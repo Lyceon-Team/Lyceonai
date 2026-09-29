@@ -74,8 +74,7 @@ export async function createTestUser(email: string, password: string = 'TestPass
       email: user.user.email!,
       display_name: email.split('@')[0],
       role: 'student',
-      is_under_13: false,
-      guardian_consent: true
+      is_under_13: false
     });
 
   if (profileError && !profileError.message.includes('duplicate')) {

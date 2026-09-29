@@ -1,7 +1,6 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
 import { parseRuntimeRole, type RuntimeRole } from "./auth-role.js";
-import { hasActiveGuardianLink } from "./guardian-link-state.js";
 
 /**
  * @spec [Doc-01_V8 Part I — Identity Model (one profiles row per authenticated user) | contracts/auth-login-e2e.contract.md AL-7]
@@ -51,12 +50,6 @@ type ProfileRow = {
   display_name: string | null;
   role: RuntimeRole;
   is_under_13: boolean;
-  /**
-   * G2-05: DERIVED, never stored — true exactly while the profile has an active guardian link
-   * (`hasActiveGuardianLink`). The stored `profiles.guardian_consent` column is no longer read.
-   * Interim: G2-04 replaces this sign-in-time value with a gate that reads the link per request.
-   */
-  guardian_consent: boolean;
   guardian_email: string | null;
   student_link_code: string | null;
   profile_completed_at: string | null;
@@ -107,15 +100,10 @@ export async function ensureProfileForAuthUser(
     if (role === null) {
       throw new UnrecognizedRoleError(user.id);
     }
-    const guardianConnected = await hasActiveGuardianLink(
-      supabaseAdmin,
-      user.id,
-    );
-    return {
-      ...(existingProfile as Omit<ProfileRow, "role" | "guardian_consent">),
-      role,
-      guardian_consent: guardianConnected,
-    };
+    // G2-04: nothing about guardian links is loaded here. Whether an under-13 student may use a
+    // learning surface is read from `guardian_links` by the gate itself, on every request
+    // (`requireGuardianLinkForUnder13`), so a session can never carry a stale answer.
+    return { ...(existingProfile as Omit<ProfileRow, "role">), role };
   }
 
   // ---- Profile absent. The trigger is the single creator, so we NEVER create here — we reconcile the

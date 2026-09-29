@@ -162,7 +162,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         display_name: backendUser.display_name,
         role: backendUser.role,
         is_under_13: backendUser.is_under_13,
-        guardian_consent: backendUser.guardian_consent,
         student_link_code: backendUser.student_link_code,
         created_at: backendUser.created_at,
         last_login_at: backendUser.last_login_at,

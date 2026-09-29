@@ -41,7 +41,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
@@ -1412,7 +1412,7 @@ router.get(
   "/pool",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1448,7 +1448,7 @@ router.get(
   "/sessions/open",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1503,7 +1503,7 @@ router.post(
   "/sessions",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     // As in diagnostic-routes: the canonical `SupabaseUser`, not an inline shape that makes
@@ -1591,7 +1591,7 @@ router.get(
   "/sessions/:sessionId/state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1647,7 +1647,7 @@ router.get(
   "/sessions/:sessionId/next",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1685,7 +1685,7 @@ router.post(
   "/sessions/:sessionId/resume",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1752,7 +1752,7 @@ router.post(
   "/sessions/:sessionId/terminate",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1798,7 +1798,7 @@ router.post(
   "/sessions/:sessionId/calculator-state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1845,7 +1845,7 @@ router.post(
   "/answer",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitReviewAnswer,
 );
@@ -1854,7 +1854,7 @@ router.post(
   "/sessions/:sessionId/skip",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitReviewSkip,
 );

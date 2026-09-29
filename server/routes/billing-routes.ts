@@ -46,6 +46,7 @@
 import { Request, Response, Router } from "express";
 import type Stripe from "stripe";
 import {
+  requireGuardianLinkForUnder13,
   requireSupabaseAuth,
   sendNoUser,
   sendRoleUnrecognized,
@@ -125,6 +126,10 @@ router.post(
   "/checkout",
   requireSupabaseAuth,
   doubleCsrfProtection,
+  // G2-04 (owner approval 2026-09-29): an under-13 student with no active guardian link cannot
+  // start a purchase or open the portal. A gate only — no Stripe logic changes. It reads the
+  // CALLER, so a guardian paying for a linked under-13 student passes.
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
@@ -903,6 +908,10 @@ router.post(
   "/portal",
   requireSupabaseAuth,
   doubleCsrfProtection,
+  // G2-04 (owner approval 2026-09-29): an under-13 student with no active guardian link cannot
+  // start a purchase or open the portal. A gate only — no Stripe logic changes. It reads the
+  // CALLER, so a guardian paying for a linked under-13 student passes.
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;

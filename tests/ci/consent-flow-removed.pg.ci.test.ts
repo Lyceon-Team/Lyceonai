@@ -10,11 +10,11 @@
  * and even without that, the route withheld `profile_completed_at` from every under-13 student.
  * No under-13 student could finish onboarding. The flow (consent rows, the email to a page that
  * does not exist, the stored `guardian_consent` flag) is removed. The profile completes; nothing is
- * written to `guardian_consent_requests`; and `guardian_consent` as the session sees it is true
- * exactly while the student has an ACTIVE guardian link.
+ * written to `guardian_consent_requests`; and whether the student still needs a guardian
+ * (`guardianConsentRequired` on GET /api/profile) is true exactly while there is NO active link.
  *
- * INTERIM, BY DESIGN. Reading the link once per sign-in is a step inside this PR only: G2-04
- * (the next commit) replaces it with a gate that reads the link on every request.
+ * G2-04 took the link off the session entirely: access is decided by the per-request gate
+ * (tests/ci/under-13-link-gate.pg.ci.test.ts), and `profiles.guardian_consent` is dropped.
  *
  * MOCK BOUNDARY. Substituted: the DATABASE TRANSPORT (real SQL over genesis + every migration)
  * and the AUTH BOUNDARY (the session reads the caller's real role). The profile route and the
@@ -32,7 +32,6 @@ import {
 import { Client } from "pg";
 import express from "express";
 import request from "supertest";
-import type { User } from "@supabase/supabase-js";
 import {
   makePgSupabase,
   bootstrapPgDatabase,
@@ -180,28 +179,29 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(res.status).toBe(200);
     });
 
-    it("guardian_consent as the session sees it follows the ACTIVE link: absent, linked, revoked", async () => {
-      const { ensureProfileForAuthUser } =
-        await import("../../server/lib/profile-bootstrap");
-      const user = { id: KID, email: "k@example.test" } as unknown as User;
-      const load = () =>
-        ensureProfileForAuthUser(makePgSupabase(pg) as never, user, {
-          source: "supabase_auth_middleware",
-        });
+    it("GET /api/profile derives 'still needs a guardian' from the ACTIVE link: absent, linked, revoked", async () => {
+      await pg.query(
+        `UPDATE public.profiles SET display_name = 'Kid', date_of_birth = (current_date - interval '10 years')::date,
+                profile_completed_at = now() WHERE id = $1`,
+        [KID],
+      );
+      const needsGuardian = async (): Promise<unknown> =>
+        (await request(await buildApp()).get("/api/profile")).body.user
+          ?.guardianConsentRequired;
 
-      expect((await load()).guardian_consent).toBe(false);
+      expect(await needsGuardian()).toBe(true);
 
       const link = await pg.query(
         `SELECT id FROM public.create_active_guardian_link_audited($1::uuid, $2::uuid, 'g2-05')`,
         [GUARDIAN, KID],
       );
-      expect((await load()).guardian_consent).toBe(true);
+      expect(await needsGuardian()).toBe(false);
 
       await pg.query(
         `UPDATE public.guardian_links SET status = 'revoked', revoked_at = now() WHERE id = $1`,
         [link.rows[0].id],
       );
-      expect((await load()).guardian_consent).toBe(false);
+      expect(await needsGuardian()).toBe(true);
     });
   },
 );

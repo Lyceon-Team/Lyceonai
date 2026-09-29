@@ -130,17 +130,30 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // the flag itself. What remains are two facts about an INCOMPLETE ACCOUNT —
   // no profile yet — and one condition from the Terms:
   //
-  // `guardianConsentRequired` is the under-13 rule: a student under 13 cannot
-  // use LYCEON until a guardian connects. That is not a consent gate, it is the
-  // basis of the under-13 position, and it routes to a screen built to get them
-  // connected — link code, guardian email — rather than a wall.
   const needsOnboarding =
-    guardianConsentRequired === true ||
-    requiredProfileComplete === false ||
-    !profileCompletedAt;
+    requiredProfileComplete === false || !profileCompletedAt;
 
   if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
     return <Redirect to="/profile/complete" replace />;
+  }
+
+  // `guardianConsentRequired` is the under-13 rule (R6, SCL-187): a student under
+  // 13 cannot use LYCEON until a guardian link is active. That is not a consent
+  // gate, it is the basis of the under-13 position, and it routes to a screen
+  // built to get them connected — the link code, the email invite, the guardian
+  // list — rather than a wall. The SERVER enforces it on every learning request
+  // (403 GUARDIAN_LINK_REQUIRED); this only spares the student refused pages.
+  const isGuardianRequiredPage = location === "/guardian-required";
+  const needsGuardianLink =
+    userRole === "student" && guardianConsentRequired === true;
+
+  if (
+    !isAdmin &&
+    !isProfileCompletePage &&
+    !isGuardianRequiredPage &&
+    needsGuardianLink
+  ) {
+    return <Redirect to="/guardian-required" replace />;
   }
 
   // @spec [LYCEON consent capture §6]

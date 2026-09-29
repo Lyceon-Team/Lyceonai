@@ -19,7 +19,6 @@ type ProfileRow = {
   display_name: string | null;
   role: string;
   is_under_13: boolean;
-  guardian_consent: boolean;
   guardian_email: string | null;
   student_link_code: string | null;
   profile_completed_at: string | null;
@@ -119,7 +118,6 @@ describe("Account linking — profile-per-human (AL-7)", () => {
       display_name: "A",
       role: "student",
       is_under_13: false,
-      guardian_consent: false,
       guardian_email: null,
       student_link_code: null,
       profile_completed_at: null,
@@ -160,7 +158,6 @@ describe("Account linking — profile-per-human (AL-7)", () => {
       display_name: "Trig",
       role: "student",
       is_under_13: false,
-      guardian_consent: false,
       guardian_email: null,
       student_link_code: null,
       profile_completed_at: null,

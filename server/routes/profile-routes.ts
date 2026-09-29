@@ -246,7 +246,6 @@ router.get("/", async (req: Request, res: Response) => {
         isAdmin: user.isAdmin,
         isGuardian: user.isGuardian,
         is_under_13: profileRow.is_under_13,
-        guardian_consent: guardianConnected,
         guardianEmail: profileRow.guardian_email,
         dateOfBirth: profileRow.date_of_birth,
         marketingOptIn: profileRow.marketing_opt_in,

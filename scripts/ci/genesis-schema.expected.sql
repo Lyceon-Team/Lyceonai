@@ -13265,7 +13265,6 @@ CREATE TABLE public.profiles (
     country_code text,
     stripe_customer_id text,
     guardian_email text,
-    guardian_consent boolean DEFAULT false,
     consent_given_at timestamp with time zone,
     guardian_profile_id uuid,
     student_link_code text,

@@ -1259,6 +1259,39 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-consent-flow-removed.json \
             --file tests/ci/consent-flow-removed.pg.ci.test.ts
 
+      # @spec [Guardian_Closure_Plan G2-04; owner ruling R6; SCL-187 rule 1] | @implemented [2026-09-29]
+      # The under-13 link gate, read live from guardian_links on every request, swept over every
+      # /api endpoint read from the real app's router: unlinked → 403 GUARDIAN_LINK_REQUIRED on each
+      # learning endpoint; after a real redeem, none; a guardian unlinking mid-session closes the
+      # student's very next request; billing checkout/portal closed; a linked guardian can still pay;
+      # the approved allowed set reachable throughout. Verdict read from vitest's JSON report: a
+      # PG-backed suite that skips is a vacuous pass.
+      - name: Under-13 link gate, every learning endpoint (G2-04) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/under-13-link-gate.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-under-13-link-gate.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-under-13-link-gate.json \
+            --file tests/ci/under-13-link-gate.pg.ci.test.ts
+
+      # The G2-04 assertions are worth what their plants prove. One product-source mutation per
+      # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
+      # per student — the stored-flag design; a learning read and checkout ungated; the gate
+      # reaching a paying guardian), each required to turn its assertion red, each reverted
+      # byte-identically in a trap.
+      - name: Under-13 link gate proven by planted violations (G2-04 P1-P6)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/under-13-link-gate.mutations.sh
+
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the

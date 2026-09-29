@@ -105,7 +105,7 @@ describe("Practice Answer Rate Limiter", () => {
       },
     );
 
-    vi.spyOn(authModule, "requireConsentCompliance").mockImplementation(
+    vi.spyOn(authModule, "requireGuardianLinkForUnder13").mockImplementation(
       (req: Request, res: Response, next: NextFunction) => {
         next();
       },

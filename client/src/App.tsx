@@ -76,6 +76,7 @@ const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
+const GuardianRequired = lazy(() => import("@/pages/guardian-required"));
 
 const DigitalSAT = lazy(() => import("@/pages/digital-sat"));
 const DigitalSATMath = lazy(() => import("@/pages/digital-sat-math"));
@@ -295,6 +296,15 @@ function Router() {
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
               <UserProfile />
+            </RequireRole>
+          )}
+        />
+        {/* G2-04: an under-13 student with no active guardian link lands here. */}
+        <Route
+          path="/guardian-required"
+          component={() => (
+            <RequireRole allow={["student"]}>
+              <GuardianRequired />
             </RequireRole>
           )}
         />

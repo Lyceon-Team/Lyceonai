@@ -51,7 +51,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   requireStudentOrAdmin: (req: any, res: any, next: any) => next(),
   requireSupabaseAdmin: (req: any, res: any, next: any) => next(),
   requireProfileComplete: (_req: any, _res: any, next: any) => next(),
-  requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
+  requireGuardianLinkForUnder13: (_req: any, _res: any, next: any) => next(),
   getSupabaseAdmin: vi.fn(
     () => require("../../apps/api/src/lib/supabase-server").supabaseServer,
   ),

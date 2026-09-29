@@ -173,7 +173,7 @@ describe("Practice /next HTTP anti-leak gate", () => {
       (_req: Request, _res: Response, next: NextFunction) => next(),
     );
 
-    vi.spyOn(authModule, "requireConsentCompliance").mockImplementation(
+    vi.spyOn(authModule, "requireGuardianLinkForUnder13").mockImplementation(
       (_req: Request, _res: Response, next: NextFunction) => next(),
     );
 
