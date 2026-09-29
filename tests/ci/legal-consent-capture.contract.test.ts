@@ -366,8 +366,14 @@ describe("C4 — checkout collects consent and the webhook records it", () => {
     // `payer_profile_id` is set only by the guardian route. Stamping every
     // checkout row 'parent' would assert a guardian relationship for people who
     // have none.
-    expect(webhook).toMatch(/guardianPayerId \? \("parent" as const\)/);
-    expect(webhook).toMatch(/: \("student" as const\)/);
+    //
+    // WHITESPACE-TOLERANT ON PURPOSE. This used to require the ternary on ONE
+    // line, which pinned the assertion to an 86-character line Prettier wraps —
+    // so formatting the file reddened a test about actor types. The claim is
+    // that the value is DERIVED from the presence of the guardian payer id, not
+    // how the derivation is laid out.
+    expect(webhook).toMatch(/guardianPayerId\s*\?\s*\("parent" as const\)/);
+    expect(webhook).toMatch(/:\s*\("student" as const\)/);
   });
 });
 
