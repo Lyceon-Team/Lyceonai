@@ -190,11 +190,16 @@ describe('billing-client', () => {
   });
 
   it('loads canonical billing plan metadata', async () => {
+    // FIXTURE CORRECTED, NOT THE PARSE RELAXED. This row omitted `interval` and
+    // `intervalCount` because the interface it was written against omitted them
+    // too — and that interface had drifted from the route. `getBillingPlans` now
+    // parses against the shared schema, so an incomplete row is refused here
+    // instead of reaching a renderer typed to believe it was complete.
     csrfFetchMock.mockResolvedValueOnce(jsonResponse({
       plans: [
-        { plan: 'monthly', amountCents: 9999, currency: 'usd', intervalLabel: 'per month', label: 'Monthly', stripePriceIdConfigured: true },
-        { plan: 'quarterly', amountCents: 19999, currency: 'usd', intervalLabel: 'per 3 months', label: 'Quarterly', stripePriceIdConfigured: true },
-        { plan: 'yearly', amountCents: 69999, currency: 'usd', intervalLabel: 'per year', label: 'Yearly', stripePriceIdConfigured: true },
+        { plan: 'monthly', amountCents: 5999, currency: 'usd', intervalLabel: 'per month', interval: 'month', intervalCount: 1, label: 'Monthly', stripePriceIdConfigured: true },
+        { plan: 'quarterly', amountCents: 14999, currency: 'usd', intervalLabel: 'per 3 months', interval: 'month', intervalCount: 3, label: 'Quarterly', stripePriceIdConfigured: true },
+        { plan: 'yearly', amountCents: 59988, currency: 'usd', intervalLabel: 'per year', interval: 'year', intervalCount: 1, label: 'Yearly', stripePriceIdConfigured: true },
       ],
     }, 200));
 
@@ -205,5 +210,34 @@ describe('billing-client', () => {
     }));
     expect(plans).toHaveLength(3);
     expect(plans.map((plan) => plan.plan)).toEqual(['monthly', 'quarterly', 'yearly']);
+  });
+
+  it('carries an unconfigured plan through as nulls rather than dropping it', async () => {
+    // The card still renders — without a price. Refusing the row would lose the
+    // plan entirely; inventing an amount is the defect this whole change removes.
+    csrfFetchMock.mockResolvedValueOnce(jsonResponse({
+      plans: [
+        { plan: 'monthly', amountCents: null, currency: null, intervalLabel: null, interval: null, intervalCount: null, label: 'Monthly', stripePriceIdConfigured: false },
+      ],
+    }, 200));
+
+    const plans = await getBillingPlans();
+
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.amountCents).toBeNull();
+    expect(plans[0]?.stripePriceIdConfigured).toBe(false);
+  });
+
+  it('refuses a plans payload that does not match the contract', async () => {
+    // `Array.isArray(payload.plans)` used to be the whole check: it proved the
+    // container was an array and nothing about its contents, so a row missing
+    // its interval arrived typed as complete.
+    csrfFetchMock.mockResolvedValueOnce(jsonResponse({
+      plans: [{ plan: 'monthly', label: 'Monthly' }],
+    }, 200));
+
+    await expect(getBillingPlans()).rejects.toThrow(
+      'Billing plans response did not match the contract',
+    );
   });
 });
