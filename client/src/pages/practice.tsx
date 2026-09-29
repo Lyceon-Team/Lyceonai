@@ -26,7 +26,6 @@ import {
   Calculator,
   Clock,
   TrendingUp,
-  Award,
   Flame,
   ArrowRight,
   AlertCircle,
@@ -84,16 +83,22 @@ interface PracticeTopics {
   }>;
 }
 
+/**
+ * @spec [SCL-186 (strikes Doc 05 Parent §12.2 "your recency-weighted accuracy is Y%");
+ *   owner ruling 6, 2026-09-29; Doc 05 AC#20] | @implemented [2026-09-29] |
+ * plain English: the Weekly Activity card no longer has an Accuracy tile. No raw accuracy
+ * figure is shown to a student; the "Questions (7d)" count (own activity) stays. The payload
+ * still carries `accuracy` on `week` and `recency`; this page never renders it, so the type
+ * does not declare it.
+ */
 interface KpiResponse {
   timezone: string;
   week: {
     questionsSolved: number;
-    accuracy: number | null;
   };
   recency: {
     window: number;
     totalAttempts: number;
-    accuracy: number | null;
   } | null;
 }
 
@@ -191,7 +196,6 @@ function Practice() {
   });
 
   const weekQuestions = kpiData?.week?.questionsSolved ?? 0;
-  const weekAccuracy = kpiData?.week?.accuracy ?? 0;
   const mathDomains = normalizePracticeTopicDomains(
     topicsData?.sections?.find((s: any) => s.section === "M")?.domains,
   );
@@ -862,22 +866,6 @@ function Practice() {
                         : kpiEmpty
                           ? "0"
                           : weekQuestions}
-                  </span>
-                </div>
-
-                <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-foreground/80">
-                    <Award className="h-4 w-4" />
-                    Accuracy
-                  </div>
-                  <span className="text-xl font-semibold">
-                    {kpiLoading
-                      ? "—"
-                      : kpiError
-                        ? "—"
-                        : kpiData?.week?.questionsSolved === 0
-                          ? "—"
-                          : `${weekAccuracy}%`}
                   </span>
                 </div>
 
