@@ -467,26 +467,6 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     callSiteExpect: '"promotion_code.updated": ignored(',
   }),
 
-  // ---- The one non-webhook granting path ---------------------------------
-  definePath({
-    path: "Guardian adds a student (add-item)",
-    trigger: CHECKOUT_ROUTE_TRIGGER,
-    direction: "grant",
-    gates: [
-      GATES.AUTH,
-      GATES.SHAPE,
-      GATES.SELECTION_AUTH,
-      GATES.COUNTRY,
-      GATES.SUBJECT_AUTH,
-    ],
-    writer:
-      "subscriptionItems.create; the row is written by customer.subscription.updated",
-    idempotency:
-      "already-funded guard refuses a second item for the same student",
-    gateTest: "tests/ci/identity-entitlement.contract.test.ts",
-    callSite: `${BR}:379`,
-    callSiteExpect: "deniesEntitlement(eligibility)",
-  }),
   // ---- There is no non-webhook granting path -----------------------------
   //
   // @revised [2026-09-29 — owner ruling: one subscription per student]

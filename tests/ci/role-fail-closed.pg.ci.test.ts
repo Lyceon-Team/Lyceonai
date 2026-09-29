@@ -27,6 +27,7 @@ import {
 } from "vitest";
 import { Client } from "pg";
 import express from "express";
+import rateLimit from "express-rate-limit";
 import request from "supertest";
 import {
   makePgSupabase,
@@ -71,6 +72,18 @@ const auth = await import("../../server/middleware/supabase-auth");
 function buildApp(): express.Express {
   const app = express();
   app.use(express.json());
+  // The production stack puts a rate limiter in front of the auth middleware
+  // (`globalRateLimiter`, server/index.ts); this app mirrors it with the same settings. A fresh
+  // limiter per app and a handful of requests per case keep it far below the limit, so it never
+  // decides an assertion.
+  app.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 1000,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+  );
   app.use((req, _res, next) => {
     (req as express.Request & { requestId?: string }).requestId = "g2-02";
     next();
