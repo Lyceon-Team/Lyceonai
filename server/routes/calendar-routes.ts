@@ -408,19 +408,10 @@ function sendLaunchFailure(
         "CALENDAR_NOT_FOUND",
         requestId,
       );
-    case "not_today":
-      // §15.1 step 1. `when` travels so the client can offer the right control — "Do it
-      // now" for a past day, nothing at all for a future one.
-      return sendError(
-        res,
-        409,
-        failure.when === "past"
-          ? "That day has passed."
-          : "That day has not started yet.",
-        "CALENDAR_NOT_TODAY",
-        requestId,
-        { when: failure.when },
-      );
+    // `not_today` / CALENDAR_NOT_TODAY is RETIRED (R-08-34, owner ruling 2026-09-29). The
+    // service no longer refuses a block for its date, so there is no arm to map. The code
+    // string is deliberately not kept as a dead branch: this switch is exhaustive over
+    // `LaunchFailure`, so removing the union member is what made tsc point here.
     case "already_complete":
       return sendError(
         res,

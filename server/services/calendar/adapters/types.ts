@@ -129,6 +129,29 @@ export type CalendarEngineAdapter = {
   ): Promise<ActivityUnit[]>;
 
   /**
+   * The same units, selected by SESSION instead of by date (§9.1 as amended by R-08-34).
+   *
+   * WHY A SECOND SELECTOR RATHER THAN A WIDER FIRST ONE. `activityUnits` is keyed on a
+   * student-local date, and the whole point of an any-day launch is that the work and the
+   * block need not share one: a student who works a Saturday block on Thursday has produced
+   * units no date-keyed read of Saturday will ever return. The launch service needs them to
+   * compute `remaining`, because otherwise a block already finished ahead of time reads
+   * 0/target and pressing Start opens a second session for work that is done.
+   *
+   * `timeZone` is the OWNING PLAN DATE's (§8.2), the same rule `activityUnits` follows, so a
+   * unit's `local_date` is the day the calendar would have filed it under. It is the block's
+   * zone rather than the unit's own because the block is what the unit is being attributed
+   * to, and one of the two has to win.
+   *
+   * An empty `sessionIds` returns `[]` without a query.
+   */
+  unitsForSessions(
+    studentId: string,
+    sessionIds: readonly string[],
+    timeZone: string,
+  ): Promise<ActivityUnit[]>;
+
+  /**
    * §9.1: the client route that opens ONE session of this engine.
    *
    * THIS EXISTS SO A HARDCODED TEMPLATE IS UNREPRESENTABLE, NOT MERELY DISCOURAGED.

@@ -50,7 +50,7 @@ import {
 import { EntitlementService } from "../../entitlement-service";
 import { logger } from "../../../logger";
 import { err, ok, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
-import { localDayWindowUtc, toIsoTimestamp } from "./local-day";
+import { localDayWindowUtc, localTodayIn, toIsoTimestamp } from "./local-day";
 import type {
   CalendarEngineAdapter,
   EngineCreateContext,
@@ -198,6 +198,11 @@ async function activityUnits(
     units.push({
       engine: "full_length",
       unit_id: row.id,
+      // THE SAME VALUE as `unit_id`, and that is correct rather than lazy: for this engine
+      // the unit IS the sitting, so `test_sessions.id` is both the unit's identity and the
+      // session a launch row points at. The two fields agreeing here is what makes a
+      // full-length launched from a future block count for that block.
+      session_id: row.id,
       occurred_at: occurredAt,
       local_date: localDate,
       section: null,
@@ -253,10 +258,64 @@ function resumeHref(sessionId: string): string {
   return `/tests/${sessionId}`;
 }
 
+/**
+ * §9.1 as amended by R-08-34: the same sittings, selected by SESSION rather than by date.
+ *
+ * For this engine the session id IS the unit id (`test_sessions.id`), so "by session" and "by
+ * unit" are the same filter — which makes this the simplest of the three and the one that
+ * shows the rule most plainly: a full-length sat on Thursday against a Saturday block is one
+ * row, and its `id` is what the launch row points at.
+ */
+async function unitsForSessions(
+  studentId: string,
+  sessionIds: readonly string[],
+  timeZone: string,
+): Promise<ActivityUnit[]> {
+  if (sessionIds.length === 0) return [];
+
+  const { data, error } = await supabaseServer
+    .from("test_sessions")
+    .select("id, test_form_id, completed_at, state")
+    .eq("student_id", studentId)
+    .eq("state", "completed")
+    .in("id", [...sessionIds]);
+
+  if (error) {
+    // Fail OPEN, exactly as `activityUnits` does (§5A).
+    logger.error(
+      "CALENDAR_ADAPTER",
+      "full_length_session_activity_read_failed",
+      "full-length activity units could not be read by session",
+      { code: error.code },
+    );
+    return [];
+  }
+
+  const units: ActivityUnit[] = [];
+  for (const row of data ?? []) {
+    if (typeof row.id !== "string" || typeof row.test_form_id !== "string")
+      continue;
+    const occurredAt = toIsoTimestamp(row.completed_at);
+    if (occurredAt === null) continue;
+    units.push({
+      engine: "full_length",
+      unit_id: row.id,
+      session_id: row.id,
+      occurred_at: occurredAt,
+      local_date: localTodayIn(timeZone, new Date(occurredAt)),
+      section: null,
+      domain: null,
+      form_id: row.test_form_id,
+    });
+  }
+  return units;
+}
+
 export const fullLengthAdapter: CalendarEngineAdapter = {
   engine: "full_length",
   create,
   activityUnits,
+  unitsForSessions,
   resumeHref,
   progress,
   nextLaunchSize,
