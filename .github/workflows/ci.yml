@@ -946,7 +946,7 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/calendar-postgrest-gate.sh
 
-      - name: Parity vs calendar_formula_reference.py (9 fixtures + seeded 3000 suite)
+      - name: Parity vs calendar_formula_reference.py (12 fixtures + seeded 3000 suite)
         env:
           PGHOST: localhost
           PGPORT: "5432"

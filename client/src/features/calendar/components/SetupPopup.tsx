@@ -38,17 +38,20 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
 import { addDays, daysBetween } from "../lib/dates";
+import {
+  DEFAULT_EXAM_WEEKDAY,
+  EXAM_FREQUENCIES,
+  examCadenceNote,
+  WEEKDAYS,
+} from "../copy/exam-cadence";
 
-/** Sunday-is-0 — the Postgres DOW convention `study_days_mask` uses (sheet §6). */
-const DAY_CHIPS: readonly { dow: number; label: string }[] = [
-  { dow: 0, label: "Sun" },
-  { dow: 1, label: "Mon" },
-  { dow: 2, label: "Tue" },
-  { dow: 3, label: "Wed" },
-  { dow: 4, label: "Thu" },
-  { dow: 5, label: "Fri" },
-  { dow: 6, label: "Sat" },
-];
+/**
+ * The cadence and weekday tables from `copy/exam-cadence` — the SAME two the settings sheet's
+ * controls are built from, so the two surfaces cannot offer different choices for one setting.
+ * Sunday-is-0, the Postgres DOW convention `study_days_mask` uses (sheet §6).
+ */
+const SETUP_FREQUENCIES = EXAM_FREQUENCIES;
+const DAY_CHIPS = WEEKDAYS;
 
 /**
  * Mon–Fri: the opening POSITION, not a stored value and not a recommendation.
@@ -89,6 +92,7 @@ export type SetupAnswers = {
   study_days_mask: number;
   daily_minutes: number;
   full_length_weekday: number | null;
+  full_length_interval_weeks: number | null;
   timezone: string;
 };
 
@@ -181,6 +185,38 @@ export function SetupPopup({
     OPENING_FULL_LENGTH_WEEKDAY,
   );
 
+  /**
+   * §8.1's cadence, opening UNANSWERED — like the weekday above it, and for the same reason.
+   *
+   * IT WAS SEEDED FROM `default_full_length_interval_weeks`, AND THAT WAS A DEFECT. The
+   * weekday row opens unanswered (R-08-27), so a seeded cadence made the pair HALF SET at
+   * rest: a student who pressed straight through — the path this whole form exists to protect,
+   * and the one 103 of 104 production students take — submitted `{weekday: null, interval: 2}`,
+   * which `full_length_pair` and the Step 2 refinement both refuse. The answer-nothing path
+   * would have 400'd. Caught by its own test before it shipped.
+   *
+   * The served default is not lost: it is the cadence a DAY pick adopts (see the day chips),
+   * which is the same rule the settings sheet follows. A prefill is a value you adopt by
+   * answering, never a value you are credited with for staying silent.
+   */
+  const [flWeeks, setFlWeeks] = useState<number | null>(null);
+
+  /**
+   * The exam half of step 2's note, from the SHARED readout — the settings sheet prints the
+   * same sentence from the same function. Which of its three shapes appears is decided there
+   * and not here: with the step-1 date still in hand it is a count, and after the "haven't
+   * picked a date yet" opt-out it falls back to the rate.
+   */
+  function setupExamNote(): string {
+    return examCadenceNote({
+      weekday: flWeekday,
+      intervalWeeks: flWeeks,
+      targetExamDate: noDate ? null : examDate,
+      today,
+      finalExamLeadDays: defaults.final_exam_lead_days,
+    });
+  }
+
   const timezone = useMemo(
     () => browserTimeZone(defaults.timezone),
     [defaults.timezone],
@@ -209,6 +245,7 @@ export function SetupPopup({
       study_days_mask: maskOf(days),
       daily_minutes: minutes,
       full_length_weekday: flWeekday,
+      full_length_interval_weeks: flWeeks,
       timezone,
     };
   }
@@ -364,12 +401,23 @@ export function SetupPopup({
                   ))}
                 </div>
               </div>
+              {/*
+                THE PAIR, ENFORCED THE SAME WAY AS IN THE SETTINGS SHEET. Both controls move
+                both halves, so no sequence of taps builds a weekday without a cadence or a
+                cadence without a weekday — `full_length_pair` refuses either, and a student
+                should never meet a refusal they could have been walked around. Setup has no
+                Save to disable, so BOTH halves always hold a value or both are null: picking
+                a day adopts the served default, and None on either clears both.
+              */}
               <div className="field">
                 <label>Practice test day</label>
                 <div className="chips" data-testid="calendar-setup-fl">
                   <Chip
                     active={flWeekday === null}
-                    onClick={() => setFlWeekday(null)}
+                    onClick={() => {
+                      setFlWeekday(null);
+                      setFlWeeks(null);
+                    }}
                   >
                     None
                   </Chip>
@@ -377,16 +425,54 @@ export function SetupPopup({
                     <Chip
                       key={d.dow}
                       active={flWeekday === d.dow}
-                      onClick={() => setFlWeekday(d.dow)}
+                      onClick={() => {
+                        setFlWeekday(d.dow);
+                        setFlWeeks(
+                          flWeeks ??
+                            defaults.default_full_length_interval_weeks,
+                        );
+                      }}
                     >
                       {d.label}
                     </Chip>
                   ))}
                 </div>
               </div>
+              <div className="field">
+                <label>Practice test frequency</label>
+                <div
+                  className="chips"
+                  data-testid="calendar-setup-fl-frequency"
+                >
+                  <Chip
+                    active={flWeeks === null}
+                    onClick={() => {
+                      setFlWeeks(null);
+                      setFlWeekday(null);
+                    }}
+                  >
+                    None
+                  </Chip>
+                  {SETUP_FREQUENCIES.map((f) => (
+                    <Chip
+                      key={f.value}
+                      active={flWeeks === f.value}
+                      onClick={() => {
+                        setFlWeeks(f.value);
+                        // Completes the pair. Setup has no Save to disable, so a cadence with
+                        // no day would submit half a pair and meet a 400 — see
+                        // DEFAULT_EXAM_WEEKDAY for why the day is Saturday.
+                        setFlWeekday(flWeekday ?? DEFAULT_EXAM_WEEKDAY);
+                      }}
+                    >
+                      {f.label}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
               <p className="note" data-testid="calendar-setup-note">
                 {days.length} day{days.length === 1 ? "" : "s"} a week ·{" "}
-                {minutesLabel(minutes)} a day
+                {minutesLabel(minutes)} a day · {setupExamNote()}
               </p>
             </>
           ) : (
