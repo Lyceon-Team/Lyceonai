@@ -11,12 +11,14 @@
  * fact on the add-item branch. Edge cases: a response that does not match the
  * contract is refused rather than half-read.
  *
- * NOT YET SCHEMA-BACKED: `getBillingPlans`. `BillingPlanMetadata` below is a
- * local shape that has drifted from the route, which returns `amountCents` and
- * `currency` as nullable and is typed here as non-null. That divergence is
- * reported and held for the owner, not fixed here — unifying it changes render
- * paths in `upgrade.tsx` and `CheckoutReturnPoller.tsx`. Stated so this header
- * does not read as a guarantee it cannot make.
+ * ALL THREE READS ARE SCHEMA-BACKED. `getBillingPlans` was not, and its local
+ * `BillingPlanMetadata` interface had drifted from the route it described:
+ * the route returns `amountCents` and `currency` as NULLABLE and the interface
+ * declared them non-null, so every consumer was typed to believe a price always
+ * exists. `formatPrice(null)` is `$NaN`, and TypeScript could not warn about it
+ * because the lie was in the type. The shape now comes from
+ * `billingPlanMetadataSchema` by inference — one definition, and a null is
+ * visible to the compiler at every use (Coding Standards §7.1, §7.2, §17).
  *
  * WHY THIS FILE CHANGED. It previously declared its own
  * `BillingPlan = 'monthly' | 'quarterly' | 'yearly'`, duplicating
@@ -33,9 +35,11 @@ import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
 import {
   billingCheckoutOutcomeSchema,
+  billingPlansResponseSchema,
   billingPortalOutcomeSchema,
   type BillingCheckoutOutcome,
   type BillingPeriodChoice,
+  type BillingPlanMetadata,
 } from "../../../packages/shared/src/billing-schema";
 
 /**
@@ -48,16 +52,14 @@ export type BillingPlan = BillingPeriodChoice;
 
 export type { BillingCheckoutOutcome };
 
-export interface BillingPlanMetadata {
-  plan: BillingPlan;
-  label: string;
-  amountCents: number;
-  currency: string;
-  intervalLabel: string;
-  equivalentMonthlyCents?: number;
-  savingsPercent?: number;
-  stripePriceIdConfigured: boolean;
-}
+/**
+ * Inferred from the shared Zod schema, never redeclared. The interface that
+ * stood here typed `amountCents` and `currency` as non-null against a route that
+ * returns both nullable, and carried `equivalentMonthlyCents` and
+ * `savingsPercent` — two fields the route has never sent, which is why the only
+ * thing that ever filled them was a hardcoded table.
+ */
+export type { BillingPlanMetadata };
 
 async function postBilling(
   endpoint: "/api/billing/checkout" | "/api/billing/portal",
@@ -102,11 +104,16 @@ export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
     );
   }
 
-  const payload = await response
-    .json()
-    .catch(() => ({}) as { plans?: BillingPlanMetadata[] });
-  const plans = Array.isArray(payload?.plans) ? payload.plans : [];
-  return plans;
+  // PARSED, NOT SHAPE-SNIFFED. `Array.isArray(payload.plans)` proved the
+  // container was an array and nothing about what was in it, so a row with a
+  // null amount, a missing interval or a plan name the client does not know
+  // reached the renderer typed as complete. Coding Standards §7.1.
+  const payload: unknown = await response.json().catch(() => null);
+  const parsed = billingPlansResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("Billing plans response did not match the contract");
+  }
+  return parsed.data.plans;
 }
 
 /**

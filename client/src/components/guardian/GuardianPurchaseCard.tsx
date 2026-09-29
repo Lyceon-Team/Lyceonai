@@ -53,6 +53,10 @@ import {
 } from "@/lib/billing-client";
 import { studentLabel, type LinkedStudent } from "@/hooks/useGuardianStudents";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
+import {
+  deriveBillingPlanPricing,
+  monthlyAmountFrom,
+} from "../../../../packages/shared/src/billing-pricing";
 
 function formatPrice(amountCents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", {
@@ -124,6 +128,15 @@ export function GuardianPurchaseCard({
     queryFn: getBillingPlans,
   });
   const prices = Array.isArray(pricesData) ? pricesData : [];
+  /**
+   * The basis for the saving badges: the monthly plan's own live amount from
+   * this same response. Before this the badge read `price.savingsPercent`, a
+   * field `GET /api/billing/plans` has never sent — so on this card the badge
+   * was dead code that never rendered, and on `/upgrade` the identically-named
+   * field was filled from a hardcoded table. Same missing field, two different
+   * wrong outcomes.
+   */
+  const monthlyAmountCents = monthlyAmountFrom(prices);
 
   const checkoutMutation = useMutation({
     mutationFn: async (plan: BillingPlan) => {
@@ -244,10 +257,21 @@ export function GuardianPurchaseCard({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {prices.map((price) => {
+              const { savingsPercent } = deriveBillingPlanPricing(
+                price,
+                monthlyAmountCents,
+              );
               const savingsBadge =
-                typeof price.savingsPercent === "number" &&
-                price.savingsPercent > 0
-                  ? `Save ${price.savingsPercent.toFixed(1)}%`
+                savingsPercent !== null && savingsPercent > 0
+                  ? `Save ${savingsPercent.toFixed(1)}%`
+                  : null;
+              // `amountCents` is nullable on the contract — an unconfigured
+              // price id or a Stripe outage. It was typed non-null here, so
+              // `formatPrice(null)` rendered "$NaN" into the guardian's choice
+              // of plan. No amount, no amount shown.
+              const headlinePrice =
+                price.amountCents !== null && price.currency !== null
+                  ? formatPrice(price.amountCents, price.currency)
                   : null;
               return (
                 <button
@@ -271,8 +295,11 @@ export function GuardianPurchaseCard({
                   <div className="text-lg font-semibold text-[#0F2E48]">
                     {price.label}
                   </div>
-                  <div className="text-2xl font-bold text-[#0F2E48] mt-1">
-                    {formatPrice(price.amountCents, price.currency)}
+                  <div
+                    className="text-2xl font-bold text-[#0F2E48] mt-1"
+                    data-testid={`guardian-price-${price.plan}`}
+                  >
+                    {headlinePrice ?? "—"}
                   </div>
                   <div className="text-sm text-[#0F2E48]/60">
                     {price.intervalLabel}

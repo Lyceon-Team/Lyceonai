@@ -26,7 +26,7 @@ export type QueryState = {
   table: string;
   columns: string;
   head: boolean;
-  op: "select" | "upsert" | "insert";
+  op: "select" | "upsert" | "insert" | "update";
   payload: unknown;
   filters: { kind: string; column: string; value: unknown }[];
   mode: "list" | "single" | "maybeSingle";
@@ -50,6 +50,15 @@ type FakeBuilder = {
     options?: { count?: string; head?: boolean },
   ): FakeBuilder;
   upsert(row: unknown, options?: { onConflict?: string }): FakeBuilder;
+  /**
+   * The real client has this and this fake did not, which is how a defect stayed invisible
+   * here for weeks. `upsertStudyProfile` writes an EXISTING profile with `.update()` —
+   * `.upsert()` renders as `INSERT … ON CONFLICT`, and PostgreSQL checks NOT NULL on the
+   * INSERT arm before resolving the conflict, so a partial body raised 23502 against a row
+   * that already had every column. A fake with no constraints could not show that, and a
+   * fake with no `.update()` could not even show the fix. (Brief 16 follow-up.)
+   */
+  update(row: unknown): FakeBuilder;
   insert(row: unknown): Promise<FakeReply>;
   eq(column: string, value: unknown): FakeBuilder;
   neq(column: string, value: unknown): FakeBuilder;
@@ -123,6 +132,11 @@ export function makeFakeClient(options: {
       },
       upsert(row) {
         state.op = "upsert";
+        state.payload = row;
+        return api;
+      },
+      update(row) {
+        state.op = "update";
         state.payload = row;
         return api;
       },

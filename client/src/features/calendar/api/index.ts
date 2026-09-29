@@ -28,6 +28,7 @@ export {
   type LaunchVariables,
   type MoveBlockVariables,
   type RegenerateVariables,
+  type StudyProfileFields,
 } from "./mutations";
 export {
   isLaunchable,
