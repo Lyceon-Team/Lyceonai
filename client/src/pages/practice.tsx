@@ -239,7 +239,7 @@ function Practice() {
     selectedSkills.length > 0;
 
   // @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
-  // plain English: the section cards no longer carry a "N questions in bank" subtitle —
+  // plain English: the section cards no longer carry a bank-size subtitle —
   // students never see question-bank counts. The only subtitle left is the session-limit
   // notice rendered below.
   const quickFocus = [
