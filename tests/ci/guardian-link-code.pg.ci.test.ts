@@ -138,8 +138,10 @@ describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () 
       ],
     );
     await pg.query(
-      `INSERT INTO public.profiles (id, email, role) VALUES
-         ($1,$2,'guardian'),($3,$4,'guardian'),($5,$6,'student')`,
+      // G1-02 (R10): a guardian redeems only with an adult date of birth on file.
+      `INSERT INTO public.profiles (id, email, role, date_of_birth) VALUES
+         ($1,$2,'guardian','1980-01-01'),($3,$4,'guardian','1980-01-01'),($5,$6,'student','2000-01-01')`,
+      // The student is an adult so the own-code case below reaches the own-code refusal, not the age rule.
       [
         GUARDIAN, "g@example.test",
         GUARDIAN_B, "g2@example.test",

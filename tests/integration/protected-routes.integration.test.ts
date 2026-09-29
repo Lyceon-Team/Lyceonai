@@ -75,43 +75,60 @@ describe.skipIf(!runIntegrationTests)('Integration Protected Routes Tests', () =
     );
   });
 
-  describe('Real Protected Route Access', () => {
-    it('should access protected routes with real authentication', async () => {
-      // This test requires setting up a real test user and getting a session
-      // Placeholder for real integration test
-      expect(true).toBe(true);
+  /**
+   * G1-10 (audit G-AUD-15a). These five used to be `expect(true).toBe(true)` placeholders —
+   * including one titled "should enforce guardian consent for under-13 users" — so this job
+   * reported them green while asserting nothing. They are replaced by assertions that CAN
+   * fail, and that are safe to run against the real project this job targets: every request
+   * is anonymous or carries a forged token, so nothing is created, read or written.
+   *
+   * THE MUTATION THAT REDS THEM (run 2026-09-29, all six red, restored green): make
+   * `sendUnauthenticated` (server/middleware/supabase-auth.ts) answer 200 instead of 401.
+   * Every 401 on these paths is sent through it. Removing ONE auth layer from a mount does
+   * NOT red them, deliberately: each mount has a second 401 behind the first
+   * (`requireRequestUser` in the role gates and in `resolveSubject`), and a test that went
+   * red on a single-layer removal would be asserting that the defence in depth is absent.
+   *
+   * Titles say what is asserted, not what was hoped.
+   */
+  const SOME_STUDENT = '00000000-0000-4000-8000-000000000001';
+
+  describe('Protected mounts refuse an anonymous caller', () => {
+    it('GET /api/guardian/students → 401', async () => {
+      const res = await request(app).get('/api/guardian/students');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /api/admin/db-health → 401', async () => {
+      const res = await request(app).get('/api/admin/db-health');
+      expect(res.status).toBe(401);
+      expect(res.body).not.toHaveProperty('status', 'healthy');
+    });
+
+    it('GET /api/students/:id/mastery/domains → 401 (the guardian/student subject surface)', async () => {
+      const res = await request(app).get(`/api/students/${SOME_STUDENT}/mastery/domains`);
+      expect(res.status).toBe(401);
+      expect(res.body).not.toHaveProperty('domains');
+    });
+
+    it('POST /api/practice/sessions → 401', async () => {
+      const res = await request(app).post('/api/practice/sessions').send({});
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /api/tutor/conversations → 401', async () => {
+      const res = await request(app).post('/api/tutor/conversations').send({});
+      expect(res.status).toBe(401);
     });
   });
 
-  describe('Real Admin Route Access', () => {
-    it('should require admin role for admin routes', async () => {
-      // This test requires real admin user setup
-      // Placeholder for real integration test
-      expect(true).toBe(true);
-    });
-  });
-
-  describe('Real FERPA Compliance', () => {
-    it('should enforce guardian consent for under-13 users', async () => {
-      // This test requires creating real under-13 test users
-      // Placeholder for real integration test
-      expect(true).toBe(true);
-    });
-  });
-
-  describe('Real Practice Session Flow', () => {
-    it('should create practice session for authenticated student', async () => {
-      // This test requires real student auth and database
-      // Placeholder for real integration test
-      expect(true).toBe(true);
-    });
-  });
-
-  describe('Real RAG Endpoint', () => {
-    it('should process RAG request for authenticated user', async () => {
-      // This test requires real auth and RAG setup
-      // Placeholder for real integration test
-      expect(true).toBe(true);
+  describe('A forged session is not a session', () => {
+    it('GET /api/guardian/students with a forged token → 401', async () => {
+      const res = await request(app)
+        .get('/api/guardian/students')
+        .set('Cookie', ['sb-access-token=forged-token-abcdefghijklmnopqrstuvwxyz0123456789']);
+      expect(res.status).toBe(401);
+      expect(res.body).not.toHaveProperty('students');
     });
   });
 });

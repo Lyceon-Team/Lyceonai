@@ -310,8 +310,9 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
       ],
     );
     await pg.query(
-      `INSERT INTO public.profiles (id, email, role, display_name) VALUES
-         ($1,$2,'guardian','Gia Guardian'),($3,$4,'student','Sam Student'),($5,$6,'student','Otto')`,
+      // G1-02 (R10): a guardian redeems only with an adult date of birth on file.
+      `INSERT INTO public.profiles (id, email, role, display_name, date_of_birth) VALUES
+         ($1,$2,'guardian','Gia Guardian','1980-01-01'),($3,$4,'student','Sam Student','2010-01-01'),($5,$6,'student','Otto','2010-01-01')`,
       [
         GUARDIAN,
         GUARDIAN_EMAIL,
