@@ -9,6 +9,7 @@ export * from "./rng.js";
 export * from "./env.js";
 export * from "./billing-schema.js";
 export * from "./guardian-subject.js";
+export * from "./entitlement-denial.js";
 export * from "./rule4-columns.js";
 export * from "./student-resources.js";
 export * from "./student-link-code-schema.js";
