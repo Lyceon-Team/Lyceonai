@@ -138,6 +138,12 @@ function setupBody(
   };
 }
 
+/**
+ * A rejected value distinctive enough to prove its own absence. Well in the past, so the
+ * schema refuses it whatever today is.
+ */
+const PAST_DATE_SENTINEL = "1999-07-04";
+
 /** A fresh key, the way `newIntent` mints one per intent in the client. */
 function key(): string {
   return crypto.randomUUID();
@@ -354,7 +360,12 @@ describe.skipIf(!PG_AVAILABLE)(
           .put("/api/calendar/profile")
           .send({
             ...setupBody({
-              daily_minutes: 37, // not one of the served presets
+              // A DISTINCTIVE sentinel, not a bare `37`. A two-digit number matches
+              // incidental digits anywhere in the serialised call — a requestId, a
+              // timestamp, a future field — so the absence assertion below would be
+              // satisfiable by accident and could also go red for no defect. A full date
+              // string cannot appear inside a uuid or a duration.
+              target_exam_date: PAST_DATE_SENTINEL, // refused: in the past
               full_length_weekday: 6, // half a pair: no interval beside it
               full_length_interval_weeks: undefined,
             }),
@@ -365,14 +376,14 @@ describe.skipIf(!PG_AVAILABLE)(
         logged = rejectionsFrom(warn);
         expect(logged).toHaveLength(1);
         expect([...logged[0]!.fields].sort()).toEqual([
-          "daily_minutes",
           "full_length_interval_weeks",
+          "target_exam_date",
         ]);
 
         // §12.1: paths only, on every line. The rejected VALUES are part of the request
-        // body — `37` is the student's input, and a log line is not a place for it.
+        // body, and a log line is not a place for either of them.
         const serialised = JSON.stringify(warn.mock.calls);
-        expect(serialised).not.toContain("37");
+        expect(serialised).not.toContain(PAST_DATE_SENTINEL);
         expect(serialised).not.toContain("America/Chicago");
       } finally {
         warn.mockRestore();

@@ -86,6 +86,25 @@ const SCORE_MAX = 1600;
 const SCORE_STEP = 10;
 const OPENING_SCORE = 1400;
 
+/**
+ * What the form collects. Deliberately NOT `Required<Pick<StudyProfileUpsert, …>>`, and the
+ * reason is worth stating because CLAUDE.md's "never re-declare a shape a canonical type
+ * already describes" points the other way at first glance.
+ *
+ * The canonical write shape makes every editable field OPTIONAL — the settings sheet sends
+ * what changed — and Zod infers `.optional()` as `{ x?: T | undefined }`. `Required<>`
+ * strips the `?` and leaves the `| undefined`, so deriving this would turn
+ * `daily_minutes: number` into `number | undefined` and let the form submit a hole. That is
+ * a WEAKER type, not a deduplicated one.
+ *
+ * What the rule is actually about is a hand-rolled shape that silently DROPS fields, so the
+ * author reaches for the nearest one that compiles. Nothing is dropped by accident here:
+ * `planner_mode` is absent because setup does not choose one, and `idempotency_key` because
+ * a popup has no business knowing what one is — both deliberate, both stated. Drift is
+ * caught at compile time where it matters: `saveProfile(answers)` in `pages/calendar.tsx`
+ * passes this straight into `StudyProfileFields`, so a field this type names that the
+ * schema does not have (or names with a different type) fails the build there.
+ */
 export type SetupAnswers = {
   target_exam_date: string | null;
   target_score: number | null;
@@ -225,12 +244,25 @@ export function SetupPopup({
   }
 
   /**
-   * Picking a DAY adopts the cadence on screen — which is the served default until the
-   * student says otherwise. "Picking a day adopts the default" is the whole reason the
-   * default is shown: the student sees what they are about to agree to before they agree.
+   * Picking a DAY answers the cadence too, and it can never answer it with null.
+   *
+   * "Picking a day adopts the default" is the whole reason the default is shown: the
+   * student sees what they are about to agree to before they agree. But `pressedWeeks()`
+   * returns null once the student has pressed None on EITHER row, and adopting that gave
+   * `{weekday: 6, interval: null}` — half a pair, refused by the Step 2 refinement and by
+   * `full_length_pair`. Every other case in this form presses None last, so nothing caught
+   * it: it needs a student who says "no tests", changes their mind, and picks a day.
+   *
+   * SCL-183 item (1) is the rule: "the UI supplies the other half whenever the student
+   * answers one." Answering the day IS answering one, so the other half is supplied — the
+   * cadence on screen when there is one, the served default when the screen says None.
+   * There is no sequence of taps through this form that can emit half a pair.
    */
   function adoptShownCadence(): void {
-    setCadence({ answered: true, weeks: pressedWeeks() });
+    setCadence({
+      answered: true,
+      weeks: pressedWeeks() ?? defaults.default_full_length_interval_weeks,
+    });
   }
 
   /**

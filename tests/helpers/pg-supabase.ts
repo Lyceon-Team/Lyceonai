@@ -47,10 +47,41 @@ import path from "node:path";
  * the `pg` module turned seven of those red for no defect at all. Per-query `types` keeps the
  * substitution where it belongs: the transport this shim is pretending to be.
  *
- * `date` is returned verbatim rather than via `Date`: node-pg builds a `Date` at LOCAL
- * midnight, so `toISOString()` on it moves the day in any zone west of UTC. The raw text is
- * already exactly `YYYY-MM-DD`.
+ * NOTHING ROUND-TRIPS THROUGH `Date`. Every parser below rewrites the RAW TEXT, for two
+ * reasons. PostgREST emits `2026-09-29T06:44:10.442123+00:00` — a numeric offset, and
+ * microseconds — while `new Date(v).toISOString()` emits `…442Z`: it truncates to
+ * milliseconds and substitutes `Z`, so a schema written as `z.string().datetime()` (no
+ * `{offset: true}`) would pass here and fail in production, which is the inverse of what
+ * this whole block is for. And `timestamptz 'infinity'` makes `toISOString()` throw
+ * `RangeError` — inside a try block, so it would surface as a query failure rather than as
+ * itself. Rewriting the text has neither problem.
+ *
+ * `date` is returned verbatim rather than via `Date` for the same family of reason: node-pg
+ * builds a `Date` at LOCAL midnight, so a conversion moves the day in any zone west of UTC.
+ * The raw text is already exactly `YYYY-MM-DD`.
+ *
+ * THE LIMITS, STATED RATHER THAN LEFT TO BE FOUND. This covers the three scalar types the
+ * calendar surface reads. It does NOT cover the array forms (`date[]` 1082→1182,
+ * `timestamptz[]` 1185), which still arrive as node-pg `Date` objects inside an array; and
+ * it does not touch `numeric`/`int8`, which node-pg hands back as STRINGS where PostgREST
+ * sends JSON numbers — a pre-existing disagreement in the opposite direction, left alone
+ * because narrowing it is a change to every suite that reads a count. A test that parses an
+ * array of timestamps, or a `numeric`, through a shared schema will meet those; the fix is
+ * to extend this block, not to loosen the schema.
  */
+
+/** `2026-09-29 06:44:10.442123+00` -> `2026-09-29T06:44:10.442123+00:00`, PostgREST's form. */
+function wireTimestamptz(value: string): string {
+  const withT = value.replace(" ", "T");
+  // `infinity` / `-infinity` have no offset to normalise, and PostgREST passes them through.
+  const offset = /([+-])(\d{2})(?::?(\d{2}))?$/.exec(withT);
+  if (offset === null) return withT;
+  return (
+    withT.slice(0, offset.index) +
+    `${offset[1]}${offset[2]}:${offset[3] ?? "00"}`
+  );
+}
+
 const WIRE_TYPES = {
   getTypeParser: (
     oid: number,
@@ -58,7 +89,7 @@ const WIRE_TYPES = {
   ): ((value: string) => unknown) => {
     if (oid === 1082) return (value: string) => value;
     if (oid === 1114) return (value: string) => value.replace(" ", "T");
-    if (oid === 1184) return (value: string) => new Date(value).toISOString();
+    if (oid === 1184) return wireTimestamptz;
     return pgTypes.getTypeParser(
       oid,
       format as Parameters<typeof pgTypes.getTypeParser>[1],
