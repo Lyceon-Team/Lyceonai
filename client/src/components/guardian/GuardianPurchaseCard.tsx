@@ -91,7 +91,6 @@ export function GuardianPurchaseCard({
     null,
   );
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [itemAdded, setItemAdded] = useState(false);
   const portal = useBillingPortal();
 
   /**
@@ -141,21 +140,12 @@ export function GuardianPurchaseCard({
   const checkoutMutation = useMutation({
     mutationFn: async (plan: BillingPlan) => {
       // The subject travels with the purchase (§20, §31.4, §36.4).
-      // `startSubscriptionCheckout` redirects to Stripe on `checkout_session`
-      // and returns without redirecting on `item_added`, which is why the
-      // outcome is inspected rather than discarded.
+      // `startSubscriptionCheckout` always redirects to Stripe: every guardian
+      // purchase, first or fifth, is a Checkout Session (owner ruling
+      // 2026-09-29, one subscription per student).
       return startSubscriptionCheckout(plan, {
         studentProfileId: selectedStudentId ?? undefined,
       });
-    },
-    onSuccess: (outcome) => {
-      // Adding a student to an existing guardian subscription completes
-      // server-side with no redirect. Saying so is the difference between a
-      // finished purchase and a button that appeared to do nothing.
-      if (outcome.kind === "item_added") {
-        setItemAdded(true);
-        setSelectedStudentId(null);
-      }
     },
     onError: (err: unknown) => {
       /**
@@ -196,15 +186,6 @@ export function GuardianPurchaseCard({
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {itemAdded && (
-          <Alert className="border-green-600/40 bg-green-50">
-            <AlertDescription className="text-green-800">
-              Student added to your existing subscription. Their access starts
-              now and the charge appears on your next invoice.
-            </AlertDescription>
-          </Alert>
-        )}
-
         <div className="space-y-2" data-testid="student-picker">
           <label
             htmlFor="checkout-student"
@@ -219,7 +200,6 @@ export function GuardianPurchaseCard({
             value={selectedStudentId ?? ""}
             onChange={(e) => {
               setCheckoutError(null);
-              setItemAdded(false);
               setSelectedStudentId(e.target.value || null);
             }}
           >
@@ -352,7 +332,6 @@ export function GuardianPurchaseCard({
             data-testid="guardian-purchase-submit"
             onClick={() => {
               setCheckoutError(null);
-              setItemAdded(false);
               if (!selectedStudentId) {
                 // No selection means NO REQUEST: the server would answer 400
                 // STUDENT_NOT_SELECTED, and a round trip to learn what the form
