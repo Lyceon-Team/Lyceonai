@@ -71,13 +71,16 @@ const stripeState = vi.hoisted(() => ({
 
 const stripeMocks = vi.hoisted(() => ({
   checkoutCreate: vi.fn(),
-  subscriptionItemsCreate: vi.fn(),
   customersCreate: vi.fn(async () => ({ id: "cus_test" })),
   customersRetrieve: vi.fn(async () => ({
     id: "cus_test",
     address: { country: "US" },
   })),
-  subscriptionsList: vi.fn(async () => ({ object: "list", data: [] })),
+  subscriptionsList: vi.fn(async () => ({
+    object: "list",
+    data: [],
+    has_more: false,
+  })),
 }));
 
 vi.mock("../../server/lib/entitlement-runtime-config", () => ({
@@ -136,7 +139,6 @@ vi.mock("../../server/lib/stripe/client", () => ({
       retrieve: stripeMocks.customersRetrieve,
     },
     subscriptions: { list: stripeMocks.subscriptionsList },
-    subscriptionItems: { create: stripeMocks.subscriptionItemsCreate },
     checkout: { sessions: { create: stripeMocks.checkoutCreate } },
     prices: { retrieve: vi.fn() },
     billingPortal: { sessions: { create: vi.fn() } },
@@ -210,12 +212,10 @@ describe("deterministic idempotency key on purchase creation", () => {
       active: false,
     });
     stripeMocks.checkoutCreate.mockImplementation(idempotentCreate("cs"));
-    stripeMocks.subscriptionItemsCreate.mockImplementation(
-      idempotentCreate("si"),
-    );
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [],
+      has_more: false,
     });
   });
 
@@ -332,17 +332,27 @@ describe("deterministic idempotency key on purchase creation", () => {
   });
 
   /**
-   * The add-item path carries its own key, on the same rule. Two identical
-   * add-item attempts must add ONE item.
+   * THE SAME RULE, NOW ON THE ONLY PATH. There used to be a second key here for
+   * `subscriptionItems.create`, covering a guardian's repeat purchase; that path
+   * took no money at purchase time and is deleted (owner ruling 2026-09-29). A
+   * repeat purchase is a Checkout Session like any other, so ONE key covers every
+   * purchase — which is the point: a second key was a second place for the rule
+   * to be got wrong.
+   *
+   * The guardian here ALREADY holds a subscription, for a DIFFERENT student, so
+   * this drives the path that used to branch to add-item and proves the
+   * double-submit still collapses to one session.
    */
-  it("collapses two identical add-item attempts into ONE subscription item", async () => {
+  it("collapses two attempts from a guardian who already has a subscription into ONE session", async () => {
     asGuardian();
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
+      has_more: false,
       data: [
         {
           id: "sub_existing",
           status: "active",
+          metadata: { student_profile_id: STUDENT_A },
           items: { object: "list", data: [] },
         },
       ],
@@ -358,9 +368,33 @@ describe("deterministic idempotency key on purchase creation", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(stripeMocks.subscriptionItemsCreate).toHaveBeenCalledTimes(2);
-    expect(new Set(keysUsed(stripeMocks.subscriptionItemsCreate)).size).toBe(1);
+    // Two attempts reached Stripe on ONE key; exactly one session exists.
+    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(2);
+    expect(new Set(keysUsed(stripeMocks.checkoutCreate)).size).toBe(1);
     expect(stripeState.counter).toBe(1);
-    expect(first.body.subscriptionItemId).toBe(second.body.subscriptionItemId);
+    expect(first.body.sessionId).toBe(second.body.sessionId);
+  });
+
+  /**
+   * THE KEY IS THE STUDENT'S, NOT THE PAYER'S — the property that makes one
+   * guardian buying for two children in one window produce TWO sessions rather
+   * than handing the second child the first child's session.
+   */
+  it("gives a guardian buying for two students two DIFFERENT keys and two sessions", async () => {
+    asGuardian();
+    const app = await billingApp();
+
+    const forA = await request(app)
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_A });
+    const forB = await request(app)
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(forA.status).toBe(200);
+    expect(forB.status).toBe(200);
+    expect(new Set(keysUsed(stripeMocks.checkoutCreate)).size).toBe(2);
+    expect(stripeState.counter).toBe(2);
+    expect(forA.body.sessionId).not.toBe(forB.body.sessionId);
   });
 });

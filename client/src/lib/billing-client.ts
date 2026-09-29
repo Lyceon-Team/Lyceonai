@@ -22,14 +22,19 @@
  *
  * WHY THIS FILE CHANGED. It previously declared its own
  * `BillingPlan = 'monthly' | 'quarterly' | 'yearly'`, duplicating
- * `billingPeriodSchema`, and read `payload.url` unconditionally on both
- * outcomes. The second of those is a real defect on the guardian add-item path
- * (row 20): that branch returns `{kind:"item_added", subscriptionItemId}` and no
- * `url`, so the helper threw "Billing response did not include a redirect URL"
- * AFTER the guardian's card had been charged for their second child. The purchase
- * had succeeded; the UI reported failure; a retry then hit
- * `STUDENT_ALREADY_FUNDED`. Parsing against the shared discriminated schema makes
- * that branch impossible to skip.
+ * `billingPeriodSchema`, and read `payload.url` unconditionally across both
+ * checkout outcomes. The second of those was a real defect on the guardian
+ * add-item path: that branch returned `{kind:"item_added", subscriptionItemId}`
+ * and no `url`, so the helper threw "Billing response did not include a redirect
+ * URL" AFTER the guardian's card had been charged for their second child. The
+ * purchase had succeeded; the UI reported failure; a retry then hit
+ * `STUDENT_ALREADY_FUNDED`.
+ *
+ * That branch no longer exists (owner ruling 2026-09-29, one subscription per
+ * student): every guardian purchase is a Checkout Session, so there is one
+ * outcome and one redirect. Parsing against the shared schema stays, because
+ * what it guards is a response this client does not understand — which a deploy
+ * skew can still produce — not that one branch in particular.
  */
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
@@ -125,9 +130,11 @@ export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
  * that is not among them (Charter §6). Sending it from a student account is
  * rejected server-side rather than ignored.
  *
- * Returns the parsed outcome. On `checkout_session` the browser is sent to
- * Stripe, so callers normally never observe the return value; on `item_added`
- * there is no redirect and the purchase is already complete.
+ * Returns the parsed outcome. Every guardian purchase — first or fifth — is a
+ * Checkout Session, so the browser is always sent to Stripe and callers
+ * normally never observe the return value. It is still returned rather than
+ * discarded, because in a non-browser environment there is nowhere to redirect
+ * to and the caller needs the session back.
  */
 export async function startSubscriptionCheckout(
   plan: BillingPlan,
@@ -148,7 +155,7 @@ export async function startSubscriptionCheckout(
   }
 
   const outcome = parsed.data;
-  if (outcome.kind === "checkout_session" && typeof window !== "undefined") {
+  if (typeof window !== "undefined") {
     window.location.assign(outcome.url);
   }
 

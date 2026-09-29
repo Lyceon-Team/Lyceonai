@@ -22,6 +22,7 @@ import {
   type CalendarRange,
 } from "../calendar/read-model";
 import { CANONICAL_DOMAINS, DOMAIN_SECTION } from "../calendar/scope";
+import type { LinkedSession } from "../calendar/allocate";
 import type { PlanBlock } from "../calendar/plan";
 
 const FIXTURE_PATH = new URL(
@@ -184,12 +185,20 @@ describe("allocator fixtures", () => {
             );
             expect(day).toBeDefined();
             if (day === undefined) return;
+            // This re-derives ONE day out of the range to read its `unit_ids`, which the
+            // range output does not carry. It filters units by their own `local_date`, which
+            // is what `buildCalendarRange` does for a fixture with no linked sessions — and
+            // only then. With links the range injects a unit into its BLOCK's day, so this
+            // shortcut would disagree with the thing it is checking. Asserted rather than
+            // assumed, so a linked range fixture fails here instead of quietly diverging.
+            expect(input.linked_sessions).toEqual([]);
             const allocation = allocateDay({
               local_date: day.local_date,
               today: input.today,
               blocks: day.blocks,
               units: input.units.filter((unit) => unit.local_date === day.local_date),
               launches: input.launches,
+              linked_sessions: input.linked_sessions,
             });
             const block = allocation.blocks.find((b) => b.block_id === blockId);
             expect(block?.unit_ids).toEqual(unitIds);
@@ -292,6 +301,10 @@ function generateCase(seed: number): DayAllocationInput {
     });
   }
 
+  // A small pool of sessions, so several units share one — which is what a real session
+  // looks like and what makes the linked pass claim more than a single unit at a time.
+  const SESSIONS = ["s-1", "s-2", "s-3", "s-4"] as const;
+
   const units: ActivityUnit[] = [];
   const unitCount = between(0, 40);
   for (let index = 0; index < unitCount; index += 1) {
@@ -304,6 +317,9 @@ function generateCase(seed: number): DayAllocationInput {
     units.push({
       engine,
       unit_id: `u-${index + 1}`,
+      // A quarter of units come from no session at all, so the unlinked path stays exercised
+      // rather than being crowded out by the new one.
+      session_id: random() < 0.25 ? null : pick(SESSIONS),
       occurred_at: `2026-09-14T${String(8 + (index % 12)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}:00Z`,
       local_date: "2026-09-14",
       section,
@@ -312,12 +328,43 @@ function generateCase(seed: number): DayAllocationInput {
     });
   }
 
+  /**
+   * R-08-34's links. Three shapes on purpose, because conservation has to survive all three:
+   *   - a session linked to a block ON this day, which pass 1 claims;
+   *   - a session linked to a block that is NOT on this day (the work-ahead / work-late
+   *     shape), whose units this day must drop entirely rather than call extra work;
+   *   - no link at all, which leaves the date-and-scope pass to do what it always did.
+   */
+  const linked: LinkedSession[] = [];
+  for (const engine of ENGINES) {
+    for (const session of SESSIONS) {
+      const roll = random();
+      if (roll < 0.35 && blocks.length > 0) {
+        linked.push({
+          block_id: pick(blocks).block_id,
+          engine,
+          engine_session_id: session,
+        });
+        continue;
+      }
+      if (roll < 0.55) {
+        linked.push({
+          // A block id no day in this case owns — a block somewhere else in the range.
+          block_id: "ffffffff-0000-4000-8000-000000000001",
+          engine,
+          engine_session_id: session,
+        });
+      }
+    }
+  }
+
   return {
     local_date: "2026-09-14",
     today: "2026-09-14",
     blocks,
     units,
     launches: [],
+    linked_sessions: linked,
   };
 }
 
@@ -327,8 +374,29 @@ describe("unit conservation (§13, INV-08-21)", () => {
       const input = generateCase(seed);
       // The generator names units `u-1`…`u-n` per engine-agnostic index, so two units can
       // share a unit_id across engines — which is legal, identity is (engine, unit_id).
+      // The units this day is responsible for. A unit whose session is linked to a block that
+      // is NOT on this day belongs to that block's day and is counted there, so it is not part
+      // of this day's conservation sum — see the allocator's own note. Deriving the expected
+      // figure here rather than reading it back from the output is the point: an implementation
+      // that simply dropped units would satisfy `allocated + extra = units_considered` while
+      // losing work.
+      const blockIdsHere = new Set(input.blocks.map((block) => block.block_id));
+      const linkedBlockOf = (unit: ActivityUnit): string | null => {
+        if (unit.session_id === null) return null;
+        const link = input.linked_sessions.find(
+          (candidate) =>
+            candidate.engine === unit.engine &&
+            candidate.engine_session_id === unit.session_id,
+        );
+        return link?.block_id ?? null;
+      };
       const identities = new Set(
-        input.units.map((unit) => `${unit.engine}|${unit.unit_id}`),
+        input.units
+          .filter((unit) => {
+            const block = linkedBlockOf(unit);
+            return block === null || blockIdsHere.has(block);
+          })
+          .map((unit) => `${unit.engine}|${unit.unit_id}`),
       );
       const allocation = allocateDay(input);
 
@@ -357,6 +425,31 @@ describe("unit conservation (§13, INV-08-21)", () => {
         }
       }
       expect(seen.size).toBe(allocation.units_considered);
+
+      // THE LINKED RULE ITSELF (R-08-34), and not merely that nothing was lost. Pass 1's whole
+      // contract: a block takes its own linked units first, up to its target. Without this the
+      // property would still pass with the linked pass deleted — every unit would land
+      // somewhere, just on the wrong block.
+      for (const block of allocation.blocks) {
+        const linkedHere = [...identities].filter((identity) => {
+          const unit = input.units.find(
+            (candidate) => `${candidate.engine}|${candidate.unit_id}` === identity,
+          );
+          // `block.engine` as well as the block id: a link whose engine differs from the
+          // block's is NOT claimable (the allocator keeps §13's engine-first clause), and a
+          // day edit can produce one.
+          return (
+            unit !== undefined &&
+            linkedBlockOf(unit) === block.block_id &&
+            unit.engine === block.engine
+          );
+        });
+        const claimable = Math.min(linkedHere.length, block.target);
+        const claimed = block.unit_ids.filter((unitId) =>
+          linkedHere.includes(`${block.engine}|${unitId}`),
+        );
+        expect(claimed.length).toBe(claimable);
+      }
     }
   });
 

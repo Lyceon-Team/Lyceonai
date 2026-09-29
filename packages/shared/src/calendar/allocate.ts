@@ -58,11 +58,33 @@ import { instantSchema, instantSortKey, localDateSchema } from "./time.js";
  * from `calendar_blocks`, so no scope can reference a skill and nothing in this layer could
  * read one. A field with no consumer on a shape that flows toward a client payload is
  * exactly what the anti-leak chokepoint rule warns about.
+ *
+ * `session_id` IS NEW (R-08-34, Brief 15), and it is the field §9.1 did not have. Linked-session
+ * attribution needs to know which engine session a unit came from, and there was no way to ask:
+ * this shape carried `unit_id` and nothing about its parent. Both item tables have had the
+ * column all along (`practice_session_items.session_id`, `review_session_items.session_id`,
+ * `20260610020000:105` and `:170`); the adapters simply never selected it.
+ *
+ * Nullable, and null is the FAIL-CLOSED value: a unit with no session id can never be linked
+ * to a block, so it falls through to the ordinary date-and-scope match. That is the right
+ * answer for any engine that cannot name a session rather than a reason to refuse the day.
+ *
+ * ANTI-LEAK, checked in this change rather than assumed (CLAUDE.md's chokepoint rule). An
+ * `ActivityUnit` never reaches a client: the wire shapes in `read-model.ts` are `.strict()`
+ * and name their own fields — `dayBlockSchema` carries `{block, actual, progress, status}` and
+ * `dayExtraWorkSchema` OMITS `unit_ids` outright — so neither a unit id nor a session id has a
+ * path to a payload. Adding one here cannot open one.
  */
 export const activityUnitSchema = z
   .object({
     engine: calendarEngineSchema,
     unit_id: z.string().min(1),
+    /**
+     * The engine session this unit came out of, or null when the engine cannot name one.
+     * Paired with `engine` it is what a `calendar_block_launches` row points at, and that
+     * pairing is the whole of the linked-session rule (§13 as amended by R-08-34).
+     */
+    session_id: z.string().min(1).nullable().default(null),
     occurred_at: instantSchema,
     /** The unit's day in the OWNING PLAN DATE's timezone (§8.2), decided by the adapter. */
     local_date: localDateSchema,
@@ -90,6 +112,29 @@ export const blockLaunchStateSchema = z
 export type BlockLaunchState = z.infer<typeof blockLaunchStateSchema>;
 
 /**
+ * A `calendar_block_launches` row, as the allocator needs it: this engine session belongs to
+ * this block (§13 as amended by R-08-34, Brief 15).
+ *
+ * RANGE-WIDE, not per-day, and that is the point. The block a session belongs to may sit on a
+ * different date from the work — that is exactly what "any-day launch" produces — so a day's
+ * allocation has to know about links pointing at OTHER days in order to leave those units
+ * alone. Passing only this day's links would make a work-ahead unit extra work today AND
+ * progress on the future block, which is the double count INV-08-21 forbids.
+ *
+ * ALL launch rows for a block, not just the latest: a block launched twice owns both sessions
+ * (§7.7 — "12/20 then abandoned → Continue starts a second session"), and the work from the
+ * abandoned first session is still that block's work.
+ */
+export const linkedSessionSchema = z
+  .object({
+    block_id: z.string().uuid(),
+    engine: calendarEngineSchema,
+    engine_session_id: z.string().min(1),
+  })
+  .strict();
+export type LinkedSession = z.infer<typeof linkedSessionSchema>;
+
+/**
  * Everything the allocator needs, and nothing it could read for itself. `today` is a
  * parameter because `missed` is the one status that depends on the calendar date, and a
  * clock read inside a pure function is a test that passes until midnight.
@@ -99,8 +144,15 @@ export const dayAllocationInputSchema = z
     local_date: localDateSchema,
     today: localDateSchema,
     blocks: z.array(planBlockSchema),
+    /**
+     * This day's units, PLUS any unit from another day whose session is linked to a block on
+     * this day. The caller assembles that set — see `buildCalendarRange` — because only it
+     * knows the whole range.
+     */
     units: z.array(activityUnitSchema),
     launches: z.array(blockLaunchStateSchema),
+    /** Range-wide launch attribution. Absent is the same as empty: no link, no attribution. */
+    linked_sessions: z.array(linkedSessionSchema).default([]),
   })
   .strict();
 export type DayAllocationInput = z.infer<typeof dayAllocationInputSchema>;
@@ -221,22 +273,70 @@ function statusOf(
   return "scheduled";
 }
 
+/** `(engine, session_id)` as one comparable key — the shape a launch row points at. */
+function sessionKey(engine: string, sessionId: string): string {
+  return JSON.stringify([engine, sessionId]);
+}
+
 /**
  * Allocate one day's activity to that day's blocks.
  *
  * Total: every legal input returns a `DayAllocation` and nothing throws. Deterministic: the
  * only orderings it uses are the stored display ordinal and the engines' own timestamps.
+ *
+ * TWO PASSES SINCE R-08-34 (Brief 15), and the order is the rule:
+ *
+ *   1. LINKED SESSIONS. A unit from an engine session that a launch row ties to block B
+ *      belongs to B, whatever date the unit happened on. The student pressed Start on B and
+ *      this is the work that came out of it; no date or scope comparison can be a better
+ *      answer than that.
+ *   2. DATE AND SCOPE, exactly as before, over whatever pass 1 left.
+ *
+ * Pass 1 goes first because it is the stronger claim. It also changes an ordinary same-day
+ * case on purpose: with an Algebra-20 block at ordinal 1 and an Algebra-10 at ordinal 2, ten
+ * Algebra units launched FROM the second now count for the second, where display order used
+ * to hand them to the first. The student did the block they pressed.
+ *
+ * CONSERVATION, which is the part worth being careful about (INV-08-21). A unit linked to a
+ * block that is NOT on this day is not this day's business at all: it is dropped before
+ * anything counts it, so it is neither progress here nor extra work here, and
+ * `units_considered` excludes it. It is counted exactly once, on its block's day, where the
+ * caller has injected it. Without that exclusion a work-ahead unit would be extra work today
+ * and progress tomorrow — the double count this invariant exists to forbid.
+ *
+ * A linked unit SURPLUS to its block's target is not special: once pass 1 has filled the
+ * block, the leftovers behave like any other unit on the block's day — pass 2 may hand them
+ * to another block, and otherwise they are that day's extra work. They are still counted once.
  */
 export function allocateDay(input: DayAllocationInput): DayAllocation {
+  // Which block each session belongs to, and which of those blocks are on this day.
+  const sessionBlock = new Map<string, string>();
+  for (const link of input.linked_sessions) {
+    sessionBlock.set(
+      sessionKey(link.engine, link.engine_session_id),
+      link.block_id,
+    );
+  }
+  const blockIdsHere = new Set(input.blocks.map((block) => block.block_id));
+
+  /** The block this unit is linked to, or null when it is linked to none. */
+  const linkedBlockOf = (unit: ActivityUnit): string | null => {
+    if (unit.session_id === null) return null;
+    return sessionBlock.get(sessionKey(unit.engine, unit.session_id)) ?? null;
+  };
+
   const sortedUnits = [...input.units].sort(compareUnits);
 
-  // Deduplicate by identity, first-in-sort-order wins (INV-08-21).
+  // Deduplicate by identity, first-in-sort-order wins (INV-08-21). A unit linked to a block
+  // on ANOTHER day is dropped in the same pass: see the conservation note above.
   const seen = new Set<string>();
   const units: ActivityUnit[] = [];
   for (const unit of sortedUnits) {
     const identity = unitIdentity(unit);
     if (seen.has(identity)) continue;
     seen.add(identity);
+    const linkedBlock = linkedBlockOf(unit);
+    if (linkedBlock !== null && !blockIdsHere.has(linkedBlock)) continue;
     units.push(unit);
   }
 
@@ -248,9 +348,35 @@ export function allocateDay(input: DayAllocationInput): DayAllocation {
       .map((launch) => launch.block_id),
   );
 
-  const blocks: AllocatedBlock[] = [];
+  // PASS 1 — linked sessions, per block in display order. Runs to completion across every
+  // block before pass 2 starts, so a link can never lose a unit to an earlier block's scope
+  // match. Two loops over the blocks rather than one interleaved pass, for exactly that.
+  const claimed = new Map<string, string[]>();
   for (const block of [...input.blocks].sort(compareBlocks)) {
     const unitIds: string[] = [];
+    for (const unit of units) {
+      if (unitIds.length >= block.target_count) break;
+      const identity = unitIdentity(unit);
+      if (consumed.has(identity)) continue;
+      if (linkedBlockOf(unit) !== block.block_id) continue;
+      // ENGINE STILL HAS TO MATCH. R-08-34 relaxes the DATE, not §13's first clause: a link
+      // says which block a session came from, and a day edit can leave a practice session
+      // linked to a block that is now a review block (see the launch service's resume
+      // branch, which hit exactly that). Counting review items toward a practice block's
+      // target would make the block report work of a kind it never asked for. Such a unit
+      // falls through to pass 2, matches nothing, and lands in extra work — visible, and
+      // attributed to nobody who did not earn it.
+      if (unit.engine !== engineOfBlock(block.block_type)) continue;
+      consumed.add(identity);
+      unitIds.push(unit.unit_id);
+    }
+    claimed.set(block.block_id, unitIds);
+  }
+
+  // PASS 2 — date and scope, unchanged.
+  const blocks: AllocatedBlock[] = [];
+  for (const block of [...input.blocks].sort(compareBlocks)) {
+    const unitIds: string[] = claimed.get(block.block_id) ?? [];
     for (const unit of units) {
       if (unitIds.length >= block.target_count) break;
       const identity = unitIdentity(unit);

@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { csrfFetch } from "@/lib/csrf";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { resolveOnboardingErrorMessage } from "@/lib/api-error";
@@ -83,6 +84,7 @@ function resolvePostCompletionPath(role: ProfileRole | undefined): string {
 export default function ProfileComplete() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { refreshUser } = useSupabaseAuth();
 
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState<"student" | "guardian">("student");
@@ -148,7 +150,8 @@ export default function ProfileComplete() {
         body: JSON.stringify({
           displayName: displayName.trim(),
           role,
-          dateOfBirth: role === "student" ? dateOfBirth : null,
+          // G1-02 (R10): guardians give their date of birth too, through the same field.
+          dateOfBirth,
           guardianEmail:
             role === "student" ? guardianEmail.trim() || null : null,
           marketingOptIn,
@@ -174,6 +177,10 @@ export default function ProfileComplete() {
         title: "Profile completed",
         description: "Your onboarding is now complete.",
       });
+      // G1-02: the session's role must be the one just written BEFORE navigating. The
+      // guardian dashboard gates on the auth context's `isGuardian`; without this refresh it
+      // still read the pre-completion 'student' and bounced a new guardian to /dashboard.
+      await refreshUser();
       navigate(resolvePostCompletionPath(result.profile.role));
     },
     onError: (error: unknown) => {
@@ -199,8 +206,8 @@ export default function ProfileComplete() {
       return;
     }
 
-    if (role === "student" && !dateOfBirth) {
-      setErrorMessage("Date of birth is required for student accounts.");
+    if (!dateOfBirth) {
+      setErrorMessage("Please enter your date of birth to continue.");
       return;
     }
 
@@ -344,45 +351,43 @@ export default function ProfileComplete() {
               </Select>
             </div>
 
-            {role === "student" && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="date-of-birth">Date Of Birth</Label>
-                  <Input
-                    id="date-of-birth"
-                    data-testid="input-date-of-birth"
-                    type="date"
-                    value={dateOfBirth}
-                    onChange={(event) => setDateOfBirth(event.target.value)}
-                    required
-                  />
-                  {age !== null && (
-                    <p className="text-xs text-muted-foreground">
-                      Age detected: {age}
-                    </p>
-                  )}
-                </div>
-
-                {isUnder13 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="guardian-email">Guardian Email</Label>
-                    <Input
-                      id="guardian-email"
-                      data-testid="input-guardian-email"
-                      type="email"
-                      value={guardianEmail}
-                      onChange={(event) => setGuardianEmail(event.target.value)}
-                      placeholder="guardian@example.com"
-                      required
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      We only mark guardian consent after verified guardian flow
-                      completion.
-                    </p>
-                  </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="date-of-birth">Date Of Birth</Label>
+                <Input
+                  id="date-of-birth"
+                  data-testid="input-date-of-birth"
+                  type="date"
+                  value={dateOfBirth}
+                  onChange={(event) => setDateOfBirth(event.target.value)}
+                  required
+                />
+                {age !== null && (
+                  <p className="text-xs text-muted-foreground">
+                    Age detected: {age}
+                  </p>
                 )}
               </div>
-            )}
+
+              {isUnder13 && (
+                <div className="space-y-2">
+                  <Label htmlFor="guardian-email">Guardian Email</Label>
+                  <Input
+                    id="guardian-email"
+                    data-testid="input-guardian-email"
+                    type="email"
+                    value={guardianEmail}
+                    onChange={(event) => setGuardianEmail(event.target.value)}
+                    placeholder="guardian@example.com"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    We only mark guardian consent after verified guardian flow
+                    completion.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="flex items-start space-x-2 pt-1">
               <Checkbox

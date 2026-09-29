@@ -50,6 +50,7 @@ import {
   vi,
 } from "vitest";
 import { bootstrapPgDatabase } from "../../../tests/helpers/pg-supabase";
+import { guardianStudentsResponseSchema } from "../../../packages/shared/src/guardian-student-schema";
 
 const PG_AVAILABLE =
   process.env.PGHOST !== undefined && process.env.PGHOST !== "";
@@ -147,8 +148,11 @@ describe.skipIf(!PG_AVAILABLE)(
 
       // Read back. If `display_name` is ever renamed, this SELECT raises 42703 and the
       // test fails — which is the whole point of not writing the row here.
+      // G1-10 (audit G-AUD-15f): the SAME column list the route selects
+      // (server/routes/guardian-routes.ts, GET /students). It omitted `created_at`, which the
+      // shared contract requires, so these rows were a shape the real hook refuses.
       const result = await pg.query(
-        `SELECT id, email, display_name FROM public.profiles WHERE id = ANY($1::uuid[])`,
+        `SELECT id, email, display_name, created_at FROM public.profiles WHERE id = ANY($1::uuid[])`,
         [[ADA, BO]],
       );
       rows = new Map(
@@ -167,18 +171,30 @@ describe.skipIf(!PG_AVAILABLE)(
     beforeEach(() => {
       // The two derived fields are NOT columns — the guardian students route computes them
       // — so they are the only things stated here.
-      students = [
-        {
-          ...rows.get(ADA),
-          has_active_entitlement: true,
-          entitlement_lapsed: false,
-        },
-        {
-          ...rows.get(BO),
-          has_active_entitlement: false,
-          entitlement_lapsed: true,
-        },
-      ];
+      // Through the SHARED contract the real hook applies, so the page only ever sees a
+      // shape the hook can actually emit. node-postgres returns `created_at` as a Date where
+      // PostgREST sends an ISO string; that one transport difference is normalised here.
+      const wire = (row: Record<string, unknown> | undefined) => ({
+        ...row,
+        created_at:
+          row?.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : row?.created_at,
+      });
+      students = guardianStudentsResponseSchema.parse({
+        students: [
+          {
+            ...wire(rows.get(ADA)),
+            has_active_entitlement: true,
+            entitlement_lapsed: false,
+          },
+          {
+            ...wire(rows.get(BO)),
+            has_active_entitlement: false,
+            entitlement_lapsed: true,
+          },
+        ],
+      }).students;
     });
 
     it("renders one link per student, each to that student's calendar route", async () => {

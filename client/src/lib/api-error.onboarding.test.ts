@@ -113,3 +113,45 @@ describe("resolveOnboardingErrorMessage — anti-leak: never returns the raw str
     );
   });
 });
+
+/**
+ * G1-02 (Karl's reproduction, 2026-09-28): picking Guardian got a 403 and the page said
+ * "We couldn't save your profile just now." The server had explained itself; the client
+ * substring-matched and fell through to generic. A CODED refusal from the closed list in
+ * packages/shared profile-role-choice-schema is now shown exactly as the server wrote it.
+ */
+describe("resolveOnboardingErrorMessage — coded refusals show the server's own message (G1-02)", () => {
+  const coded = (status: number, code: string, message: string): HttpApiError =>
+    new HttpApiError({ status, code, message });
+
+  it.each([
+    [
+      403,
+      "ROLE_LOCKED",
+      "Your account type is set when you finish signing up.",
+    ],
+    [403, "GUARDIAN_UNDER_18", "Guardian accounts are for adults 18 or older."],
+    [
+      403,
+      "ROLE_CHANGE_BLOCKED",
+      "This account already has study activity or a linked account, so its type can't be changed here.",
+    ],
+    [400, "DATE_OF_BIRTH_REQUIRED", "Please enter a valid date of birth."],
+  ])("%i %s → the server's message, verbatim", (status, code, message) => {
+    expect(
+      resolveOnboardingErrorMessage(coded(status, code, message), "save"),
+    ).toBe(message);
+  });
+
+  it("an UNKNOWN code is still not shown verbatim (AS-3 holds)", () => {
+    const shown = resolveOnboardingErrorMessage(
+      coded(
+        403,
+        "SOMETHING_ELSE",
+        "duplicate key value violates unique constraint",
+      ),
+      "save",
+    );
+    expect(shown).toBe(GENERIC_SAVE);
+  });
+});

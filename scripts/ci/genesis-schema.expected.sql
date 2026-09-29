@@ -10009,6 +10009,13 @@ DECLARE
   v_student_name  text;
   v_guardian_name text;
 BEGIN
+  -- G1-07: only a party to the link may revoke it. Checked before any write, and NULL is
+  -- not a party (IS DISTINCT FROM keeps a NULL revoker from slipping through as unknown).
+  IF p_revoked_by IS DISTINCT FROM p_guardian_id
+     AND p_revoked_by IS DISTINCT FROM p_student_id THEN
+    RAISE EXCEPTION 'revoker is not a party to this link' USING ERRCODE = 'LY005';
+  END IF;
+
   UPDATE public.guardian_links
      SET status = 'revoked',
          revoked_at = now(),
@@ -19148,7 +19155,7 @@ CREATE POLICY tutor_conversations_context_read ON public.tutor_conversations FOR
 -- Name: tutor_conversations tutor_conversations_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_conversations_insert_own ON public.tutor_conversations FOR INSERT WITH CHECK ((student_id = auth.uid()));
+CREATE POLICY tutor_conversations_insert_own ON public.tutor_conversations FOR INSERT TO authenticated WITH CHECK ((student_id = auth.uid()));
 
 
 --
@@ -19176,7 +19183,7 @@ CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR S
 -- Name: tutor_conversations tutor_conversations_update_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE USING ((student_id = auth.uid()));
+CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE TO authenticated USING ((student_id = auth.uid()));
 
 
 --
@@ -19373,7 +19380,7 @@ CREATE POLICY tutor_messages_context_read ON public.tutor_messages FOR SELECT TO
 -- Name: tutor_messages tutor_messages_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_messages_insert_own ON public.tutor_messages FOR INSERT WITH CHECK ((student_id = auth.uid()));
+CREATE POLICY tutor_messages_insert_own ON public.tutor_messages FOR INSERT TO authenticated WITH CHECK ((student_id = auth.uid()));
 
 
 --

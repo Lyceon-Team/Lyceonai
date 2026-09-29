@@ -51,6 +51,7 @@ import {
   err,
   guardianCalendarResponseSchema,
   isStudyDay,
+  linkedSessionSchema,
   ok,
   planBlockSchema,
   postgresDowOfLocalDate,
@@ -58,6 +59,7 @@ import {
   type ActivityUnit,
   type BlockLaunchState,
   type CalendarDayInput,
+  type LinkedSession,
   type CalendarEngine,
   type CalendarReadyResponse,
   type CalendarResponse,
@@ -201,8 +203,8 @@ async function readLaunchStates(
   studentId: string,
   blockIds: readonly string[],
   requestId?: string,
-): Promise<BlockLaunchState[]> {
-  if (blockIds.length === 0) return [];
+): Promise<{ states: BlockLaunchState[]; links: LinkedSession[] }> {
+  if (blockIds.length === 0) return { states: [], links: [] };
 
   const { data, error } = await supabaseServer
     .from("calendar_block_launches")
@@ -220,17 +222,31 @@ async function readLaunchStates(
       "calendar_block_launches could not be read; blocks will not show as in progress",
       { ...classifyError(error), requestId },
     );
-    return [];
+    // Fail OPEN on BOTH halves. Without the links, a work-ahead block reads 0/target and the
+    // work shows as extra on the day it happened — the pre-R-08-34 answer. That is a cosmetic
+    // loss on a read that could not see its own launch rows, and it is the same posture the
+    // `states` half has always taken.
+    return { states: [], links: [] };
   }
 
   // Highest sequence first, so the first row seen for a block is its latest launch.
   const latest = new Map<string, { engine: string; sessionId: string }>();
+  // EVERY row, not just the latest (R-08-34). A block launched twice owns both sessions, and
+  // the work from the abandoned first one is still that block's work (§7.7). Same query — the
+  // `.order()` above already returns all of them, so this costs no round trip.
+  const links: LinkedSession[] = [];
   for (const row of data ?? []) {
     if (
       typeof row.block_id !== "string" ||
       typeof row.engine_session_id !== "string"
     )
       continue;
+    const parsedLink = linkedSessionSchema.safeParse({
+      block_id: row.block_id,
+      engine: row.engine,
+      engine_session_id: row.engine_session_id,
+    });
+    if (parsedLink.success) links.push(parsedLink.data);
     if (latest.has(row.block_id)) continue;
     latest.set(row.block_id, {
       engine: String(row.engine),
@@ -249,7 +265,7 @@ async function readLaunchStates(
     });
     if (parsed.success) states.push(parsed.data);
   }
-  return states;
+  return { states, links };
 }
 
 /**
@@ -374,6 +390,11 @@ type AssembledRange = {
   units: ActivityUnit[];
   launches: BlockLaunchState[];
   /**
+   * Every launch row for the blocks in the window (R-08-34). The allocator uses it to give a
+   * unit to the block it was launched FROM rather than to the day it happened on.
+   */
+  linkedSessions: LinkedSession[];
+  /**
    * Dates the generator gave up on because the student's own day edits blocked both
    * occurrences (formula sheet §2 Step 2 item 4). Read out of the stored snapshots' own
    * `degraded[]`, so this is what the plan the student is LOOKING AT actually recorded —
@@ -483,7 +504,8 @@ async function assembleRange(
     today,
     days,
     units,
-    launches,
+    launches: launches.states,
+    linkedSessions: launches.links,
     fullLengthSuppressions: snapshotFacts.suppressions,
   };
 }
@@ -598,6 +620,7 @@ export async function readCalendar(
     days: range.days,
     units: range.units,
     launches: range.launches,
+    linked_sessions: range.linkedSessions,
   });
 
   const [streak, diagnostic, change, projection] = await Promise.all([
@@ -828,6 +851,7 @@ export async function readGuardianCalendar(
     days: range.days,
     units: range.units,
     launches: range.launches,
+    linked_sessions: range.linkedSessions,
   });
 
   // Independent reads, so they go together — the same shape as the student path above.

@@ -192,14 +192,23 @@ describe("guardian purchase card", () => {
   });
 
   /**
-   * Edge case 5. Adding a student to an existing guardian subscription returns
-   * `item_added` and does NOT redirect, so the card must say the purchase
-   * completed — otherwise the button appears to do nothing.
+   * THE CARD NO LONGER CLAIMS A CHARGE-LATER PURCHASE. It used to render, on the
+   * add-item outcome, "Student added to your existing subscription. Their access
+   * starts now and the charge appears on your next invoice." — a true
+   * description of a path that has since been deleted for exactly that reason
+   * (owner ruling 2026-09-29). Every guardian purchase now redirects to Stripe
+   * and is charged there, so no success copy belongs on this card at all: the
+   * confirmation is the Checkout page and the receipt.
+   *
+   * Asserted as an ABSENCE with the click actually made, so it cannot pass for
+   * the wrong reason — the purchase is driven end to end and the old copy must
+   * still not appear.
    */
-  it("reports completion on the add-item path, which does not redirect", async () => {
+  it("shows no 'charge appears on your next invoice' copy after a purchase", async () => {
     startSubscriptionCheckoutMock.mockResolvedValue({
-      kind: "item_added",
-      subscriptionItemId: "si_1",
+      kind: "checkout_session",
+      url: "https://stripe.example/checkout",
+      sessionId: "cs_test_1",
     });
     renderCard([student(STUDENT_B, "Blake", "b@test.com", false)]);
 
@@ -208,10 +217,15 @@ describe("guardian purchase card", () => {
     fireEvent.click(await screen.findByText("Monthly"));
     fireEvent.click(screen.getByTestId("guardian-purchase-submit"));
 
+    // Presence before absence: the purchase really was attempted.
     await waitFor(() => {
-      expect(
-        screen.getByText(/added to your existing subscription/i),
-      ).toBeTruthy();
+      expect(startSubscriptionCheckoutMock).toHaveBeenCalledWith("monthly", {
+        studentProfileId: STUDENT_B,
+      });
     });
+    expect(screen.queryByText(/next invoice/i)).toBeNull();
+    expect(
+      screen.queryByText(/added to your existing subscription/i),
+    ).toBeNull();
   });
 });
