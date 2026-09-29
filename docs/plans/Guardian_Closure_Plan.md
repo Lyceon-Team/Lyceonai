@@ -144,14 +144,20 @@ This is the binding contract. Each UI element calls exactly one route and parses
 
 ## Findings from outside the audit (to be routed)
 
-| ID | Found | Finding | Route |
-|---|---|---|---|
-| G-NEW-01 | Karl's screenshot, 2026-09-28 | The student Profile page shows "Member since Unavailable". | Student UI vertical. It is not a guardian row. |
-| G-NEW-02 | G1-01 merge, 2026-09-29 | `main` moved past `d073eb3` (to `9020316`, #931/#936/#937/#941) after the audit. One guardian-visible change the audit does not describe: the guardian calendar payload gains `full_length_suppressions` (dates where a practice test could not be placed), rendered as a statement on the guardian calendar. Owner ruling 2026-09-26 per the code comment (`packages/shared/src/calendar/api.ts` guardian ready schema; `server/services/calendar/read-service.ts` `readGuardianCalendar`; `client/src/pages/guardian-student-calendar.tsx`). The new practice-test notifications are student-only (migration comment: "The student only"). | Audit addendum. No defect. Include in the Wave 4 calendar endpoint map (G4-04). |
+| ID | Found | Finding | Route (owner wave) | Named proof | Status |
+|---|---|---|---|---|---|
+| G-NEW-01 | Karl's screenshot, 2026-09-28 | The student Profile page shows "Member since Unavailable". | Student UI vertical. It is not a guardian row. | — (owned by the student UI vertical) | ROUTED |
+| G-NEW-02 | G1-01 merge, 2026-09-29 | `main` moved past `d073eb3` (to `9020316`, #931/#936/#937/#941) after the audit. One guardian-visible change the audit does not describe: the guardian calendar payload gains `full_length_suppressions` (dates where a practice test could not be placed), rendered as a statement on the guardian calendar. Owner ruling 2026-09-26 per the code comment (`packages/shared/src/calendar/api.ts` guardian ready schema; `server/services/calendar/read-service.ts` `readGuardianCalendar`; `client/src/pages/guardian-student-calendar.tsx`). The new practice-test notifications are student-only (migration comment: "The student only"). | Audit addendum. No defect. Include in the Wave 4 calendar endpoint map (G4-04). | — | NOTE |
+| G-NEW-03 | Production logs, owner, 2026-09-29 | Right after a new guardian's first sign-up (07:44:39–41Z) the client called `GET /api/progress/kpis` and `GET /api/progress/projection` twice each. The server returned 403 `guardian_blocked`, so nothing leaked, but a student-only surface still renders for a new guardian on first load. It did not recur after linking. **Establish in Wave 4:** which component issued the calls. | Wave 4 (shell, G4-01) | An RTL test: the guardian first-load path makes zero requests to student-only routes. Production: the Vercel logs show no `guardian_blocked` events for a fresh guardian sign-up. | OPEN |
+| G-NEW-04 | Production logs, owner, 2026-09-29 | `GET /api/account/email-suppression` returns 503 on the student Settings page: Resend rejects the suppression-list read with 401 (`provider_rejected`, 07:45:55Z, request `20a65b22…`). Sending works; the API key probably lacks read permission. | Outside this vertical (ops) | Route to ops. Not a guardian row. | OPEN (ops) |
+| G-NEW-05 | #961 review, 2026-09-29 | G1-06's restore-on-failure is not atomic: a process crash between spending the code and restoring it still burns the code. | Backlog, LOW | A single-transaction redeem in SQL, with a PG test that injects a failure after the spend. | OPEN |
+| G-NEW-06 | G1-09 establish, 2026-09-29 | The seven tutor `*_select_own` policies apply to `public`. They are harmless (anon has no SELECT grant, and each policy returns only the reader's own rows), but should be tightened to `authenticated` for consistency. | Backlog, LOW | Production `pg_policies.roles` = `{authenticated}` for all seven. | OPEN |
+| G-NEW-07 | #961 consolidation, 2026-09-29 | Since #961, a guardian who has no date of birth **and** is already linked gets 403 (date of birth) on redeem instead of 409. Accepted by the owner on 2026-09-29: the guardian's own missing date of birth is refused before anything about the student is examined. | Note (no work) | None. Recorded for traceability. | NOTE |
 
 ## Backlog outside this vertical
 
 - Counsel review: is a redeemed guardian link sufficient consent for under-13 users under COPPA? Privacy Policy wording.
+- Existing guardians without a date of birth (owner, 2026-09-29): 13 older guardian accounts have none. Their links are untouched, and they are asked for a date of birth only when redeeming a new code, which is working as designed. No action.
 
 ## Wave 5 — Cleanup
 
