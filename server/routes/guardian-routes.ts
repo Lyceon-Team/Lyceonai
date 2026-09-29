@@ -27,10 +27,7 @@ import {
 // that imports its error mapping from the module it also imports its functions from loses
 // that mapping whenever the module is substituted, and reports 500 instead of the specified
 // status. See packages/shared/src/guardian-link-schema.ts.
-import {
-  GUARDIAN_LINK_ERROR,
-  GuardianLinkError,
-} from "../../packages/shared/src/guardian-link-schema";
+import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
 import { redeemStudentLinkCode } from "../lib/student-link-code";
 import { recordLegalAcceptances } from "../lib/legal-acceptance";
@@ -108,6 +105,38 @@ function errorCode(err: unknown): string | null {
   if (typeof err !== "object" || err === null) return null;
   const code = (err as { code?: unknown }).code;
   return typeof code === "string" ? code : null;
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G1-05; audit G-AUD-08; Coding Standards §13] | @implemented [2026-09-29]
+ *
+ * plain English: Express 4 does not catch a rejected async handler, so a throw inside one
+ * leaves the request with NO response — the client hangs until it gives up. This wrapper is
+ * the one place that turns any unanswered failure into a logged 500. Expected outcome: every
+ * branch of the wrapped handler ends in a response. Edge case: if the handler already sent
+ * a response before throwing, nothing more is written (a second write would itself throw).
+ * The internal error message is logged, never sent.
+ */
+function answerEveryFailure(
+  action: string,
+  handler: (req: Request, res: Response) => Promise<unknown>,
+): (req: Request, res: Response) => Promise<void> {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (err: unknown) {
+      logger.error("GUARDIAN", action, "Unhandled failure; answering 500", {
+        reason: err instanceof Error ? err.message : "unknown",
+        code: errorCode(err),
+        requestId: req.requestId,
+      });
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .json({ error: "Internal server error", requestId: req.requestId });
+      }
+    }
+  };
 }
 
 router.get(
@@ -300,7 +329,7 @@ router.post(
   requireSupabaseAuth,
   requireGuardianAccess,
   guardianLinkCodeEntryRateLimit,
-  async (req: Request, res: Response) => {
+  answerEveryFailure("link_redeem", async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const guardianId = req.user!.id;
 
@@ -432,10 +461,10 @@ router.post(
     } catch (err: unknown) {
       // LY004 — the pair is already linked. The guardian is a party to that link, so telling
       // them it exists discloses nothing they do not already know (edge case 2).
-      if (
-        err instanceof GuardianLinkError &&
-        err.code === GUARDIAN_LINK_ERROR.ALREADY_EXISTS
-      ) {
+      // G1-05: matched on the CONTRACT (`code`), never on the class — `instanceof` is false
+      // whenever the thrower's copy of GuardianLinkError is not this module's, and a missed
+      // match here used to be a hang, not even a 500. See `errorCode` above.
+      if (errorCode(err) === GUARDIAN_LINK_ERROR.ALREADY_EXISTS) {
         return res.status(409).json({
           error: {
             message: "You are already linked to that student.",
@@ -444,9 +473,11 @@ router.post(
           requestId,
         });
       }
+      // Anything else is not a contract this handler knows; `answerEveryFailure` logs it and
+      // answers 500.
       throw err;
     }
-  },
+  }),
 );
 
 /**
