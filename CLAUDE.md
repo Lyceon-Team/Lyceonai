@@ -62,6 +62,26 @@ This rule overrides any instruction to the contrary.
 Annotate every implementation:
 `@spec [Doc-ID_version, §section] | @implemented [YYYY-MM-DD] | plain English: what it does, expected outcome, trade-offs, edge cases`
 
+**An annotation that describes its own status must be updated when that status changes.**
+
+A comment saying "the ruling said X; this is wider, deliberately" is accurate when written and
+misleading the moment the deviation is ratified. It reads as an open question, and it invites the
+next person either to re-litigate a settled one or to narrow the code back to the original wording.
+So when a deviation is ruled on, the annotation records **the ruling and its date** alongside the
+reasoning, rather than continuing to describe itself as a deviation.
+
+This is the inverse of the failure everyone already watches for — the code moves and the comment
+does not. That one leaves a comment the code outran; this one leaves a comment that stopped
+tracking a **decision**. Both produce the same failure: a reader acting on something that was true
+once.
+
+> `FUNDING_SUBSCRIPTION_STATUSES` in `server/lib/stripe/guardian-subscriptions.ts` opened "THE
+> RULING SAID 'ACTIVE'; THIS IS WIDER, DELIBERATELY", which was exactly right at the time. The
+> owner ratified the wider set hours later, on the reasoning rather than the wording — and the
+> sentence then read as an unratified deviation still awaiting a decision, one narrowing away from
+> reopening the pre-webhook window the check exists to close. The neighbouring page cap had the
+> opposite gap: ruled on, and recording no ruling at all. (Learned 2026-09-29, owner ruling: #962.)
+
 ## Verify before you say "done"
 
 Never report success on assertion alone. Run the check and show the evidence (command + output):
