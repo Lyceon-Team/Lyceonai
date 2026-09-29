@@ -509,6 +509,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/guardian-view-decision-gate.sh
 
+      # @spec [Guardian_Closure_Plan G1-08; audit G-AUD-11] | @implemented [2026-09-29]
+      # GATE 0 pins the gate's body. The harness proves it bites: dropping status='active'
+      # and a one-id backdoor (which no behavioural gate's fixtures can see) must each red
+      # the gate ON GATE 0. The target migration is resolved as the LAST definer, so a
+      # newer CREATE OR REPLACE can never leave this mutation aimed at a dead body.
+      - name: guardian_view_decision gate — body-pin mutations
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/guardian-view-decision-gate.mutations.sh
+
       # Doc 04B V4.3 §7.2/§8.1/§8.2/§8.4 — every scoring-catalogue constraint is made
       # to FIRE on a fresh apply: the INSERT/UPDATE/DELETE seal on an active version's
       # constants, the attestation CHECK, the no-downgrade trigger, the (version, key,
