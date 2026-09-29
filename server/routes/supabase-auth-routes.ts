@@ -92,10 +92,10 @@ router.post(
           "AUTH",
           "admin_signup_blocked",
           "Blocked admin role request during signup",
-          {
-            email: (req.body as { email?: unknown } | undefined)?.email,
-            requestId: req.requestId,
-          },
+          // @spec [Coding Standards §12.1; Doc 01A §14; register F-10, OQ-14 ruling 2026-09-29] |
+          // @implemented [2026-09-29] | plain English: the submitted email never reaches the logger;
+          // the event and its requestId are enough to trace a blocked admin-role signup.
+          { requestId: req.requestId },
         );
         return res.status(403).json({
           error: "Admin signup is disabled",
@@ -262,10 +262,11 @@ router.post(
       const hasCanonicalSession = !!authData.session;
       // No manual persistSession: signUp on the SSR client already wrote the cookie via the adapter.
 
+      // @spec [Coding Standards §12.1; Doc 01A §14; register F-10, OQ-14 ruling 2026-09-29] | @implemented [2026-09-29] | plain English: no email in this log event; userId (digested by the logger) and requestId are enough to trace it.
       logger.info("AUTH", "signup_success", "User signed up successfully", {
         userId: authData.user.id,
-        email: authData.user.email,
         canonicalSessionEstablished: hasCanonicalSession,
+        requestId: req.requestId,
       });
 
       if (!authData.session) {
@@ -334,9 +335,10 @@ router.post(
       });
 
       if (error) {
+        // @spec [Coding Standards §12.1; Doc 01A §14; register F-10, OQ-14 ruling 2026-09-29] | @implemented [2026-09-29] | plain English: no email in this log event; requestId is enough to trace it.
         logger.warn("AUTH", "signin_failed", "Sign in failed", {
-          email,
           error: error.message,
+          requestId: req.requestId,
         });
         return res.status(401).json({
           error: "Invalid email or password",
@@ -349,9 +351,10 @@ router.post(
         });
       }
 
+      // @spec [Coding Standards §12.1; Doc 01A §14; register F-10, OQ-14 ruling 2026-09-29] | @implemented [2026-09-29] | plain English: no email in this log event; userId (digested by the logger) and requestId are enough to trace it.
       logger.info("AUTH", "signin_success", "User signed in successfully", {
         userId: data.user.id,
-        email: data.user.email,
+        requestId: req.requestId,
       });
 
       res.json({
