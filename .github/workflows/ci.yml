@@ -1069,10 +1069,6 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-link-code.json \
             --file tests/ci/guardian-link-code.pg.ci.test.ts
 
-      # @spec [Guardian_Closure_Plan G1-06; audit G-AUD-13] | @implemented [2026-09-29]
-      # A redeem that writes no link leaves the student's code redeemable: a pre-existing
-      # link is refused before the spend, and an infrastructure failure after it is undone.
-      - name: Guardian link code not burned → real PG proof
       # @spec [Guardian_Closure_Plan G1-05; audit G-AUD-08] | @implemented [2026-09-29]
       # Redeem answers on every error branch. Runs the real route against this Postgres, with
       # one failure injected per case (a thrown connection error, a foreign-instance LY004)
@@ -1086,14 +1082,26 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -euo pipefail
-          pnpm exec vitest run tests/ci/guardian-code-not-burned.pg.ci.test.ts \
-            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-code-not-burned.json
-          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-code-not-burned.json \
-            --file tests/ci/guardian-code-not-burned.pg.ci.test.ts
           pnpm exec vitest run tests/ci/guardian-redeem-errors.pg.ci.test.ts \
             --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-redeem-errors.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-redeem-errors.json \
             --file tests/ci/guardian-redeem-errors.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G1-06; audit G-AUD-13] | @implemented [2026-09-29]
+      # A redeem that writes no link leaves the student's code redeemable: a pre-existing
+      # link is refused before the spend, and an infrastructure failure after it is undone.
+      - name: Guardian link code not burned → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-code-not-burned.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-code-not-burned.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-code-not-burned.json \
+            --file tests/ci/guardian-code-not-burned.pg.ci.test.ts
 
       # @spec [Doc_05F_Study_Calendar §16] | @implemented [2026-09-22]
       # The guardian's way in to a student's calendar. Its student rows are INSERTED into
