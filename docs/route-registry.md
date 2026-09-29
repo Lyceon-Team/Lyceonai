@@ -61,10 +61,11 @@ This document is the single authoritative registry of:
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
+| `/guardian-required` | student | free | GuardianRequired (G2-04: an under-13 student with no active guardian link) | `/api/profile`, `/api/students/:studentId/link-code`, `/api/students/:studentId/link-code/regenerate`, `/api/students/:studentId/link-code/invite`, `/api/students/:studentId/links`, `/api/students/:studentId/links/:linkId` | ACTIVE |
 | `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
 | `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
 | `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |
-| `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
+| `/guardian` | guardian | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
 **admin-only** = admin role bypasses all entitlement checks (full access)
@@ -190,9 +191,9 @@ runtime and the `/full-test` page were removed by E1 (2026-09-23); no client pag
 ### Guardian Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
 |----------|--------|--------------|------|-------------|---------|
-| `/api/guardian/students` | GET | Yes | guardian/admin | free | List linked students |
-| `/api/guardian/link` | POST | Yes | guardian/admin | free | Link student account |
-| `/api/guardian/link/:studentId` | DELETE | Yes | guardian/admin | free | Unlink student |
+| `/api/guardian/students` | GET | Yes | guardian | free | List linked students |
+| `/api/guardian/link` | POST | Yes | guardian | free | Link student account |
+| `/api/guardian/link/:studentId` | DELETE | Yes | guardian | free | Unlink student |
 | `/api/students/:studentId/kpi/overall` | GET | Yes | guardian/admin | entitled | Student progress summary |
 | `/api/students/:studentId/mastery/domains` | GET | Yes | guardian/admin | entitled | Student weaknesses |
 
