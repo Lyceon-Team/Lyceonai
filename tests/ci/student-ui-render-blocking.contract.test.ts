@@ -104,12 +104,12 @@ describe("UI-12 no synchronous third-party script in index.html", () => {
   });
 
   it("R2.2 every script is a module, async or deferred", () => {
-    const scripts = [...INDEX_HTML.matchAll(/<script\b[^>]*>/g)].map(
+    const scripts = [...INDEX_HTML.matchAll(/<script\b[^>]*>/gi)].map(
       (m) => m[0],
     );
     expect(scripts.length).toBeGreaterThan(0);
     for (const tag of scripts) {
-      expect(tag).toMatch(/type="module"|\basync\b|\bdefer\b/);
+      expect(tag).toMatch(/type\s*=\s*["']module["']|\basync\b|\bdefer\b/i);
     }
   });
 });
