@@ -338,6 +338,68 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect([sum("RW"), sum("M")]).toEqual([run.rw, run.m]);
   });
 
+  /**
+   * @spec [SCL-180 (amended 2026-09-29), owner ruling 7; Doc 04C §8.1/§9.1]
+   *   | @implemented [2026-09-29]
+   * plain English: a student reading their OWN id on this path (resolveSubject
+   * `via: "self"`) gets the student projection — seven segments per domain, no
+   * correct/total — while a guardian on the same session still gets correct/total.
+   */
+  it("ruling 7, self: the student reading their own id gets segments, never correct/total", async () => {
+    const res = await get(STUDENT, reportUrl(STUDENT, sid));
+    expect(res.status).toBe(200);
+    evidence("self report (ruling 7)", res.body);
+    // Presence first: the eight domains, as segments.
+    expect(res.body.ok).toBe(true);
+    expect(res.body.report.report_state).toBe("scored");
+    const segments = res.body.report.domain_segments as Array<
+      Record<string, unknown>
+    >;
+    expect(segments).toHaveLength(8);
+    for (const row of segments) {
+      expect(Object.keys(row).sort()).toEqual([
+        "domain",
+        "section",
+        "segments_filled",
+      ]);
+    }
+    // Then absence, at any depth of the whole body.
+    const keys = new Set<string>();
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v !== null && typeof v === "object") {
+        for (const [k, x] of Object.entries(v)) {
+          keys.add(k);
+          walk(x);
+        }
+      }
+    };
+    walk(res.body);
+    expect(keys.has("segments_filled")).toBe(true);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
+    // The same segments the student's own /api/tests report serves.
+    const own = await get(STUDENT, `/api/tests/sessions/${sid}/report`);
+    expect(res.body.report.domain_segments).toEqual(
+      own.body.data.domain_segments,
+    );
+  });
+
+  it("ruling 7, guardian unchanged: the guardian on the same path still gets correct/total and no segments", async () => {
+    const res = await get(GUARDIAN, reportUrl(STUDENT, sid));
+    expect(res.status).toBe(200);
+    const report = guardianExamReportEnvelopeSchema.parse(res.body).report;
+    if (report.report_state !== "scored") throw new Error(report.report_state);
+    expect(report.domain_breakdown).toHaveLength(8);
+    for (const row of report.domain_breakdown) {
+      expect(row.total).toBeGreaterThan(0);
+      expect(row.correct).toBeGreaterThanOrEqual(0);
+    }
+    expect(res.body.report).not.toHaveProperty("domain_segments");
+    expect(res.body.report).not.toHaveProperty("omitted_domains");
+  });
+
   it("forbidden-field scan: no answer, explanation, skill, routing, raw score, pacing or review field at any depth", async () => {
     const bodies = [
       (await get(GUARDIAN, reportUrl(STUDENT, sid))).body,

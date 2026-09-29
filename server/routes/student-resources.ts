@@ -78,6 +78,7 @@ import {
   toGuardianExamList,
   toGuardianExamReport,
 } from "../../packages/shared/src/exam-guardian-report-schema";
+import { toStudentExamReport } from "../../packages/shared/src/exam-student-report-schema";
 import {
   EXAM_FEATURE_KEY,
   listExamForms,
@@ -505,9 +506,16 @@ router.get(
  * WHAT MAKES ONE PAYLOAD SAFE FOR BOTH CALLERS. The body is `toGuardianExamReport` /
  * `toGuardianExamList` output: each state is its own `.strict()` schema built from named
  * fields, so no answer, explanation, skill, module, routing path, raw count, pacing or
- * review flag can be on it. The student reading themselves here gets the same narrow
- * view; their full report is `/api/tests/sessions/:id/report`. Nothing here reads
- * `subject.via` — there is nothing to branch on.
+ * review flag can be on it. The list carries no count of any kind, so it serves both
+ * callers as-is.
+ *
+ * SELF READS THE STUDENT PROJECTION (SCL-180 amended 2026-09-29, owner ruling 7;
+ * Doc 04C §8.1/§9.1; @implemented [2026-09-29]). The guardian report carries per-domain
+ * correct/total (SCL-180); a student must never receive those, on any path. So a student
+ * reading their own id (`subject.via === "self"`) gets `toStudentExamReport` — seven
+ * segments per domain, parsed against the strict student schema — and every other caller
+ * gets `toGuardianExamReport`, exactly as before. The branch is on the server-resolved
+ * subject, never on anything the client says.
  *
  * WHAT A GUARDIAN CANNOT DO. There is no write route on this path, and the review surface
  * (/api/tests/sessions/:id/review…) is the student's own `/api/tests` family, which
@@ -598,7 +606,10 @@ router.get(
       if (read.kind === "forbidden") return sendNotFound(res, req.requestId);
       return res.json({
         ok: true,
-        report: toGuardianExamReport(read.payload),
+        report:
+          subject.via === "self"
+            ? toStudentExamReport(read.payload)
+            : toGuardianExamReport(read.payload),
         requestId: req.requestId,
       });
     } catch (err) {
