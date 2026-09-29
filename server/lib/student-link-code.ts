@@ -46,7 +46,13 @@ const MAX_GENERATION_ATTEMPTS = 3;
 const UNIQUE_VIOLATION = "23505";
 
 export type RedeemOutcome =
-  | { ok: true; studentProfileId: string }
+  | { ok: true; studentProfileId: string; replacement: string }
+  | { ok: false; reason: "not_redeemable" }
+  | { ok: false; reason: "unavailable" };
+
+/** Who holds a live code, read WITHOUT spending it (G1-06). */
+export type LiveCodeOwner =
+  | { ok: true; studentProfileId: string; issuedAt: string }
   | { ok: false; reason: "not_redeemable" }
   | { ok: false; reason: "unavailable" };
 
@@ -160,7 +166,7 @@ export async function redeemStudentLinkCode(
 
     const first = rows[0];
     if (!first) return { ok: false, reason: "not_redeemable" };
-    return { ok: true, studentProfileId: first.id };
+    return { ok: true, studentProfileId: first.id, replacement };
   }
 
   logger.error(
@@ -170,6 +176,88 @@ export async function redeemStudentLinkCode(
     { attempts: MAX_GENERATION_ATTEMPTS },
   );
   return { ok: false, reason: "unavailable" };
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G1-06; audit G-AUD-13] | @implemented [2026-09-29]
+ *
+ * plain English: which student holds this live code, and when it was issued — WITHOUT
+ * spending it. The redeem route uses it to refuse a redeem that cannot produce a link (the
+ * pair is already linked) before the code is rotated away. It judges liveness with the same
+ * predicate the spend uses, and answers the same three ways, so it opens no new oracle: a
+ * caller still learns only "redeemable" or "not".
+ */
+export async function peekLiveCodeOwner(
+  enteredCode: string,
+  ttlSeconds: number,
+): Promise<LiveCodeOwner> {
+  const liveSince = new Date(Date.now() - ttlSeconds * 1000).toISOString();
+  const { data, error } = await supabaseServer
+    .from("profiles")
+    .select("id, student_link_code_issued_at")
+    .eq("student_link_code", enteredCode)
+    .eq("role", "student")
+    .gt("student_link_code_issued_at", liveSince)
+    .limit(1);
+
+  if (error) {
+    logger.error("AUTH", "link_code_peek", "Link code lookup failed", {
+      ...classifyError(error),
+    });
+    return { ok: false, reason: "unavailable" };
+  }
+  const row = (
+    (data ?? []) as ReadonlyArray<{
+      id: string;
+      student_link_code_issued_at: string | Date | null;
+    }>
+  )[0];
+  if (!row || row.student_link_code_issued_at === null) {
+    return { ok: false, reason: "not_redeemable" };
+  }
+  const issuedAt =
+    row.student_link_code_issued_at instanceof Date
+      ? row.student_link_code_issued_at.toISOString()
+      : row.student_link_code_issued_at;
+  return { ok: true, studentProfileId: row.id, issuedAt };
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G1-06] | @implemented [2026-09-29]
+ *
+ * plain English: undo a spend whose link was never written. Puts the entered code and its
+ * ORIGINAL issue time back, but only if the row still holds the replacement this redeem wrote
+ * — if the student regenerated in the meantime, their newer code wins and nothing is touched.
+ * Returns whether the code was restored. Never throws: a failed restore is logged, and the
+ * student can always regenerate.
+ */
+export async function restoreStudentLinkCode(args: {
+  studentProfileId: string;
+  enteredCode: string;
+  issuedAt: string;
+  replacement: string;
+}): Promise<boolean> {
+  const { data, error } = await supabaseServer
+    .from("profiles")
+    .update({
+      student_link_code: args.enteredCode,
+      student_link_code_issued_at: args.issuedAt,
+    })
+    .eq("id", args.studentProfileId)
+    .eq("student_link_code", args.replacement)
+    .select("id");
+  if (error) {
+    logger.error(
+      "AUTH",
+      "link_code_restore",
+      "Could not restore an unspent link code",
+      {
+        ...classifyError(error),
+      },
+    );
+    return false;
+  }
+  return ((data ?? []) as ReadonlyArray<{ id: string }>).length > 0;
 }
 
 /**

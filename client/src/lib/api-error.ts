@@ -1,3 +1,4 @@
+import { roleChoiceErrorCodeSchema } from "@lyceon/shared/profile-role-choice-schema";
 export type ApiError = {
   status: number;
   code?: string;
@@ -255,6 +256,13 @@ export function resolveOnboardingErrorMessage(
 
   if (!isApiError(error)) return generic;
   if (error.status !== 400 && error.status !== 403) return generic;
+
+  // G1-02: a refusal the server CODED carries copy the server wrote for this person
+  // (packages/shared profile-role-choice-schema). Show it as sent. This is AS-3-safe: the
+  // code is from a closed list, so an uncurated string can never arrive this way.
+  if (roleChoiceErrorCodeSchema.safeParse(error.code).success) {
+    return error.message;
+  }
 
   const message = error.message.toLowerCase();
   if (message.includes("date of birth")) {

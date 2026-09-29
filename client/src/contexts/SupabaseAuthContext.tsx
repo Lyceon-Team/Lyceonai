@@ -62,10 +62,29 @@ const SupabaseAuthContext = createContext<SupabaseAuthContextType | undefined>(
 );
 
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SupabaseProfile | null>(null);
+  const [user, setUserState] = useState<SupabaseProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true); // Default true as requested
   const queryClient = useQueryClient();
   const isInitializing = useRef(true); // Flag to prevent auth state changes during init
+  /**
+   * G1-03 (audit G-AUD-01): the id whose data the query cache currently holds.
+   *
+   * Every cached response belongs to one signed-in person. When the person changes —
+   * sign-out, or a different account signing in on the same tab — the cache is CLEARED,
+   * synchronously, before the new user is set, so no component can mount against the
+   * previous person's data. `invalidateQueries()` was not enough: it only marks entries
+   * stale, and with `staleTime: Infinity` a remounting query renders the stale entry while
+   * it refetches — which is exactly how guardian B was shown guardian A's students.
+   */
+  const cacheOwnerId = useRef<string | null>(null);
+  const setUser = (next: SupabaseProfile | null): void => {
+    const nextId = next?.id ?? null;
+    if (cacheOwnerId.current !== null && cacheOwnerId.current !== nextId) {
+      queryClient.clear();
+    }
+    cacheOwnerId.current = nextId;
+    setUserState(next);
+  };
   const clearAuthState = () => {
     clearCsrfToken();
     setUser(null);
@@ -373,7 +392,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       }
 
       clearAuthState();
-      queryClient.invalidateQueries();
+      // G1-03: remove every cached response, not just mark it stale. `clearAuthState` has
+      // already cleared via `setUser(null)` when a user was set; this also covers a sign-out
+      // before the profile ever loaded.
+      queryClient.clear();
     } catch (error) {
       console.error("[AUTH] Sign out error:", error);
       throw authError("signout_failed");
