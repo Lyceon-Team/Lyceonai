@@ -512,7 +512,6 @@ describe("§15's error list — every failure gets its own status", () => {
 
   const launchCases: { kind: string; extra?: Record<string, unknown>; status: number; code: string }[] = [
     { kind: "not_found", status: 404, code: "CALENDAR_NOT_FOUND" },
-    { kind: "not_today", extra: { when: "past", scheduled_date: "2026-09-01", local_today: TODAY }, status: 409, code: "CALENDAR_NOT_TODAY" },
     { kind: "already_complete", extra: { target: 20, actual: 20 }, status: 409, code: "CALENDAR_ALREADY_COMPLETE" },
     { kind: "engine_unavailable", extra: { engine: "review" }, status: 409, code: "CALENDAR_ENGINE_UNAVAILABLE" },
     { kind: "engine_error", extra: { engine: "practice" }, status: 502, code: "CALENDAR_ENGINE_ERROR" },
@@ -535,17 +534,32 @@ describe("§15's error list — every failure gets its own status", () => {
     });
   }
 
-  it("a past-day launch says WHICH side of today it fell on, so the client can offer Do it now", async () => {
+  // REPLACED, not deleted. This asserted that a past-day refusal travelled `when` so the
+  // client could offer "Do it now". R-08-34 removed the refusal, so there is nothing to
+  // carry — and the assertion that matters now is the opposite one: no date is a 409.
+  it("NO date is a launch refusal any more (R-08-34) — the service is never asked to judge one", async () => {
+    // The service decides; the route only maps. So the route's proof is that it has no arm
+    // for a date at all: every failure it CAN map is in `launchCases` above, and none of
+    // them names a date. A `not_today` would now fall through the exhaustive switch.
+    const mapped = launchCases.map((testCase) => testCase.code);
+    expect(mapped).not.toContain("CALENDAR_NOT_TODAY");
+    // And the happy path is indifferent to the block's date, because the route never reads
+    // it: the launch body carries no date and the service takes it from the block row.
     launchBlockMock.mockResolvedValue({
-      ok: false,
-      error: { kind: "not_today", when: "past", scheduled_date: "2026-09-01", local_today: TODAY },
+      ok: true,
+      value: {
+        engine: "practice",
+        session_id: "11111111-1111-4111-8111-111111111111",
+        next: "/practice/session/11111111-1111-4111-8111-111111111111",
+        resumed: false,
+      },
     });
 
     const res = await request(buildApp())
       .post(`/api/calendar/blocks/${BLOCK_ID}/launch`)
       .send({ client_instance_id: "c1", platform: "web" });
 
-    expect(res.body.error.details).toEqual({ when: "past" });
+    expect(res.status).toBe(200);
   });
 
   it("a pre-setup read is a 200 carrying the state, not a 404", async () => {

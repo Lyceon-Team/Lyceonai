@@ -10,7 +10,13 @@
  * from the stored launch rows rather than from a counter the crash took with it.
  */
 import { describe, expect, it } from "vitest";
-import { ok, err, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
+import {
+  ok,
+  err,
+  type ActivityUnit,
+  type LinkedSession,
+  type PlanBlock,
+} from "@lyceon/shared";
 import {
   launchBlock,
   launchIdempotencyKey,
@@ -37,10 +43,16 @@ const BLOCK: PlanBlock = {
   membership_type: "created",
 };
 
-function unit(n: number): ActivityUnit {
+/**
+ * `session_id` defaults to null — the unit came from no session this test names, so it can
+ * never be linked and falls through to the ordinary date-and-scope match. A test that wants
+ * linked attribution passes one.
+ */
+function unit(n: number, sessionId: string | null = null): ActivityUnit {
   return {
     engine: "practice",
     unit_id: `u-${n}`,
+    session_id: sessionId,
     occurred_at: `2026-09-21T1${n % 10}:00:00Z`,
     local_date: TODAY,
     section: "M",
@@ -64,6 +76,10 @@ function harness(options: {
   createFails?: "unavailable" | "error";
   /** Throw after the engine session exists but before the link is recorded. */
   crashBeforeLink?: boolean;
+  /** R-08-34: override the day's launch rows, e.g. to link a sibling block's session. */
+  linkedSessions?: LinkedSession[];
+  /** R-08-34: units from a linked session, whatever date they fell on. */
+  linkedUnits?: ActivityUnit[];
 } = {}): Harness {
   const block = options.block ?? BLOCK;
   const launches: ExistingLaunch[] = [];
@@ -94,6 +110,7 @@ function harness(options: {
       return ok({ session_id: id, next: `/practice/session/${id}`, resumed: false });
     },
     async activityUnits() { return []; },
+    async unitsForSessions() { return []; },
     // §9.1: the route is the ADAPTER's to give. The service has nothing to build one from,
     // which is the point — see `CalendarEngineAdapter.resumeHref`.
     resumeHref(sessionId) { return `/practice/session/${sessionId}`; },
@@ -111,6 +128,20 @@ function harness(options: {
       };
     },
     async activityUnits() { return options.units ?? []; },
+    // R-08-34: the launch rows for the day's blocks, and the units those sessions produced
+    // wherever they happened. Defaulted to the block's OWN launches so the ordinary harness
+    // behaves as before; `linkedUnits` is what a work-ahead test supplies.
+    async linkedSessions() {
+      return (
+        options.linkedSessions ??
+        launches.map((l) => ({
+          block_id: block.block_id,
+          engine: l.engine,
+          engine_session_id: l.engine_session_id,
+        }))
+      );
+    },
+    async unitsForSessions() { return options.linkedUnits ?? []; },
     async latestLaunch() {
       return launches.length === 0 ? null : (launches[launches.length - 1] ?? null);
     },
@@ -257,21 +288,42 @@ describe("§15.1 — refusals", () => {
     expect(result.error.kind).toBe("not_found");
   });
 
-  it("409 for a past date — that routes to Do it now, not to a launch", async () => {
-    const h = harness({ localToday: "2026-09-22" });
+  // REWRITTEN, not deleted. These two asserted the §15.1 step 1 refusal: a past date routed
+  // to "Do it now" and a future one was view-only. R-08-34 reverses that — the calendar is a
+  // plan, never a gate — so the assertions are inverted rather than removed, and the block's
+  // date is now varied across all three positions to prove indifference rather than one case.
+  it.each([
+    ["a PAST date — a missed day the student wants to pick up", "2026-09-22", "past"],
+    ["TODAY — the case that already worked", TODAY, "today"],
+    ["a FUTURE date — a student who is ahead of schedule", "2026-09-20", "future"],
+  ])("launches on %s", async (_label, localToday) => {
+    const h = harness({ localToday });
+
     const result = await launchBlock(REQ, h.deps);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toMatchObject({ kind: "not_today", when: "past" });
-    expect(h.createCalls).toHaveLength(0);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.session_id.length).toBeGreaterThan(0);
+    // The engine was actually asked, at the block's full target — the date changed nothing
+    // about the size either.
+    expect(h.createCalls).toHaveLength(1);
+    expect(h.createCalls[0]?.size).toBe(20);
+    // And the link row was recorded, so the allocator can attribute the work (Step 2).
+    expect(h.linkCalls).toHaveLength(1);
   });
 
-  it("409 for a future date — view-only, because studying ahead is not a launch", async () => {
-    const h = harness({ localToday: "2026-09-20" });
-    const result = await launchBlock(REQ, h.deps);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toMatchObject({ kind: "not_today", when: "future" });
+  it("the idempotency key does not depend on the date, so the same block retries the same key", async () => {
+    // Worth its own case: `seq` is derived from the launch rows and the key from the block
+    // id, so a block launched from a past date and one launched today must produce the same
+    // first key. A date creeping into the key would break INV-08-18's crash-retry healing.
+    const past = harness({ localToday: "2026-09-22" });
+    const future = harness({ localToday: "2026-09-20" });
+
+    await launchBlock(REQ, past.deps);
+    await launchBlock(REQ, future.deps);
+
+    expect(past.createCalls[0]?.key).toBe(launchIdempotencyKey(BLOCK_ID, 1));
+    expect(future.createCalls[0]?.key).toBe(past.createCalls[0]?.key);
   });
 
   it("409 already_complete when the allocator says nothing is outstanding", async () => {

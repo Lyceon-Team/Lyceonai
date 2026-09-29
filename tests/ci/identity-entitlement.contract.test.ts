@@ -225,10 +225,14 @@ describe("Identity + Entitlement Runtime Contract", () => {
       .patch("/api/profile")
       .send({ role: "admin" });
 
+    // G1-02: admin is never self-assignable. The refusal is coded so the client can show the
+    // server's own message (AS-3), and still points at support.
     expect(res.status).toBe(403);
     expect(res.body).toEqual({
-      error: "Role changes are support-mediated only",
-      message: "Email support@lyceon.ai to request a role review.",
+      error: {
+        code: "ROLE_NOT_SELF_ASSIGNABLE",
+        message: "You can sign up as a student or a guardian.",
+      },
       supportEmail: "support@lyceon.ai",
     });
   });

@@ -47,7 +47,7 @@ import {
   type ReviewPoolSpec,
   type ReviewScope,
 } from "@lyceon/shared";
-import { localDayWindowUtc, toIsoTimestamp } from "./local-day";
+import { localDayWindowUtc, localTodayIn, toIsoTimestamp } from "./local-day";
 import type {
   CalendarEngineAdapter,
   EngineCreateContext,
@@ -170,7 +170,10 @@ async function activityUnits(
 
   const { data, error } = await supabaseServer
     .from("review_session_items")
-    .select("id, question_section, question_domain, occurred_at, status")
+    // `session_id` is new (R-08-34) — see the practice adapter's note.
+    .select(
+      "id, session_id, question_section, question_domain, occurred_at, status",
+    )
     .eq("student_id", studentId)
     .eq("status", "answered")
     .gte("occurred_at", window.startUtc)
@@ -201,8 +204,71 @@ async function activityUnits(
     units.push({
       engine: "review",
       unit_id: row.id,
+      session_id: typeof row.session_id === "string" ? row.session_id : null,
       occurred_at: occurredAt,
       local_date: localDate,
+      section: section === "M" || section === "RW" ? section : null,
+      domain:
+        typeof row.question_domain === "string" ? row.question_domain : null,
+      form_id: null,
+    });
+  }
+  return units;
+}
+
+/**
+ * §9.1 as amended by R-08-34: the same units, selected by SESSION rather than by date.
+ *
+ * Deliberately parallel to `activityUnits` above — same table, same `status = 'answered'`
+ * filter, same `occurred_at` mapping, same fail-open posture — with the date window swapped
+ * for a session filter. Two near-identical queries rather than one parameterised one, because
+ * the WHERE clauses share no shape and a single function taking "either a window or a session
+ * list" is the kind of flag argument that ends up doing neither well.
+ *
+ * `local_date` is computed PER ROW from `occurred_at` in the block's zone. `activityUnits`
+ * can take it as a parameter because it asked for one date; here the rows may span several,
+ * which is the entire point.
+ */
+async function unitsForSessions(
+  studentId: string,
+  sessionIds: readonly string[],
+  timeZone: string,
+): Promise<ActivityUnit[]> {
+  if (sessionIds.length === 0) return [];
+
+  const { data, error } = await supabaseServer
+    .from("review_session_items")
+    .select(
+      "id, session_id, question_section, question_domain, occurred_at, status",
+    )
+    .eq("student_id", studentId)
+    .in("session_id", [...sessionIds])
+    .eq("status", "answered");
+
+  if (error) {
+    // Fail OPEN, as every other read in this adapter does (§5A). The cost is that a block
+    // worked on another day reads as unstarted, which is the pre-R-08-34 answer — never a 500.
+    logger.error(
+      "CALENDAR_ADAPTER",
+      "review_session_activity_read_failed",
+      "review activity units could not be read by session",
+      { code: error.code },
+    );
+    return [];
+  }
+
+  const units: ActivityUnit[] = [];
+  for (const row of data ?? []) {
+    if (typeof row.id !== "string") continue;
+    const occurredAt = toIsoTimestamp(row.occurred_at);
+    if (occurredAt === null) continue;
+    const section = row.question_section;
+    units.push({
+      engine: "review",
+      unit_id: row.id,
+      session_id: typeof row.session_id === "string" ? row.session_id : null,
+      occurred_at: occurredAt,
+      local_date: localTodayIn(timeZone, new Date(occurredAt)),
       section: section === "M" || section === "RW" ? section : null,
       domain:
         typeof row.question_domain === "string" ? row.question_domain : null,
@@ -255,6 +321,7 @@ export const reviewAdapter: CalendarEngineAdapter = {
   engine: "review",
   create,
   activityUnits,
+  unitsForSessions,
   resumeHref,
   progress,
   nextLaunchSize,

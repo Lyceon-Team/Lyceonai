@@ -34,6 +34,7 @@ import {
   type NotificationFeedCursor,
   type NotificationFeedItem,
 } from "../../packages/shared/src/notifications-schema";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 import { renderInApp, siteUrlFromEnv } from "../lib/notifications/templates";
 import { logger } from "../logger";
 
@@ -52,11 +53,21 @@ function recipientOf(req: Request, res: Response): string | null {
   return id;
 }
 
+/**
+ * The one place this router refuses a body, so the one place the field names get written
+ * down. Every call site already passes `parsed.error.flatten()`; it only ever reached the
+ * client. Shared helper: `server/lib/validation-log.ts`.
+ */
 function sendInvalid(
   res: Response,
   requestId: string | undefined,
   details: unknown,
 ): void {
+  logRejectedRequest("NOTIFICATIONS", details, {
+    code: "INVALID_INPUT",
+    requestId,
+    ...routeOf(res),
+  });
   res.status(400).json({
     error: { message: "Invalid input", code: "INVALID_INPUT", details },
     requestId,

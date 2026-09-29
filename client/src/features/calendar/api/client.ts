@@ -36,6 +36,7 @@ import {
   type PlanMember,
   type ProfileUpsertResponse,
   type StreakSummary,
+  type StudyProfileUpsert,
   type VersionResponse,
 } from "@lyceon/shared/calendar";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
@@ -204,9 +205,21 @@ export async function fetchGuardianCalendar(
 
 // ── Mutations ───────────────────────────────────────────────────────────────
 
-/** §15 PUT /api/calendar/profile. The body shape is bounds-dependent and parsed server-side. */
+/**
+ * §15 PUT /api/calendar/profile.
+ *
+ * `StudyProfileUpsert`, NOT `Record<string, unknown>`. The bounds-dependent part of the
+ * body (which `daily_minutes` presets exist, how far out a target date may sit) is decided
+ * server-side and cannot be typed here — but WHICH KEYS EXIST can be, and the one key that
+ * is never optional is `idempotency_key`. Typed as an open record, this signature accepted
+ * a body without one, and that is exactly what shipped: the settings sheet minted a key,
+ * the setup form did not, and every new student's first save was a 400 naming a field no
+ * surface admitted to owning. The canonical write shape is the schema's own inferred type,
+ * so the compiler now refuses the omission at the call site instead of the server refusing
+ * it at the student.
+ */
 export async function putStudyProfile(
-  body: Record<string, unknown>,
+  body: StudyProfileUpsert,
 ): Promise<ProfileUpsertResponse> {
   const response = await apiRequest(`${CALENDAR_ROOT}/profile`, {
     ...jsonBody(body),

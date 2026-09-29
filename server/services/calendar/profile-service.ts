@@ -270,8 +270,23 @@ export async function upsertStudyProfile(
     row.study_days_mask = update.study_days_mask;
   if (update.daily_minutes !== undefined)
     row.daily_minutes = update.daily_minutes;
+  // BOTH HALVES, ALWAYS — and `full_length_interval_weeks` was missing from this block.
+  //
+  // `makeStudyProfileUpsertSchema` refuses a body naming one half and not the other, so
+  // every accepted body that touches the exam schedule carries both. This writer then wrote
+  // only the weekday, which is worse than dropping a field: turning exams ON sent
+  // `{weekday: 6, interval: 2}`, stored `weekday = 6` against an interval still NULL, and
+  // `full_length_pair` (20261010000000) rejected the row as 23514 — reported by this
+  // service as `{kind: "write_failed"}` and served to the student as a 500. The pair CHECK
+  // caught it, which is what a CHECK is for; it could not store what it was never sent.
+  //
+  // The two move together HERE because they are one decision everywhere else: in the
+  // schema, in the settings sheet's chips, and in the column CHECK.
   if (update.full_length_weekday !== undefined) {
     row.full_length_weekday = update.full_length_weekday;
+  }
+  if (update.full_length_interval_weeks !== undefined) {
+    row.full_length_interval_weeks = update.full_length_interval_weeks;
   }
   if (update.planner_mode !== undefined) row.planner_mode = update.planner_mode;
 
@@ -303,11 +318,38 @@ export async function upsertStudyProfile(
   const completesSetup = existing?.setup_completed_at == null;
   if (completesSetup) row.setup_completed_at = new Date().toISOString();
 
-  const { data, error } = await supabaseServer
-    .from("student_study_profile")
-    .upsert(row, { onConflict: "student_id" })
-    .select(PROFILE_COLUMNS)
-    .single();
+  /**
+   * AN EXISTING ROW IS UPDATED; ONLY A CREATE UPSERTS. The two are not interchangeable.
+   *
+   * `makeStudyProfileUpsertSchema` accepts a PARTIAL body on purpose — §8.1's settings sheet
+   * sends what changed — and `row` above is built to match, carrying only the keys the body
+   * named. `.upsert()` renders that as `INSERT … ON CONFLICT DO UPDATE`, and PostgreSQL
+   * evaluates the INSERT's NOT NULL constraints BEFORE it resolves the conflict. So a body
+   * that omitted `timezone`, `study_days_mask` or `daily_minutes` raised 23502 against a row
+   * that already had all three — the update could never be reached to prove them present.
+   * Reported as `write_failed`, served as a 500, for a request the schema had just accepted.
+   *
+   * No shipped surface sends such a body today (both writers send the full field set), which
+   * is why this outlived the surfaces that would have shown it. Accepting a shape the writer
+   * cannot store is the defect either way.
+   *
+   * THE CREATE PATH KEEPS ITS UPSERT, and that is what keeps this race-safe.
+   * `REQUIRED_ON_CREATE` has already proved a create carries the NOT NULL columns, so its
+   * INSERT arm is complete; and `ON CONFLICT DO UPDATE` is what settles two first saves
+   * racing each other — the second becomes an update instead of a 23505. The update path
+   * cannot race that way: it runs only where a row was already read.
+   */
+  const write =
+    existing === null
+      ? supabaseServer
+          .from("student_study_profile")
+          .upsert(row, { onConflict: "student_id" })
+      : supabaseServer
+          .from("student_study_profile")
+          .update(row)
+          .eq("student_id", studentId);
+
+  const { data, error } = await write.select(PROFILE_COLUMNS).single();
 
   if (error) {
     logger.error(
