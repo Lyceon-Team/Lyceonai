@@ -14,17 +14,25 @@
 --   leads with block_id; the composite (block_id, student_id) index is kept because it is
 --   the exact column list of the composite FK to calendar_blocks(block_id, student_id).
 --
--- ─── WHY THERE IS NO BEGIN/COMMIT ────────────────────────────────────────────
--- CREATE INDEX CONCURRENTLY cannot run inside a transaction block. CI applies each
--- migration with `psql -v ON_ERROR_STOP=1 -q -f <file>` and no --single-transaction
--- (scripts/ci/genesis-fresh-apply.sh, .github/workflows/ci.yml), so each statement
--- below runs in its own implicit transaction. Precedent:
--- 20260930000000_tutor_conversation_assignment_key_unique.sql.
+-- ─── WHY FIFTEEN ONE-STATEMENT FILES, AND NO BEGIN/COMMIT ────────────────────
+-- CREATE INDEX CONCURRENTLY cannot run inside a transaction block. The genesis gate
+-- applies files with `psql -f` (one implicit transaction per statement), but several CI
+-- test harnesses load each migration file with a single `pg` `client.query(sql)`
+-- (e.g. tests/ci/diagnostic.handler-pg.ci.test.ts, tests/helpers/pg-supabase.ts).
+-- Postgres runs a multi-statement simple query as ONE implicit transaction, so a
+-- file holding more than one CONCURRENTLY statement fails there with "cannot run
+-- inside a transaction block" (observed in CI on the first version of this change).
+-- So UI-08 is ONE change delivered as fifteen files, each holding exactly one
+-- statement. Precedent: 20260930000000_tutor_conversation_assignment_key_unique.sql
+-- (a single-statement CONCURRENTLY file). This file (…000000) carries the full notes;
+-- files …000100 to …001400 carry one index each.
 --
--- Owner apply (production): run OUTSIDE a transaction. The Supabase SQL editor runs a
--- multi-statement script as one transaction, which makes CONCURRENTLY fail with
--- "cannot run inside a transaction block". Apply with `psql -f` against this file, or
--- run each CREATE INDEX statement on its own in the SQL editor.
+-- Owner apply (production): run OUTSIDE a transaction, one file at a time, in version
+-- order (20261014000000 to 20261014001400). For example, run
+-- `for f in supabase/migrations/202610140*_hot_path_fk_index_*.sql; do psql -v ON_ERROR_STOP=1 -f "$f"; done`,
+-- or paste each file's single CREATE INDEX statement on its own into the SQL editor. The
+-- editor runs a multi-statement script as one transaction, which makes CONCURRENTLY fail
+-- with "cannot run inside a transaction block".
 --
 -- ─── INVALID INDEXES AFTER A FAILED BUILD ────────────────────────────────────
 -- If a CONCURRENTLY build fails part-way (cancelled, deadlock, lock timeout), Postgres
@@ -99,52 +107,5 @@
 --   DROP INDEX CONCURRENTLY IF EXISTS public.idx_guardian_consent_requests_student_profile;
 --   DROP INDEX CONCURRENTLY IF EXISTS public.idx_profiles_guardian_profile;
 
--- Practice / review runtime -> questions, review_schedule
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_practice_items_question
   ON public.practice_session_items (question_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_review_items_question
-  ON public.review_session_items (question_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_review_items_queue_entry
-  ON public.review_session_items (queue_entry_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_review_schedule_question
-  ON public.review_schedule (question_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_review_attempts_question
-  ON public.review_error_attempts (question_id);
-
--- Exam runtime -> questions, test_forms
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_test_session_items_question
-  ON public.test_session_items (question_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_test_form_items_question
-  ON public.test_form_items (question_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_test_sessions_form
-  ON public.test_sessions (test_form_id);
-
--- Calendar -> profiles, calendar_blocks
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_calendar_block_launches_student
-  ON public.calendar_block_launches (student_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_calendar_block_launches_block_student
-  ON public.calendar_block_launches (block_id, student_id);
-
--- Quota ledger -> auth.users
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_rate_limit_ledger_student_user
-  ON public.usage_rate_limit_ledger (student_user_id);
-
--- Notifications, deletion, consent, guardian link -> profiles
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_notification_events_subject_profile
-  ON public.notification_events (subject_profile_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_account_deletion_profile
-  ON public.account_deletion_requests (profile_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_guardian_consent_requests_student_profile
-  ON public.guardian_consent_requests (student_profile_id);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_profiles_guardian_profile
-  ON public.profiles (guardian_profile_id);
