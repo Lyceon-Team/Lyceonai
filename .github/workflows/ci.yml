@@ -1053,6 +1053,23 @@ jobs:
       # supabase/migrations/ (20260901000000_scl_080_guardian_link_code.sql), applied in the
       # same sorted order scripts/ci/genesis-fresh-apply.sh uses, so the schema under test is
       # the schema the pipeline produces rather than one the test arranged for itself.
+      # @spec [Guardian_Closure_Plan G1-02; owner rulings R1, R10] | @implemented [2026-09-29]
+      # The one-time role choice at profile completion and the guardian age rule, driven
+      # through the real PATCH /api/profile and redeem routes on the throwaway Postgres.
+      # Same verdict gate as the step below, so a skipped PG suite cannot read as a pass.
+      - name: Guardian sign-up (role choice + age rule) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-signup.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-signup.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-signup.json \
+            --file tests/ci/guardian-signup.pg.ci.test.ts
+
       - name: Guardian link code → real PG proof
         env:
           PGHOST: localhost
