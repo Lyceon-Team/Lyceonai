@@ -1,4 +1,4 @@
-import { Component, ReactNode, Suspense, lazy } from "react";
+import { Component, ErrorInfo, ReactNode, Suspense, lazy } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -19,8 +19,14 @@ import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
-import UpdatePassword from "@/pages/update-password";
-import NotificationsPage from "@/pages/notifications";
+
+// @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
+// plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
+// eager, because they are the landing surfaces whose first paint should not wait on a second
+// chunk request. Every other page, including these two, is lazy and loads under the Router's
+// Suspense fallback.
+const UpdatePassword = lazy(() => import("@/pages/update-password"));
+const NotificationsPage = lazy(() => import("@/pages/notifications"));
 
 const AccountRecover = lazy(() => import("@/pages/account-recover"));
 
@@ -373,7 +379,10 @@ class ErrorBoundary extends Component<
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: any) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // The client has no structured logger; console.error is the only sink here, as in
+    // CanonicalPracticePage.tsx. It carries the error and component stack, no student content.
+    // eslint-disable-next-line no-console
     console.error("App Error:", error, errorInfo);
   }
 
