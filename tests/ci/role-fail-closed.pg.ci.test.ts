@@ -121,10 +121,10 @@ describe.skipIf(!PG_AVAILABLE)(
         ],
       );
       await pg.query(
-        `INSERT INTO public.profiles (id, email, role, updated_at) VALUES
-         ($1,$2,'student', TIMESTAMPTZ '2026-01-01T00:00:00Z'),
-         ($3,$4,'tutor',   TIMESTAMPTZ '2026-01-01T00:00:00Z'),
-         ($5,$6,'teacher', TIMESTAMPTZ '2026-01-01T00:00:00Z')`,
+        `INSERT INTO public.profiles (id, email, role, date_of_birth, updated_at) VALUES
+         ($1,$2,'student', DATE '2008-01-01', TIMESTAMPTZ '2026-01-01T00:00:00Z'),
+         ($3,$4,'tutor',   NULL, TIMESTAMPTZ '2026-01-01T00:00:00Z'),
+         ($5,$6,'teacher', NULL, TIMESTAMPTZ '2026-01-01T00:00:00Z')`,
         [
           STUDENT,
           "s@example.test",
@@ -208,6 +208,7 @@ describe.skipIf(!PG_AVAILABLE)(
           role: "student",
           isGuardian: false,
           isAdmin: false,
+          is_under_13: false,
         }),
       ).toBe(200);
       expect(

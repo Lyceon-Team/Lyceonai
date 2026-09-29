@@ -1,6 +1,11 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  QueryFunction,
+} from "@tanstack/react-query";
 import { csrfFetch } from "./csrf";
-import { parseApiErrorFromResponse } from "./api-error";
+import { onboardingRedirectFor, parseApiErrorFromResponse } from "./api-error";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -122,7 +127,27 @@ export const getQueryFn: <T>(options: {
     return data;
   };
 
+/**
+ * G2-06: any query or mutation refused with 403 PROFILE_INCOMPLETE sends the student to profile
+ * completion. One place, so no page has to know the code. A no-op when already there (no loop).
+ */
+export function redirectForOnboarding(
+  error: unknown,
+  navigate: (path: string) => void = (path) => window.location.assign(path),
+): void {
+  const path = onboardingRedirectFor(error);
+  if (!path || typeof window === "undefined") return;
+  if (window.location.pathname === path) return;
+  navigate(path);
+}
+
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => redirectForOnboarding(error),
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => redirectForOnboarding(error),
+  }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

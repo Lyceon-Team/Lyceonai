@@ -7,7 +7,10 @@ import {
   UnrecognizedRoleError,
 } from "../lib/profile-bootstrap.js";
 import { ROLE_UNRECOGNIZED } from "../../packages/shared/src/runtime-role-schema";
-import { GUARDIAN_LINK_REQUIRED } from "../../packages/shared/src/guardian-link-gate";
+import {
+  GUARDIAN_LINK_REQUIRED,
+  PROFILE_INCOMPLETE,
+} from "../../packages/shared/src/guardian-link-gate";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
@@ -813,8 +816,9 @@ export function requireSupabaseAdmin(
  * unlinks partway through a session closes the student's very next learning request, with no
  * sign-in in between. Refused: 403 `GUARDIAN_LINK_REQUIRED`.
  *
- * Who it applies to: only `role === 'student'` with `is_under_13 === true`. Admins, guardians and
- * students of 13 or over pass without a query, so the read costs nothing for anyone else.
+ * Who it applies to: only `role === 'student'`. Admins and guardians pass untouched (so a guardian
+ * reading a linked student under /api/students/:id is never refused here). The link read happens
+ * only for `is_under_13 === true`; students of 13 or over pass without a query.
  *
  * Fails closed: a read error is a 500, never a pass (`hasActiveGuardianLink` throws).
  *
@@ -827,8 +831,14 @@ export function requireSupabaseAdmin(
  * student's request reads the link twice (mount, then route). Kept deliberately: a router mounted
  * anywhere else is still gated. The cost falls only on under-13 students.
  *
- * edge case: `is_under_13` NULL (no date of birth yet) passes this gate, as before; the profile
- * cannot be completed without a date of birth. Recorded as row G-NEW-09.
+ * G2-06 (G-NEW-09): learning requires a KNOWN AGE, and that is checked FIRST. A student whose age
+ * is unknown gets 403 `PROFILE_INCOMPLETE` before the under-13 check is reached. "Unknown" is
+ * `is_under_13` not being a boolean: the genesis trigger `profiles_set_age` sets it to NULL
+ * exactly when `date_of_birth` is NULL, and G2-03's `profiles_lock_date_of_birth` forbids writing
+ * it on its own — so it cannot disagree with the date of birth, and the session need not carry the
+ * date itself. Anything else (a field missing from the session) also counts as unknown: fail
+ * closed. Production (owner, 2026-09-29): no completed student has a NULL date of birth, so this
+ * locks out no completed student.
  */
 export async function requireGuardianLinkForUnder13(
   req: Request,
@@ -840,7 +850,29 @@ export async function requireGuardianLinkForUnder13(
     return;
   }
   const user = req.user;
-  if (user.isAdmin || user.role !== "student" || user.is_under_13 !== true) {
+  if (user.isAdmin || user.role !== "student") {
+    next();
+    return;
+  }
+
+  // G2-06: age unknown → refused before anything else is asked.
+  if (typeof user.is_under_13 !== "boolean") {
+    logger.warn(
+      "AUTH",
+      "age_unknown",
+      "Student with no date of birth refused a learning endpoint",
+      { userId: user.id, path: req.path, requestId: req.requestId },
+    );
+    sendForbidden(res, {
+      error: "Profile incomplete",
+      message: "Please complete your profile before accessing this feature.",
+      requestId: req.requestId,
+      extra: { code: PROFILE_INCOMPLETE },
+    });
+    return;
+  }
+
+  if (!user.is_under_13) {
     next();
     return;
   }
@@ -916,7 +948,7 @@ export function requireProfileComplete(
       error: "Profile incomplete",
       message: "Please complete your profile before accessing this feature.",
       requestId: req.requestId,
-      extra: { code: "PROFILE_INCOMPLETE" },
+      extra: { code: PROFILE_INCOMPLETE },
     });
   }
 

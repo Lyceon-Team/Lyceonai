@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Under-13 link gate (G2-04) — PLANT self-test (P1-P6)
+# Under-13 link gate (G2-04) and the known-age check (G2-06) — PLANT self-test (P1-P7)
 # ============================================================================
 # @spec [Guardian_Closure_Plan G2-04; owner ruling R6; SCL-187 rule 1]
 #       | @implemented [2026-09-29]
@@ -106,7 +106,7 @@ run_plant() {
 
 snapshot_all
 
-echo "=== Under-13 link gate plants (P1-P6) ==="
+echo "=== Under-13 link gate plants (P1-P7) ==="
 
 # --- P1: the gate never reads the link (always passes) ----------------------
 mutate "$AUTH" \
@@ -155,9 +155,18 @@ run_plant P5 "cannot start checkout" "an unlinked under-13 student starts checko
 
 # --- P6: the gate reaches guardians too (reads the wrong party) ------------
 mutate "$AUTH" \
-  '  if (user.isAdmin || user.role !== "student" || user.is_under_13 !== true) {' \
-  '  if (user.isAdmin || (user.role !== "student" && user.role !== "guardian") || (user.role === "student" && user.is_under_13 !== true)) {' || exit 2
+  '  if (user.isAdmin || user.role !== "student") {' \
+  '  if (user.isAdmin || (user.role !== "student" && user.role !== "guardian")) {' || exit 2
+mutate "$AUTH" \
+  '  if (!user.is_under_13) {' \
+  '  if (!user.is_under_13 && user.role !== "guardian") {' || exit 2
 run_plant P6 "can still start checkout" "a guardian paying for a linked under-13 student is refused"
+
+# --- P7 (G2-06): the known-age check is removed ------------------------------
+mutate "$AUTH" \
+  '  if (typeof user.is_under_13 !== "boolean") {' \
+  '  if (false && typeof user.is_under_13 !== "boolean") {' || exit 2
+run_plant P7 "age unknown" "a student with no date of birth reaches learning endpoints"
 
 echo
 echo "plants fired: $PASSES, did not fire / errored: $FAILURES"

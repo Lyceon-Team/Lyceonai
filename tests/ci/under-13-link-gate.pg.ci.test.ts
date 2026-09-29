@@ -53,9 +53,12 @@ import { collectEndpoints } from "../helpers/router-endpoints";
 const DB_NAME = "under_13_link_gate_ci";
 const KID = "d1111111-1111-4111-8111-111111111111";
 const GUARDIAN = "d2222222-2222-4222-8222-222222222222";
+/** G2-06: a student whose age is unknown — no date of birth, profile not completed. */
+const NO_DOB = "d3333333-3333-4333-8333-333333333333";
 const EMAILS: Record<string, string> = {
   [KID]: "kid-g204@example.test",
   [GUARDIAN]: "guardian-g204@example.test",
+  [NO_DOB]: "nodob-g206@example.test",
 };
 
 let pg: Client;
@@ -255,10 +258,10 @@ function isAllowed(method: string, path: string): boolean {
   );
 }
 
-function concrete(path: string): string {
+function concrete(path: string, studentId: string = KID): string {
   return (
     path
-      .replace(/:studentId/g, KID)
+      .replace(/:studentId/g, studentId)
       .replace(/:[A-Za-z_]+/g, "00000000-0000-4000-8000-0000000000aa")
       .replace(/\/$/, "") || "/"
   );
@@ -268,9 +271,10 @@ async function call(
   method: string,
   path: string,
   body: object = {},
+  studentId: string = KID,
 ): Promise<request.Response> {
   const agent = request(app);
-  const url = concrete(path);
+  const url = concrete(path, studentId);
   switch (method) {
     case "get":
       return agent.get(url);
@@ -288,23 +292,26 @@ async function call(
 }
 
 const GLR = "GUARDIAN_LINK_REQUIRED";
+const PROFILE_INCOMPLETE = "PROFILE_INCOMPLETE";
 
-/** Learning reads a free, linked student is served with 200 — the presence side of the gate. */
-const LEARNING_READS: ReadonlyArray<string> = [
+/** Learning reads a free, admitted student is served with 200 — the presence side of the gate. */
+const learningReads = (studentId: string): ReadonlyArray<string> => [
   "/api/me/streak",
   "/api/progress/kpis",
-  `/api/students/${KID}/kpi/overall`,
+  `/api/students/${studentId}/kpi/overall`,
   "/api/practice/topics",
 ];
+const LEARNING_READS = learningReads(KID);
 
 /** Safe reads from the allowed set: 200 in every state. */
-const ALLOWED_READS: ReadonlyArray<string> = [
+const allowedReads = (studentId: string): ReadonlyArray<string> => [
   "/api/profile",
-  `/api/students/${KID}/link-code`,
-  `/api/students/${KID}/links`,
+  `/api/students/${studentId}/link-code`,
+  `/api/students/${studentId}/links`,
   "/api/account/status",
   "/api/billing/status",
 ];
+const ALLOWED_READS = allowedReads(KID);
 
 async function redeemAsGuardian(): Promise<string> {
   session.id = KID;
@@ -329,8 +336,10 @@ async function redeemAsGuardian(): Promise<string> {
   return link.rows[0].id as string;
 }
 
-async function expectAllowedReadsServed(): Promise<void> {
-  for (const url of ALLOWED_READS) {
+async function expectAllowedReadsServed(
+  reads: ReadonlyArray<string> = ALLOWED_READS,
+): Promise<void> {
+  for (const url of reads) {
     const res = await request(app).get(url);
     expect(res.status, `${url} → ${res.status}`).toBe(200);
   }
@@ -344,8 +353,8 @@ describe.skipIf(!PG_AVAILABLE)(
     beforeAll(async () => {
       pg = await bootstrapPgDatabase(DB_NAME);
       await pg.query(
-        `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4)`,
-        [KID, EMAILS[KID], GUARDIAN, EMAILS[GUARDIAN]],
+        `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4),($5,$6)`,
+        [KID, EMAILS[KID], GUARDIAN, EMAILS[GUARDIAN], NO_DOB, EMAILS[NO_DOB]],
       );
       await pg.query(
         `INSERT INTO public.profiles (id, email, role, display_name, date_of_birth, profile_completed_at) VALUES
@@ -359,6 +368,23 @@ describe.skipIf(!PG_AVAILABLE)(
         [KID],
       );
       expect(back.rows[0]).toEqual({ role: "student", is_under_13: true });
+      // G2-06: the age-unknown principal — the state 82 production profiles are in (owner count,
+      // 2026-09-29): a student row with no date of birth and no completed profile.
+      await pg.query(
+        `INSERT INTO public.profiles (id, email, role) VALUES ($1,$2,'student')`,
+        [NO_DOB, EMAILS[NO_DOB]],
+      );
+      const nodob = await pg.query(
+        `SELECT role::text AS role, date_of_birth, is_under_13, profile_completed_at
+           FROM public.profiles WHERE id = $1`,
+        [NO_DOB],
+      );
+      expect(nodob.rows[0]).toEqual({
+        role: "student",
+        date_of_birth: null,
+        is_under_13: null,
+        profile_completed_at: null,
+      });
     });
 
     afterAll(async () => {
@@ -525,6 +551,83 @@ describe.skipIf(!PG_AVAILABLE)(
         ];
         expect(params.metadata?.student_profile_id).toBe(KID);
         expect(params.metadata?.payer_profile_id).toBe(GUARDIAN);
+      });
+    });
+
+    // G2-06 (G-NEW-09): learning requires a known age. Ordered: the refusals first, the completion
+    // last (it fixes the date of birth, which G2-03 then locks).
+    describe("G2-06: a student whose age is unknown (no date of birth)", () => {
+      beforeEach(() => {
+        session.id = NO_DOB;
+      });
+
+      it.each(
+        linkGated.map((e) => [e.method.toUpperCase(), e.path, e] as const),
+      )("age unknown → 403 PROFILE_INCOMPLETE on %s %s", async (_m, _p, e) => {
+        const res = await call(e.method, e.path, {}, NO_DOB);
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe(PROFILE_INCOMPLETE);
+      });
+
+      it("reaches the whole allowed set: reads served, linking writes past the gate", async () => {
+        await expectAllowedReadsServed(allowedReads(NO_DOB));
+        const regen = await request(app).post(
+          `/api/students/${NO_DOB}/link-code/regenerate`,
+        );
+        expect(regen.status).toBe(200);
+        const invite = await request(app)
+          .post(`/api/students/${NO_DOB}/link-code/invite`)
+          .send({});
+        expect(invite.status).toBe(400);
+        expect(invite.body.code).not.toBe(PROFILE_INCOMPLETE);
+        const legal = await request(app).get("/api/legal/acceptances");
+        expect(legal.body?.code).not.toBe(PROFILE_INCOMPLETE);
+      });
+
+      it("a guardian reading that student under /api/students/:id is not refused for it", async () => {
+        await pg.query(
+          `SELECT public.create_active_guardian_link_audited($1::uuid, $2::uuid, 'g2-06')`,
+          [GUARDIAN, NO_DOB],
+        );
+        session.id = GUARDIAN;
+        for (const path of [
+          `/api/students/${NO_DOB}/kpi/overall`,
+          `/api/students/${NO_DOB}/calendar`,
+        ]) {
+          const res = await request(app).get(path);
+          // The guardian's own gates (link, the student's entitlement) still apply; the
+          // student's missing date of birth is not one of them.
+          expect(res.body?.code, `${path} → ${res.status}`).not.toBe(
+            PROFILE_INCOMPLETE,
+          );
+          expect(res.status).not.toBe(403);
+        }
+      });
+
+      it("after completing the profile with an adult date of birth, the learning endpoints answer", async () => {
+        const adult = new Date();
+        adult.setUTCFullYear(adult.getUTCFullYear() - 18);
+        const complete = await request(app)
+          .patch("/api/profile")
+          .send({
+            displayName: "Nodob",
+            role: "student",
+            dateOfBirth: adult.toISOString().slice(0, 10),
+          });
+        expect(complete.status).toBe(200);
+
+        for (const url of learningReads(NO_DOB)) {
+          const res = await request(app).get(url);
+          expect(res.status, `${url} → ${res.status}`).toBe(200);
+        }
+        const refused: string[] = [];
+        for (const e of linkGated) {
+          const res = await call(e.method, e.path, {}, NO_DOB);
+          if (res.body?.code === PROFILE_INCOMPLETE || res.body?.code === GLR) {
+            refused.push(key(e.method, e.path));
+          }
+        }
+        expect(refused).toEqual([]);
       });
     });
   },
