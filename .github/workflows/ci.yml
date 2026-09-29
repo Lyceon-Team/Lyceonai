@@ -1528,11 +1528,13 @@ jobs:
           pnpm exec vitest run \
             tests/ci/guardian-checkout.contract.test.ts \
             tests/ci/guardian-premium-fold.contract.test.ts \
+            tests/ci/guardian-one-subscription-per-student.contract.test.ts \
             packages/shared/src/__tests__/guardian-student-schema.test.ts \
             --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-conversions.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-conversions.json \
             --file tests/ci/guardian-checkout.contract.test.ts \
             --file tests/ci/guardian-premium-fold.contract.test.ts \
+            --file tests/ci/guardian-one-subscription-per-student.contract.test.ts \
             --file packages/shared/src/__tests__/guardian-student-schema.test.ts
 
       # @spec [brief R3 §4; ruled plan §2] Review API → real PG proof.
