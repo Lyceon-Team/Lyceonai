@@ -7,7 +7,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { humanAuthError } from "@/lib/auth-error-messages";
-import { returnPathFromSearch } from "@lyceon/shared/return-path";
+import {
+  postAuthDestination,
+  returnPathFromSearch,
+} from "@lyceon/shared/return-path";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -39,24 +42,29 @@ export default function Login() {
         user.requiredProfileComplete === false ||
         !user.profile_completed_at;
 
-      let destination = user.role === "guardian" ? "/guardian" : "/dashboard";
-
       // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
       // A return path captured by RequireRole (`/login?next=…`) wins over the role default —
       // but only after it passes the ONE shared sanitiser (same-origin, relative, allowlisted),
       // and never ahead of onboarding: an incomplete account still goes to /profile/complete.
-      const returnPath =
+      //
+      // @spec [AS-5; AS-3 landing matrix; register UI-03] | @implemented [2026-09-29]
+      // plain English: the decision is the shared `postAuthDestination`. Onboarding no longer
+      // drops the return path — it rides along as /profile/complete?next=… and the onboarding
+      // page lands on it once the profile is complete. A return path the role cannot open
+      // (a guardian with next=/calendar) falls back to the role default. Admins bypass
+      // onboarding, as before.
+      const next =
         typeof window !== "undefined"
           ? returnPathFromSearch(window.location.search)
           : null;
-      if (returnPath) destination = returnPath;
 
-      // Admins bypass onboarding requirements
-      if (user.role !== "admin" && needsOnboarding) {
-        destination = "/profile/complete";
-      }
-
-      navigate(destination);
+      navigate(
+        postAuthDestination({
+          role: user.role,
+          needsOnboarding: user.role !== "admin" && needsOnboarding,
+          next,
+        }),
+      );
     }
   }, [isAuthenticated, authLoading, user, navigate]);
 

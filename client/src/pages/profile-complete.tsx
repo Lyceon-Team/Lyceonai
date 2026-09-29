@@ -5,7 +5,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-  ShieldAlert,
   UserRound,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -33,6 +32,10 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { csrfFetch } from "@/lib/csrf";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { resolveOnboardingErrorMessage } from "@/lib/api-error";
+import {
+  postAuthDestination,
+  returnPathFromSearch,
+} from "@lyceon/shared/return-path";
 
 type ProfileRole = "student" | "guardian" | "admin";
 
@@ -77,8 +80,25 @@ function calculateAge(dateOfBirth: string): number | null {
   return age;
 }
 
+/**
+ * @spec [AS-5; AS-3 landing matrix; register UI-03] | @implemented [2026-09-29]
+ * plain English: where a completed profile lands. The return path that rode through onboarding
+ * (`/profile/complete?next=…`, written by the login page, RequireRole or the OAuth callback) is
+ * read from THIS page's query and re-sanitised by the shared module; it wins only when the role
+ * may open it — a guardian is never sent to a student page. Otherwise the role default. An
+ * unknown role is treated as a student, as before. Read at call time (not captured at mount)
+ * so it is always the current URL.
+ */
 function resolvePostCompletionPath(role: ProfileRole | undefined): string {
-  return role === "guardian" ? "/guardian" : "/dashboard";
+  const next =
+    typeof window !== "undefined"
+      ? returnPathFromSearch(window.location.search)
+      : null;
+  return postAuthDestination({
+    role: role ?? "student",
+    needsOnboarding: false,
+    next,
+  });
 }
 
 export default function ProfileComplete() {
@@ -224,7 +244,7 @@ export default function ProfileComplete() {
   }
 
   if (profile?.role === "admin") {
-    return <Redirect to="/dashboard" />;
+    return <Redirect to={resolvePostCompletionPath("admin")} />;
   }
 
   if (profile?.requiredProfileComplete && profile?.profileCompletedAt) {

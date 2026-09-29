@@ -3,7 +3,11 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { csrfFetch } from "@/lib/csrf";
-import { loginPathWithReturn } from "@lyceon/shared/return-path";
+import {
+  loginPathWithReturn,
+  onboardingPathWithReturn,
+} from "@lyceon/shared/return-path";
+import { profileGateSchema } from "@lyceon/shared/profile-gate-schema";
 import { ReconsentModal } from "@/components/legal/ReconsentModal";
 import { outstandingLegalSchema } from "@shared/legal-consent";
 import {
@@ -13,20 +17,19 @@ import {
 
 type UserRole = "student" | "guardian" | "admin";
 
-interface RequireRoleProps {
+type RequireRoleProps = {
   allow: UserRole[];
   children: ReactNode;
-}
+};
 
-interface AuthUserResponse {
-  authenticated?: boolean;
-  user?: {
-    profileCompletedAt?: string | null;
-    requiredProfileComplete?: boolean;
-    guardianConsentRequired?: boolean;
-    outstandingLegal?: unknown;
-    [key: string]: any;
-  } | null;
+/**
+ * The path AND query the user was opening. wouter's `location` is the pathname only, so the
+ * query (the guardian deep link's `?code=…`) comes from `window.location` where there is one.
+ */
+function intendedPath(location: string): string {
+  return typeof window === "undefined"
+    ? location
+    : `${window.location.pathname}${window.location.search}`;
 }
 
 export function RequireRole({ allow, children }: RequireRoleProps) {
@@ -43,7 +46,10 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
 
   // Fetch profile completion status from canonical /api/profile endpoint
   const { data: authData, isLoading: profileLoading } =
-    useQuery<AuthUserResponse>({
+    // The cache entry is the raw wire payload (`unknown`), shared under this key with every
+    // other `/api/profile` reader (profile-complete reads fields this gate never looks at), so
+    // it is parsed where it is READ below, never narrowed where it is stored.
+    useQuery<unknown>({
       queryKey: ["/api/profile"],
       retry: false,
       enabled: !!user, // only fetch when user is authenticated
@@ -60,7 +66,8 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
           throw new Error(`Profile hydration failed: ${response.status}`);
         }
 
-        return response.json();
+        const body: unknown = await response.json();
+        return body;
       },
     });
 
@@ -81,11 +88,9 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     // deep link (`/guardian?code=…`) survives sign-in. The value is sanitised by the ONE shared
     // return-path module before it is written and again where it is read; an off-origin or
     // un-allowlisted destination collapses to plain /login.
-    const intended =
-      typeof window === "undefined"
-        ? location
-        : `${window.location.pathname}${window.location.search}`;
-    return <Redirect to={loginPathWithReturn(intended)} replace />;
+    return (
+      <Redirect to={loginPathWithReturn(intendedPath(location))} replace />
+    );
   }
 
   const userRole: UserRole = isAdmin
@@ -110,9 +115,16 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // Enforce profile completion (includes terms acceptance) for non-admin users.
   // Skip this check if we're already on /profile/complete to avoid redirect loops.
   const isProfileCompletePage = location === "/profile/complete";
-  const profileCompletedAt = authData?.user?.profileCompletedAt;
-  const requiredProfileComplete = authData?.user?.requiredProfileComplete;
-  const guardianConsentRequired = authData?.user?.guardianConsentRequired;
+  // @spec [Coding Standards §3.2, §7.1; register UI-10] | @implemented [2026-09-29]
+  // plain English: the wire payload is `unknown` and is parsed by the shared schema — this used
+  // to be an `interface` with an untyped index signature. A payload that does not parse yields no
+  // profile facts, so `needsOnboarding` below is true: the same fail-closed answer a missing
+  // `profileCompletedAt` always gave.
+  const gate = profileGateSchema.safeParse(authData);
+  const gateUser = gate.success ? gate.data.user : null;
+  const profileCompletedAt = gateUser?.profileCompletedAt;
+  const requiredProfileComplete = gateUser?.requiredProfileComplete;
+  const guardianConsentRequired = gateUser?.guardianConsentRequired;
 
   // NO LEGAL DOCUMENT APPEARS IN THIS LIST, AND NONE EVER SHOULD.
   // `requiredConsentsComplete === false` sat here once; it is gone, along with
@@ -129,7 +141,13 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     !profileCompletedAt;
 
   if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
-    return <Redirect to="/profile/complete" replace />;
+    // @spec [AS-5; register UI-03] | @implemented [2026-09-29] | plain English: the page the
+    // user was opening rides through onboarding as `?next=` (sanitised by the shared module;
+    // an un-allowlisted location collapses to plain /profile/complete), and the onboarding
+    // page lands on it when the profile is complete.
+    return (
+      <Redirect to={onboardingPathWithReturn(intendedPath(location))} replace />
+    );
   }
 
   // @spec [LYCEON consent capture §6]
@@ -138,7 +156,7 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // same one the server's own type is inferred from. A malformed entry becomes
   // an empty list rather than a modal rendering `undefined` at someone.
   const outstanding = outstandingLegalSchema.safeParse(
-    authData?.user?.outstandingLegal ?? [],
+    gateUser?.outstandingLegal ?? [],
   );
   const outstandingLegal = outstanding.success ? outstanding.data : [];
 
