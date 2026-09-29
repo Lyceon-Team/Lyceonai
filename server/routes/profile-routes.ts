@@ -18,8 +18,34 @@ import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
 import crypto from "crypto";
 import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
+import { setDateOfBirthRequestSchema } from "../../packages/shared/src/profile-role-choice-schema";
+import {
+  decideRoleChoice,
+  guardianAgeRefusal,
+  isSelfAssignableRole,
+  loadRoleChoiceFacts,
+  NOT_SELF_ASSIGNABLE,
+  supportMessage,
+  type RoleChoiceFacts,
+  type RoleChoiceRefusal,
+} from "../lib/role-choice";
 
 const router = Router();
+
+/**
+ * Every coded refusal on this surface has one shape, `{ error: { code, message } }`
+ * (Coding Standards §8.2), so the client can show the server's message for a known code
+ * rather than guessing from a string (G1-02; AS-3).
+ */
+function sendRoleChoiceRefusal(
+  res: Response,
+  refusal: RoleChoiceRefusal,
+): Response {
+  return res.status(refusal.status).json({
+    error: { code: refusal.code, message: refusal.message },
+    supportEmail: SUPPORT_EMAIL,
+  });
+}
 
 function calculateAge(birthDate: string): number {
   const today = new Date();
@@ -251,17 +277,17 @@ router.patch("/", async (req: Request, res: Response) => {
     }
 
     const userId = user.id;
-    const requestedRole =
-      typeof (req.body as any)?.role === "string"
-        ? (req.body as any).role
-        : null;
+    const body: unknown = req.body;
+    const rawRole: unknown =
+      typeof body === "object" && body !== null
+        ? (body as { role?: unknown }).role
+        : undefined;
+    const requestedRole = typeof rawRole === "string" ? rawRole : null;
 
-    if (requestedRole && requestedRole !== user.role) {
-      return res.status(403).json({
-        error: "Role changes are support-mediated only",
-        message: `Email ${SUPPORT_EMAIL} to request a role review.`,
-        supportEmail: SUPPORT_EMAIL,
-      });
+    // Admin (or any role outside student/guardian) is never self-assigned. Refused before
+    // anything is read, so no profile state is needed to say no.
+    if (requestedRole !== null && !isSelfAssignableRole(requestedRole)) {
+      return sendRoleChoiceRefusal(res, NOT_SELF_ASSIGNABLE);
     }
 
     const supabase = getSupabaseAdmin();
@@ -289,16 +315,36 @@ router.patch("/", async (req: Request, res: Response) => {
       });
     }
 
+    // G1-02 (R1): the one-time role choice. Every account is created as a student, so a
+    // parent picking "Guardian" is a CHANGE of role; `decideRoleChoice` allows it once,
+    // before completion, on an account with no link and no learning state. The facts are
+    // only read when a change is actually requested.
+    const isRoleChange =
+      requestedRole !== null && requestedRole !== existingProfile.role;
+    let facts: RoleChoiceFacts = {
+      hasActiveLink: false,
+      hasLearningState: false,
+    };
     if (
-      existingProfile.profile_completed_at &&
-      requestedRole &&
-      requestedRole !== existingProfile.role
+      isRoleChange &&
+      existingProfile.profile_completed_at === null &&
+      (requestedRole === "student" || requestedRole === "guardian")
     ) {
-      return res.status(403).json({
-        error: "Role changes are support-mediated only",
-        message: `Email ${SUPPORT_EMAIL} to request a role review.`,
-        supportEmail: SUPPORT_EMAIL,
+      facts = await loadRoleChoiceFacts(supabase, userId);
+    }
+    const roleDecision = decideRoleChoice({
+      currentRole: existingProfile.role,
+      requestedRole,
+      profileCompletedAt: existingProfile.profile_completed_at,
+      facts,
+      supportEmail: SUPPORT_EMAIL,
+    });
+    if (!roleDecision.ok) {
+      logger.warn("PROFILE", "role_choice_refused", "Role choice refused", {
+        code: roleDecision.refusal.code,
+        requestId: req.requestId,
       });
+      return sendRoleChoiceRefusal(res, roleDecision.refusal);
     }
 
     // Validate request body
@@ -316,6 +362,24 @@ router.patch("/", async (req: Request, res: Response) => {
       return res.status(400).json({
         error: "Date of birth is required for student accounts",
       });
+    }
+
+    // R10: a guardian gives a date of birth through the same field as a student, and must
+    // be an adult. Refused before anything is written.
+    if (data.role === "guardian") {
+      const ageRefusal = guardianAgeRefusal(data.dateOfBirth, new Date());
+      if (ageRefusal) {
+        logger.warn(
+          "PROFILE",
+          "guardian_age_refused",
+          "Guardian age rule refused",
+          {
+            code: ageRefusal.code,
+            requestId: req.requestId,
+          },
+        );
+        return sendRoleChoiceRefusal(res, ageRefusal);
+      }
     }
 
     const isUnder13 =
@@ -408,7 +472,7 @@ router.patch("/", async (req: Request, res: Response) => {
       .from("profiles")
       .update({
         display_name: data.displayName,
-        role: data.role,
+        role: roleDecision.role,
         date_of_birth: data.dateOfBirth || null,
         guardian_email: guardianEmail,
         is_under_13: isUnder13,
@@ -462,6 +526,85 @@ router.patch("/", async (req: Request, res: Response) => {
     console.error("[PROFILE] Unexpected error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
+});
+
+/**
+ * POST /api/profile/date-of-birth — the one-time date-of-birth fill for a guardian with none.
+ *
+ * @spec [Guardian_Closure_Plan G1-02 ("an existing guardian without a date of birth is asked
+ *        for it before redeeming a new code"); owner ruling R10] | @implemented [2026-09-29]
+ *
+ * plain English: guardians created before R10 have no date of birth, and redeem now refuses
+ * them. This lets such a guardian add it, once. Expected outcome: an adult date is stored and
+ * the next redeem proceeds; an under-18 date is refused and NOTHING is stored; a second fill
+ * is 409, because the write is conditional on the column being NULL. Trade-off: this is not
+ * the general date-of-birth lock (G2-03 owns that); it only ever writes into an empty field,
+ * so it cannot be used to change a date. Edge case: a student is refused here, since a student
+ * cannot complete their profile without a date of birth in the first place.
+ */
+router.post("/date-of-birth", async (req: Request, res: Response) => {
+  const user = requireRequestUser(req, res);
+  if (!user) return;
+
+  if (user.role !== "guardian") {
+    return sendRoleChoiceRefusal(res, NOT_SELF_ASSIGNABLE);
+  }
+
+  const parsed = setDateOfBirthRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return sendRoleChoiceRefusal(res, {
+      status: 400,
+      code: "DATE_OF_BIRTH_REQUIRED",
+      message: "Please enter a valid date of birth.",
+    });
+  }
+
+  const ageRefusal = guardianAgeRefusal(parsed.data.dateOfBirth, new Date());
+  if (ageRefusal) {
+    logger.warn(
+      "PROFILE",
+      "guardian_age_refused",
+      "Guardian age rule refused",
+      {
+        code: ageRefusal.code,
+        requestId: req.requestId,
+      },
+    );
+    return sendRoleChoiceRefusal(res, ageRefusal);
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("profiles")
+    .update({
+      date_of_birth: parsed.data.dateOfBirth,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", user.id)
+    .is("date_of_birth", null)
+    .select("id");
+
+  if (error) {
+    logger.error(
+      "PROFILE",
+      "date_of_birth_fill_failed",
+      "Date of birth write failed",
+      {
+        error: error.message,
+        requestId: req.requestId,
+      },
+    );
+    return res.status(500).json({ error: "Internal server error" });
+  }
+
+  if (!data || data.length === 0) {
+    return sendRoleChoiceRefusal(res, {
+      status: 409,
+      code: "DATE_OF_BIRTH_ALREADY_SET",
+      message: `Your date of birth is already on your account. ${supportMessage(SUPPORT_EMAIL)}`,
+    });
+  }
+
+  return res.json({ ok: true });
 });
 
 export default router;

@@ -33,15 +33,20 @@ describe("billingCheckoutOutcomeSchema — one discriminated shape, both branche
     expect(parsed.data.kind).toBe("checkout_session");
   });
 
-  it("accepts the ADD-ITEM outcome, which has no url because there is no redirect", () => {
-    const parsed = billingCheckoutOutcomeSchema.safeParse({
-      kind: "item_added",
-      subscriptionItemId: "si_second_child",
-    });
-
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(parsed.data.kind).toBe("item_added");
+  /**
+   * The add-item outcome is GONE, and a client must not be able to act on one.
+   * `{kind:"item_added", subscriptionItemId}` was a valid outcome until
+   * 2026-09-29; the path that produced it took no money at purchase time and was
+   * deleted. If this parses again, some layer has reintroduced a purchase that
+   * does not charge.
+   */
+  it("REFUSES the deleted add-item outcome", () => {
+    expect(
+      billingCheckoutOutcomeSchema.safeParse({
+        kind: "item_added",
+        subscriptionItemId: "si_second_child",
+      }).success,
+    ).toBe(false);
   });
 
   /**
@@ -58,12 +63,6 @@ describe("billingCheckoutOutcomeSchema — one discriminated shape, both branche
     expect(parsed.success).toBe(false);
   });
 
-  it("refuses an add-item outcome that names no subscription item", () => {
-    expect(
-      billingCheckoutOutcomeSchema.safeParse({ kind: "item_added" }).success,
-    ).toBe(false);
-  });
-
   it("refuses a checkout_session whose url is absent, rather than redirecting to nothing", () => {
     expect(
       billingCheckoutOutcomeSchema.safeParse({
@@ -75,14 +74,19 @@ describe("billingCheckoutOutcomeSchema — one discriminated shape, both branche
 
   it("strips requestId — diagnostic on the wire, not part of the contract", () => {
     const parsed = billingCheckoutOutcomeSchema.safeParse({
-      kind: "item_added",
-      subscriptionItemId: "si_1",
+      kind: "checkout_session",
+      url: "https://checkout.stripe.com/c/pay/cs_test_1",
+      sessionId: "cs_test_1",
       requestId: "req-abc",
     });
 
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(parsed.data).toEqual({ kind: "item_added", subscriptionItemId: "si_1" });
+    expect(parsed.data).toEqual({
+      kind: "checkout_session",
+      url: "https://checkout.stripe.com/c/pay/cs_test_1",
+      sessionId: "cs_test_1",
+    });
   });
 });
 
@@ -115,7 +119,9 @@ describe("billingCheckoutRequestSchema — selection, not authorisation", () => 
       { plan: "monthly", payer_profile_id: STUDENT },
       { plan: "monthly", tier: "premium" },
     ]) {
-      expect(billingCheckoutRequestSchema.safeParse(smuggled).success).toBe(false);
+      expect(billingCheckoutRequestSchema.safeParse(smuggled).success).toBe(
+        false,
+      );
     }
   });
 
@@ -129,9 +135,9 @@ describe("billingCheckoutRequestSchema — selection, not authorisation", () => 
   });
 
   it("rejects a plan outside the canonical billing periods", () => {
-    expect(billingCheckoutRequestSchema.safeParse({ plan: "weekly" }).success).toBe(
-      false,
-    );
+    expect(
+      billingCheckoutRequestSchema.safeParse({ plan: "weekly" }).success,
+    ).toBe(false);
     expect(billingPeriodSchema.options).toEqual([
       "monthly",
       "quarterly",
@@ -169,14 +175,18 @@ describe("billingPortalOutcomeSchema — one outcome, still checked", () => {
    * carrying a non-URL reached `window.location.assign` unchecked.
    */
   it("REFUSES a non-empty string that is not a URL", () => {
-    expect(billingPortalOutcomeSchema.safeParse({ url: "not-a-url" }).success).toBe(
-      false,
-    );
+    expect(
+      billingPortalOutcomeSchema.safeParse({ url: "not-a-url" }).success,
+    ).toBe(false);
   });
 
   it("refuses a missing url and a url of the wrong type", () => {
     expect(billingPortalOutcomeSchema.safeParse({}).success).toBe(false);
-    expect(billingPortalOutcomeSchema.safeParse({ url: 12345 }).success).toBe(false);
-    expect(billingPortalOutcomeSchema.safeParse({ url: null }).success).toBe(false);
+    expect(billingPortalOutcomeSchema.safeParse({ url: 12345 }).success).toBe(
+      false,
+    );
+    expect(billingPortalOutcomeSchema.safeParse({ url: null }).success).toBe(
+      false,
+    );
   });
 });

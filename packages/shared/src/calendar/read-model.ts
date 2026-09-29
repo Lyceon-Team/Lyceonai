@@ -31,6 +31,7 @@ import {
   blockStatusSchema,
   extraWorkGroupSchema,
   activityUnitSchema,
+  linkedSessionSchema,
   type ActivityUnit,
 } from "./allocate.js";
 import {
@@ -75,6 +76,13 @@ export const calendarRangeInputSchema = z
     days: z.array(calendarDayInputSchema),
     units: z.array(activityUnitSchema),
     launches: z.array(blockLaunchStateSchema),
+    /**
+     * Every `calendar_block_launches` row for the blocks in this range (R-08-34, Brief 15).
+     * This is what lets a unit count for the block it was launched from rather than for the
+     * day it happened on. Defaults to empty, which reproduces the pre-R-08-34 allocation
+     * exactly — no links, no attribution.
+     */
+    linked_sessions: z.array(linkedSessionSchema).default([]),
   })
   .strict();
 export type CalendarRangeInput = z.infer<typeof calendarRangeInputSchema>;
@@ -226,13 +234,58 @@ function bucketUnitsByDate(units: readonly ActivityUnit[]): Map<string, Activity
 export function buildCalendarRange(input: CalendarRangeInput): CalendarRange {
   const buckets = bucketUnitsByDate(input.units);
 
+  /**
+   * A unit whose session is linked to a block on some OTHER day has to reach that day, or the
+   * work-ahead case cannot count: the day's bucket is keyed on the unit's own `local_date`,
+   * and that is not where its block sits. So each day is handed its own bucket PLUS the
+   * linked units belonging to its blocks.
+   *
+   * The allocator does the other half — it drops a unit linked away from the day it is looking
+   * at — so a unit injected here is counted on exactly one day and dropped on every other.
+   * Neither half is sufficient alone, which is why both are written where they are read.
+   */
+  const unitsBySession = new Map<string, ActivityUnit[]>();
+  for (const unit of input.units) {
+    if (unit.session_id === null) continue;
+    const key = `${unit.engine}\u0000${unit.session_id}`;
+    const bucket = unitsBySession.get(key);
+    if (bucket === undefined) {
+      unitsBySession.set(key, [unit]);
+      continue;
+    }
+    bucket.push(unit);
+  }
+  const linkedByBlock = new Map<string, ActivityUnit[]>();
+  for (const link of input.linked_sessions) {
+    const found = unitsBySession.get(
+      `${link.engine}\u0000${link.engine_session_id}`,
+    );
+    if (found === undefined) continue;
+    const bucket = linkedByBlock.get(link.block_id);
+    if (bucket === undefined) {
+      linkedByBlock.set(link.block_id, [...found]);
+      continue;
+    }
+    bucket.push(...found);
+  }
+
   const days: CalendarDay[] = input.days.map((day) => {
+    const dayUnits = [...(buckets.get(day.local_date) ?? [])];
+    for (const block of day.blocks) {
+      const linked = linkedByBlock.get(block.block_id);
+      if (linked !== undefined) dayUnits.push(...linked);
+    }
+
     const allocation = allocateDay({
       local_date: day.local_date,
       today: input.today,
       blocks: day.blocks,
-      units: buckets.get(day.local_date) ?? [],
+      // Duplicates are harmless and expected — a unit whose own date IS its block's date
+      // arrives from both sources. The allocator deduplicates by `(engine, unit_id)` first
+      // (INV-08-21), so it is counted once.
+      units: dayUnits,
       launches: input.launches,
+      linked_sessions: input.linked_sessions,
     });
 
     const blocksById = new Map(day.blocks.map((block) => [block.block_id, block]));

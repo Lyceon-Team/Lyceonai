@@ -18,6 +18,7 @@ import { csrfFetch } from "@/lib/csrf";
 import {
   parseApiErrorFromResponse,
   getPremiumDenialReason,
+  isApiError,
 } from "@/lib/api-error";
 import {
   GUARDIAN_STUDENTS_QUERY_KEY,
@@ -121,6 +122,9 @@ export default function GuardianDashboard() {
       : linkCodeFromSearch(window.location.search),
   );
   const [linkError, setLinkError] = useState<string | null>(null);
+  // G1-02: a guardian created before R10 has no date of birth; redeem asks for it once.
+  const [needsDateOfBirth, setNeedsDateOfBirth] = useState(false);
+  const [guardianDateOfBirth, setGuardianDateOfBirth] = useState("");
   const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null,
@@ -235,12 +239,12 @@ export default function GuardianDashboard() {
         // that named a version would be asserting what it was shown.
         body: JSON.stringify({ code, acceptParentGuardianTerms: true }),
       });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(
-          data.error?.message || data.error || "Could not use that code",
-        );
-      return data;
+      // G1-02: keep the status AND the code. A bare Error dropped the code, so a refusal the
+      // server had already explained (no date of birth, under 18) could not be acted on.
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(res, "Could not use that code");
+      }
+      return res.json();
     },
     onSuccess: () => {
       // The link is LIVE on this response — there is nothing to wait for, so the copy
@@ -254,6 +258,9 @@ export default function GuardianDashboard() {
       queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
     },
     onError: (err: Error) => {
+      if (isApiError(err) && err.code === "GUARDIAN_DATE_OF_BIRTH_REQUIRED") {
+        setNeedsDateOfBirth(true);
+      }
       if (
         err.message.includes("Too many") ||
         err.message.includes("rate limit")
@@ -266,6 +273,37 @@ export default function GuardianDashboard() {
         setLinkError(err.message);
       }
       setLinkSuccess(null);
+    },
+  });
+
+  /**
+   * G1-02: the one-time date-of-birth fill, then the same redeem again. The server decides
+   * the age rule; this only carries the date and shows the server's own message.
+   */
+  const dateOfBirthMutation = useMutation({
+    mutationFn: async (dateOfBirth: string) => {
+      const res = await csrfFetch("/api/profile/date-of-birth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ dateOfBirth }),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(
+          res,
+          "Could not save your date of birth",
+        );
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setNeedsDateOfBirth(false);
+      setLinkError(null);
+      const code = linkCode.trim();
+      if (code.length > 0) linkMutation.mutate(code);
+    },
+    onError: (err: Error) => {
+      setLinkError(err.message);
     },
   });
 
@@ -586,6 +624,44 @@ export default function GuardianDashboard() {
                     .
                   </span>
                 </label>
+                {needsDateOfBirth && (
+                  <form
+                    className="mt-4 flex flex-col sm:flex-row gap-3 items-end"
+                    data-testid="guardian-dob-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (guardianDateOfBirth) {
+                        dateOfBirthMutation.mutate(guardianDateOfBirth);
+                      }
+                    }}
+                  >
+                    <div className="flex-1">
+                      <Label htmlFor="guardian-date-of-birth">
+                        Your date of birth
+                      </Label>
+                      <Input
+                        id="guardian-date-of-birth"
+                        data-testid="guardian-dob-input"
+                        type="date"
+                        value={guardianDateOfBirth}
+                        onChange={(e) => setGuardianDateOfBirth(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      data-testid="guardian-dob-submit"
+                      disabled={
+                        dateOfBirthMutation.isPending || !guardianDateOfBirth
+                      }
+                      className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
+                    >
+                      {dateOfBirthMutation.isPending
+                        ? "Saving..."
+                        : "Save and link"}
+                    </Button>
+                  </form>
+                )}
                 {linkError && (
                   <Alert
                     className={`mt-4 ${isRateLimited ? "bg-amber-50 border-amber-200" : "border-border/70 bg-card/70"}`}

@@ -18,6 +18,45 @@
 
 BEGIN;
 
+-- ---- GATE 0: the gate's BODY is pinned -------------------------------------
+-- @spec [Guardian_Closure_Plan G1-08; audit G-AUD-11] | @implemented 2026-09-29
+--
+-- Gates 1-13 prove BEHAVIOUR on the fixture rows below. They cannot see a change
+-- the fixtures do not exercise — a condition that lets one particular id through,
+-- say — and they cannot tell that a migration which has ALREADY been applied was
+-- edited afterwards, which is how a deployed body silently drifts from source
+-- (calendar-schema-gates B-02, same reasoning). So the three functions that ARE
+-- the guardian gate are pinned to recorded checksums, checked FIRST so a body
+-- change is always named here rather than as whatever behavioural gate it happens
+-- to trip. The same hashes are what the owner compares against production
+-- (pg_proc.prosrc, CRs stripped) to answer "is the live gate this gate?".
+--
+-- TO RE-RECORD after a deliberate change (and ship the change to production):
+--   SELECT p.oid::regprocedure, md5(replace(p.prosrc, chr(13), ''))
+--   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+--   WHERE n.nspname = 'public'
+--     AND p.proname IN ('guardian_view_decision','guardian_can_view_student_as','guardian_can_view_student');
+DO $pin$
+DECLARE
+  v_bad text;
+BEGIN
+  SELECT string_agg(format('%s (got %s)', e.sig, coalesce(md5(replace(p.prosrc, chr(13), '')), 'MISSING')), '; ')
+    INTO v_bad
+  FROM (VALUES
+    ('public.guardian_view_decision(uuid,uuid)',       'c54e5697c856f817b6071d195bd37188'),
+    ('public.guardian_can_view_student_as(uuid,uuid)', 'a53abec69aee50e6ae28fcc0de02c397'),
+    ('public.guardian_can_view_student(uuid)',         '2be995b41b47148518bf84305658b5e0')
+  ) AS e(sig, md5_expected)
+  LEFT JOIN pg_proc p ON p.oid = to_regprocedure(e.sig)
+  WHERE p.oid IS NULL OR md5(replace(p.prosrc, chr(13), '')) <> e.md5_expected;
+
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'GATE 0 FAIL: guardian gate body differs from the pinned checksum: %. If deliberate, re-record (query above) AND apply the same body in production.', v_bad;
+  END IF;
+  RAISE NOTICE 'GATE 0 PASS: guardian_view_decision and both boolean forms match their pinned bodies';
+END
+$pin$;
+
 -- ---- fixtures: real rows, mirroring production shapes -----------------------
 -- profiles are created by the handle_new_user trigger on auth.users insert.
 INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES

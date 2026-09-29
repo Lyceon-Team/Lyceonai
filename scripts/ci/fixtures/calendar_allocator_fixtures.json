@@ -1,12 +1,12 @@
 {
-  "$schema_note": "Doc 05F \u00a713/\u00a714 allocator and read-model fixtures. INPUT is a DayAllocationInput (kind=allocate) or a CalendarRangeInput (kind=range) as packages/shared/src/calendar defines them. EXPECTED is hand-authored from the spec, not captured from the implementation, and is compared as a projection: blocks by (block_id, target, actual, status), extra work by (engine, section, domain, count), and \u2014 where ordering is the point \u2014 the consumed unit ids. The file is the contract: the server and UI suites read these cases rather than inventing their own.",
+  "$schema_note": "Doc 05F §13/§14 allocator and read-model fixtures. INPUT is a DayAllocationInput (kind=allocate) or a CalendarRangeInput (kind=range) as packages/shared/src/calendar defines them. EXPECTED is hand-authored from the spec, not captured from the implementation, and is compared as a projection: blocks by (block_id, target, actual, status), extra work by (engine, section, domain, count), and — where ordering is the point — the consumed unit ids. The file is the contract: the server and UI suites read these cases rather than inventing their own.",
   "version": 1,
-  "case_count": 26,
+  "case_count": 28,
   "cases": [
     {
       "id": "two-tens-satisfy-a-twenty",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 properties: 'two 10s satisfy a 20'",
+      "spec": "Doc 05F §13 properties: 'two 10s satisfy a 20'",
       "why": "Two ten-question practice sessions on one day are twenty answered items, and a twenty-question block is satisfied by them. Sessions are not part of the unit model; their items are.",
       "input": {
         "local_date": "2026-09-14",
@@ -235,7 +235,7 @@
     {
       "id": "a-twenty-satisfies-two-tens",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 properties: 'a 20 satisfies two 10s'",
+      "spec": "Doc 05F §13 properties: 'a 20 satisfies two 10s'",
       "why": "One twenty-question session fills two ten-question blocks, in display order, and neither block sees a unit the other took.",
       "input": {
         "local_date": "2026-09-14",
@@ -492,7 +492,7 @@
     {
       "id": "thirty-against-twenty-leaves-ten-extra",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 properties: '30 against 20 = 20/20 + 10 extra'",
+      "spec": "Doc 05F §13 properties: '30 against 20 = 20/20 + 10 extra'",
       "why": "A block is capped at its target. The overshoot is the student's, and it shows as extra work rather than as 30/20.",
       "input": {
         "local_date": "2026-09-14",
@@ -818,7 +818,7 @@
     {
       "id": "overlapping-scope-wide-block-first",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 (each unit consumed once, INV-08-21); owner ruling B2 2026-09-17",
+      "spec": "Doc 05F §13 (each unit consumed once, INV-08-21); owner ruling B2 2026-09-17",
       "why": "{Algebra 20} then {Algebra 10, Geometry 10} against twenty Algebra items. The first block takes all twenty; the second sees none. Overlapping scopes cannot inflate progress.",
       "input": {
         "local_date": "2026-09-14",
@@ -1080,8 +1080,8 @@
     {
       "id": "overlapping-scope-mixed-block-first",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 (each unit consumed once, INV-08-21); owner ruling B2 2026-09-17",
-      "why": "The same two blocks in the other display order. Display order is the only tiebreak \u00a713 allows, and it is stored, so the reversal changes who gets the items and nothing else.",
+      "spec": "Doc 05F §13 (each unit consumed once, INV-08-21); owner ruling B2 2026-09-17",
+      "why": "The same two blocks in the other display order. Display order is the only tiebreak §13 allows, and it is stored, so the reversal changes who gets the items and nothing else.",
       "input": {
         "local_date": "2026-09-14",
         "today": "2026-09-14",
@@ -1342,8 +1342,8 @@
     {
       "id": "overlapping-scope-asymmetric-wide-first",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713: 'ALG-20 followed by ALG/LIN-10 against 20 Algebra items yields 20/20 and 0/10'",
-      "why": "\u00a713's own numbers, with the narrower block scoped by a second domain instead of a skill. Twenty Algebra items, a 20-block then a 10-block: 20/20 and 0/10.",
+      "spec": "Doc 05F §13: 'ALG-20 followed by ALG/LIN-10 against 20 Algebra items yields 20/20 and 0/10'",
+      "why": "§13's own numbers, with the narrower block scoped by a second domain instead of a skill. Twenty Algebra items, a 20-block then a 10-block: 20/20 and 0/10.",
       "input": {
         "local_date": "2026-09-14",
         "today": "2026-09-14",
@@ -1604,7 +1604,7 @@
     {
       "id": "overlapping-scope-asymmetric-narrow-first",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713: '\u2026and the reverse order yields 10/10 and 10/20'",
+      "spec": "Doc 05F §13: '…and the reverse order yields 10/10 and 10/20'",
       "why": "The same pair reversed. The ten-block takes ten Algebra items, the twenty-block takes what is left: 10/10 and 10/20.",
       "input": {
         "local_date": "2026-09-14",
@@ -1866,7 +1866,7 @@
     {
       "id": "review-items-never-satisfy-a-practice-block",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a79.2 / \u00a79.3 (`matches` begins with engine equality); \u00a713",
+      "spec": "Doc 05F §9.2 / §9.3 (`matches` begins with engine equality); §13",
       "why": "Ten review items in Math/Algebra against an Algebra practice block. Section and domain line up and the engine does not, so the block gets nothing and the items are extra work. Engine equality is checked BEFORE scope, which is why this is not a match.",
       "input": {
         "local_date": "2026-09-14",
@@ -2012,8 +2012,8 @@
     {
       "id": "off-scope-practice-becomes-extra-work",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 (`extra(D)` = unconsumed units grouped by engine, section, domain)",
-      "why": "Five Algebra items and five Expression of Ideas items against an Algebra block. The off-scope five are not a failure and not progress \u2014 they are extra work, grouped by (engine, section, domain).",
+      "spec": "Doc 05F §13 (`extra(D)` = unconsumed units grouped by engine, section, domain)",
+      "why": "Five Algebra items and five Expression of Ideas items against an Algebra block. The off-scope five are not a failure and not progress — they are extra work, grouped by (engine, section, domain).",
       "input": {
         "local_date": "2026-09-14",
         "today": "2026-09-14",
@@ -2158,7 +2158,7 @@
     {
       "id": "section-level-scope-matches-any-domain-in-its-section",
       "kind": "allocate",
-      "spec": "Doc 05F formula sheet \u00a71 (cold start / fallback section-level scope); \u00a79.2",
+      "spec": "Doc 05F formula sheet §1 (cold start / fallback section-level scope); §9.2",
       "why": "A cold-start block is scoped to a section, not a domain. Every Math item matches it and no Reading & Writing item does.",
       "input": {
         "local_date": "2026-09-14",
@@ -2326,7 +2326,7 @@
     {
       "id": "full-length-form-id-null-takes-any-exam",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a79.4 (`matches` = engine equality and (scope.form_id IS NULL or equal))",
+      "spec": "Doc 05F §9.4 (`matches` = engine equality and (scope.form_id IS NULL or equal))",
       "why": "Two exam blocks: one pinned to FORM-A, one left to Doc 04 rotation. The student sat FORM-B, so the pinned block gets nothing and the rotation block counts it.",
       "input": {
         "local_date": "2026-09-14",
@@ -2400,8 +2400,8 @@
     {
       "id": "an-active-launch-with-no-answers-is-in-progress",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 `status(b)`: in_progress if a launch exists whose lifecycle is active and actual = 0",
-      "why": "The student opened the session and has answered nothing yet. Both facts are passed in as data \u2014 the allocator never calls an engine.",
+      "spec": "Doc 05F §13 `status(b)`: in_progress if a launch exists whose lifecycle is active and actual = 0",
+      "why": "The student opened the session and has answered nothing yet. Both facts are passed in as data — the allocator never calls an engine.",
       "input": {
         "local_date": "2026-09-14",
         "today": "2026-09-14",
@@ -2453,7 +2453,7 @@
     {
       "id": "a-past-block-with-no-answers-is-missed",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 `status(b)`: missed if D < today and actual = 0",
+      "spec": "Doc 05F §13 `status(b)`: missed if D < today and actual = 0",
       "why": "`today` is a parameter. A pure function that read the clock would be a test that passes until midnight.",
       "input": {
         "local_date": "2026-09-13",
@@ -2501,7 +2501,7 @@
     {
       "id": "an-abandoned-launch-is-not-in-progress",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 `status(b)` (in_progress requires a NON-TERMINAL session); \u00a715.1 step 3",
+      "spec": "Doc 05F §13 `status(b)` (in_progress requires a NON-TERMINAL session); §15.1 step 3",
       "why": "A launch row alone is not progress. The session was abandoned, nothing was answered, and yesterday's block is missed.",
       "input": {
         "local_date": "2026-09-13",
@@ -2554,7 +2554,7 @@
     {
       "id": "units-are-consumed-in-occurred-at-order",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713: units 'sorted by (occurred_at, engine, unit_id)'",
+      "spec": "Doc 05F §13: units 'sorted by (occurred_at, engine, unit_id)'",
       "why": "Five Algebra items answered in a row against a two-question block. The two the block counts are the two answered FIRST. The unit ids here run backwards against the clock, so an implementation that sorted by unit_id would count a different pair.",
       "input": {
         "local_date": "2026-09-14",
@@ -2661,7 +2661,7 @@
     {
       "id": "a-repeated-identity-is-one-unit",
       "kind": "allocate",
-      "spec": "Doc 05F \u00a713 (identity is (engine, unit_id)); INV-08-21",
+      "spec": "Doc 05F §13 (identity is (engine, unit_id)); INV-08-21",
       "why": "The same item reported twice is one item. Counting it twice would inflate progress, which is the invariant the whole allocator exists to hold.",
       "input": {
         "local_date": "2026-09-14",
@@ -2746,7 +2746,7 @@
     {
       "id": "rest-day-with-activity-stays-a-rest-day",
       "kind": "range",
-      "spec": "Doc 05F \u00a714 (`day.status`); owner ruling B4 2026-09-17",
+      "spec": "Doc 05F §14 (`day.status`); owner ruling B4 2026-09-17",
       "why": "A student who studies on an off day has not turned it into a planned day. The day's extra-work list carries the activity and the status stays `rest`.",
       "input": {
         "today": "2026-09-14",
@@ -2854,7 +2854,7 @@
     {
       "id": "an-all-done-day-is-complete",
       "kind": "range",
-      "spec": "Doc 05F \u00a714 (`complete` \u2014 all blocks completed); \u00a717.5 'all-done'",
+      "spec": "Doc 05F §14 (`complete` — all blocks completed); §17.5 'all-done'",
       "why": "Every block satisfied. Nothing extra, nothing outstanding.",
       "input": {
         "today": "2026-09-14",
@@ -3078,7 +3078,7 @@
     {
       "id": "a-past-day-with-some-progress-is-partial-never-missed",
       "kind": "range",
-      "spec": "Doc 05F \u00a714; owner ruling B5 2026-09-17",
+      "spec": "Doc 05F §14; owner ruling B5 2026-09-17",
       "why": "Twelve of twenty answered yesterday. `partial` sits above `missed` in the precedence because a student who did twelve did not miss the day.",
       "input": {
         "today": "2026-09-14",
@@ -3263,7 +3263,7 @@
     {
       "id": "a-past-day-with-no-progress-is-missed",
       "kind": "range",
-      "spec": "Doc 05F \u00a714 (`missed` \u2014 past, none)",
+      "spec": "Doc 05F §14 (`missed` — past, none)",
       "why": "The complement of the case above, so the boundary between `partial` and `missed` is pinned from both sides.",
       "input": {
         "today": "2026-09-14",
@@ -3339,8 +3339,8 @@
     {
       "id": "a-cleared-past-study-day-is-a-rest-day",
       "kind": "range",
-      "spec": "Doc 05F \u00a714 (totality of the day-status ladder); \u00a712.4 (an empty member list clears a day)",
-      "why": "A study day the student cleared owns no blocks, so there is nothing to have missed. None of \u00a714's six rules names this day; `rest` is the honest label and this is the only way to reach it with `is_study_day` true.",
+      "spec": "Doc 05F §14 (totality of the day-status ladder); §12.4 (an empty member list clears a day)",
+      "why": "A study day the student cleared owns no blocks, so there is nothing to have missed. None of §14's six rules names this day; `rest` is the honest label and this is the only way to reach it with `is_study_day` true.",
       "input": {
         "today": "2026-09-14",
         "days": [
@@ -3385,7 +3385,7 @@
     {
       "id": "each-day-keeps-the-timezone-it-was-planned-in",
       "kind": "range",
-      "spec": "Doc 05F \u00a78.2 (every planned date carries the timezone in force when it was planned)",
+      "spec": "Doc 05F §8.2 (every planned date carries the timezone in force when it was planned)",
       "why": "The student moved from Los Angeles to New York. The older day keeps its own zone and the newer one carries the new zone. This module never reads a profile, so the only timezone it can report is the one the plan date carries.",
       "input": {
         "today": "2026-09-15",
@@ -3600,8 +3600,8 @@
     {
       "id": "a-session-across-midnight-splits-by-item-date",
       "kind": "range",
-      "spec": "Doc 05F \u00a722.4 (midnight, LA); \u00a78.2; \u00a713 (sort by occurred_at)",
-      "why": "One session: 8 items answered before local midnight, 12 after. Sunday counts 8 and Monday 12, by item `answered_at` in that day's own zone. Sunday's block asked for 5, so which 5 it counts is decided by the clock \u2014 Sunday's unit ids run backwards against time on purpose, so an implementation that sorted by unit_id would count a different five.",
+      "spec": "Doc 05F §22.4 (midnight, LA); §8.2; §13 (sort by occurred_at)",
+      "why": "One session: 8 items answered before local midnight, 12 after. Sunday counts 8 and Monday 12, by item `answered_at` in that day's own zone. Sunday's block asked for 5, so which 5 it counts is decided by the clock — Sunday's unit ids run backwards against time on purpose, so an implementation that sorted by unit_id would count a different five.",
       "input": {
         "today": "2026-09-14",
         "days": [
@@ -3928,8 +3928,8 @@
     {
       "id": "the-counter-worked-example",
       "kind": "range",
-      "spec": "Doc 05F \u00a722.3 (Counter); \u00a714 (facts, R-08-28)",
-      "why": "\u00a722.3 end to end: ALG 20 and CS 10 planned on a Tuesday. The student answers 12 Algebra, then 10 more from the practice page, then 15 Expression of Ideas. The Algebra block reaches 20/20 with 2 extra, the CS block is missed, and the facts read 37 questions and 17 extra.",
+      "spec": "Doc 05F §22.3 (Counter); §14 (facts, R-08-28)",
+      "why": "§22.3 end to end: ALG 20 and CS 10 planned on a Tuesday. The student answers 12 Algebra, then 10 more from the practice page, then 15 Expression of Ideas. The Algebra block reaches 20/20 with 2 extra, the CS block is missed, and the facts read 37 questions and 17 extra.",
       "input": {
         "today": "2026-09-15",
         "days": [
@@ -4379,8 +4379,8 @@
     {
       "id": "an-unplanned-exam-counts-as-a-full-length-and-not-as-extra-questions",
       "kind": "range",
-      "spec": "Doc 05F \u00a714 (facts: full-length tests completed; extra questions)",
-      "why": "An exam sat on a day with no exam block is a full-length completed. It is not an extra QUESTION \u2014 the two facts count different things and a test must not leak into the question tally.",
+      "spec": "Doc 05F §14 (facts: full-length tests completed; extra questions)",
+      "why": "An exam sat on a day with no exam block is a full-length completed. It is not an extra QUESTION — the two facts count different things and a test must not leak into the question tally.",
       "input": {
         "today": "2026-09-15",
         "days": [
@@ -4517,7 +4517,7 @@
     {
       "id": "activity-outside-the-requested-range-is-not-counted",
       "kind": "range",
-      "spec": "Doc 05F \u00a714 ('per range'); \u00a715 (`?from&to`)",
+      "spec": "Doc 05F §14 ('per range'); §15 (`?from&to`)",
       "why": "A unit dated outside the days asked for belongs to another window. Counting it would put activity from outside the range into the range's facts.",
       "input": {
         "today": "2026-09-15",
@@ -4664,6 +4664,366 @@
           "blocks_completed": 1,
           "blocks_partial": 0,
           "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 0,
+          "questions_completed": 5,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "work-ahead-counts-for-the-block-it-was-launched-from",
+      "kind": "range",
+      "spec": "Doc 05F §13 as amended by R-08-34 (owner ruling 2026-09-29); INV-08-21",
+      "why": "TWO BLOCKS WITH IDENTICAL SCOPE, and the link points at the SECOND. That is what makes this fixture discriminate: date-and-scope matching alone would hand all five units to the first block by display order, so the expectation below can only be produced by the linked pass running FIRST. A one-block version of this case passes with the linked pass deleted — the range still injects the units into the block's day and ordinary scope matching claims them — which is how a fixture agrees with a bug. A student ahead of schedule launched Wednesday's second block on Monday. It reads 5/5 on Wednesday; the first block reads 0/5; and Monday shows NO extra work. Before R-08-34 this input gave 0/5 on both and five extra questions on Monday.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 1,
+            "blocks": []
+          },
+          {
+            "local_date": "2026-09-16",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 1,
+            "blocks": [
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-16",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              },
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000002",
+                "scheduled_date": "2026-09-16",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 2,
+                "membership_type": "created"
+              }
+            ]
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": [],
+        "linked_sessions": [
+          {
+            "block_id": "aaaaaaaa-0000-4000-8000-000000000002",
+            "engine": "practice",
+            "engine_session_id": "sess-ahead"
+          }
+        ]
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "status": "today",
+            "planned_count": 0,
+            "actual_count": 0,
+            "extra_count": 0,
+            "blocks": [],
+            "extra_work": []
+          },
+          {
+            "local_date": "2026-09-16",
+            "timezone": "America/Los_Angeles",
+            "status": "partial",
+            "planned_count": 10,
+            "actual_count": 5,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000001",
+                "target": 5,
+                "actual": 0,
+                "status": "scheduled"
+              },
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000002",
+                "target": 5,
+                "actual": 5,
+                "status": "completed"
+              }
+            ],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 2,
+          "blocks_completed": 1,
+          "blocks_partial": 0,
+          "blocks_missed": 0,
+          "blocks_in_progress": 0,
+          "blocks_scheduled": 1,
+          "questions_completed": 5,
+          "full_lengths_completed": 0,
+          "extra_questions": 0
+        }
+      }
+    },
+    {
+      "id": "work-late-counts-for-the-block-it-was-launched-from",
+      "kind": "range",
+      "spec": "Doc 05F §13 as amended by R-08-34 (owner ruling 2026-09-29); INV-08-21",
+      "why": "TWO BLOCKS WITH IDENTICAL SCOPE, and the link points at the SECOND. That is what makes this fixture discriminate: date-and-scope matching alone would hand all five units to the first block by display order, so the expectation below can only be produced by the linked pass running FIRST. A one-block version of this case passes with the linked pass deleted — the range still injects the units into the block's day and ordinary scope matching claims them — which is how a fixture agrees with a bug. The mirror image: a student picking up the missed Friday launched its second block on Sunday. That block reads 5/5 and `completed` rather than `missed`, the unlaunched first block is still `missed`, and Sunday shows no extra work. Direction does not enter the rule — the link does.",
+      "input": {
+        "today": "2026-09-14",
+        "days": [
+          {
+            "local_date": "2026-09-12",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 1,
+            "blocks": [
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000001",
+                "scheduled_date": "2026-09-12",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 1,
+                "membership_type": "created"
+              },
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000002",
+                "scheduled_date": "2026-09-12",
+                "block_type": "practice",
+                "section": "M",
+                "scope": {
+                  "level": "domain",
+                  "mix": [
+                    {
+                      "domain": "Algebra",
+                      "count": 5,
+                      "explanation_key": "weak"
+                    }
+                  ]
+                },
+                "target_count": 5,
+                "source": "auto",
+                "derived_from_block_id": null,
+                "explanation_key": "weighted",
+                "display_ordinal": 2,
+                "membership_type": "created"
+              }
+            ]
+          },
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "is_user_override": false,
+            "is_study_day": true,
+            "version_no": 1,
+            "blocks": []
+          }
+        ],
+        "units": [
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-01",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:01:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-02",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:02:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-03",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:03:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-04",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:04:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          },
+          {
+            "engine": "practice",
+            "unit_id": "p-alg-05",
+            "session_id": "sess-ahead",
+            "occurred_at": "2026-09-14T17:05:00Z",
+            "local_date": "2026-09-14",
+            "section": "M",
+            "domain": "Algebra",
+            "form_id": null
+          }
+        ],
+        "launches": [],
+        "linked_sessions": [
+          {
+            "block_id": "aaaaaaaa-0000-4000-8000-000000000002",
+            "engine": "practice",
+            "engine_session_id": "sess-ahead"
+          }
+        ]
+      },
+      "expected": {
+        "days": [
+          {
+            "local_date": "2026-09-12",
+            "timezone": "America/Los_Angeles",
+            "status": "partial",
+            "planned_count": 10,
+            "actual_count": 5,
+            "extra_count": 0,
+            "blocks": [
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000001",
+                "target": 5,
+                "actual": 0,
+                "status": "missed"
+              },
+              {
+                "block_id": "aaaaaaaa-0000-4000-8000-000000000002",
+                "target": 5,
+                "actual": 5,
+                "status": "completed"
+              }
+            ],
+            "extra_work": []
+          },
+          {
+            "local_date": "2026-09-14",
+            "timezone": "America/Los_Angeles",
+            "status": "today",
+            "planned_count": 0,
+            "actual_count": 0,
+            "extra_count": 0,
+            "blocks": [],
+            "extra_work": []
+          }
+        ],
+        "facts": {
+          "blocks_total": 2,
+          "blocks_completed": 1,
+          "blocks_partial": 0,
+          "blocks_missed": 1,
           "blocks_in_progress": 0,
           "blocks_scheduled": 0,
           "questions_completed": 5,

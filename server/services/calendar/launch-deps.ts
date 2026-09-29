@@ -34,10 +34,12 @@
 import {
   engineOfBlock,
   err,
+  linkedSessionSchema,
   ok,
   planBlockSchema,
   type ActivityUnit,
   type CalendarEngine,
+  type LinkedSession,
   type PlanBlock,
   type Result,
 } from "@lyceon/shared";
@@ -320,6 +322,93 @@ async function linkLaunch(
 }
 
 /**
+ * Every launch row for the blocks on one day (R-08-34). The whole day's links, not just the
+ * block being launched: the allocator has to know that a unit belongs to a SIBLING block so it
+ * does not hand it to this one on a scope match.
+ */
+async function linkedSessions(
+  studentId: string,
+  blockIds: readonly string[],
+): Promise<LinkedSession[]> {
+  if (blockIds.length === 0) return [];
+
+  const { data, error } = await supabaseServer
+    .from("calendar_block_launches")
+    .select("block_id, engine, engine_session_id")
+    .eq("student_id", studentId)
+    .in("block_id", [...blockIds]);
+
+  if (error) {
+    // Fail OPEN, unlike `latestLaunch`. The two reads look alike and their postures are
+    // opposite on purpose: an unread MAXIMUM would let a second engine session be created
+    // under a key the first already used, which is unrecoverable, whereas unread LINKS only
+    // cost attribution — the block reads as it did before R-08-34 and the launch proceeds.
+    logger.error(
+      "CALENDAR_LAUNCH",
+      "linked_sessions_read_failed",
+      "the day's launch rows could not be read; work done on another day will not count",
+      { ...classifyError(error) },
+    );
+    return [];
+  }
+
+  const links: LinkedSession[] = [];
+  for (const row of data ?? []) {
+    const parsed = linkedSessionSchema.safeParse({
+      block_id: row.block_id,
+      engine: row.engine,
+      engine_session_id: row.engine_session_id,
+    });
+    if (parsed.success) links.push(parsed.data);
+  }
+  return links;
+}
+
+/**
+ * The units those sessions produced, whatever date they fell on — one call per engine that
+ * actually has a session in the list, never one per engine that exists.
+ */
+async function unitsForSessions(
+  studentId: string,
+  sessions: readonly LinkedSession[],
+  timeZone: string,
+): Promise<ActivityUnit[]> {
+  if (sessions.length === 0) return [];
+
+  const byEngine = new Map<CalendarEngine, string[]>();
+  for (const session of sessions) {
+    const bucket = byEngine.get(session.engine);
+    if (bucket === undefined) {
+      byEngine.set(session.engine, [session.engine_session_id]);
+      continue;
+    }
+    bucket.push(session.engine_session_id);
+  }
+
+  const settled = await Promise.allSettled(
+    [...byEngine].map(([engine, ids]) =>
+      adapterFor(engine).unitsForSessions(studentId, ids, timeZone),
+    ),
+  );
+
+  const units: ActivityUnit[] = [];
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      units.push(...result.value);
+      continue;
+    }
+    // Fail OPEN, per §5A and the adapters' own posture.
+    logger.error(
+      "CALENDAR_LAUNCH",
+      "linked_units_read_failed",
+      "an engine could not report the units for a linked session; that work will not count",
+      {},
+    );
+  }
+  return units;
+}
+
+/**
  * The live wiring. One object, exported once, so the launch route has nothing to assemble
  * and a test has one seam to replace.
  */
@@ -327,6 +416,8 @@ export const liveLaunchDeps: LaunchDeps = {
   loadBlockContext,
   activityUnits,
   latestLaunch,
+  linkedSessions,
+  unitsForSessions,
   linkLaunch,
   adapterFor,
 };
