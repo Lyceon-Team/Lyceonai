@@ -8,7 +8,6 @@ import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-sch
 
 const accountMocks = {
   revokeGuardianLink: vi.fn(),
-  isGuardianLinkedToStudent: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(),
   ensureAccountForUser: vi.fn(),
   // Step 6 (Q7). Both readers answer party-hood, which is what decides 404-versus-409.
@@ -154,24 +153,9 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
   };
 });
 
-vi.mock("../../server/middleware/guardian-entitlement", () => ({
-  requireGuardianEntitlement: (req: any, res: any, next: any) => {
-    if (req.headers["x-entitled"] === "false") {
-      return res
-        .status(402)
-        .json({ error: "Subscription required", code: "PAYMENT_REQUIRED" });
-    }
-    next();
-  },
-}));
-
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
   doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
   generateToken: () => "test-csrf-token",
-}));
-
-vi.mock("../../server/lib/durable-rate-limiter", () => ({
-  createDurableRateLimiter: () => (_req: any, _res: any, next: any) => next(),
 }));
 
 const kpiAccessMocks = {
@@ -339,7 +323,6 @@ describe("Guardian reporting runtime contract", () => {
     vi.clearAllMocks();
     systemEventInserts.length = 0;
     guardianAuditInserts.length = 0;
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getEntitlementForProfile.mockResolvedValue(null);
     entitlementMocks.isEntitlementActiveForProfile.mockResolvedValue(false);
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
@@ -606,7 +589,6 @@ describe("Guardian reporting runtime contract", () => {
   });
 
   it("fails closed on unlink conflict when link is no longer active, and writes no revoke audit row", async () => {
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     // A party with an ACTIVE link, so the route reaches `revokeGuardianLink` and the domain
     // conflict below is what produces the 409 — not the route's own party check.
     accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
@@ -658,7 +640,6 @@ describe("Guardian reporting runtime contract", () => {
    * is how the assertion would go vacuous instead of moving.
    */
   it("keeps valid unlink transition behavior and leaves the revoke audit row to the transaction", async () => {
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
     // `revokeGuardianLink` returns the revoked row now (§36.3 needs `revoked_at`,
     // `revoked_by_profile_id` and `revocation_reason` to be observable).

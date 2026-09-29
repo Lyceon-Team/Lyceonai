@@ -12,6 +12,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useGuardianStudents } from "./useGuardianStudents";
+import { makeLinkedStudent } from "../../../packages/shared/src/__fixtures__/linked-student";
 
 const csrfFetchMock = vi.fn();
 
@@ -44,27 +45,41 @@ function wrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-const STUDENT = {
-  id: "11111111-1111-4111-8111-111111111111",
-  email: "a@test.com",
-  display_name: "Ada",
-  created_at: "2026-03-20T12:00:00.000Z",
-  has_active_entitlement: false,
-  entitlement_lapsed: false,
-};
+// G1-10 (audit G-AUD-15e): built by the shared, schema-parsed factory, not typed out by hand.
+const STUDENT = makeLinkedStudent({ displayName: "Ada" });
 
 describe("useGuardianStudents", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("returns the parsed students on a well-formed response", async () => {
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ students: [STUDENT] }));
+  /**
+   * REWRITTEN (G1-10). This used to mock `{ students: [STUDENT] }` and assert the hook
+   * returned `[STUDENT]` — the mock's own value, which a hook that skipped the parse
+   * entirely would also return. Now the response is shaped like the route's real envelope
+   * (`res.json({ students, requestId })`, server/routes/guardian-routes.ts) with an internal
+   * column riding along, as it would if the route ever spread a wider row. The hook must
+   * hand back the CONTRACT shape and nothing else.
+   *
+   * MUTATION THAT REDS IT: replace the `safeParse` in useGuardianStudents with a cast
+   * (`return (await res.json()) as GuardianStudentsResponse`).
+   */
+  it("returns the contract shape: a column the contract does not name is dropped at the boundary", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        students: [{ ...STUDENT, mastery_score: 0.42 }],
+        requestId: "req-1",
+      }),
+    );
 
     const { result } = renderHook(() => useGuardianStudents(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.students).toEqual([STUDENT]);
+    expect(result.current.data?.students).toHaveLength(1);
+    expect(result.current.data?.students[0]).toEqual(STUDENT);
+    expect(result.current.data?.students[0]).not.toHaveProperty(
+      "mastery_score",
+    );
   });
 
   /**
