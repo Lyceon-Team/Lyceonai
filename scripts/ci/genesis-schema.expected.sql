@@ -8431,6 +8431,38 @@ $$;
 
 
 --
+-- Name: profiles_lock_date_of_birth(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_lock_date_of_birth() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.is_under_13 IS DISTINCT FROM OLD.is_under_13
+     AND NEW.date_of_birth IS NOT DISTINCT FROM OLD.date_of_birth THEN
+    RAISE EXCEPTION 'is_under_13 is derived from date_of_birth and cannot be written'
+      USING ERRCODE = 'LY007';
+  END IF;
+
+  IF OLD.profile_completed_at IS NOT NULL
+     AND NEW.date_of_birth IS DISTINCT FROM OLD.date_of_birth THEN
+    IF OLD.date_of_birth IS NULL THEN
+      RETURN NEW;                       -- (a) the one-time fill
+    END IF;
+    IF NEW.date_of_birth IS NULL AND OLD.deleted_at IS NOT NULL THEN
+      RETURN NEW;                       -- (b) account deletion (deidentify_user)
+    END IF;
+    RAISE EXCEPTION 'date of birth is locked after profile completion'
+      USING ERRCODE = 'LY007';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: rate_limit_check_and_increment(uuid, text, integer, timestamp with time zone, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -16687,6 +16719,13 @@ CREATE TRIGGER practice_runtime_config_notify AFTER INSERT OR UPDATE ON public.p
 
 
 --
+-- Name: profiles profiles_lock_date_of_birth; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_lock_date_of_birth BEFORE UPDATE OF date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_lock_date_of_birth();
+
+
+--
 -- Name: profiles profiles_set_age; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -20633,6 +20672,13 @@ REVOKE ALL ON FUNCTION public.prevent_score_runs_mutation() FROM PUBLIC;
 --
 
 GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
+
+
+--
+-- Name: FUNCTION profiles_lock_date_of_birth(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_lock_date_of_birth() FROM PUBLIC;
 
 
 --

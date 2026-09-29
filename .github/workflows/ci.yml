@@ -1224,6 +1224,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-role-fail-closed.json \
             --file tests/ci/role-fail-closed.pg.ci.test.ts
 
+      # @spec [Guardian_Closure_Plan G2-03; audit G-AUD-02; R10] | @implemented [2026-09-29]
+      # The date of birth is locked after profile completion on the route (409
+      # DATE_OF_BIRTH_LOCKED) and in the database (trigger profiles_lock_date_of_birth, LY007);
+      # is_under_13 is derived, never written; the guardian NULL fill works once; account
+      # deletion's deidentify_user still clears it. Real PG; behind the summary gate.
+      - name: Date of birth locked after completion → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/date-of-birth-lock.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-date-of-birth-lock.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-date-of-birth-lock.json \
+            --file tests/ci/date-of-birth-lock.pg.ci.test.ts
+
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the

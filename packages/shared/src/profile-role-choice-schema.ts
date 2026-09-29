@@ -45,6 +45,8 @@ export const ROLE_CHOICE_ERROR_CODES = [
   "GUARDIAN_DATE_OF_BIRTH_REQUIRED",
   /** The one-time date-of-birth fill was attempted on an account that already has one. */
   "DATE_OF_BIRTH_ALREADY_SET",
+  /** G2-03: the profile is complete, so its date of birth can no longer be changed. */
+  "DATE_OF_BIRTH_LOCKED",
 ] as const;
 
 export const roleChoiceErrorCodeSchema = z.enum(ROLE_CHOICE_ERROR_CODES);

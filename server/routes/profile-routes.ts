@@ -26,6 +26,7 @@ import {
   loadRoleChoiceFacts,
   NOT_SELF_ASSIGNABLE,
   supportMessage,
+  toIsoDate,
   type RoleChoiceFacts,
   type RoleChoiceRefusal,
 } from "../lib/role-choice";
@@ -296,7 +297,7 @@ router.patch("/", async (req: Request, res: Response) => {
       await supabase
         .from("profiles")
         .select(
-          "id, role, profile_completed_at, guardian_consent, guardian_email",
+          "id, role, profile_completed_at, guardian_consent, guardian_email, date_of_birth",
         )
         .eq("id", userId)
         .single();
@@ -358,7 +359,35 @@ router.patch("/", async (req: Request, res: Response) => {
 
     const data = validation.data;
 
-    if (data.role === "student" && !data.dateOfBirth) {
+    // G2-03 (R10): once the profile is complete its date of birth is fixed — for students and
+    // guardians alike. A different value is refused before anything is written; an omitted or
+    // identical one simply keeps the stored date. The one exception, a guardian filling a NULL
+    // date, is POST /date-of-birth below, not this route. The database enforces the same rule
+    // (trigger profiles_lock_date_of_birth), so no future writer can bypass it.
+    const dateOfBirthLocked = existingProfile.profile_completed_at !== null;
+    const storedDateOfBirth = toIsoDate(existingProfile.date_of_birth);
+    if (
+      dateOfBirthLocked &&
+      data.dateOfBirth &&
+      data.dateOfBirth !== storedDateOfBirth
+    ) {
+      logger.warn(
+        "PROFILE",
+        "date_of_birth_locked",
+        "Date of birth change refused after completion",
+        { requestId: req.requestId },
+      );
+      return sendRoleChoiceRefusal(res, {
+        status: 409,
+        code: "DATE_OF_BIRTH_LOCKED",
+        message: `Your date of birth can't be changed after your profile is complete. ${supportMessage(SUPPORT_EMAIL)}`,
+      });
+    }
+    const effectiveDateOfBirth = dateOfBirthLocked
+      ? storedDateOfBirth
+      : (data.dateOfBirth ?? null);
+
+    if (data.role === "student" && !effectiveDateOfBirth) {
       return res.status(400).json({
         error: "Date of birth is required for student accounts",
       });
@@ -367,7 +396,7 @@ router.patch("/", async (req: Request, res: Response) => {
     // R10: a guardian gives a date of birth through the same field as a student, and must
     // be an adult. Refused before anything is written.
     if (data.role === "guardian") {
-      const ageRefusal = guardianAgeRefusal(data.dateOfBirth, new Date());
+      const ageRefusal = guardianAgeRefusal(effectiveDateOfBirth, new Date());
       if (ageRefusal) {
         logger.warn(
           "PROFILE",
@@ -383,8 +412,8 @@ router.patch("/", async (req: Request, res: Response) => {
     }
 
     const isUnder13 =
-      data.role === "student" && data.dateOfBirth
-        ? calculateAge(data.dateOfBirth) < 13
+      data.role === "student" && effectiveDateOfBirth
+        ? calculateAge(effectiveDateOfBirth) < 13
         : false;
     const guardianEmail =
       data.guardianEmail ?? existingProfile.guardian_email ?? null;
@@ -473,9 +502,10 @@ router.patch("/", async (req: Request, res: Response) => {
       .update({
         display_name: data.displayName,
         role: roleDecision.role,
-        date_of_birth: data.dateOfBirth || null,
+        // G2-03: a locked date of birth is not written at all, and `is_under_13` is never
+        // written — the age trigger derives it from the date of birth.
+        ...(dateOfBirthLocked ? {} : { date_of_birth: effectiveDateOfBirth }),
         guardian_email: guardianEmail,
-        is_under_13: isUnder13,
         guardian_consent: guardianConsentRequired
           ? false
           : existingProfile.guardian_consent,
