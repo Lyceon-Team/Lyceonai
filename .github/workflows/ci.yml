@@ -2159,6 +2159,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/tutor-schema-proof-negative-control.sh
 
+      # @spec [Guardian_Closure_Plan G1-09; audit G-AUD-12] | @implemented [2026-09-29]
+      # The three tutor self-write policies name `authenticated`, never PUBLIC.
+      - name: Tutor self-write policies scoped to authenticated → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-policy-roles.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-policy-roles.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-policy-roles.json \
+            --file tests/ci/tutor-policy-roles.pg.ci.test.ts
+
   # ---------------------------------------------------------------------------
   # GCP Workload Identity Federation auth gate. Authenticates via WIF and runs
   # a single gcloud command to prove the credential works. This job carries

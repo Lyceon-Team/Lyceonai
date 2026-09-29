@@ -19155,7 +19155,7 @@ CREATE POLICY tutor_conversations_context_read ON public.tutor_conversations FOR
 -- Name: tutor_conversations tutor_conversations_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_conversations_insert_own ON public.tutor_conversations FOR INSERT WITH CHECK ((student_id = auth.uid()));
+CREATE POLICY tutor_conversations_insert_own ON public.tutor_conversations FOR INSERT TO authenticated WITH CHECK ((student_id = auth.uid()));
 
 
 --
@@ -19183,7 +19183,7 @@ CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR S
 -- Name: tutor_conversations tutor_conversations_update_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE USING ((student_id = auth.uid()));
+CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE TO authenticated USING ((student_id = auth.uid()));
 
 
 --
@@ -19380,7 +19380,7 @@ CREATE POLICY tutor_messages_context_read ON public.tutor_messages FOR SELECT TO
 -- Name: tutor_messages tutor_messages_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_messages_insert_own ON public.tutor_messages FOR INSERT WITH CHECK ((student_id = auth.uid()));
+CREATE POLICY tutor_messages_insert_own ON public.tutor_messages FOR INSERT TO authenticated WITH CHECK ((student_id = auth.uid()));
 
 
 --
