@@ -83,11 +83,14 @@ run_plant() {
   local label="$1" filter="$2"
   local log
   log="$(mktemp)"
-  if pnpm exec vitest run "$TEST_FILE" -t "$filter" >"$log" 2>&1; then
+  # NO_COLOR, and colour codes stripped anyway: in CI vitest colours its summary, which split
+  # "Tests  1 failed" with escape codes so the match below missed every plant that DID fire.
+  if NO_COLOR=1 FORCE_COLOR=0 pnpm exec vitest run "$TEST_FILE" -t "$filter" 2>&1 \
+    | sed -E 's/\x1b\[[0-9;]*m//g' >"$log"; test "${PIPESTATUS[0]}" -eq 0; then
     echo "  GREEN  [$label] PLANT DID NOT FIRE — the assertion does not test what it claims"
     sed -n '1,25p' "$log"
     FAILURES=$((FAILURES + 1))
-  elif grep -qE "Tests +[0-9]+ failed" "$log"; then
+  elif grep -qE "Tests +[0-9]+ failed|\([0-9]+ tests? \| [1-9][0-9]* failed" "$log"; then
     echo "  RED    [$label] $3"
     PASSES=$((PASSES + 1))
   else
