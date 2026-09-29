@@ -1,4 +1,4 @@
-import { Component, ErrorInfo, ReactNode, Suspense, lazy } from "react";
+import { Component, ReactNode, Suspense, lazy } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -355,22 +355,24 @@ function Router() {
   );
 }
 
-class ErrorBoundary extends Component<
+/**
+ * @spec [Coding Standards §12, §16; student UI vertical UI-10] | @implemented [2026-09-29]
+ * plain English: the app-wide render boundary. On a render error it shows fixed copy and a
+ * reload button. It never shows the raw `error.message` (which can carry server or
+ * developer text) and never writes to the console: the client has no structured logger,
+ * and the fallback screen itself is the surfaced failure, so nothing is swallowed.
+ */
+export class ErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean }
 > {
   constructor(props: { children: ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // eslint-disable-next-line no-console -- the client has no structured logger; lint-clean of a touched file (UI-04), behaviour unchanged.
-    console.error("App Error:", error, errorInfo);
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
   }
 
   render() {
@@ -382,7 +384,7 @@ class ErrorBoundary extends Component<
               Something went wrong
             </h1>
             <p className="text-neutral-600 mb-6">
-              {this.state.error?.message || "An unexpected error occurred"}
+              An unexpected error occurred. Reloading the page usually fixes it.
             </p>
             <button
               onClick={() => window.location.reload()}
