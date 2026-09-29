@@ -26,8 +26,18 @@
  *
  * edge cases: a block whose engine has not shipped fails OPEN — the adapter declines
  * as data and this returns `engine_unavailable`, which the route answers 409 with a
- * CTA rather than 500. Studying ahead is not a launch: a future date is view-only and
- * a past one routes to "Do it now" (§15.1 step 1).
+ * CTA rather than 500.
+ *
+ * ANY DATE LAUNCHES (R-08-34, owner ruling 2026-09-29). This service used to refuse every
+ * block whose `scheduled_date` was not the student's local today: past → "Do it now",
+ * future → view-only. That refusal is gone. The calendar is a plan, never a gate — a
+ * student who is ahead of schedule is succeeding, and a missed day they want to pick up is
+ * the behaviour to encourage. Every OTHER refusal stands unchanged: `already_complete`,
+ * an engine absent from `enabled_block_types`, and every adapter decline as data.
+ *
+ * "Do it now" is untouched and is still a different thing: it CREATES a new block on today
+ * from a missed one (§12.6). Working an existing block where it already sits is what this
+ * service now allows.
  */
 import {
   allocateDay,
@@ -36,6 +46,7 @@ import {
   ok,
   type ActivityUnit,
   type CalendarEngine,
+  type LinkedSession,
   type PlanBlock,
   type Result,
 } from "@lyceon/shared";
@@ -74,6 +85,26 @@ export type LaunchDeps = {
   ): Promise<ActivityUnit[]>;
   /** The highest `launch_sequence` for this block, or null when never launched. */
   latestLaunch(blockId: string): Promise<ExistingLaunch | null>;
+  /**
+   * Every launch row for the blocks on this day (R-08-34). The allocator needs the whole
+   * day's links, not just this block's: a unit linked to a SIBLING block must not be handed
+   * to this one by a scope match.
+   */
+  linkedSessions(
+    studentId: string,
+    blockIds: readonly string[],
+  ): Promise<LinkedSession[]>;
+  /**
+   * The units belonging to those sessions, whatever date they happened on. Separate from
+   * `activityUnits` because that one is keyed on a date and these deliberately are not —
+   * work done ahead of, or behind, the block's own day is exactly what this returns.
+   */
+  unitsForSessions(
+    studentId: string,
+    sessions: readonly LinkedSession[],
+    /** The owning plan date's zone (§8.2), so a linked unit is dated as the calendar would. */
+    timeZone: string,
+  ): Promise<ActivityUnit[]>;
   /** `calendar_link_launch`. Append-only, idempotent on (engine, engine_session_id). */
   linkLaunch(
     studentId: string,
@@ -106,12 +137,11 @@ export type LaunchSuccess = {
  */
 export type LaunchFailure =
   | { kind: "not_found" }
-  | {
-      kind: "not_today";
-      when: "past" | "future";
-      scheduled_date: string;
-      local_today: string;
-    }
+  // `not_today` is RETIRED (R-08-34). It was the §15.1 step 1 refusal for any date other
+  // than today; a block is now launchable on any date. Removed rather than left unreachable:
+  // a failure kind nothing can produce is a branch every reader has to rule out, and the
+  // route's own switch is exhaustive, so deleting it here is what makes tsc find the stale
+  // arm over there.
   | { kind: "already_complete"; target: number; actual: number }
   | { kind: "engine_unavailable"; engine: CalendarEngine }
   | {
@@ -156,18 +186,9 @@ export async function launchBlock(
   const engine = engineOfBlock(block.block_type);
   const adapter = deps.adapterFor(engine);
 
-  // 2. §15.1 step 1: only today launches. A past date routes to "Do it now"; a future
-  //    one is view-only. Studying ahead happens in the engines and shows up as today's
-  //    actual or extra work, which is why this is a refusal and not a redirect.
-  if (block.scheduled_date !== localToday) {
-    return err({
-      kind: "not_today",
-      when: block.scheduled_date < localToday ? "past" : "future",
-      scheduled_date: block.scheduled_date,
-      local_today: localToday,
-    });
-  }
-
+  // 2. §15.1 step 1 as amended by R-08-34: THERE IS NO DATE CHECK. A block launches on its
+  //    own date whatever today is. `localToday` is still needed below — the allocator takes
+  //    it to decide `missed` — but it no longer decides whether a launch may happen.
   // 3. §15.1 step 3: the latest launch, and whether its session is still live. A live
   //    session is handed back rather than joined by a second one.
   const latest = await deps.latestLaunch(block.block_id);
@@ -200,18 +221,34 @@ export async function launchBlock(
 
   // 4. §15.1 step 4: what is still outstanding, from the §13 allocator over the whole
   //    day. Not from the launch rows — a launch is not progress (§7.7).
-  const units = await deps.activityUnits(
+  const [units, linkedSessions] = await Promise.all([
+    deps.activityUnits(
+      request.student_id,
+      block.scheduled_date,
+      timezone,
+      enginesOf(dayBlocks),
+    ),
+    deps.linkedSessions(
+      request.student_id,
+      dayBlocks.map((b) => b.block_id),
+    ),
+  ]);
+  const linkedUnits = await deps.unitsForSessions(
     request.student_id,
-    block.scheduled_date,
+    linkedSessions,
     timezone,
-    enginesOf(dayBlocks),
   );
   const allocation = allocateDay({
     local_date: block.scheduled_date,
     today: localToday,
     blocks: dayBlocks,
-    units,
+    // The day's units PLUS the work already done against this block from ANOTHER day
+    // (R-08-34). Without the second part a block worked ahead would still read 0/target, so
+    // pressing Start again would open a second session for work already finished — the
+    // `already_complete` refusal below is what needs them.
+    units: [...units, ...linkedUnits],
     launches: [],
+    linked_sessions: linkedSessions,
   });
   const allocated = allocation.blocks.find(
     (b) => b.block_id === block.block_id,
