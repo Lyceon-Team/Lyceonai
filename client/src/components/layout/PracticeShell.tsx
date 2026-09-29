@@ -42,8 +42,6 @@ export function PracticeShell({
   const progressPercent = totalQuestions
     ? ((currentIndex + 1) / totalQuestions) * 100
     : 0;
-  const accuracyPercent =
-    score.total > 0 ? Math.round((score.correct / score.total) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -70,15 +68,20 @@ export function PracticeShell({
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              {/*
+                @spec [SCL-186 (strikes Doc 05 Parent §12.2 "your recency-weighted
+                accuracy is Y%"); owner ruling 6, 2026-09-29; Doc 05 AC#20] |
+                @implemented [2026-09-29] | plain English: this pill used to show the
+                session's accuracy ("75%") and correct-over-total ("3/4"), both raw
+                accuracy figures. It now shows only how many questions the student has
+                answered this session, a count of their own activity. Practice and review
+                runners both render through this shell, so both lose the figure.
+              */}
               <div className="flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5">
                 <Target className="h-3.5 w-3.5 text-foreground/80" />
                 <span className="text-xs font-semibold text-foreground">
-                  {accuracyPercent}%
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  {score.correct}/{score.total}
-                </span>
-              </div>
+                  {score.total} answered
+                </span>              </div>
 
               <div className="flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1.5">
                 <Flame className="h-3.5 w-3.5 text-foreground/80" />
