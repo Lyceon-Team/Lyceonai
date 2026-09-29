@@ -16,11 +16,15 @@
  * introduces is that removing a link broke the page around it.
  *
  * edge cases:
- *  - U1 and U2 strip comments before asserting absence. `client/src/lib/legal.ts`
- *    deliberately records what was deleted and why — "View PDF", `pdfPath`, the
+ *  - U1 and U2 strip comments before asserting absence. Legal modules
+ *    deliberately record what was deleted and why — "View PDF", `pdfPath`, the
  *    December 2024 drift — and an absence test that read comments would force
  *    the file to delete the explanation of the defect in order to go green.
  *    (The same trap as `shared/seo/public-meta.ts` and Phase 2's T5.)
+ *  - UI-06 (2026-09-29) deleted `client/src/lib/legal.ts`, the old client
+ *    registry, which had no importer left. The surviving client legal module is
+ *    `client/src/lib/legal-content.ts` (the loader the hub and document page
+ *    import), so U1 and U2 read that instead. Phase 2's T5 pins the deletion.
  *  - U3 expects all NINE to publish. `billing-terms` was the corpus's one
  *    `current: null` slug and was published on 2026-09-15; the branch that
  *    special-cased it is gone, which makes this assertion strictly stronger
@@ -76,7 +80,7 @@ describe("U1 — no deleted PDF filename is referenced anywhere", () => {
     // to a document that does not exist — which is what the cross-reference
     // gate exists to catch for markdown. This is its counterpart for binaries.
     const searched = [
-      "client/src/lib/legal.ts",
+      "client/src/lib/legal-content.ts",
       "client/src/pages/legal.tsx",
       "client/src/pages/legal-doc.tsx",
       "client/src/index.css",
@@ -102,9 +106,9 @@ describe("U1 — no deleted PDF filename is referenced anywhere", () => {
 describe("U2 — no legal page renders a PDF affordance", () => {
   const hub = readSource("client/src/pages/legal.tsx");
   const docPage = readSource("client/src/pages/legal-doc.tsx");
-  const registry = readSource("client/src/lib/legal.ts");
+  const registry = readSource("client/src/lib/legal-content.ts");
 
-  it("carries no `pdfPath` in the registry — not the field, not a value", () => {
+  it("carries no `pdfPath` in the legal loader — not the field, not a value", () => {
     expect(registry).not.toMatch(/pdfPath/);
   });
 

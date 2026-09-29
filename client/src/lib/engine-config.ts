@@ -38,17 +38,17 @@
  *     quota or paywall branch to switch off: `CanonicalPracticePage.tsx` and
  *     `useCanonicalPractice.ts` have zero occurrences of quota, paywall, upgrade or a
  *     402 branch. Practice's quota card lives on its LANDING (`practice.tsx:678-680`,
- *     fed by `usePractice.ts:292-294`), which review does not share. The loop's only
+ *     fed by `usePractice.ts:103-105`), which review does not share. The loop's only
  *     403 branch is `SESSION_LIMIT_EXCEEDED`, the concurrent-session cap, which R3 has
  *     too (`review-canonical.ts`) and which must therefore stay on for both. A switch
  *     guarding nothing would be a lie the next reader has to disprove.
- *   - `domain` feeds `parseRuntimeContractDisabledFromPayload`, which refuses a code
- *     belonging to another domain (`runtime-contract-disable.ts:47`). Getting this
- *     wrong would silently swallow a disable notice, so it is part of the config
- *     rather than a literal in the hook.
+ *   - `domain` names the engine: it keys the hook's in-flight session lock and picks
+ *     the tutor's source surface. It used to also feed the client's runtime-contract
+ *     disable parser; UI-06 (2026-09-29) deleted that parser, because no server route
+ *     emits a runtime-contract disable code, so `EngineDomain` is now this
+ *     file's own two-member type rather than the parser's three-member one.
  */
 
-import type { RuntimeContractDomain } from "@/lib/runtime-contract-disable";
 import type {
   ReviewFilterSpec,
   ReviewSessionMode,
@@ -81,9 +81,12 @@ export type EngineCreateBodyInput = {
   };
 };
 
+/** The engines the question loop serves. */
+export type EngineDomain = "practice" | "review";
+
 export type EngineConfig = {
-  /** Stable identifier; also the runtime-contract domain token. */
-  domain: RuntimeContractDomain;
+  /** Stable identifier: keys the in-flight session lock and the tutor surface. */
+  domain: EngineDomain;
   endpoints: {
     create: () => string;
     resume: (sessionId: string) => string;

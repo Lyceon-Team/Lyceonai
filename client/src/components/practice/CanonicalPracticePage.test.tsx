@@ -122,8 +122,21 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
 }));
 
 vi.mock("@/components/math/DesmosCalculator", () => ({
-  default: ({ expanded }: { expanded: boolean }) => (
-    <div data-testid="desmos-mock">{expanded ? "expanded" : "collapsed"}</div>
+  default: ({
+    expanded,
+    onStateChange,
+  }: {
+    expanded: boolean;
+    onStateChange?: (state: unknown) => void;
+  }) => (
+    <div data-testid="desmos-mock">
+      {expanded ? "expanded" : "collapsed"}
+      <button
+        type="button"
+        data-testid="desmos-emit-state"
+        onClick={() => onStateChange?.({ expressions: [] })}
+      />
+    </div>
   ),
 }));
 
@@ -403,6 +416,53 @@ describe("CanonicalPracticePage calculator UX", () => {
     const panelGroup = container.querySelector("[data-panel-group-id]");
     expect(panelGroup).toBeNull();
     expect(screen.getByTestId("desmos-mock").textContent).toContain("expanded");
+  });
+
+  /**
+   * @spec [Coding Standards §12.1, §13; register UI-10] | @implemented [2026-09-29]
+   * plain English: a failed calculator-state save used to be reported only through
+   * `console.error`. It is now surfaced to the student as a notice, with nothing
+   * logged; the next successful save clears the notice.
+   */
+  it("surfaces a failed calculator save as a notice and logs nothing", async () => {
+    const persist = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("save failed (500)"))
+      .mockResolvedValueOnce({ expressions: [] });
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", { persistCalculatorState: persist }),
+    );
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="M"
+      />,
+    );
+
+    expect(screen.queryByTestId("practice-calculator-save-failed")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("desmos-emit-state"));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("practice-calculator-save-failed").textContent,
+      ).toContain("could not be saved");
+    });
+    expect(persist).toHaveBeenCalledWith({ expressions: [] });
+    expect(consoleError).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("desmos-emit-state"));
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("practice-calculator-save-failed"),
+      ).toBeNull();
+    });
+
+    consoleError.mockRestore();
   });
 });
 
