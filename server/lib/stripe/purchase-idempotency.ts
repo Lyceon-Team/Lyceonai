@@ -1,5 +1,11 @@
 /**
- * Deterministic idempotency keys for the two Stripe calls that create a charge.
+ * The deterministic idempotency key for the one Stripe call that creates a charge.
+ *
+ * @revised [2026-09-29 — owner ruling: one subscription per student] There used
+ *          to be two keys here, the second for `subscriptionItems.create`. That
+ *          call is gone: adding an item took no money at the moment of purchase,
+ *          so every guardian purchase is now a Checkout Session and
+ *          `checkoutIdempotencyKey` is the only key needed.
  *
  * @spec [Doc 01 V8 §20 "Who pays"; Coding Standards §4.2 mutations are
  *        idempotent] | @implemented [2026-09-02]
@@ -78,32 +84,6 @@ export function checkoutIdempotencyKey(input: {
   readonly nowMs: number;
 }): string {
   return `lyceon:checkout:${input.subjectProfileId}:${input.priceId}:${windowIndex(input.nowMs)}`;
-}
-
-/**
- * The key for `subscriptionItems.create`.
- *
- * `lyceon:subitem:{subject}:{subscription}:{price}:{window}`
- *
- * PRICE IS INCLUDED, which the brief's shape omitted. The rule the brief itself
- * sets — every parameter that can differ between two legitimate attempts must
- * be in the key, or the second attempt hard-fails instead of succeeding —
- * applies to `price` here exactly as it does at Checkout: a guardian who
- * changes plan for the same student on the same subscription inside the window
- * would otherwise reuse the key with a different `price` and get
- * `StripeIdempotencyError` instead of the item they asked for. Same reason,
- * same fix, so the two keys are consistent.
- *
- * `subscription` is in the key because the same student on a DIFFERENT
- * subscription is a different purchase.
- */
-export function subscriptionItemIdempotencyKey(input: {
-  readonly subjectProfileId: string;
-  readonly subscriptionId: string;
-  readonly priceId: string;
-  readonly nowMs: number;
-}): string {
-  return `lyceon:subitem:${input.subjectProfileId}:${input.subscriptionId}:${input.priceId}:${windowIndex(input.nowMs)}`;
 }
 
 /**

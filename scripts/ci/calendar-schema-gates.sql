@@ -244,6 +244,15 @@ DECLARE
     -- which is why it sits with the route constants and not with the formula
     -- constants the parity gate cross-checks against the oracle.
     'default_full_length_interval_weeks',
+    -- Doc 05F §8.1 / formula sheet §4, seeded by 20261013000000. The other half
+    -- of the same surface default: the weekday the setup form's practice-test-day
+    -- row opens on. It sits here with the route constants for the same reason —
+    -- the generator reads student_study_profile.full_length_weekday and never
+    -- this key. It differs from its neighbour in one way worth knowing: the
+    -- oracle carries it in C, so the PARITY gate does cross-check its value
+    -- against the oracle's 6, where `default_full_length_interval_weeks` is
+    -- checked by nothing but this list.
+    'default_full_length_weekday',
     -- Doc 05F §10.2. Not a tunable: the formula naming its own revision, seeded
     -- beside the formula so a stored plan version traces to the exact SQL that
     -- made it. C-09 below asserts it names a migration timestamp.
@@ -677,7 +686,7 @@ BEGIN
       ('calendar_link_launch', 1450, 'bbb60d44b09a40a2e060493dbe269135'),
       ('calendar_move_block', 5729, '4f4c193a69a720f1d7baa99d3282cd68'),
       ('calendar_persist_version', 7859, '2f82a6df74c322536f09fd47d99ffbc6'),
-      ('calendar_place_full_lengths', 5853, '1471ad5917a072b332b481dcd531d5ed'),
+      ('calendar_place_full_lengths', 7497, 'e8056c8f64b4c5e94d061603c3946b6e'),
       ('calendar_plan_to_output', 729, 'aa6f7e9f331a5f9dfac05f855ac7f84d'),
       ('calendar_regenerate_day', 7306, '6875bfde324a4b153899cd2d61696ae1'),
       ('calendar_regenerate_day_only', 199, '5d0b0a15caca7ea867cda145a35f2fec'),

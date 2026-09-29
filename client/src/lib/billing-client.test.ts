@@ -1,16 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getBillingPlans, openBillingPortal, startSubscriptionCheckout } from './billing-client';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  getBillingPlans,
+  openBillingPortal,
+  startSubscriptionCheckout,
+} from "./billing-client";
 
 const csrfFetchMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@/lib/csrf', () => ({
+vi.mock("@/lib/csrf", () => ({
   csrfFetch: (...args: unknown[]) => csrfFetchMock(...args),
 }));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -21,112 +25,139 @@ function bodyOf(call: unknown[]): unknown {
   return init?.body ? JSON.parse(init.body) : undefined;
 }
 
-describe('billing-client', () => {
+describe("billing-client", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // This suite runs in the node environment, where `window` is undefined and
     // the helper's `typeof window !== 'undefined'` guard would skip the redirect
     // silently. Stubbing a window makes the redirect half of each outcome
     // observable, so "did not navigate" is an assertion rather than an accident.
-    vi.stubGlobal('window', { location: { assign: assignMock } });
+    vi.stubGlobal("window", { location: { assign: assignMock } });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('calls checkout endpoint, returns the session outcome, and redirects to Stripe', async () => {
+  it("calls checkout endpoint, returns the session outcome, and redirects to Stripe", async () => {
     csrfFetchMock.mockResolvedValueOnce(
       jsonResponse(
         {
-          kind: 'checkout_session',
-          url: 'https://stripe.example/checkout',
-          sessionId: 'cs_test_1',
-          requestId: 'req-1',
+          kind: "checkout_session",
+          url: "https://stripe.example/checkout",
+          sessionId: "cs_test_1",
+          requestId: "req-1",
         },
         200,
       ),
     );
 
-    const outcome = await startSubscriptionCheckout('monthly');
+    const outcome = await startSubscriptionCheckout("monthly");
 
-    expect(csrfFetchMock).toHaveBeenCalledWith('/api/billing/checkout', expect.objectContaining({
-      method: 'POST',
-      credentials: 'include',
-    }));
+    expect(csrfFetchMock).toHaveBeenCalledWith(
+      "/api/billing/checkout",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
     // The contract, not an incidental string: `requestId` is stripped.
     expect(outcome).toEqual({
-      kind: 'checkout_session',
-      url: 'https://stripe.example/checkout',
-      sessionId: 'cs_test_1',
+      kind: "checkout_session",
+      url: "https://stripe.example/checkout",
+      sessionId: "cs_test_1",
     });
-    expect(assignMock).toHaveBeenCalledWith('https://stripe.example/checkout');
+    expect(assignMock).toHaveBeenCalledWith("https://stripe.example/checkout");
   });
 
   /**
-   * ROW 20 REGRESSION. The guardian add-item branch returns no `url`. The
-   * previous client read `payload.url` unconditionally and threw "Billing
-   * response did not include a redirect URL" here — reporting failure for a
-   * purchase that had already charged the card.
+   * THE DELETED ADD-ITEM OUTCOME MUST NOT BE ACCEPTED. It used to be the
+   * guardian's second-purchase response: `{kind:"item_added"}` with no `url`,
+   * settled server-side with no redirect — and with no charge at purchase time,
+   * which is why the path is gone (owner ruling 2026-09-29).
+   *
+   * The client refuses it rather than treating it as a silent success. If a
+   * deploy skew ever serves it, the guardian is told the response was not
+   * understood instead of being shown a purchase that took no money.
    */
-  it('accepts the add-item outcome without a url, and does NOT redirect', async () => {
+  it("REFUSES the deleted add-item outcome, and does NOT redirect", async () => {
     csrfFetchMock.mockResolvedValueOnce(
       jsonResponse(
-        { kind: 'item_added', subscriptionItemId: 'si_second_child', requestId: 'req-2' },
+        {
+          kind: "item_added",
+          subscriptionItemId: "si_second_child",
+          requestId: "req-2",
+        },
         200,
       ),
     );
 
-    const outcome = await startSubscriptionCheckout('monthly', {
-      studentProfileId: '22222222-2222-4222-8222-222222222222',
-    });
+    await expect(
+      startSubscriptionCheckout("monthly", {
+        studentProfileId: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).rejects.toThrow(/did not match the checkout contract/i);
 
-    expect(outcome).toEqual({ kind: 'item_added', subscriptionItemId: 'si_second_child' });
-    // The state half: a completed server-side purchase must not navigate away.
     expect(assignMock).not.toHaveBeenCalled();
   });
 
   it("sends the guardian's selected student as student_profile_id", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ kind: 'item_added', subscriptionItemId: 'si_1' }, 200),
+      jsonResponse(
+        {
+          kind: "checkout_session",
+          url: "https://stripe.example/checkout",
+          sessionId: "cs_test_2",
+        },
+        200,
+      ),
     );
 
-    await startSubscriptionCheckout('yearly', {
-      studentProfileId: '33333333-3333-4333-8333-333333333333',
+    await startSubscriptionCheckout("yearly", {
+      studentProfileId: "33333333-3333-4333-8333-333333333333",
     });
 
     expect(bodyOf(csrfFetchMock.mock.calls[0])).toEqual({
-      plan: 'yearly',
-      student_profile_id: '33333333-3333-4333-8333-333333333333',
+      plan: "yearly",
+      student_profile_id: "33333333-3333-4333-8333-333333333333",
     });
   });
 
-  it('omits student_profile_id entirely when no student is selected', async () => {
+  it("omits student_profile_id entirely when no student is selected", async () => {
     csrfFetchMock.mockResolvedValueOnce(
-      jsonResponse({ kind: 'checkout_session', url: 'https://stripe.example/c', sessionId: 'cs_1' }, 200),
+      jsonResponse(
+        {
+          kind: "checkout_session",
+          url: "https://stripe.example/c",
+          sessionId: "cs_1",
+        },
+        200,
+      ),
     );
 
-    await startSubscriptionCheckout('monthly');
+    await startSubscriptionCheckout("monthly");
 
-    expect(bodyOf(csrfFetchMock.mock.calls[0])).toEqual({ plan: 'monthly' });
+    expect(bodyOf(csrfFetchMock.mock.calls[0])).toEqual({ plan: "monthly" });
   });
 
-  it('refuses a checkout response that matches neither branch of the contract', async () => {
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ url: 'https://stripe.example/checkout' }, 200));
+  it("refuses a checkout response that matches neither branch of the contract", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse({ url: "https://stripe.example/checkout" }, 200),
+    );
 
-    await expect(startSubscriptionCheckout('monthly')).rejects.toThrow(
-      'Billing response did not match the checkout contract',
+    await expect(startSubscriptionCheckout("monthly")).rejects.toThrow(
+      "Billing response did not match the checkout contract",
     );
     expect(assignMock).not.toHaveBeenCalled();
   });
 
-  it('surfaces the server message for a guardian refusal rather than a generic one', async () => {
+  it("surfaces the server message for a guardian refusal rather than a generic one", async () => {
     csrfFetchMock.mockResolvedValueOnce(
       jsonResponse(
         {
           error: {
-            message: 'This student is already covered by your subscription.',
-            code: 'STUDENT_ALREADY_FUNDED',
+            message: "This student is already covered by your subscription.",
+            code: "STUDENT_ALREADY_FUNDED",
           },
         },
         409,
@@ -134,27 +165,38 @@ describe('billing-client', () => {
     );
 
     await expect(
-      startSubscriptionCheckout('monthly', { studentProfileId: '44444444-4444-4444-8444-444444444444' }),
-    ).rejects.toThrow('This student is already covered by your subscription.');
+      startSubscriptionCheckout("monthly", {
+        studentProfileId: "44444444-4444-4444-8444-444444444444",
+      }),
+    ).rejects.toThrow("This student is already covered by your subscription.");
   });
 
-  it('throws a safe error when checkout fails', async () => {
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ error: 'Failed to create checkout session' }, 400));
+  it("throws a safe error when checkout fails", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: "Failed to create checkout session" }, 400),
+    );
 
-    await expect(startSubscriptionCheckout('monthly')).rejects.toThrow('Failed to create checkout session');
+    await expect(startSubscriptionCheckout("monthly")).rejects.toThrow(
+      "Failed to create checkout session",
+    );
   });
 
-  it('calls billing portal endpoint and returns portal URL', async () => {
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ url: 'https://stripe.example/portal' }, 200));
+  it("calls billing portal endpoint and returns portal URL", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse({ url: "https://stripe.example/portal" }, 200),
+    );
 
     const url = await openBillingPortal();
 
-    expect(csrfFetchMock).toHaveBeenCalledWith('/api/billing/portal', expect.objectContaining({
-      method: 'POST',
-      credentials: 'include',
-    }));
-    expect(url).toBe('https://stripe.example/portal');
-    expect(assignMock).toHaveBeenCalledWith('https://stripe.example/portal');
+    expect(csrfFetchMock).toHaveBeenCalledWith(
+      "/api/billing/portal",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
+    expect(url).toBe("https://stripe.example/portal");
+    expect(assignMock).toHaveBeenCalledWith("https://stripe.example/portal");
   });
 
   /**
@@ -162,64 +204,121 @@ describe('billing-client', () => {
    * narrowed with a cast, so a body with no usable `url` reached
    * `window.location.assign` as `undefined`.
    */
-  it('refuses a portal response with no url, and does NOT redirect', async () => {
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ requestId: 'req-9' }, 200));
+  it("refuses a portal response with no url, and does NOT redirect", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse({ requestId: "req-9" }, 200),
+    );
 
     await expect(openBillingPortal()).rejects.toThrow(
-      'Billing response did not include a redirect URL',
+      "Billing response did not include a redirect URL",
     );
     expect(assignMock).not.toHaveBeenCalled();
   });
 
-  it('refuses a portal url that is not a URL at all', async () => {
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({ url: 'not-a-url' }, 200));
+  it("refuses a portal url that is not a URL at all", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse({ url: "not-a-url" }, 200),
+    );
 
     await expect(openBillingPortal()).rejects.toThrow(
-      'Billing response did not include a redirect URL',
+      "Billing response did not include a redirect URL",
     );
     expect(assignMock).not.toHaveBeenCalled();
   });
 
-  it('refuses a portal url of the wrong type rather than assigning it', async () => {
+  it("refuses a portal url of the wrong type rather than assigning it", async () => {
     csrfFetchMock.mockResolvedValueOnce(jsonResponse({ url: 12345 }, 200));
 
     await expect(openBillingPortal()).rejects.toThrow(
-      'Billing response did not include a redirect URL',
+      "Billing response did not include a redirect URL",
     );
     expect(assignMock).not.toHaveBeenCalled();
   });
 
-  it('loads canonical billing plan metadata', async () => {
+  it("loads canonical billing plan metadata", async () => {
     // FIXTURE CORRECTED, NOT THE PARSE RELAXED. This row omitted `interval` and
     // `intervalCount` because the interface it was written against omitted them
     // too — and that interface had drifted from the route. `getBillingPlans` now
     // parses against the shared schema, so an incomplete row is refused here
     // instead of reaching a renderer typed to believe it was complete.
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({
-      plans: [
-        { plan: 'monthly', amountCents: 5999, currency: 'usd', intervalLabel: 'per month', interval: 'month', intervalCount: 1, label: 'Monthly', stripePriceIdConfigured: true },
-        { plan: 'quarterly', amountCents: 14999, currency: 'usd', intervalLabel: 'per 3 months', interval: 'month', intervalCount: 3, label: 'Quarterly', stripePriceIdConfigured: true },
-        { plan: 'yearly', amountCents: 59988, currency: 'usd', intervalLabel: 'per year', interval: 'year', intervalCount: 1, label: 'Yearly', stripePriceIdConfigured: true },
-      ],
-    }, 200));
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          plans: [
+            {
+              plan: "monthly",
+              amountCents: 5999,
+              currency: "usd",
+              intervalLabel: "per month",
+              interval: "month",
+              intervalCount: 1,
+              label: "Monthly",
+              stripePriceIdConfigured: true,
+            },
+            {
+              plan: "quarterly",
+              amountCents: 14999,
+              currency: "usd",
+              intervalLabel: "per 3 months",
+              interval: "month",
+              intervalCount: 3,
+              label: "Quarterly",
+              stripePriceIdConfigured: true,
+            },
+            {
+              plan: "yearly",
+              amountCents: 59988,
+              currency: "usd",
+              intervalLabel: "per year",
+              interval: "year",
+              intervalCount: 1,
+              label: "Yearly",
+              stripePriceIdConfigured: true,
+            },
+          ],
+        },
+        200,
+      ),
+    );
 
     const plans = await getBillingPlans();
 
-    expect(csrfFetchMock).toHaveBeenCalledWith('/api/billing/plans', expect.objectContaining({
-      credentials: 'include',
-    }));
+    expect(csrfFetchMock).toHaveBeenCalledWith(
+      "/api/billing/plans",
+      expect.objectContaining({
+        credentials: "include",
+      }),
+    );
     expect(plans).toHaveLength(3);
-    expect(plans.map((plan) => plan.plan)).toEqual(['monthly', 'quarterly', 'yearly']);
+    expect(plans.map((plan) => plan.plan)).toEqual([
+      "monthly",
+      "quarterly",
+      "yearly",
+    ]);
   });
 
-  it('carries an unconfigured plan through as nulls rather than dropping it', async () => {
+  it("carries an unconfigured plan through as nulls rather than dropping it", async () => {
     // The card still renders — without a price. Refusing the row would lose the
     // plan entirely; inventing an amount is the defect this whole change removes.
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({
-      plans: [
-        { plan: 'monthly', amountCents: null, currency: null, intervalLabel: null, interval: null, intervalCount: null, label: 'Monthly', stripePriceIdConfigured: false },
-      ],
-    }, 200));
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          plans: [
+            {
+              plan: "monthly",
+              amountCents: null,
+              currency: null,
+              intervalLabel: null,
+              interval: null,
+              intervalCount: null,
+              label: "Monthly",
+              stripePriceIdConfigured: false,
+            },
+          ],
+        },
+        200,
+      ),
+    );
 
     const plans = await getBillingPlans();
 
@@ -228,16 +327,21 @@ describe('billing-client', () => {
     expect(plans[0]?.stripePriceIdConfigured).toBe(false);
   });
 
-  it('refuses a plans payload that does not match the contract', async () => {
+  it("refuses a plans payload that does not match the contract", async () => {
     // `Array.isArray(payload.plans)` used to be the whole check: it proved the
     // container was an array and nothing about its contents, so a row missing
     // its interval arrived typed as complete.
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse({
-      plans: [{ plan: 'monthly', label: 'Monthly' }],
-    }, 200));
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          plans: [{ plan: "monthly", label: "Monthly" }],
+        },
+        200,
+      ),
+    );
 
     await expect(getBillingPlans()).rejects.toThrow(
-      'Billing plans response did not match the contract',
+      "Billing plans response did not match the contract",
     );
   });
 });

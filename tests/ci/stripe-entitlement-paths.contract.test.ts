@@ -159,7 +159,11 @@ describe("entitlement path matrix (§9)", () => {
     // Guards the guard: if the surface ever shrinks to nothing this test would
     // pass vacuously.
     expect(ALL_SUBSCRIBED_EVENTS.length).toBeGreaterThan(0);
-    expect(ENTITLEMENT_PATHS.length).toBe(ALL_SUBSCRIBED_EVENTS.length + 1);
+    // One row per subscribed event, and NO extra. The `+ 1` that used to be
+    // here was the guardian add-item route row, deleted with that path on
+    // 2026-09-29: the checkout route grants nothing directly any more, so the
+    // matrix is exactly the webhook surface.
+    expect(ENTITLEMENT_PATHS.length).toBe(ALL_SUBSCRIBED_EVENTS.length);
   });
 
   it("every matrix trigger is a subscribed event or the named route", () => {

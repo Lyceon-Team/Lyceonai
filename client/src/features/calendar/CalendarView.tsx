@@ -89,7 +89,7 @@ import { CreateBlockSheet } from "./components/CreateBlockSheet";
 import { DayStrip } from "./components/DayStrip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { DayActions } from "./components/DayMenu";
-import { SetupPopup } from "./components/SetupPopup";
+import { SetupPopup, type SetupAnswers } from "./components/SetupPopup";
 import {
   SettingsSheet,
   scheduleSummary,
@@ -129,7 +129,18 @@ export type CalendarViewProps = {
   /** Present only when the student has not set up. Never passed on the guardian surface. */
   setup?: {
     defaults: CalendarSetupDefaults;
-    onSubmit: (profile: Record<string, unknown>) => void;
+    /**
+     * `SetupAnswers` — the popup's OWN type, not `Record<string, unknown>`.
+     *
+     * The open record here is how the missing `idempotency_key` reached production. A
+     * handler taking a wider parameter satisfies a narrower slot, so `SetupPopup`'s
+     * `(answers: SetupAnswers) => void` passed straight into this prop and the shape was
+     * erased on the way up: the page received "some object" and forwarded it to a mutation
+     * that also took "some object". Three layers, each willing to carry anything, and
+     * nothing between the student's answers and the wire that knew what the endpoint
+     * requires. Naming the real type is what puts the compiler back in that gap.
+     */
+    onSubmit: (answers: SetupAnswers) => void;
     /** False for a free student — the last press shows the third panel, not a plan. */
     entitled: boolean;
     /** Dismiss saves nothing. It reopens next visit, because no profile exists yet. */

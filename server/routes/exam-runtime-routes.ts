@@ -46,6 +46,7 @@ import {
   type ExamFailure,
   type ExamResult,
 } from "../services/exam-runtime-service";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 import {
   examAnswerRequestSchema,
   examCreateSessionRequestSchema,
@@ -65,11 +66,27 @@ const router = Router();
 
 // ── Response helpers (§8.2) ─────────────────────────────────────────────────
 
+/**
+ * Every exam refusal, including its 400s — which is why the log line lives here rather than
+ * at each of the eleven `parseOr400` call sites.
+ *
+ * `failure.details` already carries `parsed.error.flatten()` on a validation refusal; it was
+ * put in the RESPONSE and never written down, so a 400 on this surface named its field to
+ * the browser and nothing to the operator. Shared with `calendar-routes`, which measured the
+ * cost of that: see `server/lib/validation-log.ts`.
+ */
 function sendFailure(
   res: Response,
   failure: ExamFailure,
   requestId: string | undefined,
 ): Response {
+  if (failure.status === 400) {
+    logRejectedRequest(COMPONENT, failure.details, {
+      code: failure.code,
+      requestId,
+      ...routeOf(res),
+    });
+  }
   return res.status(failure.status).json({
     error:
       failure.details === undefined

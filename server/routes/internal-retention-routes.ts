@@ -49,6 +49,7 @@ import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { validationFieldPaths } from "../lib/validation-log";
 import {
   oidcAuthMiddlewareWithConfigGuard,
   type OidcConfigReader,
@@ -117,7 +118,13 @@ router.post(
         "RETENTION_SWEEP",
         "sweep_invalid_payload",
         "Retention sweep payload failed validation",
-        { errors: parsed.error.flatten() },
+        // FIELD PATHS, NOT `flatten()`. `fieldErrors` holds Zod's MESSAGE strings, and a
+        // `z.enum` failure renders as "Invalid enum value. Expected 'a' | 'b', received
+        // 'xyz'" — the rejected value, verbatim, in the line. These payloads are
+        // system-generated and the surface is OIDC-authenticated, so this was hygiene
+        // rather than a student-data breach; it is still the one thing
+        // `validationFieldPaths` exists to make impossible.
+        { fields: validationFieldPaths(parsed.error.flatten()) },
       );
       res.status(400).json({
         error: {

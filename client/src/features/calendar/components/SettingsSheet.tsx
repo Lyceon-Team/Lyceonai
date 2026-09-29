@@ -44,7 +44,6 @@ import {
 } from "@lyceon/shared/calendar";
 import { addDays } from "../lib/dates";
 import {
-  DEFAULT_EXAM_WEEKDAY,
   EXAM_FREQUENCIES,
   examCadenceNote,
   WEEKDAYS,
@@ -405,7 +404,8 @@ export function SettingsSheet({
                 full_length_weekday:
                   value < 0
                     ? null
-                    : (draft.full_length_weekday ?? DEFAULT_EXAM_WEEKDAY),
+                    : (draft.full_length_weekday ??
+                      examPlanning.default_full_length_weekday),
               })
             }
           />

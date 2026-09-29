@@ -38,6 +38,7 @@ import type {
   LaunchResponse,
   PlanMember,
   ProfileUpsertResponse,
+  StudyProfileUpsert,
   VersionResponse,
 } from "@lyceon/shared";
 import { calendarKeys } from "./keys";
@@ -117,18 +118,35 @@ function useOptimisticCalendarMutation<V extends object, R>(
 // ── Profile (setup and settings) ────────────────────────────────────────────
 
 /**
+ * Everything a profile save may name, EXCEPT the key. Derived from the canonical write
+ * shape rather than restated, so a field added to the schema is a field this type has.
+ */
+export type StudyProfileFields = Omit<StudyProfileUpsert, "idempotency_key">;
+
+/**
  * §8.1 PUT /api/calendar/profile. No optimistic apply: a profile change can trigger a
  * `profile_change` regeneration that rewrites the whole horizon, and predicting a generated
  * plan on the client would be the one thing this system never does (§4, the formula lives
  * only in PL/pgSQL).
+ *
+ * THE VARIABLES TYPE IS `Intent<...>`, NOT AN OPEN RECORD, AND THAT IS THE FIX. Two
+ * surfaces call this one hook — the §17.5 setup popup and the §8.1 settings sheet — and
+ * while the variables were `Record<string, unknown>` they were free to disagree about the
+ * endpoint's contract. They did: the sheet wrapped its draft in `newIntent`, the popup
+ * passed its answers straight through, and every student whose first act was setup got
+ * `400 INVALID_BODY / fieldErrors: { idempotency_key: ["Required"] }` — a new premium
+ * account could never create a profile at all, while an existing one could edit freely.
+ *
+ * A missing `idempotency_key` is not a field oversight, it is a mutation that is not a
+ * mutation (§4.2), so the type now refuses it and `newIntent` remains the only minter.
  */
 export function useStudyProfileMutation(): UseMutationResult<
   ProfileUpsertResponse,
   Error,
-  Record<string, unknown>
+  Intent<StudyProfileFields>
 > {
   const queryClient = useQueryClient();
-  return useMutation<ProfileUpsertResponse, Error, Record<string, unknown>>({
+  return useMutation<ProfileUpsertResponse, Error, Intent<StudyProfileFields>>({
     mutationFn: putStudyProfile,
     retry: 1,
     onSettled: () => {

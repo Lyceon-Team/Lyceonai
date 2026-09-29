@@ -1871,7 +1871,18 @@ BEGIN
   -- THE SETUP DAY IS NEVER AN EXAM DAY. The retired rule anchored the series on
   -- the first preferred weekday ON OR AFTER setup, so a student who set up on
   -- their chosen weekday got an exam that same day -- one of the two production
-  -- defects. The series now starts a full interval later, so it cannot.
+  -- defects.
+  --
+  -- WHY IT CANNOT, as of 20261013000000, is no longer "the series starts a full
+  -- interval later" -- that rule is itself retired, because spending the first
+  -- interval before the first sitting put a fortnightly student's first exam past
+  -- the end of their first horizon (Z-68). The first sitting is now the first
+  -- preferred weekday STRICTLY AFTER the setup date, and strictly-after is what
+  -- keeps this claim true: `setup + 1` is already past the setup day, so the snap
+  -- forward lands on the NEXT occurrence of that weekday. This fixture is weekly
+  -- and sets up ON its preferred weekday, so it is the case that distinguishes
+  -- "strictly after" from "on or after" -- the two rules differ here and nowhere
+  -- else in this file.
   v_input := public.calendar_build_plan_input(S_SETUP, v_dates);
   v_out   := public.calendar_place_full_lengths(v_input);
 
@@ -2313,6 +2324,201 @@ BEGIN
   RAISE NOTICE '    OK Z-67 an unentitled student is a recorded skip, and the payload is {block_id, local_date} exactly';
 END;
 $examnotify$;
+
+-- ===========================================================================
+-- Z-68 .. Z-69 — the FIRST SITTING comes before the first interval
+--
+-- @spec [Doc 05F formula sheet §2 Step 2 (corrected 2026-09-29); migration
+--        20261013000000] | @implemented [2026-09-29]
+--
+-- THE DEFECT THESE PIN, from production rather than from reasoning. Profile
+-- 59ce67c7: Mon-Fri study days, Saturday tests, fortnightly, set up 29 Sep, no
+-- target. The old rule spent the first interval BEFORE the first sitting:
+--
+--   29 Sep + (2 x 7) = 13 Oct  ->  next Saturday = 17 Oct
+--   horizon          = 29 Sep .. 12 Oct
+--
+-- so the first exam fell one Saturday past the end of the window. The Saturdays
+-- inside it were owned plan dates carrying nothing. For a fortnightly student
+-- that is not bad luck, it is arithmetic: the first interval always consumes the
+-- horizon. Monthly is worse. WEEKLY IS THE ONLY CADENCE THAT WORKED, which is
+-- why Z-56..Z-59 — every one of them weekly or monthly-with-a-rehearsal — went
+-- green over it for two days.
+--
+-- Z-68 is that student. Z-69 is the other end of the same rule: once a sitting
+-- has happened the interval DOES apply, and a rule that simply always started at
+-- +1 day would put the next exam a week later for a fortnightly student.
+-- ===========================================================================
+DO $firstsitting$
+DECLARE
+  S_NEW  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000020';
+  S_AFT  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000021';
+  k_tz   CONSTANT text := 'America/Chicago';
+  v_today  date := (now() AT TIME ZONE k_tz)::date;
+  v_dates  date[];
+  v_input  jsonb;
+  v_out    jsonb;
+  v_first  date;
+  v_exday  date;   -- the first NON-study day after today; the fixture's preferred weekday
+  v_examwd integer;
+  v_sat    date;
+  v_last   date;
+  v_n      integer;
+BEGIN
+  -- Same precondition as Z-56..Z-59: earlier gates in this one-transaction file
+  -- narrow `enabled_block_types`, and with full_length off the BUILDER nulls the
+  -- weekday, so these would pass vacuously against an empty payload.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice","review","full_length"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  v_dates := ARRAY(SELECT g::date FROM generate_series(v_today, v_today + 13, interval '1 day') g);
+
+  INSERT INTO auth.users (id, email) VALUES
+    (S_NEW, 'first-sitting-new@example.test'),
+    (S_AFT, 'first-sitting-after@example.test')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES
+    (S_NEW, 'first-sitting-new@example.test',   'student'),
+    (S_AFT, 'first-sitting-after@example.test', 'student')
+  ON CONFLICT DO NOTHING;
+
+  -- THE PRODUCTION SHAPE: study Mon-Fri (mask 62), sit tests on a weekday that is
+  -- NOT a study day, FORTNIGHTLY, set up today, no target date.
+  --
+  -- THE EXAM WEEKDAY IS DERIVED FROM THE MASK, not written as an offset, and that
+  -- is the second draft. `today + 2` was a Thursday on the day this was written —
+  -- inside mask 62 — so the gate reddened on its own "must not be a study day"
+  -- assertion. An offset cannot express "not a study day" without knowing which
+  -- weekday CI runs; the mask can. The first Saturday or Sunday after today is at
+  -- most six days out, so it is always inside a fourteen-day horizon.
+  SELECT g::date INTO v_exday
+  FROM generate_series(v_today + 1, v_today + 7, interval '1 day') g
+  WHERE (62 & (1 << EXTRACT(DOW FROM g)::integer)) = 0
+  ORDER BY g LIMIT 1;
+  IF v_exday IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 mask 62 left no non-study day in seven, which is arithmetically impossible — the mask convention has changed';
+  END IF;
+  v_examwd := EXTRACT(DOW FROM v_exday)::integer;
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, target_exam_date, setup_completed_at)
+  VALUES
+    (S_NEW, k_tz, 62, 120, v_examwd,
+     2, 1400, NULL, now()),
+    -- Z-69: same cadence, set up three weeks ago, and a sitting COMPLETED on the
+    -- most recent occurrence of the preferred weekday. The next one must be a
+    -- full fortnight from THAT, not a week.
+    (S_AFT, k_tz, 62, 120, v_examwd,
+     2, 1400, NULL, now() - interval '21 days')
+  ON CONFLICT (student_id) DO UPDATE SET
+    study_days_mask            = EXCLUDED.study_days_mask,
+    full_length_weekday        = EXCLUDED.full_length_weekday,
+    full_length_interval_weeks = EXCLUDED.full_length_interval_weeks,
+    target_exam_date           = EXCLUDED.target_exam_date,
+    setup_completed_at         = EXCLUDED.setup_completed_at;
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
+     event_count_total, constants_snapshot_hash)
+  SELECT u, 'M', 'Algebra', 0, 0, 0, 10, 'h' FROM unnest(ARRAY[S_NEW,S_AFT]) u
+  UNION ALL
+  SELECT u, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h' FROM unnest(ARRAY[S_NEW,S_AFT]) u
+  ON CONFLICT DO NOTHING;
+
+  ---------------------------------------------------------------- Z-68
+  -- A NEW FORTNIGHTLY STUDENT SEES A SITTING IN THEIR FIRST HORIZON.
+  v_input := public.calendar_build_plan_input(S_NEW, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  -- The precondition first: if the builder handed placement no weekday, an empty
+  -- payload below would mean "full_length is off", not "the rule is wrong".
+  IF (v_input #>> '{profile,full_length_weekday}') IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 the builder nulled full_length_weekday, so this gate would prove nothing';
+  END IF;
+  IF (v_input #>> '{profile,setup_date}')::date <> v_today THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 fixture setup_date is % not today', v_input #>> '{profile,setup_date}';
+  END IF;
+
+  SELECT count(*), min((f ->> 'date')::date) INTO v_n, v_first
+  FROM jsonb_array_elements(v_out -> 'placed') f;
+
+  -- THE ASSERTION THE PRODUCTION PROFILE FAILED. Under the retired rule this is
+  -- zero, and the whole horizon carries no exam.
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 a new fortnightly student got NO sitting in their first horizon (% .. %) — this is the production defect, back',
+      v_today, v_today + 13;
+  END IF;
+  -- And it is the first preferred weekday strictly after setup, not merely "some
+  -- exam somewhere in the window".
+  IF v_first <> v_exday THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 the first sitting is % — expected %, the first preferred weekday strictly after the setup date',
+      v_first, v_exday;
+  END IF;
+  -- The exam day is NOT a study day (mask 62 = Mon..Fri), and that is deliberate.
+  IF (v_input #>> '{profile,study_days_mask}')::integer & (1 << EXTRACT(DOW FROM v_first)::integer) <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 the fixture put the exam on a STUDY day, so "an exam day need not be a study day" is untested here';
+  END IF;
+  RAISE NOTICE '    OK Z-68 a new fortnightly student gets their first sitting on % (day % of a 14-day horizon), on a non-study day', v_first, v_first - v_today;
+
+  ---------------------------------------------------------------- Z-69
+  -- AFTER A COMPLETED SITTING, THE NEXT IS A FULL INTERVAL LATER.
+  --
+  -- The mirror of Z-68. A rule that always started at "setup + 1, snapped" would
+  -- pass Z-68 and put this student's next exam SEVEN days out instead of
+  -- fourteen, quietly doubling everyone's exam load after their first test.
+  -- The most recent occurrence of the preferred weekday STRICTLY before today, so
+  -- the sitting is in the past and `+14` from it can still land in the horizon.
+  SELECT g::date INTO v_sat
+  FROM generate_series(v_today - 7, v_today - 1, interval '1 day') g
+  WHERE EXTRACT(DOW FROM g)::integer = v_examwd
+  ORDER BY g DESC LIMIT 1;
+  IF v_sat IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 no occurrence of weekday % in the seven days before today', v_examwd;
+  END IF;
+
+  INSERT INTO public.test_sessions
+    (student_id, test_form_id, state, mode, started_at, completed_at, grace_expires_at,
+     attempt_number_for_form, is_first_seen_form_attempt, actor_id)
+  SELECT S_AFT, f.id, 'completed', 'strict',
+         (v_sat::timestamp + interval '8 hours')  AT TIME ZONE k_tz,
+         (v_sat::timestamp + interval '11 hours') AT TIME ZONE k_tz,
+         (v_sat::timestamp + interval '23 hours') AT TIME ZONE k_tz,
+         1, true, pr.actor_id
+  FROM public.test_forms f
+  CROSS JOIN public.profiles pr
+  WHERE pr.id = S_AFT
+  ORDER BY f.id
+  LIMIT 1;
+
+  -- ASSERT THE INSERT, for the reason Z-66 records: `FROM test_forms LIMIT 1`
+  -- against an empty table writes nothing, and a gate measuring an absent sitting
+  -- reads exactly like one measuring a correct sitting.
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 seeded % completed sitting(s), not 1 — there is nothing for the interval to run from', v_n;
+  END IF;
+
+  v_input := public.calendar_build_plan_input(S_AFT, v_dates);
+  v_last  := (v_input #>> '{exams,last_completed_local_date}')::date;
+  IF v_last IS DISTINCT FROM v_sat THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 the builder reports last_completed_local_date = %, expected % — the sitting did not reach placement',
+      coalesce(v_last::text, 'NULL'), v_sat;
+  END IF;
+
+  v_out := public.calendar_place_full_lengths(v_input);
+  SELECT count(*), min((f ->> 'date')::date) INTO v_n, v_first
+  FROM jsonb_array_elements(v_out -> 'placed') f;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 nothing was placed after the completed sitting, so the interval is untested';
+  END IF;
+  IF v_first <> v_sat + 14 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 the sitting after one completed on % is %, expected % — a full fortnight from the sitting, not % (one week)',
+      v_sat, v_first, v_sat + 14, v_sat + 7;
+  END IF;
+  RAISE NOTICE '    OK Z-69 a sitting completed % is followed by % — a full fortnight, not a week', v_sat, v_first;
+END;
+$firstsitting$;
 
 
 ROLLBACK;

@@ -20,7 +20,7 @@ C = dict(   # calendar_runtime_config (launch defaults) — integers only; ratio
     weight_by_level={0:5, 1:4, 2:3, 3:2, 4:1}, null_level_weight=3,   # mastery_levels: L0 Foundations (weakest) .. L4 Strong; NULL unmeasured
     post_exam_emphasis_days=7, post_exam_multiplier=2,
     min_domain_questions=5, max_domains_per_block=4, granularity=5,
-    default_full_length_interval_weeks=2, final_exam_lead_days=7, max_full_length_per_horizon=2,
+    default_full_length_interval_weeks=2, default_full_length_weekday=6, final_exam_lead_days=7, max_full_length_per_horizon=2,
     taper_days=3, taper_ratio_bp=5000,
 )
 ENG = dict(practice_seconds_per_unit=90, review_seconds_per_unit=120)   # snapshotted from practice config / SCL-08-F
@@ -70,10 +70,20 @@ def exam_dates(P, horizon):
         if horizon[0] <= d <= horizon[-1]: placed[d] = "final_rehearsal"
 
     # (2) the series — one interval after the last exam, or after setup
-    cursor = P["last_exam_date"] or P["setup_date"]
+    # The FIRST sitting is the first preferred weekday strictly AFTER the anchor; every later one is
+    # interval_weeks after its predecessor. Starting a whole interval out put a fortnightly student's
+    # first exam on day 14-20 of a 14-day horizon, so they never saw one; "strictly after" still makes
+    # a setup-day exam unreachable, which is what the anchor rule got wrong in the other direction.
+    # After a completed sitting the interval applies from it; before the first one it does not, or a
+    # fortnightly student's first exam lands past the horizon and they never see one.
+    if P["last_exam_date"]:
+        first = P["last_exam_date"] + timedelta(days=iv * 7)
+    else:
+        first = P["setup_date"] + timedelta(days=1)
+    while dow(first) != wd: first += timedelta(days=1)
+    cursor = None
     while True:
-        d = cursor + timedelta(days=iv * 7)
-        while dow(d) != wd: d += timedelta(days=1)          # next preferred weekday on or after
+        d = first if cursor is None else cursor + timedelta(days=iv * 7)
         if d > horizon[-1]: break
         cursor = d                                           # the series advances on the intended date, not the shifted one
         if d < horizon[0] or d in placed: continue

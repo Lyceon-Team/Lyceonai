@@ -37,6 +37,7 @@ import {
   type ExamReportPayload,
 } from "../../packages/shared/src/exam-report-schema";
 import { EXAM_FEATURE_KEY } from "./exam-runtime-routes";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 
 const COMPONENT = "EXAM_REPORT";
 const router = Router();
@@ -54,8 +55,20 @@ function sendError(
   status: number,
   code: string,
   message: string,
+  details?: unknown,
 ): Response {
-  return res.status(status).json({ error: { code, message }, meta: meta(req) });
+  if (status === 400) {
+    logRejectedRequest("EXAM_REPORT", details, {
+      code,
+      requestId: req.requestId,
+      ...routeOf(res),
+    });
+  }
+  return res.status(status).json({
+    error:
+      details === undefined ? { code, message } : { code, message, details },
+    meta: meta(req),
+  });
 }
 
 /** §16.5 steps 1-7 for one session; null after an error response was sent. */
@@ -71,14 +84,18 @@ async function reportFor(
   }
   const parsed = examSessionParamsSchema.safeParse(req.params);
   if (!parsed.success) {
-    res.status(400).json({
-      error: {
-        code: "invalid_request",
-        message: "Invalid input",
-        details: parsed.error.flatten(),
-      },
-      meta: meta(req),
-    });
+    // THROUGH THE HELPER, which this branch used to step around. `sendError` wrote every
+    // other refusal on this router (401, 403, 500) and this one wrote its own response
+    // inline — so the one refusal that had field names to report was the one that did not
+    // go past the place they would be logged.
+    sendError(
+      req,
+      res,
+      400,
+      "invalid_request",
+      "Invalid input",
+      parsed.error.flatten(),
+    );
     return null;
   }
   try {
