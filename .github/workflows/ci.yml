@@ -835,6 +835,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-writer-gates.sql
 
+      # A gate that has stopped biting is indistinguishable from a passing one, so the
+      # placement gates are planted rather than trusted. Each case builds its own
+      # throwaway database, because the pipeline is not idempotent.
+      - name: Calendar placement gates — mutations (Z-70 and the override arms)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/calendar-placement-gate.mutations.sh
+
       # Real concurrent sessions, not a single-session script: the FOR UPDATE on
       # the study profile that makes version_no = MAX+1 safe (INV-08-17) is
       # invisible unless somebody else is holding it. This is also where the
@@ -972,6 +983,19 @@ jobs:
           PGDATABASE: calendar_parity
           CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
         run: pnpm exec tsx scripts/ci/calendar-parity.ts --suite-n 3000 --suite-seed 1
+
+      # Every fixture carried an `exam_placement` block and nothing read it, so the
+      # suppression rule had no gate of any kind. It does now, and these plants are what
+      # say so: two on the stored block, one on the database's own return.
+      - name: Parity exam_placement comparison — mutations
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+          CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
+        run: bash scripts/ci/calendar-parity-placement.mutations.sh
 
   practice-integration:
     runs-on: ubuntu-latest

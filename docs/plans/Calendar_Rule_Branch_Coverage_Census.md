@@ -65,8 +65,10 @@ stored expectation". Deleting the post-exam arm from a scratchpad copy of the or
 ## Step 2 — the fixture that does discriminate
 
 `docs/Spec/` is read-only to Claude Code and hook-blocked, so this is handed over rather than
-committed: **`docs/plans/calendar_fixture_post_sitting_interval.patch`**, which `git apply`s
-cleanly onto `docs/Spec/calendar_formula_fixtures.json`.
+committed: **`docs/plans/calendar_spec_fixtures.patch`**, which `git apply`s cleanly onto
+`docs/Spec/calendar_formula_fixtures.json`. (It supersedes the original
+`calendar_fixture_post_sitting_interval.patch`, which carried only this fixture; the combined
+patch also fixes the two drifts recorded below.)
 
 Name: `exam_post_sitting_interval_MonFri_FLSat_fortnightly`. Derived from
 `fallback_MonWedSat_60m_FLSat_after_exam` by changing four fields and nothing else:
@@ -199,8 +201,8 @@ today in `8fb191f5` (#968), and it has no fixture either.**
 | E-11 | **unreachable** | the mutant that advances the series from the shifted date instead of the intended one differs from the real rule in **0** of those 3,561,600 cases, for the same arithmetic reason: after a +7 shift the next intended date is already past the horizon. |
 | G-10 | **unreachable, by construction** | `SEC` puts 4 domains in each section and `max_domains_per_block` is 4, so when `len(mix) >= 4` the mix already holds all four and `pool = [d for d in doms if d in mix]` **is** `doms`. The guard can never change the pick. |
 | E-12 | unreachable through the database | the `full_length_pair` CHECK and the Zod refinement both refuse half a pair, and `rand_snapshot` emits both or neither. |
-| E-09 | **reachable; parity is structurally blind; gated elsewhere** | `generate` does `exams, _suppressed = exam_dates(...)` and discards the second value, so no plan the parity gate compares can witness a suppression. The SQL side is pinned by **Z-58** in `scripts/ci/calendar-writer-gates.sql`. |
-| E-08 | **reachable, and gated by nothing, anywhere** | see below. |
+| E-09 | **was: reachable, parity structurally blind. NOW GATED TWICE** | `generate` does `exams, _suppressed = exam_dates(...)` and discards the second value, so no plan could witness a suppression. **Closed 2026-09-29**: `calendar-parity.ts` now compares each case's `exam_placement` against `calendar_place_full_lengths`' own return, on every fixture and every suite case, and `scripts/ci/calendar-parity-placement.mutations.sh` P3 proves it bites. **Z-58** still holds the SQL side. |
+| E-08 | **was: reachable, gated by nothing, anywhere. NOW GATED** | see below. **Closed 2026-09-29** by **Z-70** in `scripts/ci/calendar-writer-gates.sql`, planted by `scripts/ci/calendar-placement-gate.mutations.sh` M1/M2. |
 
 ### E-08 is the same defect as the post-exam anchor, one arm over
 
@@ -258,12 +260,25 @@ is why E-08 and E-09 sit at 0/0 while the arms either side of them are covered h
 over, and why Z-58 — a writer gate, reading the RPC's own return value — is the only thing
 holding one of them.
 
-### Offered, not done
+### Closed, 2026-09-29 (owner brief following this report)
 
-Brief 18 says the deliverable is the fixture and nothing else if Step 1 finds no gap, and it
-found none. So E-08 is reported rather than fixed. The fix is one writer gate in the Z-57..Z-59
-family — block the *last* cadence date in the horizon, assert the plan places nothing there and
-`suppressed` stays empty — and it is the owner's call whether it belongs in this workstream.
+Both gaps this report named are now held, and both are planted:
+
+- **Z-70** in `scripts/ci/calendar-writer-gates.sql` blocks the LAST cadence date in the
+  horizon and asserts the plan places nothing there, keeps the earlier sitting, reports no
+  suppression, and places nothing past the window. `scripts/ci/calendar-placement-gate.mutations.sh`
+  reds it two ways: M1 makes the arm record a suppression, M2 deletes the arm outright.
+  Z-70's first draft hardcoded a 14-day horizon and passed against the wrong arm — Z-51 sets
+  `horizon_days` to 28 and the gate file is one transaction, so the gate now READS the value
+  and derives its interval from it.
+- **`exam_placement` is read.** `calendar_parity_emit.py` emits Step 2's second return value,
+  and `calendar-parity.ts` compares it against `calendar_place_full_lengths`' own jsonb on
+  every case — with its own counter, so a comparison that stops running fails the gate.
+  `scripts/ci/calendar-parity-placement.mutations.sh` plants all three ways it can fail.
+
+Still offered, still not done: an assertion in `calendar_parity_emit.py` that the fixtures'
+`constants` block equals the oracle's `C` (minus the keys the bridge synthesises). It is what
+would have caught drift (3) below rather than leaving it to be noticed.
 
 ---
 

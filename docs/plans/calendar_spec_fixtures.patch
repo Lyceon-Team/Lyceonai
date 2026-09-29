@@ -1,28 +1,68 @@
-Brief 18 Step 2 — the missing post-exam fixture, for docs/Spec/.
+docs/Spec fixture changes: the post-sitting fixture, and the two drifts.
+
+SUPERSEDES docs/plans/calendar_fixture_post_sitting_interval.patch, which carried only
+the first of these three changes and is deleted in the same commit. Applying both would
+conflict; apply this one.
 
 docs/Spec/ is the locked canonical corpus and is read-only to Claude Code
-(.claude/hooks/block-spec-and-secrets.mjs hard-blocks the write), so this is
-handed over as a patch rather than committed.
+(.claude/hooks/block-spec-and-secrets.mjs hard-blocks the write), so this is handed over
+as a patch rather than committed.
 
-  git apply docs/plans/calendar_fixture_post_sitting_interval.patch
+  git apply docs/plans/calendar_spec_fixtures.patch
 
-Adds one fixture, `exam_post_sitting_interval_MonFri_FLSat_fortnightly`, after
-the last existing one. Every other byte of the file is untouched; the splice was
-verified by re-parsing the result and asserting the other 13 fixtures compare
-equal.
+THREE CHANGES.
 
-It is the first fixture that can tell the post-exam anchor
-(`last_exam_date + interval_weeks x 7`) from the setup anchor: the real oracle
-places 2026-10-03, an oracle with the branch deleted places 2026-09-26. Verified
-byte-exact against the live PL/pgSQL on PostgreSQL 17.11, with
-calendar_validate_plan accepting both generators.
+(1) A new fixture, `exam_post_sitting_interval_MonFri_FLSat_fortnightly`, appended after
+    the last existing one. It is the first that can tell the post-exam anchor
+    (`last_exam_date + interval_weeks x 7`) from the setup anchor: the real oracle places
+    2026-10-03, an oracle with the branch deleted places 2026-09-26. Derived from
+    `fallback_MonWedSat_60m_FLSat_after_exam` by changing four input fields.
 
-Rationale, provenance and the surrounding branch-coverage census:
-docs/plans/Calendar_Rule_Branch_Coverage_Census.md
+(2) `fallback_MonWedSat_60m_FLSat_after_exam` gets `days_since_exam: 2` in place of
+    `null`. `calendar_build_plan_input` emits that field and `last_completed_local_date`
+    from ONE variable (20261011000000_exam_placement_frequency.sql:1093-1094), so a
+    non-null date beside a null age is a shape production cannot produce. It changed no
+    expectation only because that fixture is cold-start, where `weights()` returns before
+    reading the field — measured, not assumed.
+
+(3) The top-level `constants` block gains `default_full_length_weekday: 6`, which
+    20261013000000 (#968) added to the oracle's `C` and this block did not. Inserted in
+    the oracle's own key order, after its sibling.
+
+VERIFIED against the live PL/pgSQL on PostgreSQL 17.11, for all 14 fixtures: every stored
+`deterministic_v1`, `fallback_v1` and `exam_placement` reproduces from the reference, and
+for the two fixtures this patch touches the RPC agrees with all three and
+`calendar_validate_plan` accepts both generators. Every other byte of the file is
+untouched — the splice was checked by re-parsing the result and asserting the other 13
+fixtures compare equal.
+
+NOTE ON (3). Nothing compares this block to the oracle's `C`, which is why it drifted
+silently. An assertion in `calendar_parity_emit.py`, beside the `DOMAINS` one it already
+makes, would make the drift impossible rather than merely corrected — offered, not done,
+since it was outside what was asked.
+
+Rationale and the census this came from: docs/plans/Calendar_Rule_Branch_Coverage_Census.md
 
 --- a/docs/Spec/calendar_formula_fixtures.json
 +++ b/docs/Spec/calendar_formula_fixtures.json
-@@ -5297,6 +5297,441 @@
+@@ -26,6 +26,7 @@
+   "max_domains_per_block": 4,
+   "granularity": 5,
+   "default_full_length_interval_weeks": 2,
++  "default_full_length_weekday": 6,
+   "final_exam_lead_days": 7,
+   "max_full_length_per_horizon": 2,
+   "taper_days": 3,
+@@ -3453,7 +3454,7 @@
+     "target_exam_date": "2026-11-05",
+     "full_length_weekday": 6,
+     "last_exam_date": "2026-09-19",
+-    "days_since_exam": null,
++    "days_since_exam": 2,
+     "exam_weak_domains": [],
+     "last_exam_missed_count": 27,
+     "last_exam_reviewed": false,
+@@ -5297,6 +5298,441 @@
       ]
      ]
     }
