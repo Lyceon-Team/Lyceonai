@@ -19,6 +19,13 @@ vi.mock("@/lib/csrf", () => ({
   csrfFetch: (...args: unknown[]) => csrfFetchMock(...args),
 }));
 
+// G1-03: the roster key is scoped by the signed-in guardian, so the hook reads the session.
+vi.mock("@/contexts/SupabaseAuthContext", () => ({
+  useSupabaseAuth: () => ({
+    user: { id: "99999999-9999-4999-8999-999999999999", role: "guardian" },
+  }),
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
