@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,8 @@ function BrowseTopics() {
   // Fetch topics taxonomy
   const { data: topicsData, isLoading: topicsLoading, error: topicsError } = useQuery<PracticeTopics>({
     queryKey: ['/api/practice/topics'],
+    // UI-14: reference data — long, explicit, finite.
+    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
   });
 
   // Build query parameters for questions

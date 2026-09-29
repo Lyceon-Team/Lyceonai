@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { DateTime } from "luxon";
 import { Link, useLocation } from "wouter";
 import { AppShell } from "@/components/layout/app-shell";
@@ -112,7 +113,8 @@ export default function LyceonDashboard() {
   } = useQuery<KpiResponse>({
     queryKey: ["/api/progress/kpis"],
     enabled: !!user,
-    refetchInterval: 60000,
+    // UI-14: the one timer the dashboard already had, now named in the freshness config.
+    refetchInterval: QUERY_FRESHNESS.kpis.refetchInterval,
   });
 
   const {

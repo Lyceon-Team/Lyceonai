@@ -197,7 +197,12 @@ describe("Feedback UX hardening contract", () => {
     const guardianPaywall = read(
       "client/src/components/guardian/CheckoutReturnPoller.tsx",
     );
-    expect(guardianPaywall).toContain("parseApiErrorFromResponse");
+    // UI-14 (2026-09-29): the poller reads billing status through the one
+    // shared hook, and the structured-error parse moved there with the fetch.
+    const billingStatusHook = read("client/src/hooks/useBillingStatusQuery.ts");
+    expect(guardianPaywall).toContain("useBillingStatusQuery");
+    expect(billingStatusHook).toContain("parseApiErrorFromResponse");
     expect(guardianPaywall).not.toContain("throw new Error(data.error");
+    expect(billingStatusHook).not.toContain("throw new Error(data.error");
   });
 });

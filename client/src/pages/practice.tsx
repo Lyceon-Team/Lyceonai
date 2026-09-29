@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
 import { normalizePracticeTopicDomains } from "@/lib/practice-topic-taxonomy";
@@ -136,6 +137,8 @@ function Practice() {
   } = useQuery<PracticeTopicsResponse>({
     queryKey: ["/api/practice/topics"],
     enabled: !!user && !authLoading,
+    // UI-14: reference data — long, explicit, finite.
+    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
   });
 
   const {

@@ -23,7 +23,10 @@ let authState: {
 let location = "/dashboard";
 let authData: { user: Record<string, unknown> | null } = { user: null };
 
-vi.mock("@tanstack/react-query", () => ({
+// UI-14: RequireRole reads the profile through the shared `useProfileQuery`, which builds its
+// options with `queryOptions` — so the real module is kept and only `useQuery` is replaced.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQuery: queryMock.useQuery,
 }));
 
