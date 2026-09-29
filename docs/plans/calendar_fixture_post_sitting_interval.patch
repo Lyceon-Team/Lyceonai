@@ -1,0 +1,466 @@
+Brief 18 Step 2 — the missing post-exam fixture, for docs/Spec/.
+
+docs/Spec/ is the locked canonical corpus and is read-only to Claude Code
+(.claude/hooks/block-spec-and-secrets.mjs hard-blocks the write), so this is
+handed over as a patch rather than committed.
+
+  git apply docs/plans/calendar_fixture_post_sitting_interval.patch
+
+Adds one fixture, `exam_post_sitting_interval_MonFri_FLSat_fortnightly`, after
+the last existing one. Every other byte of the file is untouched; the splice was
+verified by re-parsing the result and asserting the other 13 fixtures compare
+equal.
+
+It is the first fixture that can tell the post-exam anchor
+(`last_exam_date + interval_weeks x 7`) from the setup anchor: the real oracle
+places 2026-10-03, an oracle with the branch deleted places 2026-09-26. Verified
+byte-exact against the live PL/pgSQL on PostgreSQL 17.11, with
+calendar_validate_plan accepting both generators.
+
+Rationale, provenance and the surrounding branch-coverage census:
+docs/plans/Calendar_Rule_Branch_Coverage_Census.md
+
+--- a/docs/Spec/calendar_formula_fixtures.json
++++ b/docs/Spec/calendar_formula_fixtures.json
+@@ -5297,6 +5297,441 @@
+      ]
+     ]
+    }
++  },
++  "exam_post_sitting_interval_MonFri_FLSat_fortnightly": {
++   "input": {
++    "today": "2026-09-21",
++    "setup_date": "2026-09-08",
++    "study_days_mask": 62,
++    "daily_minutes": 60,
++    "levels": {
++     "Algebra": null,
++     "Advanced Math": null,
++     "Problem Solving and Data Analysis": null,
++     "Geometry and Trigonometry": null,
++     "Information and Ideas": null,
++     "Craft and Structure": null,
++     "Expression of Ideas": null,
++     "Standard English Conventions": null
++    },
++    "target_exam_date": "2026-11-05",
++    "full_length_weekday": 6,
++    "last_exam_date": "2026-09-19",
++    "days_since_exam": 2,
++    "exam_weak_domains": [],
++    "last_exam_missed_count": 27,
++    "last_exam_reviewed": true,
++    "review_due_by_date": {
++     "2026-09-21": 12
++    },
++    "recent_planned_by_domain": {},
++    "full_length_interval_weeks": 2,
++    "current_overrides": []
++   },
++   "exam_placement": {
++    "placed": {
++     "2026-10-03": "exam_cadence"
++    },
++    "suppressed": []
++   },
++   "deterministic_v1": {
++    "2026-09-21": [
++     [
++      "review",
++      null,
++      12,
++      "review_due"
++     ],
++     [
++      "practice",
++      {
++       "M": 10
++      },
++      10,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "RW": 10
++      },
++      10,
++      "cold_start"
++     ]
++    ],
++    "2026-09-22": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-09-23": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-09-24": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-09-25": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-09-26": [],
++    "2026-09-27": [],
++    "2026-09-28": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-09-29": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-09-30": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-10-01": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-10-02": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "cold_start"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "cold_start"
++     ]
++    ],
++    "2026-10-03": [
++     [
++      "full_length",
++      null,
++      1,
++      "exam_cadence"
++     ]
++    ],
++    "2026-10-04": []
++   },
++   "fallback_v1": {
++    "2026-09-21": [
++     [
++      "review",
++      null,
++      12,
++      "review_due"
++     ],
++     [
++      "practice",
++      {
++       "M": 10
++      },
++      10,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "RW": 10
++      },
++      10,
++      "fallback"
++     ]
++    ],
++    "2026-09-22": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-09-23": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-09-24": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-09-25": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-09-26": [],
++    "2026-09-27": [],
++    "2026-09-28": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-09-29": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-09-30": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-10-01": [
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-10-02": [
++     [
++      "practice",
++      {
++       "RW": 20
++      },
++      20,
++      "fallback"
++     ],
++     [
++      "practice",
++      {
++       "M": 20
++      },
++      20,
++      "fallback"
++     ]
++    ],
++    "2026-10-03": [
++     [
++      "full_length",
++      null,
++      1,
++      "exam_cadence"
++     ]
++    ],
++    "2026-10-04": []
++   }
+   }
+  }
+ }
