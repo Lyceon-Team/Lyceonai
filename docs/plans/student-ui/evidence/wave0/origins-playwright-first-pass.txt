@@ -1,0 +1,39 @@
+# First pass, Playwright headless Chromium 141 (desktop viewport), 2026-09-29 ~20:37Z. Origins requested per page and every failed or >=400 request.
+# The 502s below carried no `server: Vercel` or `x-vercel-id` header, and Vercel runtime logs show no 5xx for 20:30-21:25Z: they came from the session egress proxy, not production. Re-fetched with curl they return 200 from Vercel.
+# The replit.com ERR_BLOCKED_BY_ORB was intermittent: in all 12 accepted Lighthouse runs the same URL returned 200.
+
+### / (signed out) final URL /
+- https://fonts.googleapis.com  (2 requests)
+- https://fonts.gstatic.com  (5 requests)
+- https://lyceon.ai  (7 requests)
+- https://replit.com  (1 requests)
+  FAILED https://replit.com/public/js/replit-dev-banner.js net::ERR_BLOCKED_BY_ORB
+  HTTP 401 https://lyceon.ai/api/profile
+
+### /login (signed out) final URL /login
+- https://fonts.googleapis.com  (2 requests)
+- https://fonts.gstatic.com  (3 requests)
+- https://lyceon.ai  (6 requests)
+- https://replit.com  (1 requests)
+  FAILED https://replit.com/public/js/replit-dev-banner.js net::ERR_BLOCKED_BY_ORB
+  HTTP 401 https://lyceon.ai/api/profile
+
+### /dashboard (signed in, free test account) final URL /dashboard
+- https://fonts.googleapis.com  (2 requests)
+- https://fonts.gstatic.com  (2 requests)
+- https://lyceon.ai  (20 requests)
+- https://replit.com  (1 requests)
+  FAILED https://replit.com/public/js/replit-dev-banner.js net::ERR_BLOCKED_BY_ORB
+  HTTP 502 https://lyceon.ai/_vercel/insights/script.js
+  FAILED https://lyceon.ai/_vercel/insights/script.js net::ERR_ABORTED
+  HTTP 502 https://lyceon.ai/assets/billing-client-DCbjg60J.js
+  FAILED https://lyceon.ai/assets/billing-client-DCbjg60J.js net::ERR_ABORTED
+  HTTP 502 https://lyceon.ai/assets/RecoveryNotice-VZ0KZGCZ.js
+  FAILED https://lyceon.ai/assets/RecoveryNotice-VZ0KZGCZ.js net::ERR_ABORTED
+
+### /practice (signed in, free test account) final URL /practice
+- https://fonts.googleapis.com  (2 requests)
+- https://fonts.gstatic.com  (4 requests)
+- https://lyceon.ai  (39 requests)
+- https://replit.com  (1 requests)
+  FAILED https://replit.com/public/js/replit-dev-banner.js net::ERR_BLOCKED_BY_ORB
