@@ -1,0 +1,22 @@
+# UI-00b Fluid compute, behavioural test. 2026-09-29T21:43:50.654Z..21:43:52.541Z, 30 s after the cold probe (5 warm instances).
+# 15 concurrent signed-in GET /api/practice/sessions/open (curl, session egress proxy).
+# Vercel runtime logs 21:22:10..21:44:10Z, grouped by requestPath: /api/practice/sessions/open 16, /api/profile 3, /api/progress/kpis 1 = exactly the 5 probe + 15 burst requests; no other traffic.
+# Server-side (runtime logs): all 15 authenticated between 21:43:51.359Z and 21:43:52.386Z; the 13 on warm instances between .359 and .542 with handler durations 399-600 ms (sequential warm: 174-217 ms).
+# Boot blocks in the burst: 2 (request ids 6b2f3287-... and 3ade7bd9-..., boot env-check 21:43:52.132Z / .145Z, handler 338 / 375 ms).
+# So 15 overlapping requests ran on at most 7 instances (5 warm + 2 new): instances served more than one request at a time.
+# Client times (s):
+13 200 total=0.917882 xreq=20d3d735-eb09-4fde-bec8-a340977d2899
+6 200 total=0.950713 xreq=ba875299-4f6a-4e2d-98db-a32ce907de28
+14 200 total=0.938420 xreq=0c5f7551-ab91-4fa2-a6d3-12243cf0cb55
+4 200 total=0.948260 xreq=838bd80c-89c7-4d91-b5e9-b4063ec8959c
+1 200 total=0.986470 xreq=478e00f2-bc91-463e-aae1-2209e8eb3ac9
+8 200 total=0.984982 xreq=de4a8a78-d427-414a-96ae-b25277e036ba
+11 200 total=0.599964 xreq=ebe11056-2fe6-403b-9bb3-7fccd826a2d8 (second attempt; first hit a proxy error)
+12 200 total=1.007640 xreq=75c55811-a0f9-4cda-bdc9-0e939e5c1422
+15 200 total=1.010000 xreq=5e7105fc-8765-49e8-a78e-c9a521cfe3b7
+5 200 total=1.011044 xreq=67b783b3-9c39-4bb0-aabc-a716f5c77823
+9 200 total=1.011997 xreq=d6133b90-e5c7-444b-a75d-835d4ddb0c4e
+7 200 total=1.028256 xreq=de37c915-8412-4aee-9062-164d3a9ca57a
+2 200 total=1.056732 xreq=6a199e36-6d4b-4814-a0ea-dd3f6aa7b65f
+3 200 total=1.851843 xreq=6b2f3287-edb5-49dc-b16a-7dbed5203732 (booted a new instance)
+10 200 total=1.852927 xreq=3ade7bd9-e778-4c59-a40c-8ed9f984b805 (booted a new instance)

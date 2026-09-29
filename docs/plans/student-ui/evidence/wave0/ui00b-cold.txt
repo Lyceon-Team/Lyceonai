@@ -1,0 +1,17 @@
+# UI-00b cold probe. Production idle from 2026-09-29T21:22:10Z (Vercel runtime logs for the deployment: no request between 21:22:10 and 21:43:19Z).
+# 5 concurrent signed-in GETs (curl, session egress proxy). Client times in seconds.
+probe start 2026-09-29T21:43:19.268Z
+/api/practice/sessions/open 200 ttfb=3.390714 total=3.390783 xreq=9072acb6-6f2d-40e8-8998-5fcdc5015767 (attempt 1)
+/api/profile 200 ttfb=3.518549 total=3.518605 xreq=e21d83de-99de-4d4c-a09d-3a8b1a4d73dd (attempt 1)
+/api/profile 200 ttfb=3.596847 total=3.597065 xreq=7083e315-a37f-4662-ad2b-ae3f7d46532a (attempt 1)
+/api/profile 200 ttfb=3.606014 total=3.606058 xreq=7f12d8c4-5e44-4098-b3cd-5ee33799c3ba (attempt 1)
+/api/progress/kpis 200 ttfb=3.788437 total=3.788516 xreq=34faa73e-fa53-4ceb-a840-09bad2d3d3d0 (attempt 1)
+probe end 2026-09-29T21:43:23.086Z
+
+# Server side (Vercel runtime logs, matched by x-request-id). Each request carries its own boot block ('[API] Starting Lyceon API server'), boot env-check timestamps 21:43:20.744 / .768 / .808 / .835 / .862Z: 5 new instances.
+# request_id                               path                          duration_ms (handler, after boot)
+# 9072acb6-6f2d-40e8-8998-5fcdc5015767  /api/practice/sessions/open   1891
+# e21d83de-99de-4d4c-a09d-3a8b1a4d73dd  /api/profile                  2042
+# 7083e315-a37f-4662-ad2b-ae3f7d46532a  /api/profile                  2050
+# 7f12d8c4-5e44-4098-b3cd-5ee33799c3ba  /api/profile                  2037
+# 34faa73e-fa53-4ceb-a840-09bad2d3d3d0  /api/progress/kpis            2185
