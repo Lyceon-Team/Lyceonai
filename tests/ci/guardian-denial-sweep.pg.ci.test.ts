@@ -18,36 +18,78 @@
  * gated or live under one of the guardian-reachable prefixes named here, so an ungated
  * learning route has nowhere to hide.
  *
- * WHAT IS SUBSTITUTED. Only two things: the session (`supabaseAuthMiddleware` presents a
- * guardian, as the real one does after reading the profile row) and CSRF (passed through, so
- * a 403 here is the role gate's and never a missing token's — the body assertion enforces
- * that). Every gate, router and mount is the production one.
+ * WHAT IS SUBSTITUTED. Three things: the DATABASE TRANSPORT (`supabaseServer` → real SQL via
+ * tests/helpers/pg-supabase, against genesis + every migration); the SESSION —
+ * `supabaseAuthMiddleware` skips the Auth-server `getUser()` call and instead reads the
+ * guardian's `profiles` row back from that Postgres, attaching it with the same field mapping
+ * the real middleware uses (server/middleware/supabase-auth.ts, "Attach user to request"), so
+ * the role under test is a row the schema accepted, never a hand-written object; and CSRF
+ * (passed through, so a 403 here is the role gate's and never a missing token's — the body
+ * assertion enforces that). Every gate, router and mount is the production one.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { Client } from "pg";
 import request from "supertest";
 import type { Express, NextFunction, Request, Response } from "express";
+import {
+  makePgSupabase,
+  bootstrapPgDatabase,
+  PG_AVAILABLE,
+} from "../helpers/pg-supabase";
 
-const GUARDIAN = {
-  id: "0a111111-1111-4111-8111-111111111111",
-  email: "sweep-guardian@example.test",
-  role: "guardian",
-  isGuardian: true,
-  isAdmin: false,
-  is_under_13: false,
-  guardian_consent: true,
-};
+const DB_NAME = "guardian_denial_sweep_ci";
+const GUARDIAN_ID = "0a111111-1111-4111-8111-111111111111";
+
+let pg: Client;
+
+vi.mock("../../apps/api/src/lib/supabase-server", () => ({
+  get supabaseServer() {
+    return makePgSupabase(pg);
+  },
+  supabaseAdmin: {
+    get from() {
+      return makePgSupabase(pg).from;
+    },
+  },
+}));
 
 vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    supabaseAuthMiddleware: (
+    supabaseAuthMiddleware: async (
       req: Request,
       _res: Response,
       next: NextFunction,
     ) => {
-      (req as Request & { user?: unknown }).user = { ...GUARDIAN };
-      next();
+      try {
+        const r = await pg.query(
+          `SELECT id, email, display_name, role::text AS role, is_under_13,
+                  guardian_consent, student_link_code, actor_id
+             FROM public.profiles WHERE id = $1`,
+          [GUARDIAN_ID],
+        );
+        const p = r.rows[0];
+        // No row → no user → 401, which fails every 403 assertion below. Fail loud.
+        if (p) {
+          (req as Request & { user?: unknown }).user = {
+            id: p.id,
+            email: p.email,
+            display_name: p.display_name,
+            role: p.role,
+            isAdmin: p.role === "admin",
+            isGuardian: p.role === "guardian",
+            is_under_13: p.is_under_13,
+            guardian_consent: p.guardian_consent,
+            profile_completed_at: null,
+            student_link_code: p.student_link_code,
+            actor_id: p.actor_id,
+          };
+        }
+        next();
+      } catch (err) {
+        next(err);
+      }
     },
   };
 });
@@ -183,7 +225,30 @@ function concrete(path: string): string {
   );
 }
 
-describe("G1-11 guardian denial sweep (routes read from the router)", () => {
+describe.skipIf(!PG_AVAILABLE)("G1-11 guardian denial sweep (routes read from the router)", () => {
+  beforeAll(async () => {
+    pg = await bootstrapPgDatabase(DB_NAME);
+    await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [
+      GUARDIAN_ID,
+      "sweep-guardian@example.test",
+    ]);
+    await pg.query(
+      `INSERT INTO public.profiles (id, email, role, date_of_birth)
+       VALUES ($1, $2, 'guardian', DATE '1980-01-01')`,
+      [GUARDIAN_ID, "sweep-guardian@example.test"],
+    );
+    // Presence before absence: the principal every case presents is a real guardian row.
+    const back = await pg.query(
+      `SELECT role::text AS role FROM public.profiles WHERE id = $1`,
+      [GUARDIAN_ID],
+    );
+    expect(back.rows[0]?.role).toBe("guardian");
+  });
+
+  afterAll(async () => {
+    if (pg) await pg.end();
+  });
+
   it("the sweep is non-trivial: it found the routes a guardian must never reach", () => {
     // Presence before absence: these anchors exist, so an empty sweep cannot pass.
     const has = (m: string, p: string) =>
