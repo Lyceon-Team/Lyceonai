@@ -88,7 +88,6 @@ const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
 const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
-const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
@@ -132,14 +131,10 @@ function Router() {
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
         <Route path="/trust/evidence" component={TrustEvidence} />
-        <Route
-          path="/tutor"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <TutorPage />
-            </RequireRole>
-          )}
-        />
+        {/* @spec [owner ruling 2026-09-29, UI-04] | @implemented [2026-09-29] |
+            plain English: the old tutor page is retired; /tutor now sends
+            everyone to /chat, whose guard handles sign-in (next=/chat). */}
+        <Route path="/tutor">{() => <Redirect to="/chat" replace />}</Route>
         <Route path="/legal" component={LegalHub} />
         <Route path="/legal/:slug" component={LegalDoc} />
 
@@ -360,21 +355,24 @@ function Router() {
   );
 }
 
-class ErrorBoundary extends Component<
+/**
+ * @spec [Coding Standards §12, §16; student UI vertical UI-10] | @implemented [2026-09-29]
+ * plain English: the app-wide render boundary. On a render error it shows fixed copy and a
+ * reload button. It never shows the raw `error.message` (which can carry server or
+ * developer text) and never writes to the console: the client has no structured logger,
+ * and the fallback screen itself is the surfaced failure, so nothing is swallowed.
+ */
+export class ErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean }
 > {
   constructor(props: { children: ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error("App Error:", error, errorInfo);
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
   }
 
   render() {
@@ -386,7 +384,7 @@ class ErrorBoundary extends Component<
               Something went wrong
             </h1>
             <p className="text-neutral-600 mb-6">
-              {this.state.error?.message || "An unexpected error occurred"}
+              An unexpected error occurred. Reloading the page usually fixes it.
             </p>
             <button
               onClick={() => window.location.reload()}
