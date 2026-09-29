@@ -25,9 +25,56 @@
  * `server/lib/account` against real SQL through this harness is the correction.
  */
 
-import { Client } from "pg";
+import { Client, types as pgTypes } from "pg";
 import fs from "node:fs";
 import path from "node:path";
+
+/**
+ * DATES AND TIMESTAMPS COME BACK AS STRINGS through this shim, because that is what the real
+ * transport sends.
+ *
+ * PostgREST serialises rows to JSON, where a `Date` cannot exist: `timestamptz` arrives as
+ * an ISO string and `date` as `YYYY-MM-DD`. node-pg parses all three into `Date` objects,
+ * so a shared schema that production satisfies — `setup_completed_at: z.string().nullable()`
+ * on `studyProfileSchema`, `localDateSchema` on `target_exam_date` — fails against this
+ * harness for a reason that exists nowhere but in this harness. That is the fixture
+ * disagreeing with real output, in the shape CLAUDE.md names: the harness has to produce
+ * what the wire produces, or a route test through it proves something about node-pg.
+ *
+ * SCOPED TO THE SHIM'S OWN QUERIES, NOT SET GLOBALLY. A test's direct `pg.query` is node-pg
+ * and is read as node-pg — several suites assert `toBeInstanceOf(Date)` on a stamp they read
+ * that way, correctly, because nothing in production sees those rows. Setting the parsers on
+ * the `pg` module turned seven of those red for no defect at all. Per-query `types` keeps the
+ * substitution where it belongs: the transport this shim is pretending to be.
+ *
+ * `date` is returned verbatim rather than via `Date`: node-pg builds a `Date` at LOCAL
+ * midnight, so `toISOString()` on it moves the day in any zone west of UTC. The raw text is
+ * already exactly `YYYY-MM-DD`.
+ */
+const WIRE_TYPES = {
+  getTypeParser: (
+    oid: number,
+    format?: unknown,
+  ): ((value: string) => unknown) => {
+    if (oid === 1082) return (value: string) => value;
+    if (oid === 1114) return (value: string) => value.replace(" ", "T");
+    if (oid === 1184) return (value: string) => new Date(value).toISOString();
+    return pgTypes.getTypeParser(
+      oid,
+      format as Parameters<typeof pgTypes.getTypeParser>[1],
+    ) as (value: string) => unknown;
+  },
+};
+
+/** One `pg.query` that answers in the shape PostgREST answers in. */
+async function wireQuery(
+  pg: Client,
+  text: string,
+  values: unknown[] = [],
+): Promise<{ rows: Record<string, unknown>[]; fields: { name: string }[] }> {
+  const r = await pg.query({ text, values, types: WIRE_TYPES });
+  return { rows: r.rows as Record<string, unknown>[], fields: r.fields };
+}
 
 export type PgSupabaseResult<T = unknown> = {
   data: T | null;
@@ -275,7 +322,7 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
           sql += ` ON CONFLICT (${target}) DO UPDATE SET ${sets.join(", ")}`;
         }
         sql += this.returning();
-        const r = await this.pg.query(sql, params);
+        const r = await wireQuery(this.pg, sql, params);
         return { data: r.rows, error: null };
       }
 
@@ -290,14 +337,14 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
         });
         const where = this.buildWhere(params.length + 1);
         const sql = `UPDATE ${t} SET ${sets.join(", ")}${where.sql}${this.returning()}`;
-        const r = await this.pg.query(sql, [...params, ...where.params]);
+        const r = await wireQuery(this.pg, sql, [...params, ...where.params]);
         return { data: r.rows, error: null };
       }
 
       if (this.writeMode === "delete") {
         const where = this.buildWhere(1);
         const sql = `DELETE FROM ${t}${where.sql}${this.returning()}`;
-        const r = await this.pg.query(sql, where.params);
+        const r = await wireQuery(this.pg, sql, where.params);
         return { data: r.rows, error: null };
       }
 
@@ -305,7 +352,7 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
       const where = this.buildWhere(1);
       if (this.countMode === "exact" && this.headOnly) {
         const sql = `SELECT count(*)::int AS c FROM ${t}${where.sql}`;
-        const r = await this.pg.query(sql, where.params);
+        const r = await wireQuery(this.pg, sql, where.params);
         return {
           data: null,
           error: null,
@@ -320,7 +367,7 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
         sql += ` ORDER BY ${keys}`;
       }
       if (this.limitN !== null) sql += ` LIMIT ${this.limitN}`;
-      const r = await this.pg.query(sql, where.params);
+      const r = await wireQuery(this.pg, sql, where.params);
       return { data: r.rows, error: null };
     } catch (err: unknown) {
       const e = err as Error & { code?: string; detail?: string };
@@ -355,7 +402,8 @@ export function makePgSupabase(pg: Client): {
         const call = names.length
           ? names.map((n, i) => `${n} => $${i + 1}`).join(", ")
           : "";
-        const r = await pg.query(
+        const r = await wireQuery(
+          pg,
           `SELECT * FROM public."${fn}"(${call})`,
           params,
         );

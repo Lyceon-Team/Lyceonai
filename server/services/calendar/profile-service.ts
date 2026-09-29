@@ -270,8 +270,23 @@ export async function upsertStudyProfile(
     row.study_days_mask = update.study_days_mask;
   if (update.daily_minutes !== undefined)
     row.daily_minutes = update.daily_minutes;
+  // BOTH HALVES, ALWAYS — and `full_length_interval_weeks` was missing from this block.
+  //
+  // `makeStudyProfileUpsertSchema` refuses a body naming one half and not the other, so
+  // every accepted body that touches the exam schedule carries both. This writer then wrote
+  // only the weekday, which is worse than dropping a field: turning exams ON sent
+  // `{weekday: 6, interval: 2}`, stored `weekday = 6` against an interval still NULL, and
+  // `full_length_pair` (20261010000000) rejected the row as 23514 — reported by this
+  // service as `{kind: "write_failed"}` and served to the student as a 500. The pair CHECK
+  // caught it, which is what a CHECK is for; it could not store what it was never sent.
+  //
+  // The two move together HERE because they are one decision everywhere else: in the
+  // schema, in the settings sheet's chips, and in the column CHECK.
   if (update.full_length_weekday !== undefined) {
     row.full_length_weekday = update.full_length_weekday;
+  }
+  if (update.full_length_interval_weeks !== undefined) {
+    row.full_length_interval_weeks = update.full_length_interval_weeks;
   }
   if (update.planner_mode !== undefined) row.planner_mode = update.planner_mode;
 
