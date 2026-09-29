@@ -10009,6 +10009,13 @@ DECLARE
   v_student_name  text;
   v_guardian_name text;
 BEGIN
+  -- G1-07: only a party to the link may revoke it. Checked before any write, and NULL is
+  -- not a party (IS DISTINCT FROM keeps a NULL revoker from slipping through as unknown).
+  IF p_revoked_by IS DISTINCT FROM p_guardian_id
+     AND p_revoked_by IS DISTINCT FROM p_student_id THEN
+    RAISE EXCEPTION 'revoker is not a party to this link' USING ERRCODE = 'LY005';
+  END IF;
+
   UPDATE public.guardian_links
      SET status = 'revoked',
          revoked_at = now(),

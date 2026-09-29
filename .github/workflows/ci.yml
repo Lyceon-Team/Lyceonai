@@ -1104,6 +1104,23 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-redeem-errors.json \
             --file tests/ci/guardian-redeem-errors.pg.ci.test.ts
 
+      # @spec [Guardian_Closure_Plan G1-07; audit G-AUD-10] | @implemented [2026-09-29]
+      # revoke_guardian_link_audited refuses a non-party (LY005) before writing, and the six
+      # guardian functions read f/f/f/t (guardian_can_view_student f/f/t/t) even after a
+      # simulated platform default grant to anon/authenticated. Skip-proof verdict.
+      - name: Guardian revoke party check + explicit grants → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-revoke-party.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-revoke-party.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-revoke-party.json \
+            --file tests/ci/guardian-revoke-party.pg.ci.test.ts
+
       # @spec [Guardian_Closure_Plan G1-06; audit G-AUD-13] | @implemented [2026-09-29]
       # A redeem that writes no link leaves the student's code redeemable: a pre-existing
       # link is refused before the spend, and an infrastructure failure after it is undone.
