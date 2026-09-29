@@ -45,6 +45,17 @@ function makeAdmin(opts: MockAdminOptions): SupabaseClient {
   insertSpy.mockClear();
 
   const from = (table: string) => {
+    // G2-05: the loader derives "guardian connected" from an active guardian link. These cases
+    // are about profile creation, not links, so the student has none.
+    if (table === "guardian_links") {
+      const links = {
+        select: () => links,
+        eq: () => links,
+        limit: (): SbResult<Array<{ id: string }>> =>
+          Promise.resolve({ data: [], error: null }),
+      };
+      return links;
+    }
     if (table !== "profiles") {
       throw new Error(`Unexpected table in test: ${table}`);
     }

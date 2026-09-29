@@ -1242,6 +1242,23 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-date-of-birth-lock.json \
             --file tests/ci/date-of-birth-lock.pg.ci.test.ts
 
+      # @spec [Guardian_Closure_Plan G2-05; audit G-AUD-03; R6; SCL-187] | @implemented [2026-09-29]
+      # The email-consent flow is removed: an under-13 student completes the profile, no
+      # guardian_consent_requests row is written, and "guardian connected" follows the ACTIVE
+      # link (absent, linked, revoked). Real PG; behind the summary gate.
+      - name: Consent-token flow removed → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/consent-flow-removed.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-consent-flow-removed.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-consent-flow-removed.json \
+            --file tests/ci/consent-flow-removed.pg.ci.test.ts
+
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the

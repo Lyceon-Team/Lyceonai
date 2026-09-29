@@ -18,12 +18,10 @@ import path from "node:path";
 import {
   ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX,
   ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX,
-  GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX,
   GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX,
   guardianLinkInviteIdempotencyKey,
   sendAccountDeletionCompletedEmail,
   sendAccountDeletionScheduledEmail,
-  sendGuardianConsentRequestEmail,
   sendGuardianLinkInviteEmail,
 } from "../../server/lib/notifications/direct-sends";
 import { createResendTransport } from "../../server/lib/notifications/transport";
@@ -78,43 +76,6 @@ function fakeResend(mode: "ok" | "reject") {
 const SITE = "https://app.example.test";
 
 describe("direct sends (R7/R8/R9)", () => {
-  it("consent request: keyed by the guardian_consent_requests row id, from the env sender, link carries the request id", async () => {
-    const { requests, transport } = fakeResend("ok");
-    const result = await sendGuardianConsentRequestEmail(
-      {
-        consentRequestId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-        guardianEmail: "guardian@example.test",
-        studentDisplayName: "Sam <Student>",
-      },
-      { transport, siteUrl: SITE },
-    );
-    expect(result).toEqual({
-      ok: true,
-      value: { providerMessageId: "re_direct_1" },
-    });
-    expect(requests).toHaveLength(1);
-    const req = requests[0]!;
-    expect(req.url).toBe("https://api.resend.com/emails");
-    expect(req.headers["Idempotency-Key"]).toBe(
-      `${GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX}:7c9e6679-7425-40de-944b-e07fc1f90ae7`,
-    );
-    expect(req.body.from).toBe("notifications@send.example.test");
-    expect(req.body.to).toEqual(["guardian@example.test"]);
-    expect(Object.keys(req.body).sort()).toEqual([
-      "from",
-      "html",
-      "reply_to",
-      "subject",
-      "text",
-      "to",
-    ]);
-    expect(String(req.body.html)).toContain(
-      `${SITE}/guardian/verify-consent?requestId=7c9e6679-7425-40de-944b-e07fc1f90ae7`,
-    );
-    expect(String(req.body.html)).toContain("Sam &lt;Student&gt;"); // escaped
-    expect(String(req.body.subject)).toContain("Guardian consent required");
-  });
-
   it("deletion scheduled: keyed by the account_deletion_requests row id, link carries the raw token, nothing else persists it", async () => {
     const { requests, transport } = fakeResend("ok");
     const result = await sendAccountDeletionScheduledEmail(
@@ -201,11 +162,12 @@ describe("direct sends (R7/R8/R9)", () => {
 
   it("a provider rejection is a Result, never a throw, and a missing site URL is config_missing with no request", async () => {
     const { requests, transport } = fakeResend("reject");
-    const rejected = await sendGuardianConsentRequestEmail(
+    const rejected = await sendAccountDeletionScheduledEmail(
       {
-        consentRequestId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-        guardianEmail: "g@example.test",
-        studentDisplayName: "S",
+        deletionRequestId: "11111111-1111-4111-8111-111111111111",
+        email: "u@example.test",
+        rawToken: "t",
+        scheduledHardDeleteAt: "2026-09-10T00:00:00.000Z",
       },
       { transport, siteUrl: SITE },
     );
@@ -280,7 +242,7 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(String(req.body.text).toLowerCase()).not.toMatch(/score|%|streak/);
   });
 
-  it("all four call sites are wired to the senders (R9)", () => {
+  it("all three call sites are wired to the senders (R9); the consent request is gone (G2-05)", () => {
     const root = path.resolve(__dirname, "../..");
     const read = (f: string) => fs.readFileSync(path.join(root, f), "utf8");
     const profile = read("server/routes/profile-routes.ts");
@@ -290,10 +252,11 @@ describe("direct sends (R7/R8/R9)", () => {
       /import \{ sendGuardianLinkInviteEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
     );
     expect(students).toMatch(/await sendGuardianLinkInviteEmail\(\{/);
-    expect(profile).toMatch(
-      /import \{ sendGuardianConsentRequestEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
+    // G2-05 (R6): the email-consent flow was removed; nothing may send, or export, it.
+    expect(profile).not.toContain("sendGuardianConsentRequestEmail");
+    expect(read("server/lib/notifications/direct-sends.ts")).not.toContain(
+      "sendGuardianConsentRequestEmail",
     );
-    expect(profile).toMatch(/await sendGuardianConsentRequestEmail\(\{/);
     expect(deletion).toMatch(
       /import \{ sendAccountDeletionScheduledEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
     );

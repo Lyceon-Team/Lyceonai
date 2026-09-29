@@ -1,6 +1,7 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
 import { parseRuntimeRole, type RuntimeRole } from "./auth-role.js";
+import { hasActiveGuardianLink } from "./guardian-link-state.js";
 
 /**
  * @spec [Doc-01_V8 Part I — Identity Model (one profiles row per authenticated user) | contracts/auth-login-e2e.contract.md AL-7]
@@ -42,7 +43,7 @@ const ACCOUNT_EMAIL_CONFLICT_MESSAGE =
   "An account already exists for this email. Sign in with your original method.";
 
 const PROFILE_SELECT =
-  "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at, actor_id";
+  "id, email, display_name, role, is_under_13, guardian_email, student_link_code, profile_completed_at, actor_id";
 
 type ProfileRow = {
   id: string;
@@ -50,6 +51,11 @@ type ProfileRow = {
   display_name: string | null;
   role: RuntimeRole;
   is_under_13: boolean;
+  /**
+   * G2-05: DERIVED, never stored — true exactly while the profile has an active guardian link
+   * (`hasActiveGuardianLink`). The stored `profiles.guardian_consent` column is no longer read.
+   * Interim: G2-04 replaces this sign-in-time value with a gate that reads the link per request.
+   */
   guardian_consent: boolean;
   guardian_email: string | null;
   student_link_code: string | null;
@@ -101,9 +107,14 @@ export async function ensureProfileForAuthUser(
     if (role === null) {
       throw new UnrecognizedRoleError(user.id);
     }
+    const guardianConnected = await hasActiveGuardianLink(
+      supabaseAdmin,
+      user.id,
+    );
     return {
-      ...(existingProfile as Omit<ProfileRow, "role">),
+      ...(existingProfile as Omit<ProfileRow, "role" | "guardian_consent">),
       role,
+      guardian_consent: guardianConnected,
     };
   }
 

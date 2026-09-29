@@ -57,7 +57,6 @@ interface ProfileCompletionResponse {
     role: ProfileRole;
   };
   guardianConsentRequired: boolean;
-  guardianConsentRequestId?: string | null;
 }
 
 function calculateAge(dateOfBirth: string): number | null {
