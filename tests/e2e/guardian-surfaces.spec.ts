@@ -80,12 +80,12 @@ async function serve(
       });
     if (p === "/api/csrf-token") return json({ csrfToken: "t" });
     if (p === "/api/profile") {
+      // The same answer the RTL harness gives: the role and the onboarding flags, and no
+      // profile columns (schema-truth gate Rule B — rows come from Postgres, never literals).
       return json({
         authenticated: true,
         user: {
           id: "guardian-1",
-          email: "pat@example.test",
-          display_name: "Pat",
           role: "guardian",
           profileCompletedAt: "2026-09-01T00:00:00.000Z",
           requiredProfileComplete: true,
@@ -226,6 +226,12 @@ const SURFACES: readonly Surface[] = [
     name: "students-billing",
     path: () => "/guardian/students",
     ready: "billing-manage",
+  },
+  {
+    // G4-08: a guardian's /profile is a guardian page.
+    name: "profile",
+    path: () => "/profile",
+    ready: "page-title",
   },
 ];
 

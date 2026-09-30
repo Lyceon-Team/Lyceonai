@@ -110,7 +110,9 @@ function StudentGate({
   );
 
   let body: React.ReactNode;
-  if (isLoading) {
+  // No answer yet — in flight, or not asked because the signed-in user is still resolving
+  // (the roster query waits for their id) — is loading, never an error.
+  if (isLoading || (!isError && data === undefined)) {
     body = <GuardianLoadingState what="your student" />;
   } else if (isError || data === undefined) {
     body = (
