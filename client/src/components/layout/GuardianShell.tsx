@@ -113,7 +113,9 @@ function GuardianHeader({
     >
       <SkipLink />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-2">
+        {/* Phone: logo and actions on one row, the centre (the student switcher) on its own
+            row below, so it is never squeezed to nothing. From `sm` up: one row, centre centred. */}
+        <div className="grid min-h-16 grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 py-2 sm:grid-cols-[1fr_auto_1fr] sm:py-0">
           {/* The guardian's way home is /guardian, not /dashboard — a different page, so
               the control is pointed at theirs rather than hidden from them. Same focus
               ring and title as the student shell: the two headers are meant to behave
@@ -132,7 +134,7 @@ function GuardianHeader({
           </Link>
 
           <div
-            className="flex min-w-0 justify-center"
+            className={`min-w-0 justify-center ${center ? "flex" : "hidden sm:flex"} col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto`}
             data-testid="guardian-shell-center"
           >
             {center}
