@@ -160,14 +160,47 @@ describe("ProfileComplete redirect continuity", () => {
         "/dashboard",
       );
     });
+
+    it("G2-04 wins over next: complete under-13 with no active link and next=/calendar → /guardian-required", () => {
+      window.history.replaceState({}, "", "/profile/complete?next=%2Fcalendar");
+      profilePayload = {
+        authenticated: true,
+        user: {
+          role: "student",
+          requiredProfileComplete: true,
+          profileCompletedAt: "2026-09-29T00:00:00.000Z",
+          guardianConsentRequired: true,
+        },
+      };
+      render(<ProfileComplete />);
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/guardian-required",
+      );
+    });
   });
 
-  it("shows the under-13 screen — code, copy control and guardian email", () => {
-    // WAS: asserted a one-paragraph Alert saying verification "is still
-    // required". Owner ruling 2026-09-16 — the under-13 condition stays (it is
-    // in the Terms and is the basis of the under-13 position) but it must be a
-    // useful screen, not a wall. So this asserts the MEANS are present, which is
-    // what makes it a screen: the code, a way to copy it, and a way to invite.
+  // G2-04: the under-13 screen moved to its own page (/guardian-required), built from the
+  // canonical link-code and guardian panels. Profile completion no longer renders it: a
+  // COMPLETED under-13 student with no active link is sent there instead.
+  it("a completed under-13 student with no active guardian link is sent to /guardian-required", () => {
+    profilePayload = {
+      authenticated: true,
+      user: {
+        role: "student",
+        requiredProfileComplete: true,
+        profileCompletedAt: "2026-09-29T00:00:00.000Z",
+        guardianConsentRequired: true,
+      },
+    };
+
+    render(<ProfileComplete />);
+
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+      "/guardian-required",
+    );
+  });
+
+  it("an incomplete under-13 profile sees the form, with no guardian email field", () => {
     profilePayload = {
       authenticated: true,
       user: {
@@ -175,37 +208,14 @@ describe("ProfileComplete redirect continuity", () => {
         requiredProfileComplete: false,
         profileCompletedAt: null,
         guardianConsentRequired: true,
-        studentLinkCode: "ABCDEF",
       },
     };
 
     render(<ProfileComplete />);
 
-    expect(screen.getByTestId("guardian-connect-required")).toBeInTheDocument();
-    expect(screen.getByTestId("student-link-code").textContent).toBe("ABCDEF");
-    expect(screen.getByTestId("copy-link-code")).toBeInTheDocument();
-    expect(screen.getByTestId("input-guardian-email")).toBeInTheDocument();
-    expect(screen.getByTestId("send-guardian-invite")).toBeInTheDocument();
     expect(screen.queryByTestId("redirect")).toBeNull();
-  });
-
-  it("says where to find the code when it is not ready, rather than showing an empty box", () => {
-    profilePayload = {
-      authenticated: true,
-      user: {
-        role: "student",
-        requiredProfileComplete: false,
-        profileCompletedAt: null,
-        guardianConsentRequired: true,
-        studentLinkCode: null,
-      },
-    };
-
-    render(<ProfileComplete />);
-
-    expect(screen.getByTestId("student-link-code-missing")).toBeInTheDocument();
-    expect(screen.queryByTestId("student-link-code")).toBeNull();
-    // The invite path still works without a code.
-    expect(screen.getByTestId("input-guardian-email")).toBeInTheDocument();
+    expect(screen.getByTestId("button-complete-profile")).toBeInTheDocument();
+    expect(screen.queryByTestId("input-guardian-email")).toBeNull();
+    expect(screen.queryByTestId("guardian-connect-required")).toBeNull();
   });
 });

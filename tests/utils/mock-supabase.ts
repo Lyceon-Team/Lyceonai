@@ -23,7 +23,6 @@ export interface MockProfile {
   display_name: string | null;
   role: 'student' | 'admin' | 'guardian';
   is_under_13?: boolean;
-  guardian_consent?: boolean;
   guardian_email?: string | null;
   student_link_code?: string | null;
 }
@@ -132,7 +131,6 @@ export const mockProfiles = {
     display_name: 'Test Student',
     role: 'student',
     is_under_13: false,
-    guardian_consent: true,
   }),
 
   admin: (): MockProfile => ({
@@ -141,7 +139,6 @@ export const mockProfiles = {
     display_name: 'Test Admin',
     role: 'admin',
     is_under_13: false,
-    guardian_consent: true,
   }),
 
   guardian: (): MockProfile => ({
@@ -150,7 +147,6 @@ export const mockProfiles = {
     display_name: 'Test Guardian',
     role: 'guardian',
     is_under_13: false,
-    guardian_consent: true,
   }),
 
   under13NoConsent: (): MockProfile => ({
@@ -159,7 +155,6 @@ export const mockProfiles = {
     display_name: 'Test Kid',
     role: 'student',
     is_under_13: true,
-    guardian_consent: false,
   }),
 
   under13WithConsent: (): MockProfile => ({
@@ -168,7 +163,6 @@ export const mockProfiles = {
     display_name: 'Test Kid 2',
     role: 'student',
     is_under_13: true,
-    guardian_consent: true,
   }),
 };
 

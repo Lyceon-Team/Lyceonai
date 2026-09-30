@@ -63,7 +63,6 @@ async function main(): Promise<void> {
         display_name: viewerOf(req) === "guardian" ? "Gia Rivera" : "Sam Rivera",
         role: viewerOf(req),
         is_under_13: false,
-        guardian_consent: true,
         profileCompletedAt: "2026-09-01T00:00:00Z",
         requiredProfileComplete: true,
         guardianConsentRequired: false,

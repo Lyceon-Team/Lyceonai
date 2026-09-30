@@ -175,11 +175,17 @@ describe.skipIf(!PG_AVAILABLE)("G1-02 guardian sign-up — real Postgres", () =>
       [NEWCOMER],
     );
     // Every account starts as the trigger leaves it: a student with nothing completed.
+    // Two statements, in this order: G2-03's lock refuses a date-of-birth change on a COMPLETED
+    // profile, so completion is undone first — exactly as it would have to be for real.
     await pg.query(
       `UPDATE public.profiles
-          SET role = 'student', date_of_birth = NULL, profile_completed_at = NULL,
+          SET role = 'student', profile_completed_at = NULL,
               student_link_code = NULL, student_link_code_issued_at = NULL
         WHERE id = $1`,
+      [NEWCOMER],
+    );
+    await pg.query(
+      `UPDATE public.profiles SET date_of_birth = NULL WHERE id = $1`,
       [NEWCOMER],
     );
   });

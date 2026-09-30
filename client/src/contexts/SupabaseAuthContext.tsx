@@ -10,6 +10,10 @@ import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
 import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
+import {
+  runtimeRoleSchema,
+  ROLE_UNRECOGNIZED,
+} from "@lyceon/shared/runtime-role-schema";
 import { clearReconsentDismissal } from "@/components/legal/reconsent-dismissal";
 import {
   clearProfileQuery,
@@ -69,6 +73,11 @@ interface SupabaseAuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isGuardian: boolean;
+  /**
+   * G2-02: the server refused this session as ROLE_UNRECOGNIZED (or returned a role outside the
+   * shared schema). There is no user, and the route guard shows a neutral screen, not /login.
+   */
+  accountUnavailable: boolean;
   signUp: (
     email: string,
     password: string,
@@ -89,6 +98,7 @@ const SupabaseAuthContext = createContext<SupabaseAuthContextType | undefined>(
 
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<SupabaseProfile | null>(null);
+  const [accountUnavailable, setAccountUnavailable] = useState(false);
   const [authLoading, setAuthLoading] = useState(true); // Default true as requested
   const queryClient = useQueryClient();
   const isInitializing = useRef(true); // Flag to prevent auth state changes during init
@@ -161,13 +171,27 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     // session is genuinely absent/expired, so we clear local state and treat the user as signed out.
     // `=== false`, not falsiness: only the shared function's 401/403 answer means signed out,
     // exactly as the status check this replaced. A 2xx body is a session, whatever it omits.
+    //
+    // G2-02 (merged from `main`): a 403 ROLE_UNRECOGNIZED is not a sign-out. Record it so the
+    // route guard shows the neutral screen instead of sending the person to a login that would
+    // loop back here. The shared fetch function carries the 403's refusal code for this.
     if (data.authenticated === false) {
+      if (data.status === 403) {
+        setAccountUnavailable(data.code === ROLE_UNRECOGNIZED);
+      }
       clearAuthState();
       return null;
     }
 
     const backendUser = data.user;
     if (!backendUser) return null;
+    // G2-02: parse, never assume. A role outside the shared schema is not "probably a student".
+    if (!runtimeRoleSchema.safeParse(backendUser.role).success) {
+      setAccountUnavailable(true);
+      clearAuthState();
+      return null;
+    }
+    setAccountUnavailable(false);
 
     return {
       id: backendUser.id,
@@ -175,7 +199,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       display_name: backendUser.display_name,
       role: backendUser.role,
       is_under_13: backendUser.is_under_13,
-      guardian_consent: backendUser.guardian_consent,
       student_link_code: backendUser.student_link_code,
       // Map additional onboarding status flags
       profile_completed_at: backendUser.profileCompletedAt,
@@ -426,6 +449,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         throw new Error(`Sign out failed with status ${response.status}`);
       }
 
+      setAccountUnavailable(false);
       clearAuthState();
       // G1-03: remove every cached response, not just mark it stale. `clearAuthState` has
       // already cleared via `setUser(null)` when a user was set; this also covers a sign-out
@@ -506,6 +530,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: !!user,
     isAdmin: user?.role === "admin",
     isGuardian: user?.role === "guardian",
+    accountUnavailable,
     signUp,
     signIn,
     signInWithGoogle,

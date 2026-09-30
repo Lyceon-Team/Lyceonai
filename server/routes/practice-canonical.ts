@@ -7,7 +7,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
@@ -2140,7 +2140,7 @@ router.get(
   "/sessions/open",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2214,7 +2214,7 @@ router.post(
   "/sessions/:sessionId/resume",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2326,7 +2326,7 @@ router.post(
   "/sessions",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2401,7 +2401,7 @@ router.post(
   "/sessions/:sessionId/terminate",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2476,7 +2476,7 @@ router.post(
   "/sessions/:sessionId/calculator-state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2563,7 +2563,7 @@ router.get(
   "/sessions/:sessionId/next",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2613,7 +2613,7 @@ router.get(
   "/sessions/:sessionId/state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -3986,7 +3986,7 @@ router.post(
   "/answer",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitPracticeAnswer,
 );
@@ -3994,7 +3994,7 @@ router.post(
   "/sessions/:sessionId/skip",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitPracticeSkip,
 );

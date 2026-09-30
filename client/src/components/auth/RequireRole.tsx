@@ -1,4 +1,6 @@
 import { ReactNode, useState } from "react";
+import { runtimeRoleSchema } from "@lyceon/shared/runtime-role-schema";
+import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
@@ -32,7 +34,8 @@ function intendedPath(location: string): string {
 }
 
 export function RequireRole({ allow, children }: RequireRoleProps) {
-  const { user, authLoading, isAdmin, isGuardian } = useSupabaseAuth();
+  const { user, authLoading, isAdmin, isGuardian, accountUnavailable } =
+    useSupabaseAuth();
   const [location] = useLocation();
 
   // Was the guardian re-consent prompt waved away? Two sources, deliberately.
@@ -62,6 +65,12 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     );
   }
 
+  // G2-02: the server refused this session as ROLE_UNRECOGNIZED. Not a sign-out, so not /login —
+  // the next sign-in would be refused the same way and loop back.
+  if (!user && accountUnavailable) {
+    return <AccountUnavailable />;
+  }
+
   if (!user) {
     // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
     // Carry the intended destination — path AND query — into the login redirect so the guardian
@@ -73,11 +82,13 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     );
   }
 
-  const userRole: UserRole = isAdmin
-    ? "admin"
-    : isGuardian
-      ? "guardian"
-      : "student";
+  // G2-02: the role is PARSED, never defaulted. This used to fall through to "student" for
+  // anything that was not admin or guardian, so an unknown role saw student pages.
+  const parsedRole = runtimeRoleSchema.safeParse(user.role);
+  if (!parsedRole.success) {
+    return <AccountUnavailable />;
+  }
+  const userRole: UserRole = parsedRole.data;
 
   const isAllowed =
     allow.includes(userRole) || (isAdmin && allow.includes("admin"));
@@ -111,14 +122,8 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // the flag itself. What remains are two facts about an INCOMPLETE ACCOUNT —
   // no profile yet — and one condition from the Terms:
   //
-  // `guardianConsentRequired` is the under-13 rule: a student under 13 cannot
-  // use LYCEON until a guardian connects. That is not a consent gate, it is the
-  // basis of the under-13 position, and it routes to a screen built to get them
-  // connected — link code, guardian email — rather than a wall.
   const needsOnboarding =
-    guardianConsentRequired === true ||
-    requiredProfileComplete === false ||
-    !profileCompletedAt;
+    requiredProfileComplete === false || !profileCompletedAt;
 
   if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
     // @spec [AS-5; register UI-03] | @implemented [2026-09-29] | plain English: the page the
@@ -128,6 +133,25 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     return (
       <Redirect to={onboardingPathWithReturn(intendedPath(location))} replace />
     );
+  }
+
+  // `guardianConsentRequired` is the under-13 rule (R6, SCL-187): a student under
+  // 13 cannot use LYCEON until a guardian link is active. That is not a consent
+  // gate, it is the basis of the under-13 position, and it routes to a screen
+  // built to get them connected — the link code, the email invite, the guardian
+  // list — rather than a wall. The SERVER enforces it on every learning request
+  // (403 GUARDIAN_LINK_REQUIRED); this only spares the student refused pages.
+  const isGuardianRequiredPage = location === "/guardian-required";
+  const needsGuardianLink =
+    userRole === "student" && guardianConsentRequired === true;
+
+  if (
+    !isAdmin &&
+    !isProfileCompletePage &&
+    !isGuardianRequiredPage &&
+    needsGuardianLink
+  ) {
+    return <Redirect to="/guardian-required" replace />;
   }
 
   // @spec [LYCEON consent capture §6]

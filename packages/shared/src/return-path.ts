@@ -42,7 +42,9 @@ export type ReturnPathRole = "student" | "guardian" | "admin";
 export const RETURN_PATH_ROUTE_ROLES: Readonly<
   Record<string, readonly ReturnPathRole[]>
 > = {
-  "/guardian": ["guardian", "admin"],
+  // G2-01 (merged from `main`): App.tsx gates /guardian to the guardian role only, and the
+  // server refuses admins too, so an admin is never landed there.
+  "/guardian": ["guardian"],
   "/dashboard": ["student", "admin"],
   "/profile": ["student", "guardian", "admin"],
   "/practice": ["student", "admin"],

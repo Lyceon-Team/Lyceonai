@@ -23,6 +23,7 @@ const verifyOtpMock = vi.hoisted(() => vi.fn());
 const signOutMock = vi.hoisted(() => vi.fn(async () => ({ error: null })));
 const ensureProfileMock = vi.hoisted(() => vi.fn());
 const captureLegalMock = vi.hoisted(() => vi.fn());
+const hasActiveGuardianLinkMock = vi.hoisted(() => vi.fn(async () => false));
 
 vi.mock("../../server/lib/supabase-ssr.js", () => ({
   createSupabaseServerClient: () => ({
@@ -53,6 +54,10 @@ vi.mock("../../server/lib/profile-bootstrap.js", async (importOriginal) => {
 
 // captureLegalAcceptances is mocked so we can drive durable:true (single-store failure absorbed →
 // session survives) vs durable:false (both stores down → fail closed) at the finalize seam.
+// G2-04: the callback reads the link live for a completed under-13 student.
+vi.mock("../../server/lib/guardian-link-state.js", () => ({
+  hasActiveGuardianLink: hasActiveGuardianLinkMock,
+}));
 vi.mock("../../server/lib/legal-acceptance.js", () => ({
   captureLegalAcceptances: captureLegalMock,
 }));
@@ -67,7 +72,6 @@ const USER = { id: "user-oauth", email: "oauth@example.com" };
 type ProfileShape = {
   profile_completed_at: string | null;
   is_under_13: boolean;
-  guardian_consent: boolean;
   role: "student" | "guardian";
 };
 
@@ -109,7 +113,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: null,
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -120,18 +123,33 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(exchangeCodeForSessionMock).toHaveBeenCalledWith("valid-code");
   });
 
-  it("DOB-gates an under-13 profile awaiting guardian consent to /profile/complete (even when completed_at is set)", async () => {
+  it("G2-04: a completed under-13 student with no active guardian link lands on /guardian-required", async () => {
     okExchange();
+    hasActiveGuardianLinkMock.mockResolvedValueOnce(false);
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: true,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
     const res = await request(makeApp()).get("/auth/callback?code=valid-code");
 
-    expect(res.headers.location).toBe("https://lyceon.ai/profile/complete");
+    expect(res.headers.location).toBe("https://lyceon.ai/guardian-required");
+    expect(hasActiveGuardianLinkMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("G2-04: a completed under-13 student WITH an active guardian link goes to /dashboard", async () => {
+    okExchange();
+    hasActiveGuardianLinkMock.mockResolvedValueOnce(true);
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: true,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get("/auth/callback?code=valid-code");
+
+    expect(res.headers.location).toBe("https://lyceon.ai/dashboard");
   });
 
   it("routes a completed student to /dashboard", async () => {
@@ -139,7 +157,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -153,7 +170,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "guardian",
     } satisfies ProfileShape);
 
@@ -170,7 +186,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -191,7 +206,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -215,7 +229,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -236,7 +249,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -254,7 +266,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "guardian",
     } satisfies ProfileShape);
 
@@ -272,7 +283,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: null,
       is_under_13: false,
-      guardian_consent: false,
       role: "guardian",
     } satisfies ProfileShape);
 
@@ -290,7 +300,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: null,
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -303,12 +312,15 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     );
   });
 
-  it("UI-03 an under-13 student awaiting consent keeps next=/tests/<id> through the gate", async () => {
+  // UI-03 merged with G2-04 (from `main`): a completed under-13 student with no active guardian
+  // link goes to /guardian-required even when a return path is present — the server refuses
+  // every learning request until a guardian connects, so `next` would only bounce.
+  it("UI-03 + G2-04: a completed under-13 student with no active link and next=/tests/<id> lands on /guardian-required", async () => {
     okExchange();
+    hasActiveGuardianLinkMock.mockResolvedValueOnce(false);
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: true,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -316,9 +328,23 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
       "/auth/callback?code=valid-code&next=%2Ftests%2Fs-1",
     );
 
-    expect(res.headers.location).toBe(
-      "https://lyceon.ai/profile/complete?next=%2Ftests%2Fs-1",
+    expect(res.headers.location).toBe("https://lyceon.ai/guardian-required");
+  });
+
+  it("UI-03 + G2-04: a completed under-13 student WITH an active link keeps next=/tests/<id>", async () => {
+    okExchange();
+    hasActiveGuardianLinkMock.mockResolvedValueOnce(true);
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: true,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=%2Ftests%2Fs-1",
     );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/tests/s-1");
   });
 
   it("UI-03 a disallowed next is still dropped at the onboarding gate", async () => {
@@ -326,7 +352,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: null,
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 
@@ -342,7 +367,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
     const student = await request(makeApp()).get(
@@ -354,7 +378,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
-      guardian_consent: false,
       role: "guardian",
     } satisfies ProfileShape);
     const guardian = await request(makeApp()).get(
@@ -369,7 +392,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: null,
       is_under_13: false,
-      guardian_consent: false,
       role: "guardian",
     } satisfies ProfileShape);
 
@@ -402,7 +424,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
       ensureProfileMock.mockResolvedValueOnce({
         profile_completed_at: "2026-06-17T00:00:00Z",
         is_under_13: false,
-        guardian_consent: false,
         role: "guardian",
       } satisfies ProfileShape);
 
@@ -423,7 +444,6 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: null,
       is_under_13: false,
-      guardian_consent: false,
       role: "student",
     } satisfies ProfileShape);
 

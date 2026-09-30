@@ -30,6 +30,7 @@ import {
   type QueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
+import { z } from "zod";
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
@@ -56,7 +57,6 @@ export type ProfileHydrationUser = {
   isAdmin: boolean;
   isGuardian: boolean;
   is_under_13: boolean;
-  guardian_consent: boolean;
   guardianEmail: string | null;
   dateOfBirth: string | null;
   marketingOptIn: boolean | null;
@@ -76,17 +76,37 @@ export type ProfileHydration =
       pendingDeletion?: { scheduledHardDeleteAt: string } | null;
       user: ProfileHydrationUser | null;
     }
-  | { authenticated: false; user: null };
+  | {
+      authenticated: false;
+      user: null;
+      /** Which refusal it was; the auth provider treats a 403 differently (G2-02). */
+      status: 401 | 403;
+      /** A 403's refusal code (e.g. `ROLE_UNRECOGNIZED`), if its body declared one. */
+      code: string | null;
+    };
 
-const SIGNED_OUT: ProfileHydration = { authenticated: false, user: null };
+/** The one field read from a 403 body: its refusal code, if any (G2-02). */
+const refusalCodeSchema = z.object({ code: z.string() });
 
 export async function fetchProfile(): Promise<ProfileHydration> {
   const response = await csrfFetch(PROFILE_PATH, { credentials: "include" });
 
   // AUTH-001: the server refreshes the session on every request, so a 401/403 here means the
   // session is genuinely absent. That is an answer, not a failure.
-  if (response.status === 401 || response.status === 403) {
-    return SIGNED_OUT;
+  if (response.status === 401) {
+    return { authenticated: false, user: null, status: 401, code: null };
+  }
+  if (response.status === 403) {
+    // G2-02 (merged from `main`): a 403 may be ROLE_UNRECOGNIZED, which the auth provider shows
+    // as a neutral screen rather than a sign-out. Read only a declared-JSON body; a malformed
+    // one throws, as the provider's own read did before this module owned it.
+    const body: unknown = response.headers
+      .get("content-type")
+      ?.includes("application/json")
+      ? await response.json()
+      : null;
+    const code = refusalCodeSchema.safeParse(body).data?.code ?? null;
+    return { authenticated: false, user: null, status: 403, code };
   }
 
   if (!response.ok) {

@@ -9,9 +9,21 @@ there. There used to be a second copy under scripts/ci/ with a byte-identity
 check guarding the pair; the pair was the defect and the check was a workaround
 for it. One file cannot drift from itself (owner ruling, 2026-09-17).
 
-Two responsibilities, and no third:
+Three responsibilities, and no fourth:
   1. P dict  ->  Doc 05F §10.1 snapshot (what calendar_compute_plan takes).
   2. reference plan  ->  the fixtures' four-element serialization.
+  3. P dict  ->  the fixtures' `exam_placement` block, BOTH halves of Step 2's return.
+
+WHY (3) EXISTS. `generate()` does `exams, _suppressed = exam_dates(...)` and drops the
+second value, so a suppression can never appear in a plan -- and the gate therefore
+could not see the suppression rule at all. Every fixture carried an `exam_placement`
+block and nothing in the repository read it; the fixture named
+`exam_both_occurrences_overridden_suppressed` could only witness the ABSENCE of a
+block on a date, which passes identically whatever the reason. Brief 18's census
+measured the consequence: deleting the suppression arm changed 0 of the 13 fixtures
+and 0 of 3000 suite cases (docs/plans/Calendar_Rule_Branch_Coverage_Census.md).
+Emitting it here makes it comparable against `calendar_place_full_lengths`' own
+return, which does carry both halves.
 
 Usage:
   calendar_parity_emit.py fixtures
@@ -22,7 +34,7 @@ Usage:
 import json
 import random
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -123,6 +135,22 @@ def snapshot(P):
     }
 
 
+def exam_placement(P):
+    """The fixtures' `exam_placement` block: Step 2's return, BOTH values.
+
+    Shaped to match `calendar_place_full_lengths`' own jsonb after projection --
+    `placed` keyed by ISO date, `suppressed` a sorted list of ISO dates. Sorted on
+    both sides so the comparison is about the CONTENT and not about the order two
+    different languages happened to build a map in.
+    """
+    horizon = [P["today"] + timedelta(days=i) for i in range(ref.C["horizon_days"])]
+    placed, suppressed = ref.exam_dates(P, horizon)
+    return {
+        "placed": {d.isoformat(): k for d, k in sorted(placed.items())},
+        "suppressed": sorted(d.isoformat() for d in suppressed),
+    }
+
+
 def serialize(plan):
     """The fixtures' shape: [block_type, mix, target_count, explanation_key].
 
@@ -169,6 +197,7 @@ def emit(name, P, stored=None):
         "deterministic_v1": serialize(det),
         "fallback_v1": serialize(fb),
         "deterministic_v1_explanations": explanations(det),
+        "exam_placement": exam_placement(P),
     }
     if stored is not None:
         case["stored"] = stored
@@ -179,8 +208,15 @@ def main():
     mode = sys.argv[1]
     if mode == "fixtures":
         for name, fx in FIXTURES["fixtures"].items():
+            # A fixture missing `exam_placement` is a HARD failure, never a skipped
+            # comparison: a gate that quietly stops checking one of its three
+            # claims is the failure mode this whole file is arranged against.
+            if "exam_placement" not in fx:
+                raise SystemExit(f"fixture {name!r} has no exam_placement block")
             emit(name, build_P(fx["input"]),
-                 stored={"deterministic_v1": fx["deterministic_v1"], "fallback_v1": fx["fallback_v1"]})
+                 stored={"deterministic_v1": fx["deterministic_v1"],
+                         "fallback_v1": fx["fallback_v1"],
+                         "exam_placement": fx["exam_placement"]})
     elif mode == "suite":
         n, seed = int(sys.argv[2]), int(sys.argv[3])
         rng = random.Random(seed)

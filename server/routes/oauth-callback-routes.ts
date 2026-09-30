@@ -18,6 +18,7 @@ import { Router, Request, Response } from "express";
 import { logger } from "../logger.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
+import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import {
   ensureProfileForAuthUser,
   AccountEmailConflictError,
@@ -342,9 +343,15 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         }
       }
 
-      const profileNeedsCompletion =
-        !profile.profile_completed_at ||
-        (profile.is_under_13 && !profile.guardian_consent);
+      const profileNeedsCompletion = !profile.profile_completed_at;
+      // G2-04: an under-13 student with no ACTIVE guardian link lands on the linking page, read
+      // live from `guardian_links` (no stored flag). The server gate refuses every learning
+      // request anyway; this only saves the student a detour through a refused page.
+      const needsGuardianLink =
+        !profileNeedsCompletion &&
+        profile.role === "student" &&
+        profile.is_under_13 === true &&
+        !(await hasActiveGuardianLink(admin, profile.id));
 
       // AS-5: password-recovery (and any future allow-listed handoff) routes here AFTER the
       // onboarding gate — e.g. recovery → /update-password to set a new password.
@@ -355,11 +362,18 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       // carries the allowlisted `next` along (`/profile/complete?next=…`) instead of dropping it;
       // a complete profile lands on `next` only if its role may open it, else the role default.
       // The profile gate itself (`profileNeedsCompletion`) is unchanged.
-      redirectPath = postAuthDestination({
-        role: profile.role,
-        needsOnboarding: profileNeedsCompletion,
-        next: safeNext,
-      });
+      //
+      // G2-04 (merged from `main`): a complete under-13 student with no active guardian link
+      // goes to /guardian-required ahead of any `next` — the server refuses every learning
+      // request until a guardian connects. Onboarding still comes first.
+      redirectPath =
+        !profileNeedsCompletion && needsGuardianLink
+          ? "/guardian-required"
+          : postAuthDestination({
+              role: profile.role,
+              needsOnboarding: profileNeedsCompletion,
+              next: safeNext,
+            });
     } catch (finalizeErr) {
       // AL-7 (profile-per-human): same email already owned by another identity (a second provider
       // not merged by Supabase identity-linking). Deliberate conflict — do not fork the human.

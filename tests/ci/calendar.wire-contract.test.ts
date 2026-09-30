@@ -69,6 +69,14 @@ vi.mock("../../server/middleware/subject-resolver", async () => {
       _res: express.Response,
       next: express.NextFunction,
     ) => {
+      // The real resolver only runs behind requireSupabaseAuth, so a caller always exists; the
+      // G2-04 link gate after it reads that caller and fails closed without one.
+      (req as express.Request & { user?: unknown }).user ??= {
+        id: "wire-guardian",
+        role: "guardian",
+        isAdmin: false,
+        isGuardian: true,
+      };
       req.subject = { studentId: SCENARIO_STUDENT, via: "guardian" };
       next();
     },

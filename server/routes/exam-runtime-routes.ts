@@ -28,7 +28,7 @@ import { Router, type Request, type Response } from "express";
 import type { ZodTypeAny, z } from "zod";
 import {
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
@@ -198,7 +198,7 @@ function parseOr400<S extends ZodTypeAny>(
   return parsed.data;
 }
 
-const studentGuards = [requireProfileComplete, requireConsentCompliance];
+const studentGuards = [requireProfileComplete, requireGuardianLinkForUnder13];
 
 // ── §16 endpoints ───────────────────────────────────────────────────────────
 

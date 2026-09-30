@@ -835,6 +835,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-writer-gates.sql
 
+      # A gate that has stopped biting is indistinguishable from a passing one, so the
+      # placement gates are planted rather than trusted. Each case builds its own
+      # throwaway database, because the pipeline is not idempotent.
+      - name: Calendar placement gates — mutations (Z-70 and the override arms)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/calendar-placement-gate.mutations.sh
+
       # Real concurrent sessions, not a single-session script: the FOR UPDATE on
       # the study profile that makes version_no = MAX+1 safe (INV-08-17) is
       # invisible unless somebody else is holding it. This is also where the
@@ -972,6 +983,19 @@ jobs:
           PGDATABASE: calendar_parity
           CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
         run: pnpm exec tsx scripts/ci/calendar-parity.ts --suite-n 3000 --suite-seed 1
+
+      # Every fixture carried an `exam_placement` block and nothing read it, so the
+      # suppression rule had no gate of any kind. It does now, and these plants are what
+      # say so: two on the stored block, one on the database's own return.
+      - name: Parity exam_placement comparison — mutations
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+          CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
+        run: bash scripts/ci/calendar-parity-placement.mutations.sh
 
   practice-integration:
     runs-on: ubuntu-latest
@@ -1189,6 +1213,108 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-denial-sweep.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-denial-sweep.json \
             --file tests/ci/guardian-denial-sweep.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G2-01; audit G-AUD-05; R5; SCL-078] | @implemented [2026-09-29]
+      # Guardian routes admit guardians only (an admin gets the gate's 403 and redeems nothing),
+      # and create_active_guardian_link_audited refuses a non-guardian grantee or a non-student
+      # subject with LY006. Real PG; behind the summary gate because a skipped file exits 0.
+      - name: Guardian routes admit guardians only → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-admin-denied.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-admin-denied.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-admin-denied.json \
+            --file tests/ci/guardian-admin-denied.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
+      # An unrecognised profile role ('tutor'/'teacher') is refused with 403 ROLE_UNRECOGNIZED by
+      # the real session middleware, the row is never rewritten, public routes still answer. Real
+      # PG; behind the summary gate because a skipped file exits 0.
+      - name: Unknown role fails closed → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/role-fail-closed.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-role-fail-closed.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-role-fail-closed.json \
+            --file tests/ci/role-fail-closed.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G2-03; audit G-AUD-02; R10] | @implemented [2026-09-29]
+      # The date of birth is locked after profile completion on the route (409
+      # DATE_OF_BIRTH_LOCKED) and in the database (trigger profiles_lock_date_of_birth, LY007);
+      # is_under_13 is derived, never written; the guardian NULL fill works once; account
+      # deletion's deidentify_user still clears it. Real PG; behind the summary gate.
+      - name: Date of birth locked after completion → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/date-of-birth-lock.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-date-of-birth-lock.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-date-of-birth-lock.json \
+            --file tests/ci/date-of-birth-lock.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G2-05; audit G-AUD-03; R6; SCL-187] | @implemented [2026-09-29]
+      # The email-consent flow is removed: an under-13 student completes the profile, no
+      # guardian_consent_requests row is written, and "guardian connected" follows the ACTIVE
+      # link (absent, linked, revoked). Real PG; behind the summary gate.
+      - name: Consent-token flow removed → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/consent-flow-removed.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-consent-flow-removed.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-consent-flow-removed.json \
+            --file tests/ci/consent-flow-removed.pg.ci.test.ts
+
+      # @spec [Guardian_Closure_Plan G2-04; owner ruling R6; SCL-187 rule 1] | @implemented [2026-09-29]
+      # The under-13 link gate, read live from guardian_links on every request, swept over every
+      # /api endpoint read from the real app's router: unlinked → 403 GUARDIAN_LINK_REQUIRED on each
+      # learning endpoint; after a real redeem, none; a guardian unlinking mid-session closes the
+      # student's very next request; billing checkout/portal closed; a linked guardian can still pay;
+      # the approved allowed set reachable throughout. Verdict read from vitest's JSON report: a
+      # PG-backed suite that skips is a vacuous pass.
+      - name: Under-13 link gate, every learning endpoint (G2-04) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/under-13-link-gate.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-under-13-link-gate.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-under-13-link-gate.json \
+            --file tests/ci/under-13-link-gate.pg.ci.test.ts
+
+      # The G2-04 assertions are worth what their plants prove. One product-source mutation per
+      # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
+      # per student — the stored-flag design; a learning read and checkout ungated; the gate
+      # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
+      # its assertion red, each reverted byte-identically in a trap.
+      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/under-13-link-gate.mutations.sh
 
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real

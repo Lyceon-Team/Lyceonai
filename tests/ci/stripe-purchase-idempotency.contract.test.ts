@@ -95,6 +95,13 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
   generateToken: () => "test-csrf-token",
 }));
 vi.mock("../../server/middleware/supabase-auth", () => ({
+  // G2-04: the under-13 link gate on checkout/portal has its own real-PG suite
+  // (tests/ci/under-13-link-gate.pg.ci.test.ts); here it passes, like auth above it.
+  requireGuardianLinkForUnder13: (
+    _req: unknown,
+    _res: unknown,
+    next: () => void,
+  ) => next(),
   requireSupabaseAuth: (
     req: Record<string, unknown>,
     _res: unknown,

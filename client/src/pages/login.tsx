@@ -38,9 +38,10 @@ export default function Login() {
       // account, and the under-13 rule, which is a condition of the Terms rather
       // than a consent state.
       const needsOnboarding =
-        user.guardianConsentRequired === true ||
-        user.requiredProfileComplete === false ||
-        !user.profile_completed_at;
+        user.requiredProfileComplete === false || !user.profile_completed_at;
+      // G2-04: an under-13 student with no active guardian link goes to the linking page.
+      const needsGuardianLink =
+        user.role === "student" && user.guardianConsentRequired === true;
 
       // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
       // A return path captured by RequireRole (`/login?next=…`) wins over the role default —
@@ -58,12 +59,19 @@ export default function Login() {
           ? returnPathFromSearch(window.location.search)
           : null;
 
+      // G2-04 (merged from `main`): a complete under-13 student with no active guardian link
+      // goes to the linking page ahead of any return path; the server refuses every learning
+      // request until a guardian connects, so a `next` there would only bounce. Onboarding
+      // still comes first, exactly as on `main`.
+      const onboardingFirst = user.role !== "admin" && needsOnboarding;
       navigate(
-        postAuthDestination({
-          role: user.role,
-          needsOnboarding: user.role !== "admin" && needsOnboarding,
-          next,
-        }),
+        !onboardingFirst && needsGuardianLink
+          ? "/guardian-required"
+          : postAuthDestination({
+              role: user.role,
+              needsOnboarding: onboardingFirst,
+              next,
+            }),
       );
     }
   }, [isAuthenticated, authLoading, user, navigate]);

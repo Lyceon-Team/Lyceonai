@@ -1777,8 +1777,8 @@ $flbackfill$;
 
 
 -- ----------------------------------------------------------------------------
--- Z-56 .. Z-59 — exam placement is arithmetic on the student's choice
---                (formula sheet §2 Step 2 as rewritten; 20261011000000)
+-- Z-56 .. Z-59, Z-70 — exam placement is arithmetic on the student's choice
+--                       (formula sheet §2 Step 2 as rewritten; 20261011000000)
 --
 -- THESE GATES DISCOVER THEIR OWN DATES. They call
 -- `calendar_place_full_lengths` to learn where it puts an exam, then override
@@ -1803,6 +1803,12 @@ DECLARE
   S_SETUP CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000010';
   S_SHIFT CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000011';
   S_REH   CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000012';
+  -- Z-70 needs a FOURTH, and for the same reason the other three are separate:
+  -- it needs the LAST cadence date in the horizon overridden while an EARLIER one
+  -- survives. On S_SHIFT that state is already spent -- Z-58 blocks both
+  -- occurrences, so nothing is left placed and "the answer is still non-trivial"
+  -- could not be asserted.
+  S_TAIL  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000013';
   v_today   date := (now() AT TIME ZONE 'America/Chicago')::date;
   v_dates   date[];
   v_input   jsonb;
@@ -1811,6 +1817,10 @@ DECLARE
   v_first   date;
   v_shift   date;
   v_reh     date;
+  v_last    date;
+  v_hd      integer;   -- horizon_days AS THIS BLOCK SEES IT, not 14 (see Z-70)
+  v_iv      integer;
+  v_tdates  date[];
   v_n       int;
 
 BEGIN
@@ -1828,17 +1838,42 @@ BEGIN
   SELECT (value #>> '{}')::integer INTO v_lead
   FROM public.calendar_runtime_config WHERE key = 'final_exam_lead_days';
 
+  -- READ, NEVER ASSUME, 14. Z-51 sets horizon_days to 28 (line ~1528) and this file
+  -- is ONE transaction, so every gate after it sees 28 -- the same inheritance the
+  -- Z-56 preamble warns about for enabled_block_types. Z-70's whole case is "the
+  -- shifted date falls past the horizon END", so a hardcoded 14 would put its
+  -- precondition 14 days off and let it pass against the wrong arm. It did, on the
+  -- first draft: the gate reported OK while the function had placed an exam at
+  -- today+14, inside the real 28-day window and correctly so.
+  SELECT (value #>> '{}')::integer INTO v_hd
+  FROM public.calendar_runtime_config WHERE key = 'horizon_days';
+  -- The interval that puts the SECOND sitting as late as the horizon allows while its
+  -- +7 still falls off the end: sittings are at today+1 and today+1+7*iv, so iv is the
+  -- largest whole number of weeks with today+1+7*iv <= today+v_hd-1. Derived, not
+  -- written, so this gate holds at 14 (iv=1) and at 28 (iv=3) alike.
+  v_iv := (v_hd - 2) / 7;
+  IF v_iv < 1 OR v_iv > 4 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 horizon_days=% needs interval_weeks=%, outside the CHECK''s 1..4 — the fixture cannot be built',
+      v_hd, v_iv;
+  END IF;
+  -- Its own date array, spanning the horizon the FUNCTION will use. Handing the
+  -- builder 14 dates while the function reasons over 28 is how the first draft
+  -- managed to assert a bound nothing in the system was using.
+  v_tdates := ARRAY(SELECT g::date FROM generate_series(v_today, v_today + (v_hd - 1), interval '1 day') g);
+
   v_dates := ARRAY(SELECT g::date FROM generate_series(v_today, v_today + 13, interval '1 day') g);
 
   INSERT INTO auth.users (id, email) VALUES
     (S_SETUP, 'place-setup@example.test'),
     (S_SHIFT, 'place-shift@example.test'),
-    (S_REH,   'place-reh@example.test')
+    (S_REH,   'place-reh@example.test'),
+    (S_TAIL,  'place-tail@example.test')
   ON CONFLICT DO NOTHING;
   INSERT INTO public.profiles (id, email, role) VALUES
     (S_SETUP, 'place-setup@example.test', 'student'),
     (S_SHIFT, 'place-shift@example.test', 'student'),
-    (S_REH,   'place-reh@example.test',   'student')
+    (S_REH,   'place-reh@example.test',   'student'),
+    (S_TAIL,  'place-tail@example.test',  'student')
   ON CONFLICT DO NOTHING;
 
   -- All three study every day, so nothing below depends on which weekday CI runs.
@@ -1857,14 +1892,20 @@ BEGIN
     -- Z-59: MONTHLY, so no cadence exam competes with the rehearsal inside 14 days,
     -- and a target placed so the rehearsal lands on today+3.
     (S_REH, 'America/Chicago', 127, 120, EXTRACT(DOW FROM v_today + 3)::integer,
-     4, 1400, v_today + 3 + v_lead, now());
+     4, 1400, v_today + 3 + v_lead, now()),
+    -- Z-70: set up one interval-week back minus a day so the first sitting is tomorrow,
+    -- with the interval chosen above so the SECOND sitting is the last the horizon
+    -- holds and its +7 falls off the end. Target far beyond the horizon, so no
+    -- rehearsal competes for the two-per-horizon cap.
+    (S_TAIL, 'America/Chicago', 127, 120, EXTRACT(DOW FROM v_today + 1)::integer,
+     v_iv, 1400, v_today + v_hd + 120, now() - interval '6 days');
 
   INSERT INTO public.student_domain_mastery
     (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
      event_count_total, constants_snapshot_hash)
-  SELECT u, 'M', 'Algebra', 0, 0, 0, 10, 'h' FROM unnest(ARRAY[S_SETUP,S_SHIFT,S_REH]) u
+  SELECT u, 'M', 'Algebra', 0, 0, 0, 10, 'h' FROM unnest(ARRAY[S_SETUP,S_SHIFT,S_REH,S_TAIL]) u
   UNION ALL
-  SELECT u, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h' FROM unnest(ARRAY[S_SETUP,S_SHIFT,S_REH]) u
+  SELECT u, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h' FROM unnest(ARRAY[S_SETUP,S_SHIFT,S_REH,S_TAIL]) u
   ON CONFLICT DO NOTHING;
 
   ---------------------------------------------------------------- Z-56
@@ -1987,6 +2028,90 @@ BEGIN
     RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-59 the rehearsal was reported suppressed; it is never shifted and never suppressed';
   END IF;
   RAISE NOTICE '    OK Z-59 the rehearsal stayed on % with its day blocked — unshifted and unsuppressed', v_reh;
+
+  ---------------------------------------------------------------- Z-70
+  -- A SHIFT THAT LANDS PAST THE HORIZON IS NOT A SUPPRESSION. It is the third arm
+  -- of the override rule, and until now the only one with nothing holding it.
+  --
+  -- The rule has three answers for an overridden cadence date: shift it +7 (Z-57),
+  -- record a suppression when that week is blocked too (Z-58), and -- when the +7
+  -- falls beyond the horizon -- place nothing AND say nothing, because that sitting
+  -- has not been cancelled, it simply belongs to the next horizon. The generator
+  -- says so in as many words (`-- NOT a suppression. That exam simply belongs to a
+  -- later horizon`, 20261013000000 line ~188) and the oracle agrees
+  -- (docs/Spec/calendar_formula_reference.py: `if nxt > horizon[-1]: continue`).
+  --
+  -- WHY NEITHER FIXTURE NOR PARITY COULD HOLD IT, which is why it is a writer gate.
+  -- `generate()` in the oracle does `exams, _suppressed = exam_dates(...)` and drops
+  -- the second value, so no plan the parity gate compares can witness a suppression
+  -- at all -- the whole suppression rule is invisible to it by construction. A
+  -- mutation deleting this arm changed 0 of the 13 fixtures and 0 of the 3000 seeded
+  -- suite cases, while being reachable in 162,848 of 3,561,600 placement inputs
+  -- swept (Brief 18 census, docs/plans/Calendar_Rule_Branch_Coverage_Census.md).
+  --
+  -- WHAT A REGRESSION HERE DOES TO A STUDENT: `full_length_suppressions` reaches the
+  -- client (packages/shared/src/calendar/api.ts, FullLengthSuppressionNotice), so
+  -- recording this case tells them their practice test was cancelled when it was only
+  -- scheduled for next fortnight.
+  v_input := public.calendar_build_plan_input(S_TAIL, v_tdates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  -- Presence before absence, in two parts. (1) TWO cadence sittings are in the
+  -- horizon, so blocking the later one still leaves an answer to inspect; a gate
+  -- whose expected output is an empty `placed` cannot tell "correctly placed
+  -- nothing here" from "the function returned nothing at all".
+  SELECT count(*) INTO v_n
+  FROM jsonb_array_elements(v_out -> 'placed') f WHERE f ->> 'explanation_key' = 'exam_cadence';
+  IF v_n < 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 fixture put % cadence sitting(s) in the horizon, needs 2 (one to block, one to survive); placed = %',
+      v_n, v_out -> 'placed';
+  END IF;
+  SELECT max((f ->> 'date')::date) INTO v_last
+  FROM jsonb_array_elements(v_out -> 'placed') f WHERE f ->> 'explanation_key' = 'exam_cadence';
+
+  -- (2) The case really is THIS arm and not Z-57's. If the last sitting's +7 still
+  -- fits inside the horizon the rule would shift it, and everything below would pass
+  -- for the wrong reason.
+  IF v_last + 7 <= v_today + (v_hd - 1) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 last sitting % has room for a +7 shift inside the horizon (ends %) — this is Z-57''s case, not the out-of-horizon one',
+      v_last, v_today + (v_hd - 1);
+  END IF;
+
+  PERFORM public.calendar_edit_day(S_TAIL, v_last, '[]'::jsonb, 'v1', NULL);
+  v_input := public.calendar_build_plan_input(S_TAIL, v_tdates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+             WHERE (f ->> 'date')::date = v_last) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 the overridden last sitting % still holds an exam', v_last;
+  END IF;
+  -- The earlier sitting is untouched, so the absence above is an absence and not a
+  -- silent collapse of the whole series.
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+                 WHERE f ->> 'explanation_key' = 'exam_cadence') THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 blocking the LAST sitting emptied the series; the earlier one should survive. placed = %',
+      v_out -> 'placed';
+  END IF;
+  -- THE LOAD-BEARING ASSERTION. Nothing was cancelled, so nothing is reported.
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements_text(v_out -> 'suppressed') t WHERE t::date = v_last) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 % was reported suppressed, but its +7 lands past the horizon end (%) — that sitting belongs to a later horizon and has not been cancelled. suppressed = %',
+      v_last, v_today + (v_hd - 1), v_out -> 'suppressed';
+  END IF;
+  IF jsonb_array_length(v_out -> 'suppressed') <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 nothing on this fixture is blocked twice, yet a suppression was reported: %',
+      v_out -> 'suppressed';
+  END IF;
+  -- The other half of the same guard. The arm exists because the shifted date is
+  -- PAST THE HORIZON, so the failure it prevents is not only a false suppression --
+  -- it is also using that date. Without this line, deleting the arm outright places
+  -- an exam beyond the window and every assertion above still passes.
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+             WHERE (f ->> 'date')::date > v_today + (v_hd - 1)) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 a full-length was placed past the horizon end (%): %',
+      v_today + (v_hd - 1), v_out -> 'placed';
+  END IF;
+  RAISE NOTICE '    OK Z-70 blocked last sitting % (its +7 = % is past the horizon end %, horizon_days=%, interval=%w) -> placed nothing there, suppressed nothing, earlier sitting kept',
+    v_last, v_last + 7, v_today + (v_hd - 1), v_hd, v_iv;
 END;
 $placement$;
 

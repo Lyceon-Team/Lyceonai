@@ -21,7 +21,6 @@ import { err, type Result } from "../../../packages/shared/src/result";
 import { logger } from "../../logger";
 import { deletionCompletedEmail } from "./templates/deletion-completed";
 import { deletionScheduledEmail } from "./templates/deletion-scheduled";
-import { guardianConsentRequestEmail } from "./templates/guardian-consent-request";
 import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
 import { siteUrlFromEnv } from "./templates";
 import {
@@ -30,8 +29,6 @@ import {
   type EmailTransport,
 } from "./transport";
 
-export const GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX =
-  "guardian-consent-request";
 export const ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX =
   "account-deletion-scheduled";
 export const GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX = "guardian-link-invite";
@@ -74,72 +71,6 @@ export type DirectSendResult = Result<
 
 function resolveSiteUrl(deps: DirectSendDeps): string {
   return deps.siteUrl ?? siteUrlFromEnv();
-}
-
-/** Doc 01 §37.2 steps 1–3: the consent request row exists; this is the email with the link. */
-export async function sendGuardianConsentRequestEmail(
-  input: {
-    consentRequestId: string;
-    guardianEmail: string;
-    studentDisplayName: string;
-    requestId?: string;
-  },
-  deps: DirectSendDeps = {},
-): Promise<DirectSendResult> {
-  const siteUrl = resolveSiteUrl(deps);
-  if (!siteUrl) {
-    logger.error(
-      "NOTIFICATIONS",
-      "consent_request_email_unconfigured",
-      "PUBLIC_SITE_URL is not set; cannot build the consent link",
-      { consentRequestId: input.consentRequestId, requestId: input.requestId },
-    );
-    return err({
-      kind: "config_missing",
-      message: "PUBLIC_SITE_URL is not configured",
-    });
-  }
-  const verificationUrl = `${siteUrl}/guardian/verify-consent?requestId=${encodeURIComponent(input.consentRequestId)}`;
-  const rendered = guardianConsentRequestEmail({
-    studentDisplayName: input.studentDisplayName,
-    verificationUrl,
-  });
-  const transport = deps.transport ?? defaultEmailTransport();
-  const sent = await transport({
-    idempotencyKey: `${GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX}:${input.consentRequestId}`,
-    to: input.guardianEmail,
-    // The guardian is invited by address; there is no profile to name yet.
-    recipientProfileId: null,
-    subject: rendered.subject,
-    html: rendered.html,
-    text: rendered.text,
-  });
-  if (sent.ok) {
-    logger.info(
-      "NOTIFICATIONS",
-      "consent_request_email_sent",
-      "Guardian consent request email accepted",
-      {
-        consentRequestId: input.consentRequestId,
-        providerMessageId: sent.value.providerMessageId,
-        recipientProfileId: null,
-        requestId: input.requestId,
-      },
-    );
-  } else {
-    logger.warn(
-      "NOTIFICATIONS",
-      "consent_request_email_failed",
-      "Guardian consent request email not sent",
-      {
-        consentRequestId: input.consentRequestId,
-        recipientProfileId: null,
-        kind: sent.error.kind,
-        requestId: input.requestId,
-      },
-    );
-  }
-  return sent;
 }
 
 /** Doc 01 §40.2.1 Phase 4: the deletion is committed; this carries the 7-day recovery link. */
