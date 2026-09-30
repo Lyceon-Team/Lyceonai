@@ -20,9 +20,17 @@ describe("onboardingRedirectFor", () => {
     );
   });
 
+  // G-NEW-10 (2026-09-30): this was "no redirect" under G2-06; the mid-session unlink row
+  // routes it to the linking page.
+  it("403 GUARDIAN_LINK_REQUIRED → /guardian-required", () => {
+    expect(onboardingRedirectFor(refused(403, "GUARDIAN_LINK_REQUIRED"))).toBe(
+      "/guardian-required",
+    );
+  });
+
   it("anything else → no redirect", () => {
     expect(
-      onboardingRedirectFor(refused(403, "GUARDIAN_LINK_REQUIRED")),
+      onboardingRedirectFor(refused(400, "GUARDIAN_LINK_REQUIRED")),
     ).toBeNull();
     expect(onboardingRedirectFor(refused(403))).toBeNull();
     expect(
