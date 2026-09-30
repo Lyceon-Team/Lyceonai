@@ -82,7 +82,7 @@ export function setupSecurityMocks() {
     requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
     requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
     requireProfileComplete: (_req: any, _res: any, next: any) => next(),
-    requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
+    requireGuardianLinkForUnder13: (_req: any, _res: any, next: any) => next(),
     getSupabaseAdmin: () => ({
       rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
     }),

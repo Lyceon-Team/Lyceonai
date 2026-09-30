@@ -72,6 +72,7 @@ import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
 import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
+import { requireGuardianLinkForUnder13 } from "../middleware/supabase-auth";
 import { readGuardianCalendar } from "../services/calendar/read-service";
 import { sendPaymentRequired } from "../lib/http-errors";
 import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
@@ -220,6 +221,12 @@ async function entitlementGate(
 /**
  * One wrapper for the fixed handler order: subject -> entitlement -> read -> serialize.
  * A thrown read is a 500 and is never rendered as an empty result (Coding Standards §13).
+ *
+ * G2-04: every LEARNING read on this router (this wrapper, mastery, calendar, tests, test report)
+ * carries `requireGuardianLinkForUnder13` straight after the resolver, so an under-13 student with
+ * no active guardian link is refused their own learning data. It reads the CALLER, so a linked
+ * guardian passes. The linking routes further down (link code, regenerate, invite, the guardian
+ * list, unlink) deliberately do not carry it: they are how the student gets a link.
  */
 function resource<T>(
   path: string,
@@ -231,6 +238,7 @@ function resource<T>(
   router.get(
     `/:studentId${path}`,
     resolveSubject,
+    requireGuardianLinkForUnder13,
     async (req: Request, res: Response) => {
       const subject = requireSubject(req, res);
       if (!subject) return;
@@ -275,6 +283,7 @@ function parseSection(
 router.get(
   `/:studentId${STUDENT_RESOURCE_PATHS.masteryDomains}`,
   resolveSubject,
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;
@@ -341,6 +350,7 @@ router.get(
 router.get(
   `/:studentId${STUDENT_RESOURCE_PATHS.masterySkills}`,
   resolveSubject,
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;
@@ -443,6 +453,7 @@ resource(STUDENT_RESOURCE_PATHS.projectionsSnapshots, async (subject) => ({
 router.get(
   `/:studentId${STUDENT_RESOURCE_PATHS.calendar}`,
   resolveSubject,
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;
@@ -533,6 +544,7 @@ router.get(
 router.get(
   `/:studentId${STUDENT_EXAM_PATHS.tests}`,
   resolveSubject,
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;
@@ -576,6 +588,7 @@ const examReportParamSchema = z.object({ sessionId: z.string().uuid() });
 router.get(
   `/:studentId${STUDENT_EXAM_PATHS.testReport}`,
   resolveSubject,
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;

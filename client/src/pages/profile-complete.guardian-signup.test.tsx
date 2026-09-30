@@ -143,7 +143,6 @@ describe("G1-02 guardian sign-up on /profile/complete", () => {
             profileCompletedAt: "2026-09-29T00:00:00Z",
           },
           guardianConsentRequired: false,
-          guardianConsentRequestId: null,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );

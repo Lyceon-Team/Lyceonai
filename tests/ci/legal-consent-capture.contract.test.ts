@@ -450,8 +450,12 @@ describe("C5 — the re-consent prompt blocks everyone except a guardian", () =>
     const needs = /const needsOnboarding =([\s\S]*?);/.exec(guard);
     expect(needs, "needsOnboarding not found").not.toBeNull();
     expect(needs?.[1]).not.toContain("requiredConsentsComplete");
-    // Both halves of that flag are still enforced, separately.
-    expect(needs?.[1]).toContain("guardianConsentRequired");
+    // Both halves of that flag are still enforced, separately. G2-04: the under-13 half has
+    // its own condition and its own page (/guardian-required), not the onboarding form.
+    const guardianLink = /const needsGuardianLink =([\s\S]*?);/.exec(guard);
+    expect(guardianLink, "needsGuardianLink not found").not.toBeNull();
+    expect(guardianLink?.[1]).toContain("guardianConsentRequired");
+    expect(needs?.[1]).not.toContain("guardianConsentRequired");
     expect(guard).toContain("outstandingLegal.length > 0");
   });
 

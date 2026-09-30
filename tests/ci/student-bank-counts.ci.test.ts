@@ -58,6 +58,9 @@ function userFor(req: Request): SupabaseUser | undefined {
       isAdmin: false,
       isGuardian: false,
       actor_id: "ui07-student-actor",
+      // G2-06 (merged from `main`): a real session always carries the derived `is_under_13`;
+      // a student without it (age unknown) is refused. This student is 13+.
+      is_under_13: false,
     };
   }
   if (role === "admin") {

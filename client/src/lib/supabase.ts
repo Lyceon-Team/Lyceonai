@@ -33,7 +33,6 @@ export interface SupabaseProfile {
   display_name: string | null;
   role: "student" | "admin" | "guardian";
   is_under_13: boolean;
-  guardian_consent: boolean;
   student_link_code: string | null;
   // `/api/profile` sends none of these four (see `ProfileHydrationUser`), so they were always
   // `undefined` at runtime while typed as present. Optional states what actually arrives; the

@@ -84,7 +84,7 @@ vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
     requireSupabaseAuth: pass,
     requireStudentOrAdmin: pass,
     requireProfileComplete: pass,
-    requireConsentCompliance: pass,
+    requireGuardianLinkForUnder13: pass,
   };
 });
 

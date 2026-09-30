@@ -96,9 +96,26 @@ describe("Login landing matrix (imperative navigate)", () => {
     expect(navigateMock).toHaveBeenCalledWith("/profile/complete");
   });
 
-  it("incomplete via guardianConsentRequired → /profile/complete", () => {
+  // G2-04: a COMPLETED under-13 student with no active guardian link is not "incomplete" any
+  // more — they go to the linking page, not back through profile completion.
+  it("completed under-13 student with no active guardian link → /guardian-required", () => {
     authState = {
       user: { ...completeStudent, guardianConsentRequired: true },
+      isAuthenticated: true,
+      authLoading: false,
+    };
+    render(React.createElement(Login));
+    expect(navigateMock).toHaveBeenCalledWith("/guardian-required");
+  });
+
+  it("an incomplete profile still goes to /profile/complete before the linking page", () => {
+    authState = {
+      user: {
+        ...completeStudent,
+        profile_completed_at: null,
+        requiredProfileComplete: false,
+        guardianConsentRequired: true,
+      },
       isAuthenticated: true,
       authLoading: false,
     };
@@ -194,7 +211,11 @@ describe("Login landing matrix (imperative navigate)", () => {
         "/login?next=%2Fguardian%3Fcode%3DABC234",
       );
       authState = {
-        user: { ...completeGuardian, guardianConsentRequired: true },
+        user: {
+          ...completeGuardian,
+          profile_completed_at: null,
+          requiredProfileComplete: false,
+        },
         isAuthenticated: true,
         authLoading: false,
       };
@@ -267,6 +288,17 @@ describe("Login landing matrix (imperative navigate)", () => {
       };
       render(React.createElement(Login));
       expect(navigateMock).toHaveBeenCalledWith("/profile/complete");
+    });
+
+    it("G2-04: the linking page also wins over a return path", () => {
+      window.history.replaceState({}, "", "/login?next=%2Fpractice");
+      authState = {
+        user: { ...completeStudent, guardianConsentRequired: true },
+        isAuthenticated: true,
+        authLoading: false,
+      };
+      render(React.createElement(Login));
+      expect(navigateMock).toHaveBeenCalledWith("/guardian-required");
     });
 
     it("B2.3 no next → unchanged role landing", () => {

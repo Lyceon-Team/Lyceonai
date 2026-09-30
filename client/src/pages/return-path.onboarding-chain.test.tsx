@@ -148,7 +148,8 @@ describe("UI-03 — a return path survives sign-in AND first-time onboarding", (
 
     // Hop 3: RequireRole in front of /profile/complete must render it (no loop, no drop).
     window.history.replaceState({}, "", onboardingUrl);
-    authState = { ...authState, user: { id: "u1" } };
+    // G2-02 (merged from `main`): the guard parses the role and never defaults it.
+    authState = { ...authState, user: { id: "u1", role: "student" } };
     profilePayload = {
       authenticated: true,
       user: {

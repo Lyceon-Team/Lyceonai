@@ -19,7 +19,6 @@ type ProfileRow = {
   display_name: string | null;
   role: string;
   is_under_13: boolean;
-  guardian_consent: boolean;
   guardian_email: string | null;
   student_link_code: string | null;
   profile_completed_at: string | null;
@@ -45,6 +44,17 @@ function makeAdmin(opts: MockAdminOptions): SupabaseClient {
   insertSpy.mockClear();
 
   const from = (table: string) => {
+    // G2-05: the loader derives "guardian connected" from an active guardian link. These cases
+    // are about profile creation, not links, so the student has none.
+    if (table === "guardian_links") {
+      const links = {
+        select: () => links,
+        eq: () => links,
+        limit: (): SbResult<Array<{ id: string }>> =>
+          Promise.resolve({ data: [], error: null }),
+      };
+      return links;
+    }
     if (table !== "profiles") {
       throw new Error(`Unexpected table in test: ${table}`);
     }
@@ -108,7 +118,6 @@ describe("Account linking — profile-per-human (AL-7)", () => {
       display_name: "A",
       role: "student",
       is_under_13: false,
-      guardian_consent: false,
       guardian_email: null,
       student_link_code: null,
       profile_completed_at: null,
@@ -149,7 +158,6 @@ describe("Account linking — profile-per-human (AL-7)", () => {
       display_name: "Trig",
       role: "student",
       is_under_13: false,
-      guardian_consent: false,
       guardian_email: null,
       student_link_code: null,
       profile_completed_at: null,

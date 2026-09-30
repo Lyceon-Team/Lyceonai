@@ -259,14 +259,23 @@ vi.mock("../../server/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-type Req = express.Request & { user?: { id: string; role: string }; requestId?: string };
+type Req = express.Request & {
+  user?: { id: string; role: string; is_under_13: boolean };
+  requestId?: string;
+};
 
 async function call(principal: string, studentId: string, path: string) {
   const router = (await import("../../server/routes/student-resources")).default;
   const app = express();
   app.use((req, _res, next) => {
     const r = req as Req;
-    r.user = { id: principal, role: principal === GUARDIAN ? "guardian" : "student" };
+    // A real session always carries the derived `is_under_13`; G2-06 refuses a student without it
+    // (age unknown), and G2-04 would ask for a link for an under-13 one. This student is 13+.
+    r.user = {
+      id: principal,
+      role: principal === GUARDIAN ? "guardian" : "student",
+      is_under_13: false,
+    };
     r.requestId = "req-sr";
     next();
   });

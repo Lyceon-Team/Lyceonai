@@ -120,7 +120,7 @@ function authStub() {
     requireSupabaseAuth: pass,
     requireStudentOrAdmin: pass,
     requireProfileComplete: pass,
-    requireConsentCompliance: pass,
+    requireGuardianLinkForUnder13: pass,
   };
 }
 vi.mock("../../server/middleware/supabase-auth.js", () => authStub());
