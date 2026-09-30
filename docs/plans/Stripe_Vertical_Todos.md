@@ -69,3 +69,35 @@ The `/guardian` row lists `/api/billing/prices` among its endpoints. No such rou
 Pre-existing and unrelated to any change that observed it — reported twice now (the billing
 price-derivation PR and this one) and left alone both times under the one-atomic-change rule.
 Recorded here so the third reader does not have to rediscover it.
+
+## T6 — `calendar_job_runs` now records a billing job (OWNER, naming only)
+
+`20261015000000` added `job = 'exam_score_renewal'` to `calendar_job_runs.job` and four outcomes to
+its CHECK, per the owner ruling of 2026-09-30 #5: "Consume the existing job shape. Do not fork a
+second scheduled-job pattern."
+
+That is the right call and it leaves one loose thread: the table's `COMMENT ON TABLE` cites Doc 05F
+§7.10, and a billing job writing to it makes the comment narrower than the table. The anchor the
+job reads (`student_study_profile.target_exam_date`) IS a calendar column, so the join is not
+arbitrary — but "calendar" in the name is now doing less work than it looks like it is.
+
+**Renaming it is a table rename plus a genesis regeneration plus three job files, for no behaviour
+change.** Recorded rather than taken: whether that is worth a migration is the owner's call, and
+forking a second job-runs table to avoid the question is the thing the ruling forbids.
+
+## T7 — the deletion evidence bundle does not count the three new tables (OWNER)
+
+`execute_account_deletion_cascade` enumerates tables and counts the rows it deletes.
+`exam_score_reports`, `exam_score_report_projections` and `exam_renewal_decisions` are NOT in that
+list, because all three cascade from `profiles` declaratively (`ON DELETE CASCADE`, which
+`scripts/ci/fk-delete-action-guard.sql` enumerates from `pg_constraint` and passes).
+
+**Deletion is correct; the evidence bundle under-reports.** The rows are gone either way — the FK
+cascade removes them — but the bundle will report them as absent rather than as "n rows deleted".
+
+Not fixed here, for a stated reason: it is a function-body replacement, and CLAUDE.md's own rule is
+that "a change that replaces a function body must re-point every mutation aimed at that function's
+previous home, in the same change". `scripts/ci/deletion-evidence-gate.mutations.sh` aims at that
+body. Widening a feature change into that is exactly the batching the one-atomic-change rule
+forbids, and whether an FK-cascaded table belongs in a hand-enumerated evidence count is a
+compliance question rather than a defect.

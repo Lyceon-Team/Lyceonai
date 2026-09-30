@@ -27,12 +27,20 @@ import { z } from "zod";
  * types are what let one exam block carry two independently-idempotent notifications. A single
  * type with `{"kind": ...}` in its payload would derive one id per block and the second notice
  * would be swallowed by the ON CONFLICT that makes the first a safe replay.
+ *
+ * `exam_score_report_requested` and `renewal_decision_requested` joined on 2026-09-30 (SCL-191;
+ * post-exam score report and renewal decision). Two types for the same reason, and one more
+ * besides: they ask two different questions of two different people. The score prompt goes to
+ * the student, who has the score; the renewal decision goes to the payer, who is being charged
+ * (Doc 01 §36.4). On a self-paid subscription those are one person and only the first is sent.
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
   "guardian_unlinked",
   "full_length_week",
   "full_length_tomorrow",
+  "exam_score_report_requested",
+  "renewal_decision_requested",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -107,6 +115,28 @@ export const fullLengthNoticePayloadSchema = z
 export type FullLengthNoticePayload = z.infer<
   typeof fullLengthNoticePayloadSchema
 >;
+
+/**
+ * @spec [contracts/notifications.contract.md §8.1; SCL-191] @implemented [2026-09-30]
+ *
+ * The two post-exam notices share one payload shape: what the prompt is anchored on, and the
+ * occasion it is about — the exam date on the `exam_date` anchor, the billing period-end date on
+ * `billing_cycle`. Those are the two rendering parameters a template needs to say "your exam on
+ * the 5th" or "your subscription renews on the 12th", and the two facts
+ * `exam_renewal_no_answer_candidates` reads back out of the row to find the occasion again.
+ *
+ * NO SCORE, NO AMOUNT, NO PRICE, and `.strict()` refuses each of them at render time as well as
+ * at write time. This row is persisted and readable by its recipient; a reported SAT score in it
+ * would be the student's own result sitting in a notification payload, and an amount would be
+ * billing content that Stripe owns (contract §0).
+ */
+export const postExamNoticePayloadSchema = z
+  .object({
+    anchor: z.enum(["exam_date", "billing_cycle"]),
+    occasion_key: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .strict();
+export type PostExamNoticePayload = z.infer<typeof postExamNoticePayloadSchema>;
 
 // ── DB rows read through the service client ─────────────────────────────────
 
