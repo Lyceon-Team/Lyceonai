@@ -134,7 +134,14 @@ describe("guardian exam result", () => {
       .getAllByTestId("exam-domain-row")
       .map((r) => r.textContent);
     expect(rows).toHaveLength(8);
-    expect(rows).toContain("Algebra11 of 13 correct");
+    // G3-02 (R4, SCL-189): the domain and its bar; no "N of M correct" anywhere.
+    expect(rows).toContain("Algebra");
+    for (const text of rows) expect(text).not.toMatch(/\d|correct/);
+    const algebra = screen
+      .getAllByTestId("exam-domain-row")
+      .find((r) => r.textContent === "Algebra");
+    const bar = algebra?.querySelector<HTMLElement>("[style]");
+    expect(bar?.style.width).toBe(`${Math.round((11 / 13) * 100)}%`);
     expectNoControls();
   });
 
@@ -156,7 +163,7 @@ describe("guardian exam result", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
     expect(screen.getAllByTestId("exam-domain-row")).toHaveLength(4);
     // No phantom number: the only digits on the page are the real RW score, its range,
-    // the attempt, the breakdown counts, and the date.
+    // the attempt, and the date (G3-02: the breakdown carries no counts).
     expect(document.body.textContent).not.toMatch(/1[0-9]{3}\b/);
     expectNoControls();
   });

@@ -26,7 +26,7 @@
  * (`server/lib/stripe/guardian-checkout.ts:101`). Editing the value in devtools
  * changes what is REQUESTED, never what is GRANTED.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { csrfFetch } from '@/lib/csrf';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import {
@@ -76,4 +76,34 @@ export function useGuardianStudents(options?: { enabled?: boolean }) {
     },
     enabled: (options?.enabled ?? true) && guardianId !== null,
   });
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G3-04; owner ruling R7; audit G-AUD-06/19] | @implemented [2026-09-30]
+ *
+ * plain English: the ONE thing every guardian surface does when a student stops being theirs —
+ * a 404 on a per-student read, or the guardian unlinking them. It drops every cached response
+ * about THAT student (so no panel can redraw it) and refetches the roster (so the list shows
+ * the server's current answer). Nothing is decided here: the roster refetch is what says who
+ * is still linked.
+ *
+ * WHICH KEYS. Any query whose key names the student: the id as a key part (the dashboard
+ * summary, exam and calendar keys) or a `/students/<id>/` URL inside one (the mastery key).
+ */
+export function queryKeyNamesStudent(key: QueryKey, studentId: string): boolean {
+  return key.some(
+    (part) =>
+      part === studentId ||
+      (typeof part === 'string' && part.includes(`/students/${studentId}/`)),
+  );
+}
+
+export function useForgetGuardianStudent(): (studentId: string) => void {
+  const queryClient = useQueryClient();
+  return (studentId: string) => {
+    queryClient.removeQueries({
+      predicate: (query) => queryKeyNamesStudent(query.queryKey, studentId),
+    });
+    void queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
+  };
 }

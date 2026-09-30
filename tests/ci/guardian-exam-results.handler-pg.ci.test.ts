@@ -38,6 +38,7 @@ import {
 import {
   guardianExamListEnvelopeSchema,
   guardianExamReportEnvelopeSchema,
+  toGuardianDomainBars,
 } from "../../packages/shared/src/exam-guardian-report-schema";
 import { examReportPayloadSchema } from "../../packages/shared/src/exam-report-schema";
 
@@ -282,13 +283,22 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
 
-    // "The same eight domains and correct-of-total counts the student sees."
+    // G3-02 (R4, SCL-189): the same eight domains the student sees, each as the BAR the
+    // student sees — derived from the student's own rows — and no counts.
     const own = await get(STUDENT, `/api/tests/sessions/${sid}/report`);
     expect(own.status).toBe(200);
     const student = examReportPayloadSchema.parse(own.body.data);
     if (student.report_state !== "scored")
       throw new Error(student.report_state);
-    expect(report.domain_breakdown).toEqual(student.domain_breakdown);
+    expect(report.domain_breakdown).toEqual(
+      toGuardianDomainBars(student.domain_breakdown),
+    );
+    for (const row of res.body.report.domain_breakdown as Record<
+      string,
+      unknown
+    >[]) {
+      expect(Object.keys(row).sort()).toEqual(["bar_pct", "domain", "section"]);
+    }
     expect(report.score.total_scaled).toBe(student.score.total_scaled);
     // Strict subset (04C §2.6): every guardian top-level key is a student key.
     for (const k of Object.keys(report)) expect(student).toHaveProperty(k);
@@ -301,8 +311,10 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
         [sid],
       )
     ).rows[0] as { rw: number; m: number };
+    // The bars' source rows (the student's) are tied to scoring: per section they sum to
+    // score_runs' module counts, so a guardian bar is the scored fraction, not a guess.
     const sum = (s: string) =>
-      report.domain_breakdown
+      student.domain_breakdown
         .filter((r) => r.section === s)
         .reduce((a, r) => a + r.correct, 0);
     expect([sum("RW"), sum("M")]).toEqual([run.rw, run.m]);

@@ -111,6 +111,16 @@ export function isApiError(error: unknown): error is ApiError {
   );
 }
 
+/**
+ * G3-04 (R7, audit G-AUD-06/19): a guardian's per-student read answered 404. The subject
+ * resolver answers 404 for "no such student" and "not linked to you" alike, by design (Doc
+ * 05B §10.3 — a 403 would confirm the student exists), so the status is the whole signal:
+ * for a student the guardian picked from their own roster, it means the link is gone.
+ */
+export function isStudentNoLongerLinkedError(error: unknown): boolean {
+  return isApiError(error) && error.status === 404;
+}
+
 function normalizeCode(value: string | undefined): string | undefined {
   return value ? value.trim().toUpperCase() : undefined;
 }

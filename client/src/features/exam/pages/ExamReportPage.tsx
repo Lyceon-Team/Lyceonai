@@ -18,7 +18,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link, useParams } from "wouter";
-import type { ExamDomainBreakdownRow, ExamReportPayload } from "@lyceon/shared/exam-report-schema";
+import type { ExamReportPayload } from "@lyceon/shared/exam-report-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { fetchExamReport, fetchExamReportStatus } from "../api/exam-api";
@@ -27,7 +27,7 @@ import { sessionPath } from "../lib/exam-position";
 import { MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
-import { DomainBreakdown } from "../components/DomainBreakdown";
+import { DomainBreakdown, type DomainBreakdownRow } from "../components/DomainBreakdown";
 import "../exam.css";
 
 const POLL_MS = 4_000;
@@ -144,7 +144,7 @@ export function ScoreTabs({
   breakdown,
 }: {
   children: React.ReactNode;
-  breakdown: ReadonlyArray<ExamDomainBreakdownRow>;
+  breakdown: ReadonlyArray<DomainBreakdownRow>;
 }) {
   const [tab, setTab] = useState<ScoreTab>("sections");
   const refs = useRef<Record<ScoreTab, HTMLButtonElement | null>>({ sections: null, breakdown: null });

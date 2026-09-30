@@ -74,6 +74,19 @@ const SupabaseAuthContext = createContext<SupabaseAuthContextType | undefined>(
   undefined,
 );
 
+/**
+ * G-NEW-11: the channel on which a tab says "the signed-in person changed here". It carries no
+ * id and no profile — only the fact — and every other tab answers by asking the server who is
+ * signed in now. Absent where the browser has no BroadcastChannel; focus re-validation remains.
+ */
+const AUTH_CHANGE_CHANNEL = "lyceon-auth-change";
+
+function openAuthChangeChannel(): BroadcastChannel | null {
+  return typeof BroadcastChannel === "function"
+    ? new BroadcastChannel(AUTH_CHANGE_CHANNEL)
+    : null;
+}
+
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<SupabaseProfile | null>(null);
   const [accountUnavailable, setAccountUnavailable] = useState(false);
@@ -91,10 +104,14 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
    * it refetches — which is exactly how guardian B was shown guardian A's students.
    */
   const cacheOwnerId = useRef<string | null>(null);
+  const authChannel = useRef<BroadcastChannel | null>(null);
   const setUser = (next: SupabaseProfile | null): void => {
     const nextId = next?.id ?? null;
     if (cacheOwnerId.current !== null && cacheOwnerId.current !== nextId) {
       queryClient.clear();
+    }
+    if (cacheOwnerId.current !== nextId) {
+      authChannel.current?.postMessage("changed");
     }
     cacheOwnerId.current = nextId;
     setUserState(next);
@@ -262,6 +279,61 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [queryClient]);
+
+  /**
+   * @spec [Guardian_Closure_Plan G-NEW-11; audit G-AUD-01 (G1-03)] | @implemented [2026-09-30]
+   *
+   * plain English: the session cookie is shared by every tab, so the signed-in person can change
+   * where this tab's own sign-in functions never ran — another tab, or an emailed sign-in link
+   * that opens one. Before this, the tab kept the previous person's id until a reload, and the
+   * Settings panels asked the server for that person's link code and links with the new
+   * person's cookie (production, 2026-09-30 02:19Z: 404, 404). So the tab asks the server who is
+   * signed in whenever another tab announces a change, and whenever this tab regains focus or
+   * becomes visible; a different answer goes through `setUser`, which clears the query cache.
+   *
+   * edge cases: a network failure or 5xx changes nothing (the next focus asks again); a 401 is a
+   * real sign-out and `fetchUserFromBackend` clears the state itself; the same person answering
+   * changes nothing, so a focus costs one profile read and no re-render. One read at a time. Not
+   * run while the first load or an in-tab sign-in is still settling — those set the user already.
+   */
+  const revalidating = useRef<Promise<void> | null>(null);
+  const revalidateSession = (): Promise<void> => {
+    if (isInitializing.current) return Promise.resolve();
+    revalidating.current ??= fetchUserFromBackend()
+      .then((current) => {
+        if (current && current.id !== cacheOwnerId.current) {
+          clearCsrfToken();
+          setUser(current);
+        }
+      })
+      .finally(() => {
+        revalidating.current = null;
+      });
+    return revalidating.current;
+  };
+  const revalidateRef = useRef(revalidateSession);
+  revalidateRef.current = revalidateSession;
+
+  useEffect(() => {
+    const revalidate = (): void => {
+      void revalidateRef.current();
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") revalidate();
+    };
+    const channel = openAuthChangeChannel();
+    authChannel.current = channel;
+    channel?.addEventListener("message", revalidate);
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", onVisibility);
+      channel?.removeEventListener("message", revalidate);
+      channel?.close();
+      authChannel.current = null;
+    };
+  }, []);
 
   // @spec [contracts/auth-standard-flow.contract.md AS-3, AS1-OUTBOX-DROP-001] | @implemented 2026-06-20
   // plain English: the email/password + Google auth mutations. On a handled failure they throw a CODED
