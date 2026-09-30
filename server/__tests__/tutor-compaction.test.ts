@@ -117,6 +117,7 @@ import {
 } from "../services/tutor-compaction";
 import { compactConversation } from "../lib/tutor-orchestrator-client";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { logger } from "../logger";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -625,6 +626,27 @@ describe("Chat Compaction Service (WS-L4)", () => {
 
       // Compaction still succeeds — NOTIFY is supplementary
       expect(result.ok).toBe(true);
+
+      // F-35 (2026-09-30): the warning carries its correlation keys in `data`. They used to be
+      // passed as the logger's `context` argument, which keeps only userId/requestId/ip, so
+      // `studentId` and `summaryType` were silently dropped.
+      const notifyFailed = vi
+        .mocked(logger.warn)
+        .mock.calls.find(
+          (call) =>
+            call[0] === "TUTOR_COMPACTION" && call[1] === "notify_failed",
+        );
+      expect(notifyFailed).toBeDefined();
+      expect(notifyFailed?.[2]).toBe(
+        "Failed to fire memory_summary_updated NOTIFY; cache invalidation may be delayed",
+      );
+      expect(notifyFailed?.[3]).toEqual(
+        expect.objectContaining({
+          studentId: STUDENT_ID,
+          summaryType: expect.any(String),
+        }),
+      );
+      expect(notifyFailed?.[4]).toBeUndefined();
     });
   });
 

@@ -261,8 +261,12 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
 
 const ACTIVE_DB_STATUSES = ["active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
+// @spec [Doc-02A_V6 §16; register F-33; owner ruling Brief 6] | @implemented [2026-09-30] | plain
+// English: every column `toCanonicalQuestionFromSessionItem` reads must be selected here. It used to
+// omit `question_assets` and `question_estimated_time_seconds`, so every question rebuilt from a
+// session item was served with `assets: null` (tests/ci/practice.served-assets.ci.test.ts).
 const SESSION_ITEM_SELECT =
-  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_domain, question_skill, question_difficulty, question_item_type, question_correct_variants, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
+  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_assets, question_estimated_time_seconds, question_domain, question_skill, question_difficulty, question_item_type, question_correct_variants, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
 
 let _cachedRateLimiter: ReturnType<typeof rateLimit> | null = null;
 let _cachedRateLimiterConfig: { windowMs: number; max: number } | null = null;
@@ -309,6 +313,8 @@ export async function practiceAnswerRateLimiter(
     config = await loadPracticeConfig();
   } catch {
     logger.warn(
+      "PRACTICE_ANSWER",
+      "rate_limit_config_unavailable",
       "Rate limiter config unavailable; rejecting request (fail-closed)",
     );
     res.status(503).json({
@@ -1505,6 +1511,8 @@ export async function startOrReplaySession(args: {
     } catch (e) {
       if (e instanceof RateLimitUnavailableError) {
         logger.warn(
+          "PRACTICE_SESSION",
+          "quota_dry_run_unavailable",
           "Quota dry-run unavailable at session creation; failing closed",
         );
         return {
@@ -3094,28 +3102,31 @@ export async function captureDiagnosticBaseline(
     // 23505 = unique_violation from the partial unique index → baseline already
     // captured. This is the expected idempotent path for a second diagnostic.
     if (insertError.code === "23505") {
-      logger.info("[diagnostic] baseline already captured (idempotent no-op)", {
-        requestId,
-        userId,
-      });
+      logger.info(
+        "DIAGNOSTIC_BASELINE",
+        "baseline_already_captured",
+        "[diagnostic] baseline already captured (idempotent no-op)",
+        { requestId, userId },
+      );
       return;
     }
     // Any other error is logged but non-fatal — baseline capture must not block
     // the answer response.
-    logger.info("[diagnostic] baseline insert failed (non-fatal)", {
-      requestId,
-      userId,
-      error: insertError.message,
-      code: insertError.code,
-    });
+    logger.info(
+      "DIAGNOSTIC_BASELINE",
+      "baseline_insert_failed",
+      "[diagnostic] baseline insert failed (non-fatal)",
+      { requestId, userId, error: insertError.message, code: insertError.code },
+    );
     return;
   }
 
-  logger.info("[diagnostic] baseline captured", {
-    requestId,
-    userId,
-    sections: nonNull.map((r) => r.section),
-  });
+  logger.info(
+    "DIAGNOSTIC_BASELINE",
+    "baseline_captured",
+    "[diagnostic] baseline captured",
+    { requestId, userId, sections: nonNull.map((r) => r.section) },
+  );
 }
 
 export async function submitPracticeAnswer(req: Request, res: Response) {
