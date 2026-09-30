@@ -22,16 +22,25 @@
  * oracle and the database is a place for a difference to hide, which is the
  * opposite of what a parity gate is for.
  *
- * It checks five things:
+ * It checks six things:
  *   1. calendar_runtime_config carries exactly the oracle's constants, so a
  *      config edit that diverges from the formula fails CI instead of silently
  *      changing every student's plan.
- *   2. Each fixture's stored output still reproduces from the reference.
+ *   2. Each fixture's stored output still reproduces from the reference —
+ *      including its `exam_placement` block.
  *   3. calendar_compute_plan and calendar_compute_plan_fallback reproduce the
  *      reference byte-for-byte on every case, mix ORDER included.
  *   4. The per-domain explanation keys — the oracle's fifth tuple element,
  *      which the fixtures do not store — match the RPC's scope.mix entries.
+ *  4b. calendar_place_full_lengths' OWN return — `placed` and `suppressed` both —
+ *      matches the oracle's Step 2, on every case. This one is not redundant with
+ *      (3): `generate()` drops `exam_dates`' second value, so a suppression never
+ *      reaches a plan and the whole suppression rule was invisible here. See the
+ *      ExamPlacement type below for what that cost.
  *   5. calendar_validate_plan accepts every generated plan.
+ *
+ * Both counters are self-checked at the end: a comparison that stops running is a
+ * failure, not a quiet pass.
  *
  * The gate runs against PostgreSQL 17 in CI, matching prod: security_invoker
  * semantics and integer-division edges are exactly what it exists to prove.
@@ -39,6 +48,11 @@
  * Connection via standard PG* env. Usage:
  *   tsx scripts/ci/calendar-parity.ts [--suite-n 3000] [--suite-seed 1]
  */
+/* eslint-disable no-console -- CI gate: its console output IS its interface, and the
+   14 statements this rule already flagged here are every line an operator reads when
+   the gate fails. Disabled at the file, in the same form scripts/probe/*.ts uses, rather
+   than one disable-next-line per report line. The standing rule is that a wave
+   lint-cleans the files it touches. */
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,6 +70,20 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]:
 type BlockMix = Record<string, number> | null;
 type SerializedBlock = [string, BlockMix, number, string];
 type SerializedPlan = Record<string, SerializedBlock[]>;
+/**
+ * Step 2's return, BOTH halves — `placed` keyed by date, `suppressed` a list of them.
+ *
+ * WHY THIS IS HERE AT ALL. The oracle's `generate()` does
+ * `exams, _suppressed = exam_dates(...)` and drops the second value, so no plan this
+ * gate compares can witness a suppression: the whole suppression rule was invisible to
+ * parity by construction. Every fixture carried an `exam_placement` block and nothing in
+ * the repository read it, which made `exam_both_occurrences_overridden_suppressed` a
+ * fixture that could only witness the ABSENCE of a block on a date — a claim that passes
+ * identically whether the rule suppressed correctly, used the wrong anchor, or hit the
+ * cap. Brief 18's census measured it: deleting the suppression arm changed 0 of 13
+ * fixtures and 0 of 3000 suite cases (docs/plans/Calendar_Rule_Branch_Coverage_Census.md).
+ */
+type ExamPlacement = { placed: Record<string, string>; suppressed: string[] };
 
 type ParityCase = {
   name: string;
@@ -63,7 +91,12 @@ type ParityCase = {
   deterministic_v1: SerializedPlan;
   fallback_v1: SerializedPlan;
   deterministic_v1_explanations: Record<string, Record<string, string>>;
-  stored?: { deterministic_v1: SerializedPlan; fallback_v1: SerializedPlan };
+  exam_placement: ExamPlacement;
+  stored?: {
+    deterministic_v1: SerializedPlan;
+    fallback_v1: SerializedPlan;
+    exam_placement: ExamPlacement;
+  };
 };
 
 type PlanBlock = {
@@ -76,10 +109,23 @@ type PlanBlock = {
 type PlanDay = { date: string; blocks: PlanBlock[] };
 type Plan = { generator: string; days: PlanDay[] };
 type ValidatorResult = { result: string; violations?: JsonValue };
-type ParityRow = { idx: string; det: Plan; fb: Plan; vdet: ValidatorResult; vfb: ValidatorResult };
+/** `calendar_place_full_lengths`' own jsonb: `placed` an array, `suppressed` dates. */
+type RpcPlacement = {
+  placed?: { date: string; explanation_key: string }[] | null;
+  suppressed?: string[] | null;
+};
+type ParityRow = {
+  idx: string;
+  det: Plan;
+  fb: Plan;
+  fl: RpcPlacement;
+  vdet: ValidatorResult;
+  vfb: ValidatorResult;
+};
 
 const failures: string[] = [];
 let comparisons = 0;
+let placementComparisons = 0;
 
 function fail(message: string): void {
   failures.push(message);
@@ -133,6 +179,28 @@ function project(plan: Plan): SerializedPlan {
     });
   }
   return out;
+}
+
+/**
+ * `calendar_place_full_lengths`' return, reduced to the fixtures' `exam_placement` shape.
+ *
+ * `placed` is an ARRAY in the database (jsonb sorts object keys, and the RPC builds it in
+ * placement order); the oracle keys it by date. Both sides go through `canonPlacement`
+ * below, so the comparison is about the dates and their explanation keys and not about
+ * the order two languages happened to build a map in.
+ */
+function projectPlacement(fl: RpcPlacement): ExamPlacement {
+  const placed: Record<string, string> = {};
+  for (const e of fl.placed ?? []) placed[e.date] = e.explanation_key;
+  return { placed, suppressed: [...(fl.suppressed ?? [])] };
+}
+
+/** Both sides, key-sorted, as one string — so a diff is a diff and nothing else. */
+function canonPlacement(p: ExamPlacement): string {
+  const placed = Object.keys(p.placed)
+    .sort()
+    .map((k) => [k, p.placed[k]]);
+  return JSON.stringify({ placed, suppressed: [...p.suppressed].sort() });
 }
 
 /** The oracle's fifth tuple element: per-domain explanation keys, by "date#index". */
@@ -199,12 +267,13 @@ async function runCases(client: PgClient, label: string, cases: ParityCase[]): P
   for (let off = 0; off < cases.length; off += BATCH) {
     const part = cases.slice(off, off + BATCH);
     const { rows } = await client.query<ParityRow>(
-      `SELECT t.idx::text AS idx, p.det AS det, p.fb AS fb, v.vdet AS vdet, v.vfb AS vfb
+      `SELECT t.idx::text AS idx, p.det AS det, p.fb AS fb, p.fl AS fl, v.vdet AS vdet, v.vfb AS vfb
          FROM (SELECT s, idx,
                       ARRAY(SELECT jsonb_array_elements_text(s -> 'enabled_block_types')) AS enabled
                  FROM unnest($1::jsonb[]) WITH ORDINALITY AS u(s, idx)) t,
          LATERAL (SELECT public.calendar_compute_plan(t.s) AS det,
-                         public.calendar_compute_plan_fallback(t.s) AS fb) p,
+                         public.calendar_compute_plan_fallback(t.s) AS fb,
+                         public.calendar_place_full_lengths(t.s) AS fl) p,
          LATERAL (SELECT public.calendar_validate_plan('generated', t.s,
                            pg_temp.parity_narrow(
                              public.calendar_plan_to_output(p.det, 'parity', t.enabled), t.s)) AS vdet,
@@ -227,6 +296,14 @@ async function runCases(client: PgClient, label: string, cases: ParityCase[]): P
           if (JSON.stringify(c[g]) !== JSON.stringify(c.stored[g])) {
             fail(`${c.name}/${g}: the reference no longer reproduces the stored fixture`);
           }
+        }
+        const wantStored = canonPlacement(c.stored.exam_placement);
+        const gotRef = canonPlacement(c.exam_placement);
+        if (wantStored !== gotRef) {
+          fail(
+            `${c.name}/exam_placement: the reference no longer reproduces the stored block` +
+              `\n      stored = ${wantStored}\n      ref    = ${gotRef}`,
+          );
         }
       }
 
@@ -260,6 +337,20 @@ async function runCases(client: PgClient, label: string, cases: ParityCase[]): P
         if (a === undefined || b === undefined || !sameExplanations(a, b)) {
           fail(`${c.name}: per-domain explanation keys differ at ${k}: rpc=${JSON.stringify(a)} ref=${JSON.stringify(b)}`);
         }
+      }
+
+      // (4b) THE SUPPRESSION LIST, compared against the RPC's own return rather than
+      // against the plan — which is the only place it appears at all. This runs on every
+      // case, fixture and suite alike, so the arms of the override rule are now held on
+      // every input this gate sees instead of on none.
+      placementComparisons += 1;
+      const gotPlacement = canonPlacement(projectPlacement(row.fl));
+      const wantPlacement = canonPlacement(c.exam_placement);
+      if (gotPlacement !== wantPlacement) {
+        fail(
+          `${c.name}/exam_placement: calendar_place_full_lengths differs from the oracle` +
+            `\n      rpc = ${gotPlacement}\n      ref = ${wantPlacement}`,
+        );
       }
 
       // (5) the validator accepts what the generators produce
@@ -395,7 +486,15 @@ async function main(): Promise<void> {
     console.error(`\nFAIL: compared ${comparisons} plans, expected ${expected} — the gate did not run what it claims to run`);
     process.exit(1);
   }
-  console.log(`\nOK: ${comparisons} plan comparisons, byte-exact against the oracle`);
+  // The same rule for the placement comparison, counted separately: it is one per case,
+  // not two, and an `exam_placement` block that stopped being read is exactly the state
+  // this comparison was added to end.
+  const expectedPlacements = fixtureCount + suiteN;
+  if (placementComparisons !== expectedPlacements) {
+    console.error(`\nFAIL: compared ${placementComparisons} exam_placement blocks, expected ${expectedPlacements} — the placement comparison did not run`);
+    process.exit(1);
+  }
+  console.log(`\nOK: ${comparisons} plan comparisons and ${placementComparisons} exam_placement comparisons, byte-exact against the oracle`);
 }
 
 main().catch((err: unknown) => {
