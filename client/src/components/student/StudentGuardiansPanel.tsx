@@ -52,6 +52,10 @@ import {
 export const STUDENT_GUARDIAN_LINKS_QUERY_KEY = [
   "student-guardian-links",
 ] as const;
+/** G-NEW-11: one cache entry per student, as `studentLinkCodeQueryKey`. */
+export function studentGuardianLinksQueryKey(studentId: string) {
+  return [...STUDENT_GUARDIAN_LINKS_QUERY_KEY, studentId] as const;
+}
 
 async function readLinks(
   studentId: string,
@@ -76,7 +80,7 @@ export function StudentGuardiansPanel({ studentId }: { studentId: string }) {
   const [removedName, setRemovedName] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: STUDENT_GUARDIAN_LINKS_QUERY_KEY,
+    queryKey: studentGuardianLinksQueryKey(studentId),
     queryFn: () => readLinks(studentId),
   });
 
@@ -100,14 +104,14 @@ export function StudentGuardiansPanel({ studentId }: { studentId: string }) {
       setRemovedName(guardianLabel(link));
       setPending(null);
       void queryClient.invalidateQueries({
-        queryKey: STUDENT_GUARDIAN_LINKS_QUERY_KEY,
+        queryKey: studentGuardianLinksQueryKey(studentId),
       });
     },
     onError: () => {
       // The row is re-read either way: a 409 means it was already gone.
       setPending(null);
       void queryClient.invalidateQueries({
-        queryKey: STUDENT_GUARDIAN_LINKS_QUERY_KEY,
+        queryKey: studentGuardianLinksQueryKey(studentId),
       });
     },
   });
