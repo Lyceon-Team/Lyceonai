@@ -2,56 +2,26 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { getQuotaResetTimezone } from "../lib/account";
 import {
+  studentKpiOverallSchema,
+  type ExplainedKpiMetric,
+  type GuardianKpiOverall,
+  type KpiExplanation,
+  type StudentKpiOverall as StudentKpiView,
+} from "../../packages/shared/src/student-resources";
+import {
   diagnosticStateSchema,
   type DiagnosticState,
 } from "../../packages/shared/src/diagnostic-state";
 
 export const CANONICAL_RUNTIME_VIEW_VERSION = "kpi_truth_v1";
 
-export interface KpiExplanation {
-  ruleId: string;
-  whatThisMeans: string;
-  whyThisChanged: string;
-  whatToDoNext: string;
-}
-
-export interface ExplainedKpiMetric {
-  id: string;
-  label: string;
-  kind: "official" | "weighted" | "diagnostic";
-  unit: "count" | "percent" | "minutes" | "seconds" | "score";
-  value: number | null;
-  explanation: KpiExplanation;
-}
-
-export interface StudentKpiView {
-  modelVersion: string;
-  timezone: string;
-  week: {
-    questionsSolved: number; // events_last_7d (a scored event == an answered question)
-    accuracy: number | null; // round(accuracy_last_7d * 100); null when no events
-    explanations: Record<string, KpiExplanation>;
-  };
-  recency: {
-    window: number; // 30-day trend window
-    totalAttempts: number; // events_last_30d
-    accuracy: number | null; // round(accuracy_last_30d * 100); null when no events
-    explanations: Record<string, KpiExplanation>;
-  } | null;
-  metrics: ExplainedKpiMetric[];
-  gating: {
-    historicalTrends: {
-      allowed: boolean;
-      requiredPlan: "paid";
-      reason: string;
-    };
-  };
-  measurementModel: {
-    official: string[];
-    weighted: string[];
-    diagnostic: string[];
-  };
-}
+// G3-01 (SCL-188): the KPI view's shapes are INFERRED from the shared kpi/overall schema, so
+// the wire contract and this builder cannot drift. Re-exported under their old names.
+export type {
+  KpiExplanation,
+  ExplainedKpiMetric,
+  StudentKpiOverall as StudentKpiView,
+} from "../../packages/shared/src/student-resources";
 
 function guidanceForMetric(metricId: string, value: number | null): string {
   if (value === null) {
@@ -119,7 +89,10 @@ function metricListToExplanationMap(
  * rather than restating "no events means null" — a second copy is how one surface starts
  * telling a parent their child scored 0% when the truth is that nothing was measured.
  */
-export function toAccuracyPercent(fraction: unknown, events: number): number | null {
+export function toAccuracyPercent(
+  fraction: unknown,
+  events: number,
+): number | null {
   if (events <= 0) return null;
   if (typeof fraction !== "number" || !Number.isFinite(fraction)) return null;
   return Math.round(Math.max(0, Math.min(1, fraction)) * 100);
@@ -321,6 +294,91 @@ export async function buildStudentKpiViewFromCanonical(
       diagnostic: metrics.map((m) => m.id),
     },
   };
+}
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01, owner ruling R3]
+ *   | @implemented [2026-09-30]
+ *
+ * plain English: the guardian's KPI read. It SELECTs `current_streak_days` and nothing else, so
+ * the counters a guardian is not shown are never read for them, not read and then dropped. No
+ * row yet is a streak of 0 — the same answer the student view gives for a new student.
+ * A failed read throws; it is never a zero.
+ */
+export async function readGuardianKpiOverall(
+  studentId: string,
+): Promise<GuardianKpiOverall> {
+  const { data, error } = await supabaseServer
+    .from("student_overall_kpi")
+    .select("current_streak_days")
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to fetch overall KPI: ${error.message}`);
+  }
+  const raw: unknown = (data as { current_streak_days?: unknown } | null)
+    ?.current_streak_days;
+  return {
+    currentStreakDays:
+      typeof raw === "number" && Number.isFinite(raw)
+        ? Math.max(0, Math.round(raw))
+        : 0,
+  };
+}
+
+/** Every key path present in `raw` and absent from `parsed` — names only, never values. */
+function droppedKeyPaths(raw: unknown, parsed: unknown, at = ""): string[] {
+  if (Array.isArray(raw) && Array.isArray(parsed)) {
+    return raw.flatMap((item, i) =>
+      droppedKeyPaths(item, parsed[i], `${at}[]`),
+    );
+  }
+  if (
+    raw === null ||
+    typeof raw !== "object" ||
+    parsed === null ||
+    typeof parsed !== "object"
+  ) {
+    return [];
+  }
+  const kept = parsed as Record<string, unknown>;
+  return Object.entries(raw as Record<string, unknown>).flatMap(
+    ([key, value]) => {
+      const path = at === "" ? key : `${at}.${key}`;
+      return key in kept ? droppedKeyPaths(value, kept[key], path) : [path];
+    },
+  );
+}
+
+/** Paths already warned about in this process: each is logged once, not per request. */
+const warnedDroppedKpiPaths = new Set<string>();
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01; owner ruling
+ *   2026-09-30 (#994): "student kpi/overall parses with strip, unknown keys dropped and
+ *   logged once as a warning, not strict"] | @implemented [2026-09-30]
+ *
+ * plain English: the student's own `kpi/overall` on its way to the wire. The shared schema
+ * STRIPS unknown keys at every depth, so a field the builder gains without a schema update is
+ * dropped rather than turning a student's dashboard into a 500. Each dropped key PATH is
+ * logged once per process as a warning — the path only (e.g. `week.newCounter`), never a
+ * value, so the log carries no student data. CI is where such a field is meant to be caught:
+ * `tests/ci/student-resources.contract.test.ts` asserts this parse is the identity on real
+ * route output. The guardian branch does not use this; it stays strict.
+ */
+export function toStudentKpiOverallWire(view: unknown): StudentKpiView {
+  const parsed = studentKpiOverallSchema.parse(view);
+  for (const path of droppedKeyPaths(view, parsed)) {
+    if (warnedDroppedKpiPaths.has(path)) continue;
+    warnedDroppedKpiPaths.add(path);
+    logger.warn(
+      "KPI",
+      "kpi_overall_unknown_key_dropped",
+      "Student kpi/overall carried a key its schema does not name; dropped",
+      { path },
+    );
+  }
+  return parsed;
 }
 
 export interface ScoreEstimate {

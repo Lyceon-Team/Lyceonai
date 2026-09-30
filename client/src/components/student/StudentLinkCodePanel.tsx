@@ -56,6 +56,13 @@ import { Label } from "@/components/ui/label";
 import { Mail } from "lucide-react";
 
 export const STUDENT_LINK_CODE_QUERY_KEY = ["student-link-code"] as const;
+/**
+ * G-NEW-11: one cache entry per student. Without the id in the key, an entry cached for one
+ * student is served to whichever student mounts the panel next in the same tab.
+ */
+export function studentLinkCodeQueryKey(studentId: string) {
+  return [...STUDENT_LINK_CODE_QUERY_KEY, studentId] as const;
+}
 
 /** Hours remaining, floored, or null when there is no expiry to report. */
 function hoursUntil(expiresAt: string | null, now: Date): number | null {
@@ -81,7 +88,7 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
   const [copied, setCopied] = useState(false);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: STUDENT_LINK_CODE_QUERY_KEY,
+    queryKey: studentLinkCodeQueryKey(studentId),
     queryFn: () => readCode(studentId),
   });
 
@@ -101,7 +108,7 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
     },
     onSuccess: (fresh) => {
       setCopied(false);
-      queryClient.setQueryData(STUDENT_LINK_CODE_QUERY_KEY, fresh);
+      queryClient.setQueryData(studentLinkCodeQueryKey(studentId), fresh);
     },
   });
 

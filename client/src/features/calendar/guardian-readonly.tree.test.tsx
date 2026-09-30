@@ -176,7 +176,6 @@ const GUARDIAN_RESPONSE: GuardianCalendarReadyResponse = {
   days: [
     {
       local_date: TODAY,
-      timezone: "America/Chicago",
       is_study_day: true,
       status: "today",
       blocks: [
