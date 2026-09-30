@@ -15,6 +15,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Router as WouterRouter } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { guardianStudentsResponseSchema } from "@lyceon/shared/guardian-student-schema";
+import { guardianCalendarResponseSchema } from "@lyceon/shared";
+import { masteryDomainsResponseSchema } from "@lyceon/shared/mastery-levels";
+import {
+  toGuardianExamList,
+  toGuardianExamReport,
+} from "@lyceon/shared/exam-guardian-report-schema";
+import {
+  FIXTURE_SESSION_ID,
+  formsListing,
+  scoredReport,
+} from "@/features/exam/test-fixtures/report-fixtures";
 
 export const ADA = "33333333-3333-4333-8333-333333333333";
 export const BO = "44444444-4444-4444-8444-444444444444";
@@ -111,4 +122,134 @@ export function mountApp(
     </QueryClientProvider>,
   );
   return { history: location.history, client };
+}
+
+// ── Per-student payloads, each through its shared schema or the real projection ──────────
+
+export const EXAM_SESSION = FIXTURE_SESSION_ID;
+
+/** A ready guardian calendar week, parsed by the schema the client parses it with. */
+export function calendarWeek(
+  over: {
+    streak?: number | null;
+    completed?: number;
+    total?: number;
+    targetScore?: number | null;
+    testDate?: string | null;
+  } = {},
+): Record<string, unknown> {
+  const payload = guardianCalendarResponseSchema.parse({
+    status: "ready",
+    target_score: over.targetScore === undefined ? 1350 : over.targetScore,
+    target_exam_date:
+      over.testDate === undefined ? "2026-12-06" : over.testDate,
+    projection: [
+      {
+        section: "RW",
+        projectedScoreLow: 590,
+        projectedScoreMid: 620,
+        projectedScoreHigh: 650,
+        relevantQuestionCount: 40,
+        computedAt: "2026-09-29T00:00:00Z",
+      },
+      {
+        section: "M",
+        projectedScoreLow: 590,
+        projectedScoreMid: 610,
+        projectedScoreHigh: 610,
+        relevantQuestionCount: 40,
+        computedAt: "2026-09-29T00:00:00Z",
+      },
+    ],
+    estimates: { practice_seconds_per_unit: 90, review_seconds_per_unit: 60 },
+    full_length_suppressions: [],
+    days: [],
+    facts: {
+      blocks_total: over.total ?? 6,
+      blocks_completed: over.completed ?? 4,
+      blocks_partial: 0,
+      blocks_missed: 1,
+      blocks_in_progress: 0,
+      blocks_scheduled: 1,
+      questions_completed: 80,
+      full_lengths_completed: 0,
+      extra_questions: 5,
+    },
+    streak: {
+      current: over.streak === undefined ? 12 : over.streak,
+      longest: 19,
+      history_complete: false,
+    },
+  });
+  return { ok: true, ...payload, requestId: "r" };
+}
+
+/** Mastery by domain across both sections, parsed by the client's schema. */
+export function masteryDomains(): Record<string, unknown> {
+  return masteryDomainsResponseSchema.parse({
+    ok: true,
+    domains: [
+      {
+        section: "RW",
+        domain: "Craft and Structure",
+        levelKey: "L3",
+        level: 3,
+        displayName: "Proficient",
+      },
+      {
+        section: "RW",
+        domain: "Expression of Ideas",
+        levelKey: "L2",
+        level: 2,
+        displayName: "Developing",
+      },
+      {
+        section: "M",
+        domain: "Algebra",
+        levelKey: "L4",
+        level: 4,
+        displayName: "Strong",
+      },
+      {
+        section: "M",
+        domain: "Advanced Math",
+        levelKey: "unmeasured",
+        level: null,
+        displayName: "Not enough answers yet",
+      },
+    ],
+  });
+}
+
+/** The guardian exam list, through the real projection (SCL-192 `completed_at`). */
+export function examList(): Record<string, unknown> {
+  return {
+    ok: true,
+    ...toGuardianExamList(formsListing, {
+      [FIXTURE_SESSION_ID]: "2026-09-20T15:00:00.000Z",
+    }),
+    requestId: "r",
+  };
+}
+
+/** The guardian exam report, through the real projection (bars only, SCL-189). */
+export function examReport(): Record<string, unknown> {
+  return {
+    ok: true,
+    report: toGuardianExamReport(scoredReport),
+    requestId: "r",
+  };
+}
+
+/** Answers every Dashboard read for `studentId` with its payload. */
+export function serveDashboard(studentId: string): Handler {
+  return (url) => {
+    const base = `/api/students/${studentId}`;
+    if (url.startsWith(`${base}/calendar?`)) return json(calendarWeek());
+    if (url === `${base}/mastery/domains`) return json(masteryDomains());
+    if (url === `${base}/tests`) return json(examList());
+    if (url === `${base}/tests/${EXAM_SESSION}/report`)
+      return json(examReport());
+    return undefined;
+  };
 }

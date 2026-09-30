@@ -50,18 +50,16 @@ import {
 } from "@/features/calendar/components/CalendarStates";
 import { useForgetGuardianStudent } from "@/hooks/useGuardianStudents";
 import { isStudentNoLongerLinkedError } from "@/lib/api-error";
-import { rangeForView, startOfWeek } from "@/features/calendar/lib/dates";
+import {
+  browserLocalToday,
+  rangeForView,
+  startOfWeek,
+} from "@/features/calendar/lib/dates";
 import { guardianViewModel } from "@/features/calendar/lib/view-model";
 import "@/features/calendar/calendar.css";
 
-function localToday(): string {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
-
 export default function GuardianStudentCalendarPage(): JSX.Element {
-  const today = localToday();
+  const today = browserLocalToday();
   // G4-01: the student comes from whichever route mounts this page
   // (`/guardian/:studentId/calendar`); the retired `/students/:id/calendar` redirects there.
   const { studentId = "" } = useParams<{ studentId?: string }>();
