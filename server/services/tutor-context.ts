@@ -365,6 +365,11 @@ export async function resolveScope(
  * expected outcome: QuestionContent | null. Degrades to null on DB error
  * or missing session item (general mode).
  */
+const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
+  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal";
+const QUESTION_CONTENT_COLUMNS_POST_SUBMIT =
+  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, question_explanation";
+
 export async function resolveQuestionContent(
   studentId: string,
   scope: z.infer<typeof resolvedScopeSchema>,
@@ -376,16 +381,23 @@ export async function resolveQuestionContent(
   if (!scope.source_session_item_id) return null;
 
   try {
-    const { data, error } = await supabaseServer
-      .from(tables.items)
-      .select(
-        "question_stem, question_passage, question_options, question_item_type, " +
-          "selected_answer, ordinal" +
-          (isPostSubmit ? ", question_explanation" : ""),
-      )
-      .eq("id", scope.source_session_item_id)
-      .eq(tables.owner, studentId)
-      .maybeSingle();
+    // Two literal column lists, not one concatenated string: postgrest-js can only type a row
+    // from a literal select, and the concatenation collapsed it to `GenericStringError` (F-24).
+    // Pre-submit the explanation column is still not selected at all (CR-02B-29).
+    const sessionItemId = scope.source_session_item_id;
+    const { data, error } = isPostSubmit
+      ? await supabaseServer
+          .from(tables.items)
+          .select(QUESTION_CONTENT_COLUMNS_POST_SUBMIT)
+          .eq("id", sessionItemId)
+          .eq(tables.owner, studentId)
+          .maybeSingle()
+      : await supabaseServer
+          .from(tables.items)
+          .select(QUESTION_CONTENT_COLUMNS_PRE_SUBMIT)
+          .eq("id", sessionItemId)
+          .eq(tables.owner, studentId)
+          .maybeSingle();
 
     if (error) {
       logger.warn(
@@ -433,9 +445,10 @@ export async function resolveQuestionContent(
     // construction — and the explicit gate keeps it null even if the select
     // ever changes.
     // @spec [CR-02B-29, Doc-02B_V4 §21 Question Awareness, INV-03-04; SCL-144]
-    const explanation = isPostSubmit
-      ? ((data.question_explanation as string) ?? null)
-      : null;
+    const explanation =
+      isPostSubmit && "question_explanation" in data
+        ? ((data.question_explanation as string) ?? null)
+        : null;
 
     return {
       stem: data.question_stem as string,

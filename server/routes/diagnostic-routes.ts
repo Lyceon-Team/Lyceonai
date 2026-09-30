@@ -65,18 +65,16 @@ const StartDiagnosticBodySchema = z.object({
 // the session with the first served item. Reuses the practice session ownership
 // model (client_instance_id, status machine, resumability).
 router.post("/sessions", async (req: Request, res: Response) => {
-  const requestId = (req as Record<string, unknown>).requestId as
-    | string
-    | undefined;
+  const requestId = req.requestId;
   // `SupabaseUser` (server/middleware/supabase-auth.ts) rather than a hand-rolled shape, and
   // the difference is the defect this fixes: the inline `{ id: string; role?: string }` that
   // used to be here NARROWED `actor_id` AWAY, so the only identifier in scope was the profile
   // id and `const actorId = userId` looked like the only option. The canonical type carries
   // `actor_id`; consuming it is what CLAUDE.md's single-source-of-truth rule asks for, and it
   // makes the wrong value unreachable instead of merely discouraged.
-  const user = (req as Record<string, unknown>).user as
-    | SupabaseUser
-    | undefined;
+  // `req.user` is declared as `SupabaseUser` by the auth middleware's Express augmentation
+  // (server/middleware/supabase-auth.ts), so no cast is needed to read it.
+  const user: SupabaseUser | undefined = req.user;
   const userId = user?.id;
 
   // 1. Auth
@@ -471,13 +469,8 @@ router.post("/sessions", async (req: Request, res: Response) => {
 router.get(
   "/sessions/:sessionId/weakest-skills",
   async (req: Request, res: Response) => {
-    const requestId = (req as Record<string, unknown>).requestId as
-      | string
-      | undefined;
-    const user = (req as Record<string, unknown>).user as
-      | { id: string }
-      | undefined;
-    const userId = user?.id;
+    const requestId = req.requestId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
