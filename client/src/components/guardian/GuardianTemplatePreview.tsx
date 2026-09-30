@@ -37,7 +37,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Clock, Eye, Lock, Target } from "lucide-react";
+import { Clock, Eye, Lock } from "lucide-react";
 import { GuardianMetricTile } from "./GuardianMetricTile";
 
 /** The domains the real mastery panel lists, in the order it lists them. */
@@ -72,7 +72,7 @@ export function GuardianTemplatePreview() {
         <CardHeader>
           <CardTitle className="text-[#0F2E48]">Student Progress</CardTitle>
           <CardDescription>
-            Their activity in the last 7 days, once they are linked.
+            Their study streak, once they are linked.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -82,12 +82,6 @@ export function GuardianTemplatePreview() {
               label="Day Streak"
               icon={<Clock className="h-5 w-5" />}
             />
-            <GuardianMetricTile
-              locked
-              label="Questions Attempted (7d)"
-              icon={<Target className="h-5 w-5" />}
-            />
-            <GuardianMetricTile locked label="Accuracy" icon="%" />
           </div>
         </CardContent>
       </Card>

@@ -28,7 +28,9 @@ import {
   STUDENT_EXAM_PATHS,
   STUDENT_LINK_PATHS,
   STUDENT_RESOURCE_PATHS,
+  guardianKpiOverallSchema,
   isLinkCodeLive,
+  studentKpiOverallSchema,
   type MasterySection,
 } from "../../packages/shared/src/index";
 import {
@@ -67,7 +69,10 @@ import {
   readProjectionSnapshots,
   readSectionProjections,
 } from "../../apps/api/src/services/projection-read";
-import { buildStudentKpiViewFromCanonical } from "../services/canonical-runtime-views";
+import {
+  buildStudentKpiViewFromCanonical,
+  readGuardianKpiOverall,
+} from "../services/canonical-runtime-views";
 import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
 import { logger } from "../logger";
@@ -169,8 +174,6 @@ function requireSubject(
   }
   return req.subject;
 }
-
-
 
 /**
  * THE ONE ENTITLEMENT CALL SITE ON THIS SURFACE. Returns true when the request may proceed;
@@ -392,26 +395,55 @@ router.get(
 
 // --- KPI rollups -----------------------------------------------------------
 
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188 (§10.3 RB-05B-V1-05 gains one role-aware projection:
+ *   the KPI routes); Guardian_Closure_Plan G3-01, owner ruling R3] | @implemented [2026-09-30]
+ *
+ * plain English: a guardian gets the STREAK from the KPI routes and nothing else. R3 removed
+ * the 7-day questions and 7-day accuracy tiles, and "remove" means the server stops sending
+ * the counters, not that the client stops drawing them. So, for `via === 'guardian'`:
+ *   - `kpi/overall` is `{ currentStreakDays }`, read by a SELECT of that one column;
+ *   - `kpi/sections` and `kpi/domains` are empty lists — every row they carry is a count or an
+ *     accuracy — with the §10.4 semantics `mastery/skills` already has: 200 and `[]`, never a
+ *     403 that would say the rows exist.
+ * The student's own calls are unchanged. The branch is the resolver's `via`, never a client
+ * claim. Edge case: a guardian of a student with no KPI row sees a streak of 0, as the student
+ * would.
+ */
 resource(STUDENT_RESOURCE_PATHS.kpiSections, async (subject) => ({
-  sections: await readSectionKpi({ studentId: subject.studentId }),
+  sections:
+    subject.via === "guardian"
+      ? []
+      : await readSectionKpi({ studentId: subject.studentId }),
 }));
 
 resource(STUDENT_RESOURCE_PATHS.kpiDomains, async (subject) => ({
-  domains: await readDomainKpi({ studentId: subject.studentId }),
+  domains:
+    subject.via === "guardian"
+      ? []
+      : await readDomainKpi({ studentId: subject.studentId }),
 }));
 
 /**
- * The overall KPI envelope, unchanged in shape from what the student route served. The
- * historical-trends term is resolved for the SUBJECT on both paths — that hardcoded `true`
- * on the guardian side was privilege divergence #1 (#644).
+ * The overall KPI envelope. For the student, unchanged in shape; the historical-trends term is
+ * resolved for the SUBJECT — the hardcoded `true` once on the guardian side was privilege
+ * divergence #1 (#644). Both branches parse through the shared strict schema before they are
+ * sent, so a field added to either fails here as a 500 rather than reaching the wire.
  */
 resource(STUDENT_RESOURCE_PATHS.kpiOverall, async (subject) => {
+  if (subject.via === "guardian") {
+    return guardianKpiOverallSchema.parse(
+      await readGuardianKpiOverall(subject.studentId),
+    );
+  }
   const includeHistoricalTrends = await resolveHistoricalTrendsAccess(
     subject.studentId,
   );
-  return buildStudentKpiViewFromCanonical(
-    subject.studentId,
-    includeHistoricalTrends,
+  return studentKpiOverallSchema.parse(
+    await buildStudentKpiViewFromCanonical(
+      subject.studentId,
+      includeHistoricalTrends,
+    ),
   );
 });
 

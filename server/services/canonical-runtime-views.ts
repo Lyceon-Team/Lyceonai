@@ -1,6 +1,12 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { getQuotaResetTimezone } from "../lib/account";
+import type {
+  ExplainedKpiMetric,
+  GuardianKpiOverall,
+  KpiExplanation,
+  StudentKpiOverall as StudentKpiView,
+} from "../../packages/shared/src/student-resources";
 import {
   diagnosticStateSchema,
   type DiagnosticState,
@@ -8,50 +14,13 @@ import {
 
 export const CANONICAL_RUNTIME_VIEW_VERSION = "kpi_truth_v1";
 
-export interface KpiExplanation {
-  ruleId: string;
-  whatThisMeans: string;
-  whyThisChanged: string;
-  whatToDoNext: string;
-}
-
-export interface ExplainedKpiMetric {
-  id: string;
-  label: string;
-  kind: "official" | "weighted" | "diagnostic";
-  unit: "count" | "percent" | "minutes" | "seconds" | "score";
-  value: number | null;
-  explanation: KpiExplanation;
-}
-
-export interface StudentKpiView {
-  modelVersion: string;
-  timezone: string;
-  week: {
-    questionsSolved: number; // events_last_7d (a scored event == an answered question)
-    accuracy: number | null; // round(accuracy_last_7d * 100); null when no events
-    explanations: Record<string, KpiExplanation>;
-  };
-  recency: {
-    window: number; // 30-day trend window
-    totalAttempts: number; // events_last_30d
-    accuracy: number | null; // round(accuracy_last_30d * 100); null when no events
-    explanations: Record<string, KpiExplanation>;
-  } | null;
-  metrics: ExplainedKpiMetric[];
-  gating: {
-    historicalTrends: {
-      allowed: boolean;
-      requiredPlan: "paid";
-      reason: string;
-    };
-  };
-  measurementModel: {
-    official: string[];
-    weighted: string[];
-    diagnostic: string[];
-  };
-}
+// G3-01 (SCL-188): the KPI view's shapes are INFERRED from the shared kpi/overall schema, so
+// the wire contract and this builder cannot drift. Re-exported under their old names.
+export type {
+  KpiExplanation,
+  ExplainedKpiMetric,
+  StudentKpiOverall as StudentKpiView,
+} from "../../packages/shared/src/student-resources";
 
 function guidanceForMetric(metricId: string, value: number | null): string {
   if (value === null) {
@@ -119,7 +88,10 @@ function metricListToExplanationMap(
  * rather than restating "no events means null" — a second copy is how one surface starts
  * telling a parent their child scored 0% when the truth is that nothing was measured.
  */
-export function toAccuracyPercent(fraction: unknown, events: number): number | null {
+export function toAccuracyPercent(
+  fraction: unknown,
+  events: number,
+): number | null {
   if (events <= 0) return null;
   if (typeof fraction !== "number" || !Number.isFinite(fraction)) return null;
   return Math.round(Math.max(0, Math.min(1, fraction)) * 100);
@@ -320,6 +292,36 @@ export async function buildStudentKpiViewFromCanonical(
       weighted: [],
       diagnostic: metrics.map((m) => m.id),
     },
+  };
+}
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01, owner ruling R3]
+ *   | @implemented [2026-09-30]
+ *
+ * plain English: the guardian's KPI read. It SELECTs `current_streak_days` and nothing else, so
+ * the counters a guardian is not shown are never read for them, not read and then dropped. No
+ * row yet is a streak of 0 — the same answer the student view gives for a new student.
+ * A failed read throws; it is never a zero.
+ */
+export async function readGuardianKpiOverall(
+  studentId: string,
+): Promise<GuardianKpiOverall> {
+  const { data, error } = await supabaseServer
+    .from("student_overall_kpi")
+    .select("current_streak_days")
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to fetch overall KPI: ${error.message}`);
+  }
+  const raw: unknown = (data as { current_streak_days?: unknown } | null)
+    ?.current_streak_days;
+  return {
+    currentStreakDays:
+      typeof raw === "number" && Number.isFinite(raw)
+        ? Math.max(0, Math.round(raw))
+        : 0,
   };
 }
 

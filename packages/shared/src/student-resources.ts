@@ -250,3 +250,98 @@ export const projectionSnapshotsResponseSchema = z.object({
 export type ProjectionSnapshotsResponse = z.infer<
   typeof projectionSnapshotsResponseSchema
 >;
+
+// ---------------------------------------------------------------------------
+// kpi/overall — two audiences, two shapes (G3-01, SCL-188).
+// ---------------------------------------------------------------------------
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01, owner ruling R3]
+ *   | @implemented [2026-09-30]
+ *
+ * plain English: the one schema for `GET /api/students/:studentId/kpi/overall`. The student
+ * gets the full KPI view (`studentKpiOverallSchema`); a linked guardian gets the streak and
+ * nothing else (`guardianKpiOverallSchema`). Both are `.strict()`, so a counter added to the
+ * guardian branch fails the server's own parse instead of reaching a parent's screen.
+ * The server's `StudentKpiView` is inferred from this schema; there is no second definition.
+ */
+export const kpiExplanationSchema = z
+  .object({
+    ruleId: z.string(),
+    whatThisMeans: z.string(),
+    whyThisChanged: z.string(),
+    whatToDoNext: z.string(),
+  })
+  .strict();
+export type KpiExplanation = z.infer<typeof kpiExplanationSchema>;
+
+export const explainedKpiMetricSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    kind: z.enum(["official", "weighted", "diagnostic"]),
+    unit: z.enum(["count", "percent", "minutes", "seconds", "score"]),
+    value: z.number().nullable(),
+    explanation: kpiExplanationSchema,
+  })
+  .strict();
+export type ExplainedKpiMetric = z.infer<typeof explainedKpiMetricSchema>;
+
+export const studentKpiOverallSchema = z
+  .object({
+    modelVersion: z.string(),
+    timezone: z.string(),
+    week: z
+      .object({
+        questionsSolved: z.number().int().min(0),
+        accuracy: accuracyPercentSchema,
+        explanations: z.record(kpiExplanationSchema),
+      })
+      .strict(),
+    recency: z
+      .object({
+        window: z.number().int().positive(),
+        totalAttempts: z.number().int().min(0),
+        accuracy: accuracyPercentSchema,
+        explanations: z.record(kpiExplanationSchema),
+      })
+      .strict()
+      .nullable(),
+    metrics: z.array(explainedKpiMetricSchema),
+    gating: z
+      .object({
+        historicalTrends: z
+          .object({
+            allowed: z.boolean(),
+            requiredPlan: z.literal("paid"),
+            reason: z.string(),
+          })
+          .strict(),
+      })
+      .strict(),
+    measurementModel: z
+      .object({
+        official: z.array(z.string()),
+        weighted: z.array(z.string()),
+        diagnostic: z.array(z.string()),
+      })
+      .strict(),
+  })
+  .strict();
+export type StudentKpiOverall = z.infer<typeof studentKpiOverallSchema>;
+
+/** R3: the streak, and nothing about how many questions or how many were right. */
+export const guardianKpiOverallSchema = z
+  .object({ currentStreakDays: z.number().int().min(0) })
+  .strict();
+export type GuardianKpiOverall = z.infer<typeof guardianKpiOverallSchema>;
+
+/** The wire envelopes, as `resource()` sends them: `{ ok: true, ...body, requestId }`. */
+const kpiEnvelope = { ok: z.literal(true), requestId: z.string().optional() };
+export const studentKpiOverallResponseSchema =
+  studentKpiOverallSchema.extend(kpiEnvelope);
+export const guardianKpiOverallResponseSchema =
+  guardianKpiOverallSchema.extend(kpiEnvelope);
+export type GuardianKpiOverallResponse = z.infer<
+  typeof guardianKpiOverallResponseSchema
+>;

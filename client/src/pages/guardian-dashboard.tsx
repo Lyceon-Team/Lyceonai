@@ -39,7 +39,6 @@ import {
   Users,
   Plus,
   Clock,
-  Target,
   AlertCircle,
   CheckCircle,
   UserMinus,
@@ -59,30 +58,11 @@ import { GuardianMetricTile } from "@/components/guardian/GuardianMetricTile";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { studentLabel } from "@/hooks/useGuardianStudents";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
-import { studentResourceUrl } from "@lyceon/shared/student-resources";
+import {
+  guardianKpiOverallResponseSchema,
+  studentResourceUrl,
+} from "@lyceon/shared/student-resources";
 import { LevelPill } from "@/components/mastery/LevelPill";
-
-interface StudentSummary {
-  student: {
-    id: string;
-    displayName: string | null;
-  };
-  progress: {
-    questionsAttempted: number;
-    accuracy: number | null;
-    currentStreakDays: number;
-  };
-  metrics?: Array<{
-    id: string;
-    label: string;
-    kind: "official" | "weighted" | "diagnostic";
-    unit: "count" | "percent" | "minutes" | "seconds" | "score";
-    value: number | null;
-    explanation?: {
-      whatThisMeans?: string;
-    };
-  }>;
-}
 
 interface GuardianBillingStatus {
   isPaid: boolean;
@@ -171,7 +151,9 @@ export default function GuardianDashboard() {
          */
         throw await parseApiErrorFromResponse(res, "Failed to fetch summary");
       }
-      return res.json() as Promise<StudentSummary>;
+      // G3-01 (SCL-188): parsed, never cast. The schema is `.strict()`, so a counter that
+      // reappears on the guardian branch fails here rather than rendering.
+      return guardianKpiOverallResponseSchema.parse(await res.json());
     },
     enabled: !!selectedStudentId,
   });
@@ -393,19 +375,6 @@ export default function GuardianDashboard() {
   const selectedStudent =
     students?.find((student) => student.id === selectedStudentId) ?? null;
 
-  /**
-   * The guardian summary IS the student KPI envelope with the metric list narrowed — there
-   * is no `progress` object any more, because `progress.questionsAttempted` and
-   * `metrics[id=week_questions].value` were the same number twice. Derived in the render
-   * body: a pure function of fetched data never belongs in a useEffect (§11.4).
-   */
-  const summaryMetricValue = (id: string): number | null => {
-    const metric = summaryData?.metrics?.find(
-      (candidate: { id: string; value: number | null }) => candidate.id === id,
-    );
-    const value = metric?.value;
-    return value === null || value === undefined ? null : Number(value);
-  };
   const showPaidUnlinkedCta =
     billingStatus?.hasActiveLink === false && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint =
@@ -930,7 +899,7 @@ export default function GuardianDashboard() {
                       {selectedStudent?.display_name ||
                         selectedStudent?.email?.split("@")[0] ||
                         "Student"}
-                      's activity in the last 7 days
+                      's study streak
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -959,56 +928,17 @@ export default function GuardianDashboard() {
                         THE SAME COMPONENT the template preview renders in its
                         `locked` variant. One tile, two states — so the preview
                         cannot drift into a lookalike of a card it no longer
-                        resembles.
+                        resembles. G3-01 (R3): the streak is the one tile; the
+                        7-day questions and accuracy tiles are gone, and the
+                        server no longer sends their counters to a guardian.
                       */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <GuardianMetricTile
                             label="Day Streak"
                             icon={<Clock className="h-5 w-5" />}
-                            value={summaryMetricValue("current_streak") ?? "--"}
-                          />
-                          <GuardianMetricTile
-                            label="Questions Attempted (7d)"
-                            icon={<Target className="h-5 w-5" />}
-                            value={summaryMetricValue("week_questions") ?? "--"}
-                          />
-                          <GuardianMetricTile
-                            label="Accuracy"
-                            icon="%"
-                            value={
-                              summaryMetricValue("week_accuracy") !== null
-                                ? `${summaryMetricValue("week_accuracy")}%`
-                                : "--"
-                            }
+                            value={summaryData.currentStreakDays}
                           />
                         </div>
-                        {summaryData.metrics &&
-                          summaryData.metrics.length > 0 && (
-                            <div className="grid sm:grid-cols-2 gap-3">
-                              {summaryData.metrics.slice(0, 4).map((metric) => (
-                                <div
-                                  key={metric.id}
-                                  className="rounded-lg border border-border/60 bg-secondary/35 p-3"
-                                >
-                                  <p className="text-sm font-medium text-[#0F2E48]">
-                                    {metric.label}
-                                  </p>
-                                  <p className="text-xs text-[#0F2E48]/65 mt-1">
-                                    {metric.explanation?.whatThisMeans ||
-                                      "Runtime-backed KPI metric"}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        {summaryMetricValue("week_questions") === 0 && (
-                          <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
-                            <p className="text-amber-800 text-sm">
-                              No practice activity in the last 7 days. Encourage
-                              your student to start a practice session.
-                            </p>
-                          </div>
-                        )}
                       </div>
                     ) : (
                       <div className="text-center py-12 px-4">
