@@ -261,6 +261,14 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
 
 const ACTIVE_DB_STATUSES = ["active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
+type TerminalDbStatus = (typeof TERMINAL_DB_STATUSES)[number];
+/**
+ * F-24 (2026-09-30, type-only): `isTerminalDbStatus(status)` on a `string` status did not
+ * type-check against the narrow tuple. Same boolean, as a type guard.
+ */
+function isTerminalDbStatus(status: string): status is TerminalDbStatus {
+  return TERMINAL_DB_STATUSES.some((terminal) => terminal === status);
+}
 // @spec [Doc-02A_V6 §16; register F-33; owner ruling Brief 6] | @implemented [2026-09-30] | plain
 // English: every column `toCanonicalQuestionFromSessionItem` reads must be selected here. It used to
 // omit `question_assets` and `question_estimated_time_seconds`, so every question rebuilt from a
@@ -616,15 +624,20 @@ export function toCanonicalQuestionForServing(
         ? q.passage
         : null,
     options: isGridIn ? [] : safeParseOptions(q.options),
-    difficulty: q.difficulty ?? null,
+    // F-24 (2026-09-30, type-only): `difficulty` is `unknown` on the row type; every real source
+    // returns `difficulty int` (select_practice_pool_random, review-pool), so this narrow passes
+    // the same values through as the old `?? null` did.
+    difficulty:
+      typeof q.difficulty === "string" || typeof q.difficulty === "number"
+        ? q.difficulty
+        : null,
     domain: typeof q.domain === "string" ? q.domain : null,
     skill: typeof q.skill === "string" ? q.skill : null,
     subskill: typeof q.subskill === "string" ? q.subskill : null,
-    exam: typeof q.exam === "string" ? q.exam : null,
-    structure_cluster_id:
-      typeof q.structure_cluster_id === "string"
-        ? q.structure_cluster_id
-        : null,
+    // No `questions` column carries `exam` or `structure_cluster_id` (no migration defines either),
+    // so these were always null; the session-item mapper below already writes `exam: null`.
+    exam: null,
+    structure_cluster_id: null,
     correct_answer: correctAnswer,
     explanation:
       typeof q.explanation === "string" && q.explanation.trim().length > 0
@@ -819,7 +832,14 @@ export type SessionItemInsertContext = {
   sessionId: string;
   userId: string;
   actorId: string;
-  clientInstanceId: string;
+  /**
+   * The binding written onto the first (served) item. `null` when the caller has none — the
+   * diagnostic start accepts a request without `client_instance_id`, and the column is nullable;
+   * a null binding is treated as unbound and the first requester binds it
+   * (`resolveClientInstanceBinding`). Typed `string` before 2026-09-30, which the diagnostic
+   * caller violated (F-24).
+   */
+  clientInstanceId: string | null;
   now: string;
   /**
    * Which column owns the row. Practice's items are keyed by `user_id`; review's by
@@ -1737,7 +1757,8 @@ export async function startOrReplaySession(args: {
   }
 
   const firstInsertedItem = Array.isArray(insertedItems)
-    ? insertedItems.find((row: SessionItemRow) => Number(row.ordinal) === 1)
+    ? // The insert selects only `id, ordinal`; the row type comes from that select (F-24).
+      insertedItems.find((row) => Number(row.ordinal) === 1)
     : null;
 
   if (firstInsertedItem) {
@@ -1891,7 +1912,7 @@ async function serveNextForSession(args: {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return args.res.status(409).json({
       error: "session_closed",
@@ -2173,7 +2194,9 @@ router.get(
     }
 
     const enhancedSessions = await Promise.all(
-      (sessions || []).map(async (s: SessionRow) => {
+      // The select above omits `user_id` (the rows are already scoped to this user), so the row
+      // is `SessionRow` without it (F-24).
+      (sessions || []).map(async (s: Omit<SessionRow, "user_id">) => {
         const { count } = await supabaseServer
           .from("practice_session_items")
           .select("*", { count: "exact", head: true })
@@ -2533,7 +2556,7 @@ router.post(
     if (
       sessionState === "completed" ||
       sessionState === "abandoned" ||
-      TERMINAL_DB_STATUSES.includes(owned.session.status)
+      isTerminalDbStatus(owned.session.status)
     ) {
       return res.status(409).json({
         error: "session_closed",
@@ -3218,7 +3241,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -3807,7 +3830,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",

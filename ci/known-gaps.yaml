@@ -38,35 +38,6 @@
 # =============================================================================
 
 entries:
-  - id: typecheck-ci-tsconfig
-    owner: karl
-    expires: 2026-10-01
-    command: pnpm exec tsc -p tsconfig.ci.json
-    count_command: pnpm exec tsc -p tsconfig.ci.json 2>&1 | grep -cE 'error TS'
-    findings_ceiling: 41
-    tolerance: 0
-    ceiling_source: >
-      Local Node 22.22.2, `pnpm exec tsc -p tsconfig.ci.json 2>&1 | grep -cE 'error TS'`
-      = 41. CI run 32232947651 (head d987720) passed the gate at this ceiling, which
-      proves CI measured <= 41 but not the exact figure — the tsc output is not
-      individually addressable in that log. From this change on the gate writes each
-      runner's measurement to $GITHUB_STEP_SUMMARY, so the authoritative reading is
-      recorded on the run rather than reconstructed from it. tsc is a pinned
-      deterministic compiler over a fixed file set, hence tolerance 0.
-    reason: >
-      41 type errors across 6 files, concentrated in server/routes/practice-canonical.ts (18)
-      and server/routes/diagnostic-routes.ts (10). Predominantly Supabase row-type inference
-      drift — TS2339 on GenericStringError, TS2345 shape mismatches where SessionItemRow gained
-      columns the inline literals never got — plus 10 TS2554 arity mismatches from a helper
-      whose signature changed. These are real violations of Coding Standards §3.1/§3.2, not
-      scaffolding: the fix is in production code and needs its own change with a spec citation.
-      The workflow previously described this as "2 real type errors (exam section field drift)",
-      which was wrong by a factor of 20 and is exactly what an unrenewed suppression decays into.
-    re_arm: >
-      Delete this entry and drop continue-on-error once `pnpm exec tsc -p tsconfig.ci.json`
-      exits 0. Partial progress does not qualify — a lower error count with the suppression
-      still in place is the same defect at a smaller number.
-
   - id: eslint-legacy-tree
     owner: karl
     expires: 2026-11-01

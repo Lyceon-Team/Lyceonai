@@ -2,6 +2,8 @@
 
 Taken on `cleanup` @ `fc2a16f4`. No code was changed. Every claim cites file:line on that commit. Findings that are new to the register are listed at the end and filed in §8 of the register (F-37 to F-41).
 
+> **Update, 2026-09-30, after `cleanup` moved to `3efe69bb`.** One claim in §5 no longer holds: SCL-191 (`supabase/migrations/20261015000000_exam_score_renewal_decision.sql:158-163`) added `entitlements.payer_profile_id`, and the webhook now writes it (`server/lib/stripe/webhook-handler.ts:731`, `:1400` on `3efe69bb`). §5 and F-40 carry the correction. F-40 itself still holds: the student branch of `/api/billing/status` and `UserProfile.tsx` are unchanged, so the student still sees "Manage Subscription" and gets a 409. Every other cited line is on `fc2a16f4`, as stated above.
+
 **In one paragraph.** A student's settings live on `/profile` (`client/src/App.tsx:296` → `client/src/pages/UserProfile.tsx`), which has four tabs: Profile, Progress, Settings and Billing.
 - **Profile tab:** read-only. The name and email inputs are disabled, and there is no edit path.
 - **Progress tab:** placeholders. It is dead, and the live endpoints are used only by the dashboard.
@@ -146,8 +148,8 @@ Static placeholders; see §2.
 - **No cancel endpoint:** cancellation happens in the portal only (`billing-routes.ts:835-840`).
 
 **Guardian-paid plan.**
-- **No payer column in the database:** `git grep -n -i payer -- supabase/migrations` returns 0 lines. `entitlements` (`supabase/migrations/00000000000000_genesis.sql:178-194`, re-keyed per subscription item by `20260827010000_entitlements_item_level_key.sql:74-90`) has no payer or source field.
-- **Stripe metadata is the only record of who pays.** Checkout sets `payer_profile_id`, `student_profile_id` and `payer_relationship: "guardian"` (`billing-routes.ts:445-456`; self-pay sets `"self"`, `:472-476`). The webhook treats a subscription with `metadata.payer_profile_id` as guardian-paid and writes one entitlement per item (`server/lib/stripe/webhook-handler.ts:2670`).
+- **No payer column in the database (true on `fc2a16f4`; superseded, see the update at the top):** `git grep -n -i payer -- supabase/migrations` returns 0 lines. `entitlements` (`supabase/migrations/00000000000000_genesis.sql:178-194`, re-keyed per subscription item by `20260827010000_entitlements_item_level_key.sql:74-90`) has no payer or source field.
+- **Stripe metadata is the only record of who pays (on `fc2a16f4`; since SCL-191 the webhook copies `metadata.payer_profile_id` into `entitlements.payer_profile_id`).** Checkout sets `payer_profile_id`, `student_profile_id` and `payer_relationship: "guardian"` (`billing-routes.ts:445-456`; self-pay sets `"self"`, `:472-476`). The webhook treats a subscription with `metadata.payer_profile_id` as guardian-paid and writes one entitlement per item (`server/lib/stripe/webhook-handler.ts:2670`).
 - **The student is not told that a guardian pays.** The student branch of `/api/billing/status` has no payer or source field. The guardian's subscription id is on the student's row, so `hasManageableSubscription` (`UserProfile.tsx:202-209`) is true and the student sees **"Manage Subscription"**.
 - **What that button does:** a student with no Stripe customer gets the 409 and a toast ("If someone else pays for this subscription, they can manage it from their own account settings", `useBillingPortal.ts:37-39`). This is F-40.
 
@@ -199,7 +201,7 @@ There is no provider check here either.
 | F-37 | `POST /api/auth/reset-password` reads `email` from the body without Zod (`supabase-auth-routes.ts:430-431`), against Coding Standards §7.1 |
 | F-38 | No handling of Google-only accounts on password change or reset: no provider or identity check in the UI or on the server (§7). Owner question: hide the form for OAuth-only accounts, refuse on the server, or allow adding a password deliberately |
 | F-39 | A guardian can be issued a student link code: `GET /api/students/<own id>/link-code` resolves as `via: "self"`, and `issueStudentLinkCode` (`server/lib/student-link-code.ts:85-100`) has no role filter. The code can never be redeemed, because redemption filters `role = 'student'` (`:148`). Harmless but wrong |
-| F-40 | A student whose plan a guardian pays sees "Manage Subscription" (`UserProfile.tsx:202-209`: `stripeSubscriptionId` is the guardian's) and gets a 409 toast when clicking it. `/api/billing/status` has no payer or source field for the student, and the database stores no payer (Stripe metadata only) |
+| F-40 | A student whose plan a guardian pays sees "Manage Subscription" (`UserProfile.tsx:202-209`: `stripeSubscriptionId` is the guardian's) and gets a 409 toast when clicking it. `/api/billing/status` has no payer or source field for the student, though since SCL-191 the database stores the payer (`entitlements.payer_profile_id`), so the server can now tell a guardian-paid row from a self-paid one |
 | F-41 | `PATCH /api/profile` accepts `dateOfBirth` as any string (`profile-routes.ts:132`), with no `YYYY-MM-DD` check. The guardian-only `POST /api/profile/date-of-birth` has one (`profile-role-choice-schema.ts:24-26`) |
 
 Already in the register: "Member since" is always "Unavailable" (F-23); `/api/profile` and `/api/billing/status` have no shared Zod schema (F-22).

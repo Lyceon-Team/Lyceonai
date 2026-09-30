@@ -51,3 +51,7 @@ Totals: **28 type-only, 13 likely runtime bug** (41). The 13 lines are three def
 - **What does not happen:** the request-time session kill (Doc 01 §40.2.1 Phase 3, defence in depth) never happens, so the student's other devices stay signed in. The server's `pending_deletion` gate (`server/middleware/supabase-auth.ts:737-743`) still refuses those sessions everywhere outside its allowed set, which limits the harm. Every V2 deletion request also writes one false ERROR line.
 - **Test coverage:** mock only, and the mock is dead. `server/__tests__/deletion-lifecycle.test.ts:531` gives its mock admin client a `signOutUser` that the real client lacks. That mock feeds `executeDueDeletions`, which never calls it. No test drives the route's V2 path with the real client.
 - **Spec note:** Doc 01 itself names `supabase.auth.admin.signOutUser(profileId)` (`docs/Spec/… Document 01 …md:1871, 1922`, and §17A.1 / CR-01-39 for role elevation). The API the spec prescribes does not exist in supabase-js 2.104.1. The spec is read-only, so this goes to Karl: the fix must pick a real revocation mechanism, and the spec text needs an SCL.
+
+## 5. Closed (2026-09-30)
+
+Brief 6 fixed the 13 runtime-bug lines (41 → 26). Brief 7 fixed the remaining 26 type-only errors without changing behaviour (26 → 0) and made `pnpm run check` a blocking CI step. No type-only error turned out to hide a runtime defect. Register F-24 is Closed; its row records each fix.
