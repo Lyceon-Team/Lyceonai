@@ -262,6 +262,15 @@ export function sendRoleUnrecognized(res: Response, requestId?: string) {
  */
 export function sendNoUser(req: Request, res: Response) {
   if (req.roleUnrecognized) {
+    // G-NEW-12: the refusal logs its code. (The middleware's own `role_unrecognized` line
+    // records the detection; this records that a request was refused because of it.)
+    logger.warn(
+      "AUTH",
+      "role_unrecognized_refused",
+      "Refused a request from a session with an unrecognised role",
+      { code: ROLE_UNRECOGNIZED, method: req.method, path: req.path },
+      { requestId: req.requestId },
+    );
     return sendRoleUnrecognized(res, req.requestId);
   }
   return sendUnauthenticated(res, req.requestId);
@@ -747,6 +756,14 @@ export async function enforceDeletionLock(
   }
 
   if (deletionStatus.status === "deleted") {
+    // G-NEW-12: every 403 logs its code before it answers.
+    logger.warn(
+      "AUTH",
+      "deletion_lock_refused",
+      "Refused a request from a deleted account",
+      { code: "ACCOUNT_DELETED", method: req.method, path: req.path },
+      { requestId: req.requestId, userId: req.user.id },
+    );
     return res.status(403).json({
       error: "Account deleted",
       code: "ACCOUNT_DELETED",
@@ -760,6 +777,13 @@ export async function enforceDeletionLock(
     if (isPendingDeletionAllowlisted(req.method, req.path)) {
       return next();
     }
+    logger.warn(
+      "AUTH",
+      "deletion_lock_refused",
+      "Refused a request from an account pending deletion",
+      { code: "PENDING_DELETION", method: req.method, path: req.path },
+      { requestId: req.requestId, userId: req.user.id },
+    );
     return res.status(403).json({
       error: "Account pending deletion",
       code: "PENDING_DELETION",
