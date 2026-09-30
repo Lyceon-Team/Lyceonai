@@ -104,7 +104,9 @@ router.post(
       });
     }
 
-    const removed = await defaultSuppressionTransport().remove(address);
+    const removed = await defaultSuppressionTransport().remove(address, {
+      recipientProfileId: userId,
+    });
     if (!removed.ok) {
       logger.error(
         "ACCOUNT",

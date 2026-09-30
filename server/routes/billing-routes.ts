@@ -954,7 +954,8 @@ router.get(
   requireSupabaseAuth,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
-    res.setHeader("Cache-Control", "no-store");
+    // Same as the /api default (F-27); kept explicit because this body is per-payer.
+    res.setHeader("Cache-Control", "private, no-store");
 
     try {
       const stripe = getStripeClient();
