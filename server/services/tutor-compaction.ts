@@ -49,6 +49,7 @@ import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { compactConversation } from "../lib/tutor-orchestrator-client";
+import { recentMessageSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { TutorConfig } from "./tutor-config";
 
 // ── §10.2 chat_compaction content_json Zod schema ─────────────────────
@@ -317,13 +318,14 @@ async function deriveConversationOwner(
   return { ok: true, derivedStudentId };
 }
 
-type MessageRow = {
-  id: string;
-  role: string;
-  content_kind: string;
-  message: string;
-  created_at: string;
-};
+/**
+ * F-24 (2026-09-30, type-only): the row is the worker's wire shape, the canonical
+ * `recentMessageSchema` (as `server/services/tutor-memory.ts` already uses), instead of a
+ * hand-declared copy with plain `string` for `role` and `content_kind`, which the compaction
+ * request then rejected. The values are the same: `tutor_messages_role_check` and
+ * `tutor_messages_content_kind_check` restrict both columns to exactly these unions.
+ */
+type MessageRow = z.infer<typeof recentMessageSchema>;
 
 /**
  * Load ALL messages for a conversation (no window limit).
