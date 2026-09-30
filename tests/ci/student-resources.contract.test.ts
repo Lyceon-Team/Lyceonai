@@ -100,7 +100,8 @@ function resetRows() {
       events_total: 40, events_last_7d: 12, events_last_30d: 30,
       accuracy_overall: 0.7, accuracy_last_7d: 0.75, accuracy_last_30d: 0.7,
       current_streak_days: 3, longest_streak_days: 9, sections_active: 2,
-      last_active_at: "2026-08-01", ...POISON,
+      // Active NOW, so the stored streak of 3 is current (G-NEW-16 zeroes a stale one).
+      last_active_at: new Date().toISOString(), ...POISON,
     },
   ];
   rows.student_section_projections = [
@@ -500,6 +501,39 @@ describe("subject-scoped resources — one route, two callers", () => {
       const planted = { ok: true, currentStreakDays: 3, events_last_7d: 12 };
       expect(guardianKpiOverallResponseSchema.safeParse(planted).success).toBe(false);
       expect(allKeys({ a: [{ accuracyPct: 1 }] }).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
+  });
+
+  // -- G-NEW-16: THE STREAK AS OF TODAY, ONE ANSWER ON EVERY SURFACE ------------
+  describe("G-NEW-16 — the streak is as of today, on the calendar and on kpi/overall alike", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const lastActive = (daysAgo: number): void => {
+      const row = rows.student_overall_kpi![0] as Record<string, unknown>;
+      row.last_active_at = new Date(Date.now() - daysAgo * DAY_MS).toISOString();
+    };
+    const streaks = async (): Promise<unknown[]> => {
+      const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+      const metric = (studentKpi.body.metrics as { id: string; value: number }[]).find(
+        (m) => m.id === "current_streak",
+      );
+      return [guardianKpi.body.currentStreakDays, metric?.value, calendar.body.streak.current];
+    };
+
+    it("last active 3 days ago: the streak reads 0 on every surface (stored value is 3)", async () => {
+      lastActive(3);
+      expect(await streaks()).toEqual([0, 0, 0]);
+    });
+
+    it("last active yesterday: the streak is kept on every surface", async () => {
+      lastActive(1);
+      expect(await streaks()).toEqual([3, 3, 3]);
+    });
+
+    it("active today: the streak is kept on every surface", async () => {
+      lastActive(0);
+      expect(await streaks()).toEqual([3, 3, 3]);
     });
   });
 

@@ -1,5 +1,6 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { currentStreakAsOfToday } from "./activity-streak";
 import { getQuotaResetTimezone } from "../lib/account";
 import {
   studentKpiOverallSchema,
@@ -242,7 +243,12 @@ export async function buildStudentKpiViewFromCanonical(
 
   const weekEvents = toInt(row?.events_last_7d);
   const recency30Events = toInt(row?.events_last_30d);
-  const currentStreakDays = toInt(row?.current_streak_days);
+  // G-NEW-16: the current streak as of today, as on every other surface.
+  const currentStreakDays = await currentStreakAsOfToday({
+    studentId: userId,
+    stored: toInt(row?.current_streak_days),
+    lastActiveAt: row?.last_active_at ?? null,
+  });
   const weekAccuracyPct = toAccuracyPercent(row?.accuracy_last_7d, weekEvents);
   const recency30AccuracyPct = toAccuracyPercent(
     row?.accuracy_last_30d,
@@ -300,9 +306,10 @@ export async function buildStudentKpiViewFromCanonical(
  * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01, owner ruling R3]
  *   | @implemented [2026-09-30]
  *
- * plain English: the guardian's KPI read. It SELECTs `current_streak_days` and nothing else, so
- * the counters a guardian is not shown are never read for them, not read and then dropped. No
- * row yet is a streak of 0 — the same answer the student view gives for a new student.
+ * plain English: the guardian's KPI read. It SELECTs `current_streak_days` and, since G-NEW-16,
+ * `last_active_at` (to serve the streak as of today) — no counter, so the counters a guardian is
+ * not shown are never read for them, not read and then dropped. No row yet is a streak of 0 —
+ * the same answer the student view gives for a new student.
  * A failed read throws; it is never a zero.
  */
 export async function readGuardianKpiOverall(
@@ -310,19 +317,28 @@ export async function readGuardianKpiOverall(
 ): Promise<GuardianKpiOverall> {
   const { data, error } = await supabaseServer
     .from("student_overall_kpi")
-    .select("current_streak_days")
+    .select("current_streak_days, last_active_at")
     .eq("student_id", studentId)
     .maybeSingle();
   if (error) {
     throw new Error(`Failed to fetch overall KPI: ${error.message}`);
   }
-  const raw: unknown = (data as { current_streak_days?: unknown } | null)
-    ?.current_streak_days;
+  const row = data as {
+    current_streak_days?: unknown;
+    last_active_at?: unknown;
+  } | null;
+  const raw = row?.current_streak_days;
+  const stored =
+    typeof raw === "number" && Number.isFinite(raw)
+      ? Math.max(0, Math.round(raw))
+      : 0;
+  // G-NEW-16: as of today, the same function the calendar's streak uses.
   return {
-    currentStreakDays:
-      typeof raw === "number" && Number.isFinite(raw)
-        ? Math.max(0, Math.round(raw))
-        : 0,
+    currentStreakDays: await currentStreakAsOfToday({
+      studentId,
+      stored,
+      lastActiveAt: row?.last_active_at ?? null,
+    }),
   };
 }
 

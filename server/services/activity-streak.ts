@@ -36,10 +36,65 @@
  * refresh, so both numbers are `null` — "unknown", not "zero". Zero would assert that
  * they have studied on no day, which nothing here has established.
  */
-import { streakSummarySchema, type StreakSummary } from "@lyceon/shared";
+import {
+  streakAsOfToday,
+  streakSummarySchema,
+  type StreakSummary,
+} from "@lyceon/shared";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { classifyError } from "../lib/redact";
+import { getQuotaResetTimezone } from "../lib/account";
+import {
+  isKnownTimeZone,
+  localTodayIn,
+  toIsoTimestamp,
+} from "./calendar/adapters/local-day";
+
+/**
+ * The student's own zone: their study profile's `timezone` (Doc 05F §7.1), else the platform
+ * zone (`quota_reset_timezone`, Doc 02B §41) for a student who has not set up a calendar.
+ * A failed read throws; the caller decides whether that is fail-open or a 500.
+ */
+export async function resolveStudentTimeZone(studentId: string): Promise<string> {
+  const { data, error } = await supabaseServer
+    .from("student_study_profile")
+    .select("timezone")
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`student_study_profile timezone read failed: ${error.message}`);
+  }
+  const zone: unknown = (data as { timezone?: unknown } | null)?.timezone;
+  if (typeof zone === "string" && isKnownTimeZone(zone)) return zone;
+  return getQuotaResetTimezone();
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G-NEW-16; owner ruling 2026-09-30] | @implemented [2026-09-30]
+ *
+ * plain English: the stored streak, as of today in the student's local date — 0 when the last
+ * active day is before yesterday (`streakAsOfToday`). EVERY read of the current streak goes
+ * through here: the calendar's `streak.current`, the practice page's `/api/me/streak`, and
+ * both audiences of `kpi/overall`, so no two surfaces can disagree. A zero stored streak needs
+ * no zone and reads nothing more.
+ */
+export async function currentStreakAsOfToday(args: {
+  studentId: string;
+  stored: number;
+  lastActiveAt: unknown;
+  now?: Date;
+}): Promise<number> {
+  if (args.stored <= 0) return 0;
+  const zone = await resolveStudentTimeZone(args.studentId);
+  const lastActiveIso = toIsoTimestamp(args.lastActiveAt);
+  return streakAsOfToday({
+    stored: args.stored,
+    lastActiveLocalDate:
+      lastActiveIso === null ? null : localTodayIn(zone, new Date(lastActiveIso)),
+    todayLocalDate: localTodayIn(zone, args.now ?? new Date()),
+  });
+}
 
 /**
  * `false` until SCL-08-E closes. A named constant rather than an inline literal at three
@@ -69,7 +124,7 @@ export async function getStudentActivityStreak(
 
   const { data, error } = await supabaseServer
     .from("student_overall_kpi")
-    .select("current_streak_days, longest_streak_days")
+    .select("current_streak_days, longest_streak_days, last_active_at")
     .eq("student_id", studentId)
     .maybeSingle();
 
@@ -86,8 +141,28 @@ export async function getStudentActivityStreak(
   // No row: the KPI refresh has not run for this student. Not an error, and not a zero.
   if (data === null) return UNKNOWN;
 
+  // G-NEW-16: `current` as of today. A failed zone read fails open like any other read here.
+  let current: unknown = data.current_streak_days;
+  if (typeof current === "number") {
+    try {
+      current = await currentStreakAsOfToday({
+        studentId,
+        stored: current,
+        lastActiveAt: data.last_active_at,
+      });
+    } catch (zoneError) {
+      logger.warn(
+        "ACTIVITY_STREAK",
+        "timezone_read_failed",
+        "the student's zone could not be read; the streak is served as unknown",
+        { ...classifyError(zoneError), requestId },
+      );
+      return UNKNOWN;
+    }
+  }
+
   const parsed = streakSummarySchema.safeParse({
-    current: data.current_streak_days,
+    current,
     longest: data.longest_streak_days,
     history_complete: HISTORY_COMPLETE,
   });
