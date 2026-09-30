@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Link, Redirect } from "wouter";
@@ -19,9 +19,11 @@ import {
   parseApiErrorFromResponse,
   getPremiumDenialReason,
   isApiError,
+  isStudentNoLongerLinkedError,
 } from "@/lib/api-error";
 import {
   GUARDIAN_STUDENTS_QUERY_KEY,
+  useForgetGuardianStudent,
   useGuardianStudents,
   type LinkedStudent,
 } from "@/hooks/useGuardianStudents";
@@ -111,6 +113,11 @@ export default function GuardianDashboard() {
   );
   const [unlinkStudentId, setUnlinkStudentId] = useState<string | null>(null);
   const [unlinkStudentName, setUnlinkStudentName] = useState<string>("");
+  /** G3-04: who stopped being linked while selected — the notice's subject. */
+  const [noLongerLinkedName, setNoLongerLinkedName] = useState<string | null>(
+    null,
+  );
+  const forgetStudent = useForgetGuardianStudent();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [paymentNoticeDismissed, setPaymentNoticeDismissed] = useState(false);
@@ -299,13 +306,15 @@ export default function GuardianDashboard() {
       if (!res.ok) throw new Error(data.error || "Failed to unlink student");
       return data;
     },
-    onSuccess: () => {
+    // G3-04: the unlinked id comes from the mutation's own VARIABLES, not from dialog state.
+    // Closing the dialog clears `unlinkStudentId` while the request is in flight, so the old
+    // `selectedStudentId === unlinkStudentId` compared against null and left the unlinked
+    // student's panels on screen. Their cached reads are dropped too, so nothing redraws them.
+    onSuccess: (_data, studentId) => {
       setUnlinkStudentId(null);
       setUnlinkStudentName("");
-      if (selectedStudentId === unlinkStudentId) {
-        setSelectedStudentId(null);
-      }
-      queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
+      setSelectedStudentId((current) => (current === studentId ? null : current));
+      forgetStudent(studentId);
     },
     onError: (err: Error) => {
       setLinkError(err.message);
@@ -332,6 +341,37 @@ export default function GuardianDashboard() {
     // only spares the round trip for whitespace and case.
     linkMutation.mutate(normalised);
   };
+
+  /**
+   * @spec [Guardian_Closure_Plan G3-04; owner ruling R7; audit G-AUD-06/19]
+   *   | @implemented [2026-09-30]
+   *
+   * plain English: the selected student is no longer linked — a per-student read answered 404
+   * (the resolver's answer for "not yours", Doc 05B §10.3), or a roster refetch no longer lists
+   * them (unlinked elsewhere). The dashboard says so in words, clears the selection so their
+   * panels go, drops their cached reads and refetches the roster. A 404 is never offered a
+   * "Try again": the link does not come back by retrying.
+   *
+   * An effect, not derived state: it CHANGES things (selection, cache, a refetch). The
+   * condition it acts on is derived in the render body from fetched data.
+   */
+  const rosterIds = Array.isArray(studentsData?.students)
+    ? studentsData.students.map((student) => student.id)
+    : null;
+  const selectedNoLongerLinked =
+    selectedStudentId !== null &&
+    (isStudentNoLongerLinkedError(summaryError) ||
+      isStudentNoLongerLinkedError(weaknessError) ||
+      (rosterIds !== null && !rosterIds.includes(selectedStudentId)));
+  useEffect(() => {
+    if (!selectedNoLongerLinked || selectedStudentId === null) return;
+    const gone = Array.isArray(studentsData?.students)
+      ? studentsData.students.find((student) => student.id === selectedStudentId)
+      : undefined;
+    setNoLongerLinkedName(gone ? studentLabel(gone) : "This student");
+    setSelectedStudentId(null);
+    forgetStudent(selectedStudentId);
+  }, [selectedNoLongerLinked, selectedStudentId, studentsData, forgetStudent]);
 
   const handleUnlinkClick = (student: LinkedStudent) => {
     setUnlinkStudentId(student.id);
@@ -766,7 +806,10 @@ export default function GuardianDashboard() {
                       >
                         <div className="flex items-center justify-between">
                           <button
-                            onClick={() => setSelectedStudentId(student.id)}
+                            onClick={() => {
+                              setNoLongerLinkedName(null);
+                              setSelectedStudentId(student.id);
+                            }}
                             className="flex-1 text-left"
                           >
                             <div className="font-medium">
@@ -865,6 +908,24 @@ export default function GuardianDashboard() {
                 )}
               </CardContent>
             </Card>
+
+            {noLongerLinkedName !== null && (
+              <Alert data-testid="guardian-student-no-longer-linked">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span>
+                    {noLongerLinkedName} is no longer linked to your account.
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNoLongerLinkedName(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
 
             {selectedStudentId && (
               <>
