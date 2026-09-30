@@ -30,7 +30,6 @@ import {
   STUDENT_RESOURCE_PATHS,
   guardianKpiOverallSchema,
   isLinkCodeLive,
-  studentKpiOverallSchema,
   type MasterySection,
 } from "../../packages/shared/src/index";
 import {
@@ -72,6 +71,7 @@ import {
 import {
   buildStudentKpiViewFromCanonical,
   readGuardianKpiOverall,
+  toStudentKpiOverallWire,
 } from "../services/canonical-runtime-views";
 import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
@@ -427,8 +427,10 @@ resource(STUDENT_RESOURCE_PATHS.kpiDomains, async (subject) => ({
 /**
  * The overall KPI envelope. For the student, unchanged in shape; the historical-trends term is
  * resolved for the SUBJECT — the hardcoded `true` once on the guardian side was privilege
- * divergence #1 (#644). Both branches parse through the shared strict schema before they are
- * sent, so a field added to either fails here as a 500 rather than reaching the wire.
+ * divergence #1 (#644). The guardian branch parses STRICT: a field added to it is a 500, never
+ * a leak. The student branch parses with STRIP and logs a dropped key once
+ * (`toStudentKpiOverallWire`; owner ruling 2026-09-30, #994), so a builder field added without
+ * a schema update fails CI's wire-contract test rather than a student's dashboard.
  */
 resource(STUDENT_RESOURCE_PATHS.kpiOverall, async (subject) => {
   if (subject.via === "guardian") {
@@ -439,7 +441,7 @@ resource(STUDENT_RESOURCE_PATHS.kpiOverall, async (subject) => {
   const includeHistoricalTrends = await resolveHistoricalTrendsAccess(
     subject.studentId,
   );
-  return studentKpiOverallSchema.parse(
+  return toStudentKpiOverallWire(
     await buildStudentKpiViewFromCanonical(
       subject.studentId,
       includeHistoricalTrends,

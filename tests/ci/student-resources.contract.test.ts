@@ -414,7 +414,11 @@ describe("subject-scoped resources — one route, two callers", () => {
       // Non-vacuity: the fixture row has non-zero 7-day and 30-day counters, and they arrive.
       expect(self.body.week.questionsSolved).toBe(12);
       expect(self.body.week.accuracy).toBe(75);
-      expect(studentKpiOverallResponseSchema.safeParse(self.body).success).toBe(true);
+      // THE STRICT CHECK LIVES HERE, NOT IN PRODUCTION (owner ruling 2026-09-30, #994). The
+      // production parse STRIPS, so a builder field added without a schema update would be
+      // dropped silently for a student; this asserts the parse is the identity on real route
+      // output, at every depth, so that field fails CI instead.
+      expect(studentKpiOverallResponseSchema.parse(self.body)).toEqual(self.body);
       expect(allKeys(self.body).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
     });
 
@@ -451,6 +455,45 @@ describe("subject-scoped resources — one route, two callers", () => {
       expect(sections.body.sections).toEqual([]);
       expect(domains.status).toBe(200);
       expect(domains.body.domains).toEqual([]);
+    });
+
+    it("STUDENT, production posture: an unknown key is dropped at any depth and logged once, never a 500", async () => {
+      const { toStudentKpiOverallWire } = await import(
+        "../../server/services/canonical-runtime-views"
+      );
+      const { logger } = await import("../../server/logger");
+      // The REAL builder's output, through the real route, plus two keys no schema names.
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const { ok: _ok, requestId: _rid, ...view } = self.body;
+      const planted = {
+        ...view,
+        surpriseTop: 1,
+        week: { ...view.week, surpriseNested: 2 },
+      };
+      vi.mocked(logger.warn).mockClear();
+
+      const out = toStudentKpiOverallWire(planted);
+      toStudentKpiOverallWire(planted); // a second request: no second warning
+
+      expect(out).toEqual(view);
+      expect(out).not.toHaveProperty("surpriseTop");
+      expect(out.week).not.toHaveProperty("surpriseNested");
+      const warned = vi
+        .mocked(logger.warn)
+        .mock.calls.filter((c) => c[1] === "kpi_overall_unknown_key_dropped")
+        .map((c) => (c[3] as { path: string }).path)
+        .sort();
+      expect(warned).toEqual(["surpriseTop", "week.surpriseNested"]);
+      // Path names only: the log carries `{ path }` and nothing of the payload.
+      for (const c of vi.mocked(logger.warn).mock.calls) {
+        expect(Object.keys(c[3] as object)).toEqual(["path"]);
+      }
+    });
+
+    it("the identity check itself goes red when a key is stripped (gate self-check)", async () => {
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const planted = { ...self.body, week: { ...self.body.week, surpriseNested: 2 } };
+      expect(studentKpiOverallResponseSchema.parse(planted)).not.toEqual(planted);
     });
 
     it("the strict schema itself refuses a reappearing counter (gate self-check)", () => {

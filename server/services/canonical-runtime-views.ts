@@ -1,11 +1,12 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { getQuotaResetTimezone } from "../lib/account";
-import type {
-  ExplainedKpiMetric,
-  GuardianKpiOverall,
-  KpiExplanation,
-  StudentKpiOverall as StudentKpiView,
+import {
+  studentKpiOverallSchema,
+  type ExplainedKpiMetric,
+  type GuardianKpiOverall,
+  type KpiExplanation,
+  type StudentKpiOverall as StudentKpiView,
 } from "../../packages/shared/src/student-resources";
 import {
   diagnosticStateSchema,
@@ -323,6 +324,61 @@ export async function readGuardianKpiOverall(
         ? Math.max(0, Math.round(raw))
         : 0,
   };
+}
+
+/** Every key path present in `raw` and absent from `parsed` — names only, never values. */
+function droppedKeyPaths(raw: unknown, parsed: unknown, at = ""): string[] {
+  if (Array.isArray(raw) && Array.isArray(parsed)) {
+    return raw.flatMap((item, i) =>
+      droppedKeyPaths(item, parsed[i], `${at}[]`),
+    );
+  }
+  if (
+    raw === null ||
+    typeof raw !== "object" ||
+    parsed === null ||
+    typeof parsed !== "object"
+  ) {
+    return [];
+  }
+  const kept = parsed as Record<string, unknown>;
+  return Object.entries(raw as Record<string, unknown>).flatMap(
+    ([key, value]) => {
+      const path = at === "" ? key : `${at}.${key}`;
+      return key in kept ? droppedKeyPaths(value, kept[key], path) : [path];
+    },
+  );
+}
+
+/** Paths already warned about in this process: each is logged once, not per request. */
+const warnedDroppedKpiPaths = new Set<string>();
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01; owner ruling
+ *   2026-09-30 (#994): "student kpi/overall parses with strip, unknown keys dropped and
+ *   logged once as a warning, not strict"] | @implemented [2026-09-30]
+ *
+ * plain English: the student's own `kpi/overall` on its way to the wire. The shared schema
+ * STRIPS unknown keys at every depth, so a field the builder gains without a schema update is
+ * dropped rather than turning a student's dashboard into a 500. Each dropped key PATH is
+ * logged once per process as a warning — the path only (e.g. `week.newCounter`), never a
+ * value, so the log carries no student data. CI is where such a field is meant to be caught:
+ * `tests/ci/student-resources.contract.test.ts` asserts this parse is the identity on real
+ * route output. The guardian branch does not use this; it stays strict.
+ */
+export function toStudentKpiOverallWire(view: unknown): StudentKpiView {
+  const parsed = studentKpiOverallSchema.parse(view);
+  for (const path of droppedKeyPaths(view, parsed)) {
+    if (warnedDroppedKpiPaths.has(path)) continue;
+    warnedDroppedKpiPaths.add(path);
+    logger.warn(
+      "KPI",
+      "kpi_overall_unknown_key_dropped",
+      "Student kpi/overall carried a key its schema does not name; dropped",
+      { path },
+    );
+  }
+  return parsed;
 }
 
 export interface ScoreEstimate {

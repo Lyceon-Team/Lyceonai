@@ -261,73 +261,66 @@ export type ProjectionSnapshotsResponse = z.infer<
  *
  * plain English: the one schema for `GET /api/students/:studentId/kpi/overall`. The student
  * gets the full KPI view (`studentKpiOverallSchema`); a linked guardian gets the streak and
- * nothing else (`guardianKpiOverallSchema`). Both are `.strict()`, so a counter added to the
- * guardian branch fails the server's own parse instead of reaching a parent's screen.
- * The server's `StudentKpiView` is inferred from this schema; there is no second definition.
+ * nothing else (`guardianKpiOverallSchema`). The server's `StudentKpiView` is inferred from
+ * this schema; there is no second definition.
+ *
+ * TWO POSTURES, ONE PER AUDIENCE (owner ruling 2026-09-30, #994):
+ *   - GUARDIAN: `.strict()`. A counter added to the guardian branch fails the server's own
+ *     parse — a 500 — instead of reaching a parent's screen. A leak is worse than an outage.
+ *   - STUDENT: Zod's default STRIP, at every depth. An unknown key is dropped (and the server
+ *     logs it once, `toStudentKpiOverallWire`), so a field added to the builder without a schema
+ *     update cannot 500 a student's own dashboard. What catches that field is CI, not
+ *     production: the wire-contract test asserts the parse is the identity on real route
+ *     output (`parse(body)` deep-equals `body`), which fails the moment anything is stripped.
  */
-export const kpiExplanationSchema = z
-  .object({
-    ruleId: z.string(),
-    whatThisMeans: z.string(),
-    whyThisChanged: z.string(),
-    whatToDoNext: z.string(),
-  })
-  .strict();
+export const kpiExplanationSchema = z.object({
+  ruleId: z.string(),
+  whatThisMeans: z.string(),
+  whyThisChanged: z.string(),
+  whatToDoNext: z.string(),
+});
 export type KpiExplanation = z.infer<typeof kpiExplanationSchema>;
 
-export const explainedKpiMetricSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    kind: z.enum(["official", "weighted", "diagnostic"]),
-    unit: z.enum(["count", "percent", "minutes", "seconds", "score"]),
-    value: z.number().nullable(),
-    explanation: kpiExplanationSchema,
-  })
-  .strict();
+export const explainedKpiMetricSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  kind: z.enum(["official", "weighted", "diagnostic"]),
+  unit: z.enum(["count", "percent", "minutes", "seconds", "score"]),
+  value: z.number().nullable(),
+  explanation: kpiExplanationSchema,
+});
 export type ExplainedKpiMetric = z.infer<typeof explainedKpiMetricSchema>;
 
-export const studentKpiOverallSchema = z
-  .object({
-    modelVersion: z.string(),
-    timezone: z.string(),
-    week: z
-      .object({
-        questionsSolved: z.number().int().min(0),
-        accuracy: accuracyPercentSchema,
-        explanations: z.record(kpiExplanationSchema),
-      })
-      .strict(),
-    recency: z
-      .object({
-        window: z.number().int().positive(),
-        totalAttempts: z.number().int().min(0),
-        accuracy: accuracyPercentSchema,
-        explanations: z.record(kpiExplanationSchema),
-      })
-      .strict()
-      .nullable(),
-    metrics: z.array(explainedKpiMetricSchema),
-    gating: z
-      .object({
-        historicalTrends: z
-          .object({
-            allowed: z.boolean(),
-            requiredPlan: z.literal("paid"),
-            reason: z.string(),
-          })
-          .strict(),
-      })
-      .strict(),
-    measurementModel: z
-      .object({
-        official: z.array(z.string()),
-        weighted: z.array(z.string()),
-        diagnostic: z.array(z.string()),
-      })
-      .strict(),
-  })
-  .strict();
+export const studentKpiOverallSchema = z.object({
+  modelVersion: z.string(),
+  timezone: z.string(),
+  week: z.object({
+    questionsSolved: z.number().int().min(0),
+    accuracy: accuracyPercentSchema,
+    explanations: z.record(kpiExplanationSchema),
+  }),
+  recency: z
+    .object({
+      window: z.number().int().positive(),
+      totalAttempts: z.number().int().min(0),
+      accuracy: accuracyPercentSchema,
+      explanations: z.record(kpiExplanationSchema),
+    })
+    .nullable(),
+  metrics: z.array(explainedKpiMetricSchema),
+  gating: z.object({
+    historicalTrends: z.object({
+      allowed: z.boolean(),
+      requiredPlan: z.literal("paid"),
+      reason: z.string(),
+    }),
+  }),
+  measurementModel: z.object({
+    official: z.array(z.string()),
+    weighted: z.array(z.string()),
+    diagnostic: z.array(z.string()),
+  }),
+});
 export type StudentKpiOverall = z.infer<typeof studentKpiOverallSchema>;
 
 /** R3: the streak, and nothing about how many questions or how many were right. */
