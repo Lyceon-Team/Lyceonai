@@ -10,8 +10,8 @@
  *
  * plain English: a guardian sees the headline of each exam — total, the two section
  * scores, when it was finished, lenient or strict, which attempt it was, whether the form
- * was new to the student, the disclosure — and the per-domain correct-of-total the student
- * sees on their Score breakdown tab. Nothing else.
+ * was new to the student, the disclosure — and, per domain, the BAR the student sees on their
+ * Score breakdown tab, without the "N of M correct" counts beside it (R4, SCL-189). Nothing else.
  *
  * HOW. Every guardian state has its OWN `.strict()` schema, written out field by field
  * rather than derived by `.omit()` from the student's. A field added to the student report
@@ -33,11 +33,56 @@ import { z } from "zod";
 import { examModeSchema, examSectionSchema } from "./exam-runtime-schema";
 import {
   examDisclosureSchema,
-  examDomainBreakdownSchema,
   examReportStateSchema,
+  type ExamDomainBreakdownRow,
   type ExamFormsResponse,
   type ExamReportPayload,
 } from "./exam-report-schema";
+import { canonicalDomainSchema, sectionOfDomain } from "./calendar/scope";
+
+/**
+ * @spec [Doc 04 Parent Q9 as amended by SCL-180 and SCL-189; Guardian_Closure_Plan G3-02,
+ *   owner ruling R4] | @implemented [2026-09-30]
+ *
+ * plain English: one guardian row per (scored section, domain) — the domain and the length of
+ * its bar, as a whole percent 0–100, and nothing else. R4 keeps the bar and removes the
+ * "N of M correct" counts, so `correct` and `total` are not on the guardian wire at all:
+ * `.strict()` refuses either key, and the row is built from named fields by
+ * `toGuardianDomainBars`, never spread from the student's row.
+ *
+ * edge cases: `total` is positive by the student schema, so the division is defined; the
+ * percent is rounded half-up, so 0 and 100 are reachable only by 0-of-N and N-of-N.
+ */
+export const guardianDomainBarRowSchema = z
+  .object({
+    section: examSectionSchema,
+    domain: canonicalDomainSchema,
+    bar_pct: z.number().int().min(0).max(100),
+  })
+  .strict()
+  .refine((r) => sectionOfDomain(r.domain) === r.section, {
+    message: "domain does not belong to section",
+  });
+export type GuardianDomainBarRow = z.infer<typeof guardianDomainBarRowSchema>;
+
+export const guardianDomainBarsSchema = z
+  .array(guardianDomainBarRowSchema)
+  .refine(
+    (rows) =>
+      new Set(rows.map((r) => `${r.section}|${r.domain}`)).size === rows.length,
+    { message: "duplicate (section, domain) row" },
+  );
+
+/** The student's rows in, the guardian's bars out: field by named field. Pure. */
+export function toGuardianDomainBars(
+  rows: ReadonlyArray<ExamDomainBreakdownRow>,
+): GuardianDomainBarRow[] {
+  return rows.map((r) => ({
+    section: r.section,
+    domain: r.domain,
+    bar_pct: Math.round((r.correct / r.total) * 100),
+  }));
+}
 
 const guardianBase = {
   session_id: z.string().uuid(),
@@ -84,7 +129,7 @@ export const guardianExamScoredSchema = z
         math_scaled: sectionScaled,
       })
       .strict(),
-    domain_breakdown: examDomainBreakdownSchema,
+    domain_breakdown: guardianDomainBarsSchema,
     disclosure: examDisclosureSchema,
   })
   .strict();
@@ -106,7 +151,7 @@ export const guardianExamPartialSchema = z
       .strict(),
     completed_sections: z.array(examSectionSchema),
     incomplete_sections: z.array(examSectionSchema),
-    domain_breakdown: examDomainBreakdownSchema,
+    domain_breakdown: guardianDomainBarsSchema,
     disclosure: examDisclosureSchema,
     partial_disclosure: z.object({ summary: z.string().min(1) }).strict(),
   })
@@ -187,7 +232,7 @@ export function toGuardianExamReport(
           rw_scaled: report.score.rw_scaled,
           math_scaled: report.score.math_scaled,
         },
-        domain_breakdown: report.domain_breakdown,
+        domain_breakdown: toGuardianDomainBars(report.domain_breakdown),
         disclosure: report.disclosure,
       });
     case "partial_scored":
@@ -204,7 +249,7 @@ export function toGuardianExamReport(
         },
         completed_sections: report.completed_sections,
         incomplete_sections: report.incomplete_sections,
-        domain_breakdown: report.domain_breakdown,
+        domain_breakdown: toGuardianDomainBars(report.domain_breakdown),
         disclosure: report.disclosure,
         partial_disclosure: report.partial_disclosure,
       });
