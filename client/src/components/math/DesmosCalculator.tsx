@@ -43,6 +43,15 @@ declare global {
   }
 }
 
+/**
+ * @spec [F-24 / Brief 7: type-only fix, behaviour unchanged] | @implemented [2026-09-30] | plain
+ * English: the "change" handler registered on each Desmos instance, so it can be unobserved before
+ * the instance is destroyed. It used to be stored as an expando property on the instance
+ * (`__lyceonChangeHandler`), which needed casts the compiler rejected; a WeakMap keyed by the
+ * instance holds the same association with no cast and lets a destroyed instance be collected.
+ */
+const changeHandlers = new WeakMap<DesmosCalculatorInstance, () => void>();
+
 let desmosScriptPromise: Promise<void> | null = null;
 let desmosScriptLoaded = false;
 
@@ -221,10 +230,9 @@ export default function DesmosCalculator({
         if (!mounted || !hostRef.current || !window.Desmos) return;
 
         if (calcRef.current) {
-          const prev = calcRef.current as Record<string, unknown>;
-          const handler = prev.__lyceonChangeHandler;
-          if (typeof handler === "function") {
-            calcRef.current.unobserveEvent("change", handler as () => void);
+          const handler = changeHandlers.get(calcRef.current);
+          if (handler) {
+            calcRef.current.unobserveEvent("change", handler);
           }
           calcRef.current.destroy();
           calcRef.current = null;
@@ -266,8 +274,7 @@ export default function DesmosCalculator({
         };
 
         calculator.observeEvent("change", handleChange);
-        (calculator as Record<string, unknown>).__lyceonChangeHandler =
-          handleChange;
+        changeHandlers.set(calculator, handleChange);
 
         window.setTimeout(() => calculator.resize(), 0);
       })
@@ -286,16 +293,13 @@ export default function DesmosCalculator({
         stateDebounceRef.current = null;
       }
 
-      const calculator = calcRef.current as Record<string, unknown> | null;
+      const calculator = calcRef.current;
       if (calculator) {
-        const handler = calculator.__lyceonChangeHandler;
-        if (typeof handler === "function") {
-          (calcRef.current as DesmosCalculatorInstance).unobserveEvent(
-            "change",
-            handler as () => void,
-          );
+        const handler = changeHandlers.get(calculator);
+        if (handler) {
+          calculator.unobserveEvent("change", handler);
         }
-        (calcRef.current as DesmosCalculatorInstance).destroy();
+        calculator.destroy();
       }
       calcRef.current = null;
     };
