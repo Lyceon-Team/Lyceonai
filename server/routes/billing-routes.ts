@@ -46,8 +46,10 @@
 import { Request, Response, Router } from "express";
 import type Stripe from "stripe";
 import {
+  requireGuardianLinkForUnder13,
   requireSupabaseAuth,
-  sendUnauthenticated,
+  sendNoUser,
+  sendRoleUnrecognized,
 } from "../middleware/supabase-auth";
 import {
   getStripeClient,
@@ -87,7 +89,7 @@ import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
 import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { normalizeRuntimeRole } from "../lib/auth-role";
+import { parseRuntimeRole } from "../lib/auth-role";
 
 const router = Router();
 
@@ -116,12 +118,18 @@ router.post(
   "/checkout",
   requireSupabaseAuth,
   doubleCsrfProtection,
+  // G2-04 (owner approval 2026-09-29): an under-13 student with no active guardian link cannot
+  // start a purchase or open the portal. A gate only — no Stripe logic changes. It reads the
+  // CALLER, so a guardian paying for a linked under-13 student passes.
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
 
     if (role === "admin") {
       return res
@@ -644,9 +652,11 @@ router.get(
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
     if (role === "admin") {
       return res
         .status(403)
@@ -833,12 +843,18 @@ router.post(
   "/portal",
   requireSupabaseAuth,
   doubleCsrfProtection,
+  // G2-04 (owner approval 2026-09-29): an under-13 student with no active guardian link cannot
+  // start a purchase or open the portal. A gate only — no Stripe logic changes. It reads the
+  // CALLER, so a guardian paying for a linked under-13 student passes.
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
     if (role === "admin") {
       return res
         .status(403)

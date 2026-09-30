@@ -1,0 +1,99 @@
+/**
+ * @spec [Guardian_Closure_Plan G2-04; owner ruling R6 (2026-09-27); SCL-187 rule 1; owner approval
+ *       2026-09-29 ("a dedicated /guardian-required page built from the canonical
+ *       StudentLinkCodePanel and StudentGuardiansPanel"); Student Terms §under-13; Coding
+ *       Standards §11.1, §11.3] | @implemented [2026-09-29]
+ *
+ * plain English: where an under-13 student lands while no guardian link is active. It says why in
+ * one sentence and links the Terms rather than restating them, then hands over every means of
+ * getting connected — the canonical link-code panel (the code, copy, regenerate, the email invite)
+ * and the canonical guardian list — and a sign-out. Nothing here is a second copy of either panel.
+ *
+ * NOT A CLIENT GATE. The server refuses every learning request with 403 GUARDIAN_LINK_REQUIRED
+ * (`requireGuardianLinkForUnder13`), read live from the link on each request. This page only
+ * spares the student a trip through refused pages. It asks the server whether a guardian is still
+ * needed (`guardianConsentRequired` on GET /api/profile) every 15 seconds and moves on to the
+ * dashboard as soon as the answer is no — so a guardian redeeming the code while the student
+ * waits lets them straight in.
+ *
+ * edge cases: the profile read failing or still loading keeps the panels on screen (they are
+ * reachable either way); an adult or linked student who opens this URL is sent to the dashboard.
+ */
+import { Redirect } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
+import { ShieldAlert } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
+import { StudentGuardiansPanel } from "@/components/student/StudentGuardiansPanel";
+
+const GUARDIAN_CHECK_INTERVAL_MS = 15_000;
+
+/** The one field this page reads from GET /api/profile — parsed, never cast. */
+const guardianRequirementSchema = z.object({
+  user: z.object({ guardianConsentRequired: z.boolean().optional() }),
+});
+
+export default function GuardianRequired() {
+  const { user, signOut } = useSupabaseAuth();
+  const { data } = useQuery<unknown>({
+    queryKey: ["/api/profile"],
+    refetchInterval: GUARDIAN_CHECK_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+
+  const parsed = guardianRequirementSchema.safeParse(data);
+  if (parsed.success && parsed.data.user.guardianConsentRequired !== true) {
+    return <Redirect to="/dashboard" replace />;
+  }
+
+  if (!user) return null;
+
+  return (
+    <div
+      className="min-h-screen bg-background px-4 py-10"
+      data-testid="guardian-required"
+    >
+      <div className="mx-auto max-w-xl space-y-6">
+        <h1 className="text-2xl font-semibold text-[#0F2E48]">
+          Connect a guardian to get started
+        </h1>
+        <Alert>
+          <ShieldAlert className="h-4 w-4" />
+          <AlertDescription>
+            Because you&rsquo;re under 13, a parent or guardian needs to connect
+            to your account before you can start studying. This is part of the{" "}
+            <a
+              href="/legal/student-terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Student Terms
+            </a>
+            .
+          </AlertDescription>
+        </Alert>
+
+        <StudentLinkCodePanel studentId={user.id} />
+        <StudentGuardiansPanel studentId={user.id} />
+
+        <p className="text-sm text-muted-foreground">
+          Until a guardian connects, you&rsquo;ll come back to this page
+          whenever you sign in. As soon as they enter your code, you&rsquo;ll go
+          straight on to your dashboard.
+        </p>
+
+        <Button
+          variant="outline"
+          onClick={() => void signOut()}
+          data-testid="guardian-required-sign-out"
+        >
+          Sign out
+        </Button>
+      </div>
+    </div>
+  );
+}

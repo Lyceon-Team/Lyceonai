@@ -35,9 +35,10 @@ export default function Login() {
       // account, and the under-13 rule, which is a condition of the Terms rather
       // than a consent state.
       const needsOnboarding =
-        user.guardianConsentRequired === true ||
-        user.requiredProfileComplete === false ||
-        !user.profile_completed_at;
+        user.requiredProfileComplete === false || !user.profile_completed_at;
+      // G2-04: an under-13 student with no active guardian link goes to the linking page.
+      const needsGuardianLink =
+        user.role === "student" && user.guardianConsentRequired === true;
 
       let destination = user.role === "guardian" ? "/guardian" : "/dashboard";
 
@@ -54,6 +55,8 @@ export default function Login() {
       // Admins bypass onboarding requirements
       if (user.role !== "admin" && needsOnboarding) {
         destination = "/profile/complete";
+      } else if (needsGuardianLink) {
+        destination = "/guardian-required";
       }
 
       navigate(destination);

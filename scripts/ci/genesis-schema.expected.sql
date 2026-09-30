@@ -5066,6 +5066,18 @@ BEGIN
     RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
   END IF;
 
+  -- G2-01: both parties' roles, read here rather than trusted from the caller. The grantee
+  -- must be a guardian and the subject a student; anything else (an admin, a second student,
+  -- a guardian as subject, an id with no profile) is refused BEFORE anything is written.
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_guardian_id AND role = 'guardian') THEN
+    RAISE EXCEPTION 'grantee is not a guardian' USING ERRCODE = 'LY006';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_student_id AND role = 'student') THEN
+    RAISE EXCEPTION 'subject is not a student' USING ERRCODE = 'LY006';
+  END IF;
+
   -- Edge case 2: already linked is a 409, not a duplicate row. Only 'active' is
   -- checked because SCL-080 leaves no reachable pending status.
   IF EXISTS (
@@ -8445,6 +8457,38 @@ CREATE FUNCTION public.prevent_update_delete() RETURNS trigger
     AS $$
 BEGIN
   RAISE EXCEPTION 'Table % is append-only; UPDATE and DELETE are not permitted', TG_TABLE_NAME;
+END;
+$$;
+
+
+--
+-- Name: profiles_lock_date_of_birth(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_lock_date_of_birth() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.is_under_13 IS DISTINCT FROM OLD.is_under_13
+     AND NEW.date_of_birth IS NOT DISTINCT FROM OLD.date_of_birth THEN
+    RAISE EXCEPTION 'is_under_13 is derived from date_of_birth and cannot be written'
+      USING ERRCODE = 'LY007';
+  END IF;
+
+  IF OLD.profile_completed_at IS NOT NULL
+     AND NEW.date_of_birth IS DISTINCT FROM OLD.date_of_birth THEN
+    IF OLD.date_of_birth IS NULL THEN
+      RETURN NEW;                       -- (a) the one-time fill
+    END IF;
+    IF NEW.date_of_birth IS NULL AND OLD.deleted_at IS NOT NULL THEN
+      RETURN NEW;                       -- (b) account deletion (deidentify_user)
+    END IF;
+    RAISE EXCEPTION 'date of birth is locked after profile completion'
+      USING ERRCODE = 'LY007';
+  END IF;
+
+  RETURN NEW;
 END;
 $$;
 
@@ -13252,7 +13296,6 @@ CREATE TABLE public.profiles (
     country_code text,
     stripe_customer_id text,
     guardian_email text,
-    guardian_consent boolean DEFAULT false,
     consent_given_at timestamp with time zone,
     guardian_profile_id uuid,
     student_link_code text,
@@ -16703,6 +16746,13 @@ CREATE TRIGGER practice_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE
 --
 
 CREATE TRIGGER practice_runtime_config_notify AFTER INSERT OR UPDATE ON public.practice_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: profiles profiles_lock_date_of_birth; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_lock_date_of_birth BEFORE UPDATE OF date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_lock_date_of_birth();
 
 
 --
@@ -20652,6 +20702,13 @@ REVOKE ALL ON FUNCTION public.prevent_score_runs_mutation() FROM PUBLIC;
 --
 
 GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
+
+
+--
+-- Name: FUNCTION profiles_lock_date_of_birth(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_lock_date_of_birth() FROM PUBLIC;
 
 
 --

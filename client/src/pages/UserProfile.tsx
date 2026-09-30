@@ -164,7 +164,9 @@ export default function UserProfile() {
 
   const profileUser = userProfile?.user;
 
-  const currentRole = user?.role || "student";
+  // G2-02: no default. This page renders only for a signed-in user whose role the route guard
+  // already parsed; an absent role is shown as absent, never guessed as "student".
+  const currentRole = user?.role ?? "unknown";
   const accountEmail = user?.email || profileUser?.email || "";
   const accountName = profileUser?.name || user?.display_name || "";
   const memberSinceLabel = formatMemberSince(profileUser?.createdAt);

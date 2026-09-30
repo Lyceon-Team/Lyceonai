@@ -248,7 +248,7 @@ describeIf(
       for (const mw of [
         "requireStudentOrAdmin",
         "requireProfileComplete",
-        "requireConsentCompliance",
+        "requireGuardianLinkForUnder13",
       ] as const) {
         vi.spyOn(authModule, mw).mockImplementation(
           (_req: Request, _res: Response, next: NextFunction) => next(),

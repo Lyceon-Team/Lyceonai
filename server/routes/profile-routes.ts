@@ -16,8 +16,7 @@ import { loadLegalAccountFacts } from "../lib/legal-account-facts";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
-import crypto from "crypto";
-import { sendGuardianConsentRequestEmail } from "../lib/notifications/direct-sends";
+import { hasActiveGuardianLink } from "../lib/guardian-link-state";
 import { setDateOfBirthRequestSchema } from "../../packages/shared/src/profile-role-choice-schema";
 import {
   decideRoleChoice,
@@ -26,6 +25,7 @@ import {
   loadRoleChoiceFacts,
   NOT_SELF_ASSIGNABLE,
   supportMessage,
+  toIsoDate,
   type RoleChoiceFacts,
   type RoleChoiceRefusal,
 } from "../lib/role-choice";
@@ -154,7 +154,7 @@ router.get("/", async (req: Request, res: Response) => {
     const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
+        "id, email, display_name, role, is_under_13, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
       )
       .eq("id", user.id)
       .single();
@@ -199,8 +199,11 @@ router.get("/", async (req: Request, res: Response) => {
     // under 13 cannot use LYCEON until a guardian connects — and it is the basis
     // of the under-13 position. It stays, and it routes to a screen that helps
     // them get connected rather than a wall.
+    // G2-05 (R6): "is a guardian connected" is DERIVED from an active link, never read from a
+    // stored flag. Interim within the Wave 2 PR: G2-04 gates every request on the same read.
+    const guardianConnected = await hasActiveGuardianLink(supabase, user.id);
     const guardianConsentRequired = !!(
-      profileRow.is_under_13 && !profileRow.guardian_consent
+      profileRow.is_under_13 && !guardianConnected
     );
     const requiredProfileComplete = !!profileRow.profile_completed_at;
 
@@ -243,7 +246,6 @@ router.get("/", async (req: Request, res: Response) => {
         isAdmin: user.isAdmin,
         isGuardian: user.isGuardian,
         is_under_13: profileRow.is_under_13,
-        guardian_consent: profileRow.guardian_consent,
         guardianEmail: profileRow.guardian_email,
         dateOfBirth: profileRow.date_of_birth,
         marketingOptIn: profileRow.marketing_opt_in,
@@ -296,7 +298,7 @@ router.patch("/", async (req: Request, res: Response) => {
       await supabase
         .from("profiles")
         .select(
-          "id, role, profile_completed_at, guardian_consent, guardian_email",
+          "id, role, profile_completed_at, guardian_email, date_of_birth",
         )
         .eq("id", userId)
         .single();
@@ -358,7 +360,35 @@ router.patch("/", async (req: Request, res: Response) => {
 
     const data = validation.data;
 
-    if (data.role === "student" && !data.dateOfBirth) {
+    // G2-03 (R10): once the profile is complete its date of birth is fixed — for students and
+    // guardians alike. A different value is refused before anything is written; an omitted or
+    // identical one simply keeps the stored date. The one exception, a guardian filling a NULL
+    // date, is POST /date-of-birth below, not this route. The database enforces the same rule
+    // (trigger profiles_lock_date_of_birth), so no future writer can bypass it.
+    const dateOfBirthLocked = existingProfile.profile_completed_at !== null;
+    const storedDateOfBirth = toIsoDate(existingProfile.date_of_birth);
+    if (
+      dateOfBirthLocked &&
+      data.dateOfBirth &&
+      data.dateOfBirth !== storedDateOfBirth
+    ) {
+      logger.warn(
+        "PROFILE",
+        "date_of_birth_locked",
+        "Date of birth change refused after completion",
+        { requestId: req.requestId },
+      );
+      return sendRoleChoiceRefusal(res, {
+        status: 409,
+        code: "DATE_OF_BIRTH_LOCKED",
+        message: `Your date of birth can't be changed after your profile is complete. ${supportMessage(SUPPORT_EMAIL)}`,
+      });
+    }
+    const effectiveDateOfBirth = dateOfBirthLocked
+      ? storedDateOfBirth
+      : (data.dateOfBirth ?? null);
+
+    if (data.role === "student" && !effectiveDateOfBirth) {
       return res.status(400).json({
         error: "Date of birth is required for student accounts",
       });
@@ -367,7 +397,7 @@ router.patch("/", async (req: Request, res: Response) => {
     // R10: a guardian gives a date of birth through the same field as a student, and must
     // be an adult. Refused before anything is written.
     if (data.role === "guardian") {
-      const ageRefusal = guardianAgeRefusal(data.dateOfBirth, new Date());
+      const ageRefusal = guardianAgeRefusal(effectiveDateOfBirth, new Date());
       if (ageRefusal) {
         logger.warn(
           "PROFILE",
@@ -383,89 +413,17 @@ router.patch("/", async (req: Request, res: Response) => {
     }
 
     const isUnder13 =
-      data.role === "student" && data.dateOfBirth
-        ? calculateAge(data.dateOfBirth) < 13
+      data.role === "student" && effectiveDateOfBirth
+        ? calculateAge(effectiveDateOfBirth) < 13
         : false;
     const guardianEmail =
       data.guardianEmail ?? existingProfile.guardian_email ?? null;
 
-    if (isUnder13 && !guardianEmail) {
-      return res.status(400).json({
-        error: "Guardian email is required for users under 13",
-      });
-    }
-
-    let guardianConsentRequestId: string | null = null;
-    let guardianConsentRequired = false;
-
-    if (isUnder13 && !existingProfile.guardian_consent) {
-      guardianConsentRequired = true;
-      const expiresThreshold = new Date().toISOString();
-      const { data: existingRequest, error: existingRequestError } =
-        await supabase
-          .from("guardian_consent_requests")
-          .select("id, guardian_email, expires_at, status")
-          .eq("child_id", userId)
-          .eq("status", "pending")
-          .gt("expires_at", expiresThreshold)
-          .order("expires_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-      if (existingRequestError) {
-        console.error(
-          "[PROFILE] Failed to query existing guardian consent request:",
-          existingRequestError,
-        );
-        return res
-          .status(500)
-          .json({ error: "Failed to load guardian consent state" });
-      }
-
-      if (existingRequest && existingRequest.guardian_email === guardianEmail) {
-        guardianConsentRequestId = existingRequest.id;
-      } else {
-        const requestId = crypto.randomUUID();
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 14);
-
-        const { error: requestError } = await supabase
-          .from("guardian_consent_requests")
-          .insert({
-            id: requestId,
-            child_id: userId,
-            guardian_email: guardianEmail!,
-            status: "pending",
-            expires_at: expiresAt.toISOString(),
-          });
-
-        if (requestError) {
-          console.error(
-            "[PROFILE] Failed to create guardian consent request:",
-            requestError,
-          );
-          return res
-            .status(500)
-            .json({ error: "Failed to start guardian verification flow" });
-        }
-
-        guardianConsentRequestId = requestId;
-      }
-
-      // Doc 01 §37.2 steps 1–3 / ruling R7+R9: the request row is the durable record; the
-      // email is a direct send keyed by that row's id, so a repeated PATCH cannot mail twice.
-      // Best-effort: a mail failure is logged inside the sender and never fails the profile
-      // update — the guardian can be re-mailed from the same row.
-      const consentRequestId: string | null = guardianConsentRequestId;
-      if (consentRequestId) {
-        await sendGuardianConsentRequestEmail({
-          consentRequestId,
-          guardianEmail: guardianEmail!,
-          studentDisplayName: data.displayName,
-          requestId: req.requestId,
-        });
-      }
-    }
+    // G2-05 (R6): the email-consent flow is gone. It wrote `guardian_consent_requests` rows (on a
+    // column the table never had, so every under-13 completion failed with 500), emailed a link
+    // to a page that does not exist, and withheld `profile_completed_at` from under-13 students.
+    // An under-13 student now completes the profile like anyone else; what they may reach while
+    // no guardian is linked is decided by the guardian-link gate, not by onboarding.
 
     // Finalize profile fields with server-authoritative role and under-13 state.
     const { error: updateError } = await supabase
@@ -473,16 +431,12 @@ router.patch("/", async (req: Request, res: Response) => {
       .update({
         display_name: data.displayName,
         role: roleDecision.role,
-        date_of_birth: data.dateOfBirth || null,
+        // G2-03: a locked date of birth is not written at all, and `is_under_13` is never
+        // written — the age trigger derives it from the date of birth.
+        ...(dateOfBirthLocked ? {} : { date_of_birth: effectiveDateOfBirth }),
         guardian_email: guardianEmail,
-        is_under_13: isUnder13,
-        guardian_consent: guardianConsentRequired
-          ? false
-          : existingProfile.guardian_consent,
         marketing_opt_in: data.marketingOptIn,
-        profile_completed_at: guardianConsentRequired
-          ? null
-          : new Date().toISOString(),
+        profile_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", userId);
@@ -504,6 +458,9 @@ router.patch("/", async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to fetch updated profile" });
     }
 
+    const guardianConnected = await hasActiveGuardianLink(supabase, userId);
+    const guardianConsentRequired = isUnder13 && !guardianConnected;
+
     return res.json({
       success: true,
       profile: {
@@ -513,14 +470,13 @@ router.patch("/", async (req: Request, res: Response) => {
         dateOfBirth: profile.date_of_birth,
         guardianEmail: profile.guardian_email,
         isUnder13: profile.is_under_13,
-        guardianConsent: profile.guardian_consent,
+        guardianConsent: guardianConnected,
         marketingOptIn: profile.marketing_opt_in,
         profileCompletedAt: profile.profile_completed_at,
         studentLinkCode: profile.student_link_code,
         role: profile.role,
       },
       guardianConsentRequired,
-      guardianConsentRequestId,
     });
   } catch (error: any) {
     console.error("[PROFILE] Unexpected error:", error);

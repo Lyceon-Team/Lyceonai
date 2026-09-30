@@ -1,4 +1,5 @@
 import { roleChoiceErrorCodeSchema } from "@lyceon/shared/profile-role-choice-schema";
+import { PROFILE_INCOMPLETE } from "@lyceon/shared/guardian-link-gate";
 export type ApiError = {
   status: number;
   code?: string;
@@ -116,6 +117,25 @@ function normalizeCode(value: string | undefined): string | undefined {
 
 function normalizeReason(value: string | undefined): string | undefined {
   return value ? value.trim().toLowerCase() : undefined;
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G2-06 (G-NEW-09)] | @implemented [2026-09-29]
+ *
+ * plain English: where a refused request should send the student, or null. A 403
+ * `PROFILE_INCOMPLETE` means the server will not serve learning until the profile — and so the
+ * age — is known, so the student belongs on profile completion. Pure: the query client's caches
+ * call it for every failed query and mutation (`redirectForOnboarding` in ./queryClient).
+ */
+export function onboardingRedirectFor(error: unknown): string | null {
+  if (!isApiError(error)) return null;
+  if (
+    error.status === 403 &&
+    normalizeCode(error.code) === PROFILE_INCOMPLETE
+  ) {
+    return "/profile/complete";
+  }
+  return null;
 }
 
 const entitlementCodes = new Set([

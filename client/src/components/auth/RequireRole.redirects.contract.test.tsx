@@ -14,7 +14,7 @@ import { RequireRole } from "./RequireRole";
 const queryMock = vi.hoisted(() => ({ useQuery: vi.fn() }));
 
 let authState: {
-  user: { id: string } | null;
+  user: { id: string; role: "student" | "guardian" | "admin" } | null;
   authLoading: boolean;
   isAdmin: boolean;
   isGuardian: boolean;
@@ -108,7 +108,7 @@ describe("RequireRole declarative onboarding gate", () => {
 
   it("redirects an incomplete student to /profile/complete before the feature page", () => {
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,
@@ -130,7 +130,7 @@ describe("RequireRole declarative onboarding gate", () => {
 
   it("renders children once onboarding is complete", () => {
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,
@@ -148,9 +148,66 @@ describe("RequireRole declarative onboarding gate", () => {
     expect(screen.queryByTestId("redirect")).toBeNull();
   });
 
+  describe("G2-04: an under-13 student with no active guardian link", () => {
+    const gatedStudent = {
+      profileCompletedAt: "2026-09-29T00:00:00.000Z",
+      requiredProfileComplete: true,
+      guardianConsentRequired: true,
+    };
+
+    it("is sent to /guardian-required from a feature page", () => {
+      authState = {
+        user: { id: "u13", role: "student" },
+        authLoading: false,
+        isAdmin: false,
+        isGuardian: false,
+      };
+      authData = { user: gatedStudent };
+      render(React.createElement(RequireRole, { allow: ["student"] }, child));
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/guardian-required",
+      );
+      expect(screen.queryByTestId("child")).toBeNull();
+    });
+
+    it("sees the linking page itself (no redirect loop)", () => {
+      location = "/guardian-required";
+      authState = {
+        user: { id: "u13", role: "student" },
+        authLoading: false,
+        isAdmin: false,
+        isGuardian: false,
+      };
+      authData = { user: gatedStudent };
+      render(React.createElement(RequireRole, { allow: ["student"] }, child));
+      expect(screen.getByTestId("child")).toBeInTheDocument();
+      expect(screen.queryByTestId("redirect")).toBeNull();
+    });
+
+    it("an incomplete profile still goes to /profile/complete first", () => {
+      authState = {
+        user: { id: "u13", role: "student" },
+        authLoading: false,
+        isAdmin: false,
+        isGuardian: false,
+      };
+      authData = {
+        user: {
+          ...gatedStudent,
+          profileCompletedAt: null,
+          requiredProfileComplete: false,
+        },
+      };
+      render(React.createElement(RequireRole, { allow: ["student"] }, child));
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/profile/complete",
+      );
+    });
+  });
+
   it("never gates an admin on onboarding (renders children even when incomplete)", () => {
     authState = {
-      user: { id: "a1" },
+      user: { id: "a1", role: "admin" },
       authLoading: false,
       isAdmin: true,
       isGuardian: false,
@@ -166,7 +223,7 @@ describe("RequireRole declarative onboarding gate", () => {
   it("does not re-redirect when already on /profile/complete (no loop)", () => {
     location = "/profile/complete";
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,
