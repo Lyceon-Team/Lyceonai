@@ -242,10 +242,12 @@ router.post("/sessions", async (req: Request, res: Response) => {
   for (const raw of rawPool) {
     const mapped = mapGenesisQuestionRow(raw);
     if (!isCanonicalRuntimeQuestion(mapped)) {
-      logger.warn("[diagnostic] skipping invalid question from pool", {
-        requestId,
-        questionId: String(raw.id ?? ""),
-      });
+      logger.warn(
+        "DIAGNOSTIC",
+        "pool_question_invalid",
+        "[diagnostic] skipping invalid question from pool",
+        { requestId, questionId: String(raw.id ?? "") },
+      );
       continue;
     }
     selected.push(toCanonicalQuestionForServing(mapped));
@@ -261,12 +263,18 @@ router.post("/sessions", async (req: Request, res: Response) => {
 
   if (domainCounts.size < CANONICAL_DOMAIN_COUNT) {
     const missingCount = CANONICAL_DOMAIN_COUNT - domainCounts.size;
-    logger.error("[diagnostic] insufficient domain coverage", {
-      requestId,
-      domainCounts: Object.fromEntries(domainCounts),
-      expectedDomains: CANONICAL_DOMAIN_COUNT,
-      actualDomains: domainCounts.size,
-    });
+    logger.error(
+      "DIAGNOSTIC",
+      "insufficient_domain_coverage",
+      "[diagnostic] insufficient domain coverage",
+      undefined,
+      {
+        requestId,
+        domainCounts: Object.fromEntries(domainCounts),
+        expectedDomains: CANONICAL_DOMAIN_COUNT,
+        actualDomains: domainCounts.size,
+      },
+    );
     return res.status(503).json({
       error: "diagnostic_insufficient_coverage",
       message: `${missingCount} domain(s) lack servable questions for the diagnostic. All 8 canonical domains must have ≥${perDomain} servable questions.`,
@@ -277,12 +285,13 @@ router.post("/sessions", async (req: Request, res: Response) => {
 
   for (const [domain, count] of domainCounts) {
     if (count < perDomain) {
-      logger.error("[diagnostic] domain has insufficient questions", {
-        requestId,
-        domain,
-        count,
-        required: perDomain,
-      });
+      logger.error(
+        "DIAGNOSTIC",
+        "domain_insufficient_questions",
+        "[diagnostic] domain has insufficient questions",
+        undefined,
+        { requestId, domain, count, required: perDomain },
+      );
       return res.status(503).json({
         error: "diagnostic_insufficient_coverage",
         message: `Domain "${domain}" has ${count} servable questions but the diagnostic requires ${perDomain}.`,
@@ -293,11 +302,17 @@ router.post("/sessions", async (req: Request, res: Response) => {
   }
 
   if (selected.length < totalQuestions) {
-    logger.error("[diagnostic] total pool size below requirement", {
-      requestId,
-      selectedCount: selected.length,
-      requiredCount: totalQuestions,
-    });
+    logger.error(
+      "DIAGNOSTIC",
+      "pool_below_requirement",
+      "[diagnostic] total pool size below requirement",
+      undefined,
+      {
+        requestId,
+        selectedCount: selected.length,
+        requiredCount: totalQuestions,
+      },
+    );
     return res.status(503).json({
       error: "diagnostic_insufficient_coverage",
       message: `Selected ${selected.length} questions but the diagnostic requires ${totalQuestions}.`,
@@ -423,13 +438,18 @@ router.post("/sessions", async (req: Request, res: Response) => {
     .limit(1)
     .maybeSingle();
 
-  logger.info("[diagnostic] session created", {
-    requestId,
-    sessionId,
-    totalQuestions,
-    perDomain,
-    domainCount: domainCounts.size,
-  });
+  logger.info(
+    "DIAGNOSTIC",
+    "session_created",
+    "[diagnostic] session created",
+    {
+      requestId,
+      sessionId,
+      totalQuestions,
+      perDomain,
+      domainCount: domainCounts.size,
+    },
+  );
 
   return res.status(201).json({
     sessionId,

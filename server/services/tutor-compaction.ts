@@ -504,8 +504,7 @@ async function fireMemorySummaryNotify(
         "TUTOR_COMPACTION",
         "notify_failed",
         "Failed to fire memory_summary_updated NOTIFY; cache invalidation may be delayed",
-        { message: error.message, code: error.code },
-        { studentId, summaryType },
+        { message: error.message, code: error.code, studentId, summaryType },
       );
     }
   } catch (err: unknown) {
@@ -513,8 +512,11 @@ async function fireMemorySummaryNotify(
       "TUTOR_COMPACTION",
       "notify_error",
       "Unexpected error firing NOTIFY",
-      err instanceof Error ? err : undefined,
-      { studentId, summaryType },
+      {
+        error: err instanceof Error ? err : undefined,
+        studentId,
+        summaryType,
+      },
     );
   }
 }
