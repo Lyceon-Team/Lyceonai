@@ -13,6 +13,8 @@ import * as React from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { GuardianShell } from "@/components/layout/GuardianShell";
 import { guardianPaths } from "./paths";
+import { StudentSwitcher } from "./StudentSwitcher";
+import { AddStudentButton } from "./AddStudentDialog";
 
 export type GuardianTab = "dashboard" | "calendar";
 
@@ -81,8 +83,8 @@ export function GuardianStudentLayout({
   const [location] = useLocation();
   return (
     <GuardianShell
-      center={center}
-      actions={actions}
+      center={center ?? <StudentSwitcher />}
+      actions={actions ?? <AddStudentButton />}
       subnav={
         <GuardianTabs studentId={studentId} active={tabForLocation(location)} />
       }
