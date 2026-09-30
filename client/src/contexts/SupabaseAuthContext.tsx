@@ -374,6 +374,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         );
       }
 
+      // G-NEW-12: the CSRF token is bound to the session identifier, and a successful sign-up
+      // can start a session — so the token minted before it is dead, exactly as after `signIn`.
+      // Drop it here too, or the first write after sign-up is refused and silently retried.
+      clearCsrfToken();
+
       const outcome = data?.outcome as SignupOutcome | undefined;
       if (outcome === "verification_required") {
         setUser(null);
