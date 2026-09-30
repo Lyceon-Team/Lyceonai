@@ -36,7 +36,7 @@
  * cannot run setup, so offering the sheet would be offering a control that cannot work.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRoute } from "wouter";
+import { useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { calendarKeys, useGuardianCalendar } from "@/features/calendar/api";
 import { CalendarView } from "@/features/calendar/CalendarView";
@@ -62,8 +62,9 @@ function localToday(): string {
 
 export default function GuardianStudentCalendarPage(): JSX.Element {
   const today = localToday();
-  const [, params] = useRoute("/students/:studentId/calendar");
-  const studentId = params?.studentId ?? "";
+  // G4-01: the student comes from whichever route mounts this page
+  // (`/guardian/:studentId/calendar`); the retired `/students/:id/calendar` redirects there.
+  const { studentId = "" } = useParams<{ studentId?: string }>();
   const queryClient = useQueryClient();
 
   const [range, setRange] = useState(() =>

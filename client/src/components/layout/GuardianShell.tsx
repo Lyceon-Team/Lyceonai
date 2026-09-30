@@ -23,16 +23,33 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
 
+/**
+ * G4-01 (Wave 4 layout, Karl 2026-09-28): ONE shell on every guardian page. The top bar is
+ * logo left, `center` (the student switcher, G4-02) in the middle, and `actions` (Add
+ * student, G4-02) beside the bell and the profile menu on the right. `subnav` is the tab row
+ * (Dashboard / Calendar) centred under the bar on a student's pages. A page that is not about
+ * one student (no students yet, the profile) passes none of them and gets the bar alone.
+ */
 export function GuardianShell({
   children,
   className = "",
+  center,
+  actions,
+  subnav,
 }: {
   children: React.ReactNode;
   className?: string;
+  center?: React.ReactNode;
+  actions?: React.ReactNode;
+  subnav?: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <GuardianHeader />
+    <div
+      className="min-h-screen bg-background text-foreground flex flex-col"
+      data-testid="guardian-shell"
+    >
+      <GuardianHeader center={center} actions={actions} />
+      {subnav}
       <main id="main" className={`flex-1 ${className}`}>
         {children}
       </main>
@@ -40,7 +57,13 @@ export function GuardianShell({
   );
 }
 
-function GuardianHeader() {
+function GuardianHeader({
+  center,
+  actions,
+}: {
+  center?: React.ReactNode;
+  actions?: React.ReactNode;
+}) {
   const { user } = useSupabaseAuth();
   const signOut = useHeaderSignOut();
 
@@ -51,14 +74,14 @@ function GuardianHeader() {
     >
       <SkipLink />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between">
+        <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-2">
           {/* The guardian's way home is /guardian, not /dashboard — a different page, so
               the control is pointed at theirs rather than hidden from them. Same focus
               ring and title as the student shell: the two headers are meant to behave
               identically, and the shells test exists because they have drifted before. */}
           <Link
             href="/guardian"
-            className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="flex w-fit items-center gap-2 text-foreground hover:opacity-80 transition-opacity rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             data-testid="logo-link"
             title="Lyceon home — your guardian dashboard"
           >
@@ -69,7 +92,15 @@ function GuardianHeader() {
             </span>
           </Link>
 
-          <div className="flex items-center gap-2">
+          <div
+            className="flex min-w-0 justify-center"
+            data-testid="guardian-shell-center"
+          >
+            {center}
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
+            {actions}
             {/* Notifications Bell — the same mount as AppShell; the shells test enforces it. */}
             {user && <NotificationBell />}
             <HeaderUserMenu {...signOut} fallbackName="Guardian" />

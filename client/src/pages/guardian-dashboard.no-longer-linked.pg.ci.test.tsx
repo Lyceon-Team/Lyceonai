@@ -21,6 +21,8 @@
  */
 import React from "react";
 import { Client } from "pg";
+import { Route, Router as WouterRouter } from "wouter";
+import { memoryLocation } from "wouter/memory-location";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -262,10 +264,16 @@ describe.skipIf(!PG_AVAILABLE)(
         students: [adaEntry],
       });
       server.linked.delete(ADA);
-      window.history.pushState({}, "", `/students/${ADA}/calendar`);
+      // G4-01: the page reads the student from its route (`/guardian/:studentId/calendar`).
       render(
         <QueryClientProvider client={client}>
-          <GuardianStudentCalendarPage />
+          <WouterRouter
+            hook={memoryLocation({ path: `/guardian/${ADA}/calendar` }).hook}
+          >
+            <Route path="/guardian/:studentId/calendar">
+              <GuardianStudentCalendarPage />
+            </Route>
+          </WouterRouter>
         </QueryClientProvider>,
       );
 

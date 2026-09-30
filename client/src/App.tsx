@@ -19,6 +19,7 @@ import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
+import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 import UpdatePassword from "@/pages/update-password";
 import NotificationsPage from "@/pages/notifications";
 
@@ -64,12 +65,6 @@ function ExamReportRoute() {
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
 const Calendar = lazy(() => import("@/pages/calendar"));
-const GuardianStudentCalendar = lazy(
-  () => import("@/pages/guardian-student-calendar"),
-);
-const GuardianExamResults = lazy(
-  () => import("@/features/exam/pages/GuardianExamResultsPage"),
-);
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const Review = lazy(() => import("@/pages/review"));
@@ -92,7 +87,6 @@ const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
 const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
-const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const CrisisReviewList = lazy(() => import("@/pages/admin/CrisisReviewList"));
 const CrisisReviewDetail = lazy(
   () => import("@/pages/admin/CrisisReviewDetail"),
@@ -109,7 +103,8 @@ function PageLoader() {
   );
 }
 
-function Router() {
+/** The route switch — exported so the guardian route walk (G4-01) renders the real table. */
+export function Router() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Switch>
@@ -216,41 +211,6 @@ function Router() {
             </RequireRole>
           )}
         />
-        {/*
-          Doc 05F §16 — a guardian reading a linked student's plan. The path mirrors the API
-          route (formula sheet item 14, /api/students/:studentId/calendar) so the two are
-          obviously the same resource. The server is the authority: this guard only decides
-          what is worth rendering.
-        */}
-        <Route
-          path="/students/:studentId/calendar"
-          component={() => (
-            <RequireRole allow={["guardian", "admin"]}>
-              <GuardianStudentCalendar />
-            </RequireRole>
-          )}
-        />
-        {/*
-          G1 — a guardian reading a linked student's full-length practice test results. The
-          paths mirror the API (/api/students/:studentId/tests[/:sessionId/report], SCL-181).
-          The server is the authority; this guard only decides what is worth rendering.
-        */}
-        <Route
-          path="/students/:studentId/tests"
-          component={() => (
-            <RequireRole allow={["guardian", "admin"]}>
-              <GuardianExamResults />
-            </RequireRole>
-          )}
-        />
-        <Route
-          path="/students/:studentId/tests/:sessionId"
-          component={() => (
-            <RequireRole allow={["guardian", "admin"]}>
-              <GuardianExamResults />
-            </RequireRole>
-          )}
-        />
         <Route path="/math-practice">
           {() => <Redirect to="/practice" replace />}
         </Route>
@@ -353,15 +313,20 @@ function Router() {
           )}
         />
 
-        {/* Guardian routes - guardian role only (G2-01; the server refuses admins too) */}
-        <Route
-          path="/guardian"
-          component={() => (
-            <RequireRole allow={["guardian"]}>
-              <GuardianDashboard />
-            </RequireRole>
-          )}
-        />
+        {/* Guardian routes (G4-01) — one table, guardian role only (G2-01; the server refuses
+            admins too). The retired /students/:id/* guardian pages redirect from the same
+            table. */}
+        {GUARDIAN_ROUTES.map(({ path, Page }) => (
+          <Route
+            key={path}
+            path={path}
+            component={() => (
+              <RequireRole allow={["guardian"]}>
+                <Page />
+              </RequireRole>
+            )}
+          />
+        ))}
 
         {/* 404 */}
         <Route component={NotFound} />
