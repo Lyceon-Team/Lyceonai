@@ -79,11 +79,11 @@ function mountPage(path: string) {
     <QueryClientProvider client={client}>
       <Router hook={hook}>
         <Route
-          path="/students/:studentId/tests"
+          path="/guardian/:studentId/exams"
           component={GuardianExamResultsPage}
         />
         <Route
-          path="/students/:studentId/tests/:sessionId"
+          path="/guardian/:studentId/exams/:sessionId"
           component={GuardianExamResultsPage}
         />
       </Router>
@@ -204,9 +204,10 @@ describe("guardian exam pages against the API", () => {
     // The never-sat form is not listed: a guardian has nothing to read there.
     expect(tests.map((t) => t.test_form_name)).toEqual(["Practice Test 2"]);
     fetchList.mockResolvedValue(tests);
-    mountPage(`/students/${STUDENT}/tests`);
+    mountPage(`/guardian/${STUDENT}/exams`);
     const link = await screen.findByRole("link", { name: /Practice Test 2/ });
-    expect(link.getAttribute("href")).toBe(`/students/${STUDENT}/tests/${SID}`);
+    // G4-05: the guardian routes (G4-01); the retired /students/:id/tests paths redirect here.
+    expect(link.getAttribute("href")).toBe(`/guardian/${STUDENT}/exams/${SID}`);
     expect(fetchList).toHaveBeenCalledWith(STUDENT);
     expectNoControls();
   });
@@ -220,7 +221,7 @@ describe("guardian exam pages against the API", () => {
       fetchReport.mockRejectedValue(
         new HttpApiError({ status, message: "denied" }),
       );
-      mountPage(`/students/${STUDENT}/tests/${SID}`);
+      mountPage(`/guardian/${STUDENT}/exams/${SID}`);
       expect(
         (await screen.findByTestId("guardian-exam-denied")).dataset.status,
       ).toBe(String(status));

@@ -36,6 +36,7 @@ import {
   fetchGuardianExamReport,
 } from "../api/exam-api";
 import { examKeys } from "../api/keys";
+import { guardianPaths } from "@/features/guardian/paths";
 import { MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoading } from "../components/ExamStatus";
@@ -62,36 +63,40 @@ const REPORT_STATE_LABEL: Record<
   voided: "Unavailable",
 };
 
+/**
+ * The page body inside the guardian shell (G4-05). The shell brings the only header — logo,
+ * student switcher, bell, profile menu and the Dashboard / Calendar tabs — so this page no
+ * longer draws its own header or its "Practice tests" link. `exam-root` scopes the exam
+ * styles (`--exam-*`) the shared exam components read.
+ */
 function Shell({
   studentId,
+  sessionId,
   children,
 }: {
   studentId: string;
+  sessionId: string | undefined;
   children: React.ReactNode;
 }) {
   return (
-    <div className="exam-root min-h-screen">
-      <header className="flex h-[60px] items-center justify-between border-b border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 md:px-10">
-        <span className="font-serif text-xl font-semibold">Lyceon</span>
-        <Link
-          href={`/students/${studentId}/tests`}
-          className="text-[13px] font-medium text-[var(--exam-muted)]"
-        >
-          Practice tests
-        </Link>
-      </header>
-      <main
+    <div className="exam-root">
+      <div
         className="mx-auto flex w-full max-w-4xl flex-col gap-7 px-4 py-8 md:px-10"
         data-testid="guardian-exam"
       >
         {children}
         <Link
-          href="/guardian"
-          className="flex min-h-[48px] w-fit items-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-[15px] font-medium"
+          href={
+            sessionId === undefined
+              ? guardianPaths.dashboard(studentId)
+              : guardianPaths.exams(studentId)
+          }
+          className="flex min-h-[48px] w-fit items-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-base font-medium"
+          data-testid="guardian-exam-back"
         >
-          Back to dashboard
+          {sessionId === undefined ? "Back to dashboard" : "All results"}
         </Link>
-      </main>
+      </div>
     </div>
   );
 }
@@ -134,7 +139,7 @@ export default function GuardianExamResultsPage() {
     sessionId?: string;
   }>();
   return (
-    <Shell studentId={studentId}>
+    <Shell studentId={studentId} sessionId={sessionId}>
       {sessionId === undefined ? (
         <ResultsList studentId={studentId} />
       ) : (
@@ -182,7 +187,7 @@ function ResultsList({ studentId }: { studentId: string }) {
           {list.data.map((t) => (
             <li key={t.session_id}>
               <Link
-                href={`/students/${studentId}/tests/${t.session_id}`}
+                href={guardianPaths.exam(studentId, t.session_id)}
                 className="flex min-h-[64px] items-center justify-between gap-4 rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] px-5 py-3"
               >
                 <span className="flex flex-col">
@@ -190,6 +195,9 @@ function ResultsList({ studentId }: { studentId: string }) {
                     {t.test_form_name}
                   </span>
                   <span className="text-[13px] text-[var(--exam-muted)]">
+                    {t.completed_at === null
+                      ? ""
+                      : `${formatDate(t.completed_at)} · `}
                     {MODE_SHORT_LABEL[t.mode]} timing · Attempt{" "}
                     {t.attempt_number_for_form}
                   </span>
