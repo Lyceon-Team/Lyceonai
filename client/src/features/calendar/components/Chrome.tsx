@@ -388,6 +388,7 @@ export function HeaderFacts({
  */
 export function TopBar({
   backHref,
+  hideBackLink = false,
   viewer,
   rangeLabelText,
   view,
@@ -404,6 +405,12 @@ export function TopBar({
 }: {
   /** `/dashboard` for a student, `/guardian` for a guardian — the page decides. */
   backHref: string;
+  /**
+   * G4-04 (owner, 2026-09-30): inside the guardian shell the Calendar is a TAB, so the way back
+   * is the Dashboard tab beside it and "← Dashboard" would be a second, redundant exit. Hidden
+   * by a prop, not a fork; the L1 slot stays so the header grid does not reflow.
+   */
+  hideBackLink?: boolean;
   rangeLabelText: string;
   view: "week" | "month";
   onView: (next: "week" | "month") => void;
@@ -442,19 +449,21 @@ export function TopBar({
     <div className="top">
       {/* ── L1 ─────────────────────────────────────────────────────────── */}
       <div className="slot" data-slot="L1">
-        <div className="item" data-item="dashboard">
-          {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping
+        {hideBackLink ? null : (
+          <div className="item" data-item="dashboard">
+            {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping
               the history stack lands wherever the student happened to arrive from,
               including an external referrer, and it cannot be middle-clicked or opened in
               a new tab. A link to the dashboard is deterministic. */}
-          <Link
-            href={backHref}
-            className="back"
-            data-testid="calendar-back-link"
-          >
-            <span aria-hidden="true">←</span> Dashboard
-          </Link>
-        </div>
+            <Link
+              href={backHref}
+              className="back"
+              data-testid="calendar-back-link"
+            >
+              <span aria-hidden="true">←</span> Dashboard
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* ── C1 ─────────────────────────────────────────────────────────── */}

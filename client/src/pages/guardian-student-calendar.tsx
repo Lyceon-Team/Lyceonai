@@ -116,6 +116,8 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
   return (
     <CalendarView
       backHref="/guardian"
+      // G4-04: the calendar is a tab inside the guardian shell; the Dashboard is its neighbour.
+      hideBackLink
       model={guardianViewModel(calendar.data)}
       today={today}
       viewerName="Study plan"
