@@ -17,13 +17,15 @@
  */
 import * as React from "react";
 import { Link, useLocation } from "wouter";
-import { GraduationCap, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { guardianPaths } from "@/features/guardian/paths";
 import { SkipLink } from "@/components/common/skip-link";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
+import "@/features/guardian/guardian-surface.css";
+import "@/features/guardian/guardian-type-floor.generated.css";
 
 /**
  * G4-01 (Wave 4 layout, Karl 2026-09-28): ONE shell on every guardian page. The top bar is
@@ -47,7 +49,8 @@ export function GuardianShell({
 }) {
   return (
     <div
-      className="min-h-screen bg-background text-foreground flex flex-col"
+      // `guardian-surface` scopes the R12 type floor (G4-07) over the shared components.
+      className="guardian-surface min-h-screen bg-background text-foreground flex flex-col"
       data-testid="guardian-shell"
     >
       <GuardianHeader center={center} actions={actions} />
@@ -56,6 +59,33 @@ export function GuardianShell({
         {children}
       </main>
     </div>
+  );
+}
+
+/**
+ * G4-07 (R12): the real Lyceon logo, not a graduation-cap icon. The one logo asset,
+ * `client/public/lyceon-logo.png`, is a 1024px square — the hexagon-and-book mark above the
+ * LYCEON wordmark on the brand cream. At header size the wordmark would be unreadably small,
+ * so this shows the asset's MARK through a 40px window (the asset itself is unchanged and no
+ * second asset is made); the word "Lyceon" beside it is live text. The window's numbers are
+ * the mark's bounds in the asset: centred at (512, 420) of 1024, about 404px tall, drawn at
+ * 100px so the mark fills the 40px window.
+ */
+function LyceonMark(): JSX.Element {
+  return (
+    <span
+      className="relative block h-10 w-10 shrink-0 overflow-hidden"
+      data-testid="lyceon-logo"
+    >
+      <img
+        src="/lyceon-logo.png"
+        alt="Lyceon"
+        width={100}
+        height={100}
+        className="absolute max-w-none"
+        style={{ left: -30, top: -21 }}
+      />
+    </span>
   );
 }
 
@@ -84,13 +114,13 @@ function GuardianHeader({
               identically, and the shells test exists because they have drifted before. */}
           <Link
             href="/guardian"
-            className="flex w-fit items-center gap-2 text-foreground hover:opacity-80 transition-opacity rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="flex w-fit items-center gap-2 text-foreground no-underline hover:opacity-80 transition-opacity rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             data-testid="logo-link"
             title="Lyceon home — your guardian dashboard"
           >
-            <GraduationCap className="h-6 w-6 text-foreground" />
+            <LyceonMark />
             <span className="font-bold text-lg hidden sm:inline">Lyceon</span>
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            <span className="text-base font-semibold text-muted-foreground">
               Guardian
             </span>
           </Link>

@@ -1,0 +1,31 @@
+/*
+ * The guardian surface's type floor for the SHARED components it renders.
+ *
+ * @spec [Guardian_Closure_Plan G4-07; owner ruling R12 ("no computed font below 16px" on the
+ *       guardian surface); R11 (reuse the student's components, do not fork)]
+ * @implemented [2026-09-30]
+ *
+ * plain English: the guardian pages render the student's own components — the exam report,
+ * the mastery grid and its level pills, the calendar — and those set some labels at 12–15px
+ * through Tailwind size utilities. Under `.guardian-surface` (the `GuardianShell` root) each of
+ * those utilities is raised to 16px, one class more specific than the utility itself. The
+ * student pages keep their sizes. The calendar's own stylesheet is floored by the generated
+ * `guardian-type-floor.generated.css` beside this file.
+ *
+ * The browser check is `tests/e2e/guardian-surfaces.spec.ts`: on every guardian route it reads
+ * the computed size of every element that draws text and fails under 16px.
+ */
+.guardian-surface
+  :is(
+    .text-xs,
+    .text-sm,
+    .text-\[10px\],
+    .text-\[11px\],
+    .text-\[12px\],
+    .text-\[13px\],
+    .text-\[14px\],
+    .text-\[15px\]
+  ) {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}

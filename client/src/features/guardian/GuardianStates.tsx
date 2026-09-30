@@ -181,7 +181,7 @@ export function GuardianLapsedState({
       action={
         <Link
           href={guardianPaths.choosePlan(studentId)}
-          className="inline-flex min-h-[48px] w-fit items-center rounded-md bg-primary px-5 text-base font-semibold text-primary-foreground"
+          className="inline-flex min-h-[48px] w-fit items-center rounded-md bg-primary px-5 text-base font-semibold text-primary-foreground no-underline"
           data-testid="guardian-state-lapsed-cta"
         >
           Choose a plan for {name}
@@ -208,7 +208,7 @@ export function GuardianRevokedState({
       action={
         <Link
           href={guardianPaths.home}
-          className="inline-flex min-h-[48px] w-fit items-center rounded-md border border-border px-5 text-base font-semibold"
+          className="inline-flex min-h-[48px] w-fit items-center rounded-md border border-border px-5 text-base font-semibold no-underline"
         >
           Back to your students
         </Link>

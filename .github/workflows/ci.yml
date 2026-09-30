@@ -228,6 +228,12 @@ jobs:
       - name: Guardian schema-truth self-test (proves each rule turns it red)
         run: bash scripts/ci/guardian-schema-truth-gate.selftest.sh
 
+      # G4-07 (R12): guardian files take colour from the token set, never a hex literal, and
+      # no text utility under 16px; the calendar's generated 16px floor must match calendar.css.
+      # Legacy unrouted files are excluded by name, and the gate fails if anything imports one.
+      - name: Guardian token gate (no hex literals, no sub-16px text, type floor current)
+        run: node scripts/ci/guardian-token-gate.mjs
+
       # A published legal version directory is the evidence of what somebody
       # agreed to — ARL § 17602(a)(4) requires producing that exact text three
       # years later. Editing one destroys the evidence while the consent record

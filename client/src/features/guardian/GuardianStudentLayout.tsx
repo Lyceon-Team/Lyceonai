@@ -57,7 +57,7 @@ export function GuardianTabs({
           key={tab.id}
           href={tab.href}
           aria-current={tab.id === active ? "page" : undefined}
-          className={`min-h-[48px] min-w-[140px] px-6 flex items-center justify-center text-base border-b-[3px] ${
+          className={`min-h-[48px] min-w-[140px] px-6 flex items-center justify-center text-base no-underline border-b-[3px] ${
             tab.id === active
               ? "border-foreground font-semibold text-foreground"
               : "border-transparent text-muted-foreground"

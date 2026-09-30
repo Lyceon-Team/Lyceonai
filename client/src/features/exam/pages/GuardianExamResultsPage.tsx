@@ -195,10 +195,10 @@ function ResultsList({ studentId }: { studentId: string }) {
                 className="flex min-h-[64px] items-center justify-between gap-4 rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] px-5 py-3"
               >
                 <span className="flex flex-col">
-                  <span className="text-[15px] font-semibold">
+                  <span className="text-base font-semibold">
                     {t.test_form_name}
                   </span>
-                  <span className="text-[13px] text-[var(--exam-muted)]">
+                  <span className="text-base text-[var(--exam-muted)]">
                     {t.completed_at === null
                       ? ""
                       : `${formatDate(t.completed_at)} · `}
@@ -206,7 +206,7 @@ function ResultsList({ studentId }: { studentId: string }) {
                     {t.attempt_number_for_form}
                   </span>
                 </span>
-                <span className="text-[13px] font-medium">
+                <span className="text-base font-medium">
                   {REPORT_STATE_LABEL[t.report_state]}
                 </span>
               </Link>
@@ -304,7 +304,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
                   >
                     {report.score.total_scaled}
                   </span>
-                  <span className="text-sm text-[var(--exam-muted)]">
+                  <span className="text-base text-[var(--exam-muted)]">
                     Total score · 400–1600
                   </span>
                 </div>
@@ -340,7 +340,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
           >
             <Panel title="Partial score">
               <p
-                className="m-0 text-[15px] leading-relaxed"
+                className="m-0 text-base leading-relaxed"
                 data-testid="exam-partial-summary"
               >
                 {report.partial_disclosure.summary}
@@ -368,7 +368,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
         <>
           <Title name={report.test_form_name} line="Test submitted" />
           <Panel title="Being scored">
-            <p className="m-0 text-[15px] leading-relaxed" role="status">
+            <p className="m-0 text-base leading-relaxed" role="status">
               This test has been submitted and is being scored. Scores usually
               appear within a few minutes.
             </p>
@@ -381,7 +381,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
           <Title name={report.test_form_name} line="Test submitted" />
           <Panel title="Score delayed">
             <p
-              className="m-0 text-[15px] leading-relaxed"
+              className="m-0 text-base leading-relaxed"
               data-testid="guardian-exam-delayed"
             >
               A technical issue on our end delayed this score. Our team is
@@ -401,7 +401,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
                 : "In progress"
             }
           >
-            <p className="m-0 text-[15px] leading-relaxed">
+            <p className="m-0 text-base leading-relaxed">
               {report.session_state === "abandoned_final"
                 ? "This attempt ended before it was finished, so it has no score."
                 : "A score appears here once both sections are submitted."}
@@ -414,7 +414,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
         <>
           <Title name={report.test_form_name} line="Practice test" />
           <Panel title="Not available right now">
-            <p className="m-0 text-[15px] leading-relaxed">
+            <p className="m-0 text-base leading-relaxed">
               This result can't be shown at the moment.
             </p>
           </Panel>

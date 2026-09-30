@@ -124,7 +124,9 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
       : Math.max(0, daysBetween(today, data.target_exam_date));
   return (
     <div className="flex flex-col gap-4" data-testid="dashboard-header">
-      <div className="lyceon-calendar">
+      {/* The calendar header's own readouts (`.lyceon-calendar` scopes their styles), laid out
+          as one strip: the calendar places them in its top-bar slots, the Dashboard in a row. */}
+      <div className="lyceon-calendar rounded-2xl border border-border px-5 py-4 [&_.header-facts]:flex [&_.header-facts]:flex-wrap [&_.header-facts]:items-baseline [&_.header-facts]:gap-x-10 [&_.header-facts]:gap-y-2">
         <HeaderFacts
           viewer="guardian"
           targetScore={data.target_score}

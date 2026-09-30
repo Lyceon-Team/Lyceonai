@@ -114,15 +114,15 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
   ) {
     return (
       <div
-        className="min-h-screen flex items-center justify-center bg-[#FFFAEF]"
+        className="min-h-screen flex items-center justify-center bg-brand-cream"
         data-testid="checkout-processing"
       >
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-[#0F2E48]" />
-          <p className="text-[#0F2E48] text-lg font-medium">
+          <Loader2 className="h-8 w-8 animate-spin text-brand-navy" />
+          <p className="text-brand-navy text-lg font-medium">
             Processing your payment...
           </p>
-          <p className="text-[#0F2E48]/70 text-sm">
+          <p className="text-brand-navy/70 text-base">
             This usually takes just a few seconds.
           </p>
         </div>
@@ -138,7 +138,7 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
   ) {
     return (
       <div
-        className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4"
+        className="min-h-screen flex items-center justify-center bg-brand-cream p-4"
         data-testid="checkout-timeout"
       >
         <Card className="w-full max-w-md">
@@ -146,7 +146,7 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
             <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-amber-100 flex items-center justify-center">
               <AlertTriangle className="h-8 w-8 text-amber-600" />
             </div>
-            <CardTitle className="text-2xl text-[#0F2E48]">
+            <CardTitle className="text-2xl text-brand-navy">
               Payment Processing
             </CardTitle>
             <CardDescription className="text-base">
@@ -176,10 +176,10 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
 
   if (billingLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF]">
+      <div className="min-h-screen flex items-center justify-center bg-brand-cream">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-[#0F2E48]" />
-          <p className="text-[#0F2E48]">Checking subscription status...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-brand-navy" />
+          <p className="text-brand-navy">Checking subscription status...</p>
         </div>
       </div>
     );
