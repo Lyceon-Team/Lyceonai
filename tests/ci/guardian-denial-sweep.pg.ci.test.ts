@@ -141,7 +141,6 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
   "/api/notifications/", // the caller's own feed
   "/api/profile/", // the caller's own profile
   "/api/public/",
-  "/api/questions/recent", // anonymous public preview, no answers
   "/api/questions/stats", // admin-gated (requireSupabaseAdmin): bank counts are admin-only (student UI UI-07)
   "/api/students/", // subject resolver: guardian reads only when linked + entitled; writes require via=self
   "/api/webhooks/", // signature-verified
