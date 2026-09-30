@@ -9,8 +9,9 @@
  * a second email, sender from NOTIFICATION_FROM_EMAIL. Expected provider failures (missing
  * config, non-2xx, network) come back as a Result — the dispatcher records them against
  * the row; nothing here throws for those. Logging goes through the structured logger with
- * the recipient reduced to first letter + domain; the subject, body and API key are never
- * logged. The deleted email.ts printed whole messages to the console when the key was
+ * the recipient named only by profile id (digested by the logger) and the message id; no
+ * address in any form, masked or not (owner ruling OQ-17, 2026-09-30); the subject, body and
+ * API key are never logged. The deleted email.ts printed whole messages to the console when the key was
  * absent — that path does not exist here: no key means a `config_missing` failure and a
  * warn line carrying only the message id.
  *
@@ -36,6 +37,13 @@ export type EmailSendInput = {
   /** Resend Idempotency-Key. The dispatcher passes the message_id; direct sends pass a key derived from their request row id. */
   idempotencyKey: string;
   to: string;
+  /**
+   * @spec [owner ruling OQ-17, 2026-09-30; Doc 01A §14; register F-29] | @implemented [2026-09-30]
+   * plain English: who the email is for, as a profile id. Logs carry this (the logger digests
+   * `*ProfileId` keys) and the idempotency key, never the address in any form, masked or not.
+   * `null` when the recipient has no profile yet (a guardian invited by address).
+   */
+  recipientProfileId: string | null;
   subject: string;
   html: string;
   text: string;
@@ -54,13 +62,6 @@ export type EmailSendFailure = {
 export type EmailTransport = (
   input: EmailSendInput,
 ) => Promise<Result<{ providerMessageId: string }, EmailSendFailure>>;
-
-/** Doc 01A §14: first letter + domain. Anything unparseable becomes a fixed marker. */
-export function redactEmail(address: string): string {
-  const at = address.indexOf("@");
-  if (at <= 0 || at === address.length - 1) return "<redacted>";
-  return `${address[0]}****@${address.slice(at + 1)}`;
-}
 
 type TransportOptions = {
   fetchImpl?: typeof fetch;
@@ -222,7 +223,7 @@ export function createResendTransport(
           "Resend request failed",
           {
             idempotencyKey: input.idempotencyKey,
-            recipient: redactEmail(input.to),
+            recipientProfileId: input.recipientProfileId,
             error: failure.message,
           },
         );
@@ -233,7 +234,7 @@ export function createResendTransport(
           "Resend rejected the send",
           {
             idempotencyKey: input.idempotencyKey,
-            recipient: redactEmail(input.to),
+            recipientProfileId: input.recipientProfileId,
             status: failure.status,
           },
         );
@@ -256,7 +257,7 @@ export function createResendTransport(
     logger.info("NOTIFICATIONS", "email_sent", "Email accepted by Resend", {
       idempotencyKey: input.idempotencyKey,
       providerMessageId: id,
-      recipient: redactEmail(input.to),
+      recipientProfileId: input.recipientProfileId,
     });
     return ok({ providerMessageId: id });
   };
@@ -327,10 +328,18 @@ export type SuppressionOrigin = SuppressionEntry["origin"];
 /** Same failure shape as a send, so one caller can record either without branching on kind. */
 export type SuppressionFailure = EmailSendFailure;
 
+/**
+ * Who a suppression change is for. Logged instead of the address (owner ruling OQ-17,
+ * 2026-09-30); the logger digests `*ProfileId` keys. `null` where the caller deliberately has
+ * no profile link, as on the deletion evidence side, which is keyed by log id alone.
+ */
+export type SuppressionLogContext = { recipientProfileId: string | null };
+
 export type SuppressionTransport = {
   /** Add the address to the team suppression list. Idempotent at the provider. */
   add: (
     address: string,
+    context: SuppressionLogContext,
   ) => Promise<Result<{ id: string }, SuppressionFailure>>;
   /** The entry for this address, or `ok(null)` when it is not suppressed. */
   get: (
@@ -339,6 +348,7 @@ export type SuppressionTransport = {
   /** Remove the entry, letting the address receive mail again. */
   remove: (
     address: string,
+    context: SuppressionLogContext,
   ) => Promise<Result<{ deleted: boolean }, SuppressionFailure>>;
 };
 
@@ -353,7 +363,7 @@ export function createResendSuppressionTransport(
   const request = createResendRequest(options);
 
   return {
-    async add(address) {
+    async add(address, context) {
       const normalised = normaliseAddress(address);
       const response = await request("POST", "/suppressions", {
         email: normalised,
@@ -364,7 +374,7 @@ export function createResendSuppressionTransport(
           "suppression_add_failed",
           "Resend did not accept the suppression",
           {
-            recipient: redactEmail(normalised),
+            recipientProfileId: context.recipientProfileId,
             kind: response.error.kind,
             status: response.error.status,
           },
@@ -382,7 +392,10 @@ export function createResendSuppressionTransport(
         "NOTIFICATIONS",
         "suppression_added",
         "Address added to the Resend suppression list",
-        { recipient: redactEmail(normalised) },
+        {
+          recipientProfileId: context.recipientProfileId,
+          suppressionId: added.data.id,
+        },
       );
       return ok({ id: added.data.id });
     },
@@ -410,7 +423,7 @@ export function createResendSuppressionTransport(
       return ok(entry.data);
     },
 
-    async remove(address) {
+    async remove(address, context) {
       const normalised = normaliseAddress(address);
       const response = await request(
         "DELETE",
@@ -423,7 +436,7 @@ export function createResendSuppressionTransport(
           "suppression_remove_failed",
           "Resend did not accept the suppression removal",
           {
-            recipient: redactEmail(normalised),
+            recipientProfileId: context.recipientProfileId,
             kind: response.error.kind,
             status: response.error.status,
           },
@@ -435,7 +448,7 @@ export function createResendSuppressionTransport(
         "NOTIFICATIONS",
         "suppression_removed",
         "Address removed from the Resend suppression list",
-        { recipient: redactEmail(normalised) },
+        { recipientProfileId: context.recipientProfileId },
       );
       // A 2xx whose body we cannot read still means the provider accepted the removal; the
       // flag only reports whether an entry was actually there to remove.
