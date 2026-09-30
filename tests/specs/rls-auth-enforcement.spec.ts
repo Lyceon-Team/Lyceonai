@@ -86,10 +86,8 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
 
   test('should deny access to /api/* routes without authentication', async ({ request }) => {
     // Test various endpoints without auth
+    // The /api/questions list, recent and random routes were deleted as unused (register UI-05).
     const endpoints = [
-      '/api/questions',
-      '/api/questions/recent',
-      '/api/questions/random',
       '/api/practice/sessions/current',
     ];
 
@@ -221,30 +219,9 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
     expect(body.error).toContain('Access denied');
   });
 
-  test('should require authentication for question endpoints', async ({ request }) => {
-    const endpoints = [
-      '/api/questions',
-      '/api/questions/recent', 
-      '/api/questions/random',
-      '/api/questions/count',
-      '/api/questions/feed',
-    ];
-
-    for (const endpoint of endpoints) {
-      const response = await request.get(endpoint);
-      expect(response.status()).toBe(401);
-    }
-
-    // Verify same endpoints work with auth
-    for (const endpoint of endpoints) {
-      const response = await request.get(endpoint, {
-        headers: {
-          'Cookie': `sb-access-token=${user1Token}`,
-        },
-      });
-      expect(response.status()).toBe(200);
-    }
-  });
+  // 'should require authentication for question endpoints' was removed: every route it probed
+  // (/api/questions, /recent, /random, /count, /feed) was deleted as unused (register UI-05).
+  // The one surviving route, /api/questions/stats, is admin-only and covered below.
 
   test('should require admin role for admin endpoints', async ({ request }) => {
     // UI-07 (owner ruling 2026-09-29): students never see question-bank counts, so the
@@ -268,10 +245,9 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
     // Test with invalid token
     const invalidToken = 'invalid-jwt-token';
     
+    // /api/questions and /api/questions/recent were deleted as unused (register UI-05).
     const endpoints = [
-      '/api/questions',
       '/api/practice/sessions',
-      '/api/questions/recent',
     ];
 
     for (const endpoint of endpoints) {

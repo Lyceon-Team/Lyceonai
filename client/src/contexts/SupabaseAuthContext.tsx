@@ -28,26 +28,6 @@ import {
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
 
-/**
- * The provider's one log channel. The client has no structured logger (see
- * `features/calendar/api/client.ts`), so this writes to the console — and takes only an event
- * name and flat string/number detail, so a response body, token or credential cannot reach it
- * (Coding Standards §12.1). An error is reduced to its message, which for this provider is an
- * `authError` code or a status line.
- */
-function authLog(
-  level: "warn" | "error",
-  event: string,
-  detail: Record<string, string | number> = {},
-): void {
-  // eslint-disable-next-line no-console -- the only client-side error channel; see above.
-  (level === "warn" ? console.warn : console.error)(`[AUTH] ${event}`, detail);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "unknown";
-}
-
 export type SignupOutcome = "authenticated" | "verification_required";
 
 export interface SignupResult {
@@ -160,8 +140,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     let data: ProfileHydration;
     try {
       data = await queryClient.fetchQuery({ ...profileQuery, staleTime: 0 });
-    } catch (error) {
-      authLog("error", "Profile fetch failed", { error: errorMessage(error) });
+    } catch {
+      // A failed read is "no user" for every caller (the semantics documented above). Nothing is
+      // written: there is no approved client logger, and the console is not one (Brief 5).
       return null;
     }
 
@@ -221,17 +202,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       try {
         // Pre-fetch CSRF token to "warm up" the handshake and detect connectivity issues early.
         // This avoids a race condition where the first mutating request (login) hangs on the handshake.
-        await getCsrfToken().catch((err) => {
-          if (!abortController.signal.aborted) {
-            authLog(
-              "warn",
-              "CSRF pre-fetch failed, will retry on first mutation",
-              {
-                error: errorMessage(err),
-              },
-            );
-          }
-        });
+        // A failed warm-up is not an error: `csrfFetch` fetches the token again on the first
+        // mutation, so boot continues either way.
+        await getCsrfToken().catch(() => undefined);
 
         // Bail out early if unmounted (StrictMode cleanup)
         if (abortController.signal.aborted) return;
@@ -239,13 +212,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         // Add a safety timeout to profile fetch to prevent boot-hangs if Supabase/API is slow.
         const profileFetchPromise = fetchUserFromBackend();
         const timeoutPromise = new Promise<null>((resolve) => {
-          timeoutId = setTimeout(() => {
-            authLog(
-              "warn",
-              "Profile fetch timed out, proceeding as unauthenticated",
-            );
-            resolve(null);
-          }, 8000);
+          // A slow profile read proceeds as unauthenticated.
+          timeoutId = setTimeout(() => resolve(null), 8000);
         });
 
         const backendUser = await Promise.race([
@@ -267,11 +235,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         } else {
           clearAuthState();
         }
-      } catch (error) {
-        if (!abortController.signal.aborted) {
-          authLog("error", "Initialization failed", {
-            error: errorMessage(error),
-          });
+      } catch {
+        // Boot could not establish a session: proceed signed out, the same answer a failed or
+        // slow profile read gives above.
+        if (mounted && !abortController.signal.aborted) {
+          clearAuthState();
         }
       } finally {
         if (mounted && !abortController.signal.aborted) {
@@ -324,8 +292,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        // code is specific for logging; the displayed copy is generic + non-enumerable.
-        authLog("error", "Sign up failed", { status: response.status });
+        // The displayed copy is generic and non-enumerable.
         throw authError(
           response.status === 503 ? "signup_consent_failed" : "signup_failed",
         );
@@ -356,7 +323,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         user: data?.user,
       };
     } catch (error) {
-      authLog("error", "Sign up error", { error: errorMessage(error) });
       throw error instanceof Error ? error : authError("signup_failed");
     } finally {
       setAuthLoading(false);
@@ -374,9 +340,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        authLog("error", "Server sign in failed", {
-          status: response.status,
-        });
         throw authError(response.status === 401 ? "signin_failed" : undefined);
       }
 
@@ -431,7 +394,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       }
       // On success the browser is redirected to Google; no further client work here.
     } catch (error) {
-      authLog("error", "Google sign in error", { error: errorMessage(error) });
       setAuthLoading(false);
       throw error instanceof Error ? error : authError("google_oauth_failed");
     }
@@ -455,8 +417,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // already cleared via `setUser(null)` when a user was set; this also covers a sign-out
       // before the profile ever loaded.
       queryClient.clear();
-    } catch (error) {
-      authLog("error", "Sign out error", { error: errorMessage(error) });
+    } catch {
       throw authError("signout_failed");
     } finally {
       setAuthLoading(false);
@@ -474,16 +435,12 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        authLog("error", "Reset password failed", {
-          status: response.status,
-        });
         throw authError("reset_password_failed");
       }
 
       // Successful response should be JSON, but let's be safe
       return await response.json().catch(() => ({ success: true }));
     } catch (error) {
-      authLog("error", "Reset password error", { error: errorMessage(error) });
       throw error instanceof Error ? error : authError("reset_password_failed");
     } finally {
       setAuthLoading(false);
@@ -501,15 +458,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        authLog("error", "Update password failed", {
-          status: response.status,
-        });
         throw authError("update_password_failed");
       }
 
       return await response.json().catch(() => ({ success: true }));
     } catch (error) {
-      authLog("error", "Update password error", { error: errorMessage(error) });
       throw error instanceof Error
         ? error
         : authError("update_password_failed");
