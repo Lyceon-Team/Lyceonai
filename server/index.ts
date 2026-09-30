@@ -56,6 +56,7 @@ import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
+import { apiCacheControlDefault } from "./middleware/api-cache-control";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import reviewCanonicalRouter from "./routes/review-canonical";
 import examRuntimeRouter from "./routes/exam-runtime-routes";
@@ -91,6 +92,8 @@ app.set("trust proxy", 1);
 // Request ID middleware - must be first to track all requests
 app.use(requestIdMiddleware);
 app.use(securityHeadersMiddleware());
+// F-27: every /api response is private, no-store unless its route sets a listed public header.
+app.use("/api", apiCacheControlDefault);
 
 // Core middleware
 app.use(corsAllowlist());
