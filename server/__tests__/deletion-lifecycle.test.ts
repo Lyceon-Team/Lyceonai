@@ -463,7 +463,6 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     const rpcCalls: RpcCall[] = [];
     const updateCalls: Array<{ data: Record<string, unknown>; table: string }> =
       [];
-    const signOutCalls: string[] = [];
 
     const admin = {
       from: vi.fn((table: string) => {
@@ -528,10 +527,6 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       }),
       auth: {
         admin: {
-          signOutUser: vi.fn(async (id: string) => {
-            signOutCalls.push(id);
-            return { error: null };
-          }),
           updateUserById: vi.fn(async () => ({ error: null })),
         },
       },
@@ -553,7 +548,6 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       admin: admin as unknown as Parameters<typeof executeDueDeletions>[0],
       rpcCalls,
       updateCalls,
-      signOutCalls,
     };
   }
 
