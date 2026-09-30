@@ -12,6 +12,8 @@ const seg = (value: string): string => encodeURIComponent(value);
 
 export const guardianPaths = {
   home: "/guardian",
+  /** G4-10: Linked students & billing — not about one student, so no id. */
+  students: "/guardian/students",
   dashboard: (studentId: string): string => `/guardian/${seg(studentId)}`,
   calendar: (studentId: string): string =>
     `/guardian/${seg(studentId)}/calendar`,

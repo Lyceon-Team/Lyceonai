@@ -74,6 +74,11 @@ const stripeMocks = vi.hoisted(() => ({
    * none. Tests that exercise the ADD-ITEM path override it explicitly.
    */
   customersRetrieve: vi.fn(async () => ({ id: "cus_test" })),
+  portalCreate: vi.fn(
+    async (_args: { customer: string; return_url: string }) => ({
+      url: "https://portal.test",
+    }),
+  ),
   subscriptionsList: vi.fn(async () => ({
     object: "list",
     data: [],
@@ -122,6 +127,14 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     return req.user;
   },
   getSupabaseAdmin: vi.fn(() => ({})),
+  // G4-10: the route's G2-02 refusal for an unrecognised role. The status is not what the
+  // portal tests assert — they assert that no session is opened.
+  sendRoleUnrecognized: (res: express.Response, requestId?: string) =>
+    res.status(403).json({
+      error: "Account unavailable",
+      code: "ROLE_UNRECOGNIZED",
+      requestId,
+    }),
   sendUnauthenticated: (res: any, requestId?: string) =>
     res.status(401).json({
       error: "Authentication required",
@@ -165,7 +178,7 @@ vi.mock("../../server/lib/stripe/client", () => ({
     prices: { retrieve: stripeMocks.pricesRetrieve },
     checkout: { sessions: { create: stripeMocks.checkoutCreate } },
     billingPortal: {
-      sessions: { create: vi.fn(async () => ({ url: "https://portal.test" })) },
+      sessions: { create: stripeMocks.portalCreate },
     },
   }),
   getStripePublishableKey: () => "pk_test_123",
@@ -1207,6 +1220,91 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(guardian.success ? null : guardian.error.issues).toBeNull();
     expect(guardian.success && guardian.data.lapsed).toBe(true);
     expect(student.success && student.data.effectiveAccess).toBe(true);
+  });
+
+  /**
+   * G4-10 (owner ruling 2026-09-30, option (c)): the Linked students & billing page opens the
+   * EXISTING portal session, unchanged — one Customer per payer, so one "Manage billing"
+   * button covers every student the guardian pays for. This pins what the route still refuses
+   * and that nothing the page could send widens what it opens: the session is always for the
+   * CALLER's own Customer, never one named in the body.
+   */
+  describe("G4-10: POST /api/billing/portal still refuses everyone it refused", () => {
+    const GUARDIAN = "22222222-2222-4222-8222-222222222222";
+    const asRole = (role: string | undefined): void => {
+      authState.currentUser = {
+        id: GUARDIAN,
+        role,
+        email: "guardian@test.com",
+        isGuardian: role === "guardian",
+        isAdmin: role === "admin",
+      };
+    };
+
+    it("refuses an admin, an unrecognised role and the unauthenticated, opening no session", async () => {
+      stripeMocks.portalCreate.mockClear();
+      accountMocks.getProfileStripeCustomerId.mockResolvedValue("cus_guardian");
+
+      asRole("admin");
+      const admin = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+      asRole("superuser");
+      const unknownRole = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+      asRole(undefined);
+      const noRole = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+      authState.currentUser = null;
+      const anonymous = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+
+      expect(admin.status).toBe(403);
+      expect(unknownRole.status).toBeGreaterThanOrEqual(400);
+      expect(noRole.status).toBeGreaterThanOrEqual(400);
+      expect(anonymous.status).toBe(401);
+      expect(stripeMocks.portalCreate).not.toHaveBeenCalled();
+    });
+
+    it("opens the guardian's OWN Customer, whatever student the body names", async () => {
+      stripeMocks.portalCreate.mockClear();
+      accountMocks.getProfileStripeCustomerId.mockReset();
+      accountMocks.getProfileStripeCustomerId.mockResolvedValue("cus_guardian");
+      asRole("guardian");
+
+      const res = await request(await billingApp())
+        .post("/api/billing/portal")
+        .send({
+          studentId: "99999999-9999-4999-8999-999999999999",
+          customer: "cus_someone_else",
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.url).toBe("https://portal.test");
+      expect(accountMocks.getProfileStripeCustomerId).toHaveBeenCalledWith(
+        GUARDIAN,
+      );
+      expect(stripeMocks.portalCreate).toHaveBeenCalledTimes(1);
+      const args = stripeMocks.portalCreate.mock.calls[0]?.[0];
+      expect(args?.customer).toBe("cus_guardian");
+      expect(args?.return_url).toMatch(/\/guardian$/);
+    });
+
+    it("answers 409 NO_STRIPE_CUSTOMER to a guardian who has never paid", async () => {
+      stripeMocks.portalCreate.mockClear();
+      accountMocks.getProfileStripeCustomerId.mockReset();
+      accountMocks.getProfileStripeCustomerId.mockResolvedValue(null);
+      asRole("guardian");
+
+      const res = await request(await billingApp()).post("/api/billing/portal");
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("NO_STRIPE_CUSTOMER");
+      expect(stripeMocks.portalCreate).not.toHaveBeenCalled();
+    });
   });
 
   it("reads plan pricing live from Stripe rather than from hardcoded amounts", async () => {

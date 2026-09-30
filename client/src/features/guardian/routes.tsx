@@ -19,6 +19,7 @@ const GuardianHome = React.lazy(() => import("./GuardianHome"));
 const GuardianDashboardTab = React.lazy(() => import("./GuardianDashboardTab"));
 const GuardianCalendarTab = React.lazy(() => import("./GuardianCalendarTab"));
 const GuardianExamsPage = React.lazy(() => import("./GuardianExamsPage"));
+const GuardianStudentsPage = React.lazy(() => import("./GuardianStudentsPage"));
 
 function RedirectStudent({
   to,
@@ -47,6 +48,8 @@ export type GuardianRoute = {
 
 export const GUARDIAN_ROUTES: readonly GuardianRoute[] = [
   { path: "/guardian", Page: GuardianHome },
+  // Before every `:studentId` route: "students" would otherwise match as a student id.
+  { path: "/guardian/students", Page: GuardianStudentsPage },
   { path: "/guardian/:studentId/calendar", Page: GuardianCalendarTab },
   { path: "/guardian/:studentId/exams", Page: GuardianExamsPage },
   { path: "/guardian/:studentId/exams/:sessionId", Page: GuardianExamsPage },

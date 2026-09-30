@@ -16,8 +16,10 @@
  * refuses any shell file in this directory that does not mount it.
  */
 import * as React from "react";
-import { Link } from "wouter";
-import { GraduationCap } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { GraduationCap, Users } from "lucide-react";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { guardianPaths } from "@/features/guardian/paths";
 import { SkipLink } from "@/components/common/skip-link";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -66,6 +68,7 @@ function GuardianHeader({
 }) {
   const { user } = useSupabaseAuth();
   const signOut = useHeaderSignOut();
+  const [, navigate] = useLocation();
 
   return (
     <header
@@ -103,7 +106,19 @@ function GuardianHeader({
             {actions}
             {/* Notifications Bell — the same mount as AppShell; the shells test enforces it. */}
             {user && <NotificationBell />}
-            <HeaderUserMenu {...signOut} fallbackName="Guardian" />
+            <HeaderUserMenu
+              {...signOut}
+              fallbackName="Guardian"
+              items={
+                <DropdownMenuItem
+                  onClick={() => navigate(guardianPaths.students)}
+                  data-testid="menu-linked-students"
+                >
+                  <Users className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Linked students &amp; billing
+                </DropdownMenuItem>
+              }
+            />
           </div>
         </div>
       </div>

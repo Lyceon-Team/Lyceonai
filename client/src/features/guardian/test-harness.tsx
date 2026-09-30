@@ -34,9 +34,17 @@ export const CY = "55555555-5555-4555-8555-555555555555";
 
 export type Roster = ReturnType<typeof guardianStudentsResponseSchema.parse>;
 
-/** Roster entries through the shared contract. `lapsed` students have ended subscriptions. */
+/**
+ * Roster entries through the shared contract. `lapsed` students have ended subscriptions;
+ * `unpaid` students never had one (neither entitled nor lapsed).
+ */
 export function roster(
-  entries: ReadonlyArray<{ id: string; name: string; lapsed?: boolean }>,
+  entries: ReadonlyArray<{
+    id: string;
+    name: string;
+    lapsed?: boolean;
+    unpaid?: boolean;
+  }>,
 ): Roster {
   return guardianStudentsResponseSchema.parse({
     students: entries.map((e) => ({
@@ -44,7 +52,7 @@ export function roster(
       email: `${e.name.toLowerCase()}@example.test`,
       display_name: e.name,
       created_at: "2026-09-01T00:00:00.000Z",
-      has_active_entitlement: e.lapsed !== true,
+      has_active_entitlement: e.lapsed !== true && e.unpaid !== true,
       entitlement_lapsed: e.lapsed === true,
     })),
   });
