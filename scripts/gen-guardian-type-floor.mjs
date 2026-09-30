@@ -9,8 +9,8 @@
  * plain English: the Calendar tab renders the STUDENT's `CalendarView` (R11), whose stylesheet
  * (`client/src/features/calendar/calendar.css`, derived from the approved prototype) sets many
  * labels at 10.5–15px. The student page keeps those sizes. On a guardian page every such rule
- * is raised to 16px by a copy of its selector scoped under `.guardian-surface` (the
- * `GuardianShell` root), one class more specific than the original, inside the same @media.
+ * is raised to 16px by a copy of its selector scoped under `:root[data-guardian-surface]` (set
+ * by `GuardianShell` while mounted), more specific than the original, inside the same @media.
  *
  * WHY GENERATED. A hand-kept list of 60-odd selectors drifts the first time the calendar
  * gains a rule. This reads calendar.css and writes the override; `--check` (run in CI) fails
@@ -27,7 +27,10 @@ const ROOT = process.cwd();
 const SOURCE = "client/src/features/calendar/calendar.css";
 const TARGET = "client/src/features/guardian/guardian-type-floor.generated.css";
 const FLOOR_PX = 16;
-const SCOPE = ".guardian-surface";
+// The root attribute `GuardianShell` sets while a guardian page is mounted. A root scope, not
+// the shell's own element, so content Radix portals under <body> (menus, popovers, dialogs)
+// is floored too.
+const SCOPE = ":root[data-guardian-surface]";
 
 /** The px size a declaration sets, or null. Handles `font-size` and the `font` shorthand. */
 function pxOf(decl) {

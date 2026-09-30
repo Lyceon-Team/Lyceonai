@@ -4,197 +4,197 @@
  * under 16px is raised to 16px (64 rules). The student calendar is unchanged.
  * Regenerate: node scripts/gen-guardian-type-floor.mjs
  */
-.guardian-surface .lyceon-calendar {
+:root[data-guardian-surface] .lyceon-calendar {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .who span {
+:root[data-guardian-surface] .lyceon-calendar .who span {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .mini h4 {
+:root[data-guardian-surface] .lyceon-calendar .mini h4 {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .mgrid {
+:root[data-guardian-surface] .lyceon-calendar .mgrid {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .mgrid button {
+:root[data-guardian-surface] .lyceon-calendar .mgrid button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .legend h4 {
+:root[data-guardian-surface] .lyceon-calendar .legend h4 {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .legend label {
+:root[data-guardian-surface] .lyceon-calendar .legend label {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .rail .foot {
+:root[data-guardian-surface] .lyceon-calendar .rail .foot {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .back {
+:root[data-guardian-surface] .lyceon-calendar .back {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .btn {
+:root[data-guardian-surface] .lyceon-calendar .btn {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .seg button {
+:root[data-guardian-surface] .lyceon-calendar .seg button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .stat {
+:root[data-guardian-surface] .lyceon-calendar .stat {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .stat b {
+:root[data-guardian-surface] .lyceon-calendar .stat b {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .chip-mode button {
+:root[data-guardian-surface] .lyceon-calendar .chip-mode button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .banner {
+:root[data-guardian-surface] .lyceon-calendar .banner {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .banner button {
+:root[data-guardian-surface] .lyceon-calendar .banner button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .dow {
+:root[data-guardian-surface] .lyceon-calendar .dow {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .dnum em {
+:root[data-guardian-surface] .lyceon-calendar .dnum em {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .dmeta {
+:root[data-guardian-surface] .lyceon-calendar .dmeta {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .block .ttl {
+:root[data-guardian-surface] .lyceon-calendar .block .ttl {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .block .sub {
+:root[data-guardian-surface] .lyceon-calendar .block .sub {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .block .dom span {
+:root[data-guardian-surface] .lyceon-calendar .block .dom span {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .lock {
+:root[data-guardian-surface] .lyceon-calendar .lock {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .empty {
+:root[data-guardian-surface] .lyceon-calendar .empty {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .add {
+:root[data-guardian-surface] .lyceon-calendar .add {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .mhead div {
+:root[data-guardian-surface] .lyceon-calendar .mhead div {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .mnum {
+:root[data-guardian-surface] .lyceon-calendar .mnum {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .mchip {
+:root[data-guardian-surface] .lyceon-calendar .mchip {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .facts {
+:root[data-guardian-surface] .lyceon-calendar .facts {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .sheet .kind {
+:root[data-guardian-surface] .lyceon-calendar .sheet .kind {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .sheet .when {
+:root[data-guardian-surface] .lyceon-calendar .sheet .when {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .field label {
+:root[data-guardian-surface] .lyceon-calendar .field label {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .why {
+:root[data-guardian-surface] .lyceon-calendar .why {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .why b {
+:root[data-guardian-surface] .lyceon-calendar .why b {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .del {
+:root[data-guardian-surface] .lyceon-calendar .del {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .hint {
+:root[data-guardian-surface] .lyceon-calendar .hint {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .toast {
+:root[data-guardian-surface] .lyceon-calendar .toast {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .daymenu button {
+:root[data-guardian-surface] .lyceon-calendar .daymenu button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .schedcard {
+:root[data-guardian-surface] .lyceon-calendar .schedcard {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .schedcard button {
+:root[data-guardian-surface] .lyceon-calendar .schedcard button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .chips button {
+:root[data-guardian-surface] .lyceon-calendar .chips button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .toggle small {
+:root[data-guardian-surface] .lyceon-calendar .toggle small {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .note {
+:root[data-guardian-surface] .lyceon-calendar .note {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .menu button {
+:root[data-guardian-surface] .lyceon-calendar .menu button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .moff {
+:root[data-guardian-surface] .lyceon-calendar .moff {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .offcard {
+:root[data-guardian-surface] .lyceon-calendar .offcard {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .offcard b {
+:root[data-guardian-surface] .lyceon-calendar .offcard b {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .offcard button {
+:root[data-guardian-surface] .lyceon-calendar .offcard button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .streakline {
+:root[data-guardian-surface] .lyceon-calendar .streakline {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .streakline b {
+:root[data-guardian-surface] .lyceon-calendar .streakline b {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .top .countline {
+:root[data-guardian-surface] .lyceon-calendar .top .countline {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .top .countline b {
+:root[data-guardian-surface] .lyceon-calendar .top .countline b {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .item[data-item="target"] .ptarget {
+:root[data-guardian-surface] .lyceon-calendar .item[data-item="target"] .ptarget {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .item[data-item="range"] .prange {
+:root[data-guardian-surface] .lyceon-calendar .item[data-item="range"] .prange {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .ptarget.absent,
-.guardian-surface .lyceon-calendar .top .countline.absent,
-.guardian-surface .lyceon-calendar .prange.absent {
+:root[data-guardian-surface] .lyceon-calendar .ptarget.absent,
+:root[data-guardian-surface] .lyceon-calendar .top .countline.absent,
+:root[data-guardian-surface] .lyceon-calendar .prange.absent {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .modal .lede {
+:root[data-guardian-surface] .lyceon-calendar .modal .lede {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .skip {
+:root[data-guardian-surface] .lyceon-calendar .skip {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .scoreline span {
+:root[data-guardian-surface] .lyceon-calendar .scoreline span {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .optout {
+:root[data-guardian-surface] .lyceon-calendar .optout {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .cta {
+:root[data-guardian-surface] .lyceon-calendar .cta {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .cta b {
+:root[data-guardian-surface] .lyceon-calendar .cta b {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .cta button {
+:root[data-guardian-surface] .lyceon-calendar .cta button {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .daychip .dow {
+:root[data-guardian-surface] .lyceon-calendar .daychip .dow {
     font-size: 16px
 }
-.guardian-surface .lyceon-calendar .daychip .dnum {
+:root[data-guardian-surface] .lyceon-calendar .daychip .dnum {
     font-size: 16px
 }

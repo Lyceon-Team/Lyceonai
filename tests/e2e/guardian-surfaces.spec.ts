@@ -99,6 +99,9 @@ async function serve(
     if (p === "/api/notifications/unread-count") {
       return json({ data: { unread: 0 }, requestId: "r" });
     }
+    if (p === "/api/notifications") {
+      return json({ data: { items: [], nextCursor: null }, requestId: "r" });
+    }
     const ada = `/api/students/${F.ADA}`;
     if (p === `${ada}/calendar`) return json(F.calendarWeek);
     if (p === `${ada}/mastery/domains`) return json(F.masteryDomains);
@@ -199,6 +202,25 @@ const SURFACES: readonly Surface[] = [
     act: async (page) => {
       await page.getByTestId("add-student-open").click();
       await page.getByTestId("add-student-dialog").waitFor();
+    },
+  },
+  {
+    // Portaled content (Radix renders it under <body>, outside the shell) is floored too.
+    name: "profile-menu-open",
+    path: (f) => `/guardian/${f.ADA}`,
+    ready: "dashboard-exam",
+    act: async (page) => {
+      await page.getByTestId("button-user-menu").click();
+      await page.getByTestId("menu-linked-students").waitFor();
+    },
+  },
+  {
+    name: "notifications-open",
+    path: (f) => `/guardian/${f.ADA}`,
+    ready: "dashboard-exam",
+    act: async (page) => {
+      await page.getByRole("button", { name: "Notifications" }).click();
+      await page.waitForTimeout(500);
     },
   },
   {

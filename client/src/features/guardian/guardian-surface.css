@@ -7,7 +7,9 @@
  *
  * plain English: the guardian pages render the student's own components — the exam report,
  * the mastery grid and its level pills, the calendar — and those set some labels at 12–15px
- * through Tailwind size utilities. Under `.guardian-surface` (the `GuardianShell` root) each of
+ * through Tailwind size utilities. While a guardian page is mounted (`GuardianShell` sets
+ * `data-guardian-surface` on the document root — the root, so menus, popovers and dialogs that
+ * Radix portals under <body> are covered too) each of
  * those utilities (and the responsive `md:text-sm` the form fields use) is raised to 16px,
  * one class more specific than the utility itself. The
  * student pages keep their sizes. The calendar's own stylesheet is floored by the generated
@@ -16,7 +18,7 @@
  * The browser check is `tests/e2e/guardian-surfaces.spec.ts`: on every guardian route it reads
  * the computed size of every element that draws text and fails under 16px.
  */
-.guardian-surface
+:root[data-guardian-surface]
   :is(
     .text-xs,
     .text-sm,

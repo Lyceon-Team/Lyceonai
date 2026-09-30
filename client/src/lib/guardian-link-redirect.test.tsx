@@ -23,21 +23,36 @@ import {
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GUARDIAN_LINK_REQUIRED } from "@lyceon/shared/guardian-link-gate";
-import { HttpApiError } from "./api-error";
+import { parseApiErrorFromResponse } from "./api-error";
 import { navigation, queryClient } from "./queryClient";
 
-const refused = (): HttpApiError =>
-  new HttpApiError({
-    status: 403,
-    message: "A guardian needs to connect to your account.",
+/**
+ * The refusal as it arrives: the G2-04 gate's JSON body (`sendForbidden` in
+ * server/middleware/supabase-auth.ts, error, message, requestId, and the code) on a 403,
+ * turned into an error by the client's own parser — the one every fetcher uses.
+ */
+async function refused(): Promise<unknown> {
+  const body = JSON.stringify({
+    error: "Guardian link required",
+    message:
+      "A guardian needs to connect to your account before you can use this.",
+    requestId: "r",
     code: GUARDIAN_LINK_REQUIRED,
   });
+  return parseApiErrorFromResponse(
+    new Response(body, {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    }),
+    "Refused",
+  );
+}
 
 function LearningRead(): null {
   useQuery({
     queryKey: ["/api/practice/sessions/current"],
     queryFn: async () => {
-      throw refused();
+      throw await refused();
     },
   });
   return null;
@@ -46,7 +61,7 @@ function LearningRead(): null {
 function LearningWrite(): null {
   const { mutate } = useMutation({
     mutationFn: async () => {
-      throw refused();
+      throw await refused();
     },
   });
   useEffect(() => mutate(), [mutate]);

@@ -47,10 +47,16 @@ export function GuardianShell({
   actions?: React.ReactNode;
   subnav?: React.ReactNode;
 }) {
+  // G4-07 (R12): scope the type floor to the whole document while a guardian page is
+  // mounted, so portaled content (the profile menu, the bell, dialogs) is floored as well.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute("data-guardian-surface", "");
+    return () => root.removeAttribute("data-guardian-surface");
+  }, []);
   return (
     <div
-      // `guardian-surface` scopes the R12 type floor (G4-07) over the shared components.
-      className="guardian-surface min-h-screen bg-background text-foreground flex flex-col"
+      className="min-h-screen bg-background text-foreground flex flex-col"
       data-testid="guardian-shell"
     >
       <GuardianHeader center={center} actions={actions} />
