@@ -197,7 +197,10 @@ describe("guardian exam result", () => {
 
 describe("guardian exam pages against the API", () => {
   it("lists the student's tests, each linking to its result", async () => {
-    const tests = toGuardianExamList(formsListing).tests;
+    // SCL-192: completion instants come from the same `exam_list_forms` read, by session id.
+    const tests = toGuardianExamList(formsListing, {
+      [SID]: "2026-09-20T15:00:00.000Z",
+    }).tests;
     // The never-sat form is not listed: a guardian has nothing to read there.
     expect(tests.map((t) => t.test_form_name)).toEqual(["Practice Test 2"]);
     fetchList.mockResolvedValue(tests);

@@ -111,7 +111,7 @@ This is the binding contract. Each UI element calls exactly one route and parses
 | Remove student | DELETE `/api/guardian/link/:studentId` | existing link schema |
 | Mastery by domain | GET `/api/students/:id/mastery/domains` | domain mastery view schema |
 | Header strip: streak, projected band, target, test-date countdown; this week's sessions done of planned | GET `/api/students/:id/calendar?from&to` (the current week) — `streak.current` (as of today, G-NEW-16), `projection`, `target_score`, `target_exam_date`, `facts.blocks_completed`/`facts.blocks_total`. The Dashboard makes no `kpi/overall` call (owner, 2026-09-30: one streak source). | `guardianCalendarResponseSchema` |
-| Exam list / latest exam | GET `/api/students/:id/tests` — each item carries `completed_at`; the latest exam is the newest `completed_at` (owner, 2026-09-30), then its report from the route below | `exam-guardian-report-schema` list envelope |
+| Exam list / latest exam | GET `/api/students/:id/tests` — each item carries `completed_at` (SCL-192); the latest exam is the newest `completed_at` (owner, 2026-09-30), then its report from the route below | `exam-guardian-report-schema` list envelope |
 | Exam detail | GET `/api/students/:id/tests/:sessionId/report` | `exam-guardian-report-schema` report envelope (G3-02 payload) |
 | Calendar tab (and projection, target, test date) | GET `/api/students/:id/calendar` | `guardianCalendarResponseSchema` |
 | Billing banner / purchase | GET `/api/billing/status`, checkout routes | single billing-status schema (G4-09) |
