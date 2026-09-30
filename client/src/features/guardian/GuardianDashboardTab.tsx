@@ -43,6 +43,15 @@ import {
 import { examKeys } from "@/features/exam/api/keys";
 import { GuardianReportBody } from "@/features/exam/pages/GuardianExamResultsPage";
 import { GuardianStudentLayout } from "./GuardianStudentLayout";
+import {
+  GuardianLoadingState,
+  GuardianNoExamsState,
+  GuardianNotSetUpState,
+  GuardianReadFailureState,
+  possessive,
+  useCurrentStudentName,
+  useGuardianReadFailure,
+} from "./GuardianStates";
 import { guardianPaths } from "./paths";
 import "@/features/calendar/calendar.css";
 import "@/features/exam/exam.css";
@@ -86,45 +95,29 @@ function Section({
   );
 }
 
-function WidgetMessage({
-  testId,
-  children,
-}: {
-  testId: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <p className="m-0 text-base text-muted-foreground" data-testid={testId}>
-      {children}
-    </p>
-  );
-}
-
 function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
+  const name = useCurrentStudentName();
   const today = browserLocalToday();
   const week = rangeForView("week", startOfWeek(today));
   const calendar = useGuardianCalendar(studentId, week.from, week.to);
+  const failure = useGuardianReadFailure(studentId, calendar.error);
 
   if (calendar.isLoading) {
-    return (
-      <WidgetMessage testId="dashboard-header-loading">Loading…</WidgetMessage>
-    );
+    return <GuardianLoadingState what={`${possessive(name)} week`} />;
   }
-  if (calendar.isError || calendar.data === undefined) {
+  if (failure !== null || calendar.data === undefined) {
     return (
-      <WidgetMessage testId="dashboard-header-error">
-        We couldn&rsquo;t load this week&rsquo;s plan.
-      </WidgetMessage>
+      <GuardianReadFailureState
+        failure={failure ?? "error"}
+        name={name}
+        studentId={studentId}
+        what={`${possessive(name)} week`}
+        onRetry={() => void calendar.refetch()}
+      />
     );
   }
   const data = calendar.data;
-  if (data.status !== "ready") {
-    return (
-      <WidgetMessage testId="dashboard-header-not-set-up">
-        No study plan yet.
-      </WidgetMessage>
-    );
-  }
+  if (data.status !== "ready") return <GuardianNotSetUpState name={name} />;
   const daysToTest =
     data.target_exam_date === null
       ? null
@@ -152,20 +145,24 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
 }
 
 function MasteryWidget({ studentId }: { studentId: string }): JSX.Element {
+  const name = useCurrentStudentName();
   const mastery = useQuery({
     queryKey: [studentResourceUrl(studentId, "masteryDomains")],
     queryFn: () => fetchMasteryDomains(studentId),
   });
+  const failure = useGuardianReadFailure(studentId, mastery.error);
   if (mastery.isLoading) {
-    return (
-      <WidgetMessage testId="dashboard-mastery-loading">Loading…</WidgetMessage>
-    );
+    return <GuardianLoadingState what={`${possessive(name)} mastery`} />;
   }
-  if (mastery.isError || mastery.data === undefined) {
+  if (failure !== null || mastery.data === undefined) {
     return (
-      <WidgetMessage testId="dashboard-mastery-error">
-        We couldn&rsquo;t load mastery.
-      </WidgetMessage>
+      <GuardianReadFailureState
+        failure={failure ?? "error"}
+        name={name}
+        studentId={studentId}
+        what={`${possessive(name)} mastery`}
+        onRetry={() => void mastery.refetch()}
+      />
     );
   }
   const domains = mastery.data.domains;
@@ -189,6 +186,7 @@ function MasteryWidget({ studentId }: { studentId: string }): JSX.Element {
 }
 
 function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
+  const name = useCurrentStudentName();
   const list = useQuery({
     queryKey: examKeys.guardianTests(studentId),
     queryFn: () => fetchGuardianExamList(studentId),
@@ -200,25 +198,24 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
     queryFn: () => fetchGuardianExamReport(studentId, latest?.session_id ?? ""),
     enabled: latest !== null,
   });
+  const failure = useGuardianReadFailure(studentId, list.error ?? report.error);
 
   if (list.isLoading || (latest !== null && report.isLoading)) {
-    return (
-      <WidgetMessage testId="dashboard-exam-loading">Loading…</WidgetMessage>
-    );
+    return <GuardianLoadingState what={`${possessive(name)} test results`} />;
   }
-  if (list.isError || report.isError) {
+  if (failure !== null) {
     return (
-      <WidgetMessage testId="dashboard-exam-error">
-        We couldn&rsquo;t load test results.
-      </WidgetMessage>
+      <GuardianReadFailureState
+        failure={failure}
+        name={name}
+        studentId={studentId}
+        what={`${possessive(name)} test results`}
+        onRetry={() => void list.refetch()}
+      />
     );
   }
   if (latest === null || report.data === undefined) {
-    return (
-      <WidgetMessage testId="dashboard-exam-none">
-        No full-length practice test completed yet.
-      </WidgetMessage>
-    );
+    return <GuardianNoExamsState name={name} />;
   }
   return (
     <div className="flex flex-col gap-4">
@@ -247,7 +244,9 @@ export default function GuardianDashboardTab(): JSX.Element {
         className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6"
         data-testid="guardian-dashboard-tab"
       >
-        <HeaderStrip studentId={studentId} />
+        <div data-testid="dashboard-header-strip">
+          <HeaderStrip studentId={studentId} />
+        </div>
         <Section title="Mastery by domain" testId="dashboard-mastery">
           <MasteryWidget studentId={studentId} />
         </Section>

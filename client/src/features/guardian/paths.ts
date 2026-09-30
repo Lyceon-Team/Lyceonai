@@ -14,6 +14,9 @@ export const guardianPaths = {
   home: "/guardian",
   /** G4-10: Linked students & billing — not about one student, so no id. */
   students: "/guardian/students",
+  /** G4-06: the lapsed state's named call to action — the billing page, this student selected. */
+  choosePlan: (studentId: string): string =>
+    `/guardian/students?choose=${seg(studentId)}`,
   dashboard: (studentId: string): string => `/guardian/${seg(studentId)}`,
   calendar: (studentId: string): string =>
     `/guardian/${seg(studentId)}/calendar`,

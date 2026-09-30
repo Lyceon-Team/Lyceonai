@@ -30,6 +30,7 @@
  */
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -129,7 +130,14 @@ export default function GuardianStudentsPage(): JSX.Element {
   const { data, isLoading, isError } = useGuardianStudents();
   const students = data?.students ?? [];
   const forget = useForgetGuardianStudent();
-  const [purchaseFor, setPurchaseFor] = useState<string | null>(null);
+  // G4-06: the lapsed state's "Choose a plan for …" arrives with `?choose=<studentId>` and
+  // opens that student's plan choice. Only a linked student's id selects anything — the
+  // purchase card offers the roster's students and nothing else.
+  const search = useSearch();
+  const [purchaseFor, setPurchaseFor] = useState<string | null>(() => {
+    const choose = new URLSearchParams(search).get("choose");
+    return choose !== null && choose.length > 0 ? choose : null;
+  });
   const [confirming, setConfirming] = useState<LinkedStudent | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 

@@ -31,12 +31,18 @@ import type {
   GuardianExamReport,
 } from "@lyceon/shared/exam-guardian-report-schema";
 import {
-  examErrorStatus,
   fetchGuardianExamList,
   fetchGuardianExamReport,
 } from "../api/exam-api";
 import { examKeys } from "../api/keys";
 import { guardianPaths } from "@/features/guardian/paths";
+import {
+  GuardianNoExamsState,
+  GuardianReadFailureState,
+  possessive,
+  useCurrentStudentName,
+  useGuardianReadFailure,
+} from "@/features/guardian/GuardianStates";
 import { MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoading } from "../components/ExamStatus";
@@ -101,35 +107,32 @@ function Shell({
   );
 }
 
-/** The server's denials, in a parent's words. */
-function Denied({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = examErrorStatus(error);
-  const message =
-    status === 402
-      ? "Full-length practice test results are part of the student's subscription. Their results are kept and appear here again when it is active."
-      : status === 404
-        ? "We couldn't find this. The student may no longer be linked to your account."
-        : "We couldn't load these results. Check your connection and try again.";
+/**
+ * The server's denials, in a parent's words, naming the student (G4-06): a 402 is the lapsed
+ * state with its named call to action, a 404 the revoked state (the student's reads are
+ * forgotten and the roster refetched), anything else an error with "Try again".
+ */
+function Denied({
+  studentId,
+  error,
+  what,
+  onRetry,
+}: {
+  studentId: string;
+  error: unknown;
+  what: string;
+  onRetry: () => void;
+}) {
+  const name = useCurrentStudentName();
+  const failure = useGuardianReadFailure(studentId, error);
   return (
-    <Panel title={status === 402 ? "Subscription needed" : "Not available"}>
-      <p
-        role="alert"
-        className="m-0 text-[15px] leading-relaxed"
-        data-testid="guardian-exam-denied"
-        data-status={status ?? ""}
-      >
-        {message}
-      </p>
-      {status !== 402 && status !== 404 && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="min-h-[44px] w-fit rounded-full bg-[var(--exam-accent)] px-6 text-sm font-medium text-white"
-        >
-          Try again
-        </button>
-      )}
-    </Panel>
+    <GuardianReadFailureState
+      failure={failure ?? "error"}
+      name={name}
+      studentId={studentId}
+      what={`${possessive(name)} ${what}`}
+      onRetry={onRetry}
+    />
   );
 }
 
@@ -149,6 +152,10 @@ export default function GuardianExamResultsPage() {
   );
 }
 
+function NoExams() {
+  return <GuardianNoExamsState name={useCurrentStudentName()} />;
+}
+
 function ResultsList({ studentId }: { studentId: string }) {
   const queryClient = useQueryClient();
   const list = useQuery({
@@ -160,6 +167,8 @@ function ResultsList({ studentId }: { studentId: string }) {
   if (list.isError) {
     return (
       <Denied
+        studentId={studentId}
+        what="test results"
         error={list.error}
         onRetry={() =>
           void queryClient.invalidateQueries({
@@ -173,12 +182,7 @@ function ResultsList({ studentId }: { studentId: string }) {
     <>
       <Title name="Practice test results" line="Full-length practice tests" />
       {list.data.length === 0 ? (
-        <Panel title="No practice tests yet">
-          <p className="m-0 text-[15px] leading-relaxed">
-            Results appear here after the student takes a full-length practice
-            test.
-          </p>
-        </Panel>
+        <NoExams />
       ) : (
         <ul
           className="m-0 flex list-none flex-col gap-3 p-0"
@@ -231,6 +235,8 @@ function Result({
   if (report.isError) {
     return (
       <Denied
+        studentId={studentId}
+        what="test result"
         error={report.error}
         onRetry={() =>
           void queryClient.invalidateQueries({
@@ -275,6 +281,8 @@ function AttemptFacts({
 }
 
 export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
+  // G4-06: the withheld-score line names the student; the student's own report says "Your".
+  const withheld = `${possessive(useCurrentStudentName())} score can't be shown right now. Please check back soon.`;
   switch (report.report_state) {
     case "scored":
       return (
@@ -283,7 +291,10 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             name={report.test_form_name}
             line={`Completed ${formatDate(report.completed_at)}`}
           />
-          <DisclosedScore disclosure={report.disclosure}>
+          <DisclosedScore
+            disclosure={report.disclosure}
+            withheldCopy={withheld}
+          >
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
                 <div className="flex flex-col">
@@ -323,7 +334,10 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             name={report.test_form_name}
             line={`Ended ${formatDate(report.abandoned_at)}`}
           />
-          <DisclosedScore disclosure={report.disclosure}>
+          <DisclosedScore
+            disclosure={report.disclosure}
+            withheldCopy={withheld}
+          >
             <Panel title="Partial score">
               <p
                 className="m-0 text-[15px] leading-relaxed"

@@ -15,7 +15,7 @@
  * first, then absence: the widgets render real content, and none of it is a 7-day tile, a
  * Skills control or an "N of M correct" count.
  */
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ADA,
@@ -84,35 +84,42 @@ describe("G4-03 each widget calls exactly its mapped route", () => {
     [
       "calendar",
       (url: string) => url.includes("/calendar?"),
-      "dashboard-header-error",
+      "dashboard-header-strip",
     ],
     [
       "mastery/domains",
       (url: string) => url.endsWith("/mastery/domains"),
-      "dashboard-mastery-error",
+      "dashboard-mastery",
     ],
     [
       "tests",
       (url: string) => url.endsWith(`/${ADA}/tests`),
-      "dashboard-exam-error",
+      "dashboard-latest-exam",
     ],
     [
       "the report",
       (url: string) => url.endsWith("/report"),
-      "dashboard-exam-error",
+      "dashboard-latest-exam",
     ],
   ])(
     "a malformed %s answer is refused by its schema, breaking only that widget",
-    async (_name, matches, errorId) => {
+    async (_name, matches, widgetId) => {
       net.handlers.push((url) =>
         matches(url) ? json({ ok: true, unexpected: "shape" }) : undefined,
       );
       net.handlers.push(serveDashboard(ADA));
       mountApp(Router, `/guardian/${ADA}`);
-      // The calendar hook retries a non-404 failure once (queries.ts), so allow for its delay.
+      // G4-06: the widget's error is the guardian surface's one error state, inside that
+      // widget. The calendar hook retries a non-404 failure once (queries.ts), so allow for
+      // its delay.
+      const widget = await screen.findByTestId(widgetId);
       expect(
-        await screen.findByTestId(errorId, undefined, { timeout: 5000 }),
+        await within(widget).findByTestId("guardian-state-error", undefined, {
+          timeout: 5000,
+        }),
       ).toBeTruthy();
+      // Only that widget: exactly one error on the page.
+      expect(screen.getAllByTestId("guardian-state-error")).toHaveLength(1);
     },
   );
 });

@@ -283,9 +283,8 @@ describe.skipIf(!PG_AVAILABLE)(
         </QueryClientProvider>,
       );
 
-      const notice = await screen.findByTestId(
-        "guardian-student-no-longer-linked",
-      );
+      // G4-06: the guardian surface's shared revoked state.
+      const notice = await screen.findByTestId("guardian-state-revoked");
       expect(notice.textContent).toContain("no longer linked");
       expect(screen.queryByTestId("calendar-error")).toBeNull();
       expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
@@ -304,9 +303,7 @@ describe.skipIf(!PG_AVAILABLE)(
       ).length;
       expect(calendarReads).toBeGreaterThan(0);
       expect(calendarReads).toBeLessThanOrEqual(2);
-      expect(
-        screen.getByTestId("guardian-student-no-longer-linked"),
-      ).toBeTruthy();
+      expect(screen.getByTestId("guardian-state-revoked")).toBeTruthy();
     });
 
     it("unlinking the SELECTED student removes its panels and its cached reads", async () => {

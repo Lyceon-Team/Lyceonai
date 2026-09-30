@@ -212,20 +212,21 @@ describe("guardian exam pages against the API", () => {
     expectNoControls();
   });
 
+  // G4-06: the guardian surface's shared states. Mounted without the student layout, the page
+  // has no roster name, so the copy falls back to "your student" (the layout names them; see
+  // `client/src/features/guardian/state-matrix.test.tsx`).
   it.each([
-    [402, "Subscription needed"],
-    [404, "Not available"],
+    [402, "guardian-state-lapsed", "your student's subscription has ended"],
+    [404, "guardian-state-revoked", "This student is no longer linked"],
   ])(
     "the server's %i reads as a parent's copy, with no retry",
-    async (status, title) => {
+    async (status, testId, title) => {
       fetchReport.mockRejectedValue(
         new HttpApiError({ status, message: "denied" }),
       );
       mountPage(`/guardian/${STUDENT}/exams/${SID}`);
-      expect(
-        (await screen.findByTestId("guardian-exam-denied")).dataset.status,
-      ).toBe(String(status));
-      expect(screen.getByText(title)).toBeTruthy();
+      expect(await screen.findByTestId(testId)).toBeTruthy();
+      expect(screen.getByText(title, { exact: false })).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
       expect(document.body.textContent).not.toMatch(/1340/);
     },

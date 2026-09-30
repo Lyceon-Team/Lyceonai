@@ -61,7 +61,12 @@ export function roster(
 export type Handler = (
   url: string,
   init: RequestInit | undefined,
-) => Response | undefined;
+) => Response | Promise<Response> | undefined;
+
+/** A request that never answers: the loading state, held. */
+export function pending(): Promise<Response> {
+  return new Promise<Response>(() => undefined);
+}
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -125,7 +130,7 @@ export function mountApp(
   });
   render(
     <QueryClientProvider client={client}>
-      <WouterRouter hook={location.hook}>
+      <WouterRouter hook={location.hook} searchHook={location.searchHook}>
         <Router />
       </WouterRouter>
     </QueryClientProvider>,
@@ -239,6 +244,20 @@ export function examList(): Record<string, unknown> {
     }),
     requestId: "r",
   };
+}
+
+/** A guardian calendar for a student who has not set up a plan, through the schema. */
+export function calendarSetupRequired(): Record<string, unknown> {
+  return {
+    ok: true,
+    ...guardianCalendarResponseSchema.parse({ status: "setup_required" }),
+    requestId: "r",
+  };
+}
+
+/** The guardian exam list with no attempts, through the real projection. */
+export function noExams(): Record<string, unknown> {
+  return { ok: true, ...toGuardianExamList({ forms: [] }, {}), requestId: "r" };
 }
 
 /** The guardian exam report, through the real projection (bars only, SCL-189). */

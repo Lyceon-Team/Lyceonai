@@ -15,6 +15,14 @@ import { GuardianShell } from "@/components/layout/GuardianShell";
 import { guardianPaths } from "./paths";
 import { StudentSwitcher } from "./StudentSwitcher";
 import { AddStudentButton } from "./AddStudentDialog";
+import { studentLabel, useGuardianStudents } from "@/hooks/useGuardianStudents";
+import {
+  CurrentStudentContext,
+  GuardianErrorState,
+  GuardianLapsedState,
+  GuardianLoadingState,
+  GuardianRevokedState,
+} from "./GuardianStates";
 
 export type GuardianTab = "dashboard" | "calendar";
 
@@ -70,6 +78,72 @@ export function tabForLocation(location: string): GuardianTab {
     : "dashboard";
 }
 
+/**
+ * G4-06: the page-level states, decided before any per-student read is made. The roster is
+ * the server's list of this guardian's ACTIVE links, each with the student's entitlement:
+ *   - still loading or failed → loading / error, naming nobody (there is nobody yet);
+ *   - the URL's student is not in it → revoked (R7), named with the last name seen here;
+ *   - the student is not entitled → lapsed, with the named "Choose a plan for …" CTA. Every
+ *     per-student read would answer 402, so none is made; the server still refuses them all.
+ * Otherwise the page renders, with the student's id and name in `CurrentStudentContext` for
+ * every widget's own copy.
+ */
+function StudentGate({
+  studentId,
+  children,
+}: {
+  studentId: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  const { data, isLoading, isError, refetch } = useGuardianStudents();
+  const lastName = React.useRef<{ id: string; name: string } | null>(null);
+  const student = data?.students.find((s) => s.id === studentId);
+  if (student !== undefined) {
+    lastName.current = { id: studentId, name: studentLabel(student) };
+  }
+  const current = React.useMemo(
+    () =>
+      student === undefined
+        ? null
+        : { id: studentId, name: studentLabel(student) },
+    [student, studentId],
+  );
+
+  let body: React.ReactNode;
+  if (isLoading) {
+    body = <GuardianLoadingState what="your student" />;
+  } else if (isError || data === undefined) {
+    body = (
+      <GuardianErrorState what="your students" onRetry={() => void refetch()} />
+    );
+  } else if (student === undefined || current === null) {
+    body = (
+      <GuardianRevokedState
+        name={lastName.current?.id === studentId ? lastName.current.name : null}
+      />
+    );
+  } else if (!student.has_active_entitlement) {
+    body = (
+      <GuardianLapsedState
+        name={current.name}
+        studentId={studentId}
+        ended={student.entitlement_lapsed}
+      />
+    );
+  } else {
+    return (
+      <CurrentStudentContext.Provider value={current}>
+        {children}
+      </CurrentStudentContext.Provider>
+    );
+  }
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
+      {body}
+    </div>
+  );
+}
+
 export function GuardianStudentLayout({
   children,
   center,
@@ -89,7 +163,7 @@ export function GuardianStudentLayout({
         <GuardianTabs studentId={studentId} active={tabForLocation(location)} />
       }
     >
-      {children}
+      <StudentGate studentId={studentId}>{children}</StudentGate>
     </GuardianShell>
   );
 }

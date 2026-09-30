@@ -11,6 +11,10 @@
  * `PremiumUpgradePrompt` — the shared component, not a second upgrade card — which is why
  * this module classifies the error rather than rendering a generic message.
  *
+ * The guardian's own states (not set up, no longer linked, lapsed) moved to
+ * `features/guardian/GuardianStates.tsx` in G4-06, where every guardian surface shares them
+ * and they name the student.
+ *
  * edge cases: the skeleton mirrors the REGIONS of the real layout (rail, top bar, grid) so
  * the page does not reflow when the data lands. A centred spinner would be less work and
  * would make every load feel like a jump.
@@ -96,68 +100,12 @@ export function CalendarError({
   );
 }
 
-/**
- * G3-04 (R7, audit G-AUD-06/19): a guardian's calendar read answered 404 — the student is no
- * longer linked to them. Said in words, with the way back and no "Try again": retrying does
- * not bring a link back.
- */
-export function GuardianStudentNoLongerLinked(): JSX.Element {
-  return (
-    <div className="app" data-testid="guardian-student-no-longer-linked">
-      <div className="main" style={{ gridColumn: "1 / -1", padding: 32 }}>
-        <h3
-          style={{
-            fontFamily: "'Bricolage Grotesque'",
-            fontSize: 21,
-            margin: "0 0 8px",
-          }}
-        >
-          This student is no longer linked to your account
-        </h3>
-        <p style={{ color: "var(--muted)", marginTop: 0 }} role="alert">
-          Their study plan is no longer available to you.
-        </p>
-        <a className="btn primary" href="/guardian">
-          Back to your students
-        </a>
-      </div>
-    </div>
-  );
-}
-
 /** §16 + §17.5: the premium CTA, using the shared component the rest of the app uses. */
 export function CalendarPremiumGate(): JSX.Element {
   return (
     <div className="app" data-testid="calendar-premium-gate">
       <div className="main" style={{ gridColumn: "1 / -1", padding: 32 }}>
         <PremiumUpgradePrompt featureBenefit="your study calendar" />
-      </div>
-    </div>
-  );
-}
-
-/**
- * §17.5's guardian pre-setup state. A guardian cannot run setup (§16 gives them no write
- * path), so this says what is true and offers nothing — a setup sheet here would be a
- * control that cannot work.
- */
-export function GuardianNotSetUp(): JSX.Element {
-  return (
-    <div className="app" data-testid="calendar-guardian-not-set-up">
-      <div className="main" style={{ gridColumn: "1 / -1", padding: 32 }}>
-        <h3
-          style={{
-            fontFamily: "'Bricolage Grotesque'",
-            fontSize: 21,
-            margin: "0 0 8px",
-          }}
-        >
-          Not set up yet
-        </h3>
-        <p style={{ color: "var(--muted)", marginTop: 0 }}>
-          There&apos;s no study calendar to show yet. It will appear here once
-          it has been set up.
-        </p>
       </div>
     </div>
   );
