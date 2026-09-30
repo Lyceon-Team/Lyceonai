@@ -565,10 +565,13 @@ export async function supabaseAuthMiddleware(
       "AUTH",
       "user_authenticated",
       "User authenticated successfully",
+      // @spec [Coding Standards §12.1; Doc 01A §14; register F-10, OQ-14 ruling 2026-09-29] |
+      // @implemented [2026-09-29] | plain English: no email in the per-request auth log; userId
+      // (digested by the logger), role and requestId identify the event without personal data.
       {
         userId: req.user.id,
-        email: req.user.email,
         role: req.user.role,
+        requestId: req.requestId,
       },
     );
     next();
