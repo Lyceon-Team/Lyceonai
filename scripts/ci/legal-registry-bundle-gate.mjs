@@ -35,6 +35,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const LEGAL = path.join(ROOT, "legal");
 const GENERATED = path.join(ROOT, "server/lib/legal-registry.generated.ts");
 const BUNDLE = path.join(ROOT, "dist/vercel-api.cjs");
+const METAFILE = path.join(ROOT, "dist/vercel-api.meta.json");
+const GENERATED_MODULE = "server/lib/legal-registry.generated.ts";
 
 let failed = 0;
 const fail = (m) => {
@@ -151,7 +153,22 @@ if (!fs.existsSync(BUNDLE)) {
   // The failure mode that started this: a filesystem read reaching for legal/
   // from inside the bundle. The registry still has one, deliberately, as the
   // dev/test path — but it must be GUARDED, never the only way in.
-  if (!bundle.includes("GENERATED_LEGAL_REGISTRY")) {
+  //
+  // Since UI-18 (2026-09-30) the bundle is minified, which renames the
+  // GENERATED_LEGAL_REGISTRY binding, so its name is no longer evidence. The
+  // esbuild metafile written by the same build is: it records how many bytes
+  // each input module contributes to the output, and a tree-shaken module
+  // contributes none. The name check remains for a build without a metafile.
+  if (fs.existsSync(METAFILE)) {
+    const meta = JSON.parse(fs.readFileSync(METAFILE, "utf-8"));
+    const inputs = meta?.outputs?.["dist/vercel-api.cjs"]?.inputs ?? {};
+    const bytes = inputs[GENERATED_MODULE]?.bytesInOutput ?? 0;
+    if (bytes > 0) {
+      ok(`the bundled fallback table is reachable (${GENERATED_MODULE}: ${bytes} bytes in the bundle, per the metafile)`);
+    } else {
+      fail(`${GENERATED_MODULE} contributes nothing to dist/vercel-api.cjs — the fallback was tree-shaken away`);
+    }
+  } else if (!bundle.includes("GENERATED_LEGAL_REGISTRY")) {
     fail("the bundle has no GENERATED_LEGAL_REGISTRY — the fallback was tree-shaken away");
   } else {
     ok("the bundled fallback table is reachable");
