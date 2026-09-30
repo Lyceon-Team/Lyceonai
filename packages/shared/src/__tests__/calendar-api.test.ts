@@ -462,6 +462,9 @@ describe("guardian read (§16, R-08-22)", () => {
     expect(serialised).not.toContain("is_user_override");
     expect(serialised).not.toContain("version_no");
     expect(serialised).not.toContain("membership_type");
+    // G3-03 (G-AUD-24): the student day carries a zone; the guardian day does not.
+    expect(DAY).toHaveProperty("timezone");
+    expect(guardianDay).not.toHaveProperty("timezone");
   });
 
   it("keeps the facts a guardian is entitled to see", () => {
