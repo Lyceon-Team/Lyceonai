@@ -27,6 +27,7 @@ import {
 } from "vitest";
 import { Client } from "pg";
 import express from "express";
+import rateLimit from "express-rate-limit";
 import request from "supertest";
 import {
   makePgSupabase,
@@ -70,7 +71,14 @@ const auth = await import("../../server/middleware/supabase-auth");
 
 function buildApp(): express.Express {
   const app = express();
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
   app.use(express.json());
+  app.use(limiter);
   app.use((req, _res, next) => {
     (req as express.Request & { requestId?: string }).requestId = "g2-02";
     next();
