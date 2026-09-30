@@ -8,7 +8,8 @@
  * plain English: the guardian pages render the student's own components — the exam report,
  * the mastery grid and its level pills, the calendar — and those set some labels at 12–15px
  * through Tailwind size utilities. Under `.guardian-surface` (the `GuardianShell` root) each of
- * those utilities is raised to 16px, one class more specific than the utility itself. The
+ * those utilities (and the responsive `md:text-sm` the form fields use) is raised to 16px,
+ * one class more specific than the utility itself. The
  * student pages keep their sizes. The calendar's own stylesheet is floored by the generated
  * `guardian-type-floor.generated.css` beside this file.
  *
@@ -24,7 +25,8 @@
     .text-\[12px\],
     .text-\[13px\],
     .text-\[14px\],
-    .text-\[15px\]
+    .text-\[15px\],
+    .md\:text-sm
   ) {
   font-size: 1rem;
   line-height: 1.5rem;
