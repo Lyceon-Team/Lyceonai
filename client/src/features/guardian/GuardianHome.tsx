@@ -7,6 +7,12 @@
  * plain English: with a linked student, go straight to the first one's Dashboard (the roster
  * order is the server's). With none, the page says so and offers the one thing to do — add a
  * student. The list is read from `GET /api/guardian/students`; nothing here decides access.
+ *
+ * G4-09: Stripe Checkout returns a guardian to `/guardian?checkout=success`. On that return the
+ * page sits behind `CheckoutReturnPoller`, whose processing state (bounded by its timeout)
+ * holds the redirect until the webhook has landed — without it, the redirect below fired first
+ * and the guardian landed on a Dashboard still reading the pre-payment state. Any other visit
+ * skips the poller, so an ordinary landing costs no billing read.
  */
 import { useState } from "react";
 import { Redirect } from "wouter";
@@ -16,6 +22,7 @@ import { useGuardianStudents } from "@/hooks/useGuardianStudents";
 import { linkCodeFromSearch } from "@/lib/link-code-prefill";
 import { guardianPaths } from "./paths";
 import { AddStudentButton, AddStudentDialog } from "./AddStudentDialog";
+import { CheckoutReturnPoller } from "@/components/guardian/CheckoutReturnPoller";
 
 export function GuardianNoStudents({
   onAdd,
@@ -44,7 +51,7 @@ export function GuardianNoStudents({
   );
 }
 
-export default function GuardianHome(): JSX.Element {
+function GuardianHomeBody(): JSX.Element {
   const { data, isLoading } = useGuardianStudents();
   // The emailed deep link (`/guardian?code=…`) opens the Add-student modal prefilled.
   const [prefill] = useState(() =>
@@ -75,5 +82,20 @@ export default function GuardianHome(): JSX.Element {
         <GuardianNoStudents onAdd={() => setAdding(true)} />
       )}
     </GuardianShell>
+  );
+}
+
+export default function GuardianHome(): JSX.Element {
+  const [returningFromCheckout] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("checkout") === "success",
+  );
+  return returningFromCheckout ? (
+    <CheckoutReturnPoller>
+      <GuardianHomeBody />
+    </CheckoutReturnPoller>
+  ) : (
+    <GuardianHomeBody />
   );
 }

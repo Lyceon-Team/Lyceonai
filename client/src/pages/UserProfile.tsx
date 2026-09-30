@@ -48,6 +48,7 @@ import { useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
+import { billingStatusLabel, useBillingStatus } from "@/hooks/useBillingStatus";
 import { resolveCtaDestination } from "@/lib/billing-cta";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { SessionNotice } from "@/components/feedback/SessionNotice";
@@ -64,15 +65,6 @@ interface UserProfile {
   isAdmin?: boolean;
   createdAt?: string;
   lastLoginAt?: string;
-}
-
-interface BillingStatusResponse {
-  stripeStatus: string;
-  stripeSubscriptionId: string | null;
-  effectiveAccess: boolean;
-  needsPaymentUpdate: boolean;
-  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
-  hasActiveLink?: boolean;
 }
 
 type RoleSwitchTarget = "student" | "guardian" | "teacher";
@@ -138,10 +130,7 @@ export default function UserProfile() {
     isError: billingStatusError,
     error: billingStatusErrorObj,
     refetch: refetchBillingStatus,
-  } = useQuery<BillingStatusResponse>({
-    queryKey: ["/api/billing/status"],
-    enabled: !!user,
-  });
+  } = useBillingStatus({ enabled: !!user });
 
   // Logout handler
   const handleLogout = async () => {
@@ -728,8 +717,8 @@ export default function UserProfile() {
                         Current status
                       </p>
                       <p className="font-medium">
-                        {billingStatus?.stripeStatus
-                          ? billingStatus.stripeStatus.replace("_", " ")
+                        {billingStatus
+                          ? billingStatusLabel(billingStatus)
                           : "unknown"}
                       </p>
                       {billingStatus?.hasActiveLink === false && (

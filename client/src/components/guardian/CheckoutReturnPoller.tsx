@@ -48,7 +48,6 @@
  * front of the dashboard that holds the only way to pay.
  */
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -59,81 +58,53 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertTriangle } from "lucide-react";
-import { csrfFetch } from "@/lib/csrf";
-import { parseApiErrorFromResponse } from "@/lib/api-error";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 
 /**
- * ONLY the fields this component reads — and `needsPaymentUpdate`,
- * `stripeStatus` and `isPaid` left with the gate on 2026-09-03, because the
- * only thing that read them was the interstitial. Seven more were declared here
- * and never read at all: accountId, plan, currentPeriodEnd,
- * stripeSubscriptionId, isPaid, premiumSource and billingOwnerRole. The last two were the same defect as the
- * four named below: no server route ever wrote them, so they could only ever be
- * `undefined`. Declaring a field the server does not send is how the escape
- * hatch came to be dead in the first place; the type states what arrives.
+ * How long the processing state polls before it gives up and says so.
+ *
+ * G4-09 (G-AUD-26): THE TIMEOUT NOW STOPS THE POLLING. `refetchInterval` used to be cleared
+ * only when `effectiveAccess` came back true, so after the "taking longer than expected" card
+ * appeared the query kept hitting `/api/billing/status` every two seconds for as long as the
+ * tab stayed open — and the card itself appeared only because those refetches happened to
+ * re-render. A timer now ends the polling at the timeout; "Check again" is a single read.
  */
-interface BillingStatus {
-  effectiveAccess: boolean;
-  /**
-   * Written by the guardian branch of `/api/billing/status` from §31.3's fold.
-   * Replaces `linkRequiredForPremium`, `hasLinkedStudent`,
-   * `requiresStudentSubscription` and `lockedReason`, none of which any server
-   * route ever wrote — so every branch keyed on them was dead.
-   */
-  hasActiveLink?: boolean;
-}
+export const POLLING_TIMEOUT_MS = 60_000;
+const POLL_INTERVAL_MS = 2_000;
 
 interface CheckoutReturnPollerProps {
   children: React.ReactNode;
 }
 
 export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
-  const [pollingStartTime, setPollingStartTime] = useState<number | null>(null);
-
   const urlParams =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search)
       : null;
   const checkoutSuccess = urlParams?.get("checkout") === "success";
-  const POLLING_TIMEOUT_MS = 60000;
-  const [shouldPoll, setShouldPoll] = useState(checkoutSuccess);
+  const [timedOut, setTimedOut] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const shouldPoll = checkoutSuccess && !timedOut && !confirmed;
 
   const {
     data: billingStatus,
     isLoading: billingLoading,
     refetch,
-  } = useQuery({
-    queryKey: ["billing-status"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/billing/status", {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw await parseApiErrorFromResponse(
-          res,
-          "Failed to get billing status",
-        );
-      }
-      return res.json() as Promise<BillingStatus>;
-    },
-    retry: 1,
-    refetchInterval: shouldPoll ? 2000 : false,
+  } = useBillingStatus({
+    refetchInterval: shouldPoll ? POLL_INTERVAL_MS : false,
   });
 
   useEffect(() => {
-    if (billingStatus?.effectiveAccess && shouldPoll) {
-      setShouldPoll(false);
-    }
-  }, [billingStatus?.effectiveAccess, shouldPoll]);
+    if (billingStatus?.effectiveAccess) setConfirmed(true);
+  }, [billingStatus?.effectiveAccess]);
 
   useEffect(() => {
-    if (checkoutSuccess && !pollingStartTime) {
-      setPollingStartTime(Date.now());
-    }
-  }, [checkoutSuccess, pollingStartTime]);
+    if (!checkoutSuccess) return;
+    const timer = setTimeout(() => setTimedOut(true), POLLING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [checkoutSuccess]);
 
-  const isPollingTimeout =
-    pollingStartTime && Date.now() - pollingStartTime > POLLING_TIMEOUT_MS;
+  const isPollingTimeout = timedOut;
 
   if (
     checkoutSuccess &&
@@ -142,7 +113,10 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
     !isPollingTimeout
   ) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF]">
+      <div
+        className="min-h-screen flex items-center justify-center bg-[#FFFAEF]"
+        data-testid="checkout-processing"
+      >
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-[#0F2E48]" />
           <p className="text-[#0F2E48] text-lg font-medium">
@@ -163,7 +137,10 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
     isPollingTimeout
   ) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4">
+      <div
+        className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4"
+        data-testid="checkout-timeout"
+      >
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-amber-100 flex items-center justify-center">
@@ -180,12 +157,12 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
             <Alert className="border-amber-200 bg-amber-50">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800">
-                If this persists, click "Manage Subscription" below to verify
-                your payment status.
+                Stripe has your payment; we are waiting for it to confirm. Check
+                again in a minute, or refresh this page later.
               </AlertDescription>
             </Alert>
             <Button
-              onClick={() => refetch()}
+              onClick={() => void refetch()}
               variant="outline"
               className="w-full"
             >

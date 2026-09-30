@@ -94,7 +94,21 @@ async function postBilling(
     );
   }
 
-  return response.json().catch(() => ({}));
+  return readJson(response);
+}
+
+/**
+ * Read a 2xx body as JSON.
+ *
+ * G4-09 (G-AUD-26): both readers here used to swallow a parse failure —
+ * `.catch(() => ({}))` and `.catch(() => null)` — and hand the schema an empty
+ * stand-in, so a truncated or HTML body surfaced as a contract mismatch naming
+ * the wrong cause. A body that is not JSON now fails as itself; the caller's
+ * schema parse still decides the shape of one that is.
+ */
+async function readJson(response: Response): Promise<unknown> {
+  const body: unknown = await response.json();
+  return body;
 }
 
 export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
@@ -113,7 +127,7 @@ export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
   // container was an array and nothing about what was in it, so a row with a
   // null amount, a missing interval or a plan name the client does not know
   // reached the renderer typed as complete. Coding Standards §7.1.
-  const payload: unknown = await response.json().catch(() => null);
+  const payload = await readJson(response);
   const parsed = billingPlansResponseSchema.safeParse(payload);
   if (!parsed.success) {
     throw new Error("Billing plans response did not match the contract");

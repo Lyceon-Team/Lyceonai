@@ -122,7 +122,13 @@ vi.mock("@/lib/csrf", () => ({
       if (which === "mastery")
         return json({ ok: true, domains: [], requestId: "r" });
     }
-    // Every other mount-time read (billing, notifications) answers its empty shape.
+    // Billing answers its real shape (G4-09: the one reader now parses it).
+    if (url === "/api/billing/status") {
+      const { billingStatus } =
+        await import("@/features/guardian/test-harness");
+      return json(billingStatus());
+    }
+    // Every other mount-time read (notifications) answers its empty shape.
     return json({ data: {}, requestId: "r" });
   }),
 }));

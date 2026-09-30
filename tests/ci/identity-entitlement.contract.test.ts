@@ -1148,6 +1148,67 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.body.stripeStatus).toBe("missing");
   });
 
+  /**
+   * G4-09 (G-AUD-26): the billing-status round trip. The route's REAL output, from both
+   * branches, parsed by the ONE shared schema every client reader now uses — in its
+   * `.strict()` form, so a key the route writes that the schema does not name fails here
+   * rather than being stripped silently on the client. Presence first: each branch's
+   * distinguishing keys are asserted before the strict parse is trusted.
+   */
+  it("G4-09: both branches of GET /api/billing/status round-trip the shared schema, strictly", async () => {
+    const { billingStatusResponseSchema } =
+      await import("../../packages/shared/src/billing-schema");
+    const strict = billingStatusResponseSchema.strict();
+
+    accountMocks.getEntitlementForProfile.mockResolvedValueOnce({
+      tier: "premium",
+      status: "active",
+      current_period_end: "2026-10-30T00:00:00.000Z",
+      stripe_subscription_id: "sub_1",
+    });
+    entitlementMocks.evaluateEntitlementActive.mockResolvedValueOnce({
+      ok: true,
+      active: true,
+    });
+    accountMocks.getProfileStripeCustomerId.mockResolvedValueOnce("cus_test");
+    const studentRes = await request(await billingApp()).get(
+      "/api/billing/status",
+    );
+
+    authState.currentUser = {
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "guardian",
+      email: "guardian@test.com",
+      isGuardian: true,
+      isAdmin: false,
+    };
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
+      hasPremiumAccess: false,
+      hasActiveLink: true,
+      studentEntitlementStatus: "canceled",
+      studentEntitlementTier: "premium",
+      studentStandingGood: false,
+    });
+    accountMocks.getProfileStripeCustomerId.mockResolvedValueOnce("cus_test");
+    const guardianRes = await request(await billingApp()).get(
+      "/api/billing/status",
+    );
+
+    expect(studentRes.status).toBe(200);
+    expect(guardianRes.status).toBe(200);
+    expect(studentRes.body.stripeSubscriptionId).toBe("sub_1");
+    expect(studentRes.body).not.toHaveProperty("source");
+    expect(guardianRes.body.source).toBe("guardian_linked_student");
+    expect(guardianRes.body.hasActiveLink).toBe(true);
+
+    const student = strict.safeParse(studentRes.body);
+    const guardian = strict.safeParse(guardianRes.body);
+    expect(student.success ? null : student.error.issues).toBeNull();
+    expect(guardian.success ? null : guardian.error.issues).toBeNull();
+    expect(guardian.success && guardian.data.lapsed).toBe(true);
+    expect(student.success && student.data.effectiveAccess).toBe(true);
+  });
+
   it("reads plan pricing live from Stripe rather than from hardcoded amounts", async () => {
     stripeMocks.pricesRetrieve.mockResolvedValue({
       id: "price_monthly",

@@ -16,6 +16,7 @@ import { Router as WouterRouter } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { guardianStudentsResponseSchema } from "@lyceon/shared/guardian-student-schema";
 import { guardianCalendarResponseSchema } from "@lyceon/shared";
+import { billingStatusResponseSchema } from "@lyceon/shared/billing-schema";
 import { masteryDomainsResponseSchema } from "@lyceon/shared/mastery-levels";
 import {
   toGuardianExamList,
@@ -252,4 +253,28 @@ export function serveDashboard(studentId: string): Handler {
       return json(examReport());
     return undefined;
   };
+}
+
+/**
+ * The guardian branch of `GET /api/billing/status`, through the shared schema (G4-09) — the
+ * same keys the route writes, which `identity-entitlement.contract.test.ts` holds it to.
+ */
+export function billingStatus(
+  over: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return billingStatusResponseSchema.parse({
+    plan: "premium",
+    stripeStatus: "active",
+    currentPeriodEnd: null,
+    stripeSubscriptionId: null,
+    effectiveAccess: true,
+    hasActiveLink: true,
+    needsPaymentUpdate: false,
+    lapsed: false,
+    hasBillingAccount: true,
+    isPaid: true,
+    source: "guardian_linked_student",
+    requestId: "r",
+    ...over,
+  });
 }

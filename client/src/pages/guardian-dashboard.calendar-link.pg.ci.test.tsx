@@ -93,13 +93,20 @@ vi.mock("@/hooks/useGuardianStudents", async () => {
 });
 // Every other call this page makes on mount answers with its empty shape. None of them is
 // what this file is about; they only have to not throw.
-vi.mock("@/lib/csrf", () => ({
-  csrfFetch: vi.fn(async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ data: {}, requestId: "test" }),
-  })),
-}));
+// `/api/billing/status` answers its real shape (G4-09: the one reader now parses it).
+vi.mock("@/lib/csrf", async () => {
+  const { billingStatus } = await import("@/features/guardian/test-harness");
+  return {
+    csrfFetch: vi.fn(async (url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        url === "/api/billing/status"
+          ? billingStatus()
+          : { data: {}, requestId: "test" },
+    })),
+  };
+});
 vi.mock("@/lib/queryClient", () => ({
   apiRequest: vi.fn(async () => ({
     ok: true,

@@ -18,6 +18,7 @@ import { CheckoutReturnPoller } from "./CheckoutReturnPoller";
 import { GuardianTemplatePreview } from "./GuardianTemplatePreview";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { resolveCtaDestination, resolveCtaCopy } from "@/lib/billing-cta";
+import { billingStatusResponseSchema } from "@lyceon/shared/billing-schema";
 
 const csrfFetchMock = vi.fn();
 vi.mock("@/lib/csrf", () => ({
@@ -74,13 +75,23 @@ describe("guardian dashboard survives a payment-health signal (test 1)", () => {
   it("renders its children when effectiveAccess and needsPaymentUpdate are BOTH true", async () => {
     authState = { isGuardian: true };
     csrfFetchMock.mockResolvedValue(
-      jsonResponse({
-        effectiveAccess: true,
-        needsPaymentUpdate: true,
-        hasActiveLink: true,
-        isPaid: true,
-        stripeStatus: "past_due",
-      }),
+      // The guardian branch's full shape, through the shared schema (G4-09): a partial
+      // fixture no longer parses, which is the point of parsing.
+      jsonResponse(
+        billingStatusResponseSchema.parse({
+          plan: "premium",
+          stripeStatus: "past_due",
+          currentPeriodEnd: null,
+          stripeSubscriptionId: null,
+          effectiveAccess: true,
+          hasActiveLink: true,
+          needsPaymentUpdate: true,
+          lapsed: false,
+          hasBillingAccount: true,
+          isPaid: true,
+          source: "guardian_linked_student",
+        }),
+      ),
     );
 
     withClient(

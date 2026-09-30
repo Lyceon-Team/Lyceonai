@@ -59,11 +59,10 @@ describe("Premium CTA wiring contract", () => {
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
     const userProfile = readCode("client/src/pages/UserProfile.tsx");
 
-    // Quote-agnostic: prettier owns quote style, and pinning it would make a
-    // formatter run read as a behaviour change.
-    expect(userProfile).toMatch(
-      /queryKey:\s*\[["']\/api\/billing\/status["']\]/,
-    );
+    // G4-09 (G-AUD-26): the canonical billing status is the ONE shared, parsed reader —
+    // not a private `["/api/billing/status"]` key with its own local type.
+    expect(userProfile).toContain("useBillingStatus(");
+    expect(userProfile).not.toMatch(/\/api\/billing\/status/);
     // One portal hook, not a fourth copy of the mutation.
     expect(userProfile).toContain("useBillingPortal");
     /**
@@ -76,6 +75,33 @@ describe("Premium CTA wiring contract", () => {
     expect(userProfile).not.toContain("navigate('/upgrade')");
     expect(userProfile).toContain("Manage Subscription");
     expect(userProfile).toContain("View Plans");
+  });
+
+  /**
+   * G4-09 (G-AUD-26): one reader of `GET /api/billing/status` on the client. Four readers
+   * under three cache keys with four private types, none parsed, was the defect; a fifth
+   * reader added anywhere reopens it, so the whole client tree is scanned, not a list.
+   */
+  it("G4-09: only useBillingStatus reads /api/billing/status on the client", () => {
+    const readers: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(path.join(repoRoot, dir), {
+        withFileTypes: true,
+      })) {
+        const rel = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(rel);
+        else if (
+          /\.tsx?$/.test(entry.name) &&
+          !/\.test\.tsx?$/.test(entry.name)
+        ) {
+          if (/["'`]\/api\/billing\/status["'`]/.test(readCode(rel))) {
+            readers.push(rel);
+          }
+        }
+      }
+    };
+    walk("client/src");
+    expect(readers).toEqual(["client/src/hooks/useBillingStatus.ts"]);
   });
 
   it("registers the canonical /upgrade route", () => {

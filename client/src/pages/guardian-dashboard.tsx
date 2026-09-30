@@ -65,25 +65,7 @@ import {
   studentResourceUrl,
 } from "@lyceon/shared/student-resources";
 import { LevelPill } from "@/components/mastery/LevelPill";
-
-interface GuardianBillingStatus {
-  isPaid: boolean;
-  effectiveAccess: boolean;
-  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
-  hasActiveLink?: boolean;
-  /**
-   * A payment on the conferring student's subscription needs attention.
-   *
-   * IT IS A BANNER, NOT A GATE — owner ruling 2026-09-03. This field used to
-   * make `SubscriptionPaywall` (now `CheckoutReturnPoller`) replace the whole dashboard, which locked out a
-   * guardian whose student was `past_due` and therefore, per SCL-029, still
-   * fully entitled. Reading it here and rendering a dismissible notice ABOVE
-   * the dashboard is the whole of its job now.
-   */
-  needsPaymentUpdate?: boolean;
-  /** A subscription exists on the conferring student and grants nothing. */
-  lapsed?: boolean;
-}
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 
 export default function GuardianDashboard() {
   const { isGuardian, isAuthenticated, authLoading } = useSupabaseAuth();
@@ -200,17 +182,10 @@ export default function GuardianDashboard() {
     ? weaknessData.domains
     : null;
 
-  const { data: billingStatus } = useQuery({
-    queryKey: ["guardian-billing-status"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/billing/status", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch billing status");
-      return res.json() as Promise<GuardianBillingStatus>;
-    },
+  // G4-09: the one billing-status reader. A payment-health notice is a BANNER, never a gate
+  // (owner ruling 2026-09-03) — see CheckoutReturnPoller for the lockout it replaced.
+  const { data: billingStatus } = useBillingStatus({
     enabled: isGuardian && isAuthenticated,
-    retry: 1,
   });
   /**
    * SCL-080: the guardian REDEEMS a code the student shared. This replaced an email
