@@ -70,6 +70,7 @@ function ExamReportRoute() {
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
 const Calendar = lazy(() => import("@/pages/calendar"));
+const ScoreReport = lazy(() => import("@/pages/score-report"));
 const GuardianStudentCalendar = lazy(
   () => import("@/pages/guardian-student-calendar"),
 );
@@ -208,6 +209,19 @@ function Router() {
         <Route path="/tests/:sessionId/report" component={ExamReportRoute} />
         <Route path="/tests/:sessionId/:section/:module" component={ExamModuleRoute} />
         <Route path="/tests/:sessionId" component={ExamSessionRoute} />
+        {/*
+          SCL-191 — the post-exam score report and retake answer. Student-only, and the path has
+          no id in it on purpose: the occasion comes from the prompt the server sent, so there is
+          nothing here a caller could point at somebody else's sitting.
+        */}
+        <Route
+          path="/score-report"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <ScoreReport />
+            </RequireRole>
+          )}
+        />
         {/* Doc 05F §17.1 — the student's own calendar. */}
         <Route
           path="/calendar"

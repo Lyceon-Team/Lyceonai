@@ -50,6 +50,7 @@ import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
 import { calendarRouter, streakRouter } from "./routes/calendar-routes";
+import { scoreReportRouter } from "./routes/score-report-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
@@ -463,6 +464,19 @@ app.use(
 // with its own router so that gate is absent by construction and cannot be acquired by
 // someone adding middleware to the calendar mount above.
 app.use("/api/me", requireSupabaseAuth, requireStudentOrAdmin, streakRouter);
+
+// SCL-191. The post-exam score report and retake answer. `requireStudentOrAdmin` because every
+// route is the student answering about their OWN sitting and their OWN subscription; a paying
+// guardian has no write route here and acts in the Customer Portal instead (Doc 01 §928). There
+// is deliberately NO entitlement middleware: the authorisation is the prompt we sent, checked in
+// the service, so a caller cannot answer an occasion we never raised — see the router's header.
+app.use(
+  "/api/score-report",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentOrAdmin,
+  scoreReportRouter,
+);
 // Score Projection endpoint (College Board weighted algorithm)
 app.get(
   "/api/progress/projection",

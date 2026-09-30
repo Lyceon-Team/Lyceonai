@@ -724,6 +724,11 @@ async function writeEntitlementFromSubscription(
     current_period_start: epochToIso(item?.currentPeriodStart ?? null),
     current_period_end: epochToIso(item?.currentPeriodEnd ?? null),
     cancel_at_period_end: subscription.cancel_at_period_end === true,
+    // SCL-191: who is being charged, as a fact about our own entitlement rather than one that
+    // lives only in Stripe metadata. NULL on the unaccompanied path, where payer and student are
+    // the same profile — and NULL is the value the post-exam renewal flow reads as "self-paid",
+    // so the honest absence and the honest self-payer are the same value on purpose.
+    payer_profile_id: subscription.metadata?.payer_profile_id ?? null,
   });
   // W3-3: record the billing country on the same grant. Revocations leave the
   // last known country in place — a lapsed student in crisis still gets theirs.
@@ -1388,6 +1393,11 @@ async function writeEntitlementsForAllItems(
       current_period_start: epochToIso(item.current_period_start ?? null),
       current_period_end: epochToIso(item.current_period_end ?? null),
       cancel_at_period_end: subscription.cancel_at_period_end === true,
+      // SCL-191. `payerProfileId` is already server-authorised above — every candidate was
+      // checked against this guardian's ACTIVE links before any write — so recording it here adds
+      // no trust, it records a decision this function has already made. The post-exam renewal
+      // flow reads it to decide who to ask about the money (Doc 01 §36.4).
+      payer_profile_id: payerProfileId,
     });
     if (grantCountry) {
       await setProfileCountryCode(studentProfileId, grantCountry);
