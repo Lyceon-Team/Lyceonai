@@ -31,6 +31,7 @@ import express, {
 } from "express";
 import request from "supertest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { Headers, Response } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const USER_ID = "7f3c2a10-1111-4222-8333-444455556666";
