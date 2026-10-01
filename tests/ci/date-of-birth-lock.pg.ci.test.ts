@@ -295,5 +295,86 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(after.is_under_13).toBe(false);
       });
     });
+
+    /**
+     * F-41 (Brief 8 ruling 6, 2026-10-01): at onboarding a date of birth is accepted only as a real,
+     * past, plausible date; and an under-13 student is ACCEPTED, then held by the live link gate and
+     * kept out of LISA — SCL-187 as live, per the owner's instruction of 2026-10-01.
+     */
+    describe("F-41: the date of birth at onboarding", () => {
+      const tomorrow = new Date(Date.now() + 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      it.each([
+        ["a slash-separated date", "2010/01/01"],
+        ["words", "not a date"],
+        ["a date that does not exist", "2010-02-31"],
+        ["a date in the future", tomorrow],
+        ["a date more than 120 years ago", "1890-01-01"],
+      ])(
+        "refuses %s with 400 DATE_OF_BIRTH_REQUIRED and writes nothing",
+        async (_label, dateOfBirth) => {
+          session.id = NEWCOMER;
+          const res = await request(await buildApp())
+            .patch("/api/profile")
+            .send({ displayName: "New", role: "student", dateOfBirth });
+          expect(res.status).toBe(400);
+          expect(res.body.error.code).toBe("DATE_OF_BIRTH_REQUIRED");
+          const row = await pg.query(
+            `SELECT date_of_birth, profile_completed_at FROM public.profiles WHERE id = $1`,
+            [NEWCOMER],
+          );
+          expect(row.rows[0]).toEqual({
+            date_of_birth: null,
+            profile_completed_at: null,
+          });
+        },
+      );
+
+      it("accepts an under-13 student, who is then held by the link gate and kept out of LISA", async () => {
+        session.id = NEWCOMER;
+        const elevenYearsAgo = `${new Date().getUTCFullYear() - 11}-01-15`;
+        const res = await request(await buildApp())
+          .patch("/api/profile")
+          .send({
+            displayName: "New",
+            role: "student",
+            dateOfBirth: elevenYearsAgo,
+          });
+        expect(res.status).toBe(200);
+        const after = await ageRow(NEWCOMER);
+        expect(after.date_of_birth).toBe(elevenYearsAgo);
+        expect(after.is_under_13).toBe(true);
+
+        // The live gates, with the user built from the row exactly as the auth middleware would.
+        const auth = await import("../../server/middleware/supabase-auth");
+        const probe = express();
+        probe.use((req, _res, next) => {
+          (req as express.Request & { user?: unknown }).user = {
+            id: NEWCOMER,
+            email: "n@example.test",
+            display_name: "New",
+            role: "student",
+            isAdmin: false,
+            isGuardian: false,
+            is_under_13: after.is_under_13,
+            actor_id: NEWCOMER,
+          };
+          next();
+        });
+        probe.get("/learning", auth.requireGuardianLinkForUnder13, (_q, r) =>
+          r.json({ ok: true }),
+        );
+        probe.get("/lisa", auth.requireStudentOnly, (_q, r) =>
+          r.json({ ok: true }),
+        );
+        const learning = await request(probe).get("/learning");
+        const lisa = await request(probe).get("/lisa");
+        expect(learning.status).toBe(403);
+        expect(learning.body.code).toBe("GUARDIAN_LINK_REQUIRED");
+        expect(lisa.status).toBe(403);
+        expect(lisa.body.code).toBe("AGE_RESTRICTION");
+      });
+    });
   },
 );

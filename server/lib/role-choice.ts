@@ -130,11 +130,29 @@ export function decideRoleChoice(input: {
   return { ok: true, role: wanted === "guardian" ? "guardian" : "student" };
 }
 
+/** F-41: an age beyond this is a typing error, not a person. */
+export const MAX_PLAUSIBLE_AGE_YEARS = 120;
+
+/** F-41: the refusal for a date of birth that is not a real, plausible, past date. */
+export const INVALID_DATE_OF_BIRTH: RoleChoiceRefusal = {
+  status: 400,
+  code: "DATE_OF_BIRTH_REQUIRED",
+  message: "Please enter a valid date of birth.",
+};
+
 /**
- * Pure. R10: a guardian must give a real date of birth and be at least 18.
- * Returns the refusal, or null when the date is acceptable.
+ * Pure. F-41 (Brief 8 ruling 6, 2026-10-01): a date of birth is accepted only as a real date that
+ * is not in the future and not more than 120 years ago. Returns the refusal, or null.
+ *
+ * @spec [Brief 8 ruling 6; Doc 01 V8 §9 / §37.1; SCL-187 rule 1 (APPLIED)] | @implemented
+ * [2026-10-01] | plain English: this is the format-and-plausibility half of the onboarding age
+ * check. The AGE half is not a refusal: an under-13 student is ACCEPTED, the `profiles_set_age`
+ * trigger derives `is_under_13`, and `requireGuardianLinkForUnder13` closes every learning surface
+ * until a guardian link is active while `requireStudentOnly` keeps LISA closed regardless. That
+ * is SCL-187 as live, and the owner's instruction of 2026-10-01 ("check what is currently live in
+ * the repo now and follow that") — refusing under-13 here would make that gate unreachable.
  */
-export function guardianAgeRefusal(
+export function dateOfBirthRefusal(
   dateOfBirth: string | null | undefined,
   today: Date,
 ): RoleChoiceRefusal | null {
@@ -146,14 +164,24 @@ export function guardianAgeRefusal(
     };
   }
   const age = ageInYears(dateOfBirth, today);
-  if (age === null) {
-    return {
-      status: 400,
-      code: "DATE_OF_BIRTH_REQUIRED",
-      message: "Please enter a valid date of birth.",
-    };
+  if (age === null || age < 0 || age > MAX_PLAUSIBLE_AGE_YEARS) {
+    return INVALID_DATE_OF_BIRTH;
   }
-  if (age < GUARDIAN_MIN_AGE) {
+  return null;
+}
+
+/**
+ * Pure. R10: a guardian must give a real date of birth and be at least 18.
+ * Returns the refusal, or null when the date is acceptable.
+ */
+export function guardianAgeRefusal(
+  dateOfBirth: string | null | undefined,
+  today: Date,
+): RoleChoiceRefusal | null {
+  const invalid = dateOfBirthRefusal(dateOfBirth, today);
+  if (invalid) return invalid;
+  const age = ageInYears(dateOfBirth ?? "", today);
+  if (age === null || age < GUARDIAN_MIN_AGE) {
     return {
       status: 403,
       code: "GUARDIAN_UNDER_18",
