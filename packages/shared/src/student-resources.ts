@@ -18,9 +18,9 @@
  * and tests.
  *
  * THERE IS NO GUARDIAN SHAPE. One response per resource; a guardian receives the student's
- * response. The only guardian-specific behaviour in the whole contract is that
- * `/mastery/skills` returns an empty list for `via='guardian'`, and that is Doc 05B §10.4's
- * specified denial-by-absence-of-policy, not a different shape.
+ * response, with two exceptions, neither a different shape: the KPI routes narrow a
+ * guardian to the streak (SCL-188), and `/mastery/skills` refuses a guardian with 403 —
+ * guardians see no skills, anywhere (SCL-194, amending Doc 05B §10.4's empty list).
  */
 import { z } from "zod";
 import { masterySectionSchema } from "./mastery-levels.js";

@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronRight } from "lucide-react";
 import { LevelPill } from "@/components/mastery/LevelPill";
+import { MasteryMeter } from "@/components/mastery/MasteryMeter";
 import type { MasteryDomainNode, MasterySection } from "@/lib/masteryApi";
 import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
 import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
@@ -28,20 +29,25 @@ const ALL_SECTIONS: readonly MasterySection[] = ["M", "RW"];
  * draws a grid per section). A row whose domain is not canonical is not drawn — the database
  * CHECK makes one impossible.
  *
- * READ-ONLY IS THE ABSENCE OF `onOpen`. The student page passes it and each card gets its
- * "Skills" drill-down; the guardian Dashboard does not, so no card carries a control and no
- * skill is reachable (skills are student-only, Doc 05B §10.4). There is no mode flag to set
- * wrong: a guardian caller cannot render a drill-down it was never handed.
+ * GUARDIANS SEE NO SKILLS (owner ruling 2026-10-01, #1013 review item 2; SCL-194). `viewer`
+ * is required, as on `HeaderFacts`. For `viewer="guardian"` the grid draws nothing
+ * skill-related — no "Skills" control, whatever `onOpen` it is handed — so a guardian caller
+ * that passed a drill-down by mistake still renders none; the server refuses a guardian's
+ * skills read with 403 in any case. The student page passes `viewer="student"` and `onOpen`,
+ * and each card keeps its drill-down. Domain levels and the meter are the same for both.
  */
 export function DomainGrid({
+  viewer,
   domains,
   sections = ALL_SECTIONS,
   onOpen,
 }: {
+  viewer: "student" | "guardian";
   domains: readonly MasteryDomainNode[];
   sections?: readonly MasterySection[];
   onOpen?: (target: { section: MasterySection; domain: string }) => void;
 }): JSX.Element {
+  const openSkills = viewer === "student" ? onOpen : undefined;
   const served = new Map(domains.map((d) => [`${d.section}:${d.domain}`, d]));
   const nodes: MasteryDomainNode[] = sections.flatMap((section) =>
     CANONICAL_DOMAINS_BY_SECTION[section].map(
@@ -71,25 +77,35 @@ export function DomainGrid({
               {node.domain}
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            <LevelPill
+          <CardContent className="flex flex-col gap-3">
+            {/* The pill (and the student's Skills control) on one row; beneath it, the
+                five-segment meter across the card's full content width (owner review
+                2026-10-01). */}
+            <div className="flex items-center justify-between gap-3">
+              <LevelPill
+                levelKey={node.levelKey}
+                displayName={node.displayName}
+              />
+              {openSkills === undefined ? null : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    openSkills({ section: node.section, domain: node.domain })
+                  }
+                  data-testid="domain-open"
+                  aria-label={`View skills in ${node.domain}`}
+                >
+                  Skills
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
+            </div>
+            <MasteryMeter
               levelKey={node.levelKey}
+              level={node.level}
               displayName={node.displayName}
             />
-            {onOpen === undefined ? null : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  onOpen({ section: node.section, domain: node.domain })
-                }
-                data-testid="domain-open"
-                aria-label={`View skills in ${node.domain}`}
-              >
-                Skills
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
           </CardContent>
         </Card>
       ))}

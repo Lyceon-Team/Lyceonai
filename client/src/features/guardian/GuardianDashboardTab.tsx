@@ -185,8 +185,12 @@ function MasteryWidget({ studentId }: { studentId: string }): JSX.Element {
             <h3 className="m-0 text-center text-base font-semibold text-muted-foreground sm:text-left">
               {EXAM_SECTION_LABEL[section]}
             </h3>
-            {/* No `onOpen`: no Skills drill-down on a guardian surface. */}
-            <DomainGrid domains={domains} sections={[section]} />
+            {/* `viewer="guardian"`: nothing skill-related, ever (SCL-194). */}
+            <DomainGrid
+              viewer="guardian"
+              domains={domains}
+              sections={[section]}
+            />
           </div>
         );
       })}

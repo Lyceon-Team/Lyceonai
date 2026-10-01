@@ -135,6 +135,27 @@ for (const vp of [
             selector: ".lyceon-calendar .facts",
             mode: "lines",
           },
+          // Final round item 1: the block card's own content centres on a phone (R11).
+          {
+            what: "block-card title",
+            selector: ".lyceon-calendar .col .block .ttl",
+            mode: "text",
+          },
+          {
+            what: "block-card meta line",
+            selector: ".lyceon-calendar .col .block .sub",
+            mode: "text",
+          },
+          {
+            what: "block-card scope chips",
+            selector: ".lyceon-calendar .col .block .dom",
+            mode: "lines",
+          },
+          {
+            what: "block-card progress bar",
+            selector: ".lyceon-calendar .col .block .progress",
+            mode: "box",
+          },
         ]),
       ).toEqual([]);
     }
