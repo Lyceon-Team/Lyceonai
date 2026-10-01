@@ -32,12 +32,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/ci/lib/deletion-rehearsal-db.sh
 source "$SCRIPT_DIR/lib/deletion-rehearsal-db.sh"
 REHEARSAL="$SCRIPT_DIR/deletion-cascade-rehearsal.sql"
+SEED="$SCRIPT_DIR/deletion-cascade-rehearsal.seed.sql"
 DB=deletion_cascade_rehearsal_ci
 
 [ -f "$REHEARSAL" ] || { echo "FAIL: rehearsal sql not found ($REHEARSAL)"; exit 1; }
+[ -f "$SEED" ] || { echo "FAIL: rehearsal seed not found ($SEED)"; exit 1; }
 
 echo "==> provision throwaway DB (genesis + all migrations)"
 setup_deletion_rehearsal_db "$DB"
+
+# F-47 (owner ruling 2026-10-01): the seed COMMITS in its own psql call — its own
+# transaction — before the cascade runs, matching production, where a student's
+# rows were always written by an earlier transaction than the one erasing them.
+echo "==> seed fixtures (committed in their own transaction)"
+psql -v ON_ERROR_STOP=1 -d "$DB" -f "$SEED"
 
 echo "==> run cascade rehearsal"
 psql -v ON_ERROR_STOP=1 -d "$DB" -f "$REHEARSAL"

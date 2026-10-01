@@ -15,8 +15,9 @@
 -- each gate can actually fail. A gate that cannot go red is not a gate.
 --
 -- G6 (concurrency) and G15 (deletion rehearsal) are NOT here: G6 needs two real
--- connections and G15 is scripts/ci/deletion-cascade-rehearsal.sql. Both run
--- from the self-test harness.
+-- connections and G15 runs scripts/ci/deletion-cascade-rehearsal.seed.sql then
+-- deletion-cascade-rehearsal.sql under a RESTRICT plant. Both run from the
+-- self-test harness, which asserts G15's exact error (F-47, 2026-10-01).
 -- ============================================================================
 
 \set ON_ERROR_STOP on
