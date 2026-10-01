@@ -607,3 +607,37 @@ A batch ships exactly these artifacts — nothing more:
 `infra/supabase/seed/parts/batch_<NNN>/` exists **only** for a batch that shipped a corresponding `proving_batch_<NNN>.sql` seed. Every directory under `parts/` maps 1:1 to a proving seed.
 
 Pipeline-validation runs (pilots, smoke tests) live under `tests/fixtures/`, never under `parts/`.
+
+---
+
+## A.12 Dedup Corpus Lifecycle
+
+The living dedup corpus (`content/canonical/prod_dedup_corpus.txt`) is a sorted, deduplicated list of `md5(normalize(stem) + '||' + normalize(passage))` hashes — one per line. It is the SOLE source of dedup truth for the assembly gate.
+
+### Hash formula
+
+```
+normalize(text) = text.trim().replace(/\s+/g, " ")
+hash = md5(normalize(stem) + "||" + normalize(passage ?? ""))
+```
+
+### Lifecycle
+
+1. **Branch reset (mandatory):** When a batch-authoring branch is reset from `questions` (or any integration branch), the corpus MUST be re-seeded from current prod before any new batch is authored. Re-seed query:
+
+   ```sql
+   SELECT DISTINCT md5(
+     regexp_replace(btrim(coalesce(stem,'')), '\s+', ' ', 'g')
+     || '||' ||
+     regexp_replace(btrim(coalesce(passage,'')), '\s+', ' ', 'g')
+   ) AS h
+   FROM public.questions
+   WHERE source_type = 2
+   ORDER BY 1
+   ```
+
+   Write the result (one hash per line, sorted) to `content/canonical/prod_dedup_corpus.txt`. Verify `wc -l` matches the prod distinct count.
+
+2. **Per-batch append (automatic):** On a gate PASS, `assemble-batch.ts` appends the new batch's hashes to the corpus, sorts, and deduplicates. This is automatic — no manual step needed.
+
+3. **Staleness is a defect:** If the corpus is stale (missing hashes from batches already applied to prod), the gate will not catch duplicates of those questions. The 073-076 dedup regression (5 duplicate drafts) was caused by exactly this: the corpus was not re-seeded after those batches landed in prod.
