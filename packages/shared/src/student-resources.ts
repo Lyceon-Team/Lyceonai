@@ -323,9 +323,13 @@ export const studentKpiOverallSchema = z.object({
 });
 export type StudentKpiOverall = z.infer<typeof studentKpiOverallSchema>;
 
-/** R3: the streak, and nothing about how many questions or how many were right. */
+/**
+ * R3: the streak, and nothing about how many questions or how many were right. `null` is
+ * "unknown" — the student's zone could not be read, so "as of today" could not be worked out
+ * (G-NEW-16; owner decision 2026-10-01; SCL-193 amending SCL-188). Never a zero in its place.
+ */
 export const guardianKpiOverallSchema = z
-  .object({ currentStreakDays: z.number().int().min(0) })
+  .object({ currentStreakDays: z.number().int().min(0).nullable() })
   .strict();
 export type GuardianKpiOverall = z.infer<typeof guardianKpiOverallSchema>;
 

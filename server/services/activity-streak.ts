@@ -71,22 +71,41 @@ export async function resolveStudentTimeZone(studentId: string): Promise<string>
 }
 
 /**
- * @spec [Guardian_Closure_Plan G-NEW-16; owner ruling 2026-09-30] | @implemented [2026-09-30]
+ * @spec [Guardian_Closure_Plan G-NEW-16; owner ruling 2026-09-30; owner decision 2026-10-01
+ *       (an unreadable zone is an unknown streak, never a 500); SCL-193] | @implemented [2026-09-30]
  *
  * plain English: the stored streak, as of today in the student's local date — 0 when the last
  * active day is before yesterday (`streakAsOfToday`). EVERY read of the current streak goes
  * through here: the calendar's `streak.current`, the practice page's `/api/me/streak`, and
  * both audiences of `kpi/overall`, so no two surfaces can disagree. A zero stored streak needs
  * no zone and reads nothing more.
+ *
+ * FAILS OPEN, TO `null`, IN ONE PLACE. "Today" needs the student's zone; when that read fails
+ * the streak is unknown, and every surface says so the same way — `null`, rendered as no
+ * streak. Catching here rather than at each caller is what keeps the three surfaces from
+ * disagreeing about failure as well as about the number (before 2026-10-01 the calendar
+ * served `null` and both `kpi/overall` audiences a 500).
  */
 export async function currentStreakAsOfToday(args: {
   studentId: string;
   stored: number;
   lastActiveAt: unknown;
   now?: Date;
-}): Promise<number> {
+  requestId?: string;
+}): Promise<number | null> {
   if (args.stored <= 0) return 0;
-  const zone = await resolveStudentTimeZone(args.studentId);
+  let zone: string;
+  try {
+    zone = await resolveStudentTimeZone(args.studentId);
+  } catch (zoneError) {
+    logger.warn(
+      "ACTIVITY_STREAK",
+      "timezone_read_failed",
+      "the student's zone could not be read; the streak is served as unknown",
+      { ...classifyError(zoneError), requestId: args.requestId },
+    );
+    return null;
+  }
   const lastActiveIso = toIsoTimestamp(args.lastActiveAt);
   return streakAsOfToday({
     stored: args.stored,
@@ -141,24 +160,16 @@ export async function getStudentActivityStreak(
   // No row: the KPI refresh has not run for this student. Not an error, and not a zero.
   if (data === null) return UNKNOWN;
 
-  // G-NEW-16: `current` as of today. A failed zone read fails open like any other read here.
+  // G-NEW-16: `current` as of today. An unreadable zone is an unknown streak (`null`).
   let current: unknown = data.current_streak_days;
   if (typeof current === "number") {
-    try {
-      current = await currentStreakAsOfToday({
-        studentId,
-        stored: current,
-        lastActiveAt: data.last_active_at,
-      });
-    } catch (zoneError) {
-      logger.warn(
-        "ACTIVITY_STREAK",
-        "timezone_read_failed",
-        "the student's zone could not be read; the streak is served as unknown",
-        { ...classifyError(zoneError), requestId },
-      );
-      return UNKNOWN;
-    }
+    current = await currentStreakAsOfToday({
+      studentId,
+      stored: current,
+      lastActiveAt: data.last_active_at,
+      ...(requestId === undefined ? {} : { requestId }),
+    });
+    if (current === null) return UNKNOWN;
   }
 
   const parsed = streakSummarySchema.safeParse({

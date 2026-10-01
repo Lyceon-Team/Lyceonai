@@ -25,6 +25,10 @@ export type {
 } from "../../packages/shared/src/student-resources";
 
 function guidanceForMetric(metricId: string, value: number | null): string {
+  // A null streak is "could not be worked out" (the zone was unreadable), not "no evidence".
+  if (value === null && metricId === "current_streak") {
+    return "Your streak can't be shown right now — keep practising and it will be back.";
+  }
   if (value === null) {
     return "No scored evidence in this window yet — complete a few questions to populate it.";
   }
@@ -140,7 +144,8 @@ function buildStudentMetrics(input: {
   weekAccuracyPct: number | null;
   recency30Events: number;
   recency30AccuracyPct: number | null;
-  currentStreakDays: number;
+  /** `null` when the student's zone could not be read (G-NEW-16, owner decision 2026-10-01). */
+  currentStreakDays: number | null;
   includeHistoricalTrends: boolean;
 }): ExplainedKpiMetric[] {
   const metrics: ExplainedKpiMetric[] = [
@@ -310,7 +315,8 @@ export async function buildStudentKpiViewFromCanonical(
  * `last_active_at` (to serve the streak as of today) — no counter, so the counters a guardian is
  * not shown are never read for them, not read and then dropped. No row yet is a streak of 0 —
  * the same answer the student view gives for a new student.
- * A failed read throws; it is never a zero.
+ * A failed KPI read throws; it is never a zero. A failed ZONE read is a `null` streak — unknown,
+ * as on the calendar (owner decision 2026-10-01; `currentStreakAsOfToday`).
  */
 export async function readGuardianKpiOverall(
   studentId: string,
