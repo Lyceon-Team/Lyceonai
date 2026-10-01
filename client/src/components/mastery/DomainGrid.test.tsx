@@ -13,7 +13,7 @@
  */
 import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
 import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
 import { DomainGrid } from "./DomainGrid";
@@ -70,7 +70,9 @@ function cards(
 
 describe("DomainGrid — all eight domains", () => {
   it("four rows still draw all eight, four per section, in canonical order", () => {
-    const { container } = render(<DomainGrid domains={FOUR} />);
+    const { container } = render(
+      <DomainGrid viewer="student" domains={FOUR} />,
+    );
     const drawn = cards(container);
     expect(drawn.map((c) => c.domain)).toEqual([
       ...CANONICAL_DOMAINS_BY_SECTION.M,
@@ -98,7 +100,7 @@ describe("DomainGrid — all eight domains", () => {
   });
 
   it("no rows at all: eight unmeasured cards, not an empty grid", () => {
-    const { container } = render(<DomainGrid domains={[]} />);
+    const { container } = render(<DomainGrid viewer="student" domains={[]} />);
     const drawn = cards(container);
     expect(drawn).toHaveLength(8);
     expect(new Set(drawn.map((c) => c.pill))).toEqual(
@@ -108,7 +110,7 @@ describe("DomainGrid — all eight domains", () => {
 
   it("with `sections`, draws that section's four only", () => {
     const { container } = render(
-      <DomainGrid domains={FOUR} sections={["RW"]} />,
+      <DomainGrid viewer="student" domains={FOUR} sections={["RW"]} />,
     );
     expect(cards(container).map((c) => c.domain)).toEqual([
       ...CANONICAL_DOMAINS_BY_SECTION.RW,
@@ -167,6 +169,7 @@ describe("DomainGrid — the five-segment mastery meter", () => {
     ({ levelKey, level, displayName, filled }) => {
       const { container } = render(
         <DomainGrid
+          viewer="student"
           domains={[
             { section: "M", domain: "Algebra", levelKey, level, displayName },
           ]}
@@ -220,12 +223,43 @@ describe("DomainGrid — the five-segment mastery meter", () => {
   );
 
   it("the meter draws no text of its own, so it can never fall under the 16px floor", () => {
-    const { container } = render(<DomainGrid domains={FOUR} />);
+    const { container } = render(
+      <DomainGrid viewer="student" domains={FOUR} />,
+    );
     const meters = Array.from(
       container.querySelectorAll<HTMLElement>("[data-testid='mastery-meter']"),
     );
     expect(meters).toHaveLength(8);
     for (const meter of meters)
       expect((meter.textContent ?? "").trim()).toBe("");
+  });
+});
+
+/**
+ * `viewer="guardian"` renders nothing skill-related, whatever it is handed (owner ruling
+ * 2026-10-01, #1013 review item 2; SCL-194): the student keeps the Skills drill-down.
+ */
+describe("DomainGrid — the viewer decides whether skills exist", () => {
+  it("student: every card carries its Skills drill-down", () => {
+    render(
+      <DomainGrid viewer="student" domains={FOUR} onOpen={() => undefined} />,
+    );
+    // Presence: the student's control, one per card.
+    expect(screen.getAllByTestId("domain-open")).toHaveLength(8);
+    expect(
+      screen.getByRole("button", { name: "View skills in Algebra" }),
+    ).toBeTruthy();
+  });
+
+  it("guardian: no Skills control and no skill text, even when handed a drill-down", () => {
+    const { container } = render(
+      <DomainGrid viewer="guardian" domains={FOUR} onOpen={() => undefined} />,
+    );
+    // Presence first: the eight cards and their meters are drawn.
+    expect(container.querySelectorAll("[data-domain]")).toHaveLength(8);
+    expect(screen.getAllByTestId("mastery-meter")).toHaveLength(8);
+    expect(screen.queryAllByTestId("domain-open")).toEqual([]);
+    expect(screen.queryAllByRole("button")).toEqual([]);
+    expect(container.textContent ?? "").not.toMatch(/skill/i);
   });
 });
