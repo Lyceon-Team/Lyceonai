@@ -167,6 +167,19 @@ const STATES: readonly State[] = [
     },
     testId: "guardian-state-revoked",
     names: /Ada is no longer linked to your account/,
+    // G3-04 (R7), on the Wave 4 surfaces: the 404 refetches the roster, and none of Ada's
+    // panels survive it. (The single-page dashboard's PG proof of this was deleted with that
+    // page on 2026-10-01; this is where the behaviour now lives.)
+    extra: async () => {
+      await waitFor(() =>
+        expect(
+          net.log.filter((l) => l === "GET /api/guardian/students").length,
+        ).toBeGreaterThanOrEqual(2),
+      );
+      expect(screen.queryByTestId("domain-grid")).toBeNull();
+      expect(screen.queryByTestId("dashboard-exam")).toBeNull();
+      expect(document.querySelector(".lyceon-calendar .week")).toBeNull();
+    },
   },
   {
     name: "calendar not set up",
