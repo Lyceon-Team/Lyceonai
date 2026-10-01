@@ -25,8 +25,7 @@ vi.mock("@tanstack/react-query", async (importActual) => {
   return { ...actual, useQuery: queryMock.useQuery };
 });
 // The page reads the signed-in student's id to build its subject-scoped URLs. The provider
-// is not mounted in a unit render, so the hook is stubbed — same pattern as
-// guardian-dashboard.history.test.tsx.
+// is not mounted in a unit render, so the hook is stubbed.
 vi.mock("@/contexts/SupabaseAuthContext", () => ({
   useSupabaseAuth: () => ({
     user: { id: "11111111-1111-4111-8111-111111111111" },

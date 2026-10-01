@@ -22,6 +22,7 @@ import { useGuardianStudents } from "@/hooks/useGuardianStudents";
 import { linkCodeFromSearch } from "@/lib/link-code-prefill";
 import { guardianPaths } from "./paths";
 import { AddStudentButton, AddStudentDialog } from "./AddStudentDialog";
+import { GuardianTemplatePreview } from "./GuardianTemplatePreview";
 import { CheckoutReturnPoller } from "@/components/guardian/CheckoutReturnPoller";
 
 export function GuardianNoStudents({
@@ -31,11 +32,11 @@ export function GuardianNoStudents({
 }): JSX.Element {
   return (
     <section
-      className="mx-auto flex max-w-xl flex-col gap-4 px-4 py-16 text-center"
+      className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-16 text-center"
       data-testid="guardian-no-students"
     >
       <h1 className="text-2xl font-semibold">Add your first student</h1>
-      <p className="text-base text-muted-foreground">
+      <p className="mx-auto max-w-xl text-base text-muted-foreground">
         Ask your student for the 6-character link code on their Profile page,
         under Settings. Once linked, you&rsquo;ll see their progress, study
         calendar and test results here.
@@ -47,6 +48,11 @@ export function GuardianNoStudents({
       >
         Enter a link code
       </Button>
+      {/* The 2026-09-03 preview of what linking unlocks — structural, no figures (owner
+          decision 2026-10-01: it lives in the no-students state). */}
+      <div className="mt-8">
+        <GuardianTemplatePreview />
+      </div>
     </section>
   );
 }

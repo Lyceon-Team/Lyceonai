@@ -28,7 +28,7 @@
  * who by the platform's own predicate had full access was locked out of
  * everything — including the only surface where they could have fixed it. A
  * payment-health notice is a BANNER above the dashboard, never a screen in
- * front of it; `guardian-dashboard.tsx` renders one.
+ * front of it; `GuardianShell` renders one on every guardian page (`GuardianPaymentBanner`).
  *
  * WHAT THIS NO LONGER DOES, AND WHY. It used to own the guardian purchase
  * surface: a pricing page with a student picker, rendered only while

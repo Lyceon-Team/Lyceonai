@@ -10,7 +10,7 @@
  * caller must render explicitly rather than an error.
  *
  * WHY THIS EXISTS. `GET /api/guardian/students` was already being read by
- * `client/src/pages/guardian-dashboard.tsx`, which also declared its own local
+ * `client/src/pages/guardian-dashboard.tsx` (deleted 2026-10-01), which also declared its own local
  * `LinkedStudent` interface. Adding a second reader on the checkout surface
  * would have forked both the request and the shape for one endpoint. The query
  * lives here and both pages consume it; the SHAPE lives in

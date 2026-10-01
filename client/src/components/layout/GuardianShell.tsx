@@ -24,6 +24,7 @@ import { SkipLink } from "@/components/common/skip-link";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
+import { GuardianPaymentBanner } from "@/features/guardian/GuardianPaymentBanner";
 import "@/features/guardian/guardian-surface.css";
 import "@/features/guardian/guardian-type-floor.generated.css";
 
@@ -54,12 +55,16 @@ export function GuardianShell({
     root.setAttribute("data-guardian-surface", "");
     return () => root.removeAttribute("data-guardian-surface");
   }, []);
+  const { user } = useSupabaseAuth();
   return (
     <div
       className="min-h-screen bg-background text-foreground flex flex-col"
       data-testid="guardian-shell"
     >
       <GuardianHeader center={center} actions={actions} />
+      {/* A payment problem is a notice above every guardian page, never a gate in front of
+          one (owner ruling 2026-09-03; moved here from the retired dashboard 2026-10-01). */}
+      <GuardianPaymentBanner enabled={user !== null && user !== undefined} />
       {subnav}
       <main id="main" className={`flex-1 ${className}`}>
         {children}

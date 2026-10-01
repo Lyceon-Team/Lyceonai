@@ -20,12 +20,12 @@
  * render nothing a guardian sees.
  *
  * EXCLUDED, BY NAME AND REASON — and the exclusion is checked, not trusted:
- *   - LEGACY: the retired single-page guardian dashboard and the three components only it
- *     renders. They are unrouted since G4-01 and await deletion (owner decision pending on
- *     the 2026-09-03 no-student template preview they carry). The gate FAILS if any
- *     non-legacy, non-test file imports one, so "unrouted" stays true while they are exempt.
  *   - STUDENT: `guardian-required.tsx` is the page an under-13 STUDENT sees; it is not a
  *     guardian surface despite its name.
+ * (Until 2026-10-01 a LEGACY list also exempted the retired single-page guardian dashboard
+ * and the three components only it rendered, while they awaited deletion. They are deleted —
+ * the payment banner moved into `GuardianShell` and the template preview into the
+ * no-students state — so the list and its "imported by nothing" check went with them.)
  *
  * usage: node scripts/ci/guardian-token-gate.mjs
  */
@@ -35,14 +35,8 @@ import { execFileSync } from "node:child_process";
 
 const ROOT = process.cwd();
 
-const LEGACY = [
-  "client/src/pages/guardian-dashboard.tsx",
-  "client/src/components/guardian/GuardianTemplatePreview.tsx",
-  "client/src/components/guardian/GuardianMetricTile.tsx",
-  "client/src/components/guardian/ManageSubscriptionButton.tsx",
-];
 const STUDENT_FACING = ["client/src/pages/guardian-required.tsx"];
-const EXCLUDED = new Set([...LEGACY, ...STUDENT_FACING]);
+const EXCLUDED = new Set(STUDENT_FACING);
 
 const HEX = /#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{1,5})?\b/g;
 const SMALL_TEXT =
@@ -92,25 +86,6 @@ for (const f of scanned) {
       }
     }
   });
-}
-
-// "Unrouted" must stay true for the legacy exemption to be honest.
-const legacyStems = LEGACY.map((f) =>
-  path.posix.basename(f).replace(/\.tsx?$/, ""),
-);
-for (const f of all) {
-  if (isTest(f) || EXCLUDED.has(f)) continue;
-  const text = fs.readFileSync(path.join(ROOT, f), "utf8");
-  for (const stem of legacyStems) {
-    const imported = new RegExp(
-      `(?:from\\s+|import\\()\\s*["'][^"']*/${stem}["']`,
-    ).test(text);
-    if (imported) {
-      failures.push(
-        `${f}: imports legacy ${stem}, which is exempt only while unrouted`,
-      );
-    }
-  }
 }
 
 try {
