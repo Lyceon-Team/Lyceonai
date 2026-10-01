@@ -32,7 +32,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | A10 | A | `pages/guardian-student-calendar.tsx` `backHref="/guardian"` beside `hideBackLink` | KEEP | KEEP |
 | A11 | A | Unrouted pages; modules with no importer; modules only tests import (guardian scope) | none found | none found |
 | A12 | A | `features/calendar/components/Chrome.tsx` `export` on `TargetFact`, `StreakFact`, `CountdownFact`, `ProjectionFact` | HANDED OFF (calendar) | HANDED OFF |
-| G1 | G | `client/src/features/guardian/routes.tsx` — the three `/students/:studentId/{calendar,tests,tests/:sessionId}` redirects, `RedirectStudent`, `RedirectExam`, and the never-read `redirect` field | DELETE (owner, 2026-10-01: delete, and repoint the exam spec) | PLANNED |
+| G1 | G | `client/src/features/guardian/routes.tsx` — the three `/students/:studentId/{calendar,tests,tests/:sessionId}` redirects, `RedirectStudent`, `RedirectExam`, and the never-read `redirect` field | DELETE (owner, 2026-10-01: delete, and repoint the exam spec) | DELETED (`442b980`) |
 | G2 | G | `tests/e2e/exam-disclosure.spec.ts` guardian step (exam vertical's local-only spec): fails at the guardian exam page because the exam e2e harness serves no `/api/guardian/students` roster, which the Wave 4 shell (G4-06) reads first | HANDED OFF (exam) | HANDED OFF |
 | B1 | B | `server/services/guardian-link-audit.ts` (whole module: `auditGuardianLink`, `GuardianLinkAuditAction`) | DELETE (with the old INSTRUMENT case, its only caller; see D1) | DELETED (`ee27f61`) |
 | B2 | B | `server/lib/account.ts` re-exports `GuardianLinkStatus`, `GUARDIAN_LINK_ERROR`, `GuardianLinkError` | DELETE the three re-exports (keep `GuardianLink`) | DELETED (`ee27f61`) |
@@ -72,12 +72,12 @@ Every row's evidence is a command run on this branch with its real output pasted
 | F5 | F | `profiles.guardian_profile_id` (+ `idx_profiles_guardian_profile`, its FK) and `profiles.guardian_email` | HANDED OFF (cleanup, with G-NEW-08) | HANDED OFF |
 | F6 | F | `student_skill_mastery_student_read`, `student_skill_kpi_student_read` | HANDED OFF (cleanup) | HANDED OFF |
 | F7 | F | `consent_runtime_config` (+ `_history`) | KEEP (spec-named) | KEEP |
-| H1 | H | `docs/guardian/GUARDIAN_SOURCE_OF_TRUTH.md`, `GUARDIAN_RUNTIME_CONTRACT.md` — deleted paths, functions and audit events | EDIT | PLANNED |
-| H2 | H | `docs/entitlements-map.md`, `docs/route-registry.md` — `POST /api/guardian/link`, `guardian-dashboard.tsx`, `SubscriptionPaywall.tsx`, `guardian-entitlement.ts` | EDIT | PLANNED |
-| H3 | H | `docs/qa/guardian.md`, `docs/qa/release-gates.md` — `/summary` endpoint, `guardian_link_audit` table, `scripts/guardian-smoke-test.ts`, pre-baseline migration path | EDIT | PLANNED |
-| H4 | H | `docs/exams/EXAM_SOURCE_OF_TRUTH.md:11`, `FULL_TEST_SOURCE_OF_TRUTH.md:8` cite `server/middleware/guardian-entitlement.ts` | EDIT the guardian reference only | PLANNED |
-| H5 | H | `docs/alignment/KNOWN-GAPS.md` SCHEMA-TRUTH-GATE-OUT-OF-SCOPE: "Four" accepted files and two deleted guardian-link PG suites | EDIT | PLANNED |
-| H6 | H | Code comments naming deleted files or retired behaviour | EDIT | PLANNED |
+| H1 | H | `docs/guardian/GUARDIAN_SOURCE_OF_TRUTH.md`, `GUARDIAN_RUNTIME_CONTRACT.md` — deleted paths, functions and audit events | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
+| H2 | H | `docs/entitlements-map.md`, `docs/route-registry.md` — `POST /api/guardian/link`, `guardian-dashboard.tsx`, `SubscriptionPaywall.tsx`, `guardian-entitlement.ts` | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
+| H3 | H | `docs/qa/guardian.md`, `docs/qa/release-gates.md` — `/summary` endpoint, `guardian_link_audit` table, `scripts/guardian-smoke-test.ts`, pre-baseline migration path | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
+| H4 | H | `docs/exams/EXAM_SOURCE_OF_TRUTH.md:11`, `FULL_TEST_SOURCE_OF_TRUTH.md:8` cite `server/middleware/guardian-entitlement.ts` | EDIT the guardian reference only | EDITED (H part 2, the commit after `e1f2e4d`) |
+| H5 | H | `docs/alignment/KNOWN-GAPS.md` SCHEMA-TRUTH-GATE-OUT-OF-SCOPE: "Four" accepted files and two deleted guardian-link PG suites | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
+| H6 | H | Code comments naming deleted files or retired behaviour | EDIT | EDITED (`e1f2e4d`) |
 | H7 | H | `contracts/ws0-stop-the-bleed.contract.md`, `contracts/auth-login-e2e.contract.md`, dated `KNOWN-GAPS` RESOLVED entries | KEEP | KEEP |
 | H8 | H | Environment variables and feature flags for guardian / consent | none found | none found |
 

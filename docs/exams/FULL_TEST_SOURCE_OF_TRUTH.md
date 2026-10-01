@@ -5,7 +5,7 @@ Server runtime source of truth for full-length SAT exam flow:
 - `server/routes/full-length-exam-routes.ts`
 - `apps/api/src/services/fullLengthExam.ts`
 - `server/routes/guardian-routes.ts`
-- `server/middleware/guardian-entitlement.ts`
+- `server/routes/student-resources.ts` + `server/middleware/subject-resolver.ts` (guardian exam-result reads at `/api/students/:studentId/tests` and `/tests/:sessionId/report`; updated 2026-10-01, `server/middleware/guardian-entitlement.ts` no longer exists)
 
 ## Runtime Scoring Path
 1. Session lifecycle
@@ -43,7 +43,7 @@ Guardian exam report visibility requires BOTH:
 2. Active student entitlement (paid + active/trialing + not period-expired)
 
 Enforcement path:
-- `requireGuardianEntitlement` resolves linked-pair access via `resolveLinkedPairPremiumAccessForGuardian(...)`
+- Guardian reads go through `resolveSubject` (linked pair AND the student's entitlement, via `guardian_view_decision`) and the `exam_full_length` gate in `server/routes/student-resources.ts`. (Updated 2026-10-01, guardian closeout: `requireGuardianEntitlement` no longer exists; `resolveLinkedPairPremiumAccessForGuardian` survives only in billing, not on exam reads.)
 - Route performs explicit linked-student authorization check and hard-denies unauthorized access (`403`)
 
 ## Contract Outputs

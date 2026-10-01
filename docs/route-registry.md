@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-09-27 (G1 — a guardian reads a linked student's full-length practice test results at `/students/:studentId/tests` and `/students/:studentId/tests/:sessionId`, linked per student from the guardian dashboard. Gated server-side on the link AND the STUDENT's entitlement and `exam_full_length` feature; read-only. SCL-180/181.) · 2026-09-25 (E7b — the full-length exam shell: `/tests`, `/tests/:sessionId`, `/tests/:sessionId/:section/:module`, `/tests/:sessionId/report`, and a Tests tab in the student navigation. Client only: every backing endpoint is E6/E7a's, entitlement is enforced there.) · 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
+**Last Updated:** 2026-10-01 (guardian closeout — Guardian Endpoints rows corrected: `POST /api/guardian/link` is `POST /api/guardian/link/redeem`; the student-resource rows a guardian reads are listed with their real gates; admins are not admitted to guardian routes; `SubscriptionPaywall` replaced by the guardian state matrix.) · 2026-09-27 (G1 — a guardian reads a linked student's full-length practice test results at `/students/:studentId/tests` and `/students/:studentId/tests/:sessionId`, linked per student from the guardian dashboard. Gated server-side on the link AND the STUDENT's entitlement and `exam_full_length` feature; read-only. SCL-180/181.) · 2026-09-25 (E7b — the full-length exam shell: `/tests`, `/tests/:sessionId`, `/tests/:sessionId/:section/:module`, `/tests/:sessionId/report`, and a Tests tab in the student navigation. Client only: every backing endpoint is E6/E7a's, entitlement is enforced there.) · 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
 **Last Updated:** 2026-09-22 (R4 — the two review CLIENT routes R3 reserved are now real and listed below. Both are `free`: review is free and unlimited, ruling 10, so unlike `/practice/session/:sessionId` neither carries `entitled†`. The loop behind `/review/session/:sessionId` is the SAME component practice uses, pointed at `/api/review/*` by an engine config.)
 
 ---
@@ -195,10 +195,15 @@ runtime and the `/full-test` page were removed by E1 (2026-09-23); no client pag
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
 |----------|--------|--------------|------|-------------|---------|
 | `/api/guardian/students` | GET | Yes | guardian | free | List linked students |
-| `/api/guardian/link` | POST | Yes | guardian | free | Link student account |
+| `/api/guardian/link/redeem` | POST | Yes | guardian | free | Redeem a student's link code (rate-limited) |
 | `/api/guardian/link/:studentId` | DELETE | Yes | guardian | free | Unlink student |
-| `/api/students/:studentId/kpi/overall` | GET | Yes | guardian/admin | entitled | Student progress summary |
-| `/api/students/:studentId/mastery/domains` | GET | Yes | guardian/admin | entitled | Student weaknesses |
+| `/api/students/:studentId/kpi/overall` | GET | Yes | student/guardian | free (student); guardian needs the student's active entitlement | Guardian gets the streak only (SCL-188) |
+| `/api/students/:studentId/mastery/domains` | GET | Yes | student/guardian | premium (`mastery_detail`, the STUDENT's) | Domain-grain mastery |
+| `/api/students/:studentId/calendar` | GET | Yes | student/guardian | premium (`calendar_access`, the STUDENT's) | Calendar `{ days, facts, streak }` |
+| `/api/students/:studentId/tests` | GET | Yes | student/guardian | premium (`exam_full_length`, the STUDENT's) | Full-length exam list |
+| `/api/students/:studentId/tests/:sessionId/report` | GET | Yes | student/guardian | premium (`exam_full_length`, the STUDENT's) | One exam attempt's report |
+
+Guardian access to `/api/students/:studentId/*` is decided by `resolveSubject` (`server/middleware/subject-resolver.ts` → SQL `guardian_view_decision`): unlinked → 404, linked but unentitled → 402. `/api/students/:studentId/mastery/skills` refuses a guardian with 403 (SCL-194). Admins are not admitted as guardians (G2-01).
 
 ### Admin Endpoints
 | Endpoint | Method | Auth Required | Role | Purpose |
@@ -236,14 +241,15 @@ runtime and the `/full-test` page were removed by E1 (2026-09-23); no client pag
   - Redirects unauthorized users to appropriate landing pages
   - Used for: student, guardian, and multi-role routes
 
-- **SubscriptionPaywall** (`client/src/components/guardian/SubscriptionPaywall.tsx`)
-  - Shows upgrade prompt for non-entitled guardian features
-  - Used for: guardian dashboard features
+- **Guardian state matrix** (`client/src/features/guardian/GuardianStates.tsx`)
+  - Shows the lapsed state on a 402 and the revoked state on a 404 from a per-student read
+  - Used for: the per-student guardian pages (via `GuardianStudentLayout.tsx` and `GuardianDashboardTab.tsx`), rendered inside `GuardianShell` (`client/src/components/layout/GuardianShell.tsx`)
 
 ### Server-Side Middleware
 - **requireSupabaseAuth** - Validates authenticated session (all protected endpoints)
 - **requireStudentOrAdmin** - Enforces student or admin role
-- **requireGuardianRole** - Enforces guardian or admin role
+- **requireGuardianRole** (`server/middleware/guardian-role.ts`) - Enforces guardian role; admins are refused (G2-01)
+- **resolveSubject** (`server/middleware/subject-resolver.ts`) - Admits the student or a linked guardian of an entitled student to `/api/students/:studentId/*`
 - **requireSupabaseAdmin** - Enforces admin-only access
 - **checkPracticeLimit** - Enforces practice usage limits (free tier: 10/day)
 - **checkAiChatLimit** - Enforces tutor chat usage limits (free tier: 5/day)
