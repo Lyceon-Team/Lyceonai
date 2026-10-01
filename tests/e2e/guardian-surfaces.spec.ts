@@ -22,6 +22,7 @@
  * the exam e2e specs do.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { offCentre, type Check } from "./guardian-harness/centring";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -33,6 +34,8 @@ if (process.env.E2E_CHROMIUM) {
 type Fixtures = {
   ADA: string;
   BO: string;
+  CY: string;
+  rosterWithRevoked: { students: unknown[] };
   EXAM_SESSION: string;
   roster: { students: unknown[] };
   calendarWeek: unknown;
@@ -64,9 +67,14 @@ const VIEWPORTS = [
 
 async function serve(
   page: Page,
-  opts: { students?: "two" | "none" } = {},
+  opts: { students?: "two" | "none" | "with-revoked" } = {},
 ): Promise<void> {
-  const roster = opts.students === "none" ? { students: [] } : F.roster;
+  const roster =
+    opts.students === "none"
+      ? { students: [] }
+      : opts.students === "with-revoked"
+        ? F.rosterWithRevoked
+        : F.roster;
   // Only the API: Vite serves modules under paths like `/src/features/exam/api/…` too.
   const isApi = (url: URL): boolean => url.pathname.startsWith("/api/");
   await page.route(isApi, async (route: Route) => {
@@ -108,6 +116,9 @@ async function serve(
     if (p === `${ada}/tests`) return json(F.examList);
     if (p === `${ada}/tests/${F.EXAM_SESSION}/report`)
       return json(F.examReport);
+    if (p.startsWith(`/api/students/${F.CY}/`)) {
+      return json({ error: "Not found", requestId: "r" }, 404);
+    }
     if (p.startsWith(`/api/students/${F.BO}/`)) {
       return json(
         {
@@ -350,6 +361,213 @@ test.describe("the guardian shell header", () => {
           `corner ${corner.join(",")} beside ${beside.join(",")}`,
         ).toBeLessThanOrEqual(2);
       }
+    });
+  }
+});
+
+/**
+ * Owner decision 2026-10-01 on PR 1003, item 10 — on a phone (below 640px) the guardian pages
+ * centre their headings, summary lines, control rows, the calendar's day heading and week-strip
+ * labels, empty-state messages and the calendar facts footer. Multi-line paragraphs and the
+ * content of block and domain cards stay left-aligned. Measured at 390 by `offCentre`
+ * (`guardian-harness/centring.ts`): text lines, boxes or control rows, each within 2px.
+ */
+const PHONE_CENTRING: readonly {
+  name: string;
+  path: (f: Fixtures) => string;
+  students?: "two" | "none" | "with-revoked";
+  ready: string;
+  act?: (page: Page) => Promise<void>;
+  checks: readonly Check[];
+}[] = [
+  {
+    name: "Dashboard",
+    path: (f) => `/guardian/${f.ADA}`,
+    ready: "dashboard-exam",
+    checks: [
+      {
+        what: "section heading",
+        selector:
+          "[data-testid=dashboard-mastery] > h2, [data-testid=dashboard-latest-exam] > h2",
+        mode: "text",
+      },
+      {
+        what: "section name",
+        selector: "[data-testid=dashboard-mastery] h3",
+        mode: "text",
+      },
+      {
+        what: "summary strip",
+        selector: "[data-testid=header-facts]",
+        mode: "text",
+      },
+      {
+        what: "this week's plan",
+        selector: "[data-testid=dashboard-week]",
+        mode: "text",
+      },
+    ],
+  },
+  {
+    name: "Calendar",
+    path: (f) => `/guardian/${f.ADA}/calendar`,
+    ready: "guardian-tab-calendar",
+    checks: [
+      {
+        what: "control row",
+        selector: ".lyceon-calendar .top .slot[data-slot=C1]",
+        mode: "lines",
+        within: "parent",
+      },
+      {
+        what: "streak line",
+        selector: ".lyceon-calendar .top .slot[data-slot=C2]",
+        mode: "text",
+        within: "parent",
+      },
+      {
+        what: "target line",
+        selector: ".lyceon-calendar .top .slot[data-slot=R1]",
+        mode: "text",
+        within: "parent",
+      },
+      {
+        what: "projected line",
+        selector: ".lyceon-calendar .top .slot[data-slot=R2]",
+        mode: "text",
+        within: "parent",
+      },
+      {
+        what: "selected-day heading",
+        selector: ".lyceon-calendar .col .dayhead",
+        mode: "text",
+      },
+      {
+        what: "week-strip label",
+        selector: ".lyceon-calendar .daychip",
+        mode: "text",
+      },
+      {
+        what: "facts footer",
+        selector: ".lyceon-calendar .facts",
+        mode: "lines",
+      },
+    ],
+  },
+  {
+    name: "Calendar, an empty day",
+    path: (f) => `/guardian/${f.ADA}/calendar`,
+    ready: "guardian-tab-calendar",
+    act: async (page) => {
+      // Sunday is the week's rest day: its column says "No study planned".
+      await page.locator(".lyceon-calendar .daychip").last().click();
+      await page.locator(".lyceon-calendar .col .empty").first().waitFor();
+    },
+    checks: [
+      {
+        what: "empty-day message",
+        selector: ".lyceon-calendar .col .empty",
+        mode: "text",
+      },
+    ],
+  },
+  {
+    name: "Linked students & billing",
+    path: () => "/guardian/students",
+    ready: "billing-manage",
+    checks: [
+      {
+        what: "page heading",
+        selector: "[data-testid=guardian-students-page] h1",
+        mode: "text",
+      },
+      {
+        what: "section heading",
+        selector: "[data-testid=guardian-students-page] h2",
+        mode: "text",
+      },
+    ],
+  },
+  {
+    name: "no students",
+    path: () => "/guardian",
+    students: "none",
+    ready: "guardian-no-students",
+    checks: [
+      {
+        what: "heading",
+        selector: "[data-testid=guardian-no-students] > h1",
+        mode: "text",
+      },
+      {
+        what: "message",
+        selector: "[data-testid=guardian-no-students] > p",
+        mode: "text",
+      },
+      {
+        what: "action",
+        selector: "[data-testid=guardian-no-students-add]",
+        mode: "box",
+      },
+    ],
+  },
+  {
+    name: "lapsed",
+    path: (f) => `/guardian/${f.BO}`,
+    ready: "guardian-state-lapsed",
+    checks: [
+      {
+        what: "heading",
+        selector: "[data-testid=guardian-state-lapsed] > h2",
+        mode: "text",
+      },
+      {
+        what: "message",
+        selector: "[data-testid=guardian-state-lapsed] > p",
+        mode: "text",
+      },
+      {
+        what: "action",
+        selector: "[data-testid=guardian-state-lapsed-cta]",
+        mode: "box",
+      },
+    ],
+  },
+  {
+    name: "revoked",
+    path: (f) => `/guardian/${f.CY}`,
+    students: "with-revoked",
+    ready: "guardian-state-revoked",
+    checks: [
+      {
+        what: "heading",
+        selector: "[data-testid=guardian-state-revoked] > h2",
+        mode: "text",
+      },
+      {
+        what: "message",
+        selector: "[data-testid=guardian-state-revoked] > p",
+        mode: "text",
+      },
+      {
+        what: "action",
+        selector: "[data-testid=guardian-state-revoked] > a",
+        mode: "box",
+      },
+    ],
+  },
+];
+
+test.describe("phone centring at 390 (item 10)", () => {
+  for (const s of PHONE_CENTRING) {
+    test(`${s.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await serve(page, s.students ? { students: s.students } : {});
+      await page.goto(s.path(F));
+      await page.getByTestId(s.ready).first().waitFor({ timeout: 15_000 });
+      await s.act?.(page);
+      await page.waitForTimeout(300);
+      expect(await offCentre(page, s.checks)).toEqual([]);
     });
   }
 });

@@ -10,11 +10,13 @@
  * (`calendar-week.fixture.ts`, through the same read model the server uses) and screenshots
  * it at 1440 and 390. Run once before a change to the shared calendar and once after, into
  * two directories, then compare the PNGs byte for byte (`cmp`): desktop must be identical;
- * phone differs only where a change meant it to.
+ * phone differs only where a change meant it to. At 390 it also measures the phone centring
+ * (owner decision 2026-10-01, item 10) with the guardian spec's `offCentre`.
  *
  * run: as `guardian-surfaces.spec.ts` (Vite up, E2E_BASE_URL, E2E_SHOT_DIR).
  */
 import { expect, test, type Route } from "@playwright/test";
+import { offCentre } from "./guardian-harness/centring";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -89,5 +91,52 @@ for (const vp of [
       fullPage: true,
     });
     expect(await page.locator(".lyceon-calendar").count()).toBe(1);
+    // R11: the shared calendar centres on a student's phone exactly as on a guardian's
+    // (owner decision 2026-10-01, item 10). Desktop is the byte comparison above.
+    if (vp.name === "390") {
+      expect(
+        await offCentre(page, [
+          {
+            what: "control row",
+            selector: ".lyceon-calendar .top .slot[data-slot=C1]",
+            mode: "lines",
+            within: "parent",
+          },
+          {
+            what: "streak line",
+            selector: ".lyceon-calendar .top .slot[data-slot=C2]",
+            mode: "text",
+            within: "parent",
+          },
+          {
+            what: "target line",
+            selector: ".lyceon-calendar .top .slot[data-slot=R1]",
+            mode: "text",
+            within: "parent",
+          },
+          {
+            what: "projected line",
+            selector: ".lyceon-calendar .top .slot[data-slot=R2]",
+            mode: "text",
+            within: "parent",
+          },
+          {
+            what: "selected-day heading",
+            selector: ".lyceon-calendar .col .dayhead",
+            mode: "text",
+          },
+          {
+            what: "week-strip label",
+            selector: ".lyceon-calendar .daychip",
+            mode: "text",
+          },
+          {
+            what: "facts footer",
+            selector: ".lyceon-calendar .facts",
+            mode: "lines",
+          },
+        ]),
+      ).toEqual([]);
+    }
   });
 }

@@ -89,7 +89,9 @@ function ManageBilling(): JSX.Element {
       className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5"
       data-testid="billing-manage"
     >
-      <h2 className="m-0 text-xl font-semibold">Billing</h2>
+      <h2 className="m-0 text-center text-xl font-semibold sm:text-left">
+        Billing
+      </h2>
       {status.isLoading ? (
         <p className="m-0 text-base text-muted-foreground">Loading…</p>
       ) : status.isError || status.data === undefined ? (
@@ -171,14 +173,16 @@ export default function GuardianStudentsPage(): JSX.Element {
         >
           &larr; Back to dashboard
         </Link>
-        <h1 className="m-0 text-2xl font-semibold">
+        <h1 className="m-0 text-center text-2xl font-semibold sm:text-left">
           Linked students &amp; billing
         </h1>
 
         <ManageBilling />
 
         <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5">
-          <h2 className="m-0 text-xl font-semibold">Students</h2>
+          <h2 className="m-0 text-center text-xl font-semibold sm:text-left">
+            Students
+          </h2>
           {removeError !== null && (
             <p role="alert" className="m-0 text-base text-destructive">
               {removeError}

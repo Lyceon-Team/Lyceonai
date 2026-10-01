@@ -15,6 +15,7 @@
 import {
   ADA,
   BO,
+  CY,
   EXAM_SESSION,
   billingStatus,
   calendarWeek,
@@ -30,7 +31,14 @@ import { browserLocalToday } from "../../../client/src/features/calendar/lib/dat
 const fixtures = {
   ADA,
   BO,
+  CY,
   EXAM_SESSION,
+  // Cy is on the roster but every per-student read answers 404: the revoked state.
+  rosterWithRevoked: roster([
+    { id: ADA, name: "Ada" },
+    { id: BO, name: "Bo", lapsed: true },
+    { id: CY, name: "Cy" },
+  ]),
   roster: roster([
     { id: ADA, name: "Ada" },
     { id: BO, name: "Bo", lapsed: true },

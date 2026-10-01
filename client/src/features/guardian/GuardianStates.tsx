@@ -99,8 +99,10 @@ function StateCard({
   alert?: boolean;
 }): JSX.Element {
   return (
+    // An empty-state message centres on a phone, its action with it (owner decision
+    // 2026-10-01, item 10); from 640px up it reads left-aligned like the cards around it.
     <section
-      className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5"
+      className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-card p-5 text-center sm:items-stretch sm:text-left"
       data-testid={testId}
       data-guardian-state={testId.replace(/^guardian-state-/, "")}
     >

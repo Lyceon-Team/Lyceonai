@@ -89,7 +89,10 @@ function Section({
       className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5"
       data-testid={testId}
     >
-      <h2 className="m-0 text-xl font-semibold">{title}</h2>
+      {/* Headings centre on a phone (owner decision 2026-10-01, item 10). */}
+      <h2 className="m-0 text-center text-xl font-semibold sm:text-left">
+        {title}
+      </h2>
       {children}
     </section>
   );
@@ -126,7 +129,7 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
     <div className="flex flex-col gap-4" data-testid="dashboard-header">
       {/* The calendar header's own readouts (`.lyceon-calendar` scopes their styles), laid out
           as one strip: the calendar places them in its top-bar slots, the Dashboard in a row. */}
-      <div className="lyceon-calendar rounded-2xl border border-border px-5 py-4 [&_.header-facts]:flex [&_.header-facts]:flex-wrap [&_.header-facts]:items-baseline [&_.header-facts]:gap-x-10 [&_.header-facts]:gap-y-2">
+      <div className="lyceon-calendar rounded-2xl border border-border px-5 py-4 [&_.header-facts]:flex [&_.header-facts]:flex-wrap [&_.header-facts]:items-baseline [&_.header-facts]:justify-center [&_.header-facts]:gap-x-10 [&_.header-facts]:gap-y-2 sm:[&_.header-facts]:justify-start">
         <HeaderFacts
           viewer="guardian"
           targetScore={data.target_score}
@@ -135,7 +138,10 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
           projection={data.projection}
         />
       </div>
-      <p className="m-0 text-base" data-testid="dashboard-week">
+      <p
+        className="m-0 text-center text-base sm:text-left"
+        data-testid="dashboard-week"
+      >
         This week&rsquo;s plan:{" "}
         <b>
           {data.facts.blocks_completed} of {data.facts.blocks_total}
@@ -176,7 +182,7 @@ function MasteryWidget({ studentId }: { studentId: string }): JSX.Element {
         // "Not enough answers yet".
         return (
           <div key={section} className="flex flex-col gap-3">
-            <h3 className="m-0 text-base font-semibold text-muted-foreground">
+            <h3 className="m-0 text-center text-base font-semibold text-muted-foreground sm:text-left">
               {EXAM_SECTION_LABEL[section]}
             </h3>
             {/* No `onOpen`: no Skills drill-down on a guardian surface. */}
