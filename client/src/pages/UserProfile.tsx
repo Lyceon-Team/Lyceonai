@@ -798,7 +798,7 @@ export default function UserProfile() {
                           disabled={billingStatus?.hasActiveLink === false}
                           data-testid="button-upgrade-subscription"
                         >
-                          {isGuardian ? "Go to your dashboard" : "View Plans"}
+                          {"View Plans"}
                         </Button>
                       )}
                     </>
