@@ -92,10 +92,19 @@ type DeletionAdminClient = ReturnType<typeof getSupabaseAdmin>;
 
 /**
  * @spec [Doc-01 §40.2 step 4 and §40.2.1 Phase 3, as amended by SCL-190] | @implemented
- *   [2026-09-30] |
- * plain English: at deletion-request time, revoke every session the account holds, on every
- * device. Supabase's admin API revokes by the user's own access token, not by user id —
- * `auth.admin.signOut(jwt, 'global')` revokes all of that user's refresh tokens. (Doc 01
+ *   [2026-09-30; scope changed 2026-10-01] |
+ * plain English: at deletion-request time, revoke every OTHER session the account holds, on
+ * every other device, and keep the one that asked. Supabase's admin API revokes by the user's
+ * own access token, not by user id — `auth.admin.signOut(jwt, 'others')` revokes every refresh
+ * token of that user except the session `jwt` belongs to.
+ *
+ * SCOPE `others`, NOT `global` (owner ruling 2026-10-01, register F-44, SCL-190 amended). The
+ * first build used `'global'`, which also signed out the requesting browser: the product's own
+ * reload — meant to show `PendingDeletionScreen` (rendered app-wide for a pending account,
+ * `client/src/App.tsx:444`) with its cancel button — landed on `/login` instead (observed in
+ * production 2026-10-01). Keeping the requester's session loses nothing: the pending-deletion gate
+ * (`enforceDeletionLock`) confines it to the allowlisted paths, and that screen's only two calls,
+ * `GET /api/profile` and `POST /api/account/cancel-deletion`, are both on the list. (Doc 01
  * prescribed `auth.admin.signOutUser(profileId)`, a method `@supabase/auth-js` does not have:
  * the call threw on every request and revoked nothing; register F-32.) The token is the
  * authenticated request's own, read from the request's SSR client (`req.supabase`), whose
@@ -125,7 +134,7 @@ export async function revokeSessionsAtDeletionRequest(
     }
     const { error } = await admin.auth.admin.signOut(
       session.access_token,
-      "global",
+      "others",
     );
     if (error) throw error;
   } catch {

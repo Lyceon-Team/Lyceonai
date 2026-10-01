@@ -5,8 +5,8 @@
  * plain English: pins the query-freshness contract in three parts.
  *
  *   1. The values. Account facts (profile, billing status) are short and finite; reference data
- *      (taxonomy, pricing) is long and finite; the dashboard KPI timer keeps its 60 s; the
- *      calendar keeps refetch-on-focus.
+ *      (taxonomy, pricing) is long and finite; the KPIs do not poll and refetch on focus (owner
+ *      ruling 2026-10-01; they had a 60 s timer until then); the calendar keeps refetch-on-focus.
  *   2. The consumers. Every query for one of those data types takes its freshness from
  *      `QUERY_FRESHNESS` rather than a local number — a sweep, so a new call site that forgets
  *      is caught without anyone naming it here.
@@ -99,8 +99,11 @@ describe("UI-14 — freshness values per data type", () => {
     }
   });
 
-  it("the dashboard KPIs keep their 60 s refetch interval", () => {
-    expect(QUERY_FRESHNESS.kpis.refetchInterval).toBe(MINUTE_MS);
+  it("the KPIs do not poll: no interval, refetch on focus, a finite window (owner ruling 2026-10-01)", () => {
+    expect("refetchInterval" in QUERY_FRESHNESS.kpis).toBe(false);
+    expect(QUERY_FRESHNESS.kpis.refetchOnWindowFocus).toBe(true);
+    expect(Number.isFinite(QUERY_FRESHNESS.kpis.staleTime)).toBe(true);
+    expect(QUERY_FRESHNESS.kpis.staleTime).toBeLessThanOrEqual(MINUTE_MS);
   });
 
   it("the calendar refetches on window focus (Doc 05F §17.7)", () => {
@@ -137,20 +140,24 @@ describe("UI-14 — consumers take freshness from the config", () => {
     }
   });
 
-  it("the dashboard KPI query takes its interval from the config", () => {
-    const code = stripComments(
-      fs.readFileSync(
-        path.join(CLIENT_SRC, "pages/lyceon-dashboard.tsx"),
-        "utf-8",
-      ),
+  it("the KPI read lives in one hook that takes its freshness from the config", () => {
+    const sources = clientSources();
+    const hook = sources.find((s) =>
+      s.file.endsWith("client/src/hooks/useProgressKpis.ts"),
     );
-    const [block] = optionsBlocks(
-      code,
-      /queryKey:\s*\[\s*["']\/api\/progress\/kpis["']\s*\]/,
-    );
-    expect(block).toBeDefined();
-    expect(block).toContain("QUERY_FRESHNESS.kpis");
-    expect(block).not.toMatch(/refetchInterval:\s*\d/);
+    expect(hook).toBeDefined();
+    expect(hook!.code).toContain("QUERY_FRESHNESS.kpis");
+    expect(hook!.code).not.toMatch(/refetchInterval/);
+    // Presence before absence: the endpoint is named, and only in the hook.
+    const naming = sources
+      .filter((s) => s.code.includes("/api/progress/kpis"))
+      .map((s) => s.file);
+    expect(naming).toEqual([hook!.file]);
+    // Both pages that show KPIs read them through the hook.
+    for (const page of ["pages/lyceon-dashboard.tsx", "pages/practice.tsx"]) {
+      const src = sources.find((s) => s.file.endsWith(`client/src/${page}`));
+      expect(src?.code, page).toContain("useProgressKpis");
+    }
   });
 
   it("the calendar reads take freshness from the config, with no local numbers", () => {
