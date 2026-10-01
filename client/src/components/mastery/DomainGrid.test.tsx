@@ -14,7 +14,7 @@
 import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, within } from "@testing-library/react";
-import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/question-bank-contract";
+import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
 import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
 import { DomainGrid } from "./DomainGrid";
 

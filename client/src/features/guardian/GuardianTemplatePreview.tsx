@@ -28,7 +28,7 @@
  */
 import { Eye, Lock } from "lucide-react";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
-import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/question-bank-contract";
+import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
 
 /** The Dashboard's section order (`GuardianDashboardTab`): Reading & Writing, then Math. */
 const SECTIONS = ["RW", "M"] as const;

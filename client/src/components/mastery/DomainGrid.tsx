@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { LevelPill } from "@/components/mastery/LevelPill";
 import type { MasteryDomainNode, MasterySection } from "@/lib/masteryApi";
 import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
-import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/question-bank-contract";
+import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
 
 /** Server order: Math, then Reading & Writing (`canonicalDomainPairs`). */
 const ALL_SECTIONS: readonly MasterySection[] = ["M", "RW"];
