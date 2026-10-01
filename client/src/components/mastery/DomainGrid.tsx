@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronRight } from "lucide-react";
 import { LevelPill } from "@/components/mastery/LevelPill";
+import { MasteryMeter } from "@/components/mastery/MasteryMeter";
 import type { MasteryDomainNode, MasterySection } from "@/lib/masteryApi";
 import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
 import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
@@ -72,10 +73,18 @@ export function DomainGrid({
             </CardTitle>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-3">
-            <LevelPill
-              levelKey={node.levelKey}
-              displayName={node.displayName}
-            />
+            {/* The pill, and beneath it the five-segment meter (final review, item 3). */}
+            <div className="flex flex-col items-start gap-2">
+              <LevelPill
+                levelKey={node.levelKey}
+                displayName={node.displayName}
+              />
+              <MasteryMeter
+                levelKey={node.levelKey}
+                level={node.level}
+                displayName={node.displayName}
+              />
+            </div>
             {onOpen === undefined ? null : (
               <Button
                 variant="ghost"

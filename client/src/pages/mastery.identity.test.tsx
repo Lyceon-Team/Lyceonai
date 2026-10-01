@@ -15,6 +15,11 @@
  * sends), the missing ones as "Not enough answers yet", and each card carries `data-domain`.
  * Checked when updating: with text, `data-domain`, `data-level-key` and `aria-label` set
  * aside, every card's markup and the page around the grid are byte-identical to before.
+ *
+ * UPDATED DELIBERATELY AGAIN, 2026-10-01 (owner review, final round item 3: the five-segment
+ * mastery meter in `DomainGrid`, R11). Each card's pill now sits in a column with the meter
+ * beneath it. Checked when updating: with that wrapper and the meter removed, both snapshots
+ * are byte-identical to before; 16 meters were added (8 cards × 2 snapshots).
  */
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

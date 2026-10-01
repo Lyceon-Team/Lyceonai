@@ -125,3 +125,90 @@ describe("DomainGrid — all eight domains", () => {
     );
   });
 });
+
+/**
+ * The five-segment mastery meter (owner review 2026-10-01, final round item 3): under each
+ * card's pill, `mastery_level` 0–4 fills 1–5 segments and null ("Not enough answers yet")
+ * fills 0; filled segments take the level's `LevelPill` tone; the meter is one labelled image
+ * and its segments are hidden from screen readers. The six level names are the seed rows'
+ * (`20260820000000_mastery_levels.sql`), passed in as the server sends them.
+ */
+describe("DomainGrid — the five-segment mastery meter", () => {
+  const STATES = [
+    {
+      levelKey: "unmeasured" as const,
+      level: null,
+      displayName: UNMEASURED_DISPLAY_NAME,
+      filled: 0,
+    },
+    {
+      levelKey: "L0" as const,
+      level: 0,
+      displayName: "Foundations",
+      filled: 1,
+    },
+    { levelKey: "L1" as const, level: 1, displayName: "Building", filled: 2 },
+    { levelKey: "L2" as const, level: 2, displayName: "Developing", filled: 3 },
+    { levelKey: "L3" as const, level: 3, displayName: "Proficient", filled: 4 },
+    { levelKey: "L4" as const, level: 4, displayName: "Strong", filled: 5 },
+  ];
+
+  function meterOf(container: HTMLElement, domain: string): HTMLElement {
+    const card = container.querySelector<HTMLElement>(
+      `[data-domain="${domain}"]`,
+    );
+    if (card === null) throw new Error(`no card for ${domain}`);
+    return within(card).getByTestId("mastery-meter");
+  }
+
+  it.each(STATES)(
+    "$displayName (level $level) fills $filled of 5 segments, in the pill's tone",
+    ({ levelKey, level, displayName, filled }) => {
+      const { container } = render(
+        <DomainGrid
+          domains={[
+            { section: "M", domain: "Algebra", levelKey, level, displayName },
+          ]}
+          sections={["M"]}
+        />,
+      );
+      const meter = meterOf(container, "Algebra");
+      const segments = Array.from(
+        meter.querySelectorAll<HTMLElement>("[data-segment]"),
+      );
+      // Presence first: five segments, whatever the level.
+      expect(segments).toHaveLength(5);
+      const on = segments.filter((s) => s.dataset.filled === "true");
+      expect(on).toHaveLength(filled);
+      // Filled first, left to right.
+      expect(segments.map((s) => s.dataset.filled)).toEqual(
+        Array.from({ length: 5 }, (_v, i) => (i < filled ? "true" : "false")),
+      );
+      // A filled segment wears the level's pill tone; the pill sits in the same card.
+      const pill = within(
+        meter.closest("[data-domain]") as HTMLElement,
+      ).getByTestId("level-pill");
+      const toneBg = Array.from(pill.classList).find((c) =>
+        c.startsWith("bg-"),
+      );
+      for (const seg of on) expect(seg.classList.contains(toneBg!)).toBe(true);
+      // Accessible: one labelled image; the segments themselves are hidden.
+      expect(meter.getAttribute("role")).toBe("img");
+      expect(meter.getAttribute("aria-label")).toBe(
+        `Mastery: ${displayName}, ${filled} of 5`,
+      );
+      for (const seg of segments)
+        expect(seg.getAttribute("aria-hidden")).toBe("true");
+    },
+  );
+
+  it("the meter draws no text of its own, so it can never fall under the 16px floor", () => {
+    const { container } = render(<DomainGrid domains={FOUR} />);
+    const meters = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-testid='mastery-meter']"),
+    );
+    expect(meters).toHaveLength(8);
+    for (const meter of meters)
+      expect((meter.textContent ?? "").trim()).toBe("");
+  });
+});
