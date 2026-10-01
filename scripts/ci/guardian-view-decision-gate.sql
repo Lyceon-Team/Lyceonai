@@ -25,8 +25,9 @@ BEGIN;
 -- the fixtures do not exercise — a condition that lets one particular id through,
 -- say — and they cannot tell that a migration which has ALREADY been applied was
 -- edited afterwards, which is how a deployed body silently drifts from source
--- (calendar-schema-gates B-02, same reasoning). So the three functions that ARE
--- the guardian gate are pinned to recorded checksums, checked FIRST so a body
+-- (calendar-schema-gates B-02, same reasoning). So the function that IS the
+-- guardian gate is pinned to its recorded checksum (its two boolean forms were
+-- dropped with the dead RLS policies that called them: 20261017000000, SCL-196), checked FIRST so a body
 -- change is always named here rather than as whatever behavioural gate it happens
 -- to trip. The same hashes are what the owner compares against production
 -- (pg_proc.prosrc, CRs stripped) to answer "is the live gate this gate?".
@@ -35,7 +36,7 @@ BEGIN;
 --   SELECT p.oid::regprocedure, md5(replace(p.prosrc, chr(13), ''))
 --   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 --   WHERE n.nspname = 'public'
---     AND p.proname IN ('guardian_view_decision','guardian_can_view_student_as','guardian_can_view_student');
+--     AND p.proname = 'guardian_view_decision';
 DO $pin$
 DECLARE
   v_bad text;
@@ -43,9 +44,7 @@ BEGIN
   SELECT string_agg(format('%s (got %s)', e.sig, coalesce(md5(replace(p.prosrc, chr(13), '')), 'MISSING')), '; ')
     INTO v_bad
   FROM (VALUES
-    ('public.guardian_view_decision(uuid,uuid)',       'c54e5697c856f817b6071d195bd37188'),
-    ('public.guardian_can_view_student_as(uuid,uuid)', 'a53abec69aee50e6ae28fcc0de02c397'),
-    ('public.guardian_can_view_student(uuid)',         '2be995b41b47148518bf84305658b5e0')
+    ('public.guardian_view_decision(uuid,uuid)',       'c54e5697c856f817b6071d195bd37188')
   ) AS e(sig, md5_expected)
   LEFT JOIN pg_proc p ON p.oid = to_regprocedure(e.sig)
   WHERE p.oid IS NULL OR md5(replace(p.prosrc, chr(13), '')) <> e.md5_expected;
@@ -53,7 +52,7 @@ BEGIN
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'GATE 0 FAIL: guardian gate body differs from the pinned checksum: %. If deliberate, re-record (query above) AND apply the same body in production.', v_bad;
   END IF;
-  RAISE NOTICE 'GATE 0 PASS: guardian_view_decision and both boolean forms match their pinned bodies';
+  RAISE NOTICE 'GATE 0 PASS: guardian_view_decision matches its pinned body';
 END
 $pin$;
 
@@ -87,7 +86,6 @@ DECLARE
   s_none   uuid := '00000000-0000-0000-0000-00000000f005';
   v_link_id uuid;
   v_got text;
-  v_bool boolean;
   v_count int;
 BEGIN
   -- 1. active link + active entitlement -> allow
@@ -144,16 +142,14 @@ BEGIN
   IF v_got <> 'not_linked' THEN RAISE EXCEPTION 'GATE 8 FAIL: reversed pair expected not_linked, got %', v_got; END IF;
   RAISE NOTICE 'GATE 8 PASS: reversed pair -> not_linked (link is directional)';
 
-  -- 9. the boolean form agrees with the decision on every case above
-  FOR v_got, v_bool IN
-    SELECT public.guardian_view_decision(g, t.sid), public.guardian_can_view_student_as(g, t.sid)
-    FROM (VALUES (s_ok),(s_lapsed),(s_grace),(s_none)) AS t(sid)
-  LOOP
-    IF v_bool <> (v_got = 'allow') THEN
-      RAISE EXCEPTION 'GATE 9 FAIL: boolean form disagrees with decision (decision=%, bool=%)', v_got, v_bool;
-    END IF;
-  END LOOP;
-  RAISE NOTICE 'GATE 9 PASS: guardian_can_view_student_as agrees with guardian_view_decision';
+  -- 9. the boolean forms are gone (20261017000000, G-NEW-15, SCL-196). They existed only
+  --    for the guardian RLS policies, which never served a request (every read runs on the
+  --    service role); a second callable form of the gate is a second place to drift.
+  IF to_regprocedure('public.guardian_can_view_student(uuid)') IS NOT NULL
+     OR to_regprocedure('public.guardian_can_view_student_as(uuid,uuid)') IS NOT NULL THEN
+    RAISE EXCEPTION 'GATE 9 FAIL: a boolean guardian gate form still exists';
+  END IF;
+  RAISE NOTICE 'GATE 9 PASS: guardian_view_decision is the only form of the gate';
 
   -- 10. PROVENANCE. Exactly ONE function in the schema performs the link+entitlement
   --     test. If anyone re-derives it anywhere else — in SQL or by adding a second
@@ -169,40 +165,42 @@ BEGIN
   END IF;
   RAISE NOTICE 'GATE 10 PASS: exactly ONE function derives guardian visibility';
 
-  -- 11. the two delegating forms really delegate — they contain no test of their own
-  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-       WHERE n.nspname='public' AND p.proname='guardian_can_view_student' AND p.pronargs=1)
-     NOT LIKE '%guardian_can_view_student_as%' THEN
-    RAISE EXCEPTION 'GATE 11 FAIL: guardian_can_view_student(uuid) does not delegate';
-  END IF;
-  IF (SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-       WHERE n.nspname='public' AND p.proname='guardian_can_view_student_as')
-     NOT LIKE '%guardian_view_decision%' THEN
-    RAISE EXCEPTION 'GATE 11 FAIL: guardian_can_view_student_as does not delegate';
-  END IF;
-  RAISE NOTICE 'GATE 11 PASS: both boolean forms delegate, neither re-tests';
-
-  -- 12. the six RLS policies still route through the ONE-ARG form
+  -- 11. no RLS policy anywhere consults a guardian gate: guardian visibility is decided in
+  --     the route layer, by the server calling guardian_view_decision, and nowhere else.
   SELECT count(*) INTO v_count FROM pg_policies
-   WHERE schemaname='public' AND qual LIKE '%guardian_can_view_student(%';
-  IF v_count <> 6 THEN
-    RAISE EXCEPTION 'GATE 12 FAIL: % RLS policies call guardian_can_view_student, expected 6', v_count;
+   WHERE schemaname='public' AND (qual LIKE '%guardian_can_view%' OR qual LIKE '%guardian_view_decision%');
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'GATE 11 FAIL: % RLS policies consult a guardian gate, expected 0', v_count;
   END IF;
-  RAISE NOTICE 'GATE 12 PASS: 6 RLS policies route through the one-arg form';
+  RAISE NOTICE 'GATE 11 PASS: no RLS policy consults a guardian gate';
 
-  -- 13. ENUMERATION ORACLE. The two-argument forms take the guardian id as an
-  --     argument, so an authenticated caller who could execute them could probe
-  --     "is A linked to B" for any pair. They must be service-role only.
+  -- 12. the six KPI / mastery / projection tables keep RLS on and carry NO SELECT policy:
+  --     anon and authenticated read zero rows; only the service role reads them.
+  SELECT count(*) INTO v_count FROM pg_policies
+   WHERE schemaname='public' AND cmd IN ('SELECT','ALL')
+     AND tablename IN ('student_overall_kpi','student_section_kpi','student_domain_kpi',
+                       'student_domain_mastery','student_section_projections',
+                       'student_section_projection_snapshots');
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'GATE 12 FAIL: % read policies on the six KPI/mastery/projection tables, expected 0', v_count;
+  END IF;
+  IF (SELECT bool_and(rowsecurity) FROM pg_tables WHERE schemaname='public'
+       AND tablename IN ('student_overall_kpi','student_section_kpi','student_domain_kpi',
+                         'student_domain_mastery','student_section_projections',
+                         'student_section_projection_snapshots')) IS NOT TRUE THEN
+    RAISE EXCEPTION 'GATE 12 FAIL: RLS is not enabled on all six tables (no policy would then mean open)';
+  END IF;
+  RAISE NOTICE 'GATE 12 PASS: RLS on, no read policy, on all six tables (denial by absence)';
+
+  -- 13. ENUMERATION ORACLE. guardian_view_decision takes the guardian id as an
+  --     argument, so an authenticated caller who could execute it could probe
+  --     "is A linked to B" for any pair. It must be service-role only.
   FOR v_got IN SELECT unnest(ARRAY['anon','authenticated']) LOOP
-    IF has_function_privilege(v_got, 'public.guardian_view_decision(uuid,uuid)', 'EXECUTE')
-       OR has_function_privilege(v_got, 'public.guardian_can_view_student_as(uuid,uuid)', 'EXECUTE') THEN
-      RAISE EXCEPTION 'GATE 13 FAIL: role % can execute a two-argument guardian gate (enumeration oracle)', v_got;
+    IF has_function_privilege(v_got, 'public.guardian_view_decision(uuid,uuid)', 'EXECUTE') THEN
+      RAISE EXCEPTION 'GATE 13 FAIL: role % can execute guardian_view_decision (enumeration oracle)', v_got;
     END IF;
   END LOOP;
-  IF NOT has_function_privilege('authenticated', 'public.guardian_can_view_student(uuid)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'GATE 13 FAIL: authenticated cannot execute the one-arg form; RLS would deny everything';
-  END IF;
-  RAISE NOTICE 'GATE 13 PASS: two-arg forms service-role only; one-arg callable by authenticated';
+  RAISE NOTICE 'GATE 13 PASS: guardian_view_decision is service-role only';
 
   RAISE NOTICE 'GUARDIAN-VIEW-DECISION GATE: PASS';
 END

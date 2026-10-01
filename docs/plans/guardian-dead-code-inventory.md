@@ -63,7 +63,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | E4 | E | `ci/known-gaps.yaml` entries closed by this vertical | none found | none found |
 | E5 | E | `tests/e2e/guardian-surfaces.spec.ts` (and the shared-component specs `student-calendar`, `student-mastery`) — the only proof of R12, phone centring and the meter's width — run by no CI job | FIX (Step 3: one CI job) | PLANNED |
 | E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa) | HANDED OFF |
-| E7 | E | `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI | EDIT | PLANNED |
+| E7 | E | `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI | EDIT | EDITED (`6cabf88`) |
 | F1 | F | 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read` | DROP (one migration) | PLANNED |
 | F2 | F | `public.guardian_can_view_student(uuid)`, `public.guardian_can_view_student_as(uuid, uuid)` | DROP (same migration, after F1) | PLANNED |
 | F3 | F | `profiles.consent_given_at` | DROP (same migration) | PLANNED |
@@ -967,7 +967,7 @@ $ sed -n '8,14p' scripts/ci/guardian-token-gate.mjs
 
 ### F1 — 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read`
 
-**Action:** DROP (one migration). `authenticated` has no SELECT on any of the six; every reader uses the service role, so the policies never apply (G-NEW-15, approved).
+**Action:** DROP (one migration). Every reader uses the service role (the client issues no `supabase.from`), so the app never reads through these policies (G-NEW-15, approved). CORRECTION found while building F: `authenticated` has no TABLE-level grant, but it holds COLUMN-level SELECT on all six in the migrated schema (third query), so where those grants exist the policies are LIVE — a guardian JWT could read a linked student's KPI rows through PostgREST. The rewritten guardian-mirror gate was red on exactly that before the migration (`1|0|0`). The drop closes it; SCL-196 records the spec change (Doc 05B §2.4/§11.1, Doc 05C §7.4/§11.1 named these policies).
 
 ```
 $ psql -d inv_scratch -At -c "select tablename||' '||policyname||' '||array_to_string(roles,',')||' '||qual from pg_policies where tablename in ('student_overall_kpi','student_section_kpi','student_domain_kpi','student_domain_mastery','student_section_projections','student_section_projection_snapshots') order by 1"
@@ -987,6 +987,15 @@ student_section_projections student_section_projections_student_read authenticat
 ```
 $ psql -d inv_scratch -At -c "select table_name, string_agg(grantee||':'||privilege_type, ',' order by grantee) from information_schema.role_table_grants where table_name in ('student_overall_kpi','student_section_kpi','student_domain_kpi','student_domain_mastery','student_section_projections','student_section_projection_snapshots') and grantee in ('anon','authenticated','PUBLIC') group by 1" ; echo "(anon/authenticated grants above; none = policies can never apply)"
 (anon/authenticated grants above; none = policies can never apply)
+```
+```
+$ psql -d inv_scratch -At -c "select table_name||' '||grantee||' '||count(*)||' column(s)' from information_schema.column_privileges where table_schema='public' and table_name in ('student_overall_kpi','student_section_kpi','student_domain_kpi','student_domain_mastery','student_section_projections','student_section_projection_snapshots') and grantee in ('anon','authenticated') and privilege_type='SELECT' group by table_name, grantee order by 1"
+student_domain_kpi authenticated 10 column(s)
+student_domain_mastery authenticated 5 column(s)
+student_overall_kpi authenticated 11 column(s)
+student_section_kpi authenticated 10 column(s)
+student_section_projection_snapshots authenticated 9 column(s)
+student_section_projections authenticated 8 column(s)
 ```
 ```
 $ git grep -nE "supabase\.from\(" -- client ; echo "client .from() exit=$?"

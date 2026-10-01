@@ -1157,9 +1157,10 @@ jobs:
             --file tests/ci/guardian-redeem-errors.pg.ci.test.ts
 
       # @spec [Guardian_Closure_Plan G1-07; audit G-AUD-10] | @implemented [2026-09-29]
-      # revoke_guardian_link_audited refuses a non-party (LY005) before writing, and the six
-      # guardian functions read f/f/f/t (guardian_can_view_student f/f/t/t) even after a
-      # simulated platform default grant to anon/authenticated. Skip-proof verdict.
+      # revoke_guardian_link_audited refuses a non-party (LY005) before writing, and the four
+      # guardian functions read f/f/f/t even after a simulated platform default grant to
+      # anon/authenticated (the two boolean forms were dropped: 20261017000000, SCL-196).
+      # Skip-proof verdict.
       - name: Guardian revoke party check + explicit grants → real PG proof
         env:
           PGHOST: localhost
@@ -2263,7 +2264,7 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/05c-projection-gates.sh
 
-      - name: Guardian-mirror gates (airtight link + entitlement + view-only + carve-outs)
+      - name: Guardian-mirror gates (denial by absence + one gate form + view-only + carve-outs)
         env:
           PGHOST: localhost
           PGPORT: "5432"

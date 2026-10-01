@@ -94,15 +94,16 @@ RLS=$(psql_db "$DB" -tAc "
                      'student_projection_refresh_state','projection_refresh_outbox');")
 if [ "$RLS" = "true" ]; then echo "    OK RLS enabled on all 4 projection tables"
 else echo "  FAIL: RLS not enabled on all 4 tables (bool_and=$RLS)"; exit 1; fi
-# guardian + student read policies on projections + snapshots; NONE on refresh-state/outbox.
+# SCL-196 (G-NEW-15, migration 20261017000000): NO policy on projections/snapshots — every read
+# is the service role's and the route layer enforces guardian visibility — and none on
+# refresh-state/outbox. RLS stays ON (checked above), so absence is denial.
 POL=$(psql_db "$DB" -tAc "
-  SELECT (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND policyname IN
-     ('student_section_projections_student_read','student_section_projections_guardian_read',
-      'projection_snapshots_student_read','projection_snapshots_guardian_read'))::text
+  SELECT (SELECT count(*) FROM pg_policies WHERE schemaname='public'
+     AND tablename IN ('student_section_projections','student_section_projection_snapshots'))::text
    ||'|'|| (SELECT count(*) FROM pg_policies WHERE schemaname='public'
             AND tablename IN ('student_projection_refresh_state','projection_refresh_outbox'))::text;")
-if [ "$POL" = "4|0" ]; then echo "    OK 4 read policies on projections/snapshots; 0 on refresh-state/outbox (denial by absence)"
-else echo "  FAIL: policy presence (projection-reads|bookkeeping) = $POL (expected 4|0)"; exit 1; fi
+if [ "$POL" = "0|0" ]; then echo "    OK 0 policies on projections/snapshots and on refresh-state/outbox (denial by absence, SCL-196)"
+else echo "  FAIL: policy count (projection-reads|bookkeeping) = $POL (expected 0|0)"; exit 1; fi
 # snapshots append-only: NO UPDATE/DELETE policy for any role; NO INSERT/UPDATE/DELETE for authenticated.
 APPEND=$(psql_db "$DB" -tAc "
   SELECT count(*) FROM pg_policies WHERE schemaname='public'
