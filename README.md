@@ -224,8 +224,6 @@ To enable vector search in Supabase, run:
 ## API Routes
 
 ### Public Routes
-- `GET /api/questions/recent` - Get recent questions
-- `GET /api/questions/search` - Search public question previews
 - `GET /api/health` - API health check
 - `GET /healthz` - Service health check
 

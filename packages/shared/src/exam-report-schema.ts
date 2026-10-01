@@ -15,6 +15,13 @@
  * code) fails the parse instead of reaching a student. The disclosure text is NOT
  * here: 04C §15.1 makes it payload data, read from score_disclosure_versions.
  *
+ * SERVER-SIDE REPORT (SCL-180 amended 2026-09-29, owner ruling 7; @implemented
+ * [2026-09-29]): the `scored` / `partial_scored` payloads here carry `domain_breakdown`
+ * with correct/total. They are what the report service builds, and are NOT the student
+ * wire shape: the student route sends `toStudentExamReport` output
+ * (`exam-student-report-schema.ts`, seven segments per domain, no counts); the guardian
+ * route sends `toGuardianExamReport` output (correct/total, per SCL-180).
+ *
  * trade-offs: `voided` is in the state enum (04C §5.1) but has no payload schema:
  * no voiding workflow exists (04C §11.6, MVP-reserved), so nothing can produce it.
  */

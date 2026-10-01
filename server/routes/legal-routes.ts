@@ -17,17 +17,6 @@ import { logger } from "../logger";
 export const legalRouter = Router();
 
 /**
- * POST /api/legal/accept
- * Deprecated after auth-flow cutover.
- *
- * Legal acceptance is now captured only at canonical auth entry points
- * (email signup and explicit Google pre-oauth consent).
- */
-legalRouter.post("/accept", (_req: Request, res: Response) => {
-  return res.status(404).json({ success: false, error: "Not found" });
-});
-
-/**
  * POST /api/legal/reaccept — the blocking re-consent modal's one action.
  *
  * @spec [Doc 10 §2.4 age-threshold taxonomy, §9.4 Parent / Guardian Terms; Doc 01 §35-§37 guardian linkage]
@@ -53,10 +42,10 @@ legalRouter.post("/accept", (_req: Request, res: Response) => {
  *    double-submit from a modal is not a failure.
  */
 legalRouter.post("/reaccept", async (req: Request, res: Response) => {
-  // `requireRequestUser`, the house helper, rather than `(req as any).user`.
-  // The two `as any` casts elsewhere in this file predate it; a third would
-  // have been a new one, and the identity of the person whose consent this
-  // writes is the last place to reach around the type system.
+  // `requireRequestUser`, the house helper, rather than `(req as any).user`:
+  // the identity of the person whose consent this writes is the last place to
+  // reach around the type system. (The last `as any` in this file went with
+  // the deleted GET /acceptances route, student-ui register UI-06.)
   const user = requireRequestUser(req as AuthenticatedRequest, res);
   if (!user) return;
   const userId = user.id;
@@ -163,35 +152,5 @@ legalRouter.post("/reaccept", async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ success: false, error: "Could not record your agreement" });
-  }
-});
-
-/**
- * GET /api/legal/acceptances
- * Returns acceptances for the authenticated user.
- */
-legalRouter.get("/acceptances", async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user?.id;
-    if (!userId)
-      return res
-        .status(401)
-        .json({ acceptances: [], error: "Not authenticated" });
-
-    const admin = getSupabaseAdmin();
-
-    const { data, error } = await admin
-      .from("legal_acceptances")
-      .select("doc_key, doc_version, accepted_at, actor_type")
-      .eq("user_id", userId);
-
-    if (error)
-      return res.status(500).json({ acceptances: [], error: error.message });
-
-    return res.json({ acceptances: data || [] });
-  } catch (e: any) {
-    return res
-      .status(500)
-      .json({ acceptances: [], error: e?.message || "Unknown error" });
   }
 });

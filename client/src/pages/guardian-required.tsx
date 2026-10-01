@@ -26,6 +26,7 @@ import { ShieldAlert } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { profileQuery, type ProfileHydration } from "@/hooks/useProfileQuery";
 import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
 import { StudentGuardiansPanel } from "@/components/student/StudentGuardiansPanel";
 
@@ -38,8 +39,10 @@ const guardianRequirementSchema = z.object({
 
 export default function GuardianRequired() {
   const { user, signOut } = useSupabaseAuth();
-  const { data } = useQuery<unknown>({
-    queryKey: ["/api/profile"],
+  // UI-14 (merged from `cleanup`): the ONE profile query — same key and fetch function as the
+  // auth provider and RequireRole — polled here. The result is still parsed below, never cast.
+  const { data } = useQuery<ProfileHydration, Error>({
+    ...profileQuery,
     refetchInterval: GUARDIAN_CHECK_INTERVAL_MS,
     refetchOnWindowFocus: true,
   });

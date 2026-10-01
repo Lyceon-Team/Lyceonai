@@ -339,7 +339,7 @@ describe.skipIf(!PG_AVAILABLE)(
       ).toHaveLength(2);
     });
 
-    it("A4.4 the recipient address appears in NO log output (only its redacted form) — success AND failure log lines", async () => {
+    it("A4.4 the recipient address appears in NO log output, not even masked (OQ-17) — success AND failure log lines", async () => {
       const { executeDueDeletions } =
         await import("../../server/lib/account-deletion-execute");
 
@@ -368,8 +368,18 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(allLogs).not.toContain(EMAIL_B);
       expect(allLogs).not.toContain("deleted-person-alpha");
       expect(allLogs).not.toContain("deleted-person-beta");
-      // Positive control: the redacted forms ARE logged, so both send lines were seen.
-      expect(allLogs).toContain("d****@example.test");
+      // OQ-17 (owner ruling 2026-09-30): not even the masked form is logged. Positive control:
+      // both send lines name the recipient by profile id instead (the logger digests it at the
+      // sink; tests/ci/notifications.direct-sends.test.ts proves the digest).
+      expect(allLogs).not.toContain("d****@");
+      expect(allLogs).not.toContain("@example.test");
+      for (const event of [
+        "deletion_completed_email_sent",
+        "deletion_completed_email_failed",
+      ]) {
+        const line = captured.find((l) => l.includes(event)) ?? "";
+        expect(line).toContain("recipientProfileId");
+      }
       // The Resend request body is the only place the address goes — never a log.
       expect(fakeResend.requests.map((r) => r.body.to)).toEqual([
         [EMAIL_A],

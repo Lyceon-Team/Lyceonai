@@ -7,11 +7,14 @@
  *
  * plain English: one list per section, each row "Domain — N of M correct" with a bar of the
  * same fraction. It draws exactly the rows it is given; the server sends rows only for
- * scored sections, so a section with no score has no breakdown here either. Shared by the
- * student report and the guardian's view (R11: one component, read-only for the guardian).
+ * scored sections, so a section with no score has no breakdown here either.
  *
- * G3-02 (R4, SCL-189): a guardian row carries `bar_pct` and no counts, so it draws the same
- * bar with no "N of M correct" beside it. The row shape decides, not a prop: a component
+ * GUARDIAN ONLY since SCL-180 (amended 2026-09-29), owner ruling 7 (@implemented
+ * [2026-09-29]): the student's tab draws seven segments per domain (`DomainSegments`) and
+ * never a correct-of-total count.
+ *
+ * G3-02 (R4, SCL-189): a guardian row carries `bar_pct` and no counts, so it draws the bar
+ * with no "N of M correct" beside it. The row shape decides, not a prop: a component
  * handed counts shows them, and one handed a bar has nothing else to show.
  */
 import type { ExamDomainBreakdownRow } from "@lyceon/shared/exam-report-schema";

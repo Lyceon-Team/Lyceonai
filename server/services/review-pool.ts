@@ -26,11 +26,14 @@
 
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
-import type {
-  ReviewFilterSpec,
-  ReviewPoolSpec,
-  ReviewPoolSummaryResponse,
-  ReviewSourceEngine,
+import {
+  REVIEW_POOL_SESSIONS_PAGE_SIZE,
+  reviewPoolSessionsCursorSchema,
+  type ReviewFilterSpec,
+  type ReviewPoolSessionsCursor,
+  type ReviewPoolSpec,
+  type ReviewPoolSummaryResponse,
+  type ReviewSourceEngine,
 } from "@lyceon/shared";
 import {
   mapGenesisQuestionRow,
@@ -457,6 +460,8 @@ export async function buildReviewPoolSummary(args: {
   studentId: string;
   tz: string | null | undefined;
   requestId?: string;
+  /** UI-16: the decoded `sessions_cursor`; null/absent is the first page. */
+  sessionsCursor?: ReviewPoolSessionsCursor | null;
 }): Promise<
   { ok: true; value: ReviewPoolSummaryResponse } | { ok: false; error: string }
 > {
@@ -505,6 +510,11 @@ export async function buildReviewPoolSummary(args: {
     [...openBySource.values()],
     timeZone,
   );
+  const page = pageSourceSessions(
+    sessions,
+    args.sessionsCursor ?? null,
+    REVIEW_POOL_SESSIONS_PAGE_SIZE,
+  );
 
   return {
     ok: true,
@@ -515,9 +525,103 @@ export async function buildReviewPoolSummary(args: {
       bySection: toFacets(bySection),
       byDomain: toFacets(byDomain),
       bySkill: toFacets(bySkill),
-      sessions,
+      sessions: page.rows,
+      sessions_next_cursor: page.nextCursor,
     },
   };
+}
+
+type SourceSessionRow = ReviewPoolSummaryResponse["sessions"][number];
+type SourceSessionKey = Pick<
+  SourceSessionRow,
+  "created_at" | "source_engine" | "source_session_id"
+>;
+
+/**
+ * The picker list's total order: newest first; a session with no surviving parent
+ * row (created_at null) after every dated one — an unknown date is not a recent one;
+ * ties broken by engine then session id so the order, and therefore every cursor, is
+ * deterministic.
+ */
+export function compareSourceSessions(
+  a: SourceSessionKey,
+  b: SourceSessionKey,
+): number {
+  if (a.created_at !== b.created_at) {
+    if (a.created_at === null) return 1;
+    if (b.created_at === null) return -1;
+    return a.created_at < b.created_at ? 1 : -1;
+  }
+  if (a.source_engine !== b.source_engine) {
+    return a.source_engine < b.source_engine ? -1 : 1;
+  }
+  if (a.source_session_id !== b.source_session_id) {
+    return a.source_session_id < b.source_session_id ? -1 : 1;
+  }
+  return 0;
+}
+
+export function encodeSourceSessionsCursor(row: SourceSessionKey): string {
+  const raw: ReviewPoolSessionsCursor = {
+    v: 1,
+    created_at: row.created_at,
+    source_engine: row.source_engine,
+    source_session_id: row.source_session_id,
+  };
+  return Buffer.from(JSON.stringify(raw), "utf8").toString("base64url");
+}
+
+/**
+ * Decodes `sessions_cursor`; null for anything malformed (the route answers 400).
+ * The raw cursor is never logged — only its length.
+ */
+export function decodeSourceSessionsCursor(
+  encoded: string,
+  requestId?: string,
+): ReviewPoolSessionsCursor | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+  } catch {
+    // Expected client failure, not a throw; logged so the catch is not silent (§13).
+    logger.debug(
+      COMPONENT,
+      "sessions_cursor_malformed",
+      "Past-session cursor did not decode",
+      { requestId, cursorLength: encoded.length },
+    );
+    return null;
+  }
+  const result = reviewPoolSessionsCursorSchema.safeParse(parsed);
+  return result.success ? result.data : null;
+}
+
+/**
+ * @spec [brief R3 §2.4; register UI-16] | @implemented [2026-09-29]
+ *
+ * plain English: one page of the (already sorted) past-session list — the rows
+ * strictly after the cursor's anchor, at most `limit` of them — and the cursor for
+ * the next page, null when none follows. Keyset, not offset: the anchor is a row's
+ * sort key, so a session that disappears between reads (its last open entry
+ * resolved) cannot shift a later row onto a page already shown.
+ *
+ * trade-offs: the pool is still read in full on every page — the list is derived
+ * from it — so paging bounds the payload, not the read. The pool itself, its total
+ * and its facets are untouched.
+ */
+export function pageSourceSessions(
+  sorted: readonly SourceSessionRow[],
+  anchor: SourceSessionKey | null,
+  limit: number,
+): { rows: SourceSessionRow[]; nextCursor: string | null } {
+  const after = anchor
+    ? sorted.filter((row) => compareSourceSessions(row, anchor) > 0)
+    : [...sorted];
+  const rows = after.slice(0, limit);
+  const last = rows[rows.length - 1];
+  const nextCursor =
+    after.length > limit && last ? encodeSourceSessionsCursor(last) : null;
+  return { rows, nextCursor };
 }
 
 /**
@@ -589,11 +693,7 @@ async function describeSourceSessions(
   });
 
   // Newest first. A session with no surviving parent row sorts last rather than
-  // first — an unknown date is not a recent one.
-  return described.sort((a, b) => {
-    if (a.created_at === b.created_at) return 0;
-    if (a.created_at === null) return 1;
-    if (b.created_at === null) return -1;
-    return a.created_at < b.created_at ? 1 : -1;
-  });
+  // first — an unknown date is not a recent one. Ties are broken deterministically
+  // (UI-16: the paged list needs a total order).
+  return described.sort(compareSourceSessions);
 }

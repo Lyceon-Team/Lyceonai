@@ -656,9 +656,11 @@ echo "==> (M88) an empty event url resolves to the home page and is reported"
 plant M88 "$ANASURF" "s.replace('  if (typeof url !== \"string\" || url.length === 0) return null;\n  try {\n    return new URL(url).pathname;', '  if (typeof url !== \"string\") return null;\n  try {\n    return new URL(url, \"https://lyceon.ai\").pathname;', 1)"
 expect_red M88 "E1.8 — an unparseable URL is denied rather than guessed"
 
-echo "==> (M89) /tutor is allowed although its SPA route is role-gated"
+# Re-pointed 2026-09-29 (student UI UI-04): /tutor is retired, so E1.11 now asserts it stays
+# denied with no entry anywhere; the same plant (re-adding it to the allowlist) turns it red.
+echo "==> (M89) the retired /tutor is put back on the analytics allowlist"
 plant M89 "$ANASURF" "s.replace('  \"/terms\",', '  \"/terms\",\n  \"/tutor\",', 1)"
-expect_red M89 "E1.11 — /tutor is public AND role-gated, and deny wins"
+expect_red M89 "E1.11 — retired /tutor is neither public nor a page, and stays denied"
 
 # ── The verification record's wiring ────────────────────────────────────────────
 # These four exist because the mechanism they guard was BUILT, SHAPED CORRECTLY AND TESTED,

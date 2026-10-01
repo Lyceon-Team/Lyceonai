@@ -9,7 +9,16 @@
  * projection (`toGuardianExamReport`, `toGuardianExamList`) rather than writing a second,
  * guardian-shaped copy — so the two views are tested against the same numbers, and a
  * guardian fixture cannot say something the projection would not produce.
+ *
+ * Owner ruling 7 (SCL-180 amended 2026-09-29; @implemented [2026-09-29]): the payloads
+ * below are the SERVER-SIDE report (correct/total per domain). The student page renders
+ * the student projection, `toStudentExamReport` of them (`student*` exports) — the same
+ * function the /report route applies — never these directly.
  */
+import {
+  toStudentExamReport,
+  type ExamStudentReportPayload,
+} from "@lyceon/shared/exam-student-report-schema";
 import {
   examFormsResponseSchema,
   examReportPayloadSchema,
@@ -158,6 +167,18 @@ export const inProgressReport: ExamReportPayload =
     resumable: true,
     review_unlocked: false,
   });
+
+/** What the student's /report route sends for each state above (owner ruling 7). */
+export const studentScoredReport: ExamStudentReportPayload =
+  toStudentExamReport(scoredReport);
+export const studentPartialReport: ExamStudentReportPayload =
+  toStudentExamReport(partialReport);
+export const studentPendingReport: ExamStudentReportPayload =
+  toStudentExamReport(pendingReport);
+export const studentFailedReport: ExamStudentReportPayload =
+  toStudentExamReport(failedReport);
+export const studentInProgressReport: ExamStudentReportPayload =
+  toStudentExamReport(inProgressReport);
 
 /** The student's forms listing with one sat form and one never sat. */
 export const formsListing: ExamFormsResponse = examFormsResponseSchema.parse({

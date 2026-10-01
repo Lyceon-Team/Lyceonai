@@ -25,7 +25,6 @@ import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
 import { siteUrlFromEnv } from "./templates";
 import {
   defaultEmailTransport,
-  redactEmail,
   type EmailSendFailure,
   type EmailTransport,
 } from "./transport";
@@ -79,6 +78,8 @@ export async function sendAccountDeletionScheduledEmail(
   input: {
     deletionRequestId: string;
     email: string;
+    /** The account holder being emailed. Logged as a digest (the logger digests `*ProfileId`); never the address. */
+    recipientProfileId: string;
     rawToken: string;
     scheduledHardDeleteAt: string;
     requestId?: string;
@@ -110,6 +111,7 @@ export async function sendAccountDeletionScheduledEmail(
   const sent = await transport({
     idempotencyKey: `${ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX}:${input.deletionRequestId}`,
     to: input.email,
+    recipientProfileId: input.recipientProfileId,
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
@@ -122,7 +124,7 @@ export async function sendAccountDeletionScheduledEmail(
       {
         deletionRequestId: input.deletionRequestId,
         providerMessageId: sent.value.providerMessageId,
-        recipient: redactEmail(input.email),
+        recipientProfileId: input.recipientProfileId,
         requestId: input.requestId,
       },
     );
@@ -133,7 +135,7 @@ export async function sendAccountDeletionScheduledEmail(
       "Deletion-scheduled email not sent",
       {
         deletionRequestId: input.deletionRequestId,
-        recipient: redactEmail(input.email),
+        recipientProfileId: input.recipientProfileId,
         kind: sent.error.kind,
         requestId: input.requestId,
       },
@@ -197,6 +199,8 @@ export async function sendGuardianLinkInviteEmail(
       guardianEmail: input.guardianEmail,
     }),
     to: input.guardianEmail,
+    // The guardian is invited by address; there is no profile to name yet.
+    recipientProfileId: null,
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
@@ -209,7 +213,7 @@ export async function sendGuardianLinkInviteEmail(
       {
         studentProfileId: input.studentProfileId,
         providerMessageId: sent.value.providerMessageId,
-        recipient: redactEmail(input.guardianEmail),
+        recipientProfileId: null,
         requestId: input.requestId,
       },
     );
@@ -220,7 +224,7 @@ export async function sendGuardianLinkInviteEmail(
       "Guardian link invite email not sent",
       {
         studentProfileId: input.studentProfileId,
-        recipient: redactEmail(input.guardianEmail),
+        recipientProfileId: null,
         kind: sent.error.kind,
         requestId: input.requestId,
       },
@@ -249,6 +253,8 @@ export async function sendAccountDeletionCompletedEmail(
   input: {
     deletionRequestId: string;
     email: string;
+    /** The account holder being emailed. Logged as a digest (the logger digests `*ProfileId`); never the address. */
+    recipientProfileId: string;
     completedAt: string;
     requestId?: string;
   },
@@ -259,6 +265,7 @@ export async function sendAccountDeletionCompletedEmail(
   const sent = await transport({
     idempotencyKey: `${ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX}:${input.deletionRequestId}`,
     to: input.email,
+    recipientProfileId: input.recipientProfileId,
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
@@ -271,7 +278,7 @@ export async function sendAccountDeletionCompletedEmail(
       {
         deletionRequestId: input.deletionRequestId,
         providerMessageId: sent.value.providerMessageId,
-        recipient: redactEmail(input.email),
+        recipientProfileId: input.recipientProfileId,
         requestId: input.requestId,
       },
     );
@@ -282,7 +289,7 @@ export async function sendAccountDeletionCompletedEmail(
       "Deletion-completed email not sent (best-effort, no retry by design)",
       {
         deletionRequestId: input.deletionRequestId,
-        recipient: redactEmail(input.email),
+        recipientProfileId: input.recipientProfileId,
         kind: sent.error.kind,
         requestId: input.requestId,
       },

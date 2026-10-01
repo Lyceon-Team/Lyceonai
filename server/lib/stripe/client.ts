@@ -79,17 +79,6 @@ export function getStripeClient(): Stripe {
 }
 
 /**
- * The publishable key, for the client bundle. Public by design.
- */
-export function getStripePublishableKey(): string {
-  const key = process.env.STRIPE_PUBLISHABLE_KEY;
-  if (!key) {
-    throw new Error("STRIPE_PUBLISHABLE_KEY is not configured.");
-  }
-  return key;
-}
-
-/**
  * Canonical Stripe Price ID per billing period.
  *
  * NOTE the `PARENT_` variable names encode a payer assumption SCL-043 breaks —

@@ -1656,6 +1656,25 @@ jobs:
             --file tests/ci/guardian-one-subscription-per-student.contract.test.ts \
             --file packages/shared/src/__tests__/guardian-student-schema.test.ts
 
+      # @spec [Doc-01_V8 §36.4, §955; SCL-191] Post-exam score report and renewal decision →
+      # real PG proof. Named BY FILE for the same reason every block here is: the whole-suite
+      # `pnpm test` step in the `ci` job sets no PGHOST, so `describe.skipIf(!PG_AVAILABLE)`
+      # skips the file and exits 0. A PG test not named in a service-backed job runs nowhere and
+      # reports green.
+      - name: Post-exam score report and renewal decision → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            tests/ci/exam-score-renewal.contract.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-exam-score-renewal.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-score-renewal.json \
+            --file tests/ci/exam-score-renewal.contract.test.ts
+
       # @spec [brief R3 §4; ruled plan §2] Review API → real PG proof.
       # Named BY FILE here on purpose: the whole-suite `pnpm test` step in the `ci` job
       # sets no PGHOST, so `describe.skipIf(!PG_AVAILABLE)` skips both files and exits 0.

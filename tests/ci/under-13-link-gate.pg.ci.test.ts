@@ -217,7 +217,7 @@ const ALLOWED_EXACT: ReadonlySet<string> = new Set([
   "GET /api/students/:studentId/links",
   "DELETE /api/students/:studentId/links/:linkId",
   // account essentials
-  "GET /api/account/status",
+  // (`GET /api/account/status` was here; `cleanup` deleted that route as unused — register UI-06.)
   "POST /api/account/delete",
   "POST /api/account/cancel-deletion",
   "POST /api/account/recover-deletion",
@@ -246,12 +246,14 @@ const NOT_A_STUDENT_SURFACE: ReadonlyArray<string> = [
   "/api/public/", // anonymous pricing
   "/api/webhooks/", // signature-verified
   "/api/billing/webhook", // Stripe, signature-verified; no session
+  // requireSupabaseAdmin: the one surviving /api/questions route is admin-only on `cleanup`
+  // (register UI-05/UI-07); the student-facing /api/questions routes were deleted.
+  "/api/questions/stats",
 ];
-const ANONYMOUS_PREVIEW = "GET /api/questions/recent"; // no session, no answers
 
 function isAllowed(method: string, path: string): boolean {
   const k = key(method, path);
-  if (ALLOWED_EXACT.has(k) || k === ANONYMOUS_PREVIEW) return true;
+  if (ALLOWED_EXACT.has(k)) return true;
   const p = path.replace(/\/$/, "");
   return [...ALLOWED_PREFIXES, ...NOT_A_STUDENT_SURFACE].some(
     (prefix) => p === prefix.replace(/\/$/, "") || p.startsWith(prefix),
@@ -308,7 +310,6 @@ const allowedReads = (studentId: string): ReadonlyArray<string> => [
   "/api/profile",
   `/api/students/${studentId}/link-code`,
   `/api/students/${studentId}/links`,
-  "/api/account/status",
   "/api/billing/status",
 ];
 const ALLOWED_READS = allowedReads(KID);
@@ -405,7 +406,9 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(has("post", "/api/tests/sessions")).toBe(true);
       expect(has("post", "/api/review/answer")).toBe(true);
       expect(has("put", "/api/calendar/profile")).toBe(true);
-      expect(has("get", "/api/questions")).toBe(true);
+      // `GET /api/questions` was deleted on `cleanup` (register UI-05); the question-bank read a
+      // student still has is the practice reference list.
+      expect(has("get", "/api/practice/reference/questions")).toBe(true);
       expect(has("get", "/api/progress/kpis")).toBe(true);
       expect(has("get", "/api/me/streak")).toBe(true);
       expect(has("get", "/api/students/:studentId/kpi/overall")).toBe(true);

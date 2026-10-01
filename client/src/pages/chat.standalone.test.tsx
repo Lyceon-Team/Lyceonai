@@ -676,5 +676,42 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
     expect(
       screen.getAllByRole("button", { name: /new session/i }).length,
     ).toBeGreaterThan(0);
+    // No further page: no "Load more" control.
+    expect(screen.queryByTestId("button-load-more-sessions")).toBeNull();
+  });
+
+  // ── UI-16: the sidebar loads the next server page on request ───────
+  // @spec [Doc-03B_V4.1 §8.3, §8.5] | @implemented [2026-09-29]
+  it("9. when the server reports has_more, 'Load more sessions' fetches the next page", async () => {
+    mockSearch = "";
+    useConversationMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    });
+    const fetchNextPage = vi.fn(async () => undefined);
+    useConversationsMock.mockReturnValue({
+      data: {
+        conversations: [],
+        pagination: { has_more: true, next_cursor: "opaque" },
+      },
+      isLoading: false,
+      error: null,
+      hasNextPage: true,
+      isFetchingNextPage: false,
+      fetchNextPage,
+    });
+    useSendMessageMock.mockReturnValue(idleMutation());
+    useEndConversationMock.mockReturnValue(idleMutation());
+    useResumeConversationMock.mockReturnValue(idleMutation());
+    useCreateConversationMock.mockReturnValue(idleMutation());
+
+    const { default: ChatPage } = await import("./chat");
+    render(<ChatPage />, { wrapper: createWrapper() });
+
+    const buttons = screen.getAllByTestId("button-load-more-sessions");
+    expect(buttons.length).toBeGreaterThan(0);
+    fireEvent.click(buttons[0]!);
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 });

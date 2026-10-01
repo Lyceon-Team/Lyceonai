@@ -47,7 +47,6 @@ import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Calculator, Loader2, MessageCircle } from "lucide-react";
 import { ScopedTutorPanel } from "@/components/tutor/ScopedTutorPanel";
-import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import {
   type EngineConfig,
   type ReviewSessionSpec,
@@ -206,7 +205,6 @@ export default function CanonicalPracticePage(props: {
     calculatorState,
     persistCalculatorState,
     submitBlocked,
-    runtimeDisabled,
     setForceTakeover,
     sessionItemId,
   } = useCanonicalPractice(props.section, sessionSpec, props.sessionId, engine);
@@ -314,13 +312,23 @@ export default function CanonicalPracticePage(props: {
     }
   }, [isEndingSession, terminateSession, completionDest, isDiagnostic]);
 
+  /**
+   * @spec [Coding Standards §12.1, §13; register UI-10] | @implemented [2026-09-29]
+   * plain English: a failed calculator-state save used to go to the browser console.
+   * The client has no structured logger, so the failure is surfaced to the
+   * student instead: the calculator keeps working from local state, and a notice
+   * says the work was not saved. The next successful save clears it. Nothing is
+   * logged, so the calculator state (student work) never leaves the page.
+   */
+  const [calculatorSaveFailed, setCalculatorSaveFailed] = React.useState(false);
+
   const onCalculatorStateChange = React.useCallback(
     (nextState: unknown) => {
       setLocalCalculatorState(nextState);
-      void persistCalculatorState(nextState).catch((err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.error("[Practice] calculator state persist failed", err);
-      });
+      persistCalculatorState(nextState).then(
+        () => setCalculatorSaveFailed(false),
+        () => setCalculatorSaveFailed(true),
+      );
     },
     [persistCalculatorState],
   );
@@ -372,8 +380,7 @@ export default function CanonicalPracticePage(props: {
   // W4-1 / W4-4: LISA beside the question, scoped to the served item, open
   // on every question in an engine that has it (review). Practice has no
   // LISA and no entry point: `features.tutor` is off there.
-  const canAskTutor =
-    engine.features.tutor && !!sessionItemId && !!question && !runtimeDisabled;
+  const canAskTutor = engine.features.tutor && !!sessionItemId && !!question;
   const tutorVisible =
     canAskTutor && !!sessionItemId && tutorHiddenForItem !== sessionItemId;
   const questionLabel = `Question ${currentIndex + 1}${
@@ -448,12 +455,7 @@ export default function CanonicalPracticePage(props: {
         </div>
       </div>
 
-      {runtimeDisabled ? (
-        <RuntimeContractDisabledCard
-          domain={engine.domain}
-          code={runtimeDisabled.code}
-        />
-      ) : isLoading && !question ? (
+      {isLoading && !question ? (
         <div className="flex flex-col items-center justify-center py-14 text-slate-600">
           <Loader2 className="h-8 w-8 animate-spin" />
           <p className="mt-3 text-sm">Loading your practice session...</p>
@@ -515,6 +517,17 @@ export default function CanonicalPracticePage(props: {
           {error && (
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
               {error}
+            </div>
+          )}
+
+          {calculatorSaveFailed && (
+            <div
+              className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700"
+              role="status"
+              data-testid="practice-calculator-save-failed"
+            >
+              Your calculator work could not be saved. You can keep using it,
+              but it may not be there if you reload this page.
             </div>
           )}
 

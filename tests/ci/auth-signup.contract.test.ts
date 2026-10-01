@@ -74,7 +74,6 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
     authHeaderPresent: false,
     cookieKeys: [],
   })),
-  resolveUserIdFromToken: vi.fn(async () => null),
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -645,5 +644,126 @@ describe("Auth routes — Stage 2 deltas (signin / reset / update-password)", ()
     expect(res.status).toBe(400);
     expect(String(res.body.error)).toMatch(/at least 8/i);
     expect(JSON.stringify(res.body)).not.toContain("short1");
+  });
+});
+
+/**
+ * @spec [Coding Standards §12.1 "never log sensitive content"; Doc 01A §14 PII redaction;
+ *   register F-10, OQ-14 ruling 2026-09-29] | @implemented [2026-09-29] |
+ * plain English: the auth routes' log events carry no email and no display name. The logger's
+ * sink redacts an `email` KEY, but that is a second line of defence: these tests assert the
+ * personal value never reaches the logger at all, so a renamed key or a new sink cannot leak it.
+ * Each test first proves the named event WAS emitted (presence before absence).
+ */
+describe("Auth routes — no personal data reaches the logger (F-10)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function spyOnLogger() {
+    // loadAuthApp() resets modules, so import the logger AFTER it: this is the instance the
+    // routes hold.
+    const { logger } = await import("../../server/logger");
+    const spies = [
+      vi.spyOn(logger, "info"),
+      vi.spyOn(logger, "warn"),
+      vi.spyOn(logger, "error"),
+    ];
+    return {
+      operations: () =>
+        spies.flatMap((spy) => spy.mock.calls.map((call) => call[1])),
+      serialized: () => JSON.stringify(spies.flatMap((spy) => spy.mock.calls)),
+    };
+  }
+
+  it("admin_signup_blocked logs no submitted email", async () => {
+    const app = await loadAuthApp();
+    const logs = await spyOnLogger();
+
+    const res = await signupWithCsrf(app, {
+      email: "blocked-admin@example.com",
+      password: "Password123!",
+      role: "admin",
+    });
+
+    expect(res.status).toBe(403);
+    expect(logs.operations()).toContain("admin_signup_blocked");
+    expect(logs.serialized()).not.toContain("blocked-admin@example.com");
+  });
+
+  it("signup_success logs no email and no display name", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-log-check", email: "signup-log@example.com" },
+        session: {
+          access_token: "a".repeat(48),
+          refresh_token: "r".repeat(48),
+          expires_in: 3600,
+          token_type: "bearer",
+          user: { id: "user-log-check", email: "signup-log@example.com" },
+        },
+      },
+      error: null,
+    });
+    const app = await loadAuthApp();
+    const logs = await spyOnLogger();
+
+    const res = await signupWithCsrf(app, {
+      email: "signup-log@example.com",
+      password: "Password123!",
+      displayName: "Loggable Student",
+      legalConsent: {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
+      },
+    });
+
+    expect(res.status).toBe(201);
+    expect(logs.operations()).toContain("signup_success");
+    expect(logs.serialized()).not.toContain("signup-log@example.com");
+    expect(logs.serialized()).not.toContain("Loggable Student");
+  });
+
+  it("signin_failed logs no submitted email", async () => {
+    ssrSignInMock.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: "Invalid login credentials" },
+    });
+    const app = await loadAuthApp();
+    const logs = await spyOnLogger();
+
+    const res = await postWithCsrf(app, "/api/auth/signin", {
+      email: "signin-fail-log@example.com",
+      password: "wrong-password",
+    });
+
+    expect(res.status).toBe(401);
+    expect(logs.operations()).toContain("signin_failed");
+    expect(logs.serialized()).not.toContain("signin-fail-log@example.com");
+  });
+
+  it("signin_success logs no email", async () => {
+    ssrSignInMock.mockResolvedValueOnce({
+      data: {
+        session: {
+          access_token: "a".repeat(40),
+          refresh_token: "r".repeat(40),
+        },
+        user: { id: "u-log", email: "signin-ok-log@example.com" },
+      },
+      error: null,
+    });
+    const app = await loadAuthApp();
+    const logs = await spyOnLogger();
+
+    const res = await postWithCsrf(app, "/api/auth/signin", {
+      email: "signin-ok-log@example.com",
+      password: "Password123!",
+    });
+
+    expect(res.status).toBe(200);
+    expect(logs.operations()).toContain("signin_success");
+    expect(logs.serialized()).not.toContain("signin-ok-log@example.com");
   });
 });

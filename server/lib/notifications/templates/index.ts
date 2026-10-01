@@ -14,6 +14,7 @@ import {
   fullLengthNoticePayloadSchema,
   guardianLinkedPayloadSchema,
   guardianUnlinkedPayloadSchema,
+  postExamNoticePayloadSchema,
   type NotificationEventType,
 } from "../../../../packages/shared/src/notifications-schema";
 import { err, ok, type Result } from "../../../../packages/shared/src/result";
@@ -28,6 +29,12 @@ import {
   fullLengthWeekEmail,
   fullLengthWeekInApp,
 } from "./full-length";
+import {
+  examScoreReportRequestedEmail,
+  examScoreReportRequestedInApp,
+  renewalDecisionRequestedEmail,
+  renewalDecisionRequestedInApp,
+} from "./post-exam";
 import type { EmailRender, InAppRender, RenderContext } from "./shared";
 
 export type { EmailRender, InAppRender, RenderContext } from "./shared";
@@ -64,6 +71,25 @@ export function renderInApp(
         return err("full_length_tomorrow payload does not match its schema");
       return ok(fullLengthTomorrowInApp(parsed.data, ctx));
     }
+    // SCL-191. Two cases again, and for the same id-derivation reason as the pair above — plus a
+    // second one here: they address two different people, so they could not share a template even
+    // if they could share an id.
+    case "exam_score_report_requested": {
+      const parsed = postExamNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err(
+          "exam_score_report_requested payload does not match its schema",
+        );
+      return ok(examScoreReportRequestedInApp(parsed.data, ctx));
+    }
+    case "renewal_decision_requested": {
+      const parsed = postExamNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err(
+          "renewal_decision_requested payload does not match its schema",
+        );
+      return ok(renewalDecisionRequestedInApp(parsed.data, ctx));
+    }
   }
 }
 
@@ -96,6 +122,22 @@ export function renderEmail(
       if (!parsed.success)
         return err("full_length_tomorrow payload does not match its schema");
       return ok(fullLengthTomorrowEmail(parsed.data, ctx));
+    }
+    case "exam_score_report_requested": {
+      const parsed = postExamNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err(
+          "exam_score_report_requested payload does not match its schema",
+        );
+      return ok(examScoreReportRequestedEmail(parsed.data, ctx));
+    }
+    case "renewal_decision_requested": {
+      const parsed = postExamNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err(
+          "renewal_decision_requested payload does not match its schema",
+        );
+      return ok(renewalDecisionRequestedEmail(parsed.data, ctx));
     }
   }
 }

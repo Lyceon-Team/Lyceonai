@@ -18,15 +18,20 @@
  */
 
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
+  type InfiniteData,
+  type UseInfiniteQueryResult,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import type {
   ConversationDetail,
   ConversationDetailMessage,
+  ConversationSummary,
+  ListConversationsResponse,
 } from "@lyceon/shared/tutor-lifecycle-schema";
 import { apiRequest } from "@/lib/queryClient";
 import { type HttpApiError } from "@/lib/api-error";
@@ -135,29 +140,12 @@ export type TutorMessage = ConversationDetailMessage;
 
 export type TutorConversationDetail = ConversationDetail;
 
-export type TutorConversationSummary = {
-  conversation_id: string;
-  entry_mode: TutorEntryMode;
-  source_surface: TutorSourceSurface;
-  surface: TutorConversationSurface | null;
-  status: TutorConversationStatus;
-  title: string | null;
-  crisis_flagged: boolean;
-  crisis_paused_at: string | null;
-  resolved_scope: TutorResolvedScope;
-  last_message_preview: string | null;
-  message_count: number;
-  created_at: string;
-  updated_at: string;
-};
+// List (GET /api/tutor/conversations): inferred from the shared Zod schemas,
+// for the same reason as the detail type above.
+// @spec [Doc-03B_V4.1 §8.5] | @implemented [2026-09-29]
+export type TutorConversationSummary = ConversationSummary;
 
-export type TutorConversationsList = {
-  conversations: TutorConversationSummary[];
-  pagination: {
-    has_more: boolean;
-    next_cursor: string | null;
-  };
-};
+export type TutorConversationsList = ListConversationsResponse;
 
 export type EndConversationResponse = {
   conversation_id: string;
@@ -296,16 +284,47 @@ export function useItemConversation(
   });
 }
 
-export function useConversations(): UseQueryResult<
+/**
+ * @spec [Doc-03B_V4.1 §8.3, §8.5] | @implemented [2026-09-29]
+ *
+ * plain English: the standalone sessions list, one server page at a time.
+ * `data` is every page loaded so far, flattened, so callers keep reading
+ * `data.conversations`; `fetchNextPage()` asks for the next page with the
+ * server's opaque `next_cursor`, and `hasNextPage` is the server's `has_more`.
+ * The page size is the server's (config-driven); the client sends no `limit`.
+ *
+ * edge cases: invalidating `tutorConversationsQueryKey` refetches every loaded
+ * page from the top, so a conversation that moved (new message) is not shown
+ * twice.
+ */
+export function useConversations(): UseInfiniteQueryResult<
   TutorConversationsList,
   HttpApiError
 > {
-  return useQuery({
-    queryKey: tutorConversationsQueryKey,
-    queryFn: () =>
-      tutorRequest<TutorConversationsList>(
-        "/conversations?surface=standalone&status=active",
-      ),
+  return useInfiniteQuery({
+    queryKey: [...tutorConversationsQueryKey, "standalone-active"],
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({
+        surface: "standalone",
+        status: "active",
+      });
+      if (pageParam) params.set("cursor", pageParam);
+      return tutorRequest<TutorConversationsList>(
+        `/conversations?${params.toString()}`,
+      );
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) =>
+      last.pagination.has_more ? last.pagination.next_cursor : null,
+    select: (
+      data: InfiniteData<TutorConversationsList, string | null>,
+    ): TutorConversationsList => {
+      const last = data.pages[data.pages.length - 1];
+      return {
+        conversations: data.pages.flatMap((page) => page.conversations),
+        pagination: last?.pagination ?? { has_more: false, next_cursor: null },
+      };
+    },
   });
 }
 

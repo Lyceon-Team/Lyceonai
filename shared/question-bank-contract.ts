@@ -408,31 +408,6 @@ export function isCanonicalRuntimeQuestion(
 }
 
 /**
- * @spec [Doc 02B §14/§20 Serving Questions; HALT-8 anti-leak] | @implemented 2026-06-16
- * plain English: validate an ALREADY-student-safe row — one SELECTed WITHOUT answer-bearing
- * columns (no correct_answer / correct_variants) — for RENDERABILITY only. Answer correctness
- * was already enforced at ingestion (QA validator) + the DB discriminated CHECK, so the serving
- * path must NOT re-require fields it deliberately did not select (QUESTIONS-SERVING-001:
- * isCanonicalRuntimeQuestion requires those fields and would drop every safe-selected row).
- * Checks: a valid canonical id, a normalizable section, a stem, and the renderable option shape
- * for the item_type (mcq → 4 A–D options; grid_in → NO options, renders numeric entry).
- */
-export function isStudentSafeRuntimeQuestion(
-  row: CanonicalQuestionRowLike,
-): boolean {
-  if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
-  if (!normalizeSectionCode(row.section_code ?? null)) return false;
-  if (!normalizeText(row.stem)) return false;
-  const itemType = normalizeItemType(
-    row.item_type ?? row.question_type ?? null,
-  );
-  if (itemType === "grid_in") {
-    return !hasCanonicalOptionSet(row.options ?? null);
-  }
-  return hasCanonicalOptionSet(row.options ?? null);
-}
-
-/**
  * @spec [genesis questions DDL; grid-in-extension.sql; Doc-02A_V6 §13/§16] | @implemented 2026-06-14
  * plain English: reconciles a genesis questions row onto the contract's legacy field names
  * so the single canonical serializer/validators keep working. Maps id→canonical_id,

@@ -157,6 +157,10 @@ export type ReviewNextQuery = z.infer<typeof reviewNextQuerySchema>;
  */
 export const reviewPoolQuerySchema = z.object({
   tz: z.string().max(64).optional().nullable(),
+  // UI-16: the opaque cursor for the NEXT page of the past-session picker list
+  // (`sessions_next_cursor` of the previous response). Scoped to `sessions` only:
+  // `total` and the facets always describe the whole pool.
+  sessions_cursor: z.string().min(1).max(512).optional(),
 });
 export type ReviewPoolQuery = z.infer<typeof reviewPoolQuerySchema>;
 
@@ -319,6 +323,31 @@ export const reviewPoolFacetSchema = z.object({
   count: z.number(),
 });
 
+/**
+ * @spec [brief R3 §2.4; register UI-16 (student-UI orchestrator ruling: 20 per page,
+ * opaque cursor)] | @implemented [2026-09-29]
+ *
+ * plain English: the past-session picker's page size. The picker list is the one
+ * part of the pool summary that grows without bound (one row per past session with
+ * open entries), so it is paged; the pool itself, its total and its facets are not.
+ */
+export const REVIEW_POOL_SESSIONS_PAGE_SIZE = 20;
+
+/**
+ * The decoded past-session cursor: the last row of the previous page, in the list's
+ * sort order (created_at DESC with unknown dates last, then source_engine, then
+ * source_session_id). Encoded as base64url(JSON); the client never reads it.
+ */
+export const reviewPoolSessionsCursorSchema = z.object({
+  v: z.literal(1),
+  created_at: z.string().nullable(),
+  source_engine: reviewSourceEngineSchema,
+  source_session_id: z.string().min(1),
+});
+export type ReviewPoolSessionsCursor = z.infer<
+  typeof reviewPoolSessionsCursorSchema
+>;
+
 /** GET /api/review/pool — one read for both pickers (brief R3 §2.4). */
 export const reviewPoolSummaryResponseSchema = z.object({
   total: z.number(),
@@ -327,7 +356,10 @@ export const reviewPoolSummaryResponseSchema = z.object({
   bySection: z.array(reviewPoolFacetSchema),
   byDomain: z.array(reviewPoolFacetSchema),
   bySkill: z.array(reviewPoolFacetSchema),
+  // One page of the past-session picker (REVIEW_POOL_SESSIONS_PAGE_SIZE rows at most).
   sessions: z.array(reviewPoolSourceSessionSchema),
+  // Opaque; null exactly when no past session follows this page.
+  sessions_next_cursor: z.string().nullable(),
 });
 export type ReviewPoolSummaryResponse = z.infer<
   typeof reviewPoolSummaryResponseSchema

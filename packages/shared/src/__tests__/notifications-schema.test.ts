@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   NOTIFICATION_EVENT_TYPES,
   fullLengthNoticePayloadSchema,
+  postExamNoticePayloadSchema,
   guardianLinkedPayloadSchema,
   isResendStatusEvent,
   notificationFeedQuerySchema,
@@ -14,17 +15,61 @@ import {
 } from "../notifications-schema";
 
 describe("notifications schema", () => {
-  // WAS "names exactly the two event types". Rewritten, not loosened: this list is the mirror of
-  // `notification_events_type_check`, and the value of the assertion is that a type cannot appear
-  // in one without somebody naming it in the other. The two practice-test notices joined on
-  // 2026-09-27 (Brief 14 Step 5, 20261012000000).
-  it("names exactly the four event types, in the CHECK's own order", () => {
+  // WAS "names exactly the two event types", then four. Rewritten each time, never loosened: this
+  // list is the mirror of `notification_events_type_check`, and the value of the assertion is that
+  // a type cannot appear in one without somebody naming it in the other. The two practice-test
+  // notices joined on 2026-09-27 (Brief 14 Step 5, 20261012000000); the two post-exam notices on
+  // 2026-09-30 (SCL-191, 20261015000000).
+  it("names exactly the six event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",
       "guardian_unlinked",
       "full_length_week",
       "full_length_tomorrow",
+      "exam_score_report_requested",
+      "renewal_decision_requested",
     ]);
+  });
+
+  // SCL-191 C8.1. The post-exam payload carries the anchor and the occasion and NOTHING else —
+  // no score, no amount, no price. `.strict()` is what refuses each of them, and this asserts the
+  // refusal rather than trusting the modifier.
+  it("the post-exam payload is anchor + occasion_key and nothing else (C8.1)", () => {
+    expect(
+      postExamNoticePayloadSchema.safeParse({
+        anchor: "exam_date",
+        occasion_key: "2026-09-12",
+      }).success,
+    ).toBe(true);
+    expect(
+      postExamNoticePayloadSchema.safeParse({
+        anchor: "billing_cycle",
+        occasion_key: "2026-10-14",
+      }).success,
+    ).toBe(true);
+    // An anchor the CHECK does not enumerate.
+    expect(
+      postExamNoticePayloadSchema.safeParse({
+        anchor: "whenever",
+        occasion_key: "2026-09-12",
+      }).success,
+    ).toBe(false);
+    // A score in a persisted, recipient-readable row.
+    expect(
+      postExamNoticePayloadSchema.safeParse({
+        anchor: "exam_date",
+        occasion_key: "2026-09-12",
+        total_score: 1290,
+      }).success,
+    ).toBe(false);
+    // An amount, which is Stripe's lane and not this one (contract §0).
+    expect(
+      postExamNoticePayloadSchema.safeParse({
+        anchor: "billing_cycle",
+        occasion_key: "2026-10-14",
+        amount_due: 2999,
+      }).success,
+    ).toBe(false);
   });
 
   it("the practice-test payload is block_id + local_date and nothing else (C8.1)", () => {

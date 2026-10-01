@@ -10,15 +10,17 @@ import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
 import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
-import { z } from "zod";
 import {
   runtimeRoleSchema,
   ROLE_UNRECOGNIZED,
 } from "@lyceon/shared/runtime-role-schema";
-
-/** The one field read from a 403 body: its refusal code, if any (G2-02). */
-const refusalCodeSchema = z.object({ code: z.string() });
 import { clearReconsentDismissal } from "@/components/legal/reconsent-dismissal";
+import {
+  clearProfileQuery,
+  profileQuery,
+  type ProfileHydration,
+} from "@/hooks/useProfileQuery";
+import { clearBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 // CSRF handshake utilities
 import type { ConsentSource } from "@shared/legal-consent";
 import {
@@ -119,6 +121,16 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const clearAuthState = () => {
     clearCsrfToken();
     setUser(null);
+    // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the profile
+    // and billing status are cached for 30 s now, not re-read on every consumer mount — so a
+    // sign-out that left them would let the next account in this tab be routed on the previous
+    // account's onboarding flags and shown its entitlement. Removed, not invalidated: an
+    // invalidation would re-read them for a session that no longer exists. `setUser(null)`
+    // above already clears the whole cache when a user WAS set (G1-03); these two cover the
+    // paths where none was — a 401 or a timeout during boot, after the provider's own read
+    // has cached the signed-out answer.
+    clearProfileQuery(queryClient);
+    clearBillingStatusQuery(queryClient);
     // The guardian re-consent prompt is dismissible for a tab-session, and a
     // sign-out ends that session. Without this, signing out and back in within
     // the same tab would inherit the dismissal and skip a prompt that is
@@ -127,76 +139,74 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     clearReconsentDismissal();
   };
 
-  // Fetch user profile from backend
+  // @spec [student-ui register UI-14; Doc-01_V8 §40.3] | @implemented [2026-09-29] | plain
+  // English: the provider reads `/api/profile` THROUGH the query cache, with the same key and
+  // fetch function as `RequireRole`, `profile-complete` and the profile page — so by the time
+  // `user` is set and those mount, the answer is already cached and they issue no request of
+  // their own. This read was a plain `csrfFetch` outside React Query, which is why every
+  // signed-in load requested the profile at least twice.
+  //
+  // `staleTime: 0` for THIS read only: sign-in, sign-up and `refreshUser` exist to learn what
+  // the server says now, not what was cached a few seconds ago. An in-flight read is still
+  // shared, so a consumer mounting during it does not start a second one.
+  //
+  // Semantics kept from the plain fetch: 401/403 (the shared function's `{ authenticated:
+  // false }`) clears local auth state; any other failure logs and yields no user without
+  // clearing it. The pendingDeletion and feature-flag mapping is unchanged.
   const fetchUserFromBackend = async (): Promise<SupabaseProfile | null> => {
+    let data: ProfileHydration;
     try {
-      const tryFetchUserProfile = async (): Promise<Response> => {
-        return csrfFetch("/api/profile", { credentials: "include" });
-      };
-
-      const response = await tryFetchUserProfile();
-
-      // AUTH-001: there is no longer a custom /api/auth/refresh path. Session refresh is native —
-      // the server's @supabase/ssr middleware transparently refreshes the session (and rotates the
-      // httpOnly session cookie) on every authenticated request. A 401/403 here therefore means the
-      // session is genuinely absent/expired, so we clear local state and treat the user as signed out.
-      if (response.status === 401 || response.status === 403) {
-        // G2-02: a 403 ROLE_UNRECOGNIZED is not a sign-out. Record it so the route guard shows
-        // the neutral screen instead of sending the person to a login that would loop back here.
-        if (response.status === 403) {
-          // Read only a declared-JSON body; a malformed one throws to the outer handler below.
-          const body: unknown = response.headers
-            .get("content-type")
-            ?.includes("application/json")
-            ? await response.json()
-            : null;
-          const code = refusalCodeSchema.safeParse(body).data?.code ?? null;
-          setAccountUnavailable(code === ROLE_UNRECOGNIZED);
-        }
-        clearAuthState();
-        return null;
-      }
-
-      if (!response.ok) {
-        console.error("[AUTH] Server error fetching user:", response.status);
-        return null;
-      }
-
-      const data = await response.json();
-      const backendUser = data.user;
-      if (!backendUser) return null;
-      // G2-02: parse, never assume. A role outside the shared schema is not "probably a student".
-      if (!runtimeRoleSchema.safeParse(backendUser.role).success) {
-        setAccountUnavailable(true);
-        clearAuthState();
-        return null;
-      }
-      setAccountUnavailable(false);
-
-      return {
-        id: backendUser.id,
-        email: backendUser.email,
-        display_name: backendUser.display_name,
-        role: backendUser.role,
-        is_under_13: backendUser.is_under_13,
-        student_link_code: backendUser.student_link_code,
-        created_at: backendUser.created_at,
-        last_login_at: backendUser.last_login_at,
-        guardian_email: backendUser.guardian_email,
-        updated_at: backendUser.updated_at,
-        // Map additional onboarding status flags
-        profile_completed_at: backendUser.profileCompletedAt,
-        requiredProfileComplete: backendUser.requiredProfileComplete,
-        guardianConsentRequired: backendUser.guardianConsentRequired,
-        // §40 server-authority flags + grace-window state (top-level on the /api/profile response).
-        accountDeletionLifecycleV2:
-          data.featureFlags?.accountDeletionLifecycleV2 ?? false,
-        pendingDeletion: data.pendingDeletion ?? null,
-      };
-    } catch (error) {
-      console.error("[AUTH] Network error fetching user from backend:", error);
+      data = await queryClient.fetchQuery({ ...profileQuery, staleTime: 0 });
+    } catch {
+      // A failed read is "no user" for every caller (the semantics documented above). Nothing is
+      // written: there is no approved client logger, and the console is not one (Brief 5).
       return null;
     }
+
+    // AUTH-001: there is no longer a custom /api/auth/refresh path. Session refresh is native —
+    // the server's @supabase/ssr middleware transparently refreshes the session (and rotates the
+    // httpOnly session cookie) on every authenticated request. A 401/403 here therefore means the
+    // session is genuinely absent/expired, so we clear local state and treat the user as signed out.
+    // `=== false`, not falsiness: only the shared function's 401/403 answer means signed out,
+    // exactly as the status check this replaced. A 2xx body is a session, whatever it omits.
+    //
+    // G2-02 (merged from `main`): a 403 ROLE_UNRECOGNIZED is not a sign-out. Record it so the
+    // route guard shows the neutral screen instead of sending the person to a login that would
+    // loop back here. The shared fetch function carries the 403's refusal code for this.
+    if (data.authenticated === false) {
+      if (data.status === 403) {
+        setAccountUnavailable(data.code === ROLE_UNRECOGNIZED);
+      }
+      clearAuthState();
+      return null;
+    }
+
+    const backendUser = data.user;
+    if (!backendUser) return null;
+    // G2-02: parse, never assume. A role outside the shared schema is not "probably a student".
+    if (!runtimeRoleSchema.safeParse(backendUser.role).success) {
+      setAccountUnavailable(true);
+      clearAuthState();
+      return null;
+    }
+    setAccountUnavailable(false);
+
+    return {
+      id: backendUser.id,
+      email: backendUser.email ?? "",
+      display_name: backendUser.display_name,
+      role: backendUser.role,
+      is_under_13: backendUser.is_under_13,
+      student_link_code: backendUser.student_link_code,
+      // Map additional onboarding status flags
+      profile_completed_at: backendUser.profileCompletedAt,
+      requiredProfileComplete: backendUser.requiredProfileComplete,
+      guardianConsentRequired: backendUser.guardianConsentRequired,
+      // §40 server-authority flags + grace-window state (top-level on the /api/profile response).
+      accountDeletionLifecycleV2:
+        data.featureFlags?.accountDeletionLifecycleV2 ?? false,
+      pendingDeletion: data.pendingDeletion ?? null,
+    };
   };
 
   // Initialize auth on mount
@@ -206,20 +216,12 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const initializeAuth = async () => {
-      console.log("[AUTH] Starting initialization");
-
       try {
         // Pre-fetch CSRF token to "warm up" the handshake and detect connectivity issues early.
         // This avoids a race condition where the first mutating request (login) hangs on the handshake.
-        console.log("[AUTH] Pre-fetching CSRF token...");
-        await getCsrfToken().catch((err) => {
-          if (!abortController.signal.aborted) {
-            console.warn(
-              "[AUTH] CSRF pre-fetch failed, will retry on first mutation:",
-              err,
-            );
-          }
-        });
+        // A failed warm-up is not an error: `csrfFetch` fetches the token again on the first
+        // mutation, so boot continues either way.
+        await getCsrfToken().catch(() => undefined);
 
         // Bail out early if unmounted (StrictMode cleanup)
         if (abortController.signal.aborted) return;
@@ -227,12 +229,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         // Add a safety timeout to profile fetch to prevent boot-hangs if Supabase/API is slow.
         const profileFetchPromise = fetchUserFromBackend();
         const timeoutPromise = new Promise<null>((resolve) => {
-          timeoutId = setTimeout(() => {
-            console.warn(
-              "[AUTH] Profile fetch timed out, proceeding as unauthenticated",
-            );
-            resolve(null);
-          }, 8000);
+          // A slow profile read proceeds as unauthenticated.
+          timeoutId = setTimeout(() => resolve(null), 8000);
         });
 
         const backendUser = await Promise.race([
@@ -250,21 +248,20 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         if (!mounted || abortController.signal.aborted) return;
 
         if (backendUser) {
-          console.log("[AUTH] Found user from backend cookies");
           setUser(backendUser);
         } else {
-          console.log("[AUTH] No existing session found or fetch timed out");
           clearAuthState();
         }
-      } catch (error) {
-        if (!abortController.signal.aborted) {
-          console.error("[AUTH] Initialization failed:", error);
+      } catch {
+        // Boot could not establish a session: proceed signed out, the same answer a failed or
+        // slow profile read gives above.
+        if (mounted && !abortController.signal.aborted) {
+          clearAuthState();
         }
       } finally {
         if (mounted && !abortController.signal.aborted) {
           setAuthLoading(false);
           isInitializing.current = false;
-          console.log("[AUTH] Initialization complete");
         }
       }
     };
@@ -367,8 +364,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        // code is specific for logging; the displayed copy is generic + non-enumerable.
-        console.error("[AUTH] Sign up failed", { status: response.status });
+        // The displayed copy is generic and non-enumerable.
         throw authError(
           response.status === 503 ? "signup_consent_failed" : "signup_failed",
         );
@@ -404,7 +400,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         user: data?.user,
       };
     } catch (error) {
-      console.error("[AUTH] Sign up error", error);
       throw error instanceof Error ? error : authError("signup_failed");
     } finally {
       setAuthLoading(false);
@@ -422,9 +417,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        console.error("[AUTH] Server sign in failed", {
-          status: response.status,
-        });
         throw authError(response.status === 401 ? "signin_failed" : undefined);
       }
 
@@ -437,8 +429,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         clearAuthState();
         throw new Error("Failed to load user profile after sign-in");
       }
-
-      console.log("[AUTH] Server sign in successful");
     } finally {
       setAuthLoading(false);
     }
@@ -480,9 +470,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         throw authError("google_oauth_failed");
       }
       // On success the browser is redirected to Google; no further client work here.
-      console.log("[AUTH] Redirecting to Google OAuth (native)");
     } catch (error) {
-      console.error("[AUTH] Google sign in error", error);
       setAuthLoading(false);
       throw error instanceof Error ? error : authError("google_oauth_failed");
     }
@@ -506,8 +494,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // already cleared via `setUser(null)` when a user was set; this also covers a sign-out
       // before the profile ever loaded.
       queryClient.clear();
-    } catch (error) {
-      console.error("[AUTH] Sign out error:", error);
+    } catch {
       throw authError("signout_failed");
     } finally {
       setAuthLoading(false);
@@ -525,16 +512,12 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        console.error("[AUTH] Reset password failed", {
-          status: response.status,
-        });
         throw authError("reset_password_failed");
       }
 
       // Successful response should be JSON, but let's be safe
       return await response.json().catch(() => ({ success: true }));
     } catch (error) {
-      console.error("[AUTH] Reset password error", error);
       throw error instanceof Error ? error : authError("reset_password_failed");
     } finally {
       setAuthLoading(false);
@@ -552,15 +535,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        console.error("[AUTH] Update password failed", {
-          status: response.status,
-        });
         throw authError("update_password_failed");
       }
 
       return await response.json().catch(() => ({ success: true }));
     } catch (error) {
-      console.error("[AUTH] Update password error", error);
       throw error instanceof Error
         ? error
         : authError("update_password_failed");

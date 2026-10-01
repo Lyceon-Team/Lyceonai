@@ -62,6 +62,7 @@ This document is the single authoritative registry of:
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/guardian-required` | student | free | GuardianRequired (G2-04: an under-13 student with no active guardian link) | `/api/profile`, `/api/students/:studentId/link-code`, `/api/students/:studentId/link-code/regenerate`, `/api/students/:studentId/link-code/invite`, `/api/students/:studentId/links`, `/api/students/:studentId/links/:linkId` | ACTIVE |
+| `/score-report` | student, admin | free (SCL-191: the authorisation is the prompt we sent, not an entitlement key — see `server/routes/score-report-routes.ts`) | ScoreReport | `/api/score-report`, `POST /api/score-report`, `POST /api/score-report/renewal` | ACTIVE |
 | `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
 | `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
 | `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |

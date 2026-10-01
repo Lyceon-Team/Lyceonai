@@ -11,12 +11,16 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import GuardianRequired from "./guardian-required";
+import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 
 const queryMock = vi.hoisted(() => ({ useQuery: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn(async () => undefined));
 let profileData: unknown = undefined;
 
-vi.mock("@tanstack/react-query", () => ({
+// UI-14 (merged from `cleanup`): the page reads the shared `profileQuery`, built with
+// `queryOptions` — so the real module is kept and only `useQuery` is replaced.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQuery: queryMock.useQuery,
 }));
 
@@ -77,7 +81,8 @@ describe("/guardian-required", () => {
       queryKey: unknown;
       refetchInterval: unknown;
     };
-    expect(options.queryKey).toEqual(["/api/profile"]);
+    // The shared profile key (UI-14), not a second spelling of it.
+    expect(options.queryKey).toEqual(PROFILE_QUERY_KEY);
     expect(typeof options.refetchInterval).toBe("number");
   });
 

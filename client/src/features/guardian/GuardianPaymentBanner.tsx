@@ -15,7 +15,7 @@
  * page, because a parent already dealing with it should not be told twice on every click.
  *
  * Moved from the retired single-page dashboard (`pages/guardian-dashboard.tsx`), where it
- * showed on that one page only. It reads the ONE billing-status reader (`useBillingStatus`,
+ * showed on that one page only. It reads the ONE billing-status reader (`useBillingStatusQuery`,
  * G4-09), so the shell adds no request a guardian page does not already share by query key.
  *
  * edge cases: while loading, on a failed read, or when nothing needs updating — nothing is
@@ -27,14 +27,14 @@ import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
-import { useBillingStatus } from "@/hooks/useBillingStatus";
+import { useBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 
 export function GuardianPaymentBanner({
   enabled,
 }: {
   enabled: boolean;
 }): JSX.Element | null {
-  const status = useBillingStatus({ enabled });
+  const status = useBillingStatusQuery({ enabled });
   const portal = useBillingPortal();
   const [dismissed, setDismissed] = useState(false);
 
