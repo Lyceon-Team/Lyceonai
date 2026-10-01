@@ -18,9 +18,9 @@
  * and tests.
  *
  * THERE IS NO GUARDIAN SHAPE. One response per resource; a guardian receives the student's
- * response. The only guardian-specific behaviour in the whole contract is that
- * `/mastery/skills` returns an empty list for `via='guardian'`, and that is Doc 05B §10.4's
- * specified denial-by-absence-of-policy, not a different shape.
+ * response, with two exceptions, neither a different shape: the KPI routes narrow a
+ * guardian to the streak (SCL-188), and `/mastery/skills` refuses a guardian with 403 —
+ * guardians see no skills, anywhere (SCL-194, amending Doc 05B §10.4's empty list).
  */
 import { z } from "zod";
 import { masterySectionSchema } from "./mastery-levels.js";
@@ -323,9 +323,13 @@ export const studentKpiOverallSchema = z.object({
 });
 export type StudentKpiOverall = z.infer<typeof studentKpiOverallSchema>;
 
-/** R3: the streak, and nothing about how many questions or how many were right. */
+/**
+ * R3: the streak, and nothing about how many questions or how many were right. `null` is
+ * "unknown" — the student's zone could not be read, so "as of today" could not be worked out
+ * (G-NEW-16; owner decision 2026-10-01; SCL-193 amending SCL-188). Never a zero in its place.
+ */
 export const guardianKpiOverallSchema = z
-  .object({ currentStreakDays: z.number().int().min(0) })
+  .object({ currentStreakDays: z.number().int().min(0).nullable() })
   .strict();
 export type GuardianKpiOverall = z.infer<typeof guardianKpiOverallSchema>;
 

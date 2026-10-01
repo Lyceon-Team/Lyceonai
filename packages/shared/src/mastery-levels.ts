@@ -89,6 +89,15 @@ export const masteryLevelLabelSchema = masteryLevelLabelBaseSchema.refine(
 );
 export type MasteryLevelLabel = z.infer<typeof masteryLevelLabelSchema>;
 
+/**
+ * The `unmeasured` row's display name, as `20260820000000_mastery_levels.sql` seeds it. The
+ * server always sends it with each node; a CLIENT needs it only to draw a canonical domain the
+ * payload has no row for (owner decision 2026-10-01: the domain grid always shows all eight).
+ * `client/src/components/mastery/DomainGrid.test.tsx` pins it to the seed row word for word,
+ * so the two cannot drift.
+ */
+export const UNMEASURED_DISPLAY_NAME = "Not enough answers yet";
+
 /** Canonical section codes as the database stores them (`questions.section` CHECK). */
 export const masterySectionSchema = z.enum(["M", "RW"]);
 export type MasterySection = z.infer<typeof masterySectionSchema>;

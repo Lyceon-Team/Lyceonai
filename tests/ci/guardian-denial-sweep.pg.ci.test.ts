@@ -151,6 +151,12 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
 const endpoints = collectEndpoints(app, gateOf);
 const gated = endpoints.filter((e) => e.gates.length > 0);
 const tutor = endpoints.filter((e) => e.path.startsWith("/api/tutor"));
+/**
+ * Every skill-level read, by its path. Owner ruling 2026-10-01 (#1013 review, item 2;
+ * SCL-194): guardians see no skills, anywhere — so a route that names skills is never
+ * guardian-reachable, the guardian-reachable prefixes above (`/api/students/`) included.
+ */
+const skillReads = endpoints.filter((e) => /skill/i.test(e.path));
 
 function concrete(path: string): string {
   return (
@@ -214,6 +220,30 @@ describe.skipIf(!PG_AVAILABLE)("G1-11 guardian denial sweep (routes read from th
       .map((e) => `${e.method.toUpperCase()} ${e.path}`);
     expect(unclassified).toEqual([]);
   });
+
+  it("every skill-level endpoint is student-gated, whatever prefix it lives under", () => {
+    // Presence before absence: the guardian-reachable skills read and a student-only one.
+    const has = (m: string, p: string) =>
+      skillReads.some((e) => e.method === m && e.path === p);
+    expect(has("get", "/api/students/:studentId/mastery/skills")).toBe(true);
+    expect(
+      has("get", "/api/practice/diagnostic/sessions/:sessionId/weakest-skills"),
+    ).toBe(true);
+    const ungatedSkills = skillReads
+      .filter((e) => e.gates.length === 0)
+      .map((e) => `${e.method.toUpperCase()} ${e.path}`);
+    expect(ungatedSkills).toEqual([]);
+  });
+
+  it.each(skillReads.map((e) => [e.method.toUpperCase(), e.path, e] as const))(
+    "guardian → 403 on skill-level %s %s",
+    async (_m, p, e) => {
+      expect(e.method, `unswept skill method on ${p}`).toBe("get");
+      const res = await request(app).get(concrete(e.path));
+      expect(res.status).toBe(403);
+      expect(res.body).not.toHaveProperty("skills");
+    },
+  );
 
   it.each(gated.map((e) => [e.method.toUpperCase(), e.path, e] as const))(
     "guardian → 403 on %s %s",

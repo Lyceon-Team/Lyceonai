@@ -25,7 +25,9 @@ const root = path.resolve(
 const read = (rel: string): string =>
   fs.readFileSync(path.join(root, rel), "utf8");
 
-const DASHBOARD = "client/src/pages/guardian-dashboard.tsx";
+// The guardian's link-code surface: the Add-student dialog (G4-02). It was the single-page
+// dashboard until that page's deletion on 2026-10-01; the assertions followed the form.
+const DASHBOARD = "client/src/features/guardian/AddStudentDialog.tsx";
 
 describe("guardian link-code wiring (SCL-080)", () => {
   it("redeems a code at the code endpoint", () => {

@@ -77,7 +77,10 @@ import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
 import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
-import { requireGuardianLinkForUnder13 } from "../middleware/supabase-auth";
+import {
+  requireGuardianLinkForUnder13,
+  requireStudentOrAdmin,
+} from "../middleware/supabase-auth";
 import { readGuardianCalendar } from "../services/calendar/read-service";
 import { sendPaymentRequired } from "../lib/http-errors";
 import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
@@ -88,7 +91,7 @@ import {
 import { toStudentExamReport } from "../../packages/shared/src/exam-student-report-schema";
 import {
   EXAM_FEATURE_KEY,
-  listExamForms,
+  listExamFormsWithCompletion,
 } from "../services/exam-runtime-service";
 import {
   ReportIntegrityError,
@@ -333,27 +336,29 @@ router.get(
 );
 
 /**
- * §10.4 EMPTY-LIST SEMANTICS, AND WHY THIS IS NOT A ROLE BRANCH.
+ * @spec [Doc 05B §10.4 as amended by SCL-194; owner ruling 2026-10-01 (#1013 review, item 2:
+ *       "Guardians see no skills, anywhere"); Doc 05A :73; Doc 05 Parent criterion #19]
+ *       | @implemented [2026-10-01]
  *
- * A guardian receives `200` with `skills: []`, never `403`. Doc 05B §10.4 is explicit that
- * "403 would imply the resource exists but is forbidden — leaking that skill mastery rows
- * exist for that student", while an empty 200 "is the same response a student would get if
- * they had no skill mastery rows yet".
+ * plain English: a skill-level read, for the student (and admin) only. A guardian is refused
+ * with 403 by `requireStudentOrAdmin`, which logs `guardian_blocked` (AUTH) — the platform's
+ * one student-only gate, so the G1-11 sweep finds this route by the gate's identity and sends
+ * it a guardian session.
  *
- * In the target state RLS produces this by itself: `student_skill_mastery` has NO guardian
- * SELECT policy (Doc 05A :73), so a guardian's query returns zero rows. The application
- * still reads with the service role, which bypasses RLS (Doc 01 §14 — Layer 1 is
- * launch-canonical, Layer 2 is target-state), so the empty list is produced here instead,
- * from the `via` the RESOLVER decided. When guardian reads move onto an `authenticated`
- * client this branch is deleted and nothing else changes.
+ * WHY THE GATE RUNS BEFORE THE RESOLVER. The refusal is the caller's ROLE, not anything about
+ * the student, so it is decided before the resolver reads a link or an entitlement: a
+ * guardian gets the same 403 for a linked, an unlinked and an unentitled student, and the
+ * answer says nothing about any of them. (Before SCL-194, §10.4 answered a guardian `200`
+ * with `skills: []` after the entitlement gate; that branch is gone.) The gate also ends in
+ * the under-13 link gate (G2-04), which `requireGuardianLinkForUnder13` ran here before.
  *
- * `catalogEmpty` stays FALSE for a guardian: the question bank is full, and saying otherwise
- * would be a claim about the catalogue made from a permission result.
+ * edge cases: an admin passes the gate and the resolver decides as before; a student reads
+ * their own skills unchanged.
  */
 router.get(
   `/:studentId${STUDENT_RESOURCE_PATHS.masterySkills}`,
+  requireStudentOrAdmin,
   resolveSubject,
-  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;
@@ -368,15 +373,6 @@ router.get(
         ))
       ) {
         return;
-      }
-
-      if (subject.via === "guardian") {
-        return res.json({
-          ok: true,
-          skills: [],
-          catalogEmpty: false,
-          requestId: req.requestId,
-        });
       }
 
       const view = await readSkillCatalogView({ studentId: subject.studentId });
@@ -409,8 +405,9 @@ router.get(
  * the counters, not that the client stops drawing them. So, for `via === 'guardian'`:
  *   - `kpi/overall` is `{ currentStreakDays }`, read by a SELECT of that one column;
  *   - `kpi/sections` and `kpi/domains` are empty lists — every row they carry is a count or an
- *     accuracy — with the §10.4 semantics `mastery/skills` already has: 200 and `[]`, never a
- *     403 that would say the rows exist.
+ *     accuracy — with §10.4's empty-list semantics: 200 and `[]`, never a 403 that would say
+ *     the rows exist. (`mastery/skills` carried the same semantics until SCL-194; it now
+ *     refuses a guardian outright, since no skill is ever a guardian's to read.)
  * The student's own calls are unchanged. The branch is the resolver's `via`, never a client
  * claim. Edge case: a guardian of a student with no KPI row sees a streak of 0, as the student
  * would.
@@ -594,13 +591,13 @@ router.get(
       ) {
         return;
       }
-      const forms = await listExamForms(subject.studentId);
+      const forms = await listExamFormsWithCompletion(subject.studentId);
       if (!forms.ok) {
         throw new Error(`exam_list_forms refused with ${forms.error.status}`);
       }
       return res.json({
         ok: true,
-        ...toGuardianExamList(forms.value),
+        ...toGuardianExamList(forms.value.forms, forms.value.completedAt),
         requestId: req.requestId,
       });
     } catch (err) {

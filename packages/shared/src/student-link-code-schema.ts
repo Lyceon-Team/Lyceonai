@@ -80,6 +80,20 @@ export const redeemLinkCodeRequestSchema = z.object({
 });
 
 /**
+ * @spec [SCL-080; Guardian_Closure_Plan G4-02 endpoint map] | @implemented [2026-09-30]
+ * The redeem answer as `POST /api/guardian/link/redeem` sends it (201) — the new link and the
+ * student it linked, so the Add-student modal can go straight to that student. Parsed, not cast.
+ */
+export const redeemLinkCodeResponseSchema = z.object({
+  data: z.object({
+    link_id: z.string().min(1),
+    student_profile_id: z.string().min(1),
+  }),
+  requestId: z.string().optional(),
+});
+export type RedeemLinkCodeResponse = z.infer<typeof redeemLinkCodeResponseSchema>;
+
+/**
  * @spec [Doc-01_V8 §36.2 (per-email rate limit), §38.1; 2026-09-15 guardian invite by email]
  * The invite request body: one address, trimmed and lower-cased so the per-address rate
  * limit and the idempotency key see one spelling. Nothing else — the code is read from the

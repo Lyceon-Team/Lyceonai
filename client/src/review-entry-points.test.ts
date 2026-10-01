@@ -154,10 +154,14 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
 
   it("every allowlist entry is a route in App.tsx (the file's own rule)", () => {
     const app = read("client/src/App.tsx");
+    // G4-01: the guardian routes are mounted in App.tsx from one table, GUARDIAN_ROUTES.
+    expect(app).toContain("GUARDIAN_ROUTES");
+    const guardianRoutes = read("client/src/features/guardian/routes.tsx");
     for (const entry of RETURN_PATH_ALLOWLIST) {
-      expect(app, `${entry} is allowlisted but not mounted`).toContain(
-        `path="${entry}"`,
-      );
+      const mounted =
+        app.includes(`path="${entry}"`) ||
+        guardianRoutes.includes(`path: "${entry}"`);
+      expect(mounted, `${entry} is allowlisted but not mounted`).toBe(true);
     }
   });
 
@@ -177,7 +181,23 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
         .map((m) => m[1] ?? "")
         .sort();
     };
+    // G4-01: guardian routes are mounted from one table, GUARDIAN_ROUTES, behind one
+    // RequireRole in App.tsx's `GUARDIAN_ROUTES.map(…)`; that mount is their gate.
+    const guardianRoutes = read("client/src/features/guardian/routes.tsx");
+    const guardianMount = app.indexOf("GUARDIAN_ROUTES.map(");
     for (const entry of RETURN_PATH_ALLOWLIST) {
+      if (
+        !app.includes(`path="${entry}"`) &&
+        guardianRoutes.includes(`path: "${entry}"`)
+      ) {
+        expect(guardianMount, "GUARDIAN_ROUTES is not mounted").toBeGreaterThan(
+          -1,
+        );
+        expect(allowOf(guardianMount), entry).toEqual(
+          [...(RETURN_PATH_ROUTE_ROLES[entry] ?? [])].sort(),
+        );
+        continue;
+      }
       const at = app.indexOf(`path="${entry}"`);
       expect(at, `${entry} is not mounted`).toBeGreaterThan(-1);
       // Either an inline `component={() => (<RequireRole allow=…>` or a named module-scope

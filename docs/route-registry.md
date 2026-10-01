@@ -37,9 +37,9 @@ This document is the single authoritative registry of:
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
 | `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge`, `/api/me/streak` | ACTIVE |
-| `/students/:studentId/calendar` | guardian, admin | entitled† (the STUDENT's) | GuardianStudentCalendarPage | `/api/students/:studentId/calendar` | ACTIVE |
-| `/students/:studentId/tests` | guardian, admin | entitled (the STUDENT's exam_full_length, enforced by the backing route) | GuardianExamResultsPage (the forms the student has sat, latest attempt each) | `/api/students/:studentId/tests` | ACTIVE |
-| `/students/:studentId/tests/:sessionId` | guardian, admin | entitled (the STUDENT's exam_full_length) | GuardianExamResultsPage (one attempt: headline + per-domain breakdown, SCL-180/181) | `/api/students/:studentId/tests/:sessionId/report` | ACTIVE |
+| `/students/:studentId/calendar` | guardian | free | Redirect→`/guardian/:studentId/calendar` (G4-01) | N/A | ACTIVE |
+| `/students/:studentId/tests` | guardian | free | Redirect→`/guardian/:studentId/exams` (G4-01) | N/A | ACTIVE |
+| `/students/:studentId/tests/:sessionId` | guardian | free | Redirect→`/guardian/:studentId/exams/:sessionId` (G4-01) | N/A | ACTIVE |
 | `/tests` | student, admin | entitled (exam_full_length, enforced by every backing route) | TestsHomePage | `/api/tests/forms`, `/api/tests/sessions`, `/api/tests/sessions/:session_id/sections/:section/modules/:module/start` | ACTIVE |
 | `/tests/:sessionId` | student, admin | entitled (exam_full_length) | ExamSessionPage (begin, Module 2 hand-off, break) | `/api/tests/sessions/:session_id/state`, `…/modules/:module/start`, `/api/tests/forms` | ACTIVE |
 | `/tests/:sessionId/:section/:module` | student, admin | entitled (exam_full_length) | ExamModulePage (the URL only shows the server's position; any other module redirects) | `…/state`, `…/modules/:module/items`, `…/modules/:module/workspace` (GET, PUT), `/api/tests/answer`, `…/sections/:section/heartbeat`, `…/modules/:module/submit`, `…/modules/:module/start` | ACTIVE |
@@ -66,7 +66,12 @@ This document is the single authoritative registry of:
 | `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
 | `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
 | `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |
-| `/guardian` | guardian | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
+| `/guardian` | guardian | free | GuardianHome (redirects to the first linked student's Dashboard, or the no-student state; G4-01) | `/api/guardian/students` | ACTIVE |
+| `/guardian/students` | guardian | free | GuardianStudentsPage — Linked students & billing: per-student status, one Manage billing (the existing portal), Remove with confirmation (G4-10) | `/api/guardian/students`, `/api/billing/status`, `/api/billing/plans`, `POST /api/billing/portal`, `POST /api/billing/checkout`, `DELETE /api/guardian/link/:studentId` | ACTIVE |
+| `/guardian/:studentId` | guardian | entitled (the STUDENT's) | GuardianDashboardTab, in GuardianShell (G4-01/G4-03) | `/api/guardian/students`, `/api/students/:studentId/calendar`, `/api/students/:studentId/mastery/domains`, `/api/students/:studentId/tests`, `/api/students/:studentId/tests/:sessionId/report` | ACTIVE |
+| `/guardian/:studentId/calendar` | guardian | entitled† (the STUDENT's) | GuardianCalendarTab (GuardianStudentCalendarPage in GuardianShell; G4-01/G4-04) | `/api/students/:studentId/calendar` | ACTIVE |
+| `/guardian/:studentId/exams` | guardian | entitled (the STUDENT's exam_full_length) | GuardianExamsPage (list; G4-01/G4-05) | `/api/students/:studentId/tests` | ACTIVE |
+| `/guardian/:studentId/exams/:sessionId` | guardian | entitled (the STUDENT's exam_full_length) | GuardianExamsPage (one attempt: headline + per-domain bars, SCL-180/181/189; G4-01/G4-05) | `/api/students/:studentId/tests/:sessionId/report` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
 **admin-only** = admin role bypasses all entitlement checks (full access)

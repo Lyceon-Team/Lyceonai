@@ -284,6 +284,9 @@ export const guardianExamListItemSchema = z
     mode: examModeSchema,
     attempt_number_for_form: z.number().int().positive(),
     report_state: examReportStateSchema,
+    // SCL-192: required-present, null when the attempt never completed. The Dashboard's latest
+    // test is the newest non-null value (owner ruling 2026-09-30).
+    completed_at: z.string().nullable(),
   })
   .strict();
 
@@ -296,9 +299,13 @@ export type GuardianExamList = z.infer<typeof guardianExamListSchema>;
  * @spec [SCL-181] | @implemented [2026-09-27]
  * plain English: the forms listing in, the guardian's list out — one row per form the
  * student has sat, its latest attempt. Timings, question counts and selectability are
- * the student's controls and are not carried. Pure; parsed on the way out.
+ * the student's controls and are not carried. Pure; parsed on the way out. SCL-192: each item
+ * carries its session's `completed_at` from `completedAt` (keyed by session id).
  */
-export function toGuardianExamList(forms: ExamFormsResponse): GuardianExamList {
+export function toGuardianExamList(
+  forms: ExamFormsResponse,
+  completedAt: Readonly<Record<string, string | null>>,
+): GuardianExamList {
   const tests = forms.forms.flatMap((f) =>
     f.latest_session === null
       ? []
@@ -310,6 +317,7 @@ export function toGuardianExamList(forms: ExamFormsResponse): GuardianExamList {
             mode: f.latest_session.mode,
             attempt_number_for_form: f.latest_session.attempt_number_for_form,
             report_state: f.latest_session.report_state,
+            completed_at: completedAt[f.latest_session.session_id] ?? null,
           },
         ],
   );

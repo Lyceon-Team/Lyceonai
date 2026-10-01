@@ -27,6 +27,7 @@ export * from "./tutor-lifecycle-schema.js";
 
 // Doc 05F Study Calendar — shared layer (schemas, allocator, read model).
 export * from "./calendar/index.js";
+export * from "./streak-as-of-today.js";
 export * from "./practice-response-schema.js";
 export * from "./review-schema.js";
 export * from "./crisis-flag-schema.js";

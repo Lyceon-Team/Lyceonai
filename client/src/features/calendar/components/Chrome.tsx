@@ -67,6 +67,7 @@ export function LeftRail({
   onMonthStep,
   footer,
   schedule,
+  hideBrand = false,
 }: {
   name: string;
   subtitle: string;
@@ -90,13 +91,22 @@ export function LeftRail({
    * one place to look for it and one control to keep working.
    */
   schedule?: { summary: string };
+  /**
+   * Drops the rail's "Lyceon" wordmark. The guardian calendar sits inside `GuardianShell`,
+   * whose header already carries the logo, so a second mark one inch below it is noise (owner
+   * decision 2026-10-01, item 6). A PROP, not a fork: the student calendar passes nothing
+   * and renders exactly as before.
+   */
+  hideBrand?: boolean;
 }): JSX.Element {
   const dates = monthGridDates(miniMonth);
   return (
     <aside className="rail">
-      <div className="brand">
-        <i aria-hidden="true" /> Lyceon
-      </div>
+      {hideBrand ? null : (
+        <div className="brand">
+          <i aria-hidden="true" /> Lyceon
+        </div>
+      )}
       <div className="who">
         <b>{name}</b>
         <span>{subtitle}</span>
@@ -224,6 +234,143 @@ const ABSENT_COPY = {
   { target: string; testDate: string; projection: string }
 >;
 
+// ── The header facts, one component per slot (G4-03) ────────────────────────
+
+/**
+ * @spec [Doc 05F §17.1; Guardian_Closure_Plan G4-03, R11; owner approval 2026-09-30]
+ *   | @implemented [2026-09-30]
+ *
+ * plain English: the four readouts of the calendar header — target, streak, test-date
+ * countdown, projected band — as display-only components. `TopBar` renders each in its own
+ * slot, exactly as it always did (pinned by `Chrome.identity.test.tsx`); the guardian
+ * Dashboard renders the same four through `HeaderFacts`, so a parent reads the same numbers,
+ * the same absence copy and the same markup as the student's calendar — one component, not
+ * a guardian copy (R11). None of them holds a control.
+ */
+export function TargetFact({
+  viewer,
+  targetScore,
+}: {
+  viewer: "student" | "guardian";
+  targetScore: number | null;
+}): JSX.Element {
+  return (
+    <div className="item" data-item="target">
+      {targetScore === null ? (
+        <div className="ptarget absent" data-testid="calendar-target-absent">
+          {ABSENT_COPY[viewer].target}
+        </div>
+      ) : (
+        <div className="ptarget" data-testid="calendar-target">
+          <b>{targetScore}</b> <span>Target</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Renders nothing when the streak is unknown — never a zero it did not read. */
+export function StreakFact({
+  streak,
+}: {
+  streak: StreakSummary | undefined;
+}): JSX.Element | null {
+  if (streak?.current === null || streak === undefined) return null;
+  return (
+    <div className="item" data-item="streak">
+      <div className="streakline" title="Days in a row with study activity">
+        🔥 <b>{streak.current}</b> day streak
+        {streak.history_complete && streak.longest !== null ? (
+          <span className="muted"> · best {streak.longest}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function CountdownFact({
+  viewer,
+  daysToTest,
+}: {
+  viewer: "student" | "guardian";
+  daysToTest: number | null;
+}): JSX.Element {
+  return (
+    <div className="item" data-item="countdown">
+      {daysToTest === null ? (
+        <div
+          className="countline absent"
+          data-testid="calendar-countdown-absent"
+        >
+          {ABSENT_COPY[viewer].testDate}
+        </div>
+      ) : (
+        <div className="countline" data-testid="calendar-countdown">
+          <b>{daysToTest}</b> days to test
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Doc 05C's band, summed by `projectedRange` and nothing else. */
+export function ProjectionFact({
+  viewer,
+  projection,
+}: {
+  viewer: "student" | "guardian";
+  projection: readonly SectionProjectionDto[] | undefined;
+}): JSX.Element {
+  const range = projectedRange(projection);
+  return (
+    <div className="item" data-item="range">
+      {range === null ? (
+        // Doc 05C nulls a section's low/mid/high together below its Q4 gate, so this
+        // is "not enough answered questions yet", not a failure. Saying so beats a
+        // blank (looks broken) and beats a zero (200 is the floor of a real section,
+        // so 0 is not a score).
+        <div className="prange absent" data-testid="calendar-projection-absent">
+          {ABSENT_COPY[viewer].projection}
+        </div>
+      ) : (
+        <div className="prange" data-testid="calendar-projection">
+          <b>
+            {range.low} – {range.high}
+          </b>{" "}
+          <span>Projected</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The four facts together, for a surface without the calendar's slot grid — the guardian
+ * Dashboard's header strip. Same components, same absence copy for the viewer.
+ */
+export function HeaderFacts({
+  viewer,
+  targetScore,
+  daysToTest,
+  streak,
+  projection,
+}: {
+  viewer: "student" | "guardian";
+  targetScore: number | null;
+  daysToTest: number | null;
+  streak: StreakSummary | undefined;
+  projection: readonly SectionProjectionDto[] | undefined;
+}): JSX.Element {
+  return (
+    <div className="header-facts" data-testid="header-facts">
+      <StreakFact streak={streak} />
+      <ProjectionFact viewer={viewer} projection={projection} />
+      <TargetFact viewer={viewer} targetScore={targetScore} />
+      <CountdownFact viewer={viewer} daysToTest={daysToTest} />
+    </div>
+  );
+}
+
 /**
  * §17.1 — the header, in three zones of two rows each.
  *
@@ -251,6 +398,7 @@ const ABSENT_COPY = {
  */
 export function TopBar({
   backHref,
+  hideBackLink = false,
   viewer,
   rangeLabelText,
   view,
@@ -267,6 +415,12 @@ export function TopBar({
 }: {
   /** `/dashboard` for a student, `/guardian` for a guardian — the page decides. */
   backHref: string;
+  /**
+   * G4-04 (owner, 2026-09-30): inside the guardian shell the Calendar is a TAB, so the way back
+   * is the Dashboard tab beside it and "← Dashboard" would be a second, redundant exit. Hidden
+   * by a prop, not a fork; the L1 slot stays so the header grid does not reflow.
+   */
+  hideBackLink?: boolean;
   rangeLabelText: string;
   view: "week" | "month";
   onView: (next: "week" | "month") => void;
@@ -301,25 +455,25 @@ export function TopBar({
   /** §17.3. Absent for a guardian, for the same reason as `onRefresh`. */
   onEditSchedule?: () => void;
 }): JSX.Element {
-  const range = projectedRange(projection);
-
   return (
     <div className="top">
       {/* ── L1 ─────────────────────────────────────────────────────────── */}
       <div className="slot" data-slot="L1">
-        <div className="item" data-item="dashboard">
-          {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping
+        {hideBackLink ? null : (
+          <div className="item" data-item="dashboard">
+            {/* THE WAY OUT. A real anchor to a known page, never `history.back()`: popping
               the history stack lands wherever the student happened to arrive from,
               including an external referrer, and it cannot be middle-clicked or opened in
               a new tab. A link to the dashboard is deterministic. */}
-          <Link
-            href={backHref}
-            className="back"
-            data-testid="calendar-back-link"
-          >
-            <span aria-hidden="true">←</span> Dashboard
-          </Link>
-        </div>
+            <Link
+              href={backHref}
+              className="back"
+              data-testid="calendar-back-link"
+            >
+              <span aria-hidden="true">←</span> Dashboard
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* ── C1 ─────────────────────────────────────────────────────────── */}
@@ -372,20 +526,7 @@ export function TopBar({
 
       {/* ── R1: the target ─────────────────────────────────────────────── */}
       <div className="slot" data-slot="R1">
-        <div className="item" data-item="target">
-          {targetScore === null ? (
-            <div
-              className="ptarget absent"
-              data-testid="calendar-target-absent"
-            >
-              {ABSENT_COPY[viewer].target}
-            </div>
-          ) : (
-            <div className="ptarget" data-testid="calendar-target">
-              <b>{targetScore}</b> <span>Target</span>
-            </div>
-          )}
-        </div>
+        <TargetFact viewer={viewer} targetScore={targetScore} />
       </div>
 
       {/* ── L2 ─────────────────────────────────────────────────────────── */}
@@ -418,58 +559,13 @@ export function TopBar({
 
       {/* ── C2 ─────────────────────────────────────────────────────────── */}
       <div className="slot" data-slot="C2">
-        {streak?.current === null || streak === undefined ? null : (
-          <div className="item" data-item="streak">
-            <div
-              className="streakline"
-              title="Days in a row with study activity"
-            >
-              🔥 <b>{streak.current}</b> day streak
-              {streak.history_complete && streak.longest !== null ? (
-                <span className="muted"> · best {streak.longest}</span>
-              ) : null}
-            </div>
-          </div>
-        )}
-        <div className="item" data-item="countdown">
-          {daysToTest === null ? (
-            <div
-              className="countline absent"
-              data-testid="calendar-countdown-absent"
-            >
-              {ABSENT_COPY[viewer].testDate}
-            </div>
-          ) : (
-            <div className="countline" data-testid="calendar-countdown">
-              <b>{daysToTest}</b> days to test
-            </div>
-          )}
-        </div>
+        <StreakFact streak={streak} />
+        <CountdownFact viewer={viewer} daysToTest={daysToTest} />
       </div>
 
       {/* ── R2: Doc 05C's band, summed ─────────────────────────────────── */}
       <div className="slot" data-slot="R2">
-        <div className="item" data-item="range">
-          {range === null ? (
-            // Doc 05C nulls a section's low/mid/high together below its Q4 gate, so this
-            // is "not enough answered questions yet", not a failure. Saying so beats a
-            // blank (looks broken) and beats a zero (200 is the floor of a real section,
-            // so 0 is not a score).
-            <div
-              className="prange absent"
-              data-testid="calendar-projection-absent"
-            >
-              {ABSENT_COPY[viewer].projection}
-            </div>
-          ) : (
-            <div className="prange" data-testid="calendar-projection">
-              <b>
-                {range.low} – {range.high}
-              </b>{" "}
-              <span>Projected</span>
-            </div>
-          )}
-        </div>
+        <ProjectionFact viewer={viewer} projection={projection} />
       </div>
     </div>
   );
