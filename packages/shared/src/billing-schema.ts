@@ -252,6 +252,8 @@ export function deriveBillingManagedBy(input: {
 }): BillingManagedBy {
   return input.hasSubscription && !input.isStripeCustomer ? "guardian" : "self";
 }
+
+/**
  * What GET /api/billing/status returns — ONE shape for every banner that reads it.
  *
  * @spec [Guardian_Closure_Plan G4-09 (G-AUD-26); Doc 01 V8 §31.1–§31.3 (a guardian's access
@@ -259,7 +261,7 @@ export function deriveBillingManagedBy(input: {
  * @implemented [2026-09-30]
  *
  * plain English: the route has two branches — the self-paying student and the guardian — and
- * both write the same ten keys; the guardian branch adds `hasActiveLink` (§31.3's fold) and
+ * both write the same eleven keys (`managedBy` is F-40's); the guardian branch adds `hasActiveLink` (§31.3's fold) and
  * `source: "guardian_linked_student"` (the answer is derived, and says so). Expected outcome:
  * every client reader parses this once, in `useBillingStatus`, instead of four readers each
  * casting `res.json()` to a private type that declared whichever subset it happened to read.
@@ -286,6 +288,8 @@ export const billingStatusResponseSchema = z.object({
   lapsed: z.boolean(),
   hasBillingAccount: z.boolean(),
   isPaid: z.boolean(),
+  /** F-40: who manages the plan; both branches write it (`self` for every guardian). */
+  managedBy: billingManagedBySchema,
   /** Guardian branch only: is this guardian linked to any student at all (§31.3). */
   hasActiveLink: z.boolean().optional(),
   /** Guardian branch only: the answer is derived from a linked student, never owned. */
