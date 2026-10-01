@@ -38,6 +38,8 @@ import {
 import {
   STUDENT_EXAM_PATHS,
   STUDENT_RESOURCE_PATHS,
+  guardianKpiOverallResponseSchema,
+  studentKpiOverallResponseSchema,
 } from "../../packages/shared/src/student-resources";
 
 const STUDENT = "11111111-1111-4111-8111-111111111111";
@@ -285,6 +287,29 @@ async function call(principal: string, studentId: string, path: string) {
 
 const ALL_PATHS = Object.values(STUDENT_RESOURCE_PATHS);
 
+/** SCL-188 (G3-01): the KPI routes answer a guardian with the streak only. */
+const GUARDIAN_NARROWED_KPI_PATHS: ReadonlySet<string> = new Set([
+  STUDENT_RESOURCE_PATHS.kpiOverall,
+  STUDENT_RESOURCE_PATHS.kpiSections,
+  STUDENT_RESOURCE_PATHS.kpiDomains,
+]);
+
+/** Every key, at every depth, of a JSON value. */
+function allKeys(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const v of value) allKeys(v, out);
+  } else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      out.push(k);
+      allKeys(v, out);
+    }
+  }
+  return out;
+}
+
+/** R3's counters in either spelling: `events_last_7d`/`eventsTotal`, `accuracy_*`/`accuracyPct`, `week_*`/`week`. */
+const REMOVED_COUNTER_KEY = /^(events|accuracy|week)([_A-Z]|$)/i;
+
 describe("subject-scoped resources — one route, two callers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -359,6 +384,7 @@ describe("subject-scoped resources — one route, two callers", () => {
   it("PROVENANCE — the guardian body IS the student body, byte for byte", async () => {
     for (const path of ALL_PATHS) {
       if (path === STUDENT_RESOURCE_PATHS.masterySkills) continue; // §10.4, asserted below
+      if (GUARDIAN_NARROWED_KPI_PATHS.has(path)) continue; // SCL-188, asserted below
       const self = await call(STUDENT, STUDENT, path);
       const guardian = await call(GUARDIAN, STUDENT, path);
       expect(guardian.status).toBe(self.status);
@@ -370,13 +396,112 @@ describe("subject-scoped resources — one route, two callers", () => {
     // If a handler rebuilt the body for one audience, this field would appear on one side
     // only. It must appear on both (it does not, because fields are NAMED) — the assertion
     // is that the two paths agree, not that the field is present.
-    rows.student_section_kpi = [
-      { section: "M", events_total: 1, accuracy_overall: 1, current_streak_days: 1, last_active_at: null, freshlyAddedField: "x" },
+    // (Driven through projections since SCL-188: the KPI routes now answer a guardian with
+    // the streak only, by design, so they are no longer a parity route.)
+    rows.student_section_projections = [
+      { section: "M", projected_score_mid: 600, projected_score_low: 570, projected_score_high: 630, relevant_question_count: 40, computed_at: "2026-08-01", freshlyAddedField: "x" },
     ];
-    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
-    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
+    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
     expect(guardian.body).toEqual(self.body);
     expect(JSON.stringify(self.body)).not.toContain("freshlyAddedField");
+  });
+
+  // -- SCL-188 / G3-01: A GUARDIAN GETS THE STREAK, AND ONLY THE STREAK ------------
+  describe("G3-01 — the KPI routes answer a guardian with the streak only", () => {
+    it("PRESENCE FIRST — the student's own kpi/overall still carries every counter", async () => {
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      expect(self.status).toBe(200);
+      // Non-vacuity: the fixture row has non-zero 7-day and 30-day counters, and they arrive.
+      expect(self.body.week.questionsSolved).toBe(12);
+      expect(self.body.week.accuracy).toBe(75);
+      // THE STRICT CHECK LIVES HERE, NOT IN PRODUCTION (owner ruling 2026-09-30, #994). The
+      // production parse STRIPS, so a builder field added without a schema update would be
+      // dropped silently for a student; this asserts the parse is the identity on real route
+      // output, at every depth, so that field fails CI instead.
+      expect(studentKpiOverallResponseSchema.parse(self.body)).toEqual(self.body);
+      expect(allKeys(self.body).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
+
+    it("WIRE — the guardian kpi/overall is exactly { ok, currentStreakDays, requestId }", async () => {
+      const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      expect(guardian.status).toBe(200);
+      // The value is the row's, not a default: the fixture's current_streak_days is 3.
+      expect(guardian.body.currentStreakDays).toBe(3);
+      expect(Object.keys(guardian.body).sort()).toEqual([
+        "currentStreakDays",
+        "ok",
+        "requestId",
+      ]);
+      // STRICT: a removed field reappearing fails the shared schema, not only this list.
+      expect(guardianKpiOverallResponseSchema.safeParse(guardian.body).success).toBe(true);
+    });
+
+    for (const path of GUARDIAN_NARROWED_KPI_PATHS) {
+      it(`WIRE ${path} — no events_*, accuracy_* or week_* key at any depth, as GUARDIAN`, async () => {
+        const guardian = await call(GUARDIAN, STUDENT, path);
+        expect(guardian.status).toBe(200);
+        expect(allKeys(guardian.body).filter((k) => REMOVED_COUNTER_KEY.test(k))).toEqual([]);
+        // And no metric id naming one, which is how `week_questions` travelled before.
+        expect(JSON.stringify(guardian.body)).not.toMatch(/week_|accuracy|events/i);
+      });
+    }
+
+    it("sections and domains are 200 and empty for a guardian (Doc 05B §10.4 semantics)", async () => {
+      const selfSections = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+      expect(selfSections.body.sections.length).toBeGreaterThan(0); // presence, student side
+      const sections = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+      const domains = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiDomains);
+      expect(sections.status).toBe(200);
+      expect(sections.body.sections).toEqual([]);
+      expect(domains.status).toBe(200);
+      expect(domains.body.domains).toEqual([]);
+    });
+
+    it("STUDENT, production posture: an unknown key is dropped at any depth and logged once, never a 500", async () => {
+      const { toStudentKpiOverallWire } = await import(
+        "../../server/services/canonical-runtime-views"
+      );
+      const { logger } = await import("../../server/logger");
+      // The REAL builder's output, through the real route, plus two keys no schema names.
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const { ok: _ok, requestId: _rid, ...view } = self.body;
+      const planted = {
+        ...view,
+        surpriseTop: 1,
+        week: { ...view.week, surpriseNested: 2 },
+      };
+      vi.mocked(logger.warn).mockClear();
+
+      const out = toStudentKpiOverallWire(planted);
+      toStudentKpiOverallWire(planted); // a second request: no second warning
+
+      expect(out).toEqual(view);
+      expect(out).not.toHaveProperty("surpriseTop");
+      expect(out.week).not.toHaveProperty("surpriseNested");
+      const warned = vi
+        .mocked(logger.warn)
+        .mock.calls.filter((c) => c[1] === "kpi_overall_unknown_key_dropped")
+        .map((c) => (c[3] as { path: string }).path)
+        .sort();
+      expect(warned).toEqual(["surpriseTop", "week.surpriseNested"]);
+      // Path names only: the log carries `{ path }` and nothing of the payload.
+      for (const c of vi.mocked(logger.warn).mock.calls) {
+        expect(Object.keys(c[3] as object)).toEqual(["path"]);
+      }
+    });
+
+    it("the identity check itself goes red when a key is stripped (gate self-check)", async () => {
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const planted = { ...self.body, week: { ...self.body.week, surpriseNested: 2 } };
+      expect(studentKpiOverallResponseSchema.parse(planted)).not.toEqual(planted);
+    });
+
+    it("the strict schema itself refuses a reappearing counter (gate self-check)", () => {
+      const planted = { ok: true, currentStreakDays: 3, events_last_7d: 12 };
+      expect(guardianKpiOverallResponseSchema.safeParse(planted).success).toBe(false);
+      expect(allKeys({ a: [{ accuracyPct: 1 }] }).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
   });
 
   // -- §10.4 SKILLS DENIAL ----------------------------------------------------

@@ -35,7 +35,7 @@
  * edge cases: §17.5's guardian pre-setup state is a plain "Not set up yet" — a guardian
  * cannot run setup, so offering the sheet would be offering a control that cannot work.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { calendarKeys, useGuardianCalendar } from "@/features/calendar/api";
@@ -45,8 +45,11 @@ import {
   CalendarPremiumGate,
   CalendarSkeleton,
   GuardianNotSetUp,
+  GuardianStudentNoLongerLinked,
   isEntitlementDenial,
 } from "@/features/calendar/components/CalendarStates";
+import { useForgetGuardianStudent } from "@/hooks/useGuardianStudents";
+import { isStudentNoLongerLinkedError } from "@/lib/api-error";
 import { rangeForView, startOfWeek } from "@/features/calendar/lib/dates";
 import { guardianViewModel } from "@/features/calendar/lib/view-model";
 import "@/features/calendar/calendar.css";
@@ -68,6 +71,20 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
   );
   const calendar = useGuardianCalendar(studentId, range.from, range.to);
 
+  /**
+   * G3-04: a 404 here means the link is gone. Drop this student's cached reads and refetch the
+   * roster, ONCE per student — the effect changes the cache, so it must not re-run on the
+   * refetch its own removal can cause.
+   */
+  const noLongerLinked = isStudentNoLongerLinkedError(calendar.error);
+  const forgetStudent = useForgetGuardianStudent();
+  const forgotten = useRef<string | null>(null);
+  useEffect(() => {
+    if (!noLongerLinked || forgotten.current === studentId) return;
+    forgotten.current = studentId;
+    forgetStudent(studentId);
+  }, [noLongerLinked, studentId, forgetStudent]);
+
   const onRangeChange = useCallback(
     (view: "week" | "month", cursor: string) => {
       setRange(rangeForView(view, cursor));
@@ -75,6 +92,9 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
     [],
   );
 
+  if (noLongerLinked || forgotten.current === studentId) {
+    return <GuardianStudentNoLongerLinked />;
+  }
   if (calendar.isLoading) return <CalendarSkeleton />;
   // §16: guardian visibility is derived from link AND student entitlement, so a lapsed
   // student's calendar answers 402 to their guardian too.

@@ -463,9 +463,10 @@ describe("§16 — the guardian read", () => {
     const serialized = JSON.stringify(result.value);
     expect(serialized).not.toContain("version_no");
     expect(serialized).not.toContain("is_user_override");
-    // The remaining profile columns, by name. NOT a sweep for "timezone": that string is a
-    // legitimate per-DAY field of the guardian read model, naming the zone `local_date`
-    // belongs to, so sweeping for it fails against a correct payload.
+    // The remaining profile columns, by name — and, since G3-03 (G-AUD-24) removed the
+    // per-day `timezone`, a sweep for "timezone" too: §16 gives a guardian none at any depth.
+    expect(result.value.days.length).toBeGreaterThan(0);
+    expect(serialized).not.toMatch(/timezone/i);
     expect(serialized).not.toContain("study_days_mask");
     expect(serialized).not.toContain("daily_minutes");
     expect(serialized).not.toContain("planner_mode");

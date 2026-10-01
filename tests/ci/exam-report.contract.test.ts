@@ -437,11 +437,18 @@ describe("owner ruling 7: the student report carries segments, never counts", ()
     expect(toStudentExamReport(internal)).toEqual(internal);
   });
 
-  it("guardian unchanged: the guardian projection of the same report keeps correct/total (SCL-180)", () => {
+  it("guardian: the guardian projection of the same report is a bar per domain, no counts (SCL-189)", () => {
     const internal = serializeStudentReport(source(), "scored", BREAKDOWN);
     const g = toGuardianExamReport(internal);
     if (g.report_state !== "scored") throw new Error(g.report_state);
-    expect(g.domain_breakdown).toEqual(BREAKDOWN);
+    // Expected bars computed here, not by the projection under test (G3-02, SCL-189).
+    expect(g.domain_breakdown).toEqual(
+      BREAKDOWN.map((r) => ({
+        section: r.section,
+        domain: r.domain,
+        bar_pct: Math.round((100 * r.correct) / r.total),
+      })),
+    );
     expect(g).not.toHaveProperty("domain_segments");
     expect(g).not.toHaveProperty("omitted_domains");
   });

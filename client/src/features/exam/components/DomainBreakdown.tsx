@@ -11,17 +11,28 @@
  *
  * GUARDIAN ONLY since SCL-180 (amended 2026-09-29), owner ruling 7 (@implemented
  * [2026-09-29]): the student's tab draws seven segments per domain (`DomainSegments`) and
- * never a correct-of-total count; this component is unchanged for the guardian's view.
+ * never a correct-of-total count.
+ *
+ * G3-02 (R4, SCL-189): a guardian row carries `bar_pct` and no counts, so it draws the bar
+ * with no "N of M correct" beside it. The row shape decides, not a prop: a component
+ * handed counts shows them, and one handed a bar has nothing else to show.
  */
 import type { ExamDomainBreakdownRow } from "@lyceon/shared/exam-report-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
+import type { GuardianDomainBarRow } from "@lyceon/shared/exam-guardian-report-schema";
+
+export type DomainBreakdownRow = ExamDomainBreakdownRow | GuardianDomainBarRow;
+
+function barPercent(r: DomainBreakdownRow): number {
+  return "bar_pct" in r ? r.bar_pct : (r.correct / r.total) * 100;
+}
 
 const SECTION_ORDER = ["RW", "M"] as const;
 
 export function DomainBreakdown({
   rows,
 }: {
-  rows: ReadonlyArray<ExamDomainBreakdownRow>;
+  rows: ReadonlyArray<DomainBreakdownRow>;
 }) {
   return (
     <div className="flex flex-col gap-5" data-testid="exam-domain-breakdown">
@@ -45,9 +56,11 @@ export function DomainBreakdown({
                 >
                   <div className="flex items-baseline justify-between gap-3 text-[15px]">
                     <span className="font-medium">{r.domain}</span>
-                    <span className="shrink-0 tabular-nums text-[var(--exam-muted)]">
-                      {r.correct} of {r.total} correct
-                    </span>
+                    {"correct" in r && (
+                      <span className="shrink-0 tabular-nums text-[var(--exam-muted)]">
+                        {r.correct} of {r.total} correct
+                      </span>
+                    )}
                   </div>
                   <div
                     aria-hidden="true"
@@ -55,7 +68,7 @@ export function DomainBreakdown({
                   >
                     <div
                       className="h-full rounded-full bg-[var(--exam-accent)]"
-                      style={{ width: `${(r.correct / r.total) * 100}%` }}
+                      style={{ width: `${barPercent(r)}%` }}
                     />
                   </div>
                 </li>
