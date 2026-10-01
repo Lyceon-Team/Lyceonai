@@ -29,6 +29,9 @@ type Taxonomy = {
   domains: Record<string, string[]>;
   skills: Record<string, string[]>;
   difficulty: Record<string, string>;
+  domain_weights?: Record<string, Record<string, number>>;
+  batch_size?: number;
+  section_split?: Record<string, number>;
   item_types: string[];
   option_keys: string[];
   distractor_taxonomy: Record<string, string[]>;
@@ -1252,6 +1255,25 @@ async function main(): Promise<void> {
   console.log("Domain mix (Rule 9):");
   for (const [domain, { count, pct }] of Object.entries(domainMix)) {
     console.log(`  ${domain}: ${count} (${pct} of section)`);
+  }
+
+  // Rule 9b — Domain weight deviation warning
+  const DOMAIN_MIX_TOLERANCE = 0.1; // 10 percentage points
+  if (taxonomy.domain_weights) {
+    for (const [section, weights] of Object.entries(taxonomy.domain_weights)) {
+      const sectionQs = assembled.filter((q) => q.section === section);
+      if (sectionQs.length === 0) continue;
+      for (const [domain, targetWeight] of Object.entries(weights)) {
+        const actual = sectionQs.filter((q) => q.domain === domain).length;
+        const actualPct = actual / sectionQs.length;
+        const deviation = Math.abs(actualPct - targetWeight);
+        if (deviation > DOMAIN_MIX_TOLERANCE) {
+          console.warn(
+            `  ⚠ DOMAIN_MIX_DEVIATION: ${domain} actual ${(actualPct * 100).toFixed(1)}% vs target ${(targetWeight * 100).toFixed(1)}% (deviation ${(deviation * 100).toFixed(1)}pp > ${(DOMAIN_MIX_TOLERANCE * 100).toFixed(0)}pp tolerance)`,
+          );
+        }
+      }
+    }
   }
 
   const report = {

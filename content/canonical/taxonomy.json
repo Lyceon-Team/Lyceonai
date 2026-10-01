@@ -68,6 +68,22 @@
     "2": "Medium — two-to-three steps or one non-obvious concept",
     "3": "Hard — multi-step, layered, subtle-trap"
   },
+  "domain_weights": {
+    "M": {
+      "Algebra": 0.35,
+      "Advanced Math": 0.35,
+      "Problem Solving and Data Analysis": 0.15,
+      "Geometry and Trigonometry": 0.15
+    },
+    "RW": {
+      "Information and Ideas": 0.30,
+      "Craft and Structure": 0.30,
+      "Expression of Ideas": 0.20,
+      "Standard English Conventions": 0.20
+    }
+  },
+  "batch_size": 90,
+  "section_split": { "M": 60, "RW": 30 },
   "item_types": ["mcq", "grid_in"],
   "option_keys": ["A", "B", "C", "D"],
   "distractor_taxonomy": {
