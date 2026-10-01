@@ -221,7 +221,23 @@ export default function ProfileComplete() {
     return <Redirect to="/dashboard" />;
   }
 
-  if (profile?.requiredProfileComplete && profile?.profileCompletedAt) {
+  /**
+   * G-NEW-03: an ALREADY-completed profile redirects on render — but not the one this page is
+   * completing. `onSuccess` refetches `/api/profile` before `refreshUser()` has updated the
+   * session role, so for that interval the refetched profile said "completed guardian" while
+   * the auth context still said "student". Redirecting on it sent the new guardian to
+   * /guardian as a student; `RequireRole` bounced them to /dashboard, whose widgets called
+   * `/api/progress/kpis` and `/projection` (403 `guardian_blocked`, production 2026-09-29).
+   * While the completion is in flight or done, the one navigation is `onSuccess`'s, after
+   * the refresh.
+   */
+  const completing =
+    completionMutation.isPending || completionMutation.isSuccess;
+  if (
+    !completing &&
+    profile?.requiredProfileComplete &&
+    profile?.profileCompletedAt
+  ) {
     return (
       <Redirect
         to={resolvePostCompletionPath(

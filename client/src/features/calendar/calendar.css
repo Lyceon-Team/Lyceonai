@@ -1634,3 +1634,33 @@
     transform: translateY(0);
   }
 }
+
+/*
+ * Phone centring, below 640px (owner decision 2026-10-01 on PR 1003, item 10). On a phone
+ * the header's lines, the selected day's heading and the facts footer centre; everything
+ * inside a block card stays as it is. SHARED, by R11: the student's calendar on a phone
+ * centres the same way, and nothing here reaches 640px or wider, so desktop is unchanged
+ * (`tests/e2e/student-calendar.spec.ts`, byte-compared at 1440). Placed after the 767px block
+ * so it wins over that block's `start` alignment at the same specificity.
+ */
+@media (max-width: 639px) {
+  .lyceon-calendar .top {
+    justify-items: center;
+    text-align: center;
+  }
+  .lyceon-calendar .slot,
+  .lyceon-calendar .slot[data-slot^="C"],
+  .lyceon-calendar .slot[data-slot^="R"] {
+    justify-content: center;
+  }
+  .lyceon-calendar .dayhead {
+    text-align: center;
+  }
+  .lyceon-calendar .dnum {
+    justify-content: center;
+  }
+  .lyceon-calendar .facts {
+    justify-content: center;
+    text-align: center;
+  }
+}

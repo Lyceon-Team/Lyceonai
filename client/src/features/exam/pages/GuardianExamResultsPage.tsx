@@ -31,11 +31,18 @@ import type {
   GuardianExamReport,
 } from "@lyceon/shared/exam-guardian-report-schema";
 import {
-  examErrorStatus,
   fetchGuardianExamList,
   fetchGuardianExamReport,
 } from "../api/exam-api";
 import { examKeys } from "../api/keys";
+import { guardianPaths } from "@/features/guardian/paths";
+import {
+  GuardianNoExamsState,
+  GuardianReadFailureState,
+  possessive,
+  useCurrentStudentName,
+  useGuardianReadFailure,
+} from "@/features/guardian/GuardianStates";
 import { MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoading } from "../components/ExamStatus";
@@ -62,69 +69,70 @@ const REPORT_STATE_LABEL: Record<
   voided: "Unavailable",
 };
 
+/**
+ * The page body inside the guardian shell (G4-05). The shell brings the only header — logo,
+ * student switcher, bell, profile menu and the Dashboard / Calendar tabs — so this page no
+ * longer draws its own header or its "Practice tests" link. `exam-root` scopes the exam
+ * styles (`--exam-*`) the shared exam components read.
+ */
 function Shell({
   studentId,
+  sessionId,
   children,
 }: {
   studentId: string;
+  sessionId: string | undefined;
   children: React.ReactNode;
 }) {
   return (
-    <div className="exam-root min-h-screen">
-      <header className="flex h-[60px] items-center justify-between border-b border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 md:px-10">
-        <span className="font-serif text-xl font-semibold">Lyceon</span>
-        <Link
-          href={`/students/${studentId}/tests`}
-          className="text-[13px] font-medium text-[var(--exam-muted)]"
-        >
-          Practice tests
-        </Link>
-      </header>
-      <main
+    <div className="exam-root">
+      <div
         className="mx-auto flex w-full max-w-4xl flex-col gap-7 px-4 py-8 md:px-10"
         data-testid="guardian-exam"
       >
         {children}
         <Link
-          href="/guardian"
-          className="flex min-h-[48px] w-fit items-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-[15px] font-medium"
+          href={
+            sessionId === undefined
+              ? guardianPaths.dashboard(studentId)
+              : guardianPaths.exams(studentId)
+          }
+          className="flex min-h-[48px] w-fit items-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-base font-medium"
+          data-testid="guardian-exam-back"
         >
-          Back to dashboard
+          {sessionId === undefined ? "Back to dashboard" : "All results"}
         </Link>
-      </main>
+      </div>
     </div>
   );
 }
 
-/** The server's denials, in a parent's words. */
-function Denied({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = examErrorStatus(error);
-  const message =
-    status === 402
-      ? "Full-length practice test results are part of the student's subscription. Their results are kept and appear here again when it is active."
-      : status === 404
-        ? "We couldn't find this. The student may no longer be linked to your account."
-        : "We couldn't load these results. Check your connection and try again.";
+/**
+ * The server's denials, in a parent's words, naming the student (G4-06): a 402 is the lapsed
+ * state with its named call to action, a 404 the revoked state (the student's reads are
+ * forgotten and the roster refetched), anything else an error with "Try again".
+ */
+function Denied({
+  studentId,
+  error,
+  what,
+  onRetry,
+}: {
+  studentId: string;
+  error: unknown;
+  what: string;
+  onRetry: () => void;
+}) {
+  const name = useCurrentStudentName();
+  const failure = useGuardianReadFailure(studentId, error);
   return (
-    <Panel title={status === 402 ? "Subscription needed" : "Not available"}>
-      <p
-        role="alert"
-        className="m-0 text-[15px] leading-relaxed"
-        data-testid="guardian-exam-denied"
-        data-status={status ?? ""}
-      >
-        {message}
-      </p>
-      {status !== 402 && status !== 404 && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="min-h-[44px] w-fit rounded-full bg-[var(--exam-accent)] px-6 text-sm font-medium text-white"
-        >
-          Try again
-        </button>
-      )}
-    </Panel>
+    <GuardianReadFailureState
+      failure={failure ?? "error"}
+      name={name}
+      studentId={studentId}
+      what={`${possessive(name)} ${what}`}
+      onRetry={onRetry}
+    />
   );
 }
 
@@ -134,7 +142,7 @@ export default function GuardianExamResultsPage() {
     sessionId?: string;
   }>();
   return (
-    <Shell studentId={studentId}>
+    <Shell studentId={studentId} sessionId={sessionId}>
       {sessionId === undefined ? (
         <ResultsList studentId={studentId} />
       ) : (
@@ -142,6 +150,10 @@ export default function GuardianExamResultsPage() {
       )}
     </Shell>
   );
+}
+
+function NoExams() {
+  return <GuardianNoExamsState name={useCurrentStudentName()} />;
 }
 
 function ResultsList({ studentId }: { studentId: string }) {
@@ -155,6 +167,8 @@ function ResultsList({ studentId }: { studentId: string }) {
   if (list.isError) {
     return (
       <Denied
+        studentId={studentId}
+        what="test results"
         error={list.error}
         onRetry={() =>
           void queryClient.invalidateQueries({
@@ -168,12 +182,7 @@ function ResultsList({ studentId }: { studentId: string }) {
     <>
       <Title name="Practice test results" line="Full-length practice tests" />
       {list.data.length === 0 ? (
-        <Panel title="No practice tests yet">
-          <p className="m-0 text-[15px] leading-relaxed">
-            Results appear here after the student takes a full-length practice
-            test.
-          </p>
-        </Panel>
+        <NoExams />
       ) : (
         <ul
           className="m-0 flex list-none flex-col gap-3 p-0"
@@ -182,19 +191,22 @@ function ResultsList({ studentId }: { studentId: string }) {
           {list.data.map((t) => (
             <li key={t.session_id}>
               <Link
-                href={`/students/${studentId}/tests/${t.session_id}`}
+                href={guardianPaths.exam(studentId, t.session_id)}
                 className="flex min-h-[64px] items-center justify-between gap-4 rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] px-5 py-3"
               >
                 <span className="flex flex-col">
-                  <span className="text-[15px] font-semibold">
+                  <span className="text-base font-semibold">
                     {t.test_form_name}
                   </span>
-                  <span className="text-[13px] text-[var(--exam-muted)]">
+                  <span className="text-base text-[var(--exam-muted)]">
+                    {t.completed_at === null
+                      ? ""
+                      : `${formatDate(t.completed_at)} · `}
                     {MODE_SHORT_LABEL[t.mode]} timing · Attempt{" "}
                     {t.attempt_number_for_form}
                   </span>
                 </span>
-                <span className="text-[13px] font-medium">
+                <span className="text-base font-medium">
                   {REPORT_STATE_LABEL[t.report_state]}
                 </span>
               </Link>
@@ -223,6 +235,8 @@ function Result({
   if (report.isError) {
     return (
       <Denied
+        studentId={studentId}
+        what="test result"
         error={report.error}
         onRetry={() =>
           void queryClient.invalidateQueries({
@@ -267,6 +281,8 @@ function AttemptFacts({
 }
 
 export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
+  // G4-06: the withheld-score line names the student; the student's own report says "Your".
+  const withheld = `${possessive(useCurrentStudentName())} score can't be shown right now. Please check back soon.`;
   switch (report.report_state) {
     case "scored":
       return (
@@ -275,7 +291,10 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             name={report.test_form_name}
             line={`Completed ${formatDate(report.completed_at)}`}
           />
-          <DisclosedScore disclosure={report.disclosure}>
+          <DisclosedScore
+            disclosure={report.disclosure}
+            withheldCopy={withheld}
+          >
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
                 <div className="flex flex-col">
@@ -285,7 +304,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
                   >
                     {report.score.total_scaled}
                   </span>
-                  <span className="text-sm text-[var(--exam-muted)]">
+                  <span className="text-base text-[var(--exam-muted)]">
                     Total score · 400–1600
                   </span>
                 </div>
@@ -315,10 +334,13 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             name={report.test_form_name}
             line={`Ended ${formatDate(report.abandoned_at)}`}
           />
-          <DisclosedScore disclosure={report.disclosure}>
+          <DisclosedScore
+            disclosure={report.disclosure}
+            withheldCopy={withheld}
+          >
             <Panel title="Partial score">
               <p
-                className="m-0 text-[15px] leading-relaxed"
+                className="m-0 text-base leading-relaxed"
                 data-testid="exam-partial-summary"
               >
                 {report.partial_disclosure.summary}
@@ -346,7 +368,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
         <>
           <Title name={report.test_form_name} line="Test submitted" />
           <Panel title="Being scored">
-            <p className="m-0 text-[15px] leading-relaxed" role="status">
+            <p className="m-0 text-base leading-relaxed" role="status">
               This test has been submitted and is being scored. Scores usually
               appear within a few minutes.
             </p>
@@ -359,7 +381,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
           <Title name={report.test_form_name} line="Test submitted" />
           <Panel title="Score delayed">
             <p
-              className="m-0 text-[15px] leading-relaxed"
+              className="m-0 text-base leading-relaxed"
               data-testid="guardian-exam-delayed"
             >
               A technical issue on our end delayed this score. Our team is
@@ -379,7 +401,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
                 : "In progress"
             }
           >
-            <p className="m-0 text-[15px] leading-relaxed">
+            <p className="m-0 text-base leading-relaxed">
               {report.session_state === "abandoned_final"
                 ? "This attempt ended before it was finished, so it has no score."
                 : "A score appears here once both sections are submitted."}
@@ -392,7 +414,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
         <>
           <Title name={report.test_form_name} line="Practice test" />
           <Panel title="Not available right now">
-            <p className="m-0 text-[15px] leading-relaxed">
+            <p className="m-0 text-base leading-relaxed">
               This result can't be shown at the moment.
             </p>
           </Panel>

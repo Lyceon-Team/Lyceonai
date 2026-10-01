@@ -119,10 +119,14 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
 
   it("every allowlist entry is a route in App.tsx (the file's own rule)", () => {
     const app = read("client/src/App.tsx");
+    // G4-01: the guardian routes are mounted in App.tsx from one table, GUARDIAN_ROUTES.
+    expect(app).toContain("GUARDIAN_ROUTES");
+    const guardianRoutes = read("client/src/features/guardian/routes.tsx");
     for (const entry of RETURN_PATH_ALLOWLIST) {
-      expect(app, `${entry} is allowlisted but not mounted`).toContain(
-        `path="${entry}"`,
-      );
+      const mounted =
+        app.includes(`path="${entry}"`) ||
+        guardianRoutes.includes(`path: "${entry}"`);
+      expect(mounted, `${entry} is allowlisted but not mounted`).toBe(true);
     }
   });
 });

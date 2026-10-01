@@ -118,6 +118,14 @@ jobs:
       - name: Run Tests (whole suite — blocking)
         run: pnpm test
 
+      # @spec [Coding Standards §3.1; student-ui register F-24; owner brief 7] | @implemented
+      # [2026-09-30] | BLOCKING. `pnpm run check` is `tsc` over the root tsconfig — every file the
+      # retired CI-tsconfig step checked (tsconfig.ci.json), plus four more — and exits non-zero on
+      # any error. It reached 0 errors on 2026-09-30 (41 → 26 → 0); from here a new type error
+      # fails this job instead of joining an accepted count.
+      - name: TypeScript check — whole app (blocking)
+        run: pnpm run check
+
       # Wave 0 canonical primitives (@lyceon/shared): the new SSOT is born proven —
       # strict typecheck, its own tests, and lint at error level all BLOCKING.
       - name: Shared package — typecheck (blocking)
@@ -227,6 +235,12 @@ jobs:
 
       - name: Guardian schema-truth self-test (proves each rule turns it red)
         run: bash scripts/ci/guardian-schema-truth-gate.selftest.sh
+
+      # G4-07 (R12): guardian files take colour from the token set, never a hex literal, and
+      # no text utility under 16px; the calendar's generated 16px floor must match calendar.css.
+      # Legacy unrouted files are excluded by name, and the gate fails if anything imports one.
+      - name: Guardian token gate (no hex literals, no sub-16px text, type floor current)
+        run: node scripts/ci/guardian-token-gate.mjs
 
       # A published legal version directory is the evidence of what somebody
       # agreed to — ARL § 17602(a)(4) requires producing that exact text three
@@ -364,14 +378,11 @@ jobs:
       - name: Accept-list gate self-test (proves it can refuse)
         run: bash scripts/ci/known-gaps-gate.self-test.sh
 
-      # ACCEPTED under ci/known-gaps.yaml -> typecheck-ci-tsconfig, owner karl,
-      # expires 2026-10-01. The gate step above fails this job once that date
-      # passes. The previous comment here claimed "2 real type errors (exam
-      # section field drift)"; the real count is 41 across 6 files — which is
-      # what an unrenewed suppression decays into.
-      - name: TypeScript Check (CI tsconfig) — accepted, expires 2026-10-01
-        continue-on-error: true
-        run: pnpm exec tsc -p tsconfig.ci.json
+      # The accepted "TypeScript Check (CI tsconfig)" step that stood here was retired on
+      # 2026-09-30 per its own re-arm condition (ci/known-gaps.yaml, typecheck-ci-tsconfig: "Delete
+      # this entry and drop continue-on-error once `pnpm exec tsc -p tsconfig.ci.json` exits 0").
+      # Both it and `pnpm run check` exit 0; the blocking "TypeScript check — whole app" step in the
+      # `ci` job covers every file it did.
 
       # PROMOTED TO BLOCKING 2026-08-19. Measured before promoting: `pnpm run
       # audit:ci` reports ZERO advisories of any severity, so the
@@ -1177,42 +1188,6 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-code-not-burned.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-code-not-burned.json \
             --file tests/ci/guardian-code-not-burned.pg.ci.test.ts
-
-      # @spec [Doc_05F_Study_Calendar §16] | @implemented [2026-09-22]
-      # The guardian's way in to a student's calendar. Its student rows are INSERTED into
-      # the throwaway Postgres above and READ BACK rather than spelled by hand, which is
-      # what the guardian schema-truth gate (Rule B) requires — so it needs a database, and
-      # the plain `ci` job has none. Behind the summary gate because a skipped file exits 0.
-      - name: Guardian calendar link → real PG proof
-        env:
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: |
-          set -euo pipefail
-          pnpm exec vitest run client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx \
-            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-calendar-link.json
-          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-calendar-link.json \
-            --file client/src/pages/guardian-dashboard.calendar-link.pg.ci.test.tsx
-
-      # @spec [Guardian_Closure_Plan G3-04; owner ruling R7; audit G-AUD-06/19] | @implemented [2026-09-30]
-      # A 404 on mastery, the dashboard and the calendar shows "no longer linked", refetches the
-      # roster and drops the student's panels; unlinking the selected student removes its panels.
-      # The student row is a real `profiles` row read back from Postgres (schema-truth gate Rule B),
-      # so it needs the database. Behind the summary gate because a skipped file exits 0.
-      - name: Guardian no-longer-linked → real PG proof
-        env:
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: |
-          set -euo pipefail
-          pnpm exec vitest run client/src/pages/guardian-dashboard.no-longer-linked.pg.ci.test.tsx \
-            --reporter=default --reporter=json --outputFile=/tmp/vitest-guardian-no-longer-linked.json
-          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-no-longer-linked.json \
-            --file client/src/pages/guardian-dashboard.no-longer-linked.pg.ci.test.tsx
 
       # @spec [Guardian_Closure_Plan G1-11; audit G-AUD-16] | @implemented [2026-09-29]
       # The guardian denial sweep: every student-only route and every /api/tutor route, read

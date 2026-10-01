@@ -59,11 +59,10 @@ describe("Premium CTA wiring contract", () => {
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
     const userProfile = readCode("client/src/pages/UserProfile.tsx");
 
-    // Quote-agnostic: prettier owns quote style, and pinning it would make a
-    // formatter run read as a behaviour change.
-    expect(userProfile).toMatch(
-      /queryKey:\s*\[["']\/api\/billing\/status["']\]/,
-    );
+    // G4-09 (G-AUD-26): the canonical billing status is the ONE shared, parsed reader —
+    // not a private `["/api/billing/status"]` key with its own local type.
+    expect(userProfile).toContain("useBillingStatus(");
+    expect(userProfile).not.toMatch(/\/api\/billing\/status/);
     // One portal hook, not a fourth copy of the mutation.
     expect(userProfile).toContain("useBillingPortal");
     /**
@@ -76,6 +75,33 @@ describe("Premium CTA wiring contract", () => {
     expect(userProfile).not.toContain("navigate('/upgrade')");
     expect(userProfile).toContain("Manage Subscription");
     expect(userProfile).toContain("View Plans");
+  });
+
+  /**
+   * G4-09 (G-AUD-26): one reader of `GET /api/billing/status` on the client. Four readers
+   * under three cache keys with four private types, none parsed, was the defect; a fifth
+   * reader added anywhere reopens it, so the whole client tree is scanned, not a list.
+   */
+  it("G4-09: only useBillingStatus reads /api/billing/status on the client", () => {
+    const readers: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(path.join(repoRoot, dir), {
+        withFileTypes: true,
+      })) {
+        const rel = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(rel);
+        else if (
+          /\.tsx?$/.test(entry.name) &&
+          !/\.test\.tsx?$/.test(entry.name)
+        ) {
+          if (/["'`]\/api\/billing\/status["'`]/.test(readCode(rel))) {
+            readers.push(rel);
+          }
+        }
+      }
+    };
+    walk("client/src");
+    expect(readers).toEqual(["client/src/hooks/useBillingStatus.ts"]);
   });
 
   it("registers the canonical /upgrade route", () => {
@@ -119,9 +145,13 @@ describe("Premium CTA wiring contract", () => {
     const checkoutPoller = readCode(
       "client/src/components/guardian/CheckoutReturnPoller.tsx",
     );
-    const portalButton = readCode(
-      "client/src/components/guardian/ManageSubscriptionButton.tsx",
-    );
+    // The guardian's portal controls: the payment-health banner in the shell and the one
+    // "Manage billing" on Linked students & billing. `ManageSubscriptionButton` was deleted
+    // with the single-page dashboard that rendered it (2026-10-01).
+    const portalControls = [
+      readCode("client/src/features/guardian/GuardianPaymentBanner.tsx"),
+      readCode("client/src/features/guardian/GuardianStudentsPage.tsx"),
+    ];
 
     // The surface exists, on the card, with the shared plans helper.
     expect(purchaseCard).toContain("getBillingPlans");
@@ -181,14 +211,18 @@ describe("Premium CTA wiring contract", () => {
      * also exported a subscription-management button is the same misdirection
      * the rename removed, so the button moved out — and its test file was
      * already called `ManageSubscriptionButton.test.tsx`, importing from a
-     * module of a different name.
+     * module of a different name. Since 2026-10-01 that button is deleted with
+     * the single-page dashboard it sat on; the portal controls are the shell's
+     * payment-health banner and the billing page's "Manage billing".
      *
      * The endpoint string belongs in `useBillingPortal`, the single error
      * surface for every portal call site, and must NOT be re-spelled in either
      * component.
      */
-    expect(portalButton).toContain("useBillingPortal");
-    expect(portalButton).not.toContain("/api/billing/portal");
+    for (const portalControl of portalControls) {
+      expect(portalControl).toContain("useBillingPortal");
+      expect(portalControl).not.toContain("/api/billing/portal");
+    }
     expect(checkoutPoller).not.toContain("useBillingPortal");
     expect(checkoutPoller).not.toContain("/api/billing/portal");
   });

@@ -31,9 +31,6 @@
  * entry points now reach it from facts the server does write.
  */
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { csrfFetch } from "@/lib/csrf";
-import { parseApiErrorFromResponse } from "@/lib/api-error";
 import { X, Sparkles, CreditCard, ArrowRight } from "lucide-react";
 import {
   Card,
@@ -44,6 +41,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
+import { useBillingStatus, type BillingStatus } from "@/hooks/useBillingStatus";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   resolveCtaCopy,
@@ -96,12 +94,11 @@ export type PremiumUpgradePromptProps = {
   readonly onDismiss?: () => void;
 };
 
-/** Only what this component reads from `GET /api/billing/status`. */
-type BillingStatusForCta = {
-  readonly lapsed?: boolean;
-  readonly hasBillingAccount?: boolean;
-  readonly hasActiveLink?: boolean;
-};
+/** Only what this component reads from `GET /api/billing/status` (G4-09: the shared shape). */
+type BillingStatusForCta = Pick<
+  BillingStatus,
+  "lapsed" | "hasBillingAccount" | "hasActiveLink"
+>;
 
 /**
  * Derive the state from the viewer's own billing facts.
@@ -149,22 +146,8 @@ export function PremiumUpgradePrompt({
    * Skipped entirely when the caller already knows the state — the guardian
    * dashboard does, and it knows more than this could (which student).
    */
-  const { data: billingStatus } = useQuery<BillingStatusForCta>({
-    queryKey: ["billing-status"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/billing/status", {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw await parseApiErrorFromResponse(
-          res,
-          "Failed to get billing status",
-        );
-      }
-      return res.json() as Promise<BillingStatusForCta>;
-    },
+  const { data: billingStatus } = useBillingStatus({
     enabled: state === undefined,
-    retry: 1,
   });
 
   const resolved: BillingCtaState =

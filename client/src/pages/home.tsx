@@ -74,7 +74,9 @@ export default function HomePage() {
   });
   const formattedMonthlyPrice = formatMonthlyPrice(monthlyPrice ?? null);
 
-  const { isAuthenticated, signOut } = useSupabaseAuth();
+  const { isAuthenticated, isGuardian, signOut } = useSupabaseAuth();
+  // G4-01: a signed-in guardian's home is /guardian; /dashboard is the student's.
+  const homeHref = isGuardian ? "/guardian" : "/dashboard";
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -204,7 +206,7 @@ export default function HomePage() {
                 {isAuthenticated ? (
                   <>
                     <Link
-                      href="/dashboard"
+                      href={homeHref}
                       className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
                       data-testid="button-go-to-dashboard"
                     >
@@ -811,7 +813,7 @@ export default function HomePage() {
               {isAuthenticated ? (
                 <>
                   <Link
-                    href="/dashboard"
+                    href={homeHref}
                     className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2"
                     data-testid="button-footer-dashboard"
                   >

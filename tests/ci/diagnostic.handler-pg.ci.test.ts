@@ -938,16 +938,22 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     // The production catch-23505 path logs "baseline already captured".
     // If the 23505 catch were removed, the fallback logs "baseline insert
     // failed" — this assertion would fail, detecting the regression.
+    // F-34 (2026-09-30): the call now has the logger's full signature, so the event is
+    // matched on (component, operation) and the message is asserted — this used to match
+    // `args[0]`, which pinned the short-arity call that wrote the prose into `component`.
     const capturedCall = infoSpy.mock.calls.find(
       (args) =>
-        typeof args[0] === "string" &&
-        args[0].includes("baseline already captured"),
+        args[0] === "DIAGNOSTIC_BASELINE" &&
+        args[1] === "baseline_already_captured",
     );
     expect(
       capturedCall,
-      'Expected logger.info("[diagnostic] baseline already captured ...") — ' +
+      'Expected logger.info("DIAGNOSTIC_BASELINE", "baseline_already_captured", …) — ' +
         "the production catch-23505 path must be exercised",
     ).toBeDefined();
+    expect(capturedCall?.[2]).toBe(
+      "[diagnostic] baseline already captured (idempotent no-op)",
+    );
 
     infoSpy.mockRestore();
 
