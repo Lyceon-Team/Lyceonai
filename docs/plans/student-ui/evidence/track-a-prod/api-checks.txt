@@ -1,0 +1,230 @@
+# API checks, free account, 2026-10-01T04:15:01.600Z
+signin POST /api/auth/signin -> 200; landed /dashboard
+
+GET /api/profile
+  status 200
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::nf7t9-1790828101877-0f54cead68e1
+  body: {"authenticated":true,"featureFlags":{"accountDeletionLifecycleV2":true},"pendingDeletion":null,"user":{"id":"<own-id>","email":"<free-account-email>","display_name":"QA Student","name":"QA Student","username":"<free-account-username>","role":"student","isAdmin":false,"isGuardian":false,"is_under_13":false,"guardianEmail":null,"dateOfBirth":"<invented-test-value>","marketingOptIn":false,"studentLinkCode":null,"student_link_code":null,"profileCompletedAt":"2026-10-01T04:13:37.208+00:00","requiredProfileComplete":true,"guardianConsentRequired…
+
+(own profile id resolved: yes; written below as <own-id>)
+
+## UI-01 denials
+
+GET /api/tests/forms
+  status 403
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::zbf8h-1790828102360-bbecdb58746b
+  body: {"error":{"code":"entitlement_required","message":"Full-length exams need an active subscription.","details":{"feature":"exam_full_length"}},"requestId":"ef4c95f8-557a-47d6-86a9-ec753b392972"}
+
+GET /api/calendar
+  status 200
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::kq525-1790828102788-76f08750f5d1
+  body: {"status":"setup_required","defaults":{"timezone":"America/Chicago","daily_minutes_presets":[15,30,45,60,90,120],"daily_minutes_min":15,"daily_minutes_max":180,"target_exam_date_max_days":540,"default_full_length_interval_weeks":2,"default_full_length_weekday":6,"final_exam_lead_days":7},"entitled":false,"requestId":"bc215043-69e1-42fe-b346-c79187be1cb7"}
+
+GET /api/tutor/conversations
+  status 403
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::pz5pd-1790828103348-8823ce419e3c
+  body: {"error":{"message":"An active entitlement is required to use the tutor.","code":"entitlement_required","details":{"feature":"tutor_access"}}}
+
+GET /api/students/<own-id>/mastery/domains
+  status 402
+  body: {"error":"Subscription required","code":"entitlement_required","message":"An active subscription is required to see this.","details":{"feature":"mastery_detail"},"requestId":"3f0dc736-6664-4340-a63d-1e844d021a7d"}
+
+## UI-07
+
+GET /api/questions/stats
+  status 403
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::kq525-1790828103871-c3d03b0ec34b
+  body: {"error":"Admin access required","message":"You do not have permission to access this resource","requestId":"c145e8f4-e086-4f86-be74-a0e7348425ed"}
+
+## UI-05 deleted /api/questions* (GET)
+
+GET /api/questions
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::kq525-1790828104079-6f200e392e79
+  body: {"error":"API endpoint not found"}
+
+GET /api/questions/recent
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::g7tqh-1790828104290-f80092c85ef0
+  body: {"error":"API endpoint not found"}
+
+GET /api/questions/random
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::g7tqh-1790828104508-50652066c1cc
+  body: {"error":"API endpoint not found"}
+
+GET /api/questions/count
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::7htmx-1790828104711-b76a91629377
+  body: {"error":"API endpoint not found"}
+
+GET /api/questions/feed
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::n6qzw-1790828104964-dd2f7c723f30
+  body: {"error":"API endpoint not found"}
+
+GET /api/questions/SATMATH000001
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::tlnsr-1790828105190-0ce0d6a8378e
+  body: {"error":"API endpoint not found"}
+
+(csrf token obtained: yes; never printed)
+
+POST /api/questions/feedback
+  status 404
+  cache-control: private, no-store
+  content-type: text/html; charset=utf-8
+  x-vercel-id: cle1::iad1::zbf8h-1790828105505-27d91da88015
+  body: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api/questions/feedback</pre>
+</body>
+</html>
+
+
+## UI-06 deleted endpoints
+
+GET /api/auth/debug
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::dh4w6-1790828105704-2def9958d158
+  body: {"error":"API endpoint not found"}
+
+GET /api/legal/acceptances
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::kq525-1790828105927-66c4840824ab
+  body: {"error":"API endpoint not found"}
+
+GET /api/billing/publishable-key
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::rhh8z-1790828106114-234e11a4197f
+  body: {"error":"API endpoint not found"}
+
+GET /api/account/status
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::45vdd-1790828106313-cc2f347ea4f7
+  body: {"error":"API endpoint not found"}
+
+GET /api/health/practice
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::g7tqh-1790828106504-3c9af20e3a4a
+  body: {"error":"API endpoint not found"}
+
+GET /api/_whoami
+  status 404
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::4n2mq-1790828106696-9d6405694d42
+  body: {"error":"API endpoint not found"}
+
+POST /api/auth/admin-provision
+  status 404
+  cache-control: private, no-store
+  content-type: text/html; charset=utf-8
+  x-vercel-id: cle1::iad1::pz5pd-1790828106893-6d737abf5420
+  body: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api/auth/admin-provision</pre>
+</body>
+</html>
+
+
+POST /api/legal/accept
+  status 404
+  cache-control: private, no-store
+  content-type: text/html; charset=utf-8
+  x-vercel-id: cle1::iad1::tlnsr-1790828107085-6e9f4d4cdac9
+  body: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api/legal/accept</pre>
+</body>
+</html>
+
+
+POST /api/account/select
+  status 404
+  cache-control: private, no-store
+  content-type: text/html; charset=utf-8
+  x-vercel-id: cle1::iad1::n8dtn-1790828107311-80a6a9af62b0
+  body: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api/account/select</pre>
+</body>
+</html>
+
+
+## Controls (live routes, same session)
+
+GET /api/health
+  status 200
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::dh4w6-1790828107562-70374312f08c
+  body: {"status":"ok"}
+
+GET /api/progress/kpis
+  status 200
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::vmhgc-1790828107828-1c2989ae084b
+  body: {"modelVersion":"kpi_truth_v1","timezone":"America/Chicago","week":{"questionsSolved":0,"accuracy":null,"explanations":{"week_questions":{"ruleId":"RULE_WEEK_QUESTIONS","whatThisMeans":"Scored practice events recorded in the last 7 days.","whyThisChanged":"Scored events recorded in the last 7 days.","whatToDoNext":"Start with one 20-question block and immediate review to rebuild momentum."},"week_accuracy":{"ruleId":"RULE_WEEK_ACCURACY","whatThisMeans":"Percent of scored events answered correctly in the last 7 days.","whyThisChanged":"Correct fraction across scored events in the last 7 days.",…
+
+## UI-16
+
+GET /api/review/pool?tz=America%2FNew_York
+  status 200
+  cache-control: private, no-store
+  content-type: application/json; charset=utf-8
+  x-vercel-id: cle1::iad1::7w85m-1790828108340-e1333a9bbc30
+  body: {"total":0,"timezone":"America/New_York","timezoneFallback":false,"bySection":[],"byDomain":[],"bySkill":[],"sessions":[],"sessions_next_cursor":null}

@@ -1,0 +1,5 @@
+# 2026-10-01T04:15:54.023Z signin 200
+POST /api/calendar/plan/regenerate (free account, no study profile)
+  status 402
+  cache-control: private, no-store
+  body: {"error":"Subscription required","code":"entitlement_required","message":"An active subscription is required to see this.","details":{"feature":"calendar_access"},"requestId":"d460a81f-1a93-434a-89dd-b3d46331f3b6"}

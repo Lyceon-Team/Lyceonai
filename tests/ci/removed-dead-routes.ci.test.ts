@@ -13,12 +13,12 @@
  *  - NODE_ENV is "test", not "production". Several of these handlers (`/api/_whoami`,
  *    `/api/auth/debug`, `/api/health/practice`) answered 404 only in production; outside it
  *    they served a body. Running here proves the route is gone, not that a branch hid it.
- *  - A GET must land on the app's `/api/*` fallback, whose body is exactly
+ *  - Every method must land on the app's `/api` fallback, whose body is exactly
  *    `{ error: "API endpoint not found" }`. That separates it from handler-emitted 404s such
  *    as `getQuestionById`'s `{ error: "Question not found" }` or the old
- *    `/api/legal/accept` stub's `{ success: false, error: "Not found" }`.
- *  - A POST has no JSON fallback; it lands on Express's default final handler (404, HTML,
- *    so no JSON body). Asserting an empty parsed body separates it from any handler JSON.
+ *    `/api/legal/accept` stub's `{ success: false, error: "Not found" }`. Until F-42 (owner
+ *    ruling 2026-10-01) a POST fell through to Express's default HTML 404 instead; it now gets
+ *    the same JSON fallback as a GET.
  *
  * Held routes (owner, UI-06) are asserted to still answer, so this file cannot pass by
  * breaking the whole surface.
@@ -100,17 +100,15 @@ describe("Removed dead routes (UI-05, UI-06) are not registered", () => {
   );
 
   it.each(REMOVED_POST_PATHS)(
-    "POST %s reaches no handler (Express default 404)",
+    "POST %s reaches no handler (the API's JSON 404, F-42)",
     async (p) => {
       const res = await request(app)
         .post(p)
         .set("Content-Type", "application/json")
         .send({});
       expect(res.status).toBe(404);
-      expect(res.headers["content-type"] ?? "").not.toContain(
-        "application/json",
-      );
-      expect(res.body).toEqual({});
+      expect(res.headers["content-type"] ?? "").toContain("application/json");
+      expect(res.body).toEqual(API_FALLBACK_BODY);
     },
   );
 
