@@ -286,6 +286,7 @@ export function billingStatus(
     hasBillingAccount: true,
     isPaid: true,
     source: "guardian_linked_student",
+    managedBy: "self",
     requestId: "r",
     ...over,
   });
