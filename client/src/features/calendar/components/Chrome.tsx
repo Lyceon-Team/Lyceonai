@@ -67,6 +67,7 @@ export function LeftRail({
   onMonthStep,
   footer,
   schedule,
+  hideBrand = false,
 }: {
   name: string;
   subtitle: string;
@@ -90,13 +91,22 @@ export function LeftRail({
    * one place to look for it and one control to keep working.
    */
   schedule?: { summary: string };
+  /**
+   * Drops the rail's "Lyceon" wordmark. The guardian calendar sits inside `GuardianShell`,
+   * whose header already carries the logo, so a second mark one inch below it is noise (owner
+   * decision 2026-10-01, item 6). A PROP, not a fork: the student calendar passes nothing
+   * and renders exactly as before.
+   */
+  hideBrand?: boolean;
 }): JSX.Element {
   const dates = monthGridDates(miniMonth);
   return (
     <aside className="rail">
-      <div className="brand">
-        <i aria-hidden="true" /> Lyceon
-      </div>
+      {hideBrand ? null : (
+        <div className="brand">
+          <i aria-hidden="true" /> Lyceon
+        </div>
+      )}
       <div className="who">
         <b>{name}</b>
         <span>{subtitle}</span>

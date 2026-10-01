@@ -76,27 +76,53 @@ export function GuardianShell({
 /**
  * G4-07 (R12): the real Lyceon logo, not a graduation-cap icon. The one logo asset,
  * `client/public/lyceon-logo.png`, is a 1024px square — the hexagon-and-book mark above the
- * LYCEON wordmark on the brand cream. At header size the wordmark would be unreadably small,
- * so this shows the asset's MARK through a 40px window (the asset itself is unchanged and no
- * second asset is made); the word "Lyceon" beside it is live text. The window's numbers are
- * the mark's bounds in the asset: centred at (512, 420) of 1024, about 404px tall, drawn at
- * 100px so the mark fills the 40px window.
+ * LYCEON wordmark, on an OPAQUE cream (rgb 250 244 232). At header size the wordmark would be
+ * unreadably small, so the viewBox shows only the MARK (centred at 512, 420 of 1024, about
+ * 404px tall); the word "Lyceon" beside it is live text. No second asset is made.
+ *
+ * NO SQUARE BEHIND THE MARK (owner decision 2026-10-01, item 9). Drawn as a plain image, the
+ * asset's cream showed as a square on the header's own, lighter cream background, and as a bright
+ * one in dark mode. So the mark is drawn through an SVG filter instead: the asset's luminance
+ * becomes its alpha (cream → transparent, the navy mark → opaque, the anti-aliased edge in
+ * between) and the mark is painted in `currentColor` — the header's text colour, so it is
+ * navy on cream and cream on navy. The browser check in `tests/e2e/guardian-surfaces.spec.ts`
+ * reads the pixels at the mark's corners and requires them to be the header's.
  */
 function LyceonMark(): JSX.Element {
+  const filterId = `lyceon-mark-${React.useId().replace(/:/g, "")}`;
+  // alpha = 1.6 − 2 × luminance (Rec. 709 weights): anything at or above L 0.8 — the cream and
+  // its slightly darker grain (L ≈ 0.9–0.96) — is fully transparent; the navy mark
+  // (L ≈ 0.18) is fully opaque.
+  const ALPHA_FROM_LUMINANCE =
+    "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -0.4252 -1.4304 -0.1444 0 1.6";
   return (
-    <span
-      className="relative block h-10 w-10 shrink-0 overflow-hidden"
+    <svg
+      className="block h-10 w-10 shrink-0 text-foreground"
+      viewBox="310 218 404 404"
+      role="img"
+      aria-label="Lyceon"
       data-testid="lyceon-logo"
     >
-      <img
-        src="/lyceon-logo.png"
-        alt="Lyceon"
-        width={100}
-        height={100}
-        className="absolute max-w-none"
-        style={{ left: -30, top: -21 }}
+      <defs>
+        <filter id={filterId} colorInterpolationFilters="sRGB">
+          <feColorMatrix
+            type="matrix"
+            values={ALPHA_FROM_LUMINANCE}
+            result="ink"
+          />
+          <feFlood floodColor="currentColor" />
+          <feComposite in2="ink" operator="in" />
+        </filter>
+      </defs>
+      <image
+        href="/lyceon-logo.png"
+        x="0"
+        y="0"
+        width="1024"
+        height="1024"
+        filter={`url(#${filterId})`}
       />
-    </span>
+    </svg>
   );
 }
 
@@ -132,8 +158,10 @@ function GuardianHeader({
             title="Lyceon home — your guardian dashboard"
           >
             <LyceonMark />
-            <span className="font-bold text-lg hidden sm:inline">Lyceon</span>
-            <span className="text-base font-semibold text-muted-foreground">
+            {/* On a phone the brand stays and the role label goes (owner decision
+                2026-10-01, item 7); from `sm` up, both. */}
+            <span className="font-bold text-lg">Lyceon</span>
+            <span className="hidden text-base font-semibold text-muted-foreground sm:inline">
               Guardian
             </span>
           </Link>

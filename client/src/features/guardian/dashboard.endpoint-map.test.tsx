@@ -19,6 +19,7 @@ import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ADA,
+  calendarWeek,
   EXAM_SESSION,
   json,
   mountApp,
@@ -129,8 +130,15 @@ describe("G4-03 what the Dashboard does not show", () => {
     net.handlers.push(serveDashboard(ADA));
     await renderedDashboard();
     // Presence first: the served values are on the page.
+    // The served week's own facts (the real read model's), not a typed-in pair.
+    const facts = (
+      calendarWeek() as {
+        facts: { blocks_completed: number; blocks_total: number };
+      }
+    ).facts;
+    expect(facts.blocks_total).toBeGreaterThan(0);
     expect(screen.getByTestId("dashboard-week").textContent).toContain(
-      "4 of 6",
+      `${facts.blocks_completed} of ${facts.blocks_total}`,
     );
     expect(screen.getByTestId("calendar-target").textContent).toContain("1350");
     expect(document.body.textContent).toContain("Proficient");

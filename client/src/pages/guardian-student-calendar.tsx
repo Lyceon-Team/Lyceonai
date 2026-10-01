@@ -86,7 +86,7 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
     [],
   );
 
-  if (calendar.isLoading) return <CalendarSkeleton />;
+  if (calendar.isLoading) return <CalendarSkeleton hideBrand />;
   if (failure !== null || calendar.data === undefined) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">

@@ -463,6 +463,8 @@ export function CalendarView({
     <div className="lyceon-calendar">
       <div className={`app${setup === undefined ? "" : " blur"}`}>
         <LeftRail
+          // The guardian shell carries the logo; the rail does not repeat it (item 6).
+          hideBrand={viewer === "guardian"}
           name={viewerName}
           subtitle={
             readOnly

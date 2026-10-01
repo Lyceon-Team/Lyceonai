@@ -11,9 +11,17 @@
  * control that would act on the plan is rendered — no start, resume, do-it-now, move, remove,
  * edit-schedule or refresh.
  */
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ADA, calendarWeek, json, mountApp, net, roster } from "./test-harness";
+import {
+  ADA,
+  calendarWeek,
+  json,
+  mountApp,
+  net,
+  roster,
+  serveDashboard,
+} from "./test-harness";
 import { browserLocalToday } from "@/features/calendar/lib/dates";
 
 vi.mock("@/contexts/SupabaseAuthContext", async () => {
@@ -111,5 +119,20 @@ describe("G4-04 the Calendar tab", () => {
       expect(screen.queryByRole("button", { name })).toBeNull();
     }
     expect(screen.queryByTestId("topbar-edit-schedule")).toBeNull();
+  });
+
+  // Owner decision 2026-10-01 (item 6): the shell already shows the Lyceon logo, so the
+  // calendar's rail drops its own wordmark for a guardian — by a prop, not a fork.
+  it("the rail carries no Lyceon wordmark under the guardian shell", async () => {
+    net.handlers.push(serveDashboard(ADA));
+    mountApp(Router, `/guardian/${ADA}/calendar`);
+    await screen.findByTestId("guardian-shell");
+    // Presence first: the rail itself is drawn, with its "who" card.
+    await waitFor(() =>
+      expect(
+        document.querySelector(".lyceon-calendar .rail .who"),
+      ).not.toBeNull(),
+    );
+    expect(document.querySelector(".lyceon-calendar .rail .brand")).toBeNull();
   });
 });

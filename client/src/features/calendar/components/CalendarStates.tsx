@@ -27,13 +27,18 @@ export function isEntitlementDenial(error: unknown): boolean {
   return isApiError(error) && error.status === 402;
 }
 
-export function CalendarSkeleton(): JSX.Element {
+/** `hideBrand`: as `LeftRail`'s — the guardian's skeleton sits under a shell with the logo. */
+export function CalendarSkeleton({
+  hideBrand = false,
+}: { hideBrand?: boolean } = {}): JSX.Element {
   return (
     <div className="app" data-testid="calendar-skeleton" aria-busy="true">
       <aside className="rail">
-        <div className="brand">
-          <i aria-hidden="true" /> Lyceon
-        </div>
+        {hideBrand ? null : (
+          <div className="brand">
+            <i aria-hidden="true" /> Lyceon
+          </div>
+        )}
         <div className="who" style={{ height: 52 }} />
         <div className="mini" style={{ height: 180 }} />
       </aside>

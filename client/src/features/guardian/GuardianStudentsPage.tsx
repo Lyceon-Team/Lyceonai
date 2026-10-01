@@ -30,7 +30,7 @@
  */
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useSearch } from "wouter";
+import { Link, useSearch } from "wouter";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -162,6 +162,15 @@ export default function GuardianStudentsPage(): JSX.Element {
         className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6"
         data-testid="guardian-students-page"
       >
+        {/* The way back (owner decision 2026-10-01, item 8). `/guardian` lands on the first
+            student's Dashboard, or the no-students page when there are none. */}
+        <Link
+          href="/guardian"
+          className="w-fit text-base text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          data-testid="students-back-to-dashboard"
+        >
+          &larr; Back to dashboard
+        </Link>
         <h1 className="m-0 text-2xl font-semibold">
           Linked students &amp; billing
         </h1>

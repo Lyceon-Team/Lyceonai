@@ -24,6 +24,8 @@ import {
   roster,
 } from "../../../client/src/features/guardian/test-harness";
 import { billingPlansResponseSchema } from "../../../packages/shared/src/billing-schema";
+import { studentCalendarWeek } from "../../../client/src/features/calendar/calendar-week.fixture";
+import { browserLocalToday } from "../../../client/src/features/calendar/lib/dates";
 
 const fixtures = {
   ADA,
@@ -33,7 +35,10 @@ const fixtures = {
     { id: ADA, name: "Ada" },
     { id: BO, name: "Bo", lapsed: true },
   ]),
+  // The real week (`calendar-week.fixture.ts`): the guardian's projection of it here, and the
+  // student's own payload for the SAME week below — one range, two audiences.
   calendarWeek: calendarWeek(),
+  studentCalendar: studentCalendarWeek(browserLocalToday()),
   masteryDomains: masteryDomains(),
   examList: examList(),
   examReport: examReport(),

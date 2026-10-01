@@ -16,6 +16,8 @@ import { Router as WouterRouter } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { guardianStudentsResponseSchema } from "@lyceon/shared/guardian-student-schema";
 import { guardianCalendarResponseSchema } from "@lyceon/shared";
+import { guardianCalendarWeek } from "@/features/calendar/calendar-week.fixture";
+import { browserLocalToday } from "@/features/calendar/lib/dates";
 import { billingStatusResponseSchema } from "@lyceon/shared/billing-schema";
 import { masteryDomainsResponseSchema } from "@lyceon/shared/mastery-levels";
 import {
@@ -142,7 +144,12 @@ export function mountApp(
 
 export const EXAM_SESSION = FIXTURE_SESSION_ID;
 
-/** A ready guardian calendar week, parsed by the schema the client parses it with. */
+/**
+ * A ready guardian calendar week. By default it is the REAL week: the blocks and the facts
+ * come out of `buildCalendarRange`, projected by `toGuardianCalendarDay` exactly as the server
+ * does (`calendar-week.fixture.ts`), so the Dashboard's header and the Calendar tab read one
+ * story. `completed`/`total` override the facts alone, for a case about the header's words.
+ */
 export function calendarWeek(
   over: {
     streak?: number | null;
@@ -152,50 +159,28 @@ export function calendarWeek(
     testDate?: string | null;
   } = {},
 ): Record<string, unknown> {
-  const payload = guardianCalendarResponseSchema.parse({
-    status: "ready",
-    target_score: over.targetScore === undefined ? 1350 : over.targetScore,
-    target_exam_date:
-      over.testDate === undefined ? "2026-12-06" : over.testDate,
-    projection: [
-      {
-        section: "RW",
-        projectedScoreLow: 590,
-        projectedScoreMid: 620,
-        projectedScoreHigh: 650,
-        relevantQuestionCount: 40,
-        computedAt: "2026-09-29T00:00:00Z",
-      },
-      {
-        section: "M",
-        projectedScoreLow: 590,
-        projectedScoreMid: 610,
-        projectedScoreHigh: 610,
-        relevantQuestionCount: 40,
-        computedAt: "2026-09-29T00:00:00Z",
-      },
-    ],
-    estimates: { practice_seconds_per_unit: 90, review_seconds_per_unit: 60 },
-    full_length_suppressions: [],
-    days: [],
-    facts: {
-      blocks_total: over.total ?? 6,
-      blocks_completed: over.completed ?? 4,
-      blocks_partial: 0,
-      blocks_missed: 1,
-      blocks_in_progress: 0,
-      blocks_scheduled: 1,
-      questions_completed: 80,
-      full_lengths_completed: 0,
-      extra_questions: 5,
-    },
-    streak: {
-      current: over.streak === undefined ? 12 : over.streak,
-      longest: 19,
-      history_complete: false,
-    },
+  const real = guardianCalendarWeek(browserLocalToday(), {
+    ...(over.streak === undefined ? {} : { streak: over.streak }),
+    ...(over.targetScore === undefined
+      ? {}
+      : { targetScore: over.targetScore }),
+    ...(over.testDate === undefined ? {} : { testDate: over.testDate }),
   });
-  return { ok: true, ...payload, requestId: "r" };
+  if (over.completed === undefined && over.total === undefined) return real;
+  const { ok, requestId, ...body } = real;
+  const facts = body.facts as Record<string, number>;
+  return {
+    ok,
+    ...guardianCalendarResponseSchema.parse({
+      ...body,
+      facts: {
+        ...facts,
+        blocks_completed: over.completed ?? facts.blocks_completed,
+        blocks_total: over.total ?? facts.blocks_total,
+      },
+    }),
+    requestId,
+  };
 }
 
 /** Mastery by domain across both sections, parsed by the client's schema. */

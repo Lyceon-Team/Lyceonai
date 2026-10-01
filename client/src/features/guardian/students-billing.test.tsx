@@ -178,4 +178,16 @@ describe("Linked students & billing (G4-10)", () => {
     await waitFor(() => expect(history.at(-1)).toBe(PAGE));
     expect(await screen.findByTestId("guardian-students-page")).toBeTruthy();
   });
+
+  // Owner decision 2026-10-01, item 8: the page had no way back but the browser's.
+  it("'← Back to dashboard' leads back to a student's Dashboard", async () => {
+    const { history } = mountApp(Router, PAGE);
+    const back = await screen.findByRole("link", {
+      name: /back to dashboard/i,
+    });
+    expect(back.getAttribute("href")).toBe("/guardian");
+    fireEvent.click(back);
+    // `/guardian` sends a guardian with students to the first one's Dashboard.
+    await waitFor(() => expect(history.at(-1)).toBe(`/guardian/${ADA}`));
+  });
 });

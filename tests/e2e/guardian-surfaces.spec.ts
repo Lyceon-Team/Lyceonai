@@ -276,3 +276,80 @@ for (const vp of VIEWPORTS) {
     });
   }
 }
+
+/**
+ * Owner decisions 2026-10-01 on PR 1003, items 7 and 9 — the shell header, in a real browser.
+ *   7. At 390 the header shows "Lyceon" and drops "Guardian" (not the other way round).
+ *   9. No background square behind the logo mark: the pixels at the mark's corners are the
+ *      header's own background, not the asset's cream.
+ */
+test.describe("the guardian shell header", () => {
+  for (const vp of VIEWPORTS) {
+    test(`@${vp.name}: the wordmark, and no square behind the mark`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await serve(page);
+      await page.goto(`/guardian/${F.ADA}`);
+      await page
+        .getByTestId("dashboard-exam")
+        .first()
+        .waitFor({ timeout: 15_000 });
+      await page.waitForTimeout(300);
+      const link = page.getByTestId("logo-link");
+      await expect(link.getByText("Lyceon", { exact: true })).toBeVisible();
+      if (vp.name === "390") {
+        await expect(link.getByText("Guardian", { exact: true })).toBeHidden();
+      }
+      // The mark's box, and the header around it, in device pixels.
+      const mark = page.getByTestId("lyceon-logo");
+      const box = await mark.boundingBox();
+      expect(box).not.toBeNull();
+      const shot = await page.screenshot({
+        clip: {
+          x: box!.x - 4,
+          y: box!.y,
+          width: box!.width + 8,
+          height: box!.height,
+        },
+      });
+      const pixels = await page.evaluate(async (b64) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${b64}`;
+        await img.decode();
+        const c = document.createElement("canvas");
+        c.width = img.width;
+        c.height = img.height;
+        const g = c.getContext("2d")!;
+        g.drawImage(img, 0, 0);
+        const at = (x: number, y: number) =>
+          Array.from(g.getImageData(x, y, 1, 1).data);
+        // Each corner of the mark against the header pixel beside it ON THE SAME ROW, 4px
+        // outside the mark: the header's translucent, blurred background is not uniform top
+        // to bottom, so a single reference pixel would compare unlike rows.
+        const top = 1;
+        const bottom = img.height - 2;
+        return [
+          { corner: at(5, top), beside: at(1, top) },
+          { corner: at(img.width - 6, top), beside: at(img.width - 2, top) },
+          { corner: at(5, bottom), beside: at(1, bottom) },
+          {
+            corner: at(img.width - 6, bottom),
+            beside: at(img.width - 2, bottom),
+          },
+        ];
+      }, shot.toString("base64"));
+      // Within 2 of 255 per channel: a filtered layer composites with ±1 rounding, which is
+      // invisible; the asset's cream square differed from the header by 5–7 per channel.
+      for (const { corner, beside } of pixels) {
+        const worst = Math.max(
+          ...corner.map((v, i) => Math.abs(v - beside[i]!)),
+        );
+        expect(
+          worst,
+          `corner ${corner.join(",")} beside ${beside.join(",")}`,
+        ).toBeLessThanOrEqual(2);
+      }
+    });
+  }
+});
