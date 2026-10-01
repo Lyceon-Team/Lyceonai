@@ -1,0 +1,10 @@
+# F-32 two-context deletion test, deletion-test account, 2026-10-01T04:18:35.758Z
+context A sign-in -> 200, at /dashboard
+context B sign-in -> 200, at /dashboard
+B before deletion (presence: B is signed in): GET /api/profile -> 200 authenticated=true pendingDeletion=null code=- x-request-id=5c3f5650-722c-4243-a450-7cb52e55eba3
+A: POST /api/account/delete at 2026-10-01T04:18:48.223Z -> 200 x-request-id=0ee76b6c-651b-445e-9eba-13ef0c6ad247 body=
+A after deletion: at /login
+B: reload /dashboard at 2026-10-01T04:18:56.495Z -> landed /login?next=%2Fdashboard
+B: API calls during that reload: ["GET /api/csrf-token 200","GET /api/profile 401"]
+B after deletion: GET /api/profile -> 401 authenticated=- pendingDeletion=undefined code=Authentication required x-request-id=78c26b8b-24e5-403b-ab54-1ce2abf1c48a
+B cookie names after reload (names only): ["__Host-csrf"]

@@ -1,0 +1,24 @@
+# Browser checks, free account, 2026-10-01T04:16:45.818Z
+
+## UI-03
+signed out, opened /calendar -> /login?next=%2Fcalendar
+after sign-in -> /calendar
+
+## UI-04
+signed in, opened /tutor -> /chat
+signed out, opened /tutor -> /login?next=%2Fchat
+
+## UI-14 /dashboard full load (page.goto, 10 s settle), 2026-10-01T04:17:11.430Z
+all requests: 37; hosts: ["lyceon.ai","fonts.googleapis.com","fonts.gstatic.com"]
+  1 × GET /api/csrf-token
+  1 × GET /api/notifications/unread-count
+  1 × GET /api/profile
+  1 × GET /api/progress/kpis
+  1 × GET /api/progress/projection
+  duplicates: 0
+
+## UI-07 / UI-1A rendered text scan
+
+/dashboard: rendered text 1850 chars; '%' figures: []; 'accura*': []; bank-count phrases: ["0 questions","40 questions"]
+
+/practice: rendered text 2191 chars; '%' figures: []; 'accura*': []; bank-count phrases: ["10 questions"]
