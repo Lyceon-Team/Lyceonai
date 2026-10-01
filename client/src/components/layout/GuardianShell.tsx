@@ -37,13 +37,11 @@ import "@/features/guardian/guardian-type-floor.generated.css";
  */
 export function GuardianShell({
   children,
-  className = "",
   center,
   actions,
   subnav,
 }: {
   children: React.ReactNode;
-  className?: string;
   center?: React.ReactNode;
   actions?: React.ReactNode;
   subnav?: React.ReactNode;
@@ -66,7 +64,7 @@ export function GuardianShell({
           one (owner ruling 2026-09-03; moved here from the retired dashboard 2026-10-01). */}
       <GuardianPaymentBanner enabled={user !== null && user !== undefined} />
       {subnav}
-      <main id="main" className={`flex-1 ${className}`}>
+      <main id="main" className="flex-1">
         {children}
       </main>
     </div>
@@ -196,5 +194,3 @@ function GuardianHeader({
     </header>
   );
 }
-
-export default GuardianShell;

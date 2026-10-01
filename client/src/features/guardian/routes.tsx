@@ -38,7 +38,7 @@ function RedirectExam(): JSX.Element {
   return <Redirect to={guardianPaths.exam(studentId, sessionId)} replace />;
 }
 
-export type GuardianRoute = {
+type GuardianRoute = {
   path: string;
   /** Rendered inside `RequireRole allow={["guardian"]}` by the mounting switch. */
   Page: React.ComponentType;

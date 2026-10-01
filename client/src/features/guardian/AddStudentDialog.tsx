@@ -35,7 +35,7 @@ import { GUARDIAN_STUDENTS_QUERY_KEY } from "@/hooks/useGuardianStudents";
 import { redeemLinkCodeResponseSchema } from "@lyceon/shared/student-link-code-schema";
 import { guardianPaths } from "./paths";
 
-export const RATE_LIMIT_COPY =
+const RATE_LIMIT_COPY =
   "Too many attempts. Please wait 15 minutes before trying again.";
 const DATE_OF_BIRTH_REQUIRED = "GUARDIAN_DATE_OF_BIRTH_REQUIRED";
 
