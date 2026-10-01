@@ -45,23 +45,25 @@ Every row's evidence is a command run on this branch with its real output pasted
 | B10 | B | `server/routes/student-resources.ts` inline `{ studentId: string; via: "self" | "guardian" }` | REPLACE with the canonical `Subject` | REPLACED (`ee27f61`) |
 | B11 | B | `server/middleware/guardian-link-rate-limit.ts` `export` on the four `*_BUCKET` constants and `guardianInviteEmailBucketKey`; `templates/guardian-link-invite.ts` `export` on `GuardianLinkInviteInput` | DELETE `export` (symbols stay) | DELETED (`ee27f61`) |
 | B12 | B | Zombie `case` branches for removed roles/states; error codes nothing emits; log-event registries | none found | none found |
-| C1 | C | `packages/shared/src/services/subject-digest.ts` (whole module) | DELETE | PLANNED |
-| C2 | C | `packages/shared/src/student-resources.ts` — `sectionKpiResponseSchema`, `SectionKpiResponse`, `domainKpiResponseSchema`, `DomainKpiResponse`, `sectionProjectionsResponseSchema`, `SectionProjectionsResponse`, `projectionSnapshotsResponseSchema`, `ProjectionSnapshotsResponse`, `GuardianKpiOverallResponse`, `StudentGuardianLinksView` | DELETE | PLANNED |
-| C3 | C | `packages/shared/src/profile-role-choice-schema.ts` — `roleChoiceErrorBodySchema`, `RoleChoiceErrorBody`, `SetDateOfBirthRequest` | DELETE | PLANNED |
-| C4 | C | `packages/shared/src/student-link-code-schema.ts` — `RedeemLinkCodeResponse`, `InviteGuardianRequest` | DELETE | PLANNED |
-| C5 | C | `packages/shared/src/profile-gate-schema.ts / guardian-subject.ts` — `ProfileGate`, `SubjectVia` | DELETE | PLANNED |
-| C6 | C | `packages/shared/src/calendar/api.ts, calendar/read-model.ts` — `guardianCalendarQuerySchema`, `GuardianCalendarQuery`, `GuardianCalendarSetupRequiredResponse`, `GuardianDayBlock` | DELETE | PLANNED |
-| C7 | C | `export` on in-file building blocks: `exam-guardian-report-schema.ts` per-state schemas, `guardianDomainBarsSchema`, `guardianExamListSchema`; `guardian-link-schema.ts` `guardianLinkStatusSchema`, `guardianLinkStoredInitiatorSchema`; `guardian-subject.ts` `GUARDIAN_VIEW_DECISIONS`, `SUBJECT_VIA`, `subjectViaSchema` (`subjectSchema` stays exported: Zod-first, its inferred `Subject` is the export, and `no-unused-vars` rejects a value used only as a type; the gate now counts a used inferred type as a use of its schema) | DELETE `export` (symbols stay) | PLANNED |
+| C1 | C | `packages/shared/src/services/subject-digest.ts` (whole module) | DELETE | DELETED (`7a67798`) |
+| C2 | C | `packages/shared/src/student-resources.ts` — `sectionKpiResponseSchema`, `SectionKpiResponse`, `domainKpiResponseSchema`, `DomainKpiResponse`, `sectionProjectionsResponseSchema`, `SectionProjectionsResponse`, `projectionSnapshotsResponseSchema`, `ProjectionSnapshotsResponse`, `GuardianKpiOverallResponse`, `StudentGuardianLinksView` | DELETE | DELETED (`7a67798`) |
+| C3 | C | `packages/shared/src/profile-role-choice-schema.ts` — `roleChoiceErrorBodySchema`, `RoleChoiceErrorBody`, `SetDateOfBirthRequest` | DELETE | DELETED (`7a67798`) |
+| C4 | C | `packages/shared/src/student-link-code-schema.ts` — `RedeemLinkCodeResponse`, `InviteGuardianRequest` | DELETE | DELETED (`7a67798`) |
+| C5 | C | `packages/shared/src/profile-gate-schema.ts / guardian-subject.ts` — `ProfileGate`, `SubjectVia` | DELETE | DELETED (`7a67798`) |
+| C6 | C | `packages/shared/src/calendar/api.ts, calendar/read-model.ts` — `guardianCalendarQuerySchema`, `GuardianCalendarQuery`, `GuardianCalendarSetupRequiredResponse`, `GuardianDayBlock` | DELETE | DELETED (`7a67798`) |
+| C7 | C | `export` on in-file building blocks: `exam-guardian-report-schema.ts` per-state schemas, `guardianDomainBarsSchema`, `guardianExamListSchema`; `guardian-link-schema.ts` `guardianLinkStatusSchema`, `guardianLinkStoredInitiatorSchema`; `guardian-subject.ts` `GUARDIAN_VIEW_DECISIONS`, `SUBJECT_VIA`, `subjectViaSchema` (`subjectSchema` stays exported: Zod-first, its inferred `Subject` is the export, and `no-unused-vars` rejects a value used only as a type; the gate now counts a used inferred type as a use of its schema) | DELETE `export` (symbols stay) | DELETED `export` (`7a67798`) |
 | D1 | D | `tests/ci/guardian-reporting.contract.test.ts` — "returns linked students list and emits guardian_dashboard_viewed" | DELETE the case | KEPT — it is the file's instrument control: the only case driving the real route through the `audit_logs` capture the negative assertions rely on (M1 reddens it). Relabelled in `ee27f61`. |
 | D2 | D | `tests/utils/auth-helpers.ts`, `tests/utils/mock-supabase.ts` (hand-written guardian fixtures) | HANDED OFF (cleanup) | HANDED OFF |
 | D3 | D | `.skip` / `.todo` / `xit` / `.only` in guardian tests | none found | none found |
 | D4 | D | Tests importing deleted modules; tests of unmounted routes; snapshot files with no test | none found | none found |
+| D5 | D | Test comments naming deleted guardian suites: `tests/ci/guardian-reporting.contract.test.ts` (the revoke audit row's proof), `tests/helpers/pg-supabase.ts` | EDIT | PLANNED |
 | E1 | E | Guardian CI steps that point at missing files; guardian PG tests CI never runs | none found | none found |
 | E2 | E | Steps that can never fail (`|| true`, `continue-on-error`, always-false `if:`) | none found (guardian) | none found |
 | E3 | E | Guardian gate accept / exclude lists naming deleted files | none found | none found |
 | E4 | E | `ci/known-gaps.yaml` entries closed by this vertical | none found | none found |
 | E5 | E | `tests/e2e/guardian-surfaces.spec.ts` (and the shared-component specs `student-calendar`, `student-mastery`) — the only proof of R12, phone centring and the meter's width — run by no CI job | FIX (Step 3: one CI job) | PLANNED |
 | E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa) | HANDED OFF |
+| E7 | E | `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI | EDIT | PLANNED |
 | F1 | F | 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read` | DROP (one migration) | PLANNED |
 | F2 | F | `public.guardian_can_view_student(uuid)`, `public.guardian_can_view_student_as(uuid, uuid)` | DROP (same migration, after F1) | PLANNED |
 | F3 | F | `profiles.consent_given_at` | DROP (same migration) | PLANNED |
@@ -855,6 +857,21 @@ $ git ls-files '*.snap' | xargs grep -l -i guardian
 client/src/features/calendar/components/__snapshots__/Chrome.identity.test.tsx.snap
 ```
 
+### D5 — Test comments naming deleted guardian suites: `tests/ci/guardian-reporting.contract.test.ts` (the revoke audit row's proof), `tests/helpers/pg-supabase.ts`
+
+**Action:** EDIT. Point the revoke audit row's proof at `guardian-unlinked.pg.ci.test.ts` (A4.2, reads the row back) and `guardian-revoke-party.pg.ci.test.ts` (a refused revoke writes neither).
+
+```
+$ git grep -nE 'guardian-link-student-side|guardian-link\.pg\.ci' -- tests
+tests/ci/guardian-reporting.contract.test.ts:636:   * The audit row itself is proven where it is now written: `guardian-link-student-side
+tests/helpers/pg-supabase.ts:528: * (`guardian-link.pg.ci.test.ts`, `guardian-link-student-side.pg.ci.test.ts`,
+```
+```
+$ ls tests/ci/guardian-link.pg.ci.test.ts tests/ci/guardian-link-student-side.pg.ci.test.ts 2>&1
+ls: cannot access 'tests/ci/guardian-link.pg.ci.test.ts': No such file or directory
+ls: cannot access 'tests/ci/guardian-link-student-side.pg.ci.test.ts': No such file or directory
+```
+
 
 ## E. CI
 
@@ -924,6 +941,25 @@ $ sed -n '20,22p' tests/e2e/guardian-surfaces.spec.ts
 $ for f in tests/ci/calendar.profile-upsert.pg.ci.test.ts tests/ci/tutor-conversation-list.pg.ci.test.ts; do echo "$f in ci.yml: $(grep -c "$f" .github/workflows/ci.yml)"; done
 tests/ci/calendar.profile-upsert.pg.ci.test.ts in ci.yml: 0
 tests/ci/tutor-conversation-list.pg.ci.test.ts in ci.yml: 0
+```
+
+### E7 — `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI
+
+**Action:** EDIT. Name a live exemplar; say where the browser half runs (the new CI job, step 3).
+
+```
+$ grep -n 'guardian-link.pg.ci' scripts/ci/guardian-schema-truth-gate.mjs
+26: *   check is wrong. Keying on `vi.mock(...supabase...)` flags `guardian-link.pg.ci.test.ts` —
+```
+```
+$ sed -n '8,14p' scripts/ci/guardian-token-gate.mjs
+ *
+ * plain English: every guardian file is scanned for
+ *   (1) a hex colour literal (`#0F2E48`, `#fff` …) — colour comes from the token set; and
+ *   (2) a Tailwind text-size utility under 16px (`text-xs`, `text-sm`, `text-[13px]` …) —
+ *       the static half of R12. The computed half, which also covers the SHARED components a
+ *       guardian page renders, is `tests/e2e/guardian-surfaces.spec.ts`.
+ * It also checks that `guardian-type-floor.generated.css` is what the calendar stylesheet
 ```
 
 

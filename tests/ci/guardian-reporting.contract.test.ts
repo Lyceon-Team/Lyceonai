@@ -607,9 +607,10 @@ describe("Guardian reporting runtime contract", () => {
    *   regression rather than a formality — re-adding the call is the most natural way for
    *   someone to "restore" this test's old assertion.
    *
-   * The audit row itself is proven where it is now written: `guardian-link-student-side
-   * .pg.ci.test.ts` reads it back out of a real `audit_logs` table, and its FAIL-CLOSED pair
-   * proves the row and the status change stand or fall together. A mocked account layer
+   * The audit row itself is proven where it is now written: `guardian-unlinked.pg.ci.test.ts`
+   * (A4.2's revoke) reads it back out of a real `audit_logs` table, and
+   * `guardian-revoke-party.pg.ci.test.ts` proves a refused revoke writes neither the row nor
+   * the status change. A mocked account layer
    * cannot see a write that happens inside the function it replaced, and pretending otherwise
    * is how the assertion would go vacuous instead of moving.
    */
