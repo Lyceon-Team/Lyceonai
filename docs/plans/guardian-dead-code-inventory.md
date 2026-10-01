@@ -56,7 +56,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | D2 | D | `tests/utils/auth-helpers.ts`, `tests/utils/mock-supabase.ts` (hand-written guardian fixtures) | HANDED OFF (cleanup) | HANDED OFF |
 | D3 | D | `.skip` / `.todo` / `xit` / `.only` in guardian tests | none found | none found |
 | D4 | D | Tests importing deleted modules; tests of unmounted routes; snapshot files with no test | none found | none found |
-| D5 | D | Test comments naming deleted guardian suites: `tests/ci/guardian-reporting.contract.test.ts` (the revoke audit row's proof), `tests/helpers/pg-supabase.ts` | EDIT | PLANNED |
+| D5 | D | Test comments naming deleted guardian suites: `tests/ci/guardian-reporting.contract.test.ts` (the revoke audit row's proof), `tests/helpers/pg-supabase.ts` | EDIT | EDITED (`1654d14`) |
 | E1 | E | Guardian CI steps that point at missing files; guardian PG tests CI never runs | none found | none found |
 | E2 | E | Steps that can never fail (`|| true`, `continue-on-error`, always-false `if:`) | none found (guardian) | none found |
 | E3 | E | Guardian gate accept / exclude lists naming deleted files | none found | none found |
