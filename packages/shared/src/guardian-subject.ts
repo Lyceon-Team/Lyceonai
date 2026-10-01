@@ -26,7 +26,7 @@ import { z } from "zod";
  * closed rather than passing an unrecognised string to a caller that will treat
  * anything non-'allow' as a denial — which is the safe direction, but silently.
  */
-export const GUARDIAN_VIEW_DECISIONS = [
+const GUARDIAN_VIEW_DECISIONS = [
   "allow",
   "not_linked",
   "student_unentitled",
@@ -40,9 +40,8 @@ export type GuardianViewDecision = z.infer<typeof guardianViewDecisionSchema>;
  * behaviour: no handler below the resolver branches on it, and the chokepoint
  * gate enforces that no handler can even see the caller's role.
  */
-export const SUBJECT_VIA = ["self", "guardian"] as const;
-export const subjectViaSchema = z.enum(SUBJECT_VIA);
-export type SubjectVia = z.infer<typeof subjectViaSchema>;
+const SUBJECT_VIA = ["self", "guardian"] as const;
+const subjectViaSchema = z.enum(SUBJECT_VIA);
 
 /**
  * The ONLY thing a subject-scoped handler reads to know whose data it is serving.

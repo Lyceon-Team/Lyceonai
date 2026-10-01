@@ -24,6 +24,11 @@
  * result is not destructured marks every export of the target used — conservative, so the
  * gate can under-report but never reports a used export.
  *
+ * Zod-first (coding standards §7.2): `export type T = z.infer<typeof tSchema>` makes the schema
+ * the source of the type, so a used `T` counts as a use of `tSchema`. Without this, the schema
+ * could neither stay exported (this gate) nor be un-exported (`no-unused-vars` rejects a value
+ * used only as a type).
+ *
  * Trade-off: names are matched by module and spelling, not by the type checker's symbol
  * identity, so an export used only via `typeof import("…")` would be reported; none exists.
  */
@@ -79,6 +84,8 @@ const importers = new Map();
 const starEdges = new Map();
 /** exportsOf[file] = Map name -> line. */
 const exportsOf = new Map();
+/** inferredFrom[file] = Map exported type name -> the schema it is `z.infer`red from. */
+const inferredFrom = new Map();
 
 const add = (m, k, v) => {
   if (!m.has(k)) m.set(k, new Set());
@@ -97,6 +104,15 @@ function bindingNames(pattern) {
   return names;
 }
 
+/** `z.infer<typeof X>` / `z.input<…>` / `z.output<…>` → "X", else null. */
+function inferredSchema(type) {
+  if (!ts.isTypeReferenceNode(type) || !type.typeArguments?.length) return null;
+  const name = type.typeName.getText();
+  if (!/^z\.(infer|input|output)$/.test(name)) return null;
+  const arg = type.typeArguments[0];
+  return ts.isTypeQueryNode(arg) && ts.isIdentifier(arg.exprName) ? arg.exprName.text : null;
+}
+
 function collectExports(sf, rel) {
   const out = new Map();
   const line = (n) => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
@@ -109,7 +125,11 @@ function collectExports(sf, rel) {
       else if (ts.isVariableStatement(st)) {
         for (const d of st.declarationList.declarations)
           if (ts.isIdentifier(d.name)) out.set(d.name.text, line(d));
-      } else if (st.name && ts.isIdentifier(st.name)) out.set(st.name.text, line(st));
+      } else if (st.name && ts.isIdentifier(st.name)) {
+        out.set(st.name.text, line(st));
+        const schema = ts.isTypeAliasDeclaration(st) ? inferredSchema(st.type) : null;
+        if (schema) add(inferredFrom, rel, [st.name.text, schema]);
+      }
     } else if (ts.isExportAssignment(st)) out.set("default", line(st));
     else if (ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause) {
       if (ts.isNamedExports(st.exportClause))
@@ -200,6 +220,13 @@ while (changed) {
         }
       }
   }
+}
+
+// A used inferred type is a use of its schema (Zod-first).
+for (const [file, pairs] of inferredFrom) {
+  const names = used.get(file);
+  if (!names) continue;
+  for (const [typeName, schema] of pairs) if (names.has(typeName)) add(used, file, schema);
 }
 
 const findings = [];
