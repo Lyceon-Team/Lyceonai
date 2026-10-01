@@ -27,11 +27,10 @@ import express, {
   type Express,
   type NextFunction,
   type Request,
-  type Response,
+  type Response as ExpressResponse,
 } from "express";
 import request from "supertest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { Headers, Response } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const USER_ID = "7f3c2a10-1111-4222-8333-444455556666";
@@ -51,7 +50,7 @@ vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
   return {
     ...actual,
     getSupabaseAdmin: () => seams.admin,
-    requireSupabaseAuth: (req: Request, _res: Response, next: NextFunction) => {
+    requireSupabaseAuth: (req: Request, _res: ExpressResponse, next: NextFunction) => {
       req.user = {
         id: USER_ID,
         email: "revoke-test@example.test",
@@ -68,7 +67,7 @@ vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
 });
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) =>
+  doubleCsrfProtection: (_req: Request, _res: ExpressResponse, next: NextFunction) =>
     next(),
 }));
 
@@ -274,7 +273,7 @@ describe("deletion request revokes every session (F-32, SCL-190)", () => {
           out.body = body;
           return res;
         },
-      } as unknown as Response;
+      } as unknown as ExpressResponse;
       await authModule.enforceDeletionLock(req, res, () => {
         out.next = true;
       });
