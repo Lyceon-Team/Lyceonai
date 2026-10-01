@@ -95,7 +95,7 @@ run_plant() {
 
 snapshot_all
 
-echo "=== Review route plants (A1-A14) ==="
+echo "=== Review route plants (A1-A14, A16) ==="
 
 # --- A1: include the snapshot's answer in the next-item payload -------------
 mutate "$ROUTES" \
@@ -264,6 +264,32 @@ mutate "$ROUTES" \
   '    totalQuestions: await countSessionItems(args.sessionId),' \
   '    totalItems: await countSessionItems(args.sessionId),' || exit 2
 run_plant A14 "A14:" "rename totalQuestions in the next-item response"
+
+# --- A16a-d: the past-session picker is paged (register UI-16, 2026-09-29) ---
+mutate "$POOL" \
+  '    .eq("student_id", studentId)
+    .eq("status", "active")' \
+  '    .eq("status", "active")' || exit 2
+run_plant A16a "A16a:" "read every student's open entries into the picker"
+
+mutate "$POOL" \
+  '    after.length > limit && last ? encodeSourceSessionsCursor(last) : null;' \
+  '    after.length >= limit && last ? encodeSourceSessionsCursor(last) : null;' || exit 2
+run_plant A16b "A16b:" "report a next page at exactly one full page"
+
+mutate "$POOL" \
+  '  const after = anchor
+    ? sorted.filter((row) => compareSourceSessions(row, anchor) > 0)
+    : [...sorted];' \
+  '  const after = [...sorted];' || exit 2
+run_plant A16c "A16c:" "ignore the sessions cursor, so page 2 repeats page 1"
+
+mutate "$ROUTES" \
+  '      if (!sessionsCursor) {
+        return res.status(400).json({' \
+  '      if (sessionsCursor === undefined) {
+        return res.status(400).json({' || exit 2
+run_plant A16d "A16d:" "serve the first page for a malformed sessions cursor"
 
 echo ""
 echo "plants fired: $PASSES   plants that did not fire: $FAILURES"

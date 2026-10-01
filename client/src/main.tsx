@@ -3,7 +3,11 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App";
 import "./index.css";
-import "katex/dist/katex.min.css";
+// @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
+// plain English: the math stylesheet is no longer imported here. MathRenderer.tsx imports it
+// itself, and every math surface (practice, review, exam, tutor thread, reference sheet)
+// renders through MathRenderer, so the stylesheet now ships in the lazy chunk that needs it
+// instead of blocking first paint on every page.
 
 declare global {
   interface Window {
@@ -11,8 +15,9 @@ declare global {
   }
 }
 
+// The build stamp stays readable as `window.__BUILD__`; it is no longer printed, because
+// Coding Standards §16 bans console.log in product code.
 window.__BUILD__ = `${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
-console.log("[Build]", window.__BUILD__);
 
 // Microsoft Clarity was initialised here, before the router, with no options object —
 // session recording and heatmaps on by vendor default, including on /chat and /tutor. It

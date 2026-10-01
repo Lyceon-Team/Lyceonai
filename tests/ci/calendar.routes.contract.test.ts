@@ -18,6 +18,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readEntitlementDenial } from "../../packages/shared/src/entitlement-denial";
 
 const STUDENT = "11111111-1111-1111-1111-111111111111";
 const BLOCK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
@@ -208,10 +209,32 @@ describe("§16 — every calendar route is gated on calendar_access", () => {
     const res = await request(buildApp()).get("/api/calendar");
 
     expect(res.status).toBe(402);
-    // The flat platform shape the client's `getPremiumDenialReason` gates on: status + a
-    // TOP-LEVEL code, deliberately not the §8.2 nested envelope.
-    expect(res.body.code).toBe("PAYMENT_REQUIRED");
+    // The flat platform shape (Doc 05F §15.1, owner ruling 2026-09-17): a TOP-LEVEL code,
+    // deliberately not the §8.2 nested envelope. SCL-185 (UI-01): the code is the platform's
+    // paid-feature denial and `details.feature` names the refused key.
+    expect(res.body).toEqual({
+      error: "Subscription required",
+      code: "entitlement_required",
+      message: "An active subscription is required to see this.",
+      details: { feature: "calendar_access" },
+      requestId: "req-test",
+    });
+    // The REAL body, through the one reader the client uses (keyed on code, not status).
+    expect(readEntitlementDenial(res.body)).toEqual({
+      feature: "calendar_access",
+      message: "An active subscription is required to see this.",
+    });
     expect(readCalendarMock).not.toHaveBeenCalled();
+  });
+
+  it("UI-01 allow: GET /api/calendar answers 200 to a paid student, and the reader sees no denial", async () => {
+    entitled = true;
+
+    const res = await request(buildApp()).get("/api/calendar");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("ready");
+    expect(readEntitlementDenial(res.body)).toBeNull();
   });
 
   for (const mutation of MUTATIONS) {
@@ -221,7 +244,8 @@ describe("§16 — every calendar route is gated on calendar_access", () => {
       const res = await mutation.call(buildApp());
 
       expect(res.status).toBe(402);
-      expect(res.body.code).toBe("PAYMENT_REQUIRED");
+      expect(res.body.code).toBe("entitlement_required");
+      expect(res.body.details).toEqual({ feature: "calendar_access" });
       for (const mock of [regeneratePlanMock, regenerateDayMock, editDayMock, doItNowMock, launchBlockMock, upsertProfileMock, acknowledgeMock]) {
         expect(mock).not.toHaveBeenCalled();
       }
@@ -740,7 +764,8 @@ describe("setup runs before the entitlement gate", () => {
     const res = await request(buildApp()).get("/api/calendar");
 
     expect(res.status).toBe(402);
-    expect(res.body.code).toBe("PAYMENT_REQUIRED");
+    expect(res.body.code).toBe("entitlement_required");
+    expect(res.body.details).toEqual({ feature: "calendar_access" });
     // The whole point of checking the profile directly: `readCalendar` runs
     // `generateOnFirstOpen`, and an unentitled student must not get a plan generated.
     expect(readCalendarMock).not.toHaveBeenCalled();

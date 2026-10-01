@@ -6381,6 +6381,56 @@ $$;
 
 
 --
+-- Name: exam_renewal_no_answer_candidates(integer, integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_renewal_no_answer_candidates(p_window_days integer, p_limit integer DEFAULT 500, p_now timestamp with time zone DEFAULT now()) RETURNS TABLE(student_id uuid, anchor text, occasion_key date, stripe_subscription_id text, outcome text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH prompts AS (
+    SELECT ne.subject_profile_id                     AS student_id,
+           ne.payload ->> 'anchor'                   AS anchor,
+           (ne.payload ->> 'occasion_key')::date     AS occasion_key,
+           MIN(ne.created_at)                        AS prompted_at
+      FROM public.notification_events ne
+     WHERE ne.event_type IN ('exam_score_report_requested', 'renewal_decision_requested')
+     GROUP BY 1, 2, 3
+  )
+  SELECT p.student_id,
+         p.anchor,
+         p.occasion_key,
+         e.stripe_subscription_id,
+         CASE
+           WHEN NOT public.entitlement_active(p.student_id) THEN 'skipped_no_entitlement'
+           WHEN e.cancel_at_period_end IS TRUE             THEN 'skipped_cancel_pending'
+           WHEN sp.target_exam_date IS NOT NULL
+            AND sp.target_exam_date >
+                (p_now AT TIME ZONE COALESCE(sp.timezone, 'UTC'))::date
+                                                            THEN 'skipped_new_exam_date'
+           WHEN EXISTS (SELECT 1 FROM public.exam_renewal_decisions x
+                         WHERE x.student_id   = p.student_id
+                           AND x.occasion_key = p.occasion_key
+                           AND x.decision     = 'retaking')  THEN 'skipped_answered'
+           ELSE NULL
+         END AS outcome
+    FROM prompts p
+    JOIN public.entitlements e ON e.profile_id = p.student_id
+    LEFT JOIN public.student_study_profile sp ON sp.student_id = p.student_id
+   WHERE p.prompted_at <= p_now - make_interval(days => p_window_days)
+   ORDER BY p.student_id, p.occasion_key
+   LIMIT p_limit;
+$$;
+
+
+--
+-- Name: FUNCTION exam_renewal_no_answer_candidates(p_window_days integer, p_limit integer, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_renewal_no_answer_candidates(p_window_days integer, p_limit integer, p_now timestamp with time zone) IS 'One row per (student, occasion) prompted at least p_window_days ago. outcome NULL means set cancel_at_period_end on Stripe; every other value is a calendar_job_runs.outcome verbatim. A retaking answer from ANY party blocks the cancellation, and so does a future target_exam_date (edge case 6). Silence is the only thing that cancels here.';
+
+
+--
 -- Name: exam_report_source(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6624,6 +6674,142 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'score_run_id', v_run, 'followup_outbox_id', v_follow);
 END;
 $$;
+
+
+--
+-- Name: exam_score_renewal_candidates(integer, integer, integer, integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_score_renewal_candidates(p_offset_days integer, p_max_exam_age_days integer, p_lead_days integer, p_limit integer DEFAULT 500, p_now timestamp with time zone DEFAULT now()) RETURNS TABLE(student_id uuid, payer_profile_id uuid, timezone text, anchor text, occasion_key date, outcome text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH resolved AS (
+    SELECT e.profile_id                          AS student_id,
+           e.payer_profile_id,
+           e.cancel_at_period_end,
+           e.current_period_end,
+           COALESCE(sp.timezone, 'UTC')          AS timezone,
+           sp.target_exam_date,
+           (p_now AT TIME ZONE COALESCE(sp.timezone, 'UTC'))::date AS today_local
+      FROM public.entitlements e
+      LEFT JOIN public.student_study_profile sp ON sp.student_id = e.profile_id
+  ),
+  due AS (
+    SELECT r.student_id, r.payer_profile_id, r.timezone, r.cancel_at_period_end,
+           'exam_date'::text  AS anchor,
+           r.target_exam_date AS occasion_key
+      FROM resolved r
+     WHERE r.target_exam_date IS NOT NULL
+       AND r.target_exam_date <= r.today_local - p_offset_days
+       AND r.target_exam_date >= r.today_local - p_max_exam_age_days
+    UNION ALL
+    SELECT r.student_id, r.payer_profile_id, r.timezone, r.cancel_at_period_end,
+           'billing_cycle'::text,
+           (r.current_period_end AT TIME ZONE r.timezone)::date
+      FROM resolved r
+     WHERE r.current_period_end IS NOT NULL
+       AND (r.target_exam_date IS NULL
+            OR r.target_exam_date < r.today_local - p_max_exam_age_days)
+       AND (r.current_period_end AT TIME ZONE r.timezone)::date >  r.today_local
+       AND (r.current_period_end AT TIME ZONE r.timezone)::date - p_lead_days <= r.today_local
+  )
+  SELECT d.student_id, d.payer_profile_id, d.timezone, d.anchor, d.occasion_key,
+         CASE
+           WHEN NOT public.entitlement_active(d.student_id) THEN 'skipped_no_entitlement'
+           -- Edge case 8: the subscription is already ending. Asking somebody to decide
+           -- something they have already decided is worse than saying nothing.
+           WHEN d.cancel_at_period_end IS TRUE             THEN 'skipped_cancel_pending'
+           -- Edge case 6, at the prompt as well as at the sweep: a student who answered is not
+           -- asked again.
+           WHEN EXISTS (SELECT 1 FROM public.exam_renewal_decisions x
+                         WHERE x.student_id   = d.student_id
+                           AND x.occasion_key = d.occasion_key) THEN 'skipped_answered'
+           ELSE NULL
+         END AS outcome
+    FROM due d
+   ORDER BY d.student_id, d.anchor, d.occasion_key
+   LIMIT p_limit;
+$$;
+
+
+--
+-- Name: FUNCTION exam_score_renewal_candidates(p_offset_days integer, p_max_exam_age_days integer, p_lead_days integer, p_limit integer, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_score_renewal_candidates(p_offset_days integer, p_max_exam_age_days integer, p_lead_days integer, p_limit integer, p_now timestamp with time zone) IS 'One row per (student, anchor, occasion) due for a post-exam prompt today in the student''s own zone. outcome NULL means notify; every other value is a calendar_job_runs.outcome verbatim so every considered row gets a job row. Thresholds are parameters because entitlement_runtime_config has one reader, in TypeScript. p_now exists so the date arithmetic is testable on any day.';
+
+
+--
+-- Name: exam_score_renewal_emit(uuid, text, date, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_event_id  uuid;
+  v_source_id text;
+  v_recipient uuid;
+BEGIN
+  IF p_anchor NOT IN ('exam_date', 'billing_cycle') THEN
+    RAISE EXCEPTION 'exam_score_renewal_emit: unknown anchor %', p_anchor
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_event_type NOT IN ('exam_score_report_requested', 'renewal_decision_requested') THEN
+    RAISE EXCEPTION 'exam_score_renewal_emit: unknown event type %', p_event_type
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- The score prompt has no meaning without a sitting to ask about. Refusing rather than
+  -- silently degrading: a caller that asks for this pairing has a bug, and emitting a
+  -- "how did your exam go" notice to a student who never named an exam date would be the
+  -- defect arriving as a real email.
+  IF p_event_type = 'exam_score_report_requested' AND p_anchor <> 'exam_date' THEN
+    RAISE EXCEPTION 'exam_score_renewal_emit: the score prompt requires the exam_date anchor'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- The recipient IS the event type's subject question. The score is the student's; the money
+  -- is the payer's, who is the student unless a guardian is on the row (§3).
+  v_recipient := CASE
+    WHEN p_event_type = 'exam_score_report_requested' THEN p_student_id
+    ELSE COALESCE(p_payer_profile_id, p_student_id)
+  END;
+
+  v_source_id := p_student_id::text || ':' || p_occasion_key::text;
+  v_event_id  := public.notification_event_id(p_event_type, v_source_id);
+
+  IF EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id = v_event_id) THEN
+    RETURN 'duplicate';
+  END IF;
+
+  PERFORM public.emit_notification_event(
+    v_event_id,
+    p_event_type,
+    -- The SUBJECT is always the student, whoever the recipient is: the subject is who the
+    -- notification is about, and `notification_events.subject_profile_id` is what the account
+    -- deletion cascade follows.
+    p_student_id,
+    jsonb_build_array(
+      jsonb_build_object('profile_id', v_recipient,
+                         'channels', jsonb_build_array('in_app', 'email'))
+    ),
+    jsonb_build_object('anchor', p_anchor, 'occasion_key', p_occasion_key)
+  );
+
+  RETURN 'emitted';
+END;
+$$;
+
+
+--
+-- Name: FUNCTION exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) IS 'The one write path for the two post-exam notices. Returns emitted | duplicate. Idempotent per (student, occasion, event type) because the type is part of notification_event_id''s hash input. The score prompt goes to the student; the renewal decision goes to the payer (the student when payer_profile_id is NULL).';
 
 
 --
@@ -8900,6 +9086,76 @@ $$;
 --
 
 COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail); there is no in_progress state because verification runs inside T3. Validates the §6.3 four-layer shape and refuses a pass whose in-scope layers are not verified, making §6.5 (d) unreachable. proof_manifest_ref is a SHA-256 over the canonical record (log_id, outcome, layers) per owner ruling B3. The deleted_profile_id parameter was removed 2026-09-25 (SCL-152) with the column. Called by public.complete_deletion_log (T3) and public.reconcile_deletion_log.';
+
+
+--
+-- Name: record_exam_score_report(uuid, date, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_exam_score_report(p_student_id uuid, p_occasion_key date, p_total_score integer, p_rw_score integer, p_math_score integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_report_id uuid;
+  v_timezone  text;
+  v_cutoff    timestamptz;
+  v_section   text;
+  v_snap      public.student_section_projection_snapshots;
+  v_status    text;
+BEGIN
+  SELECT COALESCE(sp.timezone, 'UTC') INTO v_timezone
+    FROM public.student_study_profile sp
+   WHERE sp.student_id = p_student_id;
+  IF v_timezone IS NULL THEN
+    -- No study profile at all. UTC is the only defensible zone for a student who has never
+    -- told us one, and it is the same fallback the read path uses.
+    v_timezone := 'UTC';
+  END IF;
+
+  -- Exclusive end of the exam day, in the student's zone.
+  v_cutoff := (p_occasion_key + 1)::timestamp AT TIME ZONE v_timezone;
+
+  -- The column CHECKs are the guard; this insert is what trips them, so an out-of-range score
+  -- raises 23514 here rather than being stored.
+  INSERT INTO public.exam_score_reports
+    (student_id, occasion_key, total_score, rw_score, math_score)
+  VALUES (p_student_id, p_occasion_key, p_total_score, p_rw_score, p_math_score)
+  RETURNING report_id INTO v_report_id;
+
+  FOREACH v_section IN ARRAY ARRAY['M', 'RW'] LOOP
+    SELECT s.* INTO v_snap
+      FROM public.student_section_projection_snapshots s
+     WHERE s.student_id = p_student_id
+       AND s.section    = v_section
+       AND s.snapshot_at < v_cutoff
+     ORDER BY s.snapshot_at DESC
+     LIMIT 1;
+
+    IF NOT FOUND THEN
+      INSERT INTO public.exam_score_report_projections
+        (report_id, section, projection_status)
+      VALUES (v_report_id, v_section, 'none');
+    ELSE
+      v_status := CASE WHEN v_snap.projected_score_mid IS NULL THEN 'gated' ELSE 'snapshot' END;
+      INSERT INTO public.exam_score_report_projections
+        (report_id, section, projection_status, snapshot_id, snapshot_at,
+         projected_score_mid, projected_score_low, projected_score_high)
+      VALUES (v_report_id, v_section, v_status, v_snap.snapshot_id, v_snap.snapshot_at,
+              v_snap.projected_score_mid, v_snap.projected_score_low, v_snap.projected_score_high);
+    END IF;
+  END LOOP;
+
+  RETURN v_report_id;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION record_exam_score_report(p_student_id uuid, p_occasion_key date, p_total_score integer, p_rw_score integer, p_math_score integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.record_exam_score_report(p_student_id uuid, p_occasion_key date, p_total_score integer, p_rw_score integer, p_math_score integer) IS 'Writes one reported real-SAT score and its per-section projection pairing in one transaction. The pairing is the newest snapshot strictly before the end of the exam day in the student''s own zone. Append-only: a second report for the same occasion is a new row and the latest reported_at wins.';
 
 
 --
@@ -11811,8 +12067,8 @@ CREATE TABLE public.calendar_job_runs (
     outcome text NOT NULL,
     detail jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT calendar_job_runs_job_check CHECK ((job = ANY (ARRAY['weekly_regen'::text, 'exam_notify'::text]))),
-    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'skipped_complete'::text, 'skipped_duplicate'::text, 'failed'::text])))
+    CONSTRAINT calendar_job_runs_job_check CHECK ((job = ANY (ARRAY['weekly_regen'::text, 'exam_notify'::text, 'exam_score_renewal'::text]))),
+    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'skipped_complete'::text, 'skipped_duplicate'::text, 'skipped_cancel_pending'::text, 'skipped_new_exam_date'::text, 'skipped_answered'::text, 'canceled_no_answer'::text, 'failed'::text])))
 );
 
 
@@ -12300,6 +12556,7 @@ CREATE TABLE public.entitlements (
     grace_period_ends_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    payer_profile_id uuid,
     CONSTRAINT entitlements_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'canceled'::text, 'unpaid'::text, 'incomplete'::text, 'incomplete_expired'::text, 'trialing'::text]))),
     CONSTRAINT entitlements_tier_check CHECK ((tier = ANY (ARRAY['free'::text, 'premium'::text])))
 );
@@ -12310,6 +12567,13 @@ CREATE TABLE public.entitlements (
 --
 
 COMMENT ON COLUMN public.entitlements.stripe_subscription_item_id IS 'SCL-045: the subscription ITEM this entitlement is keyed to. One item per entitled student, so one guardian subscription can carry several. NULL on rows written before 2026-08-27 and backfilled by the next customer.subscription.updated for that subscription — the item id is not derivable in SQL.';
+
+
+--
+-- Name: COLUMN entitlements.payer_profile_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.entitlements.payer_profile_id IS 'Doc 01 V8 §36.4: the profile being charged, when it is not the student. NULL means self-paid — and also means "written before this column existed", which reads as self-paid on purpose (the renewal question then goes to the student rather than to nobody). Writer: the Stripe webhook handler, from subscription metadata.';
 
 
 --
@@ -12337,6 +12601,34 @@ COMMENT ON TABLE public.exam_child_tables IS 'E9 commit 0: the exam tables execu
 
 
 --
+-- Name: exam_renewal_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exam_renewal_decisions (
+    decision_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    occasion_key date NOT NULL,
+    anchor text NOT NULL,
+    decided_by_profile_id uuid,
+    decider_role text NOT NULL,
+    decision text NOT NULL,
+    action text NOT NULL,
+    decided_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT exam_renewal_decisions_action_check CHECK ((action = ANY (ARRAY['none'::text, 'cancel_at_period_end'::text, 'cancel_cleared'::text]))),
+    CONSTRAINT exam_renewal_decisions_anchor_check CHECK ((anchor = ANY (ARRAY['exam_date'::text, 'billing_cycle'::text]))),
+    CONSTRAINT exam_renewal_decisions_decider_role_check CHECK ((decider_role = ANY (ARRAY['student'::text, 'payer'::text]))),
+    CONSTRAINT exam_renewal_decisions_decision_check CHECK ((decision = ANY (ARRAY['retaking'::text, 'not_retaking'::text])))
+);
+
+
+--
+-- Name: TABLE exam_renewal_decisions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.exam_renewal_decisions IS 'Append-only; the latest decided_at for a (student, occasion) is the answer. `decision` is what was said and `action` is what was done to the subscription — only a payer''s not_retaking sets cancel_at_period_end. Silence is NOT recorded here: it has no decider and no decision, and it appears as calendar_job_runs.outcome = canceled_no_answer.';
+
+
+--
 -- Name: exam_runtime_outbox; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12355,6 +12647,62 @@ CREATE TABLE public.exam_runtime_outbox (
     CONSTRAINT exam_runtime_outbox_event_type_check CHECK ((event_type = ANY (ARRAY['test_session_completed'::text, 'test_session_partial_scored_abandoned'::text, 'test_session_scored'::text]))),
     CONSTRAINT exam_runtime_outbox_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'published'::text, 'failed'::text])))
 );
+
+
+--
+-- Name: exam_score_report_projections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exam_score_report_projections (
+    report_id uuid NOT NULL,
+    section text NOT NULL,
+    projection_status text NOT NULL,
+    snapshot_id bigint,
+    snapshot_at timestamp with time zone,
+    projected_score_mid integer,
+    projected_score_low integer,
+    projected_score_high integer,
+    CONSTRAINT exam_score_report_projections_identity_coherent CHECK (((projection_status = 'none'::text) = (snapshot_at IS NULL))),
+    CONSTRAINT exam_score_report_projections_projected_score_high_check CHECK (((projected_score_high IS NULL) OR ((projected_score_high >= 200) AND (projected_score_high <= 800)))),
+    CONSTRAINT exam_score_report_projections_projected_score_low_check CHECK (((projected_score_low IS NULL) OR ((projected_score_low >= 200) AND (projected_score_low <= 800)))),
+    CONSTRAINT exam_score_report_projections_projected_score_mid_check CHECK (((projected_score_mid IS NULL) OR ((projected_score_mid >= 200) AND (projected_score_mid <= 800)))),
+    CONSTRAINT exam_score_report_projections_projection_status_check CHECK ((projection_status = ANY (ARRAY['snapshot'::text, 'gated'::text, 'none'::text]))),
+    CONSTRAINT exam_score_report_projections_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT exam_score_report_projections_values_coherent CHECK (((projection_status = 'snapshot'::text) = (projected_score_mid IS NOT NULL)))
+);
+
+
+--
+-- Name: TABLE exam_score_report_projections; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.exam_score_report_projections IS 'The projection that was live on the exam date, paired with the reported score. Stores the snapshot''s own identity and instant (Doc 05C §7.2), not just its values, so the pair can be re-derived. projection_status = ''none'' records "there was no projection" explicitly.';
+
+
+--
+-- Name: exam_score_reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exam_score_reports (
+    report_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    occasion_key date NOT NULL,
+    total_score integer NOT NULL,
+    rw_score integer NOT NULL,
+    math_score integer NOT NULL,
+    reported_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT exam_score_reports_math_scale CHECK ((((math_score >= 200) AND (math_score <= 800)) AND ((math_score % 10) = 0))),
+    CONSTRAINT exam_score_reports_rw_scale CHECK ((((rw_score >= 200) AND (rw_score <= 800)) AND ((rw_score % 10) = 0))),
+    CONSTRAINT exam_score_reports_total_is_the_sum CHECK ((total_score = (rw_score + math_score))),
+    CONSTRAINT exam_score_reports_total_scale CHECK ((((total_score >= 400) AND (total_score <= 1600)) AND ((total_score % 10) = 0)))
+);
+
+
+--
+-- Name: TABLE exam_score_reports; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.exam_score_reports IS 'Student-reported REAL SAT scores, one row per report (append-only; latest reported_at wins). Not Doc 04C''s exam score report, which is Lyceon''s own modelled score for a practice full-length — this is what College Board sent the student. Service-role only.';
 
 
 --
@@ -13188,7 +13536,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text])))
 );
 
 
@@ -14848,11 +15196,35 @@ ALTER TABLE ONLY public.exam_child_tables
 
 
 --
+-- Name: exam_renewal_decisions exam_renewal_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_renewal_decisions
+    ADD CONSTRAINT exam_renewal_decisions_pkey PRIMARY KEY (decision_id);
+
+
+--
 -- Name: exam_runtime_outbox exam_runtime_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exam_runtime_outbox
     ADD CONSTRAINT exam_runtime_outbox_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: exam_score_report_projections exam_score_report_projections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_score_report_projections
+    ADD CONSTRAINT exam_score_report_projections_pkey PRIMARY KEY (report_id, section);
+
+
+--
+-- Name: exam_score_reports exam_score_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_score_reports
+    ADD CONSTRAINT exam_score_reports_pkey PRIMARY KEY (report_id);
 
 
 --
@@ -15657,6 +16029,20 @@ CREATE UNIQUE INDEX entitlements_stripe_subscription_item_id_key ON public.entit
 
 
 --
+-- Name: exam_renewal_decisions_latest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX exam_renewal_decisions_latest ON public.exam_renewal_decisions USING btree (student_id, occasion_key, decided_at DESC);
+
+
+--
+-- Name: exam_score_reports_latest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX exam_score_reports_latest ON public.exam_score_reports USING btree (student_id, occasion_key, reported_at DESC);
+
+
+--
 -- Name: idx_abuse_incidents_student; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15682,6 +16068,13 @@ CREATE INDEX idx_abuse_scores_tier ON public.abuse_scores USING btree (tier) WHE
 --
 
 CREATE INDEX idx_account_deletion_pending ON public.account_deletion_requests USING btree (scheduled_hard_delete_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: idx_account_deletion_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_account_deletion_profile ON public.account_deletion_requests USING btree (profile_id);
 
 
 --
@@ -15717,6 +16110,20 @@ CREATE INDEX idx_audit_logs_target ON public.audit_logs USING btree (target_prof
 --
 
 CREATE UNIQUE INDEX idx_baseline_once_per_student_section ON public.student_section_projection_snapshots USING btree (student_id, section) WHERE (snapshot_kind = 'diagnostic_baseline'::text);
+
+
+--
+-- Name: idx_calendar_block_launches_block_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_block_launches_block_student ON public.calendar_block_launches USING btree (block_id, student_id);
+
+
+--
+-- Name: idx_calendar_block_launches_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_calendar_block_launches_student ON public.calendar_block_launches USING btree (student_id);
 
 
 --
@@ -15783,6 +16190,13 @@ CREATE INDEX idx_entitlements_active ON public.entitlements USING btree (profile
 
 
 --
+-- Name: idx_entitlements_payer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_entitlements_payer ON public.entitlements USING btree (payer_profile_id) WHERE (payer_profile_id IS NOT NULL);
+
+
+--
 -- Name: idx_entitlements_profile; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15801,6 +16215,13 @@ CREATE INDEX idx_entitlements_stripe_subscription ON public.entitlements USING b
 --
 
 CREATE INDEX idx_exam_runtime_outbox_pending ON public.exam_runtime_outbox USING btree (created_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: idx_guardian_consent_requests_student_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_guardian_consent_requests_student_profile ON public.guardian_consent_requests USING btree (student_profile_id);
 
 
 --
@@ -15881,6 +16302,20 @@ CREATE INDEX idx_mccl_time ON public.mastery_constants_change_log USING btree (c
 
 
 --
+-- Name: idx_notification_events_subject_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notification_events_subject_profile ON public.notification_events USING btree (subject_profile_id);
+
+
+--
+-- Name: idx_practice_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_practice_items_question ON public.practice_session_items USING btree (question_id);
+
+
+--
 -- Name: idx_practice_items_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15934,6 +16369,13 @@ CREATE INDEX idx_profiles_deleted ON public.profiles USING btree (deleted_at) WH
 --
 
 CREATE UNIQUE INDEX idx_profiles_email_active ON public.profiles USING btree (lower(email)) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_profiles_guardian_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_profiles_guardian_profile ON public.profiles USING btree (guardian_profile_id);
 
 
 --
@@ -15993,10 +16435,31 @@ CREATE INDEX idx_review_attempts_item ON public.review_error_attempts USING btre
 
 
 --
+-- Name: idx_review_attempts_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_attempts_question ON public.review_error_attempts USING btree (question_id);
+
+
+--
 -- Name: idx_review_attempts_student; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_review_attempts_student ON public.review_error_attempts USING btree (student_id, occurred_at DESC);
+
+
+--
+-- Name: idx_review_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_items_question ON public.review_session_items USING btree (question_id);
+
+
+--
+-- Name: idx_review_items_queue_entry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_items_queue_entry ON public.review_session_items USING btree (queue_entry_id);
 
 
 --
@@ -16018,6 +16481,13 @@ CREATE INDEX idx_review_items_student ON public.review_session_items USING btree
 --
 
 CREATE INDEX idx_review_schedule_due ON public.review_schedule USING btree (student_id, queued_at) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_review_schedule_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_schedule_question ON public.review_schedule USING btree (question_id);
 
 
 --
@@ -16168,6 +16638,13 @@ CREATE INDEX idx_test_form_items_lookup ON public.test_form_items USING btree (t
 
 
 --
+-- Name: idx_test_form_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_form_items_question ON public.test_form_items USING btree (question_id);
+
+
+--
 -- Name: idx_test_session_answers_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16175,10 +16652,24 @@ CREATE INDEX idx_test_session_answers_session ON public.test_session_answers USI
 
 
 --
+-- Name: idx_test_session_items_question; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_session_items_question ON public.test_session_items USING btree (question_id);
+
+
+--
 -- Name: idx_test_session_sections_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_test_session_sections_lookup ON public.test_session_sections USING btree (test_session_id, section);
+
+
+--
+-- Name: idx_test_sessions_form; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_sessions_form ON public.test_sessions USING btree (test_form_id);
 
 
 --
@@ -16382,6 +16873,13 @@ CREATE INDEX idx_tutor_turn_metrics_crisis_outcome ON public.tutor_turn_metrics 
 --
 
 CREATE INDEX idx_usage_rate_limit_ledger_scope_user_created ON public.usage_rate_limit_ledger USING btree (scope, student_user_id, created_at DESC);
+
+
+--
+-- Name: idx_usage_rate_limit_ledger_student_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_usage_rate_limit_ledger_student_user ON public.usage_rate_limit_ledger USING btree (student_user_id);
 
 
 --
@@ -17279,11 +17777,59 @@ ALTER TABLE ONLY public.entitlement_runtime_config
 
 
 --
+-- Name: entitlements entitlements_payer_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.entitlements
+    ADD CONSTRAINT entitlements_payer_profile_id_fkey FOREIGN KEY (payer_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
 -- Name: entitlements entitlements_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.entitlements
     ADD CONSTRAINT entitlements_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: exam_renewal_decisions exam_renewal_decisions_decided_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_renewal_decisions
+    ADD CONSTRAINT exam_renewal_decisions_decided_by_profile_id_fkey FOREIGN KEY (decided_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: exam_renewal_decisions exam_renewal_decisions_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_renewal_decisions
+    ADD CONSTRAINT exam_renewal_decisions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: exam_score_report_projections exam_score_report_projections_report_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_score_report_projections
+    ADD CONSTRAINT exam_score_report_projections_report_id_fkey FOREIGN KEY (report_id) REFERENCES public.exam_score_reports(report_id) ON DELETE CASCADE;
+
+
+--
+-- Name: exam_score_report_projections exam_score_report_projections_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_score_report_projections
+    ADD CONSTRAINT exam_score_report_projections_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES public.student_section_projection_snapshots(snapshot_id) ON DELETE SET NULL;
+
+
+--
+-- Name: exam_score_reports exam_score_reports_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_score_reports
+    ADD CONSTRAINT exam_score_reports_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -18373,6 +18919,12 @@ ALTER TABLE public.entitlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_child_tables ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: exam_renewal_decisions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exam_renewal_decisions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: exam_runtime_outbox; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -18391,6 +18943,18 @@ CREATE POLICY exam_runtime_outbox_no_client_access ON public.exam_runtime_outbox
 
 CREATE POLICY exam_runtime_outbox_scoring_owner_read ON public.exam_runtime_outbox FOR SELECT TO lyceon_scoring_owner USING (true);
 
+
+--
+-- Name: exam_score_report_projections; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exam_score_report_projections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exam_score_reports; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exam_score_reports ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -20349,6 +20913,14 @@ GRANT ALL ON FUNCTION public.exam_remaining_ms(p_session_id uuid, p_section text
 
 
 --
+-- Name: FUNCTION exam_renewal_no_answer_candidates(p_window_days integer, p_limit integer, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_renewal_no_answer_candidates(p_window_days integer, p_limit integer, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_renewal_no_answer_candidates(p_window_days integer, p_limit integer, p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION exam_report_source(p_student_id uuid, p_session_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -20378,6 +20950,22 @@ GRANT ALL ON FUNCTION public.exam_save_item_workspace(p_student_id uuid, p_sessi
 
 REVOKE ALL ON FUNCTION public.exam_score_outbox_event(p_outbox_event_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.exam_score_outbox_event(p_outbox_event_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_score_renewal_candidates(p_offset_days integer, p_max_exam_age_days integer, p_lead_days integer, p_limit integer, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_score_renewal_candidates(p_offset_days integer, p_max_exam_age_days integer, p_lead_days integer, p_limit integer, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_score_renewal_candidates(p_offset_days integer, p_max_exam_age_days integer, p_lead_days integer, p_limit integer, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) TO service_role;
 
 
 --
@@ -20764,6 +21352,14 @@ GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, 
 
 REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) TO service_role;
+
+
+--
+-- Name: FUNCTION record_exam_score_report(p_student_id uuid, p_occasion_key date, p_total_score integer, p_rw_score integer, p_math_score integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_exam_score_report(p_student_id uuid, p_occasion_key date, p_total_score integer, p_rw_score integer, p_math_score integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_exam_score_report(p_student_id uuid, p_occasion_key date, p_total_score integer, p_rw_score integer, p_math_score integer) TO service_role;
 
 
 --

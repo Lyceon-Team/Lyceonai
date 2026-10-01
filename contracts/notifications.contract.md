@@ -49,8 +49,8 @@ Three email lanes exist. This contract governs exactly one.
 
 ## 1. Schema
 
-**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked`, `guardian_unlinked`, `full_length_week` and `full_length_tomorrow` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; the two practice-test notices added 2026-09-27 by `20261012000000_calendar_exam_notifications.sql`; adding a type is a CHECK change plus a row in §2.3).
-*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than those four; or `confdeltype` of the profiles FK is not `c`.
+**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked`, `guardian_unlinked`, `full_length_week`, `full_length_tomorrow`, `exam_score_report_requested` and `renewal_decision_requested` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; the two practice-test notices added 2026-09-27 by `20261012000000_calendar_exam_notifications.sql`; the two post-exam notices added 2026-09-30 by `20261015000000_exam_score_renewal_decision.sql` (SCL-191); adding a type is a CHECK change plus a row in §2.3).
+*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than those six; or `confdeltype` of the profiles FK is not `c`.
 
 **C1.2** `public.notification_messages(message_id uuid PK, event_id FK → notification_events ON DELETE CASCADE, recipient_profile_id FK → profiles(id) ON DELETE CASCADE, channel ∈ {in_app,email}, status ∈ {queued,sent,delivered,bounced,complained,failed}, provider_message_id, attempts, last_error, seen_at, read_at, archived_at, sent_at, delivered_at, created_at)` with `UNIQUE (event_id, recipient_profile_id, channel)`.
 *Violated if:* any listed column, CHECK, or the unique constraint is absent in `information_schema` / `pg_constraint`; or either FK's `confdeltype` is not `c`.
@@ -82,6 +82,8 @@ Three email lanes exist. This contract governs exactly one.
 | `guardian_unlinked` | the student | the party who did NOT revoke (`v_target`, derived once inside the function): `in_app`, `email`; the revoker: nothing | `revoke_guardian_link_audited` |
 | `full_length_week` | the student | the student: `in_app` | `calendar_emit_exam_notification` |
 | `full_length_tomorrow` | the student | the student: `in_app`, `email` | `calendar_emit_exam_notification` |
+| `exam_score_report_requested` | the student | the student: `in_app`, `email` | `exam_score_renewal_emit` |
+| `renewal_decision_requested` | the student | the PAYER — `entitlements.payer_profile_id`, or the student when it is NULL: `in_app`, `email` | `exam_score_renewal_emit` |
 
 Not event types (see §0.4): the guardian consent request, the deletion-scheduled email and the guardian link INVITE (the student's current code, sent to an address with no profile row; `sendGuardianLinkInviteEmail`, keyed on student id + code issue time + a hash of the address) are direct sends.
 
@@ -94,7 +96,20 @@ notification, and the week-ahead notice does not, because §12.2 says minimise c
 surface and the student sees the week when they open the calendar. It is one `jsonb_build_array`
 in `calendar_emit_exam_notification` plus this row.
 
-*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; a `full_length_week` or `full_length_tomorrow` event has a message for any profile other than its subject student, or a `full_length_week` event has an `email` row, or a `full_length_tomorrow` event lacks one; or an event row exists whose type is not in this table.
+The two POST-EXAM rows are SCL-191, added 2026-09-30. The SUBJECT is the student on both — the
+student is who the notification is about, and `subject_profile_id` is what the account-deletion
+cascade follows — while the RECIPIENT differs, because the two rows ask two different questions.
+The score is the student's, so the student is asked for it. The money is the payer's, so the payer
+is asked about it: Doc 01 §36.4 already prompts a paying guardian "you are still paying for this
+student's subscription — keep or cancel?", and this is the same question at a different moment.
+On a SELF-PAID subscription those are one person, and `exam_score_renewal_emit`'s caller
+(`noticesFor` in `server/services/exam-score-renewal/job.ts`) sends the score prompt ONLY, so a
+student does not get two emails on the same morning about the same sitting. On the `billing_cycle`
+anchor there is no sitting, so only `renewal_decision_requested` is sent (owner ruling 2026-09-30
+#1). A guardian NEVER receives `exam_score_report_requested`: Doc 01 §38.1 gives a guardian
+aggregates rather than the student's own SAT result.
+
+*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; a `full_length_week` or `full_length_tomorrow` event has a message for any profile other than its subject student, or a `full_length_week` event has an `email` row, or a `full_length_tomorrow` event lacks one; an `exam_score_report_requested` event has a message for any profile other than its subject student, or lacks either channel; a `renewal_decision_requested` event has a message for any profile other than its subject's `entitlements.payer_profile_id` (or the subject itself where that is NULL), or lacks either channel; a self-paid student receives both post-exam types for one occasion; or an event row exists whose type is not in this table.
 
 **C2.4** `in_app` rows are delivered on insert: `status='delivered'`, `delivered_at = created_at`. The row is the delivery.
 *Violated if:* an `in_app` row exists with `status <> 'delivered'` or `delivered_at IS NULL`.

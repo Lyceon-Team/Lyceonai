@@ -51,8 +51,10 @@ function newId(): string {
 
 class FakeQuery implements PromiseLike<Result> {
   private filters: Filter[] = [];
-  private orderCol: string | null = null;
-  private ascending = true;
+  // Chained `.order()` calls accumulate, as in supabase-js: the first is the
+  // primary key and each later one a tiebreak (tests/helpers/pg-supabase.ts has
+  // the same rule). Before 2026-09-29 the last call overwrote the rest.
+  private orderBy: Array<{ col: string; ascending: boolean }> = [];
   private limitN: number | null = null;
   private mode: "select" | "insert" | "update" = "select";
   private payload: Row | Row[] | null = null;
@@ -101,8 +103,7 @@ class FakeQuery implements PromiseLike<Result> {
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }): this {
-    this.orderCol = col;
-    this.ascending = opts?.ascending ?? true;
+    this.orderBy.push({ col, ascending: opts?.ascending ?? true });
     return this;
   }
   limit(n: number): this {
@@ -180,25 +181,27 @@ class FakeQuery implements PromiseLike<Result> {
     }
 
     let rows = this.matching();
-    if (this.orderCol) {
-      const col = this.orderCol;
-      const dir = this.ascending ? 1 : -1;
-      rows = rows
-        .slice()
-        .sort((a, b) =>
-          String(a[col]) < String(b[col])
-            ? -dir
-            : String(a[col]) > String(b[col])
-              ? dir
-              : 0,
-        );
+    if (this.orderBy.length > 0) {
+      const keys = this.orderBy;
+      rows = rows.slice().sort((a, b) => {
+        for (const { col, ascending } of keys) {
+          const dir = ascending ? 1 : -1;
+          const av = String(a[col]);
+          const bv = String(b[col]);
+          if (av < bv) return -dir;
+          if (av > bv) return dir;
+        }
+        return 0;
+      });
     }
+    // PostgREST's exact count is the total that matched, before the limit.
+    const matched = rows.length;
     if (this.limitN !== null) rows = rows.slice(0, this.limitN);
     if (this.countExact) {
       return {
         data: this.headOnly ? null : rows,
         error: null,
-        count: rows.length,
+        count: matched,
       };
     }
     return this.shape(rows);

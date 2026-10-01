@@ -1,0 +1,35 @@
+# UI-00b warm, client side. curl from the session container through the session egress proxy, 2026-09-29 21:21:24Z..21:21:58Z, free test account cookie (not shown).
+# Sequential, 10 successful requests per endpoint (proxy connection failures retried and not counted). Times in seconds; they include the proxy round trip.
+== /api/profile
+200 ttfb=2.050055 total=2.050111 xreq=8a2be3ee-9a60-4de8-baca-966b60c90a25
+200 ttfb=1.194774 total=1.194829 xreq=f42fdf97-14a7-4ea1-89aa-916d613f84f0
+200 ttfb=0.565444 total=0.565495 xreq=d6234e9f-f02b-464c-a0ce-9ba844167d4a
+200 ttfb=0.543122 total=0.543178 xreq=2ecb5af0-4fb5-429b-9e6b-15ddb978d9b5
+200 ttfb=0.645856 total=0.645910 xreq=950c4703-470e-4579-a31d-58921dfda744
+200 ttfb=0.637167 total=0.637232 xreq=d7b9efee-acc0-4d81-8cc9-1c259aaf1da5
+200 ttfb=0.711640 total=0.711695 xreq=d6f66cea-44be-41b5-9bdc-bb8a9cecf151
+200 ttfb=0.874000 total=0.874058 xreq=f255815f-80b5-4a70-bcdd-afa14742f92e
+200 ttfb=0.479991 total=0.480043 xreq=a4aafb7e-99c9-4e07-9273-97701b773ecd
+200 ttfb=0.538108 total=0.538166 xreq=951bf472-610a-4ac2-8810-0aba1ed300af
+== /api/progress/kpis
+200 ttfb=0.776337 total=0.776389 xreq=4bad8380-0380-4e6c-9a35-009573522862
+200 ttfb=0.721305 total=0.721362 xreq=4f3e4aed-6941-43cb-858b-fc26fcf2b71c
+200 ttfb=0.793836 total=0.793900 xreq=df6998d4-704b-4b8a-8f5e-12e46a6696df
+200 ttfb=0.661617 total=0.661669 xreq=67ddd5b3-5eb4-461c-8fae-9b36d1be9494
+200 ttfb=0.681672 total=0.681728 xreq=f9b73074-4cbd-441d-a876-5336332729c1
+200 ttfb=0.699378 total=0.699427 xreq=b49219d1-44b6-4492-87da-a3c59aeb8526
+200 ttfb=0.773117 total=0.773178 xreq=cddaa2f2-9052-431b-a7d0-149b20f3ea5c
+200 ttfb=0.814557 total=0.814642 xreq=7c0f5f53-cfe5-417f-8b6e-abe93cd867d0
+200 ttfb=0.675232 total=0.675314 xreq=5a5271d5-7579-4fa8-bb21-f2b3ae7eec9a
+200 ttfb=1.011095 total=1.011153 xreq=1f5b9a25-b9b9-4acf-b8c0-fbfd9b611615
+== /api/practice/sessions/open
+200 ttfb=0.388916 total=0.388956 xreq=afe6f422-d93d-4faf-8b4d-d601a49e126a
+200 ttfb=0.371571 total=0.371626 xreq=db593280-86ce-4c55-adb3-371e40fdfa40
+200 ttfb=0.361985 total=0.362029 xreq=d0843bfa-2de1-4a5b-bc25-f55a34b2f04e
+200 ttfb=0.360014 total=0.360058 xreq=6a7f6e69-6bd8-4cb5-9390-c6104fa4375d
+200 ttfb=0.365553 total=0.365597 xreq=074019a0-f22b-473e-8fcb-83ed0776e326
+200 ttfb=0.495557 total=0.495600 xreq=d755e6f2-c76c-400b-92bf-2ca8d5d26411
+200 ttfb=0.341194 total=0.341237 xreq=cfa36f79-41f9-4cd0-96dc-5f34ef41a389
+200 ttfb=0.372674 total=0.372718 xreq=567aaadd-0514-4764-885c-1ad9fadbec45
+200 ttfb=0.355939 total=0.355980 xreq=b5fc4828-ec9b-4532-aa1e-8ef2e006118f
+200 ttfb=0.375042 total=0.375082 xreq=25d992af-0000-4638-966a-75f6ce342e76

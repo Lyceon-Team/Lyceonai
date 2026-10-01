@@ -8,11 +8,6 @@ describe('Auth Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('status', 'ok');
     });
-
-    it('should return questions for anonymous users', async () => {
-      const res = await request(app).get('/api/questions/recent?limit=5');
-      expect([200, 304]).toContain(res.status);
-    });
   });
 
   describe('Auth User Endpoint', () => {
@@ -100,7 +95,8 @@ describe('Auth Integration Tests', () => {
 
   describe('Cookie Security', () => {
     it('should not set cookies on public endpoints', async () => {
-      const res = await request(app).get('/api/questions/recent');
+      // /api/questions/recent was the public probe here; it was deleted as unused (UI-05).
+      const res = await request(app).get('/api/health');
       const cookies = res.headers['set-cookie'];
       
       // Public endpoints should not set auth cookies

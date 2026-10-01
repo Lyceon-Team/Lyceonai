@@ -288,6 +288,9 @@ export type ExamWorkspaceSaveResponse = z.infer<
 export const EXAM_ERROR_CODES = [
   "unauthenticated",
   "forbidden",
+  // SCL-185 (UI-01): the entitlement branch of §16.2's 403. Route-emitted only; the exam RPCs
+  // never return it (their 403 is session ownership, which stays `forbidden`).
+  "entitlement_required",
   "invalid_request",
   "form_not_published",
   "form_not_available",

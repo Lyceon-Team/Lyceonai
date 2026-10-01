@@ -46,6 +46,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { csrfFetch } from "@/lib/csrf";
+import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, FileText, X } from "lucide-react";
@@ -123,7 +124,7 @@ export function ReconsentModal({
     },
     onSuccess: () => {
       setError(null);
-      void queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+      void queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
     },
     onError: (err: unknown) => {
       setError(err instanceof Error ? err.message : "Something went wrong");

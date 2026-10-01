@@ -179,6 +179,7 @@ async function dispatchOne(
   const sent = await transport({
     idempotencyKey: row.message_id,
     to: address,
+    recipientProfileId: row.recipient_profile_id,
     subject: rendered.value.subject,
     html: rendered.value.html,
     text: rendered.value.text,

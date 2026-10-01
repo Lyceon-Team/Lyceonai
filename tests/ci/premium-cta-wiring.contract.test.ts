@@ -23,16 +23,23 @@ function readCode(filePath: string): string {
 }
 
 describe("Premium CTA wiring contract", () => {
+  /**
+   * @spec [owner ruling 2026-09-03 §3; register UI-06] | @implemented [2026-09-29]
+   * plain English: the third surface here used to be `ScoreProjectionCard.tsx`,
+   * an orphan UI-06 deleted. The live premium lock component is
+   * `PremiumUpgradePrompt` (mastery renders it, asserted below), so it takes
+   * that slot: a dead `href="/"` upgrade link there goes red.
+   */
   it('removes dead "/" upgrade links from known premium lock surfaces', () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
     const mastery = read("client/src/pages/mastery.tsx");
-    const projection = read(
-      "client/src/components/progress/ScoreProjectionCard.tsx",
+    const upgradePrompt = read(
+      "client/src/components/billing/PremiumUpgradePrompt.tsx",
     );
 
     expect(dashboard).not.toContain('Link href="/"');
     expect(mastery).not.toContain('href="/"');
-    expect(projection).not.toContain('href="/"');
+    expect(upgradePrompt).not.toContain('href="/"');
   });
 
   /**
@@ -59,9 +66,11 @@ describe("Premium CTA wiring contract", () => {
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
     const userProfile = readCode("client/src/pages/UserProfile.tsx");
 
-    // G4-09 (G-AUD-26): the canonical billing status is the ONE shared, parsed reader —
-    // not a private `["/api/billing/status"]` key with its own local type.
-    expect(userProfile).toContain("useBillingStatus(");
+    // UI-14 (2026-09-29) and G4-09 (G-AUD-26): the page reads billing status through the ONE
+    // shared, parsed hook — one key and one fetch function for every surface — rather than
+    // spelling the key itself. The hook's key is pinned in
+    // tests/ci/query-freshness.contract.test.ts.
+    expect(userProfile).toContain("useBillingStatusQuery");
     expect(userProfile).not.toMatch(/\/api\/billing\/status/);
     // One portal hook, not a fourth copy of the mutation.
     expect(userProfile).toContain("useBillingPortal");
@@ -82,7 +91,7 @@ describe("Premium CTA wiring contract", () => {
    * under three cache keys with four private types, none parsed, was the defect; a fifth
    * reader added anywhere reopens it, so the whole client tree is scanned, not a list.
    */
-  it("G4-09: only useBillingStatus reads /api/billing/status on the client", () => {
+  it("G4-09 / UI-14: only useBillingStatusQuery reads /api/billing/status on the client", () => {
     const readers: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(path.join(repoRoot, dir), {
@@ -101,7 +110,7 @@ describe("Premium CTA wiring contract", () => {
       }
     };
     walk("client/src");
-    expect(readers).toEqual(["client/src/hooks/useBillingStatus.ts"]);
+    expect(readers).toEqual(["client/src/hooks/useBillingStatusQuery.ts"]);
   });
 
   it("registers the canonical /upgrade route", () => {

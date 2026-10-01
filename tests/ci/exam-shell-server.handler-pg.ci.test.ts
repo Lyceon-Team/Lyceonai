@@ -38,7 +38,23 @@ import {
   bootstrapPgDatabase,
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
-import { examReportPayloadSchema } from "../../packages/shared/src/exam-report-schema";
+import { examStudentReportPayloadSchema } from "../../packages/shared/src/exam-student-report-schema";
+
+/** Every key name at any depth of a JSON body. */
+function keysDeep(value: unknown, acc = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) for (const v of value) keysDeep(v, acc);
+  else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      acc.add(k);
+      keysDeep(v, acc);
+    }
+  }
+  return acc;
+}
+
+function evidence(label: string, value: unknown): void {
+  process.stdout.write(`UI-19 EVIDENCE ${label} ${JSON.stringify(value)}\n`);
+}
 
 const DB_NAME = "exam_shell_server_handler_ci";
 const FORM = "e7af0000-0000-4000-8000-0000000000c1";
@@ -312,7 +328,7 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
       resumable: true,
     });
     expect(mine.body.meta).toMatchObject({ request_id: "exam-shell-pg" });
-    examReportPayloadSchema.parse(mine.body.data);
+    examStudentReportPayloadSchema.parse(mine.body.data);
 
     const foreign = await as(OTHER)(
       request(app).get(`/api/tests/sessions/${sid}/report`),
@@ -382,10 +398,35 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
       request(app).get(`/api/tests/sessions/${sid}/report`),
     );
     expect(report.status).toBe(200);
-    const data = examReportPayloadSchema.parse(report.body.data);
+    const data = examStudentReportPayloadSchema.parse(report.body.data);
     expect(data.report_state).toBe("scored");
     if (data.report_state !== "scored") return;
     expect(data.score.total_scaled).toBe(1600);
+    // Owner ruling 7 (SCL-180 amended 2026-09-29), on the real route's body. Presence
+    // first: eight domains, every answer right, so every domain fills all seven segments.
+    evidence("student scored payload", {
+      report_state: data.report_state,
+      domain_segments: data.domain_segments,
+      omitted_domains: data.omitted_domains,
+    });
+    expect(data.domain_segments).toHaveLength(8);
+    expect(data.domain_segments.map((r) => r.segments_filled)).toEqual([
+      7, 7, 7, 7, 7, 7, 7, 7,
+    ]);
+    expect(data.omitted_domains).toEqual([]);
+    // Then absence: no count on any row, and none anywhere in the body.
+    for (const row of report.body.data.domain_segments as object[]) {
+      expect(Object.keys(row).sort()).toEqual([
+        "domain",
+        "section",
+        "segments_filled",
+      ]);
+    }
+    const bodyKeys = keysDeep(report.body);
+    expect(bodyKeys.has("segments_filled")).toBe(true);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => bodyKeys.has(k)),
+    ).toEqual([]);
     expect(data.disclosure.summary).toMatch(
       /^Lyceon-modeled SAT score\. .* ±20-50 points or more\.$/,
     );
@@ -443,7 +484,7 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
         report_state: "scoring_pending",
         estimated_ready_at: null,
       });
-      examReportPayloadSchema.parse(pending.body.data);
+      examStudentReportPayloadSchema.parse(pending.body.data);
 
       await pg.query(
         "UPDATE public.exam_runtime_outbox SET status = 'failed', attempts = 5, last_attempt_at = now() WHERE aggregate_id = $1",
@@ -452,7 +493,7 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
       const failed = await as(STUDENT)(
         request(app).get(`/api/tests/sessions/${sid}/report`),
       );
-      const data = examReportPayloadSchema.parse(failed.body.data);
+      const data = examStudentReportPayloadSchema.parse(failed.body.data);
       expect(data.report_state).toBe("failed_requires_review");
       expect(JSON.stringify(failed.body)).not.toMatch(
         /sqlstate|failure_code|score_runs|v1\.0/,
@@ -485,11 +526,37 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
     const res = await as(OTHER)(
       request(app).get(`/api/tests/sessions/${osid}/report`),
     );
-    const data = examReportPayloadSchema.parse(res.body.data);
+    const data = examStudentReportPayloadSchema.parse(res.body.data);
     expect(data.report_state).toBe("partial_scored");
     if (data.report_state !== "partial_scored") return;
     expect(data.score.total_scaled).toBeNull();
     expect(data.completed_sections).toEqual(["RW"]);
+    // Owner ruling 7: RW submitted unanswered -> four RW domains at 0 of 7 segments; the
+    // unscored Math section's domains are omitted, and the payload says why.
+    evidence("student partial payload", {
+      report_state: data.report_state,
+      domain_segments: data.domain_segments,
+      omitted_domains: data.omitted_domains,
+    });
+    expect(data.domain_segments).toHaveLength(4);
+    expect(
+      data.domain_segments.map((r) => [r.section, r.segments_filled]),
+    ).toEqual([
+      ["RW", 0],
+      ["RW", 0],
+      ["RW", 0],
+      ["RW", 0],
+    ]);
+    expect(data.omitted_domains.map((o) => [o.section, o.reason])).toEqual([
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+    ]);
+    const bodyKeys = keysDeep(res.body);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => bodyKeys.has(k)),
+    ).toEqual([]);
     expect(data.partial_disclosure.summary).toMatch(
       /Math was not completed, so no total score is available\.$/,
     );

@@ -31,6 +31,10 @@
  * entry points now reach it from facts the server does write.
  */
 import { useLocation } from "wouter";
+import {
+  useBillingStatusQuery,
+  type BillingStatus,
+} from "@/hooks/useBillingStatusQuery";
 import { X, Sparkles, CreditCard, ArrowRight } from "lucide-react";
 import {
   Card,
@@ -41,7 +45,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
-import { useBillingStatus, type BillingStatus } from "@/hooks/useBillingStatus";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   resolveCtaCopy,
@@ -108,15 +111,15 @@ type BillingStatusForCta = Pick<
  * WHY THE COMPONENT ASKS RATHER THAN EACH SURFACE. Reaching the lapsed state
  * needs `lapsed` and `hasBillingAccount`, which only `/api/billing/status`
  * writes. Threading both through calendar, chat, exams, mastery and practice
- * would be five new props and five chances to forget one. The query shares
- * `["billing-status"]` with the guardian paywall, so on a surface that already
- * holds it this costs no request at all.
+ * would be five new props and five chances to forget one. The query is the
+ * shared `useBillingStatusQuery` (UI-14), so on a surface that already holds it
+ * this costs no request at all.
  *
  * A guardian without per-student context is sent to their dashboard, because
  * that is where every guardian remedy lives. Never `/upgrade`.
  */
 function stateFromBilling(
-  status: BillingStatusForCta | undefined,
+  status: BillingStatus | undefined,
   isGuardian: boolean,
 ): BillingCtaState {
   if (isGuardian) {
@@ -146,7 +149,7 @@ export function PremiumUpgradePrompt({
    * Skipped entirely when the caller already knows the state — the guardian
    * dashboard does, and it knows more than this could (which student).
    */
-  const { data: billingStatus } = useBillingStatus({
+  const { data: billingStatus } = useBillingStatusQuery({
     enabled: state === undefined,
   });
 

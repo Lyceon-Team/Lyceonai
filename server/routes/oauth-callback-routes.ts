@@ -27,7 +27,10 @@ import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
-import { sanitizeReturnPath } from "../../packages/shared/src/return-path";
+import {
+  postAuthDestination,
+  sanitizeReturnPath,
+} from "../../packages/shared/src/return-path";
 
 const router = Router();
 
@@ -350,19 +353,27 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         profile.is_under_13 === true &&
         !(await hasActiveGuardianLink(admin, profile.id));
 
-      if (profileNeedsCompletion) {
-        redirectPath = "/profile/complete";
-      } else if (needsGuardianLink) {
-        redirectPath = "/guardian-required";
-      } else if (safeNext) {
-        // AS-5: password-recovery (and any future allow-listed handoff) routes here AFTER the
-        // onboarding gate — e.g. recovery → /update-password to set a new password.
-        redirectPath = safeNext;
-      } else if (profile.role === "guardian") {
-        redirectPath = "/guardian";
-      } else {
-        redirectPath = "/dashboard";
-      }
+      // AS-5: password-recovery (and any future allow-listed handoff) routes here AFTER the
+      // onboarding gate — e.g. recovery → /update-password to set a new password.
+      //
+      // @spec [AS-5; AS-3 landing matrix; register UI-03] | @implemented [2026-09-29]
+      // plain English: the shared `postAuthDestination` — the same decision the login page and
+      // the onboarding page make. An incomplete profile still goes to /profile/complete, but now
+      // carries the allowlisted `next` along (`/profile/complete?next=…`) instead of dropping it;
+      // a complete profile lands on `next` only if its role may open it, else the role default.
+      // The profile gate itself (`profileNeedsCompletion`) is unchanged.
+      //
+      // G2-04 (merged from `main`): a complete under-13 student with no active guardian link
+      // goes to /guardian-required ahead of any `next` — the server refuses every learning
+      // request until a guardian connects. Onboarding still comes first.
+      redirectPath =
+        !profileNeedsCompletion && needsGuardianLink
+          ? "/guardian-required"
+          : postAuthDestination({
+              role: profile.role,
+              needsOnboarding: profileNeedsCompletion,
+              next: safeNext,
+            });
     } catch (finalizeErr) {
       // AL-7 (profile-per-human): same email already owned by another identity (a second provider
       // not merged by Supabase identity-linking). Deliberate conflict — do not fork the human.
@@ -411,9 +422,13 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       return res.redirect(`${siteUrl}/login?error=post_auth_finalize`);
     }
 
+    // @spec [Coding Standards §12.1; register UI-03] | @implemented [2026-09-29] | plain English:
+    // log the landing PATHNAME only. The query can now carry a return path through onboarding
+    // (`/profile/complete?next=%2Fguardian%3Fcode%3D…`), and a guardian link code is a
+    // credential-like value that has no business in a log line.
     logger.info("OAUTH", "success", "Native Google OAuth successful", {
       userId: user.id,
-      redirectPath,
+      redirectPath: redirectPath.split("?")[0],
     });
 
     return res.redirect(`${siteUrl}${redirectPath}`);

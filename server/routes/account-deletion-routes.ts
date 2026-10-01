@@ -326,6 +326,7 @@ router.post(
             await sendAccountDeletionScheduledEmail({
               deletionRequestId: result.requestRowId,
               email,
+              recipientProfileId: userId,
               rawToken: result.rawToken,
               scheduledHardDeleteAt: result.scheduledHardDeleteAt,
               requestId,

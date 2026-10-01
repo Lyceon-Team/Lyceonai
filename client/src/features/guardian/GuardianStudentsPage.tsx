@@ -47,7 +47,7 @@ import { GuardianPurchaseCard } from "@/components/guardian/GuardianPurchaseCard
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
-import { useBillingStatus } from "@/hooks/useBillingStatus";
+import { useBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 import {
   studentLabel,
   useForgetGuardianStudent,
@@ -82,7 +82,7 @@ async function unlink(studentId: string): Promise<void> {
 }
 
 function ManageBilling(): JSX.Element {
-  const status = useBillingStatus();
+  const status = useBillingStatusQuery();
   const portal = useBillingPortal();
   return (
     <section

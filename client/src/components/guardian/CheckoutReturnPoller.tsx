@@ -58,7 +58,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertTriangle } from "lucide-react";
-import { useBillingStatus } from "@/hooks/useBillingStatus";
+import { useBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 
 /**
  * How long the processing state polls before it gives up and says so.
@@ -86,11 +86,14 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
   const [confirmed, setConfirmed] = useState(false);
   const shouldPoll = checkoutSuccess && !timedOut && !confirmed;
 
+  // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the shared
+  // billing-status query (one key with the guardian dashboard and the premium prompt); only the
+  // poll interval is this component's own, and only while it waits for the webhook.
   const {
     data: billingStatus,
     isLoading: billingLoading,
     refetch,
-  } = useBillingStatus({
+  } = useBillingStatusQuery({
     refetchInterval: shouldPoll ? POLL_INTERVAL_MS : false,
   });
 

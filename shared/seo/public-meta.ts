@@ -283,12 +283,6 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     canonical: `${BASE_URL}/trust/evidence`,
     ogImage: DEFAULT_OG_IMAGE,
   },
-  "/tutor": {
-    title: "Tutor Safety & Privacy | Lyceon",
-    description: "Lyceon's tutor boundaries, privacy posture, and learning pedagogy for SAT-aligned study.",
-    canonical: `${BASE_URL}/tutor`,
-    ogImage: DEFAULT_OG_IMAGE,
-  },
   "/legal": {
     title: "Legal & Trust | Lyceon",
     description:

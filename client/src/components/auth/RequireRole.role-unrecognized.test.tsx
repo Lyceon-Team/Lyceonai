@@ -26,7 +26,11 @@ type AuthState = {
 
 let authState: AuthState;
 
-vi.mock("@tanstack/react-query", () => ({
+// UI-14 (merged from `cleanup`): RequireRole reads the profile through the shared
+// `useProfileQuery`, which builds its options with `queryOptions` — so the real module is kept
+// and only `useQuery` is replaced, as in `RequireRole.redirects.contract.test.tsx`.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQuery: queryMock.useQuery,
 }));
 

@@ -153,6 +153,9 @@ function SessionsListContent({
   onNewSession,
   newSessionPending,
   locked,
+  hasMore,
+  onLoadMore,
+  loadingMore,
 }: {
   conversations: TutorConversationSummary[];
   activeId: string | null;
@@ -161,6 +164,10 @@ function SessionsListContent({
   newSessionPending: boolean;
   /** The server refused this student LISA: nothing here may start a session. */
   locked: boolean;
+  /** The server said another page exists (`pagination.has_more`, Doc 03B §8.5). */
+  hasMore: boolean;
+  onLoadMore: () => void;
+  loadingMore: boolean;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -217,6 +224,22 @@ function SessionsListContent({
           <p className="px-1 py-4 text-xs text-muted-foreground text-center">
             No sessions yet
           </p>
+        )}
+
+        {hasMore && (
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="w-full rounded-lg px-3 py-2.5 text-center text-sm text-muted-foreground hover:bg-secondary/50 transition-colors min-h-[44px]"
+            data-testid="button-load-more-sessions"
+          >
+            {loadingMore ? (
+              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+            ) : (
+              "Load more sessions"
+            )}
+          </button>
         )}
       </div>
     </div>
@@ -276,8 +299,13 @@ export default function ChatPage() {
     isLoading,
     error: conversationError,
   } = useConversation(conversationId);
-  const { data: conversationsList, error: conversationsError } =
-    useConversations();
+  const {
+    data: conversationsList,
+    error: conversationsError,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useConversations();
   const createConversation = useCreateConversation();
   const endConversation = useEndConversation();
 
@@ -416,6 +444,9 @@ export default function ChatPage() {
       onNewSession={handleNewSession}
       newSessionPending={createConversation.isPending}
       locked={denied}
+      hasMore={!!hasNextPage}
+      onLoadMore={() => void fetchNextPage()}
+      loadingMore={!!isFetchingNextPage}
     />
   );
 

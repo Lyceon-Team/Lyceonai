@@ -46,6 +46,7 @@ import {
 import { MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoading } from "../components/ExamStatus";
+import { DomainBreakdown } from "../components/DomainBreakdown";
 import {
   Fact,
   Panel,
@@ -312,7 +313,9 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
               </div>
               <DisclosureNote disclosure={report.disclosure} />
             </div>
-            <ScoreTabs breakdown={report.domain_breakdown}>
+            <ScoreTabs
+              breakdown={<DomainBreakdown rows={report.domain_breakdown} />}
+            >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard
                   label={EXAM_SECTION_LABEL.RW}
@@ -348,7 +351,9 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
               <AttemptFacts report={report} />
               <DisclosureNote disclosure={report.disclosure} />
             </Panel>
-            <ScoreTabs breakdown={report.domain_breakdown}>
+            <ScoreTabs
+              breakdown={<DomainBreakdown rows={report.domain_breakdown} />}
+            >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard
                   label={EXAM_SECTION_LABEL.RW}
