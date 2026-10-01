@@ -92,14 +92,14 @@ describe("E1 — Vercel Analytics is off on every role-gated surface", () => {
     expect(denied).toEqual([]);
   });
 
-  it("E1.11 — /tutor is public AND role-gated, and deny wins", () => {
-    // Recorded rather than absorbed. `server/seo-content.ts` renders a public
-    // "Tutor Transparency" page there for a logged-out visitor; `App.tsx`
-    // wraps the SPA route in RequireRole allow={["student","admin"]}. If that
-    // ever stops being true in either direction, this test says so instead of
-    // the subtraction in E1.1 quietly covering it.
-    expect(Object.keys(PUBLIC_SSR_ROUTES)).toContain("/tutor");
-    expect(ROLE_GATED_PATHS).toContain("/tutor");
+  it("E1.11 — retired /tutor is neither public nor a page, and stays denied", () => {
+    // @spec [owner ruling 2026-09-29, UI-04] | @implemented [2026-09-29]
+    // /tutor used to be both a public SSR page and a role-gated SPA page.
+    // Retired: the public page is gone and the SPA route only redirects to
+    // /chat. It must not come back as a public (analytics-allowed) page, and
+    // with no entry anywhere it falls to the default deny.
+    expect(Object.keys(PUBLIC_SSR_ROUTES)).not.toContain("/tutor");
+    expect(ROLE_GATED_PATHS).not.toContain("/tutor");
     expect(isAnalyticsAllowedPath("/tutor")).toBe(false);
   });
 

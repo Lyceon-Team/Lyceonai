@@ -206,10 +206,12 @@ assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
 # ── U9 — /review is in RETURN_PATH_ALLOWLIST ─────────────────────────────────────────
+# Re-pointed 2026-09-29 (student UI UI-03): the allowlist is now derived from
+# RETURN_PATH_ROUTE_ROLES, so the plant removes the `/review` entry from that map.
 plant "U9" "remove /review from RETURN_PATH_ALLOWLIST" \
   "client/src/review-entry-points.test.ts" \
   "packages/shared/src/return-path.ts" \
-  'a = "  \"/review\",\n"
+  'a = "  \"/review\": [\"student\", \"admin\"],\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 

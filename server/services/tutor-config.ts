@@ -104,6 +104,19 @@ const tutorConfigKeySchemas = {
     schema: z.number().int().positive(),
     default: 5,
   },
+  // @spec [Doc-03B_V4.1 §8.3] | @implemented [2026-09-29] | plain English:
+  // the conversation list's page size when the client sends no `limit`, and
+  // the most it may ask for. Key names are the spec's own; no row is seeded,
+  // so the spec values below serve until an operator writes one. The wire
+  // schema also caps `limit` at 100, so a DB value above that cannot widen it.
+  "validation.pagination_default": {
+    schema: z.number().int().positive(),
+    default: 20,
+  },
+  "validation.pagination_max": {
+    schema: z.number().int().positive(),
+    default: 100,
+  },
 } as const;
 
 type TutorConfigKey = keyof typeof tutorConfigKeySchemas;

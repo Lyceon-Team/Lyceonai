@@ -1,5 +1,10 @@
 import { roleChoiceErrorCodeSchema } from "@lyceon/shared/profile-role-choice-schema";
 import { PROFILE_INCOMPLETE } from "@lyceon/shared/guardian-link-gate";
+import {
+  readEntitlementDenial,
+  type EntitlementDenial,
+} from "@lyceon/shared/entitlement-denial";
+
 export type ApiError = {
   status: number;
   code?: string;
@@ -34,61 +39,74 @@ export class HttpApiError extends Error implements ApiError {
   }
 }
 
-function readNestedErrorPayload(payload: any): Partial<ApiError> {
-  if (!payload || typeof payload !== "object") return {};
-  const nested = payload.error;
-  if (!nested || typeof nested !== "object") return {};
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringField(
+  record: Record<string, unknown> | null,
+  key: string,
+): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function booleanField(
+  record: Record<string, unknown> | null,
+  key: string,
+): boolean | undefined {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function readNestedErrorPayload(payload: unknown): Partial<ApiError> {
+  const nested = asRecord(asRecord(payload)?.error);
+  if (nested === null) return {};
 
   return {
-    code: typeof nested.code === "string" ? nested.code : undefined,
-    message: typeof nested.message === "string" ? nested.message : undefined,
-    retryable:
-      typeof nested.retryable === "boolean" ? nested.retryable : undefined,
+    code: stringField(nested, "code"),
+    message: stringField(nested, "message"),
+    retryable: booleanField(nested, "retryable"),
   };
+}
+
+/** The response body as JSON, or null when it is not JSON (an HTML error page, an empty body). */
+async function readJsonBody(response: Response): Promise<unknown> {
+  try {
+    return await response.clone().json();
+  } catch {
+    // Expected, not swallowed: a non-JSON body carries no error payload, and the caller
+    // falls back to the status and its fallback message.
+    return null;
+  }
 }
 
 export async function parseApiErrorFromResponse(
   response: Response,
   fallbackMessage = "Request failed",
 ): Promise<HttpApiError> {
-  let payload: any = null;
-  try {
-    payload = await response.clone().json();
-  } catch {
-    payload = null;
-  }
+  const payload = await readJsonBody(response);
+  const body = asRecord(payload);
 
   const nested = readNestedErrorPayload(payload);
   const message =
     nested.message ||
-    (payload && typeof payload.message === "string"
-      ? payload.message
-      : undefined) ||
-    (payload && typeof payload.error === "string"
-      ? payload.error
-      : undefined) ||
+    stringField(body, "message") ||
+    stringField(body, "error") ||
     fallbackMessage;
 
-  const code =
-    nested.code ||
-    (payload && typeof payload.code === "string" ? payload.code : undefined) ||
-    undefined;
+  const code = nested.code || stringField(body, "code") || undefined;
 
   const reason =
-    payload && typeof payload.reason === "string"
-      ? payload.reason
-      : payload &&
-          payload.entitlement &&
-          typeof payload.entitlement.reason === "string"
-        ? payload.entitlement.reason
-        : undefined;
+    stringField(body, "reason") ??
+    stringField(asRecord(body?.entitlement), "reason");
 
   const retryable =
-    typeof nested.retryable === "boolean"
-      ? nested.retryable
-      : payload && typeof payload.retryable === "boolean"
-        ? payload.retryable
-        : response.status >= 500;
+    nested.retryable ??
+    booleanField(body, "retryable") ??
+    response.status >= 500;
 
   return new HttpApiError({
     status: response.status,
@@ -101,13 +119,11 @@ export async function parseApiErrorFromResponse(
 }
 
 export function isApiError(error: unknown): error is ApiError {
-  return Boolean(
-    error &&
-    typeof error === "object" &&
-    "status" in (error as any) &&
-    typeof (error as any).status === "number" &&
-    "message" in (error as any) &&
-    typeof (error as any).message === "string",
+  const record = asRecord(error);
+  return (
+    record !== null &&
+    typeof record.status === "number" &&
+    typeof record.message === "string"
   );
 }
 
@@ -178,6 +194,21 @@ export function getPremiumDenialReason(
 
 export function isEntitlementDenialError(error: unknown): boolean {
   return getPremiumDenialReason(error) !== null;
+}
+
+/**
+ * @spec [Doc-01_V8 §26.1; Doc-03B_V2 §5.9; Doc-04A_V2.2 §16.2; Doc-05F_V1.0 §15.1; SCL-185
+ *        (UI-01)] | @implemented [2026-09-29]
+ * plain English: the client's one reader for a paid-feature denial. `parseApiErrorFromResponse`
+ * keeps the raw response body on `details`; this hands that body to the shared
+ * `readEntitlementDenial`, which accepts the nested (tutor, exam) and flat (calendar,
+ * student-resource gate) shapes and keys on `code: "entitlement_required"` — never on status,
+ * since the status differs by surface and a 403 `forbidden` is not a denial. Returns the
+ * `canAccessFeature` key that was refused, or null. Pages are not rewired to it yet (Wave 4).
+ */
+export function getEntitlementDenial(error: unknown): EntitlementDenial | null {
+  if (!isApiError(error)) return null;
+  return readEntitlementDenial(error.details);
 }
 
 /**

@@ -118,6 +118,14 @@ jobs:
       - name: Run Tests (whole suite — blocking)
         run: pnpm test
 
+      # @spec [Coding Standards §3.1; student-ui register F-24; owner brief 7] | @implemented
+      # [2026-09-30] | BLOCKING. `pnpm run check` is `tsc` over the root tsconfig — every file the
+      # retired CI-tsconfig step checked (tsconfig.ci.json), plus four more — and exits non-zero on
+      # any error. It reached 0 errors on 2026-09-30 (41 → 26 → 0); from here a new type error
+      # fails this job instead of joining an accepted count.
+      - name: TypeScript check — whole app (blocking)
+        run: pnpm run check
+
       # Wave 0 canonical primitives (@lyceon/shared): the new SSOT is born proven —
       # strict typecheck, its own tests, and lint at error level all BLOCKING.
       - name: Shared package — typecheck (blocking)
@@ -364,14 +372,11 @@ jobs:
       - name: Accept-list gate self-test (proves it can refuse)
         run: bash scripts/ci/known-gaps-gate.self-test.sh
 
-      # ACCEPTED under ci/known-gaps.yaml -> typecheck-ci-tsconfig, owner karl,
-      # expires 2026-10-01. The gate step above fails this job once that date
-      # passes. The previous comment here claimed "2 real type errors (exam
-      # section field drift)"; the real count is 41 across 6 files — which is
-      # what an unrenewed suppression decays into.
-      - name: TypeScript Check (CI tsconfig) — accepted, expires 2026-10-01
-        continue-on-error: true
-        run: pnpm exec tsc -p tsconfig.ci.json
+      # The accepted "TypeScript Check (CI tsconfig)" step that stood here was retired on
+      # 2026-09-30 per its own re-arm condition (ci/known-gaps.yaml, typecheck-ci-tsconfig: "Delete
+      # this entry and drop continue-on-error once `pnpm exec tsc -p tsconfig.ci.json` exits 0").
+      # Both it and `pnpm run check` exit 0; the blocking "TypeScript check — whole app" step in the
+      # `ci` job covers every file it did.
 
       # PROMOTED TO BLOCKING 2026-08-19. Measured before promoting: `pnpm run
       # audit:ci` reports ZERO advisories of any severity, so the
@@ -1680,6 +1685,25 @@ jobs:
             --file tests/ci/guardian-premium-fold.contract.test.ts \
             --file tests/ci/guardian-one-subscription-per-student.contract.test.ts \
             --file packages/shared/src/__tests__/guardian-student-schema.test.ts
+
+      # @spec [Doc-01_V8 §36.4, §955; SCL-191] Post-exam score report and renewal decision →
+      # real PG proof. Named BY FILE for the same reason every block here is: the whole-suite
+      # `pnpm test` step in the `ci` job sets no PGHOST, so `describe.skipIf(!PG_AVAILABLE)`
+      # skips the file and exits 0. A PG test not named in a service-backed job runs nowhere and
+      # reports green.
+      - name: Post-exam score report and renewal decision → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            tests/ci/exam-score-renewal.contract.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-exam-score-renewal.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-score-renewal.json \
+            --file tests/ci/exam-score-renewal.contract.test.ts
 
       # @spec [brief R3 §4; ruled plan §2] Review API → real PG proof.
       # Named BY FILE here on purpose: the whole-suite `pnpm test` step in the `ci` job

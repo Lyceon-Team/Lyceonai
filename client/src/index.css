@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@300;400;500;600;700&display=swap');
+/* Web fonts load from client/index.html (preconnect + one <link>), not a render-blocking
+   CSS import here. Student-ui register UI-12, 2026-09-29. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

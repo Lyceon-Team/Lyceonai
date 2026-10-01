@@ -2,8 +2,9 @@
  * @spec [Doc-01_V8 §20 (verified heading "## **§20 Subscription model**"), §22;
  *        SCL-043 payer identity; SCL-052 one entitlement tier] @implemented 2026-08-20
  *
- * plain English: the billing surface. Five routes: POST /checkout, GET /status,
- * POST /portal, GET /plans, GET /publishable-key.
+ * plain English: the billing surface. Four routes: POST /checkout, GET /status,
+ * POST /portal, GET /plans. (GET /publishable-key was deleted as unused,
+ * student-ui register UI-06, 2026-09-29.)
  *
  * What this serves:
  *  - Self-pay. An unaccompanied student pays for themselves, so the Stripe
@@ -53,7 +54,6 @@ import {
 } from "../middleware/supabase-auth";
 import {
   getStripeClient,
-  getStripePublishableKey,
   getPriceId,
   getConfiguredPriceId,
   BILLING_PERIODS,
@@ -970,7 +970,8 @@ router.get(
   requireSupabaseAuth,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
-    res.setHeader("Cache-Control", "no-store");
+    // Same as the /api default (F-27); kept explicit because this body is per-payer.
+    res.setHeader("Cache-Control", "private, no-store");
 
     try {
       const stripe = getStripeClient();
@@ -1025,23 +1026,5 @@ router.get(
     }
   },
 );
-
-/** GET /api/billing/publishable-key — public by design. */
-router.get("/publishable-key", (req: Request, res: Response) => {
-  const requestId = req.requestId;
-  try {
-    return res.json({ publishableKey: getStripePublishableKey(), requestId });
-  } catch {
-    logger.error(
-      "BILLING",
-      "publishable_key",
-      "STRIPE_PUBLISHABLE_KEY is not configured",
-      { requestId },
-    );
-    return res
-      .status(503)
-      .json({ error: "Billing is not configured", requestId });
-  }
-});
 
 export default router;

@@ -170,3 +170,47 @@ export const conversationSummarySchema = z.object({
   updated_at: z.string(),
 });
 export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
+
+// ── Conversation list page (GET /api/tutor/conversations) ────────────
+
+/**
+ * @spec [Doc-03B_V4.1 §8.3, §8.5; cursor format §7.3 (CR-03B-28)]
+ * | @implemented [2026-09-29]
+ *
+ * plain English: the decoded form of the list's opaque `cursor`. The server
+ * encodes it as base64url(JSON) and the client never reads it. It anchors the
+ * next page on the LAST row of the previous one by (updated_at, id), so two
+ * conversations with the same updated_at are still ordered, and a page never
+ * repeats or skips a row the way an offset would.
+ *
+ * edge cases: `v` is the format version (§7.3) — a cursor with any other
+ * version, sort, or a malformed anchor fails this schema and the route answers
+ * 400 invalid_input rather than guessing.
+ */
+export const conversationListCursorSchema = z.object({
+  v: z.literal(1),
+  sort: z.literal("updated_at_desc"),
+  anchor_ts: z.string().datetime({ offset: true }),
+  anchor_id: z.string().uuid(),
+});
+export type ConversationListCursor = z.infer<
+  typeof conversationListCursorSchema
+>;
+
+/**
+ * @spec [Doc-03B_V4.1 §8.5] | @implemented [2026-09-29]
+ *
+ * plain English: the list response body under `data`. `has_more` is true only
+ * when a further row exists (the server reads limit+1), and `next_cursor` is
+ * null exactly when `has_more` is false.
+ */
+export const listConversationsResponseSchema = z.object({
+  conversations: z.array(conversationSummarySchema),
+  pagination: z.object({
+    has_more: z.boolean(),
+    next_cursor: z.string().nullable(),
+  }),
+});
+export type ListConversationsResponse = z.infer<
+  typeof listConversationsResponseSchema
+>;

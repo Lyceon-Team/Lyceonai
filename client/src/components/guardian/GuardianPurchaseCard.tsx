@@ -31,6 +31,7 @@
  */
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import {
   Card,
   CardContent,
@@ -125,6 +126,8 @@ export function GuardianPurchaseCard({
   >({
     queryKey: ["billing-plans"],
     queryFn: getBillingPlans,
+    // UI-14: live prices change when the owner reprices, not within a session.
+    staleTime: QUERY_FRESHNESS.pricing.staleTime,
   });
   const prices = Array.isArray(pricesData) ? pricesData : [];
   /**

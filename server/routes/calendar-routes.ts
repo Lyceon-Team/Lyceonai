@@ -49,6 +49,7 @@ import {
 import { logger } from "../logger";
 import { logRejectedRequest, routeOf } from "../lib/validation-log";
 import { sendPaymentRequired } from "../lib/http-errors";
+import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { EntitlementService } from "../services/entitlement-service";
 import { getStudentActivityStreak } from "../services/activity-streak";
@@ -82,7 +83,7 @@ export const calendarRouter = Router();
 export const streakRouter = Router();
 
 /** §16: the one feature key this surface gates on. Never the entitlement predicate directly. */
-export const CALENDAR_FEATURE_KEY = "calendar_access";
+export const CALENDAR_FEATURE_KEY = "calendar_access" satisfies EntitlementFeatureKey;
 
 /** §7 / §15: the two rate-limited surfaces, seeded by `20260917140000`. */
 export const CALENDAR_PLAN_REGENERATE_BUCKET = "calendar_plan_regenerate";
@@ -217,7 +218,8 @@ async function entitled(
     "a caller without calendar_access was shown the upgrade CTA",
     { path: req.path, requestId: req.requestId },
   );
-  sendPaymentRequired(res, req.requestId);
+  // SCL-185 (UI-01): same 402 and flat shape; the body names the refused feature.
+  sendPaymentRequired(res, CALENDAR_FEATURE_KEY, req.requestId);
   return false;
 }
 

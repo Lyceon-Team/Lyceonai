@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
 import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
 import { StudentGuardiansPanel } from "@/components/student/StudentGuardiansPanel";
@@ -26,7 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   User,
   Settings,
@@ -54,26 +54,8 @@ import { SessionNotice } from "@/components/feedback/SessionNotice";
 import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
 import { EmailNotificationsCard } from "@/components/account/EmailNotificationsCard";
 import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
-
-interface UserProfile {
-  id: string;
-  username?: string;
-  email?: string;
-  name?: string;
-  avatarUrl?: string;
-  isAdmin?: boolean;
-  createdAt?: string;
-  lastLoginAt?: string;
-}
-
-interface BillingStatusResponse {
-  stripeStatus: string;
-  stripeSubscriptionId: string | null;
-  effectiveAccess: boolean;
-  needsPaymentUpdate: boolean;
-  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
-  hasActiveLink?: boolean;
-}
+import { useProfileQuery } from "@/hooks/useProfileQuery";
+import { useBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 
 type RoleSwitchTarget = "student" | "guardian" | "teacher";
 
@@ -120,17 +102,17 @@ export default function UserProfile() {
     useState<RoleSwitchTarget>("student");
   const [roleSwitchMessage, setRoleSwitchMessage] = useState("");
 
-  // Get user profile from canonical endpoint
+  // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the shared
+  // profile and billing-status queries — one key and one fetch function each, shared with the
+  // route guard, the auth provider and the premium prompt, so this page adds no request for
+  // data they already hold.
   const {
     data: userProfile,
     isLoading: profileLoading,
     isError: profileError,
     error: profileErrorObj,
     refetch: refetchProfile,
-  } = useQuery<{ user: UserProfile; authenticated: boolean }>({
-    queryKey: ["/api/profile"],
-    enabled: !!user,
-  });
+  } = useProfileQuery({ enabled: !!user });
 
   const {
     data: billingStatus,
@@ -138,10 +120,7 @@ export default function UserProfile() {
     isError: billingStatusError,
     error: billingStatusErrorObj,
     refetch: refetchBillingStatus,
-  } = useQuery<BillingStatusResponse>({
-    queryKey: ["/api/billing/status"],
-    enabled: !!user,
-  });
+  } = useBillingStatusQuery({ enabled: !!user });
 
   // Logout handler
   const handleLogout = async () => {
@@ -169,7 +148,9 @@ export default function UserProfile() {
   const currentRole = user?.role ?? "unknown";
   const accountEmail = user?.email || profileUser?.email || "";
   const accountName = profileUser?.name || user?.display_name || "";
-  const memberSinceLabel = formatMemberSince(profileUser?.createdAt);
+  // `/api/profile` has never sent a creation date (see `ProfileHydrationUser`); the auth
+  // context's `created_at` is the only field that names one.
+  const memberSinceLabel = formatMemberSince(user?.created_at);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -310,10 +291,6 @@ export default function UserProfile() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
               <div className="relative">
                 <Avatar className="h-24 w-24">
-                  <AvatarImage
-                    src={profileUser.avatarUrl}
-                    alt={profileUser.name || user?.email}
-                  />
                   <AvatarFallback className="text-lg">
                     {profileUser.name?.charAt(0) ||
                       user?.email?.charAt(0) ||

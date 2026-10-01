@@ -156,10 +156,10 @@ export default function TrustHub() {
                 <CardContent className="pt-0 mt-auto">
                   <Button asChild variant="outline" size="sm">
                     <Link
-                      href="/tutor"
+                      href="/chat"
                       className="inline-flex items-center gap-1"
                     >
-                      Open Tutor Page
+                      Open the tutor
                       <ChevronRight className="h-4 w-4" />
                     </Link>
                   </Button>

@@ -46,6 +46,7 @@ import {
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
 import { ENGINE_RESPONSE_SCHEMAS } from "../../packages/shared/src/practice-response-schema";
+import { reviewPoolSummaryResponseSchema } from "../../packages/shared/src/review-schema";
 
 const DB_NAME = "review_routes_ci";
 
@@ -920,6 +921,115 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     expect(
       byId.get(filter.body.sessionId as string)?.filters?.sections,
     ).toEqual(["M"]);
+  });
+
+  // -------------------------------------------------------------------------
+  // A16 — the past-session picker is paged (register UI-16)
+  // @spec [brief R3 §2.4; register UI-16] | @implemented [2026-09-29]
+  // plain English: `sessions` on GET /api/review/pool is one page of 20 with an opaque
+  // `sessions_next_cursor`; the pool, `total` and the facets are not paged. Parent
+  // session rows are not seeded, so every row's created_at is null and the order is
+  // the deterministic tie-break (engine, then session id) — the keyset's hardest case.
+  // -------------------------------------------------------------------------
+  function pastSessionId(i: number): string {
+    return `5a5a5a5a-0000-4000-8000-${String(i).padStart(12, "0")}`;
+  }
+
+  /** `n` past sessions, each with one open entry on its own servable question. */
+  async function seedPastSessions(
+    n: number,
+    studentId: string = STUDENT_A,
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    for (let i = 1; i <= n; i += 1) {
+      const qid = `SATM1P${String(i).padStart(5, "0")}`;
+      await testPg!.query(
+        `INSERT INTO public.questions
+           (id, section, source_type, domain, skill_codes, difficulty, stem, options,
+            correct_answer, explanation, status, item_type, published_at)
+         VALUES ($1,'M',1,'Algebra',$2,1,$3,$4::jsonb,'B','x','published','mcq', now())
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          qid,
+          ["ALG.D01"],
+          `Stem ${qid}`,
+          JSON.stringify([
+            { key: "A", text: "a" },
+            { key: "B", text: "b" },
+            { key: "C", text: "c" },
+            { key: "D", text: "d" },
+          ]),
+        ],
+      );
+      await enqueue(testPg!, {
+        studentId,
+        questionId: qid,
+        queuedAt: T1,
+        sourceSessionId: pastSessionId(i),
+      });
+      ids.push(pastSessionId(i));
+    }
+    return ids;
+  }
+
+  function sessionIds(body: {
+    sessions: Array<{ source_session_id: string }>;
+  }): string[] {
+    return body.sessions.map((s) => s.source_session_id);
+  }
+
+  it("A16a: picker, empty — another student's past sessions never appear", async () => {
+    await seedPastSessions(3, STUDENT_B);
+    const res = await request(app).get("/api/review/pool");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+    expect(res.body.sessions).toEqual([]);
+    expect(res.body.sessions_next_cursor).toBeNull();
+  });
+
+  it("A16b: picker, exactly 20 — one page, sessions_next_cursor null", async () => {
+    const ids = await seedPastSessions(20);
+    const res = await request(app).get("/api/review/pool");
+    expect(res.status).toBe(200);
+    expect(sessionIds(res.body)).toEqual([...ids].sort());
+    expect(res.body.sessions_next_cursor).toBeNull();
+  });
+
+  it("A16c: picker, 21 — 20 then the 21st, no overlap; the pool and facets are not paged", async () => {
+    const ids = await seedPastSessions(21);
+    const page1 = await request(app).get("/api/review/pool");
+    expect(page1.status).toBe(200);
+    expect(page1.body.sessions).toHaveLength(20);
+    expect(typeof page1.body.sessions_next_cursor).toBe("string");
+
+    const page2 = await request(app)
+      .get("/api/review/pool")
+      .query({ sessions_cursor: page1.body.sessions_next_cursor });
+    expect(page2.status).toBe(200);
+    const first = sessionIds(page1.body);
+    const second = sessionIds(page2.body);
+    expect(second).toHaveLength(1);
+    expect(first.filter((id) => second.includes(id))).toEqual([]);
+    expect([...first, ...second]).toEqual([...ids].sort());
+    expect(page2.body.sessions_next_cursor).toBeNull();
+
+    // Paging is scoped to the picker list: every page reports the whole pool. And
+    // each real page satisfies the schema the client hook parses with.
+    for (const body of [page1.body, page2.body]) {
+      expect(reviewPoolSummaryResponseSchema.safeParse(body).success).toBe(
+        true,
+      );
+      expect(body.total).toBe(21);
+      expect(body.bySection).toEqual([{ key: "M", count: 21 }]);
+    }
+  });
+
+  it("A16d: a malformed sessions_cursor is 400, never a silent first page", async () => {
+    await seedPastSessions(2);
+    const res = await request(app)
+      .get("/api/review/pool")
+      .query({ sessions_cursor: "not-a-cursor" });
+    expect(res.status).toBe(400);
   });
 
   // -------------------------------------------------------------------------

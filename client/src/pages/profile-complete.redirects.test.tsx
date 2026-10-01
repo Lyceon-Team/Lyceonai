@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ProfileComplete from "./profile-complete";
 
 const queryMock = vi.hoisted(() => ({
@@ -11,7 +11,10 @@ const queryMock = vi.hoisted(() => ({
 
 const navigateMock = vi.hoisted(() => vi.fn());
 
-let profilePayload: { authenticated?: boolean; user?: any | null } = {
+let profilePayload: {
+  authenticated?: boolean;
+  user?: Record<string, unknown> | null;
+} = {
   authenticated: false,
   user: null,
 };
@@ -94,6 +97,86 @@ describe("ProfileComplete redirect continuity", () => {
       "/dashboard",
     );
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * @spec [AS-5; register UI-03] | @implemented [2026-09-29] — the return path that rode
+   * through onboarding (`/profile/complete?next=…`) is where a complete profile lands, if the
+   * role may open it; a guardian is never sent to a student page; a disallowed value is dropped.
+   */
+  describe("return path (?next=) through onboarding", () => {
+    afterEach(() => {
+      window.history.replaceState({}, "", "/profile/complete");
+    });
+
+    it("UI-03 already-complete student with next=/calendar → /calendar", () => {
+      window.history.replaceState({}, "", "/profile/complete?next=%2Fcalendar");
+      profilePayload = {
+        authenticated: true,
+        user: {
+          role: "student",
+          requiredProfileComplete: true,
+          profileCompletedAt: "2026-03-24T10:00:00.000Z",
+        },
+      };
+      render(<ProfileComplete />);
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/calendar",
+      );
+    });
+
+    it("UI-03 already-complete guardian with next=/calendar → /guardian", () => {
+      window.history.replaceState({}, "", "/profile/complete?next=%2Fcalendar");
+      profilePayload = {
+        authenticated: true,
+        user: {
+          role: "guardian",
+          requiredProfileComplete: true,
+          profileCompletedAt: "2026-03-24T10:00:00.000Z",
+        },
+      };
+      render(<ProfileComplete />);
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/guardian",
+      );
+    });
+
+    it("UI-03 a disallowed next is dropped → role default", () => {
+      window.history.replaceState(
+        {},
+        "",
+        "/profile/complete?next=%2F%2Fevil.example.com%2Fcalendar",
+      );
+      profilePayload = {
+        authenticated: true,
+        user: {
+          role: "student",
+          requiredProfileComplete: true,
+          profileCompletedAt: "2026-03-24T10:00:00.000Z",
+        },
+      };
+      render(<ProfileComplete />);
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/dashboard",
+      );
+    });
+
+    it("G2-04 wins over next: complete under-13 with no active link and next=/calendar → /guardian-required", () => {
+      window.history.replaceState({}, "", "/profile/complete?next=%2Fcalendar");
+      profilePayload = {
+        authenticated: true,
+        user: {
+          role: "student",
+          requiredProfileComplete: true,
+          profileCompletedAt: "2026-09-29T00:00:00.000Z",
+          guardianConsentRequired: true,
+        },
+      };
+      render(<ProfileComplete />);
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/guardian-required",
+      );
+    });
   });
 
   // G2-04: the under-13 screen moved to its own page (/guardian-required), built from the

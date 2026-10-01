@@ -31,6 +31,12 @@ import {
   examFormsResponseSchema,
 } from "../../packages/shared/src/exam-report-schema";
 import {
+  examStudentReportPayloadSchema,
+  examStudentReportScoredSchema,
+  toStudentExamReport,
+} from "../../packages/shared/src/exam-student-report-schema";
+import { toGuardianExamReport } from "../../packages/shared/src/exam-guardian-report-schema";
+import {
   ReportIntegrityError,
   serializeStudentReport,
   reportStateOf,
@@ -312,6 +318,142 @@ describe("per-state serializers (§11.3)", () => {
   });
 });
 
+/** Every key name at any depth of a JSON value. */
+function keysDeep(value: unknown, acc = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) for (const v of value) keysDeep(v, acc);
+  else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      acc.add(k);
+      keysDeep(v, acc);
+    }
+  }
+  return acc;
+}
+
+/**
+ * @spec [Doc-04C §8.1/§9.1; SCL-180 (amended 2026-09-29), owner ruling 7]
+ *   | @implemented [2026-09-29]
+ * plain English: the student's wire payload is `toStudentExamReport` of the REAL
+ * serializer's output: seven segments per domain, never correct/total. The guardian's
+ * projection of the same server-side report still carries correct/total (SCL-180).
+ */
+describe("owner ruling 7: the student report carries segments, never counts", () => {
+  const partialSource = () =>
+    source({
+      session: {
+        ...source().session,
+        state: "partial_scored_abandoned",
+        completed_at: null,
+        abandoned_at: "2026-09-25T13:00:00Z",
+      },
+      sections: [
+        { section: "RW", state: "submitted", module2_submitted_by: "timeout" },
+        {
+          section: "M",
+          state: "module1_submitted",
+          module2_submitted_by: null,
+        },
+      ],
+      score_run: {
+        ...source().score_run!,
+        math_scored: false,
+        math_scaled: null,
+        total_scaled: null,
+        partial_display_scaled: 690,
+      },
+    });
+
+  it("scored: eight segment rows present (asserted first), then no correct/total/domain_breakdown at any depth", () => {
+    const p = toStudentExamReport(
+      serializeStudentReport(source(), "scored", BREAKDOWN),
+    );
+    if (p.report_state !== "scored") throw new Error(p.report_state);
+    // presence before absence
+    expect(p.domain_segments).toHaveLength(8);
+    expect(
+      p.domain_segments.every((r) => Number.isInteger(r.segments_filled)),
+    ).toBe(true);
+    expect(p.domain_segments.find((r) => r.domain === "Algebra")).toEqual({
+      section: "M",
+      domain: "Algebra",
+      segments_filled: 6, // 11 of 13 -> 77/13 = 5.92 -> 6
+    });
+    expect(p.omitted_domains).toEqual([]);
+    for (const row of p.domain_segments) {
+      expect(row).not.toHaveProperty("correct");
+      expect(row).not.toHaveProperty("total");
+    }
+    const keys = keysDeep(p);
+    expect(keys.has("segments_filled")).toBe(true);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
+    examStudentReportPayloadSchema.parse(p);
+  });
+
+  it("partial: the scored section's segments, the unscored section's domains omitted with a reason", () => {
+    const s = partialSource();
+    const p = toStudentExamReport(
+      serializeStudentReport(s, reportStateOf(s, true), RW_ROWS),
+    );
+    if (p.report_state !== "partial_scored") throw new Error(p.report_state);
+    expect(p.domain_segments.map((r) => r.section)).toEqual([
+      "RW",
+      "RW",
+      "RW",
+      "RW",
+    ]);
+    expect(p.omitted_domains.map((o) => [o.section, o.reason])).toEqual([
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+    ]);
+    const keys = keysDeep(p);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
+  });
+
+  it("the strict student schema refuses a count smuggled onto a row or the payload", () => {
+    const p = toStudentExamReport(
+      serializeStudentReport(source(), "scored", BREAKDOWN),
+    );
+    if (p.report_state !== "scored") throw new Error(p.report_state);
+    const row = p.domain_segments[0]!;
+    expect(examStudentReportScoredSchema.safeParse(p).success).toBe(true);
+    for (const bad of [
+      { ...p, domain_segments: [{ ...row, correct: 10 }] },
+      { ...p, domain_segments: [{ ...row, total: 13 }] },
+      { ...p, domain_breakdown: BREAKDOWN },
+    ]) {
+      expect(examStudentReportScoredSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it("states without a breakdown pass through unchanged", () => {
+    const s = source({ score_run: null, disclosure: null });
+    const internal = serializeStudentReport(s, reportStateOf(s, true), []);
+    expect(toStudentExamReport(internal)).toEqual(internal);
+  });
+
+  it("guardian: the guardian projection of the same report is a bar per domain, no counts (SCL-189)", () => {
+    const internal = serializeStudentReport(source(), "scored", BREAKDOWN);
+    const g = toGuardianExamReport(internal);
+    if (g.report_state !== "scored") throw new Error(g.report_state);
+    // Expected bars computed here, not by the projection under test (G3-02, SCL-189).
+    expect(g.domain_breakdown).toEqual(
+      BREAKDOWN.map((r) => ({
+        section: r.section,
+        domain: r.domain,
+        bar_pct: Math.round((100 * r.correct) / r.total),
+      })),
+    );
+    expect(g).not.toHaveProperty("domain_segments");
+    expect(g).not.toHaveProperty("omitted_domains");
+  });
+});
+
 /** Every key reachable in a Zod schema (objects, arrays, unions, nullables). */
 function keysOf(schema: ZodTypeAny, acc = new Set<string>()): Set<string> {
   const def = schema._def as { typeName: string } & Record<string, unknown>;
@@ -371,11 +513,23 @@ describe("§11.7 field-level redaction linter", () => {
   ];
   it.each([
     ["report payloads", examReportPayloadSchema],
+    ["student report payloads", examStudentReportPayloadSchema],
     ["report status", examReportStatusSchema],
     ["forms list", examFormsResponseSchema],
   ] as const)("%s carry none of the forbidden fields", (_name, schema) => {
     const keys = keysOf(schema as unknown as ZodTypeAny);
     expect(keys.size).toBeGreaterThan(2);
     expect(FORBIDDEN.filter((k) => keys.has(k))).toEqual([]);
+  });
+
+  it("owner ruling 7: the student wire schema has segments_filled and no correct/total key anywhere", () => {
+    const keys = keysOf(
+      examStudentReportPayloadSchema as unknown as ZodTypeAny,
+    );
+    expect(keys.has("segments_filled")).toBe(true);
+    expect(keys.has("omitted_domains")).toBe(true);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
   });
 });

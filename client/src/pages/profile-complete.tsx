@@ -1,13 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Redirect, useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  ShieldAlert,
-  UserRound,
-} from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { AlertCircle, CheckCircle2, Loader2, UserRound } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,24 +23,17 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { csrfFetch } from "@/lib/csrf";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  PROFILE_QUERY_KEY,
+  useProfileQuery,
+  type ProfileRole,
+} from "@/hooks/useProfileQuery";
 import { resolveOnboardingErrorMessage } from "@/lib/api-error";
-
-type ProfileRole = "student" | "guardian" | "admin";
-
-interface ProfileHydrationResponse {
-  authenticated?: boolean;
-  user?: {
-    id: string;
-    email?: string | null;
-    display_name?: string | null;
-    role?: ProfileRole;
-    guardianConsentRequired?: boolean;
-    requiredProfileComplete?: boolean;
-    profileCompletedAt?: string | null;
-  } | null;
-}
+import {
+  postAuthDestination,
+  returnPathFromSearch,
+} from "@lyceon/shared/return-path";
 
 interface ProfileCompletionResponse {
   success: boolean;
@@ -74,15 +61,34 @@ function calculateAge(dateOfBirth: string): number | null {
 }
 
 /**
- * G2-04: an under-13 student with no active guardian link goes to the linking page, not the
- * dashboard — the server refuses every learning request until a guardian connects.
+ * @spec [AS-5; AS-3 landing matrix; register UI-03] | @implemented [2026-09-29]
+ * plain English: where a completed profile lands. The return path that rode through onboarding
+ * (`/profile/complete?next=…`, written by the login page, RequireRole or the OAuth callback) is
+ * read from THIS page's query and re-sanitised by the shared module; it wins only when the role
+ * may open it — a guardian is never sent to a student page. Otherwise the role default. An
+ * unknown role is treated as a student, as before. Read at call time (not captured at mount)
+ * so it is always the current URL.
+ *
+ * G2-04 (merged from `main`): an under-13 student with no active guardian link goes to the
+ * linking page ahead of any return path — the server refuses every learning request until a
+ * guardian connects, so the return path would only bounce.
  */
 function resolvePostCompletionPath(
   role: ProfileRole | undefined,
   guardianLinkRequired: boolean,
 ): string {
-  if (role === "guardian") return "/guardian";
-  return guardianLinkRequired ? "/guardian-required" : "/dashboard";
+  if (role !== "guardian" && role !== "admin" && guardianLinkRequired) {
+    return "/guardian-required";
+  }
+  const next =
+    typeof window !== "undefined"
+      ? returnPathFromSearch(window.location.search)
+      : null;
+  return postAuthDestination({
+    role: role ?? "student",
+    needsOnboarding: false,
+    next,
+  });
 }
 
 export default function ProfileComplete() {
@@ -97,30 +103,10 @@ export default function ProfileComplete() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
-  const {
-    data: hydration,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery<ProfileHydrationResponse>({
-    queryKey: ["/api/profile"],
-    retry: false,
-    queryFn: async () => {
-      const response = await csrfFetch("/api/profile", {
-        credentials: "include",
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        return { authenticated: false, user: null };
-      }
-
-      if (!response.ok) {
-        throw new Error(`Failed to load profile (${response.status})`);
-      }
-
-      return response.json();
-    },
-  });
+  // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the one
+  // shared profile query; its 401/403 → `{ authenticated: false }` answer is the one this page
+  // already redirected on.
+  const { data: hydration, isLoading, error, refetch } = useProfileQuery();
 
   const profile = hydration?.user ?? null;
   const isAuthenticated = hydration?.authenticated !== false && !!profile;
@@ -163,7 +149,7 @@ export default function ProfileComplete() {
     },
     onSuccess: async (result) => {
       setErrorMessage("");
-      await queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+      await queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
 
       toast({
         title: "Profile completed",
@@ -218,7 +204,7 @@ export default function ProfileComplete() {
   }
 
   if (profile?.role === "admin") {
-    return <Redirect to="/dashboard" />;
+    return <Redirect to={resolvePostCompletionPath("admin", false)} />;
   }
 
   if (profile?.requiredProfileComplete && profile?.profileCompletedAt) {

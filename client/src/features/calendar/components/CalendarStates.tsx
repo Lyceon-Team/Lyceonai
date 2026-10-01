@@ -78,7 +78,7 @@ export function CalendarError({
       <div className="main" style={{ gridColumn: "1 / -1", padding: 32 }}>
         <h3
           style={{
-            fontFamily: "'Bricolage Grotesque'",
+            fontFamily: "serif",
             fontSize: 21,
             margin: "0 0 8px",
           }}
@@ -107,7 +107,7 @@ export function GuardianStudentNoLongerLinked(): JSX.Element {
       <div className="main" style={{ gridColumn: "1 / -1", padding: 32 }}>
         <h3
           style={{
-            fontFamily: "'Bricolage Grotesque'",
+            fontFamily: "serif",
             fontSize: 21,
             margin: "0 0 8px",
           }}
@@ -147,7 +147,7 @@ export function GuardianNotSetUp(): JSX.Element {
       <div className="main" style={{ gridColumn: "1 / -1", padding: 32 }}>
         <h3
           style={{
-            fontFamily: "'Bricolage Grotesque'",
+            fontFamily: "serif",
             fontSize: 21,
             margin: "0 0 8px",
           }}

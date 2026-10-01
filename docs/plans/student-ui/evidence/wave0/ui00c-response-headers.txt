@@ -1,0 +1,89 @@
+# UI-00c response headers, production https://lyceon.ai, 2026-09-29T21:00:29Z
+# curl 8 via session egress (not TLS-intercepted: cert issuer Let's Encrypt), request header Accept-Encoding: gzip, deflate, br, zstd; free test account session cookie (not shown)
+
+$ curl -sS -o /dev/null -D - -H 'Cookie: <redacted>' -H 'Accept-Encoding: gzip, deflate, br, zstd' https://lyceon.ai/api/profile
+HTTP/1.1 200 Connection Established
+
+HTTP/2 200 
+age: 0
+cache-control: public, max-age=0, must-revalidate
+content-type: application/json; charset=utf-8
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-site
+etag: W/"296-SKbr6C8Ubvlag28/et7KUfKVFb0"
+origin-agent-cluster: ?1
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), interest-cohort=()
+ratelimit-limit: 1000
+ratelimit-policy: 1000;w=900
+ratelimit-remaining: 995
+ratelimit-reset: 736
+referrer-policy: strict-origin-when-cross-origin
+server: Vercel
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: DENY
+x-permitted-cross-domain-policies: none
+x-request-id: 743660b2-7d2d-470d-8ef5-ff3fcf38f5e1
+x-vercel-cache: MISS
+x-xss-protection: 0
+content-length: 662
+
+
+$ curl -sS -o /dev/null -D - -H 'Cookie: <redacted>' -H 'Accept-Encoding: gzip, deflate, br, zstd' https://lyceon.ai/api/progress/kpis
+HTTP/1.1 200 Connection Established
+
+HTTP/2 200 
+age: 0
+cache-control: public, max-age=0, must-revalidate
+content-encoding: br
+content-type: application/json; charset=utf-8
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-site
+etag: W/"a1e-6EvFpl3t4PStawNS1jWZSlN1C0s"
+origin-agent-cluster: ?1
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), interest-cohort=()
+ratelimit-limit: 1000
+ratelimit-policy: 1000;w=900
+ratelimit-remaining: 999
+ratelimit-reset: 900
+referrer-policy: strict-origin-when-cross-origin
+server: Vercel
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: DENY
+x-permitted-cross-domain-policies: none
+x-request-id: 174f4085-d858-443b-9a87-a8f8190dc8c5
+x-vercel-cache: MISS
+x-xss-protection: 0
+
+
+$ curl -sS -o /dev/null -D - -H 'Cookie: <redacted>' -H 'Accept-Encoding: gzip, deflate, br, zstd' https://lyceon.ai/api/practice/sessions/open
+HTTP/1.1 200 Connection Established
+
+HTTP/2 200 
+age: 0
+cache-control: public, max-age=0, must-revalidate
+content-type: application/json; charset=utf-8
+cross-origin-opener-policy: same-origin
+cross-origin-resource-policy: same-site
+etag: W/"5c-dm0JF0R1onhBOLGceWqHenKDQsg"
+origin-agent-cluster: ?1
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), interest-cohort=()
+ratelimit-limit: 1000
+ratelimit-policy: 1000;w=900
+ratelimit-remaining: 999
+ratelimit-reset: 900
+referrer-policy: strict-origin-when-cross-origin
+server: Vercel
+x-content-type-options: nosniff
+x-dns-prefetch-control: off
+x-download-options: noopen
+x-frame-options: DENY
+x-permitted-cross-domain-policies: none
+x-request-id: 0fda1fc6-1c66-4ea6-a995-ae2e0d0b9a3f
+x-vercel-cache: MISS
+x-xss-protection: 0
+content-length: 92
+
