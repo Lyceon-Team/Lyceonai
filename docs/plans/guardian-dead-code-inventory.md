@@ -62,7 +62,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | E2 | E | Steps that can never fail (`|| true`, `continue-on-error`, always-false `if:`) | none found (guardian) | none found |
 | E3 | E | Guardian gate accept / exclude lists naming deleted files | none found | none found |
 | E4 | E | `ci/known-gaps.yaml` entries closed by this vertical | none found | none found |
-| E5 | E | `tests/e2e/guardian-surfaces.spec.ts` (and the shared-component specs `student-calendar`, `student-mastery`) — the only proof of R12, phone centring and the meter's width — run by no CI job | FIX (Step 3: one CI job) | PLANNED |
+| E5 | E | `tests/e2e/guardian-surfaces.spec.ts` (and the shared-component specs `student-calendar`, `student-mastery`) — the only proof of R12, phone centring and the meter's width — run by no CI job | FIX (Step 3: one CI job) | FIXED (step 3: the `guardian-e2e` CI job) |
 | E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa) | HANDED OFF |
 | E7 | E | `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI | EDIT | EDITED (`6cabf88`) |
 | F1 | F | 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read` | DROP (one migration) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
@@ -72,11 +72,11 @@ Every row's evidence is a command run on this branch with its real output pasted
 | F5 | F | `profiles.guardian_profile_id` (+ `idx_profiles_guardian_profile`, its FK) and `profiles.guardian_email` | HANDED OFF (cleanup, with G-NEW-08) | HANDED OFF |
 | F6 | F | `student_skill_mastery_student_read`, `student_skill_kpi_student_read` | HANDED OFF (cleanup) | HANDED OFF |
 | F7 | F | `consent_runtime_config` (+ `_history`) | KEEP (spec-named) | KEEP |
-| H1 | H | `docs/guardian/GUARDIAN_SOURCE_OF_TRUTH.md`, `GUARDIAN_RUNTIME_CONTRACT.md` — deleted paths, functions and audit events | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
-| H2 | H | `docs/entitlements-map.md`, `docs/route-registry.md` — `POST /api/guardian/link`, `guardian-dashboard.tsx`, `SubscriptionPaywall.tsx`, `guardian-entitlement.ts` | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
-| H3 | H | `docs/qa/guardian.md`, `docs/qa/release-gates.md` — `/summary` endpoint, `guardian_link_audit` table, `scripts/guardian-smoke-test.ts`, pre-baseline migration path | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
-| H4 | H | `docs/exams/EXAM_SOURCE_OF_TRUTH.md:11`, `FULL_TEST_SOURCE_OF_TRUTH.md:8` cite `server/middleware/guardian-entitlement.ts` | EDIT the guardian reference only | EDITED (H part 2, the commit after `e1f2e4d`) |
-| H5 | H | `docs/alignment/KNOWN-GAPS.md` SCHEMA-TRUTH-GATE-OUT-OF-SCOPE: "Four" accepted files and two deleted guardian-link PG suites | EDIT | EDITED (H part 2, the commit after `e1f2e4d`) |
+| H1 | H | `docs/guardian/GUARDIAN_SOURCE_OF_TRUTH.md`, `GUARDIAN_RUNTIME_CONTRACT.md` — deleted paths, functions and audit events | EDIT | EDITED (`f0c468c`) |
+| H2 | H | `docs/entitlements-map.md`, `docs/route-registry.md` — `POST /api/guardian/link`, `guardian-dashboard.tsx`, `SubscriptionPaywall.tsx`, `guardian-entitlement.ts` | EDIT | EDITED (`f0c468c`) |
+| H3 | H | `docs/qa/guardian.md`, `docs/qa/release-gates.md` — `/summary` endpoint, `guardian_link_audit` table, `scripts/guardian-smoke-test.ts`, pre-baseline migration path | EDIT | EDITED (`f0c468c`) |
+| H4 | H | `docs/exams/EXAM_SOURCE_OF_TRUTH.md:11`, `FULL_TEST_SOURCE_OF_TRUTH.md:8` cite `server/middleware/guardian-entitlement.ts` | EDIT the guardian reference only | EDITED (`f0c468c`) |
+| H5 | H | `docs/alignment/KNOWN-GAPS.md` SCHEMA-TRUTH-GATE-OUT-OF-SCOPE: "Four" accepted files and two deleted guardian-link PG suites | EDIT | EDITED (`f0c468c`) |
 | H6 | H | Code comments naming deleted files or retired behaviour | EDIT | EDITED (`e1f2e4d`) |
 | H7 | H | `contracts/ws0-stop-the-bleed.contract.md`, `contracts/auth-login-e2e.contract.md`, dated `KNOWN-GAPS` RESOLVED entries | KEEP | KEEP |
 | H8 | H | Environment variables and feature flags for guardian / consent | none found | none found |
