@@ -20,11 +20,12 @@
  * Behavioural coverage of the allowlist lives in `sanitizeReturnPath` below.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   RETURN_PATH_ALLOWLIST,
+  RETURN_PATH_ROUTE_ROLES,
   sanitizeReturnPath,
 } from "@lyceon/shared/return-path";
 
@@ -68,17 +69,51 @@ describe("U8 — review is reachable from normal navigation", () => {
     expect(actionsBlock).toContain('href: "/review"');
   });
 
-  it("every other nav component that lists Practice also lists Review", () => {
-    // These three have no importers today, but a revived nav must not ship without
-    // review — the brief's §2.4 rule is about every nav component, not just the live one.
-    for (const file of [
-      "client/src/components/NavBar.tsx",
-      "client/src/components/navigation.tsx",
-      "client/src/components/progress-sidebar.tsx",
-    ]) {
-      const source = read(file);
-      expect(source, `${file} mentions /practice`).toContain("/practice");
-      expect(source, `${file} is missing /review`).toContain("/review");
+  /**
+   * @spec [brief R4 §2.4; register UI-06] | @implemented [2026-09-29] | plain English:
+   * the brief's rule is about EVERY nav component, not just the live one. This used to
+   * name three orphan navs (`NavBar`, `navigation`, `progress-sidebar`); UI-06 deleted
+   * them, so the rule is now enforced by discovery: any component whose file name says
+   * it is navigation (nav / navigation / sidebar / shell / menu, outside the `ui/`
+   * primitives) and that carries a Practice nav entry must carry a Review entry too.
+   * A nav added or revived later is caught without editing this list. Trade-off: a nav
+   * named outside that vocabulary escapes, which is why the live nav is also pinned by
+   * name above.
+   */
+  it("every nav component that links to Practice also links to Review", () => {
+    const componentsDir = join(REPO_ROOT, "client/src/components");
+    const navFiles = (
+      readdirSync(componentsDir, {
+        recursive: true,
+        encoding: "utf8",
+      }) as string[]
+    )
+      .map((relative) => relative.split("\\").join("/"))
+      .filter((relative) => relative.endsWith(".tsx"))
+      .filter((relative) => !relative.startsWith("ui/"))
+      .filter((relative) => !/\.test\.tsx$/.test(relative))
+      .filter((relative) =>
+        /(nav|navigation|sidebar|shell|menu)[^/]*\.tsx$/i.test(relative),
+      )
+      .map((relative) => `client/src/components/${relative}`);
+
+    // Presence before absence: the discovery must find the live nav, or an empty
+    // list would pass this test for the wrong reason.
+    expect(navFiles).toContain("client/src/components/layout/app-shell.tsx");
+
+    const practiceEntry = /href(?:=|:\s*)["']\/practice["']/;
+    const reviewEntry = /href(?:=|:\s*)["']\/review["']/;
+    const linkingPractice = navFiles.filter((file) =>
+      practiceEntry.test(read(file)),
+    );
+    expect(linkingPractice).toContain(
+      "client/src/components/layout/app-shell.tsx",
+    );
+
+    for (const file of linkingPractice) {
+      expect(read(file), `${file} links /practice but not /review`).toMatch(
+        reviewEntry,
+      );
     }
   });
 });
@@ -119,9 +154,61 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
 
   it("every allowlist entry is a route in App.tsx (the file's own rule)", () => {
     const app = read("client/src/App.tsx");
+    // G4-01: the guardian routes are mounted in App.tsx from one table, GUARDIAN_ROUTES.
+    expect(app).toContain("GUARDIAN_ROUTES");
+    const guardianRoutes = read("client/src/features/guardian/routes.tsx");
     for (const entry of RETURN_PATH_ALLOWLIST) {
-      expect(app, `${entry} is allowlisted but not mounted`).toContain(
-        `path="${entry}"`,
+      const mounted =
+        app.includes(`path="${entry}"`) ||
+        guardianRoutes.includes(`path: "${entry}"`);
+      expect(mounted, `${entry} is allowlisted but not mounted`).toBe(true);
+    }
+  });
+
+  /**
+   * @spec [AS-5; register UI-03] | @implemented [2026-09-29] — the return path is role-aware
+   * (`RETURN_PATH_ROUTE_ROLES`), so its role lists must be the ones App.tsx's RequireRole
+   * actually enforces on each route. Read from source for the same reason as above: the route
+   * table is a fact about the file. Plant: change any role list in return-path.ts, or any
+   * allowlisted route's `allow={[…]}` in App.tsx, and this goes red.
+   */
+  it("every allowlist entry's role list is the RequireRole gate App.tsx mounts it behind", () => {
+    const app = read("client/src/App.tsx");
+    const allowOf = (from: number): string[] => {
+      const match = /allow=\{\[([^\]]*)\]\}/.exec(app.slice(from));
+      expect(match, `no allow={[…]} after offset ${from}`).not.toBeNull();
+      return [...(match?.[1] ?? "").matchAll(/"([a-z]+)"/g)]
+        .map((m) => m[1] ?? "")
+        .sort();
+    };
+    // G4-01: guardian routes are mounted from one table, GUARDIAN_ROUTES, behind one
+    // RequireRole in App.tsx's `GUARDIAN_ROUTES.map(…)`; that mount is their gate.
+    const guardianRoutes = read("client/src/features/guardian/routes.tsx");
+    const guardianMount = app.indexOf("GUARDIAN_ROUTES.map(");
+    for (const entry of RETURN_PATH_ALLOWLIST) {
+      if (
+        !app.includes(`path="${entry}"`) &&
+        guardianRoutes.includes(`path: "${entry}"`)
+      ) {
+        expect(guardianMount, "GUARDIAN_ROUTES is not mounted").toBeGreaterThan(
+          -1,
+        );
+        expect(allowOf(guardianMount), entry).toEqual(
+          [...(RETURN_PATH_ROUTE_ROLES[entry] ?? [])].sort(),
+        );
+        continue;
+      }
+      const at = app.indexOf(`path="${entry}"`);
+      expect(at, `${entry} is not mounted`).toBeGreaterThan(-1);
+      // Either an inline `component={() => (<RequireRole allow=…>` or a named module-scope
+      // wrapper (`component={TestsHomeRoute}`, whose body holds the RequireRole).
+      const named = /^path="[^"]*"\s+component=\{([A-Z]\w*)\}/.exec(
+        app.slice(at),
+      );
+      const gateAt = named ? app.indexOf(`function ${named[1] ?? ""}()`) : at;
+      expect(gateAt, `${entry}: wrapper not found`).toBeGreaterThan(-1);
+      expect(allowOf(gateAt), entry).toEqual(
+        [...(RETURN_PATH_ROUTE_ROLES[entry] ?? [])].sort(),
       );
     }
   });

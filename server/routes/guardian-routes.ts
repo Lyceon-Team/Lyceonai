@@ -10,6 +10,7 @@ import { EntitlementService } from "../services/entitlement-service";
 import { getEntitlementForProfile } from "../lib/account";
 import { resolveEntitlementDisplay } from "../lib/entitlement-display";
 import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
+import { guardianAgeRefusal, toIsoDate } from "../lib/role-choice";
 
 /**
  * ONE code for every refusal a redemption can give: malformed, expired, already used, never
@@ -27,12 +28,13 @@ import {
 // that imports its error mapping from the module it also imports its functions from loses
 // that mapping whenever the module is substituted, and reports 500 instead of the specified
 // status. See packages/shared/src/guardian-link-schema.ts.
-import {
-  GUARDIAN_LINK_ERROR,
-  GuardianLinkError,
-} from "../../packages/shared/src/guardian-link-schema";
+import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-schema";
 import { redeemLinkCodeRequestSchema } from "../../packages/shared/src/student-link-code-schema";
-import { redeemStudentLinkCode } from "../lib/student-link-code";
+import {
+  peekLiveCodeOwner,
+  redeemStudentLinkCode,
+  restoreStudentLinkCode,
+} from "../lib/student-link-code";
 import { recordLegalAcceptances } from "../lib/legal-acceptance";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import { GUARDIAN_LINK_LEGAL_DOC } from "../../shared/legal-consent.js";
@@ -46,34 +48,49 @@ const requireGuardianAccess = requireGuardianRole({
   message: "You do not have permission to access guardian resources",
 });
 
-type GuardianAccessEventType =
-  | "guardian_dashboard_viewed"
-  | "guardian_report_viewed"
-  | "guardian_access_denied";
-
-async function emitGuardianAccessEvent(args: {
-  eventType: GuardianAccessEventType;
+/**
+ * @spec [Guardian_Closure_Plan G1-04; audit G-AUD-07; Doc 01 V8 §14 Layer 3, §12.1]
+ * | @implemented [2026-09-29]
+ *
+ * plain English: records that a guardian opened their dashboard. It writes to `audit_logs`,
+ * in the same shape the link and revoke events already use (`guardian_link_audit`):
+ * actor = the guardian, no single target, `changes` NULL (nothing changed), and a `context`
+ * of IDs and counts only — never an email, a name, or anything about a student's work.
+ *
+ * WHY IT CHANGED. It wrote to `system_event_logs`, which no migration creates and production
+ * does not have (owner check 2026-09-28), inside `catch { // Best effort only. }` — and the
+ * supabase-js `{ error }` was never read, so the failure did not even reach the catch. Every
+ * dashboard-view record since this route existed was lost without a trace.
+ *
+ * Trade-off: a failed write is logged at ERROR and the roster is still served. The roster is
+ * the guardian's OWN list; each read of a child's data goes through `resolveSubject`, which
+ * records the access and fails closed on an unrecorded one. Failing the roster too would
+ * trade the guardian's ability to see their own links for a record the per-student reads
+ * already keep. The other two event names this type once declared were never emitted by any
+ * code path and are removed.
+ */
+async function recordDashboardView(args: {
   guardianId: string;
-  studentId?: string;
+  linkedStudentCount: number;
   requestId?: string;
-  details?: Record<string, unknown>;
 }): Promise<void> {
-  try {
-    await supabaseServer.from("system_event_logs").insert({
-      event_type: args.eventType,
-      level: "info",
-      source: "guardian_routes",
-      message: args.eventType,
-      user_id: args.guardianId,
-      session_id: args.studentId ?? null,
-      details: {
-        request_id: args.requestId ?? null,
-        student_id: args.studentId ?? null,
-        ...(args.details ?? {}),
-      },
-    });
-  } catch {
-    // Best effort only.
+  const { error } = await supabaseServer.from("audit_logs").insert({
+    actor_profile_id: args.guardianId,
+    target_profile_id: null,
+    action: "guardian_dashboard_viewed",
+    changes: null,
+    context: {
+      request_id: args.requestId ?? null,
+      linked_student_count: args.linkedStudentCount,
+    },
+  });
+  if (error) {
+    logger.error(
+      "GUARDIAN",
+      "dashboard_view_audit_failed",
+      "audit_logs insert for guardian_dashboard_viewed failed",
+      { error: error.message, code: error.code, requestId: args.requestId },
+    );
   }
 }
 
@@ -95,6 +112,38 @@ function errorCode(err: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
+/**
+ * @spec [Guardian_Closure_Plan G1-05; audit G-AUD-08; Coding Standards §13] | @implemented [2026-09-29]
+ *
+ * plain English: Express 4 does not catch a rejected async handler, so a throw inside one
+ * leaves the request with NO response — the client hangs until it gives up. This wrapper is
+ * the one place that turns any unanswered failure into a logged 500. Expected outcome: every
+ * branch of the wrapped handler ends in a response. Edge case: if the handler already sent
+ * a response before throwing, nothing more is written (a second write would itself throw).
+ * The internal error message is logged, never sent.
+ */
+function answerEveryFailure(
+  action: string,
+  handler: (req: Request, res: Response) => Promise<unknown>,
+): (req: Request, res: Response) => Promise<void> {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (err: unknown) {
+      logger.error("GUARDIAN", action, "Unhandled failure; answering 500", {
+        reason: err instanceof Error ? err.message : "unknown",
+        code: errorCode(err),
+        requestId: req.requestId,
+      });
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .json({ error: "Internal server error", requestId: req.requestId });
+      }
+    }
+  };
+}
+
 router.get(
   "/students",
   requireSupabaseAuth,
@@ -107,11 +156,10 @@ router.get(
       // CANONICAL: Read from guardian_links, join profiles for display info
       const links = await getAllGuardianStudentLinks(guardianId);
       if (links.length === 0) {
-        await emitGuardianAccessEvent({
-          eventType: "guardian_dashboard_viewed",
+        await recordDashboardView({
           guardianId,
+          linkedStudentCount: 0,
           requestId,
-          details: { linked_student_count: 0 },
         });
         return res.json({ students: [], requestId });
       }
@@ -232,11 +280,10 @@ router.get(
         }),
       );
 
-      await emitGuardianAccessEvent({
-        eventType: "guardian_dashboard_viewed",
+      await recordDashboardView({
         guardianId,
+        linkedStudentCount: roster.length,
         requestId,
-        details: { linked_student_count: roster.length },
       });
       res.json({
         students: roster.map((student, i) => ({
@@ -287,7 +334,7 @@ router.post(
   requireSupabaseAuth,
   requireGuardianAccess,
   guardianLinkCodeEntryRateLimit,
-  async (req: Request, res: Response) => {
+  answerEveryFailure("link_redeem", async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const guardianId = req.user!.id;
 
@@ -305,6 +352,51 @@ router.post(
       });
     }
 
+    // G1-02 (R10): a guardian must be an adult with a date of birth on file BEFORE the code
+    // is spent, so a refusal here leaves the student's code redeemable and writes no link.
+    // An existing guardian with no date of birth is told to add it; nothing about their
+    // existing links changes.
+    const { data: guardianProfile, error: guardianProfileError } =
+      await supabaseServer
+        .from("profiles")
+        .select("date_of_birth")
+        .eq("id", guardianId)
+        .maybeSingle();
+    if (guardianProfileError) {
+      logger.error("GUARDIAN", "link_redeem", "Guardian profile read failed", {
+        error: guardianProfileError.message,
+        requestId,
+      });
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
+    }
+    const dateOfBirth = toIsoDate(guardianProfile?.date_of_birth);
+    const ageRefusal =
+      dateOfBirth !== null
+        ? guardianAgeRefusal(dateOfBirth, new Date())
+        : ({
+            status: 403,
+            code: "GUARDIAN_DATE_OF_BIRTH_REQUIRED",
+            message:
+              "Add your date of birth to your account before linking a student.",
+          } as const);
+    if (ageRefusal) {
+      logger.warn(
+        "GUARDIAN",
+        "link_redeem",
+        "Guardian age rule refused redeem",
+        {
+          code: ageRefusal.code,
+          requestId,
+        },
+      );
+      return res.status(403).json({
+        error: { code: ageRefusal.code, message: ageRefusal.message },
+        requestId,
+      });
+    }
+
     const ttlSeconds = await getStudentLinkCodeTtlSeconds();
     if (ttlSeconds === null) {
       return res.status(503).json({
@@ -314,6 +406,45 @@ router.post(
         },
         requestId,
       });
+    }
+
+    // G1-06: a redeem that cannot produce a link must not cost the student their code. Find
+    // who holds it WITHOUT spending, and refuse "already linked" before the rotation. The
+    // peek answers exactly the three ways the spend does, so it is not a new oracle.
+    const owner = await peekLiveCodeOwner(parsed.data.code, ttlSeconds);
+    if (owner.ok && owner.studentProfileId !== guardianId) {
+      const { data: existingLink, error: existingLinkError } =
+        await supabaseServer
+          .from("guardian_links")
+          .select("id")
+          .eq("guardian_profile_id", guardianId)
+          .eq("student_profile_id", owner.studentProfileId)
+          .eq("status", "active")
+          .limit(1);
+      if (existingLinkError) {
+        logger.error(
+          "GUARDIAN",
+          "link_redeem",
+          "Active-link pre-check failed",
+          {
+            error: existingLinkError.message,
+            requestId,
+          },
+        );
+        return res.status(503).json({
+          error: { message: "Could not redeem that code. Please try again." },
+          requestId,
+        });
+      }
+      if ((existingLink ?? []).length > 0) {
+        return res.status(409).json({
+          error: {
+            message: "You are already linked to that student.",
+            code: GUARDIAN_LINK_ERROR.ALREADY_EXISTS,
+          },
+          requestId,
+        });
+      }
     }
 
     const outcome = await redeemStudentLinkCode(parsed.data.code, ttlSeconds);
@@ -417,12 +548,33 @@ router.post(
         requestId,
       });
     } catch (err: unknown) {
+      // G1-06: no link was written, so the spend is undone — the code goes back exactly as it
+      // was, unless the student has regenerated since (their newer code wins).
+      if (owner.ok && owner.studentProfileId === studentProfileId) {
+        const restored = await restoreStudentLinkCode({
+          studentProfileId,
+          enteredCode: parsed.data.code,
+          issuedAt: owner.issuedAt,
+          replacement: outcome.replacement,
+        });
+        logger.warn(
+          "GUARDIAN",
+          "link_redeem",
+          "Link write failed after the spend",
+          {
+            code: errorCode(err),
+            codeRestored: restored,
+            requestId,
+          },
+        );
+      }
+
       // LY004 — the pair is already linked. The guardian is a party to that link, so telling
       // them it exists discloses nothing they do not already know (edge case 2).
-      if (
-        err instanceof GuardianLinkError &&
-        err.code === GUARDIAN_LINK_ERROR.ALREADY_EXISTS
-      ) {
+      // G1-05: matched on the CONTRACT (`code`), never on the class — `instanceof` is false
+      // whenever the thrower's copy of GuardianLinkError is not this module's, and a missed
+      // match here used to be a hang, not even a 500. See `errorCode` above.
+      if (errorCode(err) === GUARDIAN_LINK_ERROR.ALREADY_EXISTS) {
         return res.status(409).json({
           error: {
             message: "You are already linked to that student.",
@@ -431,9 +583,20 @@ router.post(
           requestId,
         });
       }
+      // Answered here rather than rethrown: under Express 4 a rethrow from an async handler
+      // is a request with no response (G1-05 fixes the handler as a whole).
+      logger.error("GUARDIAN", "link_redeem", "Link write failed", {
+        reason: err instanceof Error ? err.message : "unknown",
+        requestId,
+      });
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId });
+      // Anything else is not a contract this handler knows; `answerEveryFailure` logs it and
+      // answers 500.
       throw err;
     }
-  },
+  }),
 );
 
 /**

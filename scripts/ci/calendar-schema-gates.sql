@@ -221,7 +221,10 @@ DECLARE
     'horizon_days','review_share_max_bp','review_block_max','exam_review_default_count',
     'weight_by_level','null_level_weight','post_exam_emphasis_days','post_exam_multiplier',
     'min_domain_questions','max_domains_per_block','granularity',
-    'full_length_every_n_occurrences','full_length_min_gap_days','final_exam_lead_days',
+    -- `full_length_every_n_occurrences` and `full_length_min_gap_days` were retired by
+    -- 20261011000000: the cadence is the student's (`full_length_interval_weeks`) and
+    -- the gap is implied by it, so two rules said one thing.
+    'final_exam_lead_days',
     'max_full_length_per_horizon','taper_days','taper_ratio_bp','recent_planned_window_days',
     'canonical_domain_order','enabled_block_types',
     -- Doc 05F §21 / SCL-08-F: calendar-owned until Doc 02B claims a review
@@ -235,6 +238,21 @@ DECLARE
     -- pace the weekly job.
     'daily_minutes_min','daily_minutes_max','daily_minutes_presets',
     'target_exam_date_max_days','weekly_job_interval_minutes',
+    -- Doc 05F §8.1, seeded by 20261010000000. A SURFACE default only: the value
+    -- the frequency control opens on before the student chooses. The generator
+    -- reads student_study_profile.full_length_interval_weeks and never this key,
+    -- which is why it sits with the route constants and not with the formula
+    -- constants the parity gate cross-checks against the oracle.
+    'default_full_length_interval_weeks',
+    -- Doc 05F §8.1 / formula sheet §4, seeded by 20261013000000. The other half
+    -- of the same surface default: the weekday the setup form's practice-test-day
+    -- row opens on. It sits here with the route constants for the same reason —
+    -- the generator reads student_study_profile.full_length_weekday and never
+    -- this key. It differs from its neighbour in one way worth knowing: the
+    -- oracle carries it in C, so the PARITY gate does cross-check its value
+    -- against the oracle's 6, where `default_full_length_interval_weeks` is
+    -- checked by nothing but this list.
+    'default_full_length_weekday',
     -- Doc 05F §10.2. Not a tunable: the formula naming its own revision, seeded
     -- beside the formula so a stored plan version traces to the exact SQL that
     -- made it. C-09 below asserts it names a migration timestamp.
@@ -257,7 +275,10 @@ BEGIN
   IF v_extra IS NOT NULL THEN
     RAISE EXCEPTION 'CALENDAR_SCHEMA_GATE_FAILED: C-01 unexpected calendar_runtime_config key(s): %', v_extra;
   END IF;
-  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the 20 formula sheet §4 keys, review_estimated_seconds_per_item (SCL-08-F) and the 6 route/job/provenance keys of Doc 05F §8.1/§12.5/§10.2';
+  -- The counts that used to be in this message drifted every time a key was added or
+  -- retired (20261011000000 retired two), and a number nobody re-derives is worse than
+  -- no number. The ARRAY above IS the assertion; this line names the rule it enforces.
+  RAISE NOTICE '    OK C-01 calendar_runtime_config holds exactly the keys CALENDAR_CONFIG_KEYS reads — the formula sheet §4 set, review_estimated_seconds_per_item (SCL-08-F), and the route/job/provenance/surface keys of Doc 05F §8.1/§12.5/§10.2 — with no key missing and none extra';
 
   -- Sheet §2: "Every quantity is an integer ... No floats anywhere."
   SELECT string_agg(key || ' (' || value_type || ')', ', ') INTO v_bad
@@ -644,20 +665,28 @@ DECLARE
 BEGIN
   WITH expected(name, len, md5) AS (VALUES
       ('calendar_acknowledge_version', 709, 'efea435c708ffec687802c7df28c0ee2'),
-      ('calendar_build_plan_input', 14698, '418f6748a9b1aa5a9439f88dc8fe4757'),
+      ('calendar_build_plan_input', 15301, 'b0e121f5feebe3743f5aa14820149a10'),
       ('calendar_carry_started', 882, '1a34b4dec6664e8c13028098d7563ea0'),
-      ('calendar_compute_plan', 20052, 'b55730b62121604d01e50d37ea8e86a3'),
-      ('calendar_compute_plan_fallback', 8363, '431fadefc7c68bbad9c4931a966a9e17'),
+      ('calendar_compute_plan', 20505, '24942262871697678ba5e04850ec0adf'),
+      ('calendar_compute_plan_fallback', 8648, 'a50c6df81c9a70df6c18cd708026ede1'),
       ('calendar_do_it_now', 3921, 'cb08df2b79ae17e0b17e11af2cebcd33'),
       ('calendar_drop_today_for_system', 325, 'a037c331145e3afc8c94dc17b18a4cf4'),
       ('calendar_drop_unowned_dates', 336, 'afa423c5bf6382097610133e64707412'),
       ('calendar_edit_day', 2323, 'd03883155de01a174fd761426518ec36'),
+      -- The three added by 20261012000000 (Brief 14 Step 5). NOT YET DEPLOYED at the time
+      -- this line was written: the migration is authored and the owner applies it, so the
+      -- owner-run half of this gate will read "pinned but does not exist" against production
+      -- until they do. That is the gate working, not drift -- and it is the only state in
+      -- which those two answers mean different things, so it is worth saying which one this is.
+      ('calendar_emit_exam_notification', 1138, 'afb40e5ef7a854544e9f86eefeef2cbe'),
+      ('calendar_exam_notification_candidates', 1449, '8eb5b52c82624b772b69c4f58b014d8f'),
       ('calendar_exam_review_scope', 428, 'c74a9a309ec9c84944fe53f5f12298db'),
+      ('calendar_full_length_complete', 301, '8ce47219a892b2339373463a8c626118'),
       ('calendar_is_known_timezone', 91, '946a562369e4d62e7ed74d83a529e890'),
       ('calendar_link_launch', 1450, 'bbb60d44b09a40a2e060493dbe269135'),
       ('calendar_move_block', 5729, '4f4c193a69a720f1d7baa99d3282cd68'),
-      ('calendar_persist_version', 5225, '8769894020580f0525c4e817af4860e3'),
-      ('calendar_place_full_lengths', 3375, '5d75f39c96396a22d6d4276ad2833d27'),
+      ('calendar_persist_version', 7859, '2f82a6df74c322536f09fd47d99ffbc6'),
+      ('calendar_place_full_lengths', 7497, 'e8056c8f64b4c5e94d061603c3946b6e'),
       ('calendar_plan_to_output', 729, 'aa6f7e9f331a5f9dfac05f855ac7f84d'),
       ('calendar_regenerate_day', 7306, '6875bfde324a4b153899cd2d61696ae1'),
       ('calendar_regenerate_day_only', 199, '5d0b0a15caca7ea867cda145a35f2fec'),

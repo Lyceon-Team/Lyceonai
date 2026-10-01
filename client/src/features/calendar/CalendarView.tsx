@@ -38,6 +38,7 @@ import {
 } from "@dnd-kit/core";
 import type {
   CalendarSetupDefaults,
+  ExamPlanning,
   PlanBlock,
   PlanTrigger,
   PlanningEstimates,
@@ -75,6 +76,7 @@ import {
 import {
   ALL_TONES_VISIBLE,
   FactsStrip,
+  FullLengthSuppressionNotice,
   LeftRail,
   PlanUpdatedBanner,
   TopBar,
@@ -87,7 +89,7 @@ import { CreateBlockSheet } from "./components/CreateBlockSheet";
 import { DayStrip } from "./components/DayStrip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { DayActions } from "./components/DayMenu";
-import { SetupPopup } from "./components/SetupPopup";
+import { SetupPopup, type SetupAnswers } from "./components/SetupPopup";
 import {
   SettingsSheet,
   scheduleSummary,
@@ -127,7 +129,18 @@ export type CalendarViewProps = {
   /** Present only when the student has not set up. Never passed on the guardian surface. */
   setup?: {
     defaults: CalendarSetupDefaults;
-    onSubmit: (profile: Record<string, unknown>) => void;
+    /**
+     * `SetupAnswers` — the popup's OWN type, not `Record<string, unknown>`.
+     *
+     * The open record here is how the missing `idempotency_key` reached production. A
+     * handler taking a wider parameter satisfies a narrower slot, so `SetupPopup`'s
+     * `(answers: SetupAnswers) => void` passed straight into this prop and the shape was
+     * erased on the way up: the page received "some object" and forwarded it to a mutation
+     * that also took "some object". Three layers, each willing to carry anything, and
+     * nothing between the student's answers and the wire that knew what the endpoint
+     * requires. Naming the real type is what puts the compiler back in that gap.
+     */
+    onSubmit: (answers: SetupAnswers) => void;
     /** False for a free student — the last press shows the third panel, not a plan. */
     entitled: boolean;
     /** Dismiss saves nothing. It reopens next visit, because no profile exists yet. */
@@ -157,6 +170,16 @@ export type CalendarViewProps = {
    */
   projection?: readonly SectionProjectionDto[];
   streak: StreakSummary | undefined;
+  /**
+   * Brief 14 Step 4 — `full_length_suppressions`, straight off the payload. Dates the
+   * generator refused to place a practice test on because both the chosen weekday occurrence
+   * and the +7-day alternative were blocked out.
+   *
+   * REQUIRED, not optional, and served on BOTH payloads (owner ruling 2026-09-26: the
+   * guardian sees the suppression). An empty array is the ordinary case and renders nothing;
+   * making it optional would let a page forget it and re-create the silence this brief ends.
+   */
+  fullLengthSuppressions: readonly string[];
   /** §17.4. Null when there is nothing unacknowledged. */
   planUpdate: { versionNo: number; trigger: PlanTrigger } | null;
   /** Called when the visible range changes, so the page can re-query. */
@@ -170,6 +193,8 @@ export type CalendarViewProps = {
     profile: StudyProfile;
     bounds: StudyProfileBounds;
     estimates: PlanningEstimates;
+    /** §8.1's frequency readout: the lead window and the prefill cadence, both server-owned. */
+    examPlanning: ExamPlanning;
     onSave: (draft: SettingsDraft) => void;
     pending: boolean;
     error: string | null;
@@ -188,6 +213,8 @@ export type CalendarViewProps = {
    * names its own.
    */
   backHref: string;
+  /** G4-04: the guardian Calendar tab hides "← Dashboard" (the Dashboard is the tab beside it). */
+  hideBackLink?: boolean;
   mutations?: CalendarMutations;
 };
 
@@ -201,10 +228,12 @@ export function CalendarView({
   viewerName,
   targetExamDate,
   streak,
+  fullLengthSuppressions,
   planUpdate,
   onRangeChange,
   schedule,
   backHref,
+  hideBackLink = false,
   mutations,
 }: CalendarViewProps): JSX.Element {
   const [view, setView] = useState<"week" | "month">("week");
@@ -434,6 +463,8 @@ export function CalendarView({
     <div className="lyceon-calendar">
       <div className={`app${setup === undefined ? "" : " blur"}`}>
         <LeftRail
+          // The guardian shell carries the logo; the rail does not repeat it (item 6).
+          hideBrand={viewer === "guardian"}
           name={viewerName}
           subtitle={
             readOnly
@@ -469,6 +500,15 @@ export function CalendarView({
                   summary: scheduleSummary(
                     schedule.profile,
                     schedule.estimates,
+                    {
+                      targetExamDate: schedule.profile.target_exam_date,
+                      today,
+                      // The one field the readout reads, named rather than spread: the
+                      // prefill beside it on `examPlanning` is for the frequency control,
+                      // not for this sentence.
+                      finalExamLeadDays:
+                        schedule.examPlanning.final_exam_lead_days,
+                    },
                   ),
                 },
               })}
@@ -477,6 +517,7 @@ export function CalendarView({
         <div className="main">
           <TopBar
             backHref={backHref}
+            hideBackLink={hideBackLink}
             viewer={viewer}
             targetScore={targetScore}
             projection={projection}
@@ -510,6 +551,24 @@ export function CalendarView({
               onDismiss={() => mutations.acknowledge(planUpdate.versionNo)}
             />
           ) : null}
+
+          {/* The suppressed practice test, on both surfaces. The handler is passed for a
+              STUDENT only — the component takes `viewer` as well, so the "statement, never an
+              action" rule for a guardian holds even if a future caller passes a handler by
+              mistake. Two locks, because the copy rule and the control rule are both the
+              owner's 2026-09-26 ruling and neither is a style choice. */}
+          <FullLengthSuppressionNotice
+            viewer={viewer}
+            dates={fullLengthSuppressions}
+            {...(viewer === "student"
+              ? {
+                  onGoToWeek: (date: string) => {
+                    move("week", startOfWeek(date));
+                    setAgendaDate(date);
+                  },
+                }
+              : {})}
+          />
 
           <DndContext sensors={sensors} onDragEnd={onDragEnd}>
             <div className="scroll">
@@ -615,6 +674,7 @@ export function CalendarView({
           profile={schedule.profile}
           bounds={schedule.bounds}
           estimates={schedule.estimates}
+          examPlanning={schedule.examPlanning}
           today={today}
           onSave={schedule.onSave}
           onClose={() => setSettingsOpen(false)}

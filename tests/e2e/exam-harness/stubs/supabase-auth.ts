@@ -6,5 +6,17 @@ const pass = (_req: Request, _res: Response, next: NextFunction): void => next()
 export const requireSupabaseAuth = pass;
 export const requireStudentOrAdmin = pass;
 export const requireProfileComplete = pass;
-export const requireConsentCompliance = pass;
+export const requireGuardianLinkForUnder13 = pass;
 export const supabaseAuthMiddleware = pass;
+
+/** G2: the subject resolver reads the caller through this; the harness server set req.user. */
+export function requireRequestUser(
+  req: Request & { user?: { id: string } },
+  res: Response,
+): { id: string } | null {
+  if (!req.user?.id) {
+    res.status(401).json({ error: "Unauthenticated" });
+    return null;
+  }
+  return req.user;
+}

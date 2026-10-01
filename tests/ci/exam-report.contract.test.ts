@@ -31,6 +31,12 @@ import {
   examFormsResponseSchema,
 } from "../../packages/shared/src/exam-report-schema";
 import {
+  examStudentReportPayloadSchema,
+  examStudentReportScoredSchema,
+  toStudentExamReport,
+} from "../../packages/shared/src/exam-student-report-schema";
+import { toGuardianExamReport } from "../../packages/shared/src/exam-guardian-report-schema";
+import {
   ReportIntegrityError,
   serializeStudentReport,
   reportStateOf,
@@ -43,6 +49,31 @@ const DISCLOSURE = {
     "Lyceon-modeled SAT score. Designed to approximate Digital SAT score ranges using Lyceon's internal scoring model. This is not an official College Board score prediction and may differ from official SAT scores by ±20-50 points or more.",
   full_text_url: "/legal/score-disclosure",
 };
+
+/** G1: what exam_domain_breakdown returns for a fully scored attempt. */
+const RW_ROWS = [
+  { section: "RW", domain: "Craft and Structure", correct: 10, total: 13 },
+  { section: "RW", domain: "Expression of Ideas", correct: 6, total: 8 },
+  { section: "RW", domain: "Information and Ideas", correct: 9, total: 12 },
+  {
+    section: "RW",
+    domain: "Standard English Conventions",
+    correct: 11,
+    total: 21,
+  },
+] as const;
+const BREAKDOWN = [
+  ...RW_ROWS,
+  { section: "M", domain: "Advanced Math", correct: 12, total: 15 },
+  { section: "M", domain: "Algebra", correct: 11, total: 13 },
+  { section: "M", domain: "Geometry and Trigonometry", correct: 4, total: 7 },
+  {
+    section: "M",
+    domain: "Problem Solving and Data Analysis",
+    correct: 5,
+    total: 9,
+  },
+] as const;
 
 function source(over: Partial<ExamReportSource> = {}): ExamReportSource {
   return {
@@ -120,7 +151,7 @@ describe("§5.3 derivation — every branch", () => {
 describe("per-state serializers (§11.3)", () => {
   it("scored carries the disclosure row verbatim and both sections", () => {
     const s = source();
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), BREAKDOWN);
     expect(p.report_state).toBe("scored");
     if (p.report_state !== "scored") return;
     expect(p.score.total_scaled).toBe(1340);
@@ -130,14 +161,50 @@ describe("per-state serializers (§11.3)", () => {
 
   it("a scaled score never ships without its disclosure row (§15.1, §16.7)", () => {
     const s = source({ disclosure: null });
-    expect(() => serializeStudentReport(s, "scored")).toThrow(
+    expect(() => serializeStudentReport(s, "scored", BREAKDOWN)).toThrow(
       ReportIntegrityError,
     );
   });
 
+  it("G1: the breakdown ships with the score, one row per domain, correct-of-total", () => {
+    const p = serializeStudentReport(source(), "scored", BREAKDOWN);
+    if (p.report_state !== "scored") throw new Error("not scored");
+    expect(p.domain_breakdown).toEqual(BREAKDOWN);
+    expect(Object.keys(p.domain_breakdown[0]!).sort()).toEqual([
+      "correct",
+      "domain",
+      "section",
+      "total",
+    ]);
+  });
+
+  it("G1: a breakdown that does not cover exactly the scored sections is an integrity violation", () => {
+    expect(() => serializeStudentReport(source(), "scored", RW_ROWS)).toThrow(
+      ReportIntegrityError,
+    );
+    expect(() => serializeStudentReport(source(), "scored", [])).toThrow(
+      ReportIntegrityError,
+    );
+  });
+
+  it("G1: a breakdown row with a skill, a module or a mismatched domain fails the strict parse", () => {
+    const p = serializeStudentReport(source(), "scored", BREAKDOWN);
+    const row = BREAKDOWN[0];
+    for (const bad of [
+      { ...row, skill_code: "CAS.WIC" },
+      { ...row, module: "2A" },
+      { ...row, domain: "Algebra" }, // a Math domain on an RW row
+      { ...row, correct: 14, total: 13 },
+    ]) {
+      expect(() =>
+        examReportScoredSchema.parse({ ...p, domain_breakdown: [bad] }),
+      ).toThrow();
+    }
+  });
+
   it("a scored payload with a decomposition field fails the strict parse (§11.7)", () => {
     const s = source();
-    const p = serializeStudentReport(s, "scored");
+    const p = serializeStudentReport(s, "scored", BREAKDOWN);
     expect(() =>
       examReportScoredSchema.parse({
         ...p,
@@ -170,7 +237,7 @@ describe("per-state serializers (§11.3)", () => {
         partial_display_scaled: 690,
       },
     });
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), RW_ROWS);
     expect(p.report_state).toBe("partial_scored");
     if (p.report_state !== "partial_scored") return;
     expect(p.score.total_scaled).toBeNull();
@@ -187,11 +254,15 @@ describe("per-state serializers (§11.3)", () => {
     expect(p.partial_disclosure.summary).not.toMatch(
       /total score is \d|estimated|projected/i,
     );
+    // G1: only the scored section is broken down.
+    expect(new Set(p.domain_breakdown.map((r) => r.section))).toEqual(
+      new Set(["RW"]),
+    );
   });
 
   it("pending: no score, no disclosure block (§15.4)", () => {
     const s = source({ score_run: null, disclosure: null });
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), []);
     expect(p.report_state).toBe("scoring_pending");
     expect(p).not.toHaveProperty("score");
     expect(p).not.toHaveProperty("disclosure");
@@ -206,7 +277,7 @@ describe("per-state serializers (§11.3)", () => {
         recorded_at: "2026-09-25T12:05:00Z",
       },
     });
-    const p = serializeStudentReport(s, reportStateOf(s, true));
+    const p = serializeStudentReport(s, reportStateOf(s, true), []);
     expect(p.report_state).toBe("failed_requires_review");
     if (p.report_state !== "failed_requires_review") return;
     expect(p.failure_summary.incident_reference).toBe("INC-a1b2c3d4");
@@ -221,7 +292,7 @@ describe("per-state serializers (§11.3)", () => {
 
   it("revoked access: 200 unavailable with no score (§11.5b)", () => {
     const s = source();
-    const p = serializeStudentReport(s, reportStateOf(s, false));
+    const p = serializeStudentReport(s, reportStateOf(s, false), []);
     expect(p.report_state).toBe("unavailable");
     expect(JSON.stringify(p)).not.toMatch(/scaled|1340|disclosure/);
   });
@@ -238,12 +309,148 @@ describe("per-state serializers (§11.3)", () => {
         grace_expires_at: "2026-09-25T00:00:00Z",
       },
     });
-    expect(serializeStudentReport(live, "not_completed")).toMatchObject({
+    expect(serializeStudentReport(live, "not_completed", [])).toMatchObject({
       resumable: true,
     });
-    expect(serializeStudentReport(late, "not_completed")).toMatchObject({
+    expect(serializeStudentReport(late, "not_completed", [])).toMatchObject({
       resumable: false,
     });
+  });
+});
+
+/** Every key name at any depth of a JSON value. */
+function keysDeep(value: unknown, acc = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) for (const v of value) keysDeep(v, acc);
+  else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      acc.add(k);
+      keysDeep(v, acc);
+    }
+  }
+  return acc;
+}
+
+/**
+ * @spec [Doc-04C §8.1/§9.1; SCL-180 (amended 2026-09-29), owner ruling 7]
+ *   | @implemented [2026-09-29]
+ * plain English: the student's wire payload is `toStudentExamReport` of the REAL
+ * serializer's output: seven segments per domain, never correct/total. The guardian's
+ * projection of the same server-side report still carries correct/total (SCL-180).
+ */
+describe("owner ruling 7: the student report carries segments, never counts", () => {
+  const partialSource = () =>
+    source({
+      session: {
+        ...source().session,
+        state: "partial_scored_abandoned",
+        completed_at: null,
+        abandoned_at: "2026-09-25T13:00:00Z",
+      },
+      sections: [
+        { section: "RW", state: "submitted", module2_submitted_by: "timeout" },
+        {
+          section: "M",
+          state: "module1_submitted",
+          module2_submitted_by: null,
+        },
+      ],
+      score_run: {
+        ...source().score_run!,
+        math_scored: false,
+        math_scaled: null,
+        total_scaled: null,
+        partial_display_scaled: 690,
+      },
+    });
+
+  it("scored: eight segment rows present (asserted first), then no correct/total/domain_breakdown at any depth", () => {
+    const p = toStudentExamReport(
+      serializeStudentReport(source(), "scored", BREAKDOWN),
+    );
+    if (p.report_state !== "scored") throw new Error(p.report_state);
+    // presence before absence
+    expect(p.domain_segments).toHaveLength(8);
+    expect(
+      p.domain_segments.every((r) => Number.isInteger(r.segments_filled)),
+    ).toBe(true);
+    expect(p.domain_segments.find((r) => r.domain === "Algebra")).toEqual({
+      section: "M",
+      domain: "Algebra",
+      segments_filled: 6, // 11 of 13 -> 77/13 = 5.92 -> 6
+    });
+    expect(p.omitted_domains).toEqual([]);
+    for (const row of p.domain_segments) {
+      expect(row).not.toHaveProperty("correct");
+      expect(row).not.toHaveProperty("total");
+    }
+    const keys = keysDeep(p);
+    expect(keys.has("segments_filled")).toBe(true);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
+    examStudentReportPayloadSchema.parse(p);
+  });
+
+  it("partial: the scored section's segments, the unscored section's domains omitted with a reason", () => {
+    const s = partialSource();
+    const p = toStudentExamReport(
+      serializeStudentReport(s, reportStateOf(s, true), RW_ROWS),
+    );
+    if (p.report_state !== "partial_scored") throw new Error(p.report_state);
+    expect(p.domain_segments.map((r) => r.section)).toEqual([
+      "RW",
+      "RW",
+      "RW",
+      "RW",
+    ]);
+    expect(p.omitted_domains.map((o) => [o.section, o.reason])).toEqual([
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+      ["M", "section_not_scored"],
+    ]);
+    const keys = keysDeep(p);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
+  });
+
+  it("the strict student schema refuses a count smuggled onto a row or the payload", () => {
+    const p = toStudentExamReport(
+      serializeStudentReport(source(), "scored", BREAKDOWN),
+    );
+    if (p.report_state !== "scored") throw new Error(p.report_state);
+    const row = p.domain_segments[0]!;
+    expect(examStudentReportScoredSchema.safeParse(p).success).toBe(true);
+    for (const bad of [
+      { ...p, domain_segments: [{ ...row, correct: 10 }] },
+      { ...p, domain_segments: [{ ...row, total: 13 }] },
+      { ...p, domain_breakdown: BREAKDOWN },
+    ]) {
+      expect(examStudentReportScoredSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it("states without a breakdown pass through unchanged", () => {
+    const s = source({ score_run: null, disclosure: null });
+    const internal = serializeStudentReport(s, reportStateOf(s, true), []);
+    expect(toStudentExamReport(internal)).toEqual(internal);
+  });
+
+  it("guardian: the guardian projection of the same report is a bar per domain, no counts (SCL-189)", () => {
+    const internal = serializeStudentReport(source(), "scored", BREAKDOWN);
+    const g = toGuardianExamReport(internal);
+    if (g.report_state !== "scored") throw new Error(g.report_state);
+    // Expected bars computed here, not by the projection under test (G3-02, SCL-189).
+    expect(g.domain_breakdown).toEqual(
+      BREAKDOWN.map((r) => ({
+        section: r.section,
+        domain: r.domain,
+        bar_pct: Math.round((100 * r.correct) / r.total),
+      })),
+    );
+    expect(g).not.toHaveProperty("domain_segments");
+    expect(g).not.toHaveProperty("omitted_domains");
   });
 });
 
@@ -306,11 +513,23 @@ describe("§11.7 field-level redaction linter", () => {
   ];
   it.each([
     ["report payloads", examReportPayloadSchema],
+    ["student report payloads", examStudentReportPayloadSchema],
     ["report status", examReportStatusSchema],
     ["forms list", examFormsResponseSchema],
   ] as const)("%s carry none of the forbidden fields", (_name, schema) => {
     const keys = keysOf(schema as unknown as ZodTypeAny);
     expect(keys.size).toBeGreaterThan(2);
     expect(FORBIDDEN.filter((k) => keys.has(k))).toEqual([]);
+  });
+
+  it("owner ruling 7: the student wire schema has segments_filled and no correct/total key anywhere", () => {
+    const keys = keysOf(
+      examStudentReportPayloadSchema as unknown as ZodTypeAny,
+    );
+    expect(keys.has("segments_filled")).toBe(true);
+    expect(keys.has("omitted_domains")).toBe(true);
+    expect(
+      ["correct", "total", "domain_breakdown"].filter((k) => keys.has(k)),
+    ).toEqual([]);
   });
 });

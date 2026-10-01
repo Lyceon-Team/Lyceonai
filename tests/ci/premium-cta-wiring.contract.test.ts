@@ -23,16 +23,23 @@ function readCode(filePath: string): string {
 }
 
 describe("Premium CTA wiring contract", () => {
+  /**
+   * @spec [owner ruling 2026-09-03 §3; register UI-06] | @implemented [2026-09-29]
+   * plain English: the third surface here used to be `ScoreProjectionCard.tsx`,
+   * an orphan UI-06 deleted. The live premium lock component is
+   * `PremiumUpgradePrompt` (mastery renders it, asserted below), so it takes
+   * that slot: a dead `href="/"` upgrade link there goes red.
+   */
   it('removes dead "/" upgrade links from known premium lock surfaces', () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
     const mastery = read("client/src/pages/mastery.tsx");
-    const projection = read(
-      "client/src/components/progress/ScoreProjectionCard.tsx",
+    const upgradePrompt = read(
+      "client/src/components/billing/PremiumUpgradePrompt.tsx",
     );
 
     expect(dashboard).not.toContain('Link href="/"');
     expect(mastery).not.toContain('href="/"');
-    expect(projection).not.toContain('href="/"');
+    expect(upgradePrompt).not.toContain('href="/"');
   });
 
   /**
@@ -59,11 +66,12 @@ describe("Premium CTA wiring contract", () => {
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
     const userProfile = readCode("client/src/pages/UserProfile.tsx");
 
-    // Quote-agnostic: prettier owns quote style, and pinning it would make a
-    // formatter run read as a behaviour change.
-    expect(userProfile).toMatch(
-      /queryKey:\s*\[["']\/api\/billing\/status["']\]/,
-    );
+    // UI-14 (2026-09-29) and G4-09 (G-AUD-26): the page reads billing status through the ONE
+    // shared, parsed hook — one key and one fetch function for every surface — rather than
+    // spelling the key itself. The hook's key is pinned in
+    // tests/ci/query-freshness.contract.test.ts.
+    expect(userProfile).toContain("useBillingStatusQuery");
+    expect(userProfile).not.toMatch(/\/api\/billing\/status/);
     // One portal hook, not a fourth copy of the mutation.
     expect(userProfile).toContain("useBillingPortal");
     /**
@@ -76,6 +84,33 @@ describe("Premium CTA wiring contract", () => {
     expect(userProfile).not.toContain("navigate('/upgrade')");
     expect(userProfile).toContain("Manage Subscription");
     expect(userProfile).toContain("View Plans");
+  });
+
+  /**
+   * G4-09 (G-AUD-26): one reader of `GET /api/billing/status` on the client. Four readers
+   * under three cache keys with four private types, none parsed, was the defect; a fifth
+   * reader added anywhere reopens it, so the whole client tree is scanned, not a list.
+   */
+  it("G4-09 / UI-14: only useBillingStatusQuery reads /api/billing/status on the client", () => {
+    const readers: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(path.join(repoRoot, dir), {
+        withFileTypes: true,
+      })) {
+        const rel = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(rel);
+        else if (
+          /\.tsx?$/.test(entry.name) &&
+          !/\.test\.tsx?$/.test(entry.name)
+        ) {
+          if (/["'`]\/api\/billing\/status["'`]/.test(readCode(rel))) {
+            readers.push(rel);
+          }
+        }
+      }
+    };
+    walk("client/src");
+    expect(readers).toEqual(["client/src/hooks/useBillingStatusQuery.ts"]);
   });
 
   it("registers the canonical /upgrade route", () => {
@@ -97,11 +132,16 @@ describe("Premium CTA wiring contract", () => {
       "client/src/components/tutor/ScopedTutorPanel.tsx",
     );
 
-    expect(chat).toContain("PremiumUpgradePrompt");
+    // W4-11: both LISA surfaces draw the LISA upgrade card, which is the one
+    // billing card with LISA's pitch — not a second card.
+    const lisaCard = read("client/src/components/tutor/LisaUpgradeCard.tsx");
+    expect(chat).toContain("LisaUpgradeCard");
     expect(chat).toContain("useTutorTurn");
     expect(tutorTurn).toContain("mapTutorErrorToPremiumReason");
-    expect(reviewPanel).toContain("PremiumUpgradePrompt");
+    expect(reviewPanel).toContain("LisaUpgradeCard");
     expect(reviewPanel).toContain("useTutorTurn");
+    expect(lisaCard).toContain("PremiumUpgradePrompt");
+    expect(lisaCard).toContain("mapTutorErrorToPremiumReason");
     // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
     // pending Doc 04 rebuild. The two full-test.tsx assertions (PremiumUpgradePrompt,
     // getPremiumDenialReason) went with the deleted page; the chat surface is unchanged.
@@ -114,9 +154,13 @@ describe("Premium CTA wiring contract", () => {
     const checkoutPoller = readCode(
       "client/src/components/guardian/CheckoutReturnPoller.tsx",
     );
-    const portalButton = readCode(
-      "client/src/components/guardian/ManageSubscriptionButton.tsx",
-    );
+    // The guardian's portal controls: the payment-health banner in the shell and the one
+    // "Manage billing" on Linked students & billing. `ManageSubscriptionButton` was deleted
+    // with the single-page dashboard that rendered it (2026-10-01).
+    const portalControls = [
+      readCode("client/src/features/guardian/GuardianPaymentBanner.tsx"),
+      readCode("client/src/features/guardian/GuardianStudentsPage.tsx"),
+    ];
 
     // The surface exists, on the card, with the shared plans helper.
     expect(purchaseCard).toContain("getBillingPlans");
@@ -176,14 +220,18 @@ describe("Premium CTA wiring contract", () => {
      * also exported a subscription-management button is the same misdirection
      * the rename removed, so the button moved out — and its test file was
      * already called `ManageSubscriptionButton.test.tsx`, importing from a
-     * module of a different name.
+     * module of a different name. Since 2026-10-01 that button is deleted with
+     * the single-page dashboard it sat on; the portal controls are the shell's
+     * payment-health banner and the billing page's "Manage billing".
      *
      * The endpoint string belongs in `useBillingPortal`, the single error
      * surface for every portal call site, and must NOT be re-spelled in either
      * component.
      */
-    expect(portalButton).toContain("useBillingPortal");
-    expect(portalButton).not.toContain("/api/billing/portal");
+    for (const portalControl of portalControls) {
+      expect(portalControl).toContain("useBillingPortal");
+      expect(portalControl).not.toContain("/api/billing/portal");
+    }
     expect(checkoutPoller).not.toContain("useBillingPortal");
     expect(checkoutPoller).not.toContain("/api/billing/portal");
   });

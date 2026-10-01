@@ -37,6 +37,7 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import {
   AlertCircle,
   BookOpen,
@@ -114,6 +115,9 @@ export default function ReviewPage() {
     isLoading: poolLoading,
     isError: poolError,
     refetch: refetchPool,
+    hasMoreSessions,
+    loadMoreSessions,
+    isLoadingMoreSessions,
   } = useReviewPool();
   const {
     sessions: openSessions,
@@ -133,6 +137,8 @@ export default function ReviewPage() {
 
   const { data: topicsData } = useQuery<TopicsResponse>({
     queryKey: ["/api/practice/topics"],
+    // UI-14: reference data — long, explicit, finite.
+    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
   });
 
   // "Today" in the SAME zone R3 used to compute each row's local_date.
@@ -572,6 +578,20 @@ export default function ReviewPage() {
                           </div>
                         </div>
                       ))}
+                      {/* UI-16: the picker is paged by the server's cursor. */}
+                      {hasMoreSessions && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          disabled={isLoadingMoreSessions}
+                          onClick={loadMoreSessions}
+                          data-testid="button-review-more-sessions"
+                        >
+                          {isLoadingMoreSessions
+                            ? "Loading…"
+                            : "Show more sessions"}
+                        </Button>
+                      )}
                     </div>
                   )}
                 </PageCard>

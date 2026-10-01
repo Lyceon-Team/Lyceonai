@@ -20,7 +20,7 @@
  * formatters those call into are pinned separately in `review-session-picker.test.ts`.
  */
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/layout/app-shell", () => ({
@@ -72,6 +72,9 @@ const hooksMock = vi.hoisted(() => ({
     isLoading: false,
     isError: false,
     refetch: vi.fn(),
+    hasMoreSessions: false,
+    loadMoreSessions: vi.fn(),
+    isLoadingMoreSessions: false,
   },
   open: {
     sessions: [] as Array<Record<string, unknown>>,
@@ -132,6 +135,7 @@ function populatedPool(): Record<string, unknown> {
         open_count: 3,
       },
     ],
+    sessions_next_cursor: null,
   };
 }
 
@@ -157,6 +161,9 @@ describe("review landing", () => {
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
+      hasMoreSessions: false,
+      loadMoreSessions: vi.fn(),
+      isLoadingMoreSessions: false,
     };
     hooksMock.open = {
       sessions: [],
@@ -326,5 +333,23 @@ describe("review landing", () => {
     hooksMock.open = { ...hooksMock.open, sessions: [] };
     render(<ReviewPage />);
     expect(screen.queryByTestId("review-open-sessions")).toBeNull();
+  });
+
+  // ── UI-16: the past-session picker is paged ───────────────────────────────
+  // @spec [brief R3 §2.4; register UI-16] | @implemented [2026-09-29]
+  it("UI-16: 'Show more sessions' appears only when the server has another page, and asks for it", () => {
+    render(<ReviewPage />);
+    expect(screen.queryByTestId("button-review-more-sessions")).toBeNull();
+    cleanup();
+
+    const loadMoreSessions = vi.fn();
+    hooksMock.pool = {
+      ...hooksMock.pool,
+      hasMoreSessions: true,
+      loadMoreSessions,
+    };
+    render(<ReviewPage />);
+    fireEvent.click(screen.getByTestId("button-review-more-sessions"));
+    expect(loadMoreSessions).toHaveBeenCalledTimes(1);
   });
 });

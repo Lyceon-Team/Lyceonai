@@ -31,9 +31,10 @@
  * entry points now reach it from facts the server does write.
  */
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { csrfFetch } from "@/lib/csrf";
-import { parseApiErrorFromResponse } from "@/lib/api-error";
+import {
+  useBillingStatusQuery,
+  type BillingStatus,
+} from "@/hooks/useBillingStatusQuery";
 import { X, Sparkles, CreditCard, ArrowRight } from "lucide-react";
 import {
   Card,
@@ -48,6 +49,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   resolveCtaCopy,
   resolveCtaDestination,
+  type BillingCtaPitch,
   type BillingCtaState,
 } from "@/lib/billing-cta";
 
@@ -85,16 +87,21 @@ export type PremiumUpgradePromptProps = {
    * calendar and a lock on mastery are different disappointments.
    */
   readonly featureBenefit?: string;
+  /**
+   * The surface's own words for a student who has never paid (W4-11: LISA's).
+   * Copy only — the state, the destination and every other state's copy are
+   * unchanged. See `BillingCtaPitch`.
+   */
+  readonly pitch?: BillingCtaPitch;
   readonly mode?: "floating" | "inline";
   readonly onDismiss?: () => void;
 };
 
-/** Only what this component reads from `GET /api/billing/status`. */
-type BillingStatusForCta = {
-  readonly lapsed?: boolean;
-  readonly hasBillingAccount?: boolean;
-  readonly hasActiveLink?: boolean;
-};
+/** Only what this component reads from `GET /api/billing/status` (G4-09: the shared shape). */
+type BillingStatusForCta = Pick<
+  BillingStatus,
+  "lapsed" | "hasBillingAccount" | "hasActiveLink"
+>;
 
 /**
  * Derive the state from the viewer's own billing facts.
@@ -104,15 +111,15 @@ type BillingStatusForCta = {
  * WHY THE COMPONENT ASKS RATHER THAN EACH SURFACE. Reaching the lapsed state
  * needs `lapsed` and `hasBillingAccount`, which only `/api/billing/status`
  * writes. Threading both through calendar, chat, exams, mastery and practice
- * would be five new props and five chances to forget one. The query shares
- * `["billing-status"]` with the guardian paywall, so on a surface that already
- * holds it this costs no request at all.
+ * would be five new props and five chances to forget one. The query is the
+ * shared `useBillingStatusQuery` (UI-14), so on a surface that already holds it
+ * this costs no request at all.
  *
  * A guardian without per-student context is sent to their dashboard, because
  * that is where every guardian remedy lives. Never `/upgrade`.
  */
 function stateFromBilling(
-  status: BillingStatusForCta | undefined,
+  status: BillingStatus | undefined,
   isGuardian: boolean,
 ): BillingCtaState {
   if (isGuardian) {
@@ -130,6 +137,7 @@ function stateFromBilling(
 export function PremiumUpgradePrompt({
   state,
   featureBenefit,
+  pitch,
   mode = "inline",
   onDismiss,
 }: PremiumUpgradePromptProps) {
@@ -141,27 +149,16 @@ export function PremiumUpgradePrompt({
    * Skipped entirely when the caller already knows the state — the guardian
    * dashboard does, and it knows more than this could (which student).
    */
-  const { data: billingStatus } = useQuery<BillingStatusForCta>({
-    queryKey: ["billing-status"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/billing/status", {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw await parseApiErrorFromResponse(
-          res,
-          "Failed to get billing status",
-        );
-      }
-      return res.json() as Promise<BillingStatusForCta>;
-    },
+  const { data: billingStatus } = useBillingStatusQuery({
     enabled: state === undefined,
-    retry: 1,
   });
 
   const resolved: BillingCtaState =
     state ?? stateFromBilling(billingStatus, isGuardian);
-  const copy = resolveCtaCopy(resolved, { featureBenefit });
+  const copy = resolveCtaCopy(resolved, {
+    ...(featureBenefit !== undefined ? { featureBenefit } : {}),
+    ...(pitch !== undefined ? { pitch } : {}),
+  });
 
   /**
    * The destination is a pure function of the role, checked against the role's

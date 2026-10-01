@@ -16,6 +16,7 @@
  * with a Try-again button for an entitlement denial gives them a button that can never work.
  */
 import { useCallback, useMemo, useState } from "react";
+import type { ProfileUpsertResponse } from "@lyceon/shared";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -34,6 +35,7 @@ import {
   useResetDay,
   useStreak,
   useStudyProfileMutation,
+  type StudyProfileFields,
 } from "@/features/calendar/api";
 import { CalendarView, type EditHint } from "@/features/calendar/CalendarView";
 import {
@@ -96,6 +98,29 @@ export default function CalendarPage(): JSX.Element {
   const profile = useStudyProfileMutation();
   const { launch, isPending: launchPending } = useLaunchBlock(navigate);
 
+  /**
+   * THE ONE PROFILE SAVE PATH. Both surfaces that write a profile go through here — the
+   * §17.5 setup popup and the §8.1 settings sheet — because they used not to, and the
+   * difference was invisible until production showed it: the sheet wrapped its draft in
+   * `newIntent`, setup called `profile.mutate(body)` with the popup's answers, and a body
+   * without `idempotency_key` is refused by `makeStudyProfileUpsertSchema` (§4.2). Every
+   * new student's FIRST save 400'd; every existing student's edits worked. Eight
+   * consecutive 400s, zero rows in `student_study_profile`, zero plan versions.
+   *
+   * One function, so there is one answer to "does a profile save carry a key" instead of
+   * one per call site. The `newIntent` mint stays at the intent boundary — one press, one
+   * key, reused across TanStack's retry of THAT press and never across two presses.
+   */
+  const saveProfile = useCallback(
+    (
+      fields: StudyProfileFields,
+      options?: { onSuccess?: (result: ProfileUpsertResponse) => void },
+    ): void => {
+      profile.mutate(newIntent(fields), options);
+    },
+    [profile],
+  );
+
   const onRangeChange = useCallback(
     (nextView: "week" | "month", nextCursor: string) => {
       setView(nextView);
@@ -153,7 +178,10 @@ export default function CalendarPage(): JSX.Element {
             ? undefined
             : {
                 defaults: response.defaults,
-                onSubmit: (body) => profile.mutate(body),
+                // Through the one save path, which is what mints the key. `answers()` is
+                // the student's answers and nothing else — the popup does not know what an
+                // idempotency key is, and should not.
+                onSubmit: (answers) => saveProfile(answers),
                 // A free student reaches setup since SCL-130, and the last press shows them the
                 // third panel instead of a plan. `setup_required` is served before the
                 // entitlement gate, so reaching here says nothing about entitlement — the
@@ -179,6 +207,9 @@ export default function CalendarPage(): JSX.Element {
         // "Set a target" rather than showing a slot the student cannot explain.
         targetScore={null}
         streak={streak.data}
+        // Pre-setup there is no plan, so nothing can have been suppressed. Empty rather than
+        // omitted: the prop is required, which is what stops a page forgetting it.
+        fullLengthSuppressions={[]}
         planUpdate={null}
         onRangeChange={onRangeChange}
       />
@@ -201,6 +232,9 @@ export default function CalendarPage(): JSX.Element {
       // touches them.
       projection={response.projection}
       streak={streak.data ?? response.streak}
+      // Brief 14 Step 4 — the dates the generator refused to place a test on, straight off
+      // the payload. The notice names them; nothing here re-derives which days are blocked.
+      fullLengthSuppressions={response.full_length_suppressions}
       planUpdate={
         change === null
           ? null
@@ -213,17 +247,24 @@ export default function CalendarPage(): JSX.Element {
         // the save against. Never a literal preset list in the client.
         bounds: response.bounds,
         estimates: response.estimates,
+        examPlanning: response.exam_planning,
         onSave: (draft) =>
-          profile.mutate(
-            newIntent({
+          saveProfile(
+            {
               timezone: draft.timezone,
               study_days_mask: draft.study_days_mask,
               daily_minutes: draft.daily_minutes,
               target_exam_date: draft.target_exam_date,
               target_score: draft.target_score,
               full_length_weekday: draft.full_length_weekday,
+              // Both halves, always. `calendarProfileUpsertSchema` refuses a body that
+              // names one and not the other (Brief 14 Step 2), so omitting this — as this
+              // call site did until the pair landed — makes every schedule save that touches
+              // the exam a 400 rather than a silent half-write. The sheet's own chips move
+              // both halves together for the same reason.
+              full_length_interval_weeks: draft.full_length_interval_weeks,
               planner_mode: draft.planner_mode,
-            }),
+            },
             {
               onSuccess: (result) =>
                 // No version number means nothing was replanned, which in practice means a

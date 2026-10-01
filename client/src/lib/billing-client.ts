@@ -11,31 +11,40 @@
  * fact on the add-item branch. Edge cases: a response that does not match the
  * contract is refused rather than half-read.
  *
- * NOT YET SCHEMA-BACKED: `getBillingPlans`. `BillingPlanMetadata` below is a
- * local shape that has drifted from the route, which returns `amountCents` and
- * `currency` as nullable and is typed here as non-null. That divergence is
- * reported and held for the owner, not fixed here — unifying it changes render
- * paths in `upgrade.tsx` and `CheckoutReturnPoller.tsx`. Stated so this header
- * does not read as a guarantee it cannot make.
+ * ALL THREE READS ARE SCHEMA-BACKED. `getBillingPlans` was not, and its local
+ * `BillingPlanMetadata` interface had drifted from the route it described:
+ * the route returns `amountCents` and `currency` as NULLABLE and the interface
+ * declared them non-null, so every consumer was typed to believe a price always
+ * exists. `formatPrice(null)` is `$NaN`, and TypeScript could not warn about it
+ * because the lie was in the type. The shape now comes from
+ * `billingPlanMetadataSchema` by inference — one definition, and a null is
+ * visible to the compiler at every use (Coding Standards §7.1, §7.2, §17).
  *
  * WHY THIS FILE CHANGED. It previously declared its own
  * `BillingPlan = 'monthly' | 'quarterly' | 'yearly'`, duplicating
- * `billingPeriodSchema`, and read `payload.url` unconditionally on both
- * outcomes. The second of those is a real defect on the guardian add-item path
- * (row 20): that branch returns `{kind:"item_added", subscriptionItemId}` and no
- * `url`, so the helper threw "Billing response did not include a redirect URL"
- * AFTER the guardian's card had been charged for their second child. The purchase
- * had succeeded; the UI reported failure; a retry then hit
- * `STUDENT_ALREADY_FUNDED`. Parsing against the shared discriminated schema makes
- * that branch impossible to skip.
+ * `billingPeriodSchema`, and read `payload.url` unconditionally across both
+ * checkout outcomes. The second of those was a real defect on the guardian
+ * add-item path: that branch returned `{kind:"item_added", subscriptionItemId}`
+ * and no `url`, so the helper threw "Billing response did not include a redirect
+ * URL" AFTER the guardian's card had been charged for their second child. The
+ * purchase had succeeded; the UI reported failure; a retry then hit
+ * `STUDENT_ALREADY_FUNDED`.
+ *
+ * That branch no longer exists (owner ruling 2026-09-29, one subscription per
+ * student): every guardian purchase is a Checkout Session, so there is one
+ * outcome and one redirect. Parsing against the shared schema stays, because
+ * what it guards is a response this client does not understand — which a deploy
+ * skew can still produce — not that one branch in particular.
  */
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
 import {
   billingCheckoutOutcomeSchema,
+  billingPlansResponseSchema,
   billingPortalOutcomeSchema,
   type BillingCheckoutOutcome,
   type BillingPeriodChoice,
+  type BillingPlanMetadata,
 } from "../../../packages/shared/src/billing-schema";
 
 /**
@@ -48,16 +57,14 @@ export type BillingPlan = BillingPeriodChoice;
 
 export type { BillingCheckoutOutcome };
 
-export interface BillingPlanMetadata {
-  plan: BillingPlan;
-  label: string;
-  amountCents: number;
-  currency: string;
-  intervalLabel: string;
-  equivalentMonthlyCents?: number;
-  savingsPercent?: number;
-  stripePriceIdConfigured: boolean;
-}
+/**
+ * Inferred from the shared Zod schema, never redeclared. The interface that
+ * stood here typed `amountCents` and `currency` as non-null against a route that
+ * returns both nullable, and carried `equivalentMonthlyCents` and
+ * `savingsPercent` — two fields the route has never sent, which is why the only
+ * thing that ever filled them was a hardcoded table.
+ */
+export type { BillingPlanMetadata };
 
 async function postBilling(
   endpoint: "/api/billing/checkout" | "/api/billing/portal",
@@ -87,7 +94,21 @@ async function postBilling(
     );
   }
 
-  return response.json().catch(() => ({}));
+  return readJson(response);
+}
+
+/**
+ * Read a 2xx body as JSON.
+ *
+ * G4-09 (G-AUD-26): both readers here used to swallow a parse failure —
+ * `.catch(() => ({}))` and `.catch(() => null)` — and hand the schema an empty
+ * stand-in, so a truncated or HTML body surfaced as a contract mismatch naming
+ * the wrong cause. A body that is not JSON now fails as itself; the caller's
+ * schema parse still decides the shape of one that is.
+ */
+async function readJson(response: Response): Promise<unknown> {
+  const body: unknown = await response.json();
+  return body;
 }
 
 export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
@@ -102,11 +123,16 @@ export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
     );
   }
 
-  const payload = await response
-    .json()
-    .catch(() => ({}) as { plans?: BillingPlanMetadata[] });
-  const plans = Array.isArray(payload?.plans) ? payload.plans : [];
-  return plans;
+  // PARSED, NOT SHAPE-SNIFFED. `Array.isArray(payload.plans)` proved the
+  // container was an array and nothing about what was in it, so a row with a
+  // null amount, a missing interval or a plan name the client does not know
+  // reached the renderer typed as complete. Coding Standards §7.1.
+  const payload = await readJson(response);
+  const parsed = billingPlansResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("Billing plans response did not match the contract");
+  }
+  return parsed.data.plans;
 }
 
 /**
@@ -118,9 +144,11 @@ export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
  * that is not among them (Charter §6). Sending it from a student account is
  * rejected server-side rather than ignored.
  *
- * Returns the parsed outcome. On `checkout_session` the browser is sent to
- * Stripe, so callers normally never observe the return value; on `item_added`
- * there is no redirect and the purchase is already complete.
+ * Returns the parsed outcome. Every guardian purchase — first or fifth — is a
+ * Checkout Session, so the browser is always sent to Stripe and callers
+ * normally never observe the return value. It is still returned rather than
+ * discarded, because in a non-browser environment there is nowhere to redirect
+ * to and the caller needs the session back.
  */
 export async function startSubscriptionCheckout(
   plan: BillingPlan,
@@ -141,7 +169,7 @@ export async function startSubscriptionCheckout(
   }
 
   const outcome = parsed.data;
-  if (outcome.kind === "checkout_session" && typeof window !== "undefined") {
+  if (typeof window !== "undefined") {
     window.location.assign(outcome.url);
   }
 

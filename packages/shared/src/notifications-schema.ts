@@ -20,10 +20,27 @@ import { z } from "zod";
  * joined on 2026-09-15 (Doc 01 §36.3 — the party who did not revoke is told). The consent
  * request, the deletion-scheduled email and the guardian INVITE are direct sends, not events —
  * see server/lib/notifications/direct-sends.ts.
+ *
+ * `full_length_week` and `full_length_tomorrow` joined on 2026-09-27 (Brief 14 Step 5; Doc 05F
+ * §8.1). TWO TYPES, NOT ONE WITH A KIND IN THE PAYLOAD — the owner's ruling of 2026-09-26, and
+ * not a stylistic one: `notification_event_id(event_type, source_id)` hashes the TYPE, so two
+ * types are what let one exam block carry two independently-idempotent notifications. A single
+ * type with `{"kind": ...}` in its payload would derive one id per block and the second notice
+ * would be swallowed by the ON CONFLICT that makes the first a safe replay.
+ *
+ * `exam_score_report_requested` and `renewal_decision_requested` joined on 2026-09-30 (SCL-191;
+ * post-exam score report and renewal decision). Two types for the same reason, and one more
+ * besides: they ask two different questions of two different people. The score prompt goes to
+ * the student, who has the score; the renewal decision goes to the payer, who is being charged
+ * (Doc 01 §36.4). On a self-paid subscription those are one person and only the first is sent.
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
   "guardian_unlinked",
+  "full_length_week",
+  "full_length_tomorrow",
+  "exam_score_report_requested",
+  "renewal_decision_requested",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -75,6 +92,51 @@ export const guardianUnlinkedPayloadSchema = z
 export type GuardianUnlinkedPayload = z.infer<
   typeof guardianUnlinkedPayloadSchema
 >;
+
+/**
+ * @spec [Doc-05F_V1.0 §8.1; contracts/notifications.contract.md §8.1; Brief 14 Step 5]
+ * @implemented [2026-09-27]
+ *
+ * The two practice-test notices share one payload shape: the block the notice is about and
+ * the local date the template renders ("Saturday the 17th"). Identifiers and rendering
+ * parameters only.
+ *
+ * NO `form_id`, deliberately. It names a specific exam paper, which is content about the
+ * assessment sitting in a persisted, recipient-readable row — and the notice does not need it
+ * to say a practice test is coming. `.strict()` refuses it, and every other addition, at
+ * render time as well as at write time.
+ */
+export const fullLengthNoticePayloadSchema = z
+  .object({
+    block_id: z.string().uuid(),
+    local_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .strict();
+export type FullLengthNoticePayload = z.infer<
+  typeof fullLengthNoticePayloadSchema
+>;
+
+/**
+ * @spec [contracts/notifications.contract.md §8.1; SCL-191] @implemented [2026-09-30]
+ *
+ * The two post-exam notices share one payload shape: what the prompt is anchored on, and the
+ * occasion it is about — the exam date on the `exam_date` anchor, the billing period-end date on
+ * `billing_cycle`. Those are the two rendering parameters a template needs to say "your exam on
+ * the 5th" or "your subscription renews on the 12th", and the two facts
+ * `exam_renewal_no_answer_candidates` reads back out of the row to find the occasion again.
+ *
+ * NO SCORE, NO AMOUNT, NO PRICE, and `.strict()` refuses each of them at render time as well as
+ * at write time. This row is persisted and readable by its recipient; a reported SAT score in it
+ * would be the student's own result sitting in a notification payload, and an amount would be
+ * billing content that Stripe owns (contract §0).
+ */
+export const postExamNoticePayloadSchema = z
+  .object({
+    anchor: z.enum(["exam_date", "billing_cycle"]),
+    occasion_key: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .strict();
+export type PostExamNoticePayload = z.infer<typeof postExamNoticePayloadSchema>;
 
 // ── DB rows read through the service client ─────────────────────────────────
 

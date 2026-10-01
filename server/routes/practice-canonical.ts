@@ -7,7 +7,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
@@ -261,8 +261,20 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
 
 const ACTIVE_DB_STATUSES = ["active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
+type TerminalDbStatus = (typeof TERMINAL_DB_STATUSES)[number];
+/**
+ * F-24 (2026-09-30, type-only): `isTerminalDbStatus(status)` on a `string` status did not
+ * type-check against the narrow tuple. Same boolean, as a type guard.
+ */
+function isTerminalDbStatus(status: string): status is TerminalDbStatus {
+  return TERMINAL_DB_STATUSES.some((terminal) => terminal === status);
+}
+// @spec [Doc-02A_V6 §16; register F-33; owner ruling Brief 6] | @implemented [2026-09-30] | plain
+// English: every column `toCanonicalQuestionFromSessionItem` reads must be selected here. It used to
+// omit `question_assets` and `question_estimated_time_seconds`, so every question rebuilt from a
+// session item was served with `assets: null` (tests/ci/practice.served-assets.ci.test.ts).
 const SESSION_ITEM_SELECT =
-  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_domain, question_skill, question_difficulty, question_item_type, question_correct_variants, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
+  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_assets, question_estimated_time_seconds, question_domain, question_skill, question_difficulty, question_item_type, question_correct_variants, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
 
 let _cachedRateLimiter: ReturnType<typeof rateLimit> | null = null;
 let _cachedRateLimiterConfig: { windowMs: number; max: number } | null = null;
@@ -309,6 +321,8 @@ export async function practiceAnswerRateLimiter(
     config = await loadPracticeConfig();
   } catch {
     logger.warn(
+      "PRACTICE_ANSWER",
+      "rate_limit_config_unavailable",
       "Rate limiter config unavailable; rejecting request (fail-closed)",
     );
     res.status(503).json({
@@ -610,15 +624,20 @@ export function toCanonicalQuestionForServing(
         ? q.passage
         : null,
     options: isGridIn ? [] : safeParseOptions(q.options),
-    difficulty: q.difficulty ?? null,
+    // F-24 (2026-09-30, type-only): `difficulty` is `unknown` on the row type; every real source
+    // returns `difficulty int` (select_practice_pool_random, review-pool), so this narrow passes
+    // the same values through as the old `?? null` did.
+    difficulty:
+      typeof q.difficulty === "string" || typeof q.difficulty === "number"
+        ? q.difficulty
+        : null,
     domain: typeof q.domain === "string" ? q.domain : null,
     skill: typeof q.skill === "string" ? q.skill : null,
     subskill: typeof q.subskill === "string" ? q.subskill : null,
-    exam: typeof q.exam === "string" ? q.exam : null,
-    structure_cluster_id:
-      typeof q.structure_cluster_id === "string"
-        ? q.structure_cluster_id
-        : null,
+    // No `questions` column carries `exam` or `structure_cluster_id` (no migration defines either),
+    // so these were always null; the session-item mapper below already writes `exam: null`.
+    exam: null,
+    structure_cluster_id: null,
     correct_answer: correctAnswer,
     explanation:
       typeof q.explanation === "string" && q.explanation.trim().length > 0
@@ -813,7 +832,14 @@ export type SessionItemInsertContext = {
   sessionId: string;
   userId: string;
   actorId: string;
-  clientInstanceId: string;
+  /**
+   * The binding written onto the first (served) item. `null` when the caller has none — the
+   * diagnostic start accepts a request without `client_instance_id`, and the column is nullable;
+   * a null binding is treated as unbound and the first requester binds it
+   * (`resolveClientInstanceBinding`). Typed `string` before 2026-09-30, which the diagnostic
+   * caller violated (F-24).
+   */
+  clientInstanceId: string | null;
   now: string;
   /**
    * Which column owns the row. Practice's items are keyed by `user_id`; review's by
@@ -1505,6 +1531,8 @@ export async function startOrReplaySession(args: {
     } catch (e) {
       if (e instanceof RateLimitUnavailableError) {
         logger.warn(
+          "PRACTICE_SESSION",
+          "quota_dry_run_unavailable",
           "Quota dry-run unavailable at session creation; failing closed",
         );
         return {
@@ -1729,7 +1757,8 @@ export async function startOrReplaySession(args: {
   }
 
   const firstInsertedItem = Array.isArray(insertedItems)
-    ? insertedItems.find((row: SessionItemRow) => Number(row.ordinal) === 1)
+    ? // The insert selects only `id, ordinal`; the row type comes from that select (F-24).
+      insertedItems.find((row) => Number(row.ordinal) === 1)
     : null;
 
   if (firstInsertedItem) {
@@ -1883,7 +1912,7 @@ async function serveNextForSession(args: {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return args.res.status(409).json({
       error: "session_closed",
@@ -2140,7 +2169,7 @@ router.get(
   "/sessions/open",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2165,7 +2194,9 @@ router.get(
     }
 
     const enhancedSessions = await Promise.all(
-      (sessions || []).map(async (s: SessionRow) => {
+      // The select above omits `user_id` (the rows are already scoped to this user), so the row
+      // is `SessionRow` without it (F-24).
+      (sessions || []).map(async (s: Omit<SessionRow, "user_id">) => {
         const { count } = await supabaseServer
           .from("practice_session_items")
           .select("*", { count: "exact", head: true })
@@ -2214,7 +2245,7 @@ router.post(
   "/sessions/:sessionId/resume",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2326,7 +2357,7 @@ router.post(
   "/sessions",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2401,7 +2432,7 @@ router.post(
   "/sessions/:sessionId/terminate",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2476,7 +2507,7 @@ router.post(
   "/sessions/:sessionId/calculator-state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2525,7 +2556,7 @@ router.post(
     if (
       sessionState === "completed" ||
       sessionState === "abandoned" ||
-      TERMINAL_DB_STATUSES.includes(owned.session.status)
+      isTerminalDbStatus(owned.session.status)
     ) {
       return res.status(409).json({
         error: "session_closed",
@@ -2563,7 +2594,7 @@ router.get(
   "/sessions/:sessionId/next",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2613,7 +2644,7 @@ router.get(
   "/sessions/:sessionId/state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -3094,28 +3125,31 @@ export async function captureDiagnosticBaseline(
     // 23505 = unique_violation from the partial unique index → baseline already
     // captured. This is the expected idempotent path for a second diagnostic.
     if (insertError.code === "23505") {
-      logger.info("[diagnostic] baseline already captured (idempotent no-op)", {
-        requestId,
-        userId,
-      });
+      logger.info(
+        "DIAGNOSTIC_BASELINE",
+        "baseline_already_captured",
+        "[diagnostic] baseline already captured (idempotent no-op)",
+        { requestId, userId },
+      );
       return;
     }
     // Any other error is logged but non-fatal — baseline capture must not block
     // the answer response.
-    logger.info("[diagnostic] baseline insert failed (non-fatal)", {
-      requestId,
-      userId,
-      error: insertError.message,
-      code: insertError.code,
-    });
+    logger.info(
+      "DIAGNOSTIC_BASELINE",
+      "baseline_insert_failed",
+      "[diagnostic] baseline insert failed (non-fatal)",
+      { requestId, userId, error: insertError.message, code: insertError.code },
+    );
     return;
   }
 
-  logger.info("[diagnostic] baseline captured", {
-    requestId,
-    userId,
-    sections: nonNull.map((r) => r.section),
-  });
+  logger.info(
+    "DIAGNOSTIC_BASELINE",
+    "baseline_captured",
+    "[diagnostic] baseline captured",
+    { requestId, userId, sections: nonNull.map((r) => r.section) },
+  );
 }
 
 export async function submitPracticeAnswer(req: Request, res: Response) {
@@ -3207,7 +3241,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -3796,7 +3830,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -3986,7 +4020,7 @@ router.post(
   "/answer",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitPracticeAnswer,
 );
@@ -3994,7 +4028,7 @@ router.post(
   "/sessions/:sessionId/skip",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitPracticeSkip,
 );

@@ -129,6 +129,7 @@ const READY: CalendarResponse = {
     study_days_mask: 62,
     daily_minutes: 45,
     full_length_weekday: 6,
+    full_length_interval_weeks: 2,
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T18:00:00Z",
   },
@@ -142,6 +143,14 @@ const READY: CalendarResponse = {
     practice_seconds_per_unit: 90,
     review_seconds_per_unit: 120,
   },
+  exam_planning: {
+    final_exam_lead_days: 7,
+    default_full_length_interval_weeks: 2,
+    default_full_length_weekday: 6,
+  },
+  // Brief 14 Step 4. Required on the ready payload, so the §15 round-trip below refuses a
+  // fixture without it — which is the assertion that caught its absence here.
+  full_length_suppressions: ["2026-10-17"],
   days: [
     {
       local_date: YESTERDAY,
@@ -225,6 +234,9 @@ const SETUP_REQUIRED: CalendarResponse = {
     daily_minutes_min: 15,
     daily_minutes_max: 180,
     target_exam_date_max_days: 540,
+    default_full_length_interval_weeks: 2,
+    default_full_length_weekday: 6,
+    final_exam_lead_days: 7,
   },
 };
 

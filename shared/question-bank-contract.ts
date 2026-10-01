@@ -5,6 +5,10 @@ import { randomBytes, randomInt } from "crypto";
 // isValidCanonicalId function can reference the pattern.
 import { CANONICAL_ID_PATTERN } from "./canonical-id";
 export { CANONICAL_ID_PATTERN };
+// Likewise the canonical (section, domain) pairing — browser-safe in `./canonical-domains`
+// (moved there 2026-10-01 so the client can draw all eight domains), re-exported unchanged.
+import { CANONICAL_DOMAINS_BY_SECTION } from "./canonical-domains";
+export { CANONICAL_DOMAINS_BY_SECTION };
 export const MC_OPTION_KEYS = ["A", "B", "C", "D"] as const;
 export const QUESTION_LIFECYCLE = ["draft", "qa", "published"] as const;
 export const LEGACY_QUESTION_LIFECYCLE = ["reviewed"] as const;
@@ -124,34 +128,7 @@ export function normalizeItemType(value: unknown): CanonicalItemType | null {
   return null;
 }
 
-/**
- * @spec [Doc-05B_V1.0 §4.2 domain canonicality is BLOCKING in 05B] | @implemented [2026-08-16]
- * plain English: the canonical (section, domain) pairing, single-sourced. It mirrors
- * the two lists inside refresh_domain_mastery exactly — that function raises
- * DOMAIN_SECTION_MISMATCH on anything else and rolls back the whole mastery event,
- * so a drifted string here is not cosmetic. Note 'Problem Solving and Data Analysis'
- * has NO hyphen. The DB enforces the same pairing independently
- * (questions_domain_section_canonical / psi_question_domain_section_canonical);
- * this is the application-side source, not a substitute for that floor.
- */
-export const CANONICAL_DOMAINS_BY_SECTION: Readonly<
-  Record<"M" | "RW", readonly string[]>
-> = {
-  M: [
-    "Algebra",
-    "Advanced Math",
-    "Problem Solving and Data Analysis",
-    "Geometry and Trigonometry",
-  ],
-  RW: [
-    "Craft and Structure",
-    "Information and Ideas",
-    "Standard English Conventions",
-    "Expression of Ideas",
-  ],
-};
-
-/** Flat view of the pairing above. Derived — never edit this list directly. */
+/** Flat view of the pairing (`./canonical-domains`). Derived — never edit this list directly. */
 export const CANONICAL_DOMAINS: readonly string[] = [
   ...CANONICAL_DOMAINS_BY_SECTION.M,
   ...CANONICAL_DOMAINS_BY_SECTION.RW,
@@ -428,31 +405,6 @@ export function isCanonicalRuntimeQuestion(
   );
   if (itemType === "grid_in") return isCanonicalRuntimeGridInQuestion(row);
   return isCanonicalRuntimeMcQuestion(row);
-}
-
-/**
- * @spec [Doc 02B §14/§20 Serving Questions; HALT-8 anti-leak] | @implemented 2026-06-16
- * plain English: validate an ALREADY-student-safe row — one SELECTed WITHOUT answer-bearing
- * columns (no correct_answer / correct_variants) — for RENDERABILITY only. Answer correctness
- * was already enforced at ingestion (QA validator) + the DB discriminated CHECK, so the serving
- * path must NOT re-require fields it deliberately did not select (QUESTIONS-SERVING-001:
- * isCanonicalRuntimeQuestion requires those fields and would drop every safe-selected row).
- * Checks: a valid canonical id, a normalizable section, a stem, and the renderable option shape
- * for the item_type (mcq → 4 A–D options; grid_in → NO options, renders numeric entry).
- */
-export function isStudentSafeRuntimeQuestion(
-  row: CanonicalQuestionRowLike,
-): boolean {
-  if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
-  if (!normalizeSectionCode(row.section_code ?? null)) return false;
-  if (!normalizeText(row.stem)) return false;
-  const itemType = normalizeItemType(
-    row.item_type ?? row.question_type ?? null,
-  );
-  if (itemType === "grid_in") {
-    return !hasCanonicalOptionSet(row.options ?? null);
-  }
-  return hasCanonicalOptionSet(row.options ?? null);
 }
 
 /**

@@ -27,6 +27,8 @@ import { sectionProjectionSchema } from "../student-resources.js";
 import { calendarBlockTypeSchema, calendarEngineSchema } from "./scope.js";
 import { planBlockSchema, planMemberSchema } from "./plan.js";
 import {
+  fullLengthIntervalWeeksSchema,
+  postgresDowSchema,
   studyProfileBoundsSchema,
   studyProfileSchema,
   targetScoreSchema,
@@ -163,6 +165,24 @@ export const calendarSetupDefaultsSchema = z
     daily_minutes_min: z.number().int().positive(),
     daily_minutes_max: z.number().int().positive(),
     target_exam_date_max_days: z.number().int().positive(),
+    // §8.1: the cadence the frequency control OPENS on, from
+    // `default_full_length_interval_weeks` (20261010000000). A prefill, exactly like
+    // `timezone` above — nothing is stored until the student saves, and the generator never
+    // reads this key, so an operator changing it cannot re-space anyone's existing exams.
+    // Bounded by the same schema the write path uses, so the form can never be prefilled
+    // with a cadence the upsert would then refuse.
+    default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+    // The weekday half of the same prefill (20261013000000). Bounded by
+    // `postgresDowSchema` — the SAME schema the write path holds
+    // `full_length_weekday` to — so the form can never be prefilled with a day the
+    // upsert would then refuse. NOT nullable: a default is a value the control
+    // opens on, and "no default" is what the day row had when it opened on None
+    // while the cadence row opened on 2, which is half of a pair the database
+    // refuses to store.
+    default_full_length_weekday: postgresDowSchema,
+    // The frequency readout is on the SETUP form too, so the constant it needs travels with
+    // the rest of the prefill rather than being fetched separately.
+    final_exam_lead_days: z.number().int().positive(),
   })
   .strict();
 export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;
@@ -186,6 +206,43 @@ export const planningEstimatesSchema = z
   })
   .strict();
 export type PlanningEstimates = z.infer<typeof planningEstimatesSchema>;
+
+/**
+ * The one formula constant a client needs to state a TRUTHFUL number of practice tests.
+ *
+ * §8.1's frequency readout says "about 5 practice tests before 5 December". That count
+ * depends on `final_exam_lead_days` — nothing is placed inside the lead window, so the
+ * window decides whether the last sitting before the target exists at all. The client
+ * cannot know it: it is `calendar_runtime_config`, operator-tunable, and §17 forbids a
+ * literal. Same reason `estimates` exists above — a figure the student reads must come from
+ * the value the generator planned against, or it drifts the moment an operator moves it.
+ *
+ * Its own object rather than a field on `bounds`: `studyProfileBoundsSchema` is the write
+ * path's validation context (`makeStudyProfileUpsertSchema` takes it), and a formula
+ * constant is not a bound on what a student may choose.
+ */
+export const examPlanningSchema = z
+  .object({
+    final_exam_lead_days: z.number().int().positive(),
+    /**
+     * The cadence a day-pick adopts when the student has not chosen one — the same value the
+     * setup form opens on, so "pick a day" means the same thing on both surfaces. The
+     * pre-setup arm carries these two inline in `defaults` (it also carries a timezone and
+     * the minute presets, which the ready arm gets from `bounds`), so the values are shared
+     * even though the two payload arms shape them differently.
+     */
+    default_full_length_interval_weeks: fullLengthIntervalWeeksSchema,
+    // The weekday half of the same prefill (20261013000000). Bounded by
+    // `postgresDowSchema` — the SAME schema the write path holds
+    // `full_length_weekday` to — so the form can never be prefilled with a day the
+    // upsert would then refuse. NOT nullable: a default is a value the control
+    // opens on, and "no default" is what the day row had when it opened on None
+    // while the cadence row opened on 2, which is half of a pair the database
+    // refuses to store.
+    default_full_length_weekday: postgresDowSchema,
+  })
+  .strict();
+export type ExamPlanning = z.infer<typeof examPlanningSchema>;
 
 /**
  * The READY payload — everything §15 lists, under `status: "ready"`.
@@ -213,6 +270,18 @@ export const calendarReadyResponseSchema = z
     bounds: studyProfileBoundsSchema,
     /** §17.1's "~N min" readout — see `planningEstimatesSchema`. */
     estimates: planningEstimatesSchema,
+    exam_planning: examPlanningSchema,
+    /**
+     * Dates where the student's own day edits displaced a practice test TWICE, so none was
+     * placed (formula sheet §2 Step 2 item 4). REQUIRED, and `[]` when there are none:
+     * present-and-empty is "we checked and nothing was lost", where absent would be
+     * indistinguishable from "the server did not tell you".
+     *
+     * This is the whole reason the `degraded[]` entry exists. An entry nothing reads is the
+     * silence it replaced — on one production profile an edited day swallowed the only exam
+     * in a horizon with no trace anywhere, and no refresh would ever have revealed it.
+     */
+    full_length_suppressions: z.array(localDateSchema),
     days: z.array(calendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,
@@ -519,6 +588,22 @@ export const guardianCalendarReadyResponseSchema = z
      * fell back to "Full sitting" for every block type.
      */
     estimates: planningEstimatesSchema,
+    /**
+     * Dates where a practice test could not be placed because the days the student chose are
+     * blocked. SERVED TO THE GUARDIAN, by owner ruling 2026-09-26: it is a fact about the
+     * plan, not a control and not a profile field — the same category as `projection` and
+     * `target_exam_date`, both of which §16 as amended already admits.
+     *
+     * The reasoning is the one this whole change turns on. A parent looking at a week with no
+     * practice test should know the reason is "the days your child picked are blocked" rather
+     * than silently see nothing; withholding it would rebuild, on the guardian side, exactly
+     * the silence being removed on the student's.
+     *
+     * The DATA is identical to the student's; only the COPY differs. §16 gives a guardian no
+     * write path, so their line is a statement and never an instruction — same rule as
+     * "No target set" in the header.
+     */
+    full_length_suppressions: z.array(localDateSchema),
     days: z.array(guardianCalendarDaySchema),
     facts: calendarFactsSchema,
     streak: streakSummarySchema,

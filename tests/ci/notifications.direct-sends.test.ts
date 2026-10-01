@@ -12,21 +12,23 @@
  * mailing — the exact regression the rebuild's deletion commit had). No database is touched,
  * so no PG harness; the network is a recorded fake.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
   ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX,
   ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX,
-  GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX,
   GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX,
   guardianLinkInviteIdempotencyKey,
   sendAccountDeletionCompletedEmail,
   sendAccountDeletionScheduledEmail,
-  sendGuardianConsentRequestEmail,
   sendGuardianLinkInviteEmail,
 } from "../../server/lib/notifications/direct-sends";
-import { createResendTransport } from "../../server/lib/notifications/transport";
+import {
+  createResendSuppressionTransport,
+  createResendTransport,
+} from "../../server/lib/notifications/transport";
+import { logger, redactSensitive } from "../../server/logger";
 
 type Captured = {
   url: string;
@@ -78,49 +80,13 @@ function fakeResend(mode: "ok" | "reject") {
 const SITE = "https://app.example.test";
 
 describe("direct sends (R7/R8/R9)", () => {
-  it("consent request: keyed by the guardian_consent_requests row id, from the env sender, link carries the request id", async () => {
-    const { requests, transport } = fakeResend("ok");
-    const result = await sendGuardianConsentRequestEmail(
-      {
-        consentRequestId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-        guardianEmail: "guardian@example.test",
-        studentDisplayName: "Sam <Student>",
-      },
-      { transport, siteUrl: SITE },
-    );
-    expect(result).toEqual({
-      ok: true,
-      value: { providerMessageId: "re_direct_1" },
-    });
-    expect(requests).toHaveLength(1);
-    const req = requests[0]!;
-    expect(req.url).toBe("https://api.resend.com/emails");
-    expect(req.headers["Idempotency-Key"]).toBe(
-      `${GUARDIAN_CONSENT_REQUEST_IDEMPOTENCY_PREFIX}:7c9e6679-7425-40de-944b-e07fc1f90ae7`,
-    );
-    expect(req.body.from).toBe("notifications@send.example.test");
-    expect(req.body.to).toEqual(["guardian@example.test"]);
-    expect(Object.keys(req.body).sort()).toEqual([
-      "from",
-      "html",
-      "reply_to",
-      "subject",
-      "text",
-      "to",
-    ]);
-    expect(String(req.body.html)).toContain(
-      `${SITE}/guardian/verify-consent?requestId=7c9e6679-7425-40de-944b-e07fc1f90ae7`,
-    );
-    expect(String(req.body.html)).toContain("Sam &lt;Student&gt;"); // escaped
-    expect(String(req.body.subject)).toContain("Guardian consent required");
-  });
-
   it("deletion scheduled: keyed by the account_deletion_requests row id, link carries the raw token, nothing else persists it", async () => {
     const { requests, transport } = fakeResend("ok");
     const result = await sendAccountDeletionScheduledEmail(
       {
         deletionRequestId: "11111111-1111-4111-8111-111111111111",
         email: "user@example.test",
+        recipientProfileId: "44444444-4444-4444-8444-444444444444",
         rawToken: "tok_raw+value",
         scheduledHardDeleteAt: "2026-09-10T00:00:00.000Z",
       },
@@ -156,6 +122,7 @@ describe("direct sends (R7/R8/R9)", () => {
       {
         deletionRequestId: "33333333-3333-4333-8333-333333333333",
         email: "gone@example.test",
+        recipientProfileId: "44444444-4444-4444-8444-444444444444",
         completedAt: "2026-09-17T00:00:00.000Z",
       },
       { transport },
@@ -190,6 +157,7 @@ describe("direct sends (R7/R8/R9)", () => {
       {
         deletionRequestId: "33333333-3333-4333-8333-333333333333",
         email: "gone@example.test",
+        recipientProfileId: "44444444-4444-4444-8444-444444444444",
         completedAt: "2026-09-17T00:00:00.000Z",
       },
       { transport },
@@ -201,11 +169,12 @@ describe("direct sends (R7/R8/R9)", () => {
 
   it("a provider rejection is a Result, never a throw, and a missing site URL is config_missing with no request", async () => {
     const { requests, transport } = fakeResend("reject");
-    const rejected = await sendGuardianConsentRequestEmail(
+    const rejected = await sendAccountDeletionScheduledEmail(
       {
-        consentRequestId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-        guardianEmail: "g@example.test",
-        studentDisplayName: "S",
+        deletionRequestId: "11111111-1111-4111-8111-111111111111",
+        email: "u@example.test",
+        rawToken: "t",
+        scheduledHardDeleteAt: "2026-09-10T00:00:00.000Z",
       },
       { transport, siteUrl: SITE },
     );
@@ -217,6 +186,7 @@ describe("direct sends (R7/R8/R9)", () => {
       {
         deletionRequestId: "11111111-1111-4111-8111-111111111111",
         email: "u@example.test",
+        recipientProfileId: "44444444-4444-4444-8444-444444444444",
         rawToken: "t",
         scheduledHardDeleteAt: "2026-09-10T00:00:00.000Z",
       },
@@ -280,7 +250,7 @@ describe("direct sends (R7/R8/R9)", () => {
     expect(String(req.body.text).toLowerCase()).not.toMatch(/score|%|streak/);
   });
 
-  it("all four call sites are wired to the senders (R9)", () => {
+  it("all three call sites are wired to the senders (R9); the consent request is gone (G2-05)", () => {
     const root = path.resolve(__dirname, "../..");
     const read = (f: string) => fs.readFileSync(path.join(root, f), "utf8");
     const profile = read("server/routes/profile-routes.ts");
@@ -290,10 +260,11 @@ describe("direct sends (R7/R8/R9)", () => {
       /import \{ sendGuardianLinkInviteEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
     );
     expect(students).toMatch(/await sendGuardianLinkInviteEmail\(\{/);
-    expect(profile).toMatch(
-      /import \{ sendGuardianConsentRequestEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
+    // G2-05 (R6): the email-consent flow was removed; nothing may send, or export, it.
+    expect(profile).not.toContain("sendGuardianConsentRequestEmail");
+    expect(read("server/lib/notifications/direct-sends.ts")).not.toContain(
+      "sendGuardianConsentRequestEmail",
     );
-    expect(profile).toMatch(/await sendGuardianConsentRequestEmail\(\{/);
     expect(deletion).toMatch(
       /import \{ sendAccountDeletionScheduledEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
     );
@@ -310,6 +281,203 @@ describe("direct sends (R7/R8/R9)", () => {
       "server/lib/notifications/transport.ts",
     ]) {
       expect(read(f)).not.toMatch(/@lyceon\.ai/);
+    }
+  });
+});
+
+/**
+ * @spec [owner ruling OQ-17, 2026-09-30; Doc 01A §14; Coding Standards §12.1; register F-29]
+ *   | @implemented [2026-09-30] |
+ * plain English: no notification log line carries the recipient's address in any form, masked
+ * or not. Each send and each suppression change is driven through the REAL transport (a
+ * recorded fake network), in the success and the failure branch, with the logger spied. A
+ * distinctive address is used so any fragment of it (local part, domain, or the old
+ * first-letter mask) would show up. Presence first: the named event must have been emitted.
+ */
+describe("notification logs carry no recipient address (OQ-17)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const ADDRESS = "kiddo.tester@family-domain.example";
+  const FRAGMENTS = ["kiddo", "family-domain", "k****@", "@family"];
+  const PROFILE_ID = "55555555-5555-4555-8555-555555555555";
+
+  function spyLogs() {
+    const spies = [
+      vi.spyOn(logger, "info"),
+      vi.spyOn(logger, "warn"),
+      vi.spyOn(logger, "error"),
+    ];
+    const calls = () => spies.flatMap((spy) => spy.mock.calls);
+    return {
+      operations: () => calls().map((call) => call[1]),
+      serialized: () => JSON.stringify(calls()),
+      dataFor: (operation: string): unknown =>
+        calls().find((call) => call[1] === operation)?.[3],
+    };
+  }
+
+  function expectNoAddress(serialized: string) {
+    for (const fragment of FRAGMENTS) {
+      expect(serialized).not.toContain(fragment);
+    }
+  }
+
+  it("the logger digests recipientProfileId (same mechanism as userId)", () => {
+    const written = redactSensitive({ recipientProfileId: PROFILE_ID });
+    expect(written.recipientProfileId).not.toBe(PROFILE_ID);
+    expect(typeof written.recipientProfileId).toBe("string");
+  });
+
+  for (const mode of ["ok", "reject"] as const) {
+    it(`deletion scheduled (${mode}): no address; the request id and the recipient profile are logged`, async () => {
+      const logs = spyLogs();
+      const { transport } = fakeResend(mode);
+      await sendAccountDeletionScheduledEmail(
+        {
+          deletionRequestId: "11111111-1111-4111-8111-111111111111",
+          email: ADDRESS,
+          recipientProfileId: PROFILE_ID,
+          rawToken: "tok_" + "a".repeat(40),
+          scheduledHardDeleteAt: "2026-10-07T00:00:00.000Z",
+        },
+        { transport, siteUrl: SITE },
+      );
+      const event =
+        mode === "ok"
+          ? "deletion_scheduled_email_sent"
+          : "deletion_scheduled_email_failed";
+      expect(logs.operations()).toContain(event);
+      expect(logs.dataFor(event)).toMatchObject({
+        deletionRequestId: "11111111-1111-4111-8111-111111111111",
+        recipientProfileId: PROFILE_ID,
+      });
+      expectNoAddress(logs.serialized());
+    });
+
+    it(`guardian link invite (${mode}): no address; a null profile is logged`, async () => {
+      const logs = spyLogs();
+      const { transport } = fakeResend(mode);
+      await sendGuardianLinkInviteEmail(
+        {
+          studentProfileId: "22222222-2222-4222-8222-222222222222",
+          studentDisplayName: "Sam",
+          code: "ABC234",
+          codeIssuedAt: "2026-09-15T08:00:00.000Z",
+          expiresAt: "2026-09-16T08:00:00.000Z",
+          guardianEmail: ADDRESS,
+        },
+        { transport, siteUrl: SITE },
+      );
+      const event =
+        mode === "ok" ? "link_invite_email_sent" : "link_invite_email_failed";
+      expect(logs.operations()).toContain(event);
+      expect(logs.dataFor(event)).toMatchObject({ recipientProfileId: null });
+      expectNoAddress(logs.serialized());
+    });
+
+    it(`deletion completed (${mode}): no address; the request id and the recipient profile are logged`, async () => {
+      const logs = spyLogs();
+      const { transport } = fakeResend(mode);
+      await sendAccountDeletionCompletedEmail(
+        {
+          deletionRequestId: "33333333-3333-4333-8333-333333333333",
+          email: ADDRESS,
+          recipientProfileId: PROFILE_ID,
+          completedAt: "2026-10-07T00:00:00.000Z",
+        },
+        { transport },
+      );
+      const event =
+        mode === "ok"
+          ? "deletion_completed_email_sent"
+          : "deletion_completed_email_failed";
+      expect(logs.operations()).toContain(event);
+      expect(logs.dataFor(event)).toMatchObject({
+        deletionRequestId: "33333333-3333-4333-8333-333333333333",
+        recipientProfileId: PROFILE_ID,
+      });
+      expectNoAddress(logs.serialized());
+    });
+  }
+
+  it("the transport's own lines (sent / rejected) log the message id and profile, not the address", async () => {
+    for (const mode of ["ok", "reject"] as const) {
+      const logs = spyLogs();
+      const { transport } = fakeResend(mode);
+      await transport({
+        idempotencyKey: "msg-1",
+        to: ADDRESS,
+        recipientProfileId: PROFILE_ID,
+        subject: "s",
+        html: "<p>h</p>",
+        text: "t",
+      });
+      const event = mode === "ok" ? "email_sent" : "email_send_rejected";
+      expect(logs.operations()).toContain(event);
+      expect(logs.dataFor(event)).toMatchObject({
+        idempotencyKey: "msg-1",
+        recipientProfileId: PROFILE_ID,
+      });
+      expectNoAddress(logs.serialized());
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("suppression add / remove (success and failure) log the profile, not the address", async () => {
+    for (const status of [200, 500] as const) {
+      const logs = spyLogs();
+      const fetchImpl = (async () =>
+        new Response(
+          JSON.stringify(
+            status === 200 ? { id: "sup_1", deleted: true } : { message: "no" },
+          ),
+          { status, headers: { "Content-Type": "application/json" } },
+        )) as typeof fetch;
+      const suppression = createResendSuppressionTransport({
+        fetchImpl,
+        env: { RESEND_API_KEY: "re_test" },
+      });
+      await suppression.add(ADDRESS, { recipientProfileId: PROFILE_ID });
+      await suppression.remove(ADDRESS, { recipientProfileId: PROFILE_ID });
+      const events =
+        status === 200
+          ? ["suppression_added", "suppression_removed"]
+          : ["suppression_add_failed", "suppression_remove_failed"];
+      for (const event of events) {
+        expect(logs.operations()).toContain(event);
+        expect(logs.dataFor(event)).toMatchObject({
+          recipientProfileId: PROFILE_ID,
+        });
+      }
+      expectNoAddress(logs.serialized());
+      vi.restoreAllMocks();
+    }
+  });
+});
+
+/**
+ * Guardians see no skills, anywhere (owner ruling 2026-10-01, #1013 review item 2; SCL-194) —
+ * including in what the invite email promises a guardian will see.
+ */
+describe("the guardian invite promises no skills (SCL-194)", () => {
+  it("states what a guardian sees, and no skill is part of it", async () => {
+    const { guardianLinkInviteEmail } =
+      await import("../../server/lib/notifications/templates/guardian-link-invite");
+    const email = guardianLinkInviteEmail({
+      studentDisplayName: "Ada",
+      code: "ABCD-1234",
+      redeemUrl: "https://lyceon.example/guardian/link?code=ABCD-1234",
+      expiresAt: "2026-10-08T00:00:00.000Z",
+    });
+    for (const part of [email.subject, email.text, email.html]) {
+      // Presence first: the body really states what a guardian can see.
+      if (part !== email.subject) {
+        expect(part).toContain("As a guardian you can see");
+        expect(part).toContain("mastery by domain");
+      }
+      expect(part).not.toMatch(/skill/i);
     }
   });
 });

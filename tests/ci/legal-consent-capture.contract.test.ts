@@ -313,10 +313,13 @@ describe("C3 — no acceptance, no link", () => {
   });
 
   it("asks for it on the guardian surface, linking the document itself", () => {
-    const page = readCode("client/src/pages/guardian-dashboard.tsx");
+    // The guardian links a student in the Add-student dialog (G4-02); the retired single-page
+    // dashboard that used to carry the form was deleted 2026-10-01.
+    const page = readCode("client/src/features/guardian/AddStudentDialog.tsx");
     expect(page).toContain("/legal/parent-guardian-terms");
     expect(page).toContain("acceptParentGuardianTerms: true");
-    expect(page).toMatch(/acceptedParentTerms/);
+    // The submit is refused until the guardian ticks the box (the dialog's `acceptedTerms`).
+    expect(page).toMatch(/if \(!acceptedTerms\)/);
   });
 });
 
@@ -366,8 +369,14 @@ describe("C4 — checkout collects consent and the webhook records it", () => {
     // `payer_profile_id` is set only by the guardian route. Stamping every
     // checkout row 'parent' would assert a guardian relationship for people who
     // have none.
-    expect(webhook).toMatch(/guardianPayerId \? \("parent" as const\)/);
-    expect(webhook).toMatch(/: \("student" as const\)/);
+    //
+    // WHITESPACE-TOLERANT ON PURPOSE. This used to require the ternary on ONE
+    // line, which pinned the assertion to an 86-character line Prettier wraps —
+    // so formatting the file reddened a test about actor types. The claim is
+    // that the value is DERIVED from the presence of the guardian payer id, not
+    // how the derivation is laid out.
+    expect(webhook).toMatch(/guardianPayerId\s*\?\s*\("parent" as const\)/);
+    expect(webhook).toMatch(/:\s*\("student" as const\)/);
   });
 });
 
@@ -444,8 +453,12 @@ describe("C5 — the re-consent prompt blocks everyone except a guardian", () =>
     const needs = /const needsOnboarding =([\s\S]*?);/.exec(guard);
     expect(needs, "needsOnboarding not found").not.toBeNull();
     expect(needs?.[1]).not.toContain("requiredConsentsComplete");
-    // Both halves of that flag are still enforced, separately.
-    expect(needs?.[1]).toContain("guardianConsentRequired");
+    // Both halves of that flag are still enforced, separately. G2-04: the under-13 half has
+    // its own condition and its own page (/guardian-required), not the onboarding form.
+    const guardianLink = /const needsGuardianLink =([\s\S]*?);/.exec(guard);
+    expect(guardianLink, "needsGuardianLink not found").not.toBeNull();
+    expect(guardianLink?.[1]).toContain("guardianConsentRequired");
+    expect(needs?.[1]).not.toContain("guardianConsentRequired");
     expect(guard).toContain("outstandingLegal.length > 0");
   });
 
@@ -519,7 +532,7 @@ describe("C7 — no duplicated contract text, no hashless acceptance", () => {
   const CONSENT_SURFACES = [
     "client/src/components/legal/ReconsentModal.tsx",
     "client/src/components/auth/RequireRole.tsx",
-    "client/src/pages/guardian-dashboard.tsx",
+    "client/src/features/guardian/AddStudentDialog.tsx",
     "server/routes/billing-routes.ts",
     "server/routes/legal-routes.ts",
     "shared/legal-consent.ts",

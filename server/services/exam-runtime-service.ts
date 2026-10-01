@@ -682,6 +682,8 @@ const formRowSchema = z.object({
       score_total_present: z.boolean(),
       score_partial_present: z.boolean(),
       failed_outbox_id: z.string().uuid().nullable(),
+      // `exam_list_forms` has always emitted it; the guardian list carries it (SCL-192).
+      completed_at: z.string().nullable(),
     })
     .nullable(),
 });
@@ -694,6 +696,25 @@ const formRowSchema = z.object({
 export async function listExamForms(
   studentId: string,
 ): Promise<ExamResult<ExamFormsResponse>> {
+  const read = await listExamFormsWithCompletion(studentId);
+  return read.ok ? { ok: true, status: 200, value: read.value.forms } : read;
+}
+
+/**
+ * @spec [SCL-192 (amends SCL-180/SCL-189: the guardian exam list carries `completed_at`);
+ *   Guardian_Closure_Plan G4-03/G4-05; owner ruling 2026-09-30] | @implemented [2026-09-30]
+ *
+ * plain English: the same one `exam_list_forms` call, returning the student's forms listing
+ * unchanged PLUS each latest session's `completed_at`, keyed by session id. The student's
+ * listing does not gain the field; only the guardian list, which needs it to pick the latest
+ * test, reads the map. Null for a session that never completed (in progress, abandoned).
+ */
+export async function listExamFormsWithCompletion(studentId: string): Promise<
+  ExamResult<{
+    forms: ExamFormsResponse;
+    completedAt: Readonly<Record<string, string | null>>;
+  }>
+> {
   const env = await callExamRpc("exam_list_forms", {
     p_student_id: studentId,
   });
@@ -701,35 +722,44 @@ export async function listExamForms(
   const rows = z
     .object({ forms: z.array(formRowSchema) })
     .parse(env.body).forms;
+  const completedAt: Record<string, string | null> = {};
+  for (const f of rows) {
+    if (f.latest_session !== null) {
+      completedAt[f.latest_session.session_id] = f.latest_session.completed_at;
+    }
+  }
   return {
     ok: true,
     status: 200,
-    value: examFormsResponseSchema.parse({
-      forms: rows.map((f) => ({
-        test_form_id: f.test_form_id,
-        name: f.name,
-        is_selectable: f.is_selectable,
-        question_count: f.question_count,
-        break_duration_ms: f.break_duration_ms,
-        sections: f.sections,
-        latest_session:
-          f.latest_session === null
-            ? null
-            : {
-                session_id: f.latest_session.session_id,
-                state: f.latest_session.state,
-                mode: f.latest_session.mode,
-                attempt_number_for_form:
-                  f.latest_session.attempt_number_for_form,
-                report_state: deriveReportState({
-                  sessionState: f.latest_session.state,
-                  scoreTotalPresent: f.latest_session.score_total_present,
-                  scorePartialPresent: f.latest_session.score_partial_present,
-                  failurePresent: f.latest_session.failed_outbox_id !== null,
-                  accessGranted: true,
-                }),
-              },
-      })),
-    }),
+    value: {
+      completedAt,
+      forms: examFormsResponseSchema.parse({
+        forms: rows.map((f) => ({
+          test_form_id: f.test_form_id,
+          name: f.name,
+          is_selectable: f.is_selectable,
+          question_count: f.question_count,
+          break_duration_ms: f.break_duration_ms,
+          sections: f.sections,
+          latest_session:
+            f.latest_session === null
+              ? null
+              : {
+                  session_id: f.latest_session.session_id,
+                  state: f.latest_session.state,
+                  mode: f.latest_session.mode,
+                  attempt_number_for_form:
+                    f.latest_session.attempt_number_for_form,
+                  report_state: deriveReportState({
+                    sessionState: f.latest_session.state,
+                    scoreTotalPresent: f.latest_session.score_total_present,
+                    scorePartialPresent: f.latest_session.score_partial_present,
+                    failurePresent: f.latest_session.failed_outbox_id !== null,
+                    accessGranted: true,
+                  }),
+                },
+        })),
+      }),
+    },
   };
 }

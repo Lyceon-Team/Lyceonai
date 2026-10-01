@@ -106,7 +106,11 @@ export function BlockSheet({
 
   const isPast = day.date < today;
   const complete = block.target > 0 && block.actual >= block.target;
-  // §12.2: a started block is protected state; a past day is never edited.
+  // §12.2: a started block is protected state; a past day is never edited. EDITING only —
+  // R-08-34 separated the two, and `locked` is deliberately untouched by it. A past block can
+  // now be WORKED where it sits while its scope stays frozen, which is the distinction §12.2
+  // was always making and the date gate blurred: protecting a plan from edits is not the same
+  // as forbidding the student to do the work.
   const locked = actions === undefined || block.started || isPast;
   const plan = block.plan;
 
@@ -219,21 +223,18 @@ export function BlockSheet({
             <div className="hint" style={{ padding: 0 }}>
               You&apos;re viewing this plan. Only the student can change it.
             </div>
-          ) : isPast && !complete ? (
-            <button
-              type="button"
-              className="btn primary"
-              onClick={actions.onDoItNow}
-            >
-              Do it now
-            </button>
           ) : (
             <>
               {block.launchable ? (
                 <button
                   type="button"
                   className="btn primary"
-                  disabled={complete || actions.launchPending || isPast}
+                  // `isPast` IS GONE from this list (R-08-34). It used to disable Start on a
+                  // past block AND swap the whole control for "Do it now" — so a student who
+                  // missed Tuesday could not work Tuesday's block, only copy it to today. The
+                  // remaining two conditions are the real ones: a finished block has nothing
+                  // to launch, and a launch already in flight must not be fired twice.
+                  disabled={complete || actions.launchPending}
                   // §17.7: warm the resume chunk on reach, not on mount — prefetching
                   // every Start on a 14-day grid would download both engines' bundles
                   // for a student who is only looking at their week.
@@ -265,6 +266,21 @@ export function BlockSheet({
                   Coming soon
                 </button>
               )}
+              {/* "Do it now" SURVIVES, beside Start rather than instead of it (§12.6). The
+                  two do different things and a student may want either: Start works the
+                  block where it sits, and this copies it onto today, which is what somebody
+                  rebuilding a routine after a missed week actually wants. Still only on an
+                  unfinished past block — there is nothing to bring forward from a finished
+                  one, and a future block is already ahead of today. */}
+              {isPast && !complete ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={actions.onDoItNow}
+                >
+                  Do it now
+                </button>
+              ) : null}
               {!locked ? (
                 <button
                   type="button"

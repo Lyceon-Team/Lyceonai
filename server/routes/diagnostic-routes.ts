@@ -65,18 +65,16 @@ const StartDiagnosticBodySchema = z.object({
 // the session with the first served item. Reuses the practice session ownership
 // model (client_instance_id, status machine, resumability).
 router.post("/sessions", async (req: Request, res: Response) => {
-  const requestId = (req as Record<string, unknown>).requestId as
-    | string
-    | undefined;
+  const requestId = req.requestId;
   // `SupabaseUser` (server/middleware/supabase-auth.ts) rather than a hand-rolled shape, and
   // the difference is the defect this fixes: the inline `{ id: string; role?: string }` that
   // used to be here NARROWED `actor_id` AWAY, so the only identifier in scope was the profile
   // id and `const actorId = userId` looked like the only option. The canonical type carries
   // `actor_id`; consuming it is what CLAUDE.md's single-source-of-truth rule asks for, and it
   // makes the wrong value unreachable instead of merely discouraged.
-  const user = (req as Record<string, unknown>).user as
-    | SupabaseUser
-    | undefined;
+  // `req.user` is declared as `SupabaseUser` by the auth middleware's Express augmentation
+  // (server/middleware/supabase-auth.ts), so no cast is needed to read it.
+  const user: SupabaseUser | undefined = req.user;
   const userId = user?.id;
 
   // 1. Auth
@@ -242,10 +240,12 @@ router.post("/sessions", async (req: Request, res: Response) => {
   for (const raw of rawPool) {
     const mapped = mapGenesisQuestionRow(raw);
     if (!isCanonicalRuntimeQuestion(mapped)) {
-      logger.warn("[diagnostic] skipping invalid question from pool", {
-        requestId,
-        questionId: String(raw.id ?? ""),
-      });
+      logger.warn(
+        "DIAGNOSTIC",
+        "pool_question_invalid",
+        "[diagnostic] skipping invalid question from pool",
+        { requestId, questionId: String(raw.id ?? "") },
+      );
       continue;
     }
     selected.push(toCanonicalQuestionForServing(mapped));
@@ -261,12 +261,18 @@ router.post("/sessions", async (req: Request, res: Response) => {
 
   if (domainCounts.size < CANONICAL_DOMAIN_COUNT) {
     const missingCount = CANONICAL_DOMAIN_COUNT - domainCounts.size;
-    logger.error("[diagnostic] insufficient domain coverage", {
-      requestId,
-      domainCounts: Object.fromEntries(domainCounts),
-      expectedDomains: CANONICAL_DOMAIN_COUNT,
-      actualDomains: domainCounts.size,
-    });
+    logger.error(
+      "DIAGNOSTIC",
+      "insufficient_domain_coverage",
+      "[diagnostic] insufficient domain coverage",
+      undefined,
+      {
+        requestId,
+        domainCounts: Object.fromEntries(domainCounts),
+        expectedDomains: CANONICAL_DOMAIN_COUNT,
+        actualDomains: domainCounts.size,
+      },
+    );
     return res.status(503).json({
       error: "diagnostic_insufficient_coverage",
       message: `${missingCount} domain(s) lack servable questions for the diagnostic. All 8 canonical domains must have ≥${perDomain} servable questions.`,
@@ -277,12 +283,13 @@ router.post("/sessions", async (req: Request, res: Response) => {
 
   for (const [domain, count] of domainCounts) {
     if (count < perDomain) {
-      logger.error("[diagnostic] domain has insufficient questions", {
-        requestId,
-        domain,
-        count,
-        required: perDomain,
-      });
+      logger.error(
+        "DIAGNOSTIC",
+        "domain_insufficient_questions",
+        "[diagnostic] domain has insufficient questions",
+        undefined,
+        { requestId, domain, count, required: perDomain },
+      );
       return res.status(503).json({
         error: "diagnostic_insufficient_coverage",
         message: `Domain "${domain}" has ${count} servable questions but the diagnostic requires ${perDomain}.`,
@@ -293,11 +300,17 @@ router.post("/sessions", async (req: Request, res: Response) => {
   }
 
   if (selected.length < totalQuestions) {
-    logger.error("[diagnostic] total pool size below requirement", {
-      requestId,
-      selectedCount: selected.length,
-      requiredCount: totalQuestions,
-    });
+    logger.error(
+      "DIAGNOSTIC",
+      "pool_below_requirement",
+      "[diagnostic] total pool size below requirement",
+      undefined,
+      {
+        requestId,
+        selectedCount: selected.length,
+        requiredCount: totalQuestions,
+      },
+    );
     return res.status(503).json({
       error: "diagnostic_insufficient_coverage",
       message: `Selected ${selected.length} questions but the diagnostic requires ${totalQuestions}.`,
@@ -423,13 +436,18 @@ router.post("/sessions", async (req: Request, res: Response) => {
     .limit(1)
     .maybeSingle();
 
-  logger.info("[diagnostic] session created", {
-    requestId,
-    sessionId,
-    totalQuestions,
-    perDomain,
-    domainCount: domainCounts.size,
-  });
+  logger.info(
+    "DIAGNOSTIC",
+    "session_created",
+    "[diagnostic] session created",
+    {
+      requestId,
+      sessionId,
+      totalQuestions,
+      perDomain,
+      domainCount: domainCounts.size,
+    },
+  );
 
   return res.status(201).json({
     sessionId,
@@ -451,13 +469,8 @@ router.post("/sessions", async (req: Request, res: Response) => {
 router.get(
   "/sessions/:sessionId/weakest-skills",
   async (req: Request, res: Response) => {
-    const requestId = (req as Record<string, unknown>).requestId as
-      | string
-      | undefined;
-    const user = (req as Record<string, unknown>).user as
-      | { id: string }
-      | undefined;
-    const userId = user?.id;
+    const requestId = req.requestId;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({

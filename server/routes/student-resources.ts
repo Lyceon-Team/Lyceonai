@@ -25,8 +25,10 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import {
+  STUDENT_EXAM_PATHS,
   STUDENT_LINK_PATHS,
   STUDENT_RESOURCE_PATHS,
+  guardianKpiOverallSchema,
   isLinkCodeLive,
   type MasterySection,
 } from "../../packages/shared/src/index";
@@ -66,13 +68,35 @@ import {
   readProjectionSnapshots,
   readSectionProjections,
 } from "../../apps/api/src/services/projection-read";
-import { buildStudentKpiViewFromCanonical } from "../services/canonical-runtime-views";
+import {
+  buildStudentKpiViewFromCanonical,
+  readGuardianKpiOverall,
+  toStudentKpiOverallWire,
+} from "../services/canonical-runtime-views";
 import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
 import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
+import {
+  requireGuardianLinkForUnder13,
+  requireStudentOrAdmin,
+} from "../middleware/supabase-auth";
 import { readGuardianCalendar } from "../services/calendar/read-service";
 import { sendPaymentRequired } from "../lib/http-errors";
+import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
+import {
+  toGuardianExamList,
+  toGuardianExamReport,
+} from "../../packages/shared/src/exam-guardian-report-schema";
+import { toStudentExamReport } from "../../packages/shared/src/exam-student-report-schema";
+import {
+  EXAM_FEATURE_KEY,
+  listExamFormsWithCompletion,
+} from "../services/exam-runtime-service";
+import {
+  ReportIntegrityError,
+  readExamReport,
+} from "../services/exam-report-service";
 
 const router = Router({ mergeParams: true });
 
@@ -118,7 +142,9 @@ const router = Router({ mergeParams: true });
  * `/kpi/overall` away from free students, which is a product decision. Changing it is one
  * edit to this table.
  */
-export const requiresEntitlement: Record<string, string | null> = {
+// Keys typed against the shared Doc 01 §26.1 enum (SCL-185): the key is also the denial's
+// `details.feature`, so a table entry naming a non-existent feature fails to compile.
+export const requiresEntitlement: Record<string, EntitlementFeatureKey | null> = {
   [STUDENT_RESOURCE_PATHS.masteryDomains]: "mastery_detail",
   [STUDENT_RESOURCE_PATHS.masterySkills]: "mastery_detail",
   [STUDENT_RESOURCE_PATHS.kpiSections]: null,
@@ -130,6 +156,11 @@ export const requiresEntitlement: Record<string, string | null> = {
   // that student's entitlement, which is the same term `guardian_view_decision` uses — so a
   // lapsed student and their guardian lose the view together, and nothing is deleted.
   [STUDENT_RESOURCE_PATHS.calendar]: "calendar_access",
+  // G1 (Doc 04C §2.6 condition 2): exam results need the SUBJECT's full-length feature,
+  // not merely any entitlement — `guardian_view_decision` answers the latter, this the
+  // former. The key is the one the student's own /api/tests surface already gates on.
+  [STUDENT_EXAM_PATHS.tests]: EXAM_FEATURE_KEY,
+  [STUDENT_EXAM_PATHS.testReport]: EXAM_FEATURE_KEY,
 };
 /** `req.subject` is set by the resolver; reaching a handler without it is a wiring bug. */
 function requireSubject(
@@ -150,8 +181,6 @@ function requireSubject(
   }
   return req.subject;
 }
-
-
 
 /**
  * THE ONE ENTITLEMENT CALL SITE ON THIS SURFACE. Returns true when the request may proceed;
@@ -190,13 +219,20 @@ async function entitlementGate(
   if (await EntitlementService.canAccessFeature(studentId, featureKey)) {
     return true;
   }
-  sendPaymentRequired(res, requestId);
+  // SCL-185 (UI-01): the 402 names the refused key as `details.feature`.
+  sendPaymentRequired(res, featureKey, requestId);
   return false;
 }
 
 /**
  * One wrapper for the fixed handler order: subject -> entitlement -> read -> serialize.
  * A thrown read is a 500 and is never rendered as an empty result (Coding Standards §13).
+ *
+ * G2-04: every LEARNING read on this router (this wrapper, mastery, calendar, tests, test report)
+ * carries `requireGuardianLinkForUnder13` straight after the resolver, so an under-13 student with
+ * no active guardian link is refused their own learning data. It reads the CALLER, so a linked
+ * guardian passes. The linking routes further down (link code, regenerate, invite, the guardian
+ * list, unlink) deliberately do not carry it: they are how the student gets a link.
  */
 function resource<T>(
   path: string,
@@ -208,6 +244,7 @@ function resource<T>(
   router.get(
     `/:studentId${path}`,
     resolveSubject,
+    requireGuardianLinkForUnder13,
     async (req: Request, res: Response) => {
       const subject = requireSubject(req, res);
       if (!subject) return;
@@ -252,6 +289,7 @@ function parseSection(
 router.get(
   `/:studentId${STUDENT_RESOURCE_PATHS.masteryDomains}`,
   resolveSubject,
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;
@@ -298,25 +336,28 @@ router.get(
 );
 
 /**
- * §10.4 EMPTY-LIST SEMANTICS, AND WHY THIS IS NOT A ROLE BRANCH.
+ * @spec [Doc 05B §10.4 as amended by SCL-194; owner ruling 2026-10-01 (#1013 review, item 2:
+ *       "Guardians see no skills, anywhere"); Doc 05A :73; Doc 05 Parent criterion #19]
+ *       | @implemented [2026-10-01]
  *
- * A guardian receives `200` with `skills: []`, never `403`. Doc 05B §10.4 is explicit that
- * "403 would imply the resource exists but is forbidden — leaking that skill mastery rows
- * exist for that student", while an empty 200 "is the same response a student would get if
- * they had no skill mastery rows yet".
+ * plain English: a skill-level read, for the student (and admin) only. A guardian is refused
+ * with 403 by `requireStudentOrAdmin`, which logs `guardian_blocked` (AUTH) — the platform's
+ * one student-only gate, so the G1-11 sweep finds this route by the gate's identity and sends
+ * it a guardian session.
  *
- * In the target state RLS produces this by itself: `student_skill_mastery` has NO guardian
- * SELECT policy (Doc 05A :73), so a guardian's query returns zero rows. The application
- * still reads with the service role, which bypasses RLS (Doc 01 §14 — Layer 1 is
- * launch-canonical, Layer 2 is target-state), so the empty list is produced here instead,
- * from the `via` the RESOLVER decided. When guardian reads move onto an `authenticated`
- * client this branch is deleted and nothing else changes.
+ * WHY THE GATE RUNS BEFORE THE RESOLVER. The refusal is the caller's ROLE, not anything about
+ * the student, so it is decided before the resolver reads a link or an entitlement: a
+ * guardian gets the same 403 for a linked, an unlinked and an unentitled student, and the
+ * answer says nothing about any of them. (Before SCL-194, §10.4 answered a guardian `200`
+ * with `skills: []` after the entitlement gate; that branch is gone.) The gate also ends in
+ * the under-13 link gate (G2-04), which `requireGuardianLinkForUnder13` ran here before.
  *
- * `catalogEmpty` stays FALSE for a guardian: the question bank is full, and saying otherwise
- * would be a claim about the catalogue made from a permission result.
+ * edge cases: an admin passes the gate and the resolver decides as before; a student reads
+ * their own skills unchanged.
  */
 router.get(
   `/:studentId${STUDENT_RESOURCE_PATHS.masterySkills}`,
+  requireStudentOrAdmin,
   resolveSubject,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
@@ -332,15 +373,6 @@ router.get(
         ))
       ) {
         return;
-      }
-
-      if (subject.via === "guardian") {
-        return res.json({
-          ok: true,
-          skills: [],
-          catalogEmpty: false,
-          requestId: req.requestId,
-        });
       }
 
       const view = await readSkillCatalogView({ studentId: subject.studentId });
@@ -364,26 +396,58 @@ router.get(
 
 // --- KPI rollups -----------------------------------------------------------
 
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188 (§10.3 RB-05B-V1-05 gains one role-aware projection:
+ *   the KPI routes); Guardian_Closure_Plan G3-01, owner ruling R3] | @implemented [2026-09-30]
+ *
+ * plain English: a guardian gets the STREAK from the KPI routes and nothing else. R3 removed
+ * the 7-day questions and 7-day accuracy tiles, and "remove" means the server stops sending
+ * the counters, not that the client stops drawing them. So, for `via === 'guardian'`:
+ *   - `kpi/overall` is `{ currentStreakDays }`, read by a SELECT of that one column;
+ *   - `kpi/sections` and `kpi/domains` are empty lists — every row they carry is a count or an
+ *     accuracy — with §10.4's empty-list semantics: 200 and `[]`, never a 403 that would say
+ *     the rows exist. (`mastery/skills` carried the same semantics until SCL-194; it now
+ *     refuses a guardian outright, since no skill is ever a guardian's to read.)
+ * The student's own calls are unchanged. The branch is the resolver's `via`, never a client
+ * claim. Edge case: a guardian of a student with no KPI row sees a streak of 0, as the student
+ * would.
+ */
 resource(STUDENT_RESOURCE_PATHS.kpiSections, async (subject) => ({
-  sections: await readSectionKpi({ studentId: subject.studentId }),
+  sections:
+    subject.via === "guardian"
+      ? []
+      : await readSectionKpi({ studentId: subject.studentId }),
 }));
 
 resource(STUDENT_RESOURCE_PATHS.kpiDomains, async (subject) => ({
-  domains: await readDomainKpi({ studentId: subject.studentId }),
+  domains:
+    subject.via === "guardian"
+      ? []
+      : await readDomainKpi({ studentId: subject.studentId }),
 }));
 
 /**
- * The overall KPI envelope, unchanged in shape from what the student route served. The
- * historical-trends term is resolved for the SUBJECT on both paths — that hardcoded `true`
- * on the guardian side was privilege divergence #1 (#644).
+ * The overall KPI envelope. For the student, unchanged in shape; the historical-trends term is
+ * resolved for the SUBJECT — the hardcoded `true` once on the guardian side was privilege
+ * divergence #1 (#644). The guardian branch parses STRICT: a field added to it is a 500, never
+ * a leak. The student branch parses with STRIP and logs a dropped key once
+ * (`toStudentKpiOverallWire`; owner ruling 2026-09-30, #994), so a builder field added without
+ * a schema update fails CI's wire-contract test rather than a student's dashboard.
  */
 resource(STUDENT_RESOURCE_PATHS.kpiOverall, async (subject) => {
+  if (subject.via === "guardian") {
+    return guardianKpiOverallSchema.parse(
+      await readGuardianKpiOverall(subject.studentId),
+    );
+  }
   const includeHistoricalTrends = await resolveHistoricalTrendsAccess(
     subject.studentId,
   );
-  return buildStudentKpiViewFromCanonical(
-    subject.studentId,
-    includeHistoricalTrends,
+  return toStudentKpiOverallWire(
+    await buildStudentKpiViewFromCanonical(
+      subject.studentId,
+      includeHistoricalTrends,
+    ),
   );
 });
 
@@ -420,6 +484,7 @@ resource(STUDENT_RESOURCE_PATHS.projectionsSnapshots, async (subject) => ({
 router.get(
   `/:studentId${STUDENT_RESOURCE_PATHS.calendar}`,
   resolveSubject,
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const subject = requireSubject(req, res);
     if (!subject) return;
@@ -465,6 +530,145 @@ router.get(
         "STUDENT_RESOURCES",
         "calendar_read_failed",
         "Subject-scoped calendar read failed",
+        { err, requestId: req.requestId },
+      );
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId: req.requestId });
+    }
+  },
+);
+
+// --- full-length exam results (G1; Doc 04C §12 as amended by SCL-181) ---------
+
+/**
+ * @spec [Doc-04C §2.6, §12.2, §12.3; Doc 04 Parent Q9 as amended by SCL-180; SCL-181]
+ *   | @implemented [2026-09-27]
+ *
+ * plain English: a linked guardian's read of a student's exam results — the list of forms
+ * sat (latest attempt each) and one attempt's report. Same order as every route in this
+ * file: subject → entitlement → parse → read → serialize.
+ *
+ * WHAT MAKES ONE PAYLOAD SAFE FOR BOTH CALLERS. The body is `toGuardianExamReport` /
+ * `toGuardianExamList` output: each state is its own `.strict()` schema built from named
+ * fields, so no answer, explanation, skill, module, routing path, raw count, pacing or
+ * review flag can be on it. The list carries no count of any kind, so it serves both
+ * callers as-is.
+ *
+ * SELF READS THE STUDENT PROJECTION (SCL-180 amended 2026-09-29, owner ruling 7;
+ * Doc 04C §8.1/§9.1; @implemented [2026-09-29]). The guardian report carries per-domain
+ * correct/total (SCL-180); a student must never receive those, on any path. So a student
+ * reading their own id (`subject.via === "self"`) gets `toStudentExamReport` — seven
+ * segments per domain, parsed against the strict student schema — and every other caller
+ * gets `toGuardianExamReport`, exactly as before. The branch is on the server-resolved
+ * subject, never on anything the client says.
+ *
+ * WHAT A GUARDIAN CANNOT DO. There is no write route on this path, and the review surface
+ * (/api/tests/sessions/:id/review…) is the student's own `/api/tests` family, which
+ * resolves the caller as the subject — a guardian there is simply not the owner (§12.3).
+ *
+ * DENIALS. No link, revoked link, and a session that is not this student's all answer the
+ * resolver's byte-identical 404 (anti-enumeration: a guardian cannot tell "not linked" from
+ * "no such exam"). Student without an active entitlement: the resolver's 402. Entitled
+ * student without the full-length feature: `entitlementGate`'s 402.
+ */
+router.get(
+  `/:studentId${STUDENT_EXAM_PATHS.tests}`,
+  resolveSubject,
+  requireGuardianLinkForUnder13,
+  async (req: Request, res: Response) => {
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+
+    try {
+      if (
+        !(await entitlementGate(
+          STUDENT_EXAM_PATHS.tests,
+          subject.studentId,
+          res,
+          req.requestId,
+        ))
+      ) {
+        return;
+      }
+      const forms = await listExamFormsWithCompletion(subject.studentId);
+      if (!forms.ok) {
+        throw new Error(`exam_list_forms refused with ${forms.error.status}`);
+      }
+      return res.json({
+        ok: true,
+        ...toGuardianExamList(forms.value.forms, forms.value.completedAt),
+        requestId: req.requestId,
+      });
+    } catch (err) {
+      logger.error(
+        "STUDENT_RESOURCES",
+        "exam_list_failed",
+        "Subject-scoped exam list failed",
+        { err, requestId: req.requestId },
+      );
+      return res
+        .status(500)
+        .json({ error: "Internal server error", requestId: req.requestId });
+    }
+  },
+);
+
+const examReportParamSchema = z.object({ sessionId: z.string().uuid() });
+
+router.get(
+  `/:studentId${STUDENT_EXAM_PATHS.testReport}`,
+  resolveSubject,
+  requireGuardianLinkForUnder13,
+  async (req: Request, res: Response) => {
+    const subject = requireSubject(req, res);
+    if (!subject) return;
+
+    try {
+      if (
+        !(await entitlementGate(
+          STUDENT_EXAM_PATHS.testReport,
+          subject.studentId,
+          res,
+          req.requestId,
+        ))
+      ) {
+        return;
+      }
+      const params = examReportParamSchema.safeParse(req.params);
+      if (!params.success) {
+        return res.status(400).json({
+          error: { message: "Invalid session id", code: "INVALID_SESSION_ID" },
+          requestId: req.requestId,
+        });
+      }
+      const read = await readExamReport(
+        subject.studentId,
+        params.data.sessionId,
+        () =>
+          EntitlementService.canAccessFeature(
+            subject.studentId,
+            EXAM_FEATURE_KEY,
+          ),
+      );
+      if (read.kind === "forbidden") return sendNotFound(res, req.requestId);
+      return res.json({
+        ok: true,
+        report:
+          subject.via === "self"
+            ? toStudentExamReport(read.payload)
+            : toGuardianExamReport(read.payload),
+        requestId: req.requestId,
+      });
+    } catch (err) {
+      // A ReportIntegrityError is logged by kind only: its message names an invariant,
+      // never a score or an answer.
+      logger.error(
+        "STUDENT_RESOURCES",
+        err instanceof ReportIntegrityError
+          ? "report_data_integrity_violation"
+          : "exam_report_failed",
+        "Subject-scoped exam report failed",
         { err, requestId: req.requestId },
       );
       return res

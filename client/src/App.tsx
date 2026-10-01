@@ -19,8 +19,15 @@ import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
-import UpdatePassword from "@/pages/update-password";
-import NotificationsPage from "@/pages/notifications";
+import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
+
+// @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
+// plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
+// eager, because they are the landing surfaces whose first paint should not wait on a second
+// chunk request. Every other page, including these two, is lazy and loads under the Router's
+// Suspense fallback.
+const UpdatePassword = lazy(() => import("@/pages/update-password"));
+const NotificationsPage = lazy(() => import("@/pages/notifications"));
 
 const AccountRecover = lazy(() => import("@/pages/account-recover"));
 
@@ -64,15 +71,16 @@ function ExamReportRoute() {
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
 const Calendar = lazy(() => import("@/pages/calendar"));
-const GuardianStudentCalendar = lazy(
-  () => import("@/pages/guardian-student-calendar"),
-);
+// Guardian pages (the student calendar and exam results included) are routed by
+// GUARDIAN_ROUTES (`features/guardian/routes.tsx`), which lazy-loads them itself.
+const ScoreReport = lazy(() => import("@/pages/score-report"));
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
+const GuardianRequired = lazy(() => import("@/pages/guardian-required"));
 
 const DigitalSAT = lazy(() => import("@/pages/digital-sat"));
 const DigitalSATMath = lazy(() => import("@/pages/digital-sat-math"));
@@ -85,10 +93,8 @@ const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
 const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
-const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
-const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const CrisisReviewList = lazy(() => import("@/pages/admin/CrisisReviewList"));
 const CrisisReviewDetail = lazy(
   () => import("@/pages/admin/CrisisReviewDetail"),
@@ -105,7 +111,8 @@ function PageLoader() {
   );
 }
 
-function Router() {
+/** The route switch — exported so the guardian route walk (G4-01) renders the real table. */
+export function Router() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Switch>
@@ -129,14 +136,10 @@ function Router() {
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
         <Route path="/trust/evidence" component={TrustEvidence} />
-        <Route
-          path="/tutor"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <TutorPage />
-            </RequireRole>
-          )}
-        />
+        {/* @spec [owner ruling 2026-09-29, UI-04] | @implemented [2026-09-29] |
+            plain English: the old tutor page is retired; /tutor now sends
+            everyone to /chat, whose guard handles sign-in (next=/chat). */}
+        <Route path="/tutor">{() => <Redirect to="/chat" replace />}</Route>
         <Route path="/legal" component={LegalHub} />
         <Route path="/legal/:slug" component={LegalDoc} />
 
@@ -203,26 +206,25 @@ function Router() {
         <Route path="/tests/:sessionId/report" component={ExamReportRoute} />
         <Route path="/tests/:sessionId/:section/:module" component={ExamModuleRoute} />
         <Route path="/tests/:sessionId" component={ExamSessionRoute} />
+        {/*
+          SCL-191 — the post-exam score report and retake answer. Student-only, and the path has
+          no id in it on purpose: the occasion comes from the prompt the server sent, so there is
+          nothing here a caller could point at somebody else's sitting.
+        */}
+        <Route
+          path="/score-report"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <ScoreReport />
+            </RequireRole>
+          )}
+        />
         {/* Doc 05F §17.1 — the student's own calendar. */}
         <Route
           path="/calendar"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
               <Calendar />
-            </RequireRole>
-          )}
-        />
-        {/*
-          Doc 05F §16 — a guardian reading a linked student's plan. The path mirrors the API
-          route (formula sheet item 14, /api/students/:studentId/calendar) so the two are
-          obviously the same resource. The server is the authority: this guard only decides
-          what is worth rendering.
-        */}
-        <Route
-          path="/students/:studentId/calendar"
-          component={() => (
-            <RequireRole allow={["guardian", "admin"]}>
-              <GuardianStudentCalendar />
             </RequireRole>
           )}
         />
@@ -274,6 +276,15 @@ function Router() {
             </RequireRole>
           )}
         />
+        {/* G2-04: an under-13 student with no active guardian link lands here. */}
+        <Route
+          path="/guardian-required"
+          component={() => (
+            <RequireRole allow={["student"]}>
+              <GuardianRequired />
+            </RequireRole>
+          )}
+        />
         <Route
           path="/profile/complete"
           component={() => (
@@ -319,15 +330,20 @@ function Router() {
           )}
         />
 
-        {/* Guardian routes - require guardian or admin role */}
-        <Route
-          path="/guardian"
-          component={() => (
-            <RequireRole allow={["guardian", "admin"]}>
-              <GuardianDashboard />
-            </RequireRole>
-          )}
-        />
+        {/* Guardian routes (G4-01) — one table, guardian role only (G2-01; the server refuses
+            admins too). The retired /students/:id/* guardian pages redirect from the same
+            table. */}
+        {GUARDIAN_ROUTES.map(({ path, Page }) => (
+          <Route
+            key={path}
+            path={path}
+            component={() => (
+              <RequireRole allow={["guardian"]}>
+                <Page />
+              </RequireRole>
+            )}
+          />
+        ))}
 
         {/* 404 */}
         <Route component={NotFound} />
@@ -336,21 +352,24 @@ function Router() {
   );
 }
 
-class ErrorBoundary extends Component<
+/**
+ * @spec [Coding Standards §12, §16; student UI vertical UI-10] | @implemented [2026-09-29]
+ * plain English: the app-wide render boundary. On a render error it shows fixed copy and a
+ * reload button. It never shows the raw `error.message` (which can carry server or
+ * developer text) and never writes to the console: the client has no structured logger,
+ * and the fallback screen itself is the surfaced failure, so nothing is swallowed.
+ */
+export class ErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean }
 > {
   constructor(props: { children: ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error("App Error:", error, errorInfo);
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
   }
 
   render() {
@@ -362,7 +381,7 @@ class ErrorBoundary extends Component<
               Something went wrong
             </h1>
             <p className="text-neutral-600 mb-6">
-              {this.state.error?.message || "An unexpected error occurred"}
+              An unexpected error occurred. Reloading the page usually fixes it.
             </p>
             <button
               onClick={() => window.location.reload()}

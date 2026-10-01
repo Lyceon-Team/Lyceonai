@@ -8,7 +8,10 @@
  *
  * plain English: mounts the REAL /api/tests routers (runtime + 04C report) and, since E9b,
  * the REAL /api/calendar and /api/me routers, over a throwaway database built from this
- * repo's migrations. The only substitutions are
+ * repo's migrations. Since G2 it also mounts the REAL /api/students router (the subject
+ * resolver and the guardian exam results routes), and a request carrying
+ * `x-harness-as: guardian` is made as the one linked guardian instead of the student —
+ * the browser spec sets that header for its guardian page. The only substitutions are
  * the four imports in hooks.mjs (Supabase clients -> this Postgres; auth guards and
  * entitlement -> one fixed student). The real client runs unmodified under Vite and
  * reaches this server through Vite's /api proxy; it learns who is signed in from
@@ -21,7 +24,7 @@
  * run:  PGHOST=localhost PGPORT=54331 pnpm exec tsx --import ./tests/e2e/exam-harness/register.mjs tests/e2e/exam-harness/server.ts
  */
 import express, { type NextFunction, type Request, type Response } from "express";
-import { buildHarnessDb, STUDENT_ID } from "./db";
+import { buildHarnessDb, GUARDIAN_ID, STUDENT_ID } from "./db";
 import { setHarnessPg } from "./pg";
 
 if (process.env.NODE_ENV === "production") {
@@ -37,26 +40,29 @@ async function main(): Promise<void> {
   const { default: runtimeRouter } = await import("../../../server/routes/exam-runtime-routes");
   const { default: reportRouter } = await import("../../../server/routes/exam-report-routes");
   const { calendarRouter, streakRouter } = await import("../../../server/routes/calendar-routes");
+  const { default: studentResourcesRouter } = await import("../../../server/routes/student-resources");
 
   const app = express();
   app.use(express.json());
+  const viewerOf = (req: Request): "student" | "guardian" =>
+    req.header("x-harness-as") === "guardian" ? "guardian" : "student";
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    (req as unknown as { user: unknown }).user = { id: STUDENT_ID, actor_id: STUDENT_ID, role: "student" };
+    const id = viewerOf(req) === "guardian" ? GUARDIAN_ID : STUDENT_ID;
+    (req as unknown as { user: unknown }).user = { id, actor_id: id, role: viewerOf(req) };
     (req as unknown as { requestId: string }).requestId = `e2e-${Date.now()}`;
     next();
   });
   // The client's auth context and RequireRole read these two and nothing else.
   app.get("/api/csrf-token", (_req, res) => res.json({ csrfToken: "e2e-harness" }));
-  app.get("/api/profile", (_req, res) =>
+  app.get("/api/profile", (req, res) =>
     res.json({
       authenticated: true,
       user: {
-        id: STUDENT_ID,
-        email: "student@example.test",
-        display_name: "Sam Rivera",
-        role: "student",
+        id: viewerOf(req) === "guardian" ? GUARDIAN_ID : STUDENT_ID,
+        email: viewerOf(req) === "guardian" ? "guardian@example.test" : "student@example.test",
+        display_name: viewerOf(req) === "guardian" ? "Gia Rivera" : "Sam Rivera",
+        role: viewerOf(req),
         is_under_13: false,
-        guardian_consent: true,
         profileCompletedAt: "2026-09-01T00:00:00Z",
         requiredProfileComplete: true,
         guardianConsentRequired: false,
@@ -69,6 +75,8 @@ async function main(): Promise<void> {
   // E9b: the calendar a full-length block is launched from (Doc 05F §15, §9.4).
   app.use("/api/calendar", calendarRouter);
   app.use("/api/me", streakRouter);
+  // G2: guardian exam results, behind the real subject resolver (as server/index.ts mounts it).
+  app.use("/api/students", studentResourcesRouter);
   // Anything else the app shell asks for is outside this harness.
   app.use("/api", (_req, res) => res.status(404).json({ error: { code: "not_in_harness", message: "Not served by the exam harness." } }));
 

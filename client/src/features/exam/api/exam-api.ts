@@ -39,12 +39,20 @@ import {
 import {
   examFormsResponseSchema,
   examReportMetaSchema,
-  examReportPayloadSchema,
   examReportStatusSchema,
   type ExamFormsResponse,
-  type ExamReportPayload,
   type ExamReportStatus,
 } from "@lyceon/shared/exam-report-schema";
+import {
+  examStudentReportPayloadSchema,
+  type ExamStudentReportPayload,
+} from "@lyceon/shared/exam-student-report-schema";
+import {
+  guardianExamListEnvelopeSchema,
+  guardianExamReportEnvelopeSchema,
+  type GuardianExamList,
+  type GuardianExamReport,
+} from "@lyceon/shared/exam-guardian-report-schema";
 import { apiRequest } from "@/lib/queryClient";
 import { HttpApiError } from "@/lib/api-error";
 
@@ -119,11 +127,15 @@ export async function fetchModuleWorkspace(
   return parsed(res, examWorkspaceResponseSchema, "GET module workspace");
 }
 
+/**
+ * The student's wire shape (SCL-180 amended 2026-09-29, owner ruling 7): seven segments
+ * per domain, never correct/total — the strict schema refuses a count.
+ */
 const reportEnvelopeSchema = z
-  .object({ data: examReportPayloadSchema, meta: examReportMetaSchema })
+  .object({ data: examStudentReportPayloadSchema, meta: examReportMetaSchema })
   .strict();
 
-export async function fetchExamReport(sessionId: string): Promise<ExamReportPayload> {
+export async function fetchExamReport(sessionId: string): Promise<ExamStudentReportPayload> {
   const res = await apiRequest(`${EXAM_ROOT}/sessions/${sessionId}/report`);
   return (await parsed(res, reportEnvelopeSchema, "GET report")).data;
 }
@@ -136,6 +148,25 @@ const reportStatusEnvelopeSchema = z
 export async function fetchExamReportStatus(sessionId: string): Promise<ExamReportStatus> {
   const res = await apiRequest(`${EXAM_ROOT}/sessions/${sessionId}/report/status`);
   return (await parsed(res, reportStatusEnvelopeSchema, "GET report status")).data;
+}
+
+// ── G1: a guardian reading a linked student's results (SCL-181) ─────────────
+
+/**
+ * `/api/students/:studentId/tests[/:sessionId/report]` — the guardian projection, parsed
+ * against the strict guardian envelope, never the student's report schema: a type wide
+ * enough for both would let a student-only field through.
+ */
+export async function fetchGuardianExamList(studentId: string): Promise<GuardianExamList["tests"]> {
+  const res = await apiRequest(`/api/students/${encodeURIComponent(studentId)}/tests`);
+  return (await parsed(res, guardianExamListEnvelopeSchema, "GET /api/students/:id/tests")).tests;
+}
+
+export async function fetchGuardianExamReport(studentId: string, sessionId: string): Promise<GuardianExamReport> {
+  const res = await apiRequest(
+    `/api/students/${encodeURIComponent(studentId)}/tests/${encodeURIComponent(sessionId)}/report`,
+  );
+  return (await parsed(res, guardianExamReportEnvelopeSchema, "GET /api/students/:id/tests/:sid/report")).report;
 }
 
 // ── Writes ──────────────────────────────────────────────────────────────────

@@ -724,6 +724,11 @@ async function writeEntitlementFromSubscription(
     current_period_start: epochToIso(item?.currentPeriodStart ?? null),
     current_period_end: epochToIso(item?.currentPeriodEnd ?? null),
     cancel_at_period_end: subscription.cancel_at_period_end === true,
+    // SCL-191: who is being charged, as a fact about our own entitlement rather than one that
+    // lives only in Stripe metadata. NULL on the unaccompanied path, where payer and student are
+    // the same profile — and NULL is the value the post-exam renewal flow reads as "self-paid",
+    // so the honest absence and the honest self-payer are the same value on purpose.
+    payer_profile_id: subscription.metadata?.payer_profile_id ?? null,
   });
   // W3-3: record the billing country on the same grant. Revocations leave the
   // last known country in place — a lapsed student in crisis still gets theirs.
@@ -1388,6 +1393,11 @@ async function writeEntitlementsForAllItems(
       current_period_start: epochToIso(item.current_period_start ?? null),
       current_period_end: epochToIso(item.current_period_end ?? null),
       cancel_at_period_end: subscription.cancel_at_period_end === true,
+      // SCL-191. `payerProfileId` is already server-authorised above — every candidate was
+      // checked against this guardian's ACTIVE links before any write — so recording it here adds
+      // no trust, it records a decision this function has already made. The post-exam renewal
+      // flow reads it to decide who to ask about the money (Doc 01 §36.4).
+      payer_profile_id: payerProfileId,
     });
     if (grantCountry) {
       await setProfileCountryCode(studentProfileId, grantCountry);
@@ -1412,26 +1422,39 @@ async function writeEntitlementsForAllItems(
  *        identifies, it does not authorise] | @implemented [2026-09-02]
  *
  * plain English: Stripe Checkout does not copy `line_items[].metadata` onto the
- * SubscriptionItem it creates, so a guardian's first purchase produces an item
- * with `metadata: {}`. This writes the student the session named onto that item,
- * so both purchase paths — Checkout and `subscriptionItems.create` — leave the
- * same item-level shape behind. Expected outcome: every item on a guardian
- * subscription names its own student, from the first purchase onwards.
+ * SubscriptionItem it creates, so a guardian purchase produces an item with
+ * `metadata: {}`. This writes the student the session named onto that item.
+ * Expected outcome: every item on a guardian subscription names its own student,
+ * from the moment it is bought.
  *
  * VERIFIED, NOT ASSUMED. `sub_1UB8p5DPtjyWEVqErGBHVFQF` in live Stripe carries
  * the full subject on the subscription and `metadata: {}` on item
  * `si_VBVqCKx5JSjVkF`. That question had been carried as an open verification
  * since Phase 3; the answer is that Checkout does not propagate it.
  *
- * WHY IT MATTERS, AND WHAT IT IS NOT FOR. It is NOT what makes the first
- * purchase work — `writeEntitlementsForAllItems`'s single-student fallback
- * already resolves a lone bare item from subscription metadata, and already
- * writes `stripe_subscription_item_id` from the item's own id. The defect it
- * closes appears at the SECOND student: once a guardian adds one, the
- * subscription has two items, the fallback is correctly restricted to the
- * one-item case, and the first student's bare item stops resolving — so their
- * entitlement is never refreshed again on renewal. Filling the item in at
- * purchase time is what keeps that from arising.
+ * WHY IT MATTERS, AND WHAT IT IS NOT FOR. It is NOT what makes a purchase work:
+ * `writeEntitlementsForAllItems`'s single-student fallback already resolves a
+ * lone bare item from subscription metadata, and already writes
+ * `stripe_subscription_item_id` from the item's own id.
+ *
+ * @revised [2026-09-29 — owner ruling: one subscription per student] THE REASON
+ * THIS EXISTS HAS CHANGED, and stating the old one would now be false. It used
+ * to close a defect that appeared at the SECOND student: a guardian's second
+ * purchase added an item to the same subscription, the single-student fallback
+ * is correctly restricted to the one-item case, and the first student's bare
+ * item then stopped resolving — so their entitlement was never refreshed again
+ * on renewal. That cannot arise any more, because no subscription this system
+ * creates will ever hold two items: each student gets their own subscription,
+ * and the one-item fallback therefore always applies.
+ *
+ * It is kept for two narrower reasons. First, `stripe_subscription_item_id` is
+ * SCL-045's entitlement key and reading it from the item's own metadata is what
+ * keeps it durable rather than dependent on a fallback. Second, it means both
+ * the item-level and subscription-level identifiers agree on every subscription,
+ * so a reader does not have to know which path created one. It also still
+ * matters for the subscriptions that ALREADY carry two items from the deleted
+ * add-item path — `sub_1UB8p5DPtjyWEVqErGBHVFQF` is one — where the fallback
+ * genuinely does not apply.
  *
  * IT GRANTS NOTHING. The value written comes from OUR session metadata, set
  * server-side at session creation, and the writer still re-resolves every item
@@ -1589,7 +1612,9 @@ async function recordCheckoutConsent(
   // 'parent' would assert a guardian relationship for people who have none.
   const guardianPayerId = session.metadata?.payer_profile_id ?? null;
   const payerProfileId = guardianPayerId ?? session.client_reference_id ?? null;
-  const actorType = guardianPayerId ? ("parent" as const) : ("student" as const);
+  const actorType = guardianPayerId
+    ? ("parent" as const)
+    : ("student" as const);
 
   if (!accepted || !payerProfileId) {
     logger.info(

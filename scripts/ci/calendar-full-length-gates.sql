@@ -42,8 +42,22 @@ CREATE FUNCTION pg_temp.student(p_id uuid, p_weekday int DEFAULT NULL) RETURNS v
   -- handle_new_user creates the profile (with its actor_id) from the auth row.
   INSERT INTO auth.users (id, email) VALUES (p_id, p_id::text || '@e9b.test');
   INSERT INTO public.student_study_profile
-    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-  VALUES (p_id, 'UTC', 127, 180, p_weekday, 1400, now());
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, setup_completed_at)
+  -- The interval MIRRORS p_weekday rather than taking a literal: this helper is
+  -- called with NULL to build the no-exam student, and `full_length_pair`
+  -- (20261010000000) requires both halves to agree.
+  -- SETUP IS BACKDATED ONE INTERVAL, and that is load-bearing after 20261011000000.
+  -- These fixtures used to set up `now()` and still got an exam in the horizon,
+  -- because the retired rule anchored the series on the first preferred weekday ON
+  -- OR AFTER setup. Placement is now arithmetic: the first sitting is
+  -- interval_weeks x 7 days after setup, so a fortnightly student who set up today
+  -- has their first exam on day 15 of a 14-day horizon -- correctly absent, and the
+  -- anchor defect being fixed rather than a regression. A gate about what an exam
+  -- does needs a student whose exam is actually due.
+  VALUES (p_id, 'UTC', 127, 180, p_weekday,
+          CASE WHEN p_weekday IS NULL THEN NULL ELSE 2 END, 1400,
+          now() - interval '14 days');
 $f$;
 
 CREATE FUNCTION pg_temp.input(p_student uuid) RETURNS jsonb LANGUAGE sql AS $f$

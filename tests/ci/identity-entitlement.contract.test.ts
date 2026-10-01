@@ -74,8 +74,16 @@ const stripeMocks = vi.hoisted(() => ({
    * none. Tests that exercise the ADD-ITEM path override it explicitly.
    */
   customersRetrieve: vi.fn(async () => ({ id: "cus_test" })),
-  subscriptionsList: vi.fn(async () => ({ object: "list", data: [] })),
-  subscriptionItemsCreate: vi.fn(async () => ({ id: "si_added" })),
+  portalCreate: vi.fn(
+    async (_args: { customer: string; return_url: string }) => ({
+      url: "https://portal.test",
+    }),
+  ),
+  subscriptionsList: vi.fn(async () => ({
+    object: "list",
+    data: [],
+    has_more: false,
+  })),
 }));
 
 vi.mock("../../server/lib/entitlement-runtime-config", () => ({
@@ -88,6 +96,13 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
 }));
 
 vi.mock("../../server/middleware/supabase-auth", () => ({
+  // G2-04: the under-13 link gate on checkout/portal has its own real-PG suite
+  // (tests/ci/under-13-link-gate.pg.ci.test.ts); here it passes, like auth above it.
+  requireGuardianLinkForUnder13: (
+    _req: unknown,
+    _res: unknown,
+    next: () => void,
+  ) => next(),
   requireSupabaseAuth: (req: any, res: any, next: any) => {
     if (!authState.currentUser) {
       return res.status(401).json({
@@ -112,6 +127,14 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     return req.user;
   },
   getSupabaseAdmin: vi.fn(() => ({})),
+  // G4-10: the route's G2-02 refusal for an unrecognised role. The status is not what the
+  // portal tests assert — they assert that no session is opened.
+  sendRoleUnrecognized: (res: express.Response, requestId?: string) =>
+    res.status(403).json({
+      error: "Account unavailable",
+      code: "ROLE_UNRECOGNIZED",
+      requestId,
+    }),
   sendUnauthenticated: (res: any, requestId?: string) =>
     res.status(401).json({
       error: "Authentication required",
@@ -152,11 +175,10 @@ vi.mock("../../server/lib/stripe/client", () => ({
       retrieve: stripeMocks.customersRetrieve,
     },
     subscriptions: { list: stripeMocks.subscriptionsList },
-    subscriptionItems: { create: stripeMocks.subscriptionItemsCreate },
     prices: { retrieve: stripeMocks.pricesRetrieve },
     checkout: { sessions: { create: stripeMocks.checkoutCreate } },
     billingPortal: {
-      sessions: { create: vi.fn(async () => ({ url: "https://portal.test" })) },
+      sessions: { create: stripeMocks.portalCreate },
     },
   }),
   getStripePublishableKey: () => "pk_test_123",
@@ -223,10 +245,14 @@ describe("Identity + Entitlement Runtime Contract", () => {
       .patch("/api/profile")
       .send({ role: "admin" });
 
+    // G1-02: admin is never self-assignable. The refusal is coded so the client can show the
+    // server's own message (AS-3), and still points at support.
     expect(res.status).toBe(403);
     expect(res.body).toEqual({
-      error: "Role changes are support-mediated only",
-      message: "Email support@lyceon.ai to request a role review.",
+      error: {
+        code: "ROLE_NOT_SELF_ASSIGNABLE",
+        message: "You can sign up as a student or a guardian.",
+      },
       supportEmail: "support@lyceon.ai",
     });
   });
@@ -335,6 +361,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [],
+      has_more: false,
     });
     stripeMocks.customersRetrieve.mockResolvedValue({ id: "cus_test" });
 
@@ -472,6 +499,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [],
+      has_more: false,
     });
     stripeMocks.customersRetrieve.mockResolvedValue({ id: "cus_test" });
 
@@ -486,19 +514,31 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(params.customer).toBeTruthy();
   });
 
-  it("SECOND student: adds an ITEM to the existing subscription — not a second subscription", async () => {
+  /**
+   * CLAIM 1 (owner ruling 2026-09-29). A guardian who ALREADY has a subscription
+   * and buys for a new student gets a CHECKOUT SESSION, not a subscription item.
+   *
+   * This is the defect the ruling closes. The old branch called
+   * `subscriptionItems.create` on the existing subscription, which with Stripe's
+   * `create_prorations` default put the amount on the NEXT invoice — entitlement
+   * now, money up to three months later, no price shown, no receipt, and no
+   * Billing Terms consent, since `consent_collection.terms_of_service` exists
+   * only on a Checkout Session.
+   */
+  it("SECOND student: creates a CHECKOUT SESSION, not a subscription item", async () => {
     asGuardian();
-    // The add-item path REQUIRES a known eligible country: it grants
-    // entitlement with no later Checkout gate to catch an unknown one.
     stripeMocks.customersRetrieve.mockResolvedValue({
       id: "cus_test",
       address: { country: "US" },
     });
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
+      has_more: false,
       data: [
         {
           id: "sub_guardian_existing",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_A },
           items: {
             data: [{ id: "si_a", metadata: { student_profile_id: STUDENT_A } }],
           },
@@ -511,23 +551,179 @@ describe("Identity + Entitlement Runtime Contract", () => {
       .send({ plan: "monthly", student_profile_id: STUDENT_B });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      kind: "item_added",
-      subscriptionItemId: "si_added",
+    expect(res.body).toMatchObject({ kind: "checkout_session" });
+    expect(res.body.url).toBeTruthy();
+
+    // The mechanic, asserted precisely: a Checkout Session for the SELECTED
+    // student, on the existing Customer, and its own subscription metadata.
+    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
+    const params = stripeMocks.checkoutCreate.mock.calls[0][0];
+    expect(params.mode).toBe("subscription");
+    expect(params.customer).toBeTruthy();
+    expect(params.line_items[0].metadata).toEqual({
+      student_profile_id: STUDENT_B,
+    });
+    // Load-bearing, not bookkeeping: this is what the next purchase's
+    // already-funded check reads.
+    expect(params.subscription_data.metadata).toMatchObject({
+      student_profile_id: STUDENT_B,
+      payer_relationship: "guardian",
+    });
+  });
+
+  /**
+   * CLAIM 6, the capture half. A REPEAT guardian purchase now collects Billing
+   * Terms consent, because it is a Checkout Session like any other.
+   *
+   * This is the §17602 hole the add-item path left: it authorised a recurring
+   * charge and captured no affirmative consent, because
+   * `consent_collection.terms_of_service` exists only on a Checkout Session.
+   * That the ticked box then becomes a `billing-terms` acceptance row with slug,
+   * version and hash is owned by
+   * `tests/ci/legal-consent-capture.contract.test.ts` (C4); what could not be
+   * asserted before is that a guardian's SECOND purchase reaches that path at
+   * all.
+   */
+  it("collects Billing Terms consent on a REPEAT guardian purchase", async () => {
+    asGuardian();
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "US" },
+    });
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      has_more: false,
+      data: [
+        {
+          id: "sub_guardian_existing",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_A },
+          items: { object: "list", data: [] },
+        },
+      ],
     });
 
-    // The mechanic, asserted precisely: an item on the EXISTING subscription,
-    // and NO new Checkout Session.
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(200);
+    const params = stripeMocks.checkoutCreate.mock.calls[0][0];
+    expect(params.consent_collection).toEqual({
+      terms_of_service: "required",
+    });
+  });
+
+  /**
+   * CLAIM 3, the Stripe half. Two students produce two DISTINCT subscriptions,
+   * so the existing one is never extended and never reused.
+   *
+   * The distinct `stripe_subscription_id` values land through the webhook, which
+   * this route test cannot observe. What it can prove is the input to that: the
+   * route asks Stripe for a new subscription rather than naming the existing
+   * one anywhere in the call.
+   */
+  it("never names the guardian's existing subscription when buying for a new student", async () => {
+    asGuardian();
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "US" },
+    });
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      has_more: false,
+      data: [
+        {
+          id: "sub_guardian_existing",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_A },
+          items: { object: "list", data: [] },
+        },
+      ],
+    });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(200);
+    const serialised = JSON.stringify(
+      stripeMocks.checkoutCreate.mock.calls[0][0],
+    );
+    expect(serialised).not.toContain("sub_guardian_existing");
+  });
+
+  /**
+   * THE PRE-WEBHOOK WINDOW, on the Stripe side. A subscription in Stripe already
+   * names this student, but no entitlement row exists yet — so
+   * `evaluateSubjectPurchaseEligibility` allows and only the subscription-level
+   * check can refuse. Without it, this guardian would be sold a second
+   * subscription for a student they are already paying for, and because
+   * `upsertEntitlement` keys on `profile_id` the first would be left billing
+   * unreferenced (student `3f18cbe2`, `sub_1U4bqZ…` and `sub_1U8pin…`).
+   */
+  it("refuses when an existing SUBSCRIPTION already funds the student, before the webhook has landed", async () => {
+    asGuardian();
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "US" },
+    });
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      has_more: false,
+      data: [
+        {
+          id: "sub_already_funds_b",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_B },
+          items: { object: "list", data: [] },
+        },
+      ],
+    });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("STUDENT_ALREADY_FUNDED");
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
-    expect(stripeMocks.subscriptionItemsCreate).toHaveBeenCalledTimes(1);
-    const params = stripeMocks.subscriptionItemsCreate.mock.calls[0][0];
-    expect(params.subscription).toBe("sub_guardian_existing");
-    expect(params.quantity).toBe(1);
-    expect(params.metadata).toEqual({ student_profile_id: STUDENT_B });
-    // proration_behavior is NOT set: Stripe's documented default is
-    // `create_prorations`, which is the wanted behaviour. Setting it would be
-    // overriding a native mechanism with the same value.
-    expect(params.proration_behavior).toBeUndefined();
+  });
+
+  /**
+   * AN INCOMPLETE SCAN REFUSES. `has_more` with the page cap exhausted means the
+   * subscription that would have refused this purchase may be on a page never
+   * read, and "not found in a prefix" is not "does not exist". Five pages are
+   * returned, all full and all still claiming more.
+   */
+  it("refuses with 503 when the guardian's subscriptions cannot be read completely", async () => {
+    asGuardian();
+    stripeMocks.customersRetrieve.mockResolvedValue({
+      id: "cus_test",
+      address: { country: "US" },
+    });
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      has_more: true,
+      data: [
+        {
+          id: "sub_page_filler",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_A },
+          items: { object: "list", data: [] },
+        },
+      ],
+    });
+
+    const res = await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_B });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe("SUBSCRIPTION_SCAN_INCOMPLETE");
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
+    // Walked to the cap rather than giving up on page one.
+    expect(stripeMocks.subscriptionsList).toHaveBeenCalledTimes(5);
   });
 
   /**
@@ -551,19 +747,16 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("STUDENT_ALREADY_FUNDED");
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
-    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
   });
 
   /**
-   * THE ADD-ITEM PATH IS UNAFFECTED — confirmed, not assumed.
-   *
-   * That path exists to add a student who has NO entitlement, so the new guard
-   * returns `ok` and the item is created exactly as before. This drives the
-   * real add-item branch (an existing active subscription, an eligible payer
-   * country) and asserts the item is still created, so a guard that refused too
-   * broadly would fail here rather than passing quietly.
+   * A GUARDIAN WITH AN EXISTING SUBSCRIPTION IS NOT BLOCKED. The entitlement
+   * guard asks about the SELECTED STUDENT, so a guardian already paying for one
+   * child can still buy for another — and gets a Checkout Session for it. A
+   * guard that refused too broadly, or a subscription-level check that matched on
+   * the payer rather than the student, would fail here rather than pass quietly.
    */
-  it("leaves the add-item path working for a student with no entitlement", async () => {
+  it("lets a guardian with an existing subscription buy for a student who has none", async () => {
     asGuardian();
     stripeMocks.customersRetrieve.mockResolvedValue({
       id: "cus_test",
@@ -571,10 +764,12 @@ describe("Identity + Entitlement Runtime Contract", () => {
     });
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
+      has_more: false,
       data: [
         {
           id: "sub_existing",
           status: "active",
+          metadata: { student_profile_id: STUDENT_A },
           items: { object: "list", data: [] },
         },
       ],
@@ -585,8 +780,8 @@ describe("Identity + Entitlement Runtime Contract", () => {
       .send({ plan: "monthly", student_profile_id: STUDENT_B });
 
     expect(res.status).toBe(200);
-    expect(res.body.kind).toBe("item_added");
-    expect(stripeMocks.subscriptionItemsCreate).toHaveBeenCalledTimes(1);
+    expect(res.body.kind).toBe("checkout_session");
+    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a student the guardian is not linked to, and charges nothing", async () => {
@@ -600,7 +795,6 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("STUDENT_NOT_LINKED");
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
-    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
   });
 
   it("refuses when the guardian selects nobody — never defaults to a link", async () => {
@@ -615,17 +809,22 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 
-  it("refuses to bill twice for a student the subscription already funds", async () => {
+  it("refuses to bill twice for a student a subscription already funds", async () => {
     asGuardian();
     stripeMocks.customersRetrieve.mockResolvedValue({
       id: "cus_test",
       address: { country: "US" },
     });
+    // The subject now lives on the SUBSCRIPTION, which is where
+    // `subscription_data.metadata` puts it and where the check reads it.
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
+      has_more: false,
       data: [
         {
           id: "sub_guardian_existing",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_A },
           items: {
             data: [{ id: "si_a", metadata: { student_profile_id: STUDENT_A } }],
           },
@@ -639,15 +838,16 @@ describe("Identity + Entitlement Runtime Contract", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("STUDENT_ALREADY_FUNDED");
-    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 
-  it("REFUSES a first purchase from a KNOWN ineligible country", async () => {
+  it("REFUSES a purchase from a KNOWN ineligible country", async () => {
     // `blocksCheckout` semantics: unknown proceeds, a positive ineligible does not.
     asGuardian();
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
       data: [],
+      has_more: false,
     });
     stripeMocks.customersRetrieve.mockResolvedValue({
       id: "cus_test",
@@ -663,35 +863,68 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 
-  it("REFUSES the add-item path on an UNKNOWN country — no later gate would catch it", async () => {
-    // The asymmetry that makes the two branches different verdicts, pinned.
+  /**
+   * ONE VERDICT NOW, AND IT IS `blocksCheckout` — asserted where the asymmetry
+   * used to be.
+   *
+   * Two tests used to sit here pinning the old split: an UNKNOWN country
+   * REFUSED the add-item path (`deniesEntitlement`, because that path granted
+   * entitlement with no later Checkout gate) while proceeding on a first
+   * purchase (`blocksCheckout`, because the billing address does not exist until
+   * Checkout collects it). With one write path there is one verdict, so an
+   * unknown country PROCEEDS for a repeat purchase too — and this asserts that
+   * directly, because it is the behaviour change the ruling accepted rather than
+   * an incidental consequence.
+   *
+   * Nothing is ungated: `checkout.session.completed` applies
+   * `deniesEntitlement` to the address Checkout collected, and
+   * `remediateCountryDenial` cancels and refunds on denial. The refusal moved;
+   * it did not disappear. That settlement half is proved in
+   * `tests/ci/stripe-lifecycle-gate.contract.test.ts`, not here — this test
+   * owns the session-creation half only.
+   */
+  it("PROCEEDS on an UNKNOWN country for a guardian who already has a subscription", async () => {
     asGuardian();
     stripeMocks.subscriptionsList.mockResolvedValue({
       object: "list",
+      has_more: false,
       data: [
         {
           id: "sub_guardian_existing",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_A },
           items: {
             data: [{ id: "si_a", metadata: { student_profile_id: STUDENT_A } }],
           },
         },
       ],
     });
+    // No address: the `unknown` verdict.
     stripeMocks.customersRetrieve.mockResolvedValue({ id: "cus_test" });
 
     const res = await request(await billingApp())
       .post("/api/billing/checkout")
       .send({ plan: "monthly", student_profile_id: STUDENT_B });
 
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe("COUNTRY_NOT_ELIGIBLE");
-    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(res.body.kind).toBe("checkout_session");
+    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("denies the add-item path on an ineligible payer country (INV-03-08)", async () => {
-    // The add-item path never produces a checkout.session.completed, so without
-    // this gate a second child would be entitled with no country decision.
+  it("REFUSES a repeat purchase from a KNOWN ineligible payer country (INV-03-08)", async () => {
     asGuardian();
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      has_more: false,
+      data: [
+        {
+          id: "sub_guardian_existing",
+          status: "active",
+          metadata: { student_profile_id: STUDENT_A },
+          items: { object: "list", data: [] },
+        },
+      ],
+    });
     stripeMocks.customersRetrieve.mockResolvedValue({
       id: "cus_test",
       address: { country: "FR" },
@@ -704,7 +937,6 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe("COUNTRY_NOT_ELIGIBLE");
     expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
-    expect(stripeMocks.subscriptionItemsCreate).not.toHaveBeenCalled();
   });
 
   it("rejects a STUDENT who tries to name another student as the subject", async () => {
@@ -927,6 +1159,152 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.body.lapsed).toBe(false);
     expect(res.body.hasBillingAccount).toBe(false);
     expect(res.body.stripeStatus).toBe("missing");
+  });
+
+  /**
+   * G4-09 (G-AUD-26): the billing-status round trip. The route's REAL output, from both
+   * branches, parsed by the ONE shared schema every client reader now uses — in its
+   * `.strict()` form, so a key the route writes that the schema does not name fails here
+   * rather than being stripped silently on the client. Presence first: each branch's
+   * distinguishing keys are asserted before the strict parse is trusted.
+   */
+  it("G4-09: both branches of GET /api/billing/status round-trip the shared schema, strictly", async () => {
+    const { billingStatusResponseSchema } =
+      await import("../../packages/shared/src/billing-schema");
+    const strict = billingStatusResponseSchema.strict();
+
+    accountMocks.getEntitlementForProfile.mockResolvedValueOnce({
+      tier: "premium",
+      status: "active",
+      current_period_end: "2026-10-30T00:00:00.000Z",
+      stripe_subscription_id: "sub_1",
+    });
+    entitlementMocks.evaluateEntitlementActive.mockResolvedValueOnce({
+      ok: true,
+      active: true,
+    });
+    accountMocks.getProfileStripeCustomerId.mockResolvedValueOnce("cus_test");
+    const studentRes = await request(await billingApp()).get(
+      "/api/billing/status",
+    );
+
+    authState.currentUser = {
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "guardian",
+      email: "guardian@test.com",
+      isGuardian: true,
+      isAdmin: false,
+    };
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
+      hasPremiumAccess: false,
+      hasActiveLink: true,
+      studentEntitlementStatus: "canceled",
+      studentEntitlementTier: "premium",
+      studentStandingGood: false,
+    });
+    accountMocks.getProfileStripeCustomerId.mockResolvedValueOnce("cus_test");
+    const guardianRes = await request(await billingApp()).get(
+      "/api/billing/status",
+    );
+
+    expect(studentRes.status).toBe(200);
+    expect(guardianRes.status).toBe(200);
+    expect(studentRes.body.stripeSubscriptionId).toBe("sub_1");
+    expect(studentRes.body).not.toHaveProperty("source");
+    expect(guardianRes.body.source).toBe("guardian_linked_student");
+    expect(guardianRes.body.hasActiveLink).toBe(true);
+
+    const student = strict.safeParse(studentRes.body);
+    const guardian = strict.safeParse(guardianRes.body);
+    expect(student.success ? null : student.error.issues).toBeNull();
+    expect(guardian.success ? null : guardian.error.issues).toBeNull();
+    expect(guardian.success && guardian.data.lapsed).toBe(true);
+    expect(student.success && student.data.effectiveAccess).toBe(true);
+  });
+
+  /**
+   * G4-10 (owner ruling 2026-09-30, option (c)): the Linked students & billing page opens the
+   * EXISTING portal session, unchanged — one Customer per payer, so one "Manage billing"
+   * button covers every student the guardian pays for. This pins what the route still refuses
+   * and that nothing the page could send widens what it opens: the session is always for the
+   * CALLER's own Customer, never one named in the body.
+   */
+  describe("G4-10: POST /api/billing/portal still refuses everyone it refused", () => {
+    const GUARDIAN = "22222222-2222-4222-8222-222222222222";
+    const asRole = (role: string | undefined): void => {
+      authState.currentUser = {
+        id: GUARDIAN,
+        role,
+        email: "guardian@test.com",
+        isGuardian: role === "guardian",
+        isAdmin: role === "admin",
+      };
+    };
+
+    it("refuses an admin, an unrecognised role and the unauthenticated, opening no session", async () => {
+      stripeMocks.portalCreate.mockClear();
+      accountMocks.getProfileStripeCustomerId.mockResolvedValue("cus_guardian");
+
+      asRole("admin");
+      const admin = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+      asRole("superuser");
+      const unknownRole = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+      asRole(undefined);
+      const noRole = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+      authState.currentUser = null;
+      const anonymous = await request(await billingApp()).post(
+        "/api/billing/portal",
+      );
+
+      expect(admin.status).toBe(403);
+      expect(unknownRole.status).toBeGreaterThanOrEqual(400);
+      expect(noRole.status).toBeGreaterThanOrEqual(400);
+      expect(anonymous.status).toBe(401);
+      expect(stripeMocks.portalCreate).not.toHaveBeenCalled();
+    });
+
+    it("opens the guardian's OWN Customer, whatever student the body names", async () => {
+      stripeMocks.portalCreate.mockClear();
+      accountMocks.getProfileStripeCustomerId.mockReset();
+      accountMocks.getProfileStripeCustomerId.mockResolvedValue("cus_guardian");
+      asRole("guardian");
+
+      const res = await request(await billingApp())
+        .post("/api/billing/portal")
+        .send({
+          studentId: "99999999-9999-4999-8999-999999999999",
+          customer: "cus_someone_else",
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.url).toBe("https://portal.test");
+      expect(accountMocks.getProfileStripeCustomerId).toHaveBeenCalledWith(
+        GUARDIAN,
+      );
+      expect(stripeMocks.portalCreate).toHaveBeenCalledTimes(1);
+      const args = stripeMocks.portalCreate.mock.calls[0]?.[0];
+      expect(args?.customer).toBe("cus_guardian");
+      expect(args?.return_url).toMatch(/\/guardian$/);
+    });
+
+    it("answers 409 NO_STRIPE_CUSTOMER to a guardian who has never paid", async () => {
+      stripeMocks.portalCreate.mockClear();
+      accountMocks.getProfileStripeCustomerId.mockReset();
+      accountMocks.getProfileStripeCustomerId.mockResolvedValue(null);
+      asRole("guardian");
+
+      const res = await request(await billingApp()).post("/api/billing/portal");
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("NO_STRIPE_CUSTOMER");
+      expect(stripeMocks.portalCreate).not.toHaveBeenCalled();
+    });
   });
 
   it("reads plan pricing live from Stripe rather than from hardcoded amounts", async () => {

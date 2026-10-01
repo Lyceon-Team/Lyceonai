@@ -35,7 +35,10 @@ const STUDENT_ID = "88888888-8888-4888-8888-888888888888";
 
 const signOutMock = vi.fn();
 const authState = {
-  user: { id: GUARDIAN_ID } as { id: string } | null,
+  user: { id: GUARDIAN_ID, role: "guardian" } as {
+    id: string;
+    role: string;
+  } | null,
   authLoading: false,
   isAdmin: false,
   isGuardian: true,
@@ -129,7 +132,7 @@ async function renderGate(
 beforeEach(() => {
   vi.clearAllMocks();
   window.sessionStorage.clear();
-  authState.user = { id: GUARDIAN_ID };
+  authState.user = { id: GUARDIAN_ID, role: "guardian" };
   authState.isGuardian = true;
   authState.isAdmin = false;
 });
@@ -216,6 +219,7 @@ describe("R2 — after dismissing, the dashboard is fully usable", () => {
     // everyone, so the assertion is inverted rather than deleted. If the
     // blocking branch ever returns, this is the test that says so.
     authState.isGuardian = false;
+    authState.user = { id: STUDENT_ID, role: "student" };
     await renderGate(OUTSTANDING, ["student"]);
 
     const modal = await screen.findByTestId("reconsent-modal");
@@ -295,7 +299,10 @@ describe("R3 — the prompt returns at the next sign-in", () => {
       expect(screen.queryByTestId("reconsent-modal")).toBeNull(),
     );
 
-    authState.user = { id: "77777777-7777-4777-8777-777777777777" };
+    authState.user = {
+      id: "77777777-7777-4777-8777-777777777777",
+      role: "guardian",
+    };
     await renderGate();
     expect(await screen.findByTestId("reconsent-modal")).toBeTruthy();
   });

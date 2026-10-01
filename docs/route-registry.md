@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-09-25 (E7b — the full-length exam shell: `/tests`, `/tests/:sessionId`, `/tests/:sessionId/:section/:module`, `/tests/:sessionId/report`, and a Tests tab in the student navigation. Client only: every backing endpoint is E6/E7a's, entitlement is enforced there.) · 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
+**Last Updated:** 2026-09-27 (G1 — a guardian reads a linked student's full-length practice test results at `/students/:studentId/tests` and `/students/:studentId/tests/:sessionId`, linked per student from the guardian dashboard. Gated server-side on the link AND the STUDENT's entitlement and `exam_full_length` feature; read-only. SCL-180/181.) · 2026-09-25 (E7b — the full-length exam shell: `/tests`, `/tests/:sessionId`, `/tests/:sessionId/:section/:module`, `/tests/:sessionId/report`, and a Tests tab in the student navigation. Client only: every backing endpoint is E6/E7a's, entitlement is enforced there.) · 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; `/api/me/streak` is served with no `calendar_access` check at all (INV-08-20).) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
 **Last Updated:** 2026-09-22 (R4 — the two review CLIENT routes R3 reserved are now real and listed below. Both are `free`: review is free and unlimited, ruling 10, so unlike `/practice/session/:sessionId` neither carries `entitled†`. The loop behind `/review/session/:sessionId` is the SAME component practice uses, pointed at `/api/review/*` by an engine config.)
 
 ---
@@ -37,7 +37,9 @@ This document is the single authoritative registry of:
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
 | `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge`, `/api/me/streak` | ACTIVE |
-| `/students/:studentId/calendar` | guardian, admin | entitled† (the STUDENT's) | GuardianStudentCalendarPage | `/api/students/:studentId/calendar` | ACTIVE |
+| `/students/:studentId/calendar` | guardian | free | Redirect→`/guardian/:studentId/calendar` (G4-01) | N/A | ACTIVE |
+| `/students/:studentId/tests` | guardian | free | Redirect→`/guardian/:studentId/exams` (G4-01) | N/A | ACTIVE |
+| `/students/:studentId/tests/:sessionId` | guardian | free | Redirect→`/guardian/:studentId/exams/:sessionId` (G4-01) | N/A | ACTIVE |
 | `/tests` | student, admin | entitled (exam_full_length, enforced by every backing route) | TestsHomePage | `/api/tests/forms`, `/api/tests/sessions`, `/api/tests/sessions/:session_id/sections/:section/modules/:module/start` | ACTIVE |
 | `/tests/:sessionId` | student, admin | entitled (exam_full_length) | ExamSessionPage (begin, Module 2 hand-off, break) | `/api/tests/sessions/:session_id/state`, `…/modules/:module/start`, `/api/tests/forms` | ACTIVE |
 | `/tests/:sessionId/:section/:module` | student, admin | entitled (exam_full_length) | ExamModulePage (the URL only shows the server's position; any other module redirects) | `…/state`, `…/modules/:module/items`, `…/modules/:module/workspace` (GET, PUT), `/api/tests/answer`, `…/sections/:section/heartbeat`, `…/modules/:module/submit`, `…/modules/:module/start` | ACTIVE |
@@ -59,10 +61,17 @@ This document is the single authoritative registry of:
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
+| `/guardian-required` | student | free | GuardianRequired (G2-04: an under-13 student with no active guardian link) | `/api/profile`, `/api/students/:studentId/link-code`, `/api/students/:studentId/link-code/regenerate`, `/api/students/:studentId/link-code/invite`, `/api/students/:studentId/links`, `/api/students/:studentId/links/:linkId` | ACTIVE |
+| `/score-report` | student, admin | free (SCL-191: the authorisation is the prompt we sent, not an entitlement key — see `server/routes/score-report-routes.ts`) | ScoreReport | `/api/score-report`, `POST /api/score-report`, `POST /api/score-report/renewal` | ACTIVE |
 | `/notifications` | student, guardian, admin | free | NotificationsPage | `/api/notifications` (`?archived=`, cursor), `/api/notifications/unread-count`, `/api/notifications/mark-all-seen`, `/api/notifications/mark-all-read`, `PATCH /api/notifications/:message_id` | ACTIVE |
 | `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
 | `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |
-| `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/link`, `/api/guardian/link/:linkId/accept`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
+| `/guardian` | guardian | free | GuardianHome (redirects to the first linked student's Dashboard, or the no-student state; G4-01) | `/api/guardian/students` | ACTIVE |
+| `/guardian/students` | guardian | free | GuardianStudentsPage — Linked students & billing: per-student status, one Manage billing (the existing portal), Remove with confirmation (G4-10) | `/api/guardian/students`, `/api/billing/status`, `/api/billing/plans`, `POST /api/billing/portal`, `POST /api/billing/checkout`, `DELETE /api/guardian/link/:studentId` | ACTIVE |
+| `/guardian/:studentId` | guardian | entitled (the STUDENT's) | GuardianDashboardTab, in GuardianShell (G4-01/G4-03) | `/api/guardian/students`, `/api/students/:studentId/calendar`, `/api/students/:studentId/mastery/domains`, `/api/students/:studentId/tests`, `/api/students/:studentId/tests/:sessionId/report` | ACTIVE |
+| `/guardian/:studentId/calendar` | guardian | entitled† (the STUDENT's) | GuardianCalendarTab (GuardianStudentCalendarPage in GuardianShell; G4-01/G4-04) | `/api/students/:studentId/calendar` | ACTIVE |
+| `/guardian/:studentId/exams` | guardian | entitled (the STUDENT's exam_full_length) | GuardianExamsPage (list; G4-01/G4-05) | `/api/students/:studentId/tests` | ACTIVE |
+| `/guardian/:studentId/exams/:sessionId` | guardian | entitled (the STUDENT's exam_full_length) | GuardianExamsPage (one attempt: headline + per-domain bars, SCL-180/181/189; G4-01/G4-05) | `/api/students/:studentId/tests/:sessionId/report` | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
 **admin-only** = admin role bypasses all entitlement checks (full access)
@@ -188,9 +197,9 @@ runtime and the `/full-test` page were removed by E1 (2026-09-23); no client pag
 ### Guardian Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
 |----------|--------|--------------|------|-------------|---------|
-| `/api/guardian/students` | GET | Yes | guardian/admin | free | List linked students |
-| `/api/guardian/link` | POST | Yes | guardian/admin | free | Link student account |
-| `/api/guardian/link/:studentId` | DELETE | Yes | guardian/admin | free | Unlink student |
+| `/api/guardian/students` | GET | Yes | guardian | free | List linked students |
+| `/api/guardian/link` | POST | Yes | guardian | free | Link student account |
+| `/api/guardian/link/:studentId` | DELETE | Yes | guardian | free | Unlink student |
 | `/api/students/:studentId/kpi/overall` | GET | Yes | guardian/admin | entitled | Student progress summary |
 | `/api/students/:studentId/mastery/domains` | GET | Yes | guardian/admin | entitled | Student weaknesses |
 

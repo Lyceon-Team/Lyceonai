@@ -1,3 +1,13 @@
+import { roleChoiceErrorCodeSchema } from "@lyceon/shared/profile-role-choice-schema";
+import {
+  GUARDIAN_LINK_REQUIRED,
+  PROFILE_INCOMPLETE,
+} from "@lyceon/shared/guardian-link-gate";
+import {
+  readEntitlementDenial,
+  type EntitlementDenial,
+} from "@lyceon/shared/entitlement-denial";
+
 export type ApiError = {
   status: number;
   code?: string;
@@ -32,61 +42,74 @@ export class HttpApiError extends Error implements ApiError {
   }
 }
 
-function readNestedErrorPayload(payload: any): Partial<ApiError> {
-  if (!payload || typeof payload !== "object") return {};
-  const nested = payload.error;
-  if (!nested || typeof nested !== "object") return {};
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringField(
+  record: Record<string, unknown> | null,
+  key: string,
+): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function booleanField(
+  record: Record<string, unknown> | null,
+  key: string,
+): boolean | undefined {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function readNestedErrorPayload(payload: unknown): Partial<ApiError> {
+  const nested = asRecord(asRecord(payload)?.error);
+  if (nested === null) return {};
 
   return {
-    code: typeof nested.code === "string" ? nested.code : undefined,
-    message: typeof nested.message === "string" ? nested.message : undefined,
-    retryable:
-      typeof nested.retryable === "boolean" ? nested.retryable : undefined,
+    code: stringField(nested, "code"),
+    message: stringField(nested, "message"),
+    retryable: booleanField(nested, "retryable"),
   };
+}
+
+/** The response body as JSON, or null when it is not JSON (an HTML error page, an empty body). */
+async function readJsonBody(response: Response): Promise<unknown> {
+  try {
+    return await response.clone().json();
+  } catch {
+    // Expected, not swallowed: a non-JSON body carries no error payload, and the caller
+    // falls back to the status and its fallback message.
+    return null;
+  }
 }
 
 export async function parseApiErrorFromResponse(
   response: Response,
   fallbackMessage = "Request failed",
 ): Promise<HttpApiError> {
-  let payload: any = null;
-  try {
-    payload = await response.clone().json();
-  } catch {
-    payload = null;
-  }
+  const payload = await readJsonBody(response);
+  const body = asRecord(payload);
 
   const nested = readNestedErrorPayload(payload);
   const message =
     nested.message ||
-    (payload && typeof payload.message === "string"
-      ? payload.message
-      : undefined) ||
-    (payload && typeof payload.error === "string"
-      ? payload.error
-      : undefined) ||
+    stringField(body, "message") ||
+    stringField(body, "error") ||
     fallbackMessage;
 
-  const code =
-    nested.code ||
-    (payload && typeof payload.code === "string" ? payload.code : undefined) ||
-    undefined;
+  const code = nested.code || stringField(body, "code") || undefined;
 
   const reason =
-    payload && typeof payload.reason === "string"
-      ? payload.reason
-      : payload &&
-          payload.entitlement &&
-          typeof payload.entitlement.reason === "string"
-        ? payload.entitlement.reason
-        : undefined;
+    stringField(body, "reason") ??
+    stringField(asRecord(body?.entitlement), "reason");
 
   const retryable =
-    typeof nested.retryable === "boolean"
-      ? nested.retryable
-      : payload && typeof payload.retryable === "boolean"
-        ? payload.retryable
-        : response.status >= 500;
+    nested.retryable ??
+    booleanField(body, "retryable") ??
+    response.status >= 500;
 
   return new HttpApiError({
     status: response.status,
@@ -99,14 +122,22 @@ export async function parseApiErrorFromResponse(
 }
 
 export function isApiError(error: unknown): error is ApiError {
-  return Boolean(
-    error &&
-    typeof error === "object" &&
-    "status" in (error as any) &&
-    typeof (error as any).status === "number" &&
-    "message" in (error as any) &&
-    typeof (error as any).message === "string",
+  const record = asRecord(error);
+  return (
+    record !== null &&
+    typeof record.status === "number" &&
+    typeof record.message === "string"
   );
+}
+
+/**
+ * G3-04 (R7, audit G-AUD-06/19): a guardian's per-student read answered 404. The subject
+ * resolver answers 404 for "no such student" and "not linked to you" alike, by design (Doc
+ * 05B §10.3 — a 403 would confirm the student exists), so the status is the whole signal:
+ * for a student the guardian picked from their own roster, it means the link is gone.
+ */
+export function isStudentNoLongerLinkedError(error: unknown): boolean {
+  return isApiError(error) && error.status === 404;
 }
 
 function normalizeCode(value: string | undefined): string | undefined {
@@ -115,6 +146,35 @@ function normalizeCode(value: string | undefined): string | undefined {
 
 function normalizeReason(value: string | undefined): string | undefined {
   return value ? value.trim().toLowerCase() : undefined;
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G2-06 (G-NEW-09)] | @implemented [2026-09-29]
+ *
+ * plain English: where a refused request should send the student, or null. A 403
+ * `GUARDIAN_LINK_REQUIRED` (G-NEW-10) means an under-13 student has no active guardian link,
+ * so they belong on /guardian-required. A 403
+ * `PROFILE_INCOMPLETE` means the server will not serve learning until the profile — and so the
+ * age — is known, so the student belongs on profile completion. Pure: the query client's caches
+ * call it for every failed query and mutation (`redirectForOnboarding` in ./queryClient).
+ */
+export function onboardingRedirectFor(error: unknown): string | null {
+  if (!isApiError(error)) return null;
+  if (
+    error.status === 403 &&
+    normalizeCode(error.code) === PROFILE_INCOMPLETE
+  ) {
+    return "/profile/complete";
+  }
+  // G-NEW-10: the under-13 link gate (G2-04) refuses every learning request with this code
+  // once the student has no active guardian link — including mid-session, after a revoke.
+  if (
+    error.status === 403 &&
+    normalizeCode(error.code) === GUARDIAN_LINK_REQUIRED
+  ) {
+    return "/guardian-required";
+  }
+  return null;
 }
 
 const entitlementCodes = new Set([
@@ -147,6 +207,21 @@ export function getPremiumDenialReason(
 
 export function isEntitlementDenialError(error: unknown): boolean {
   return getPremiumDenialReason(error) !== null;
+}
+
+/**
+ * @spec [Doc-01_V8 §26.1; Doc-03B_V2 §5.9; Doc-04A_V2.2 §16.2; Doc-05F_V1.0 §15.1; SCL-185
+ *        (UI-01)] | @implemented [2026-09-29]
+ * plain English: the client's one reader for a paid-feature denial. `parseApiErrorFromResponse`
+ * keeps the raw response body on `details`; this hands that body to the shared
+ * `readEntitlementDenial`, which accepts the nested (tutor, exam) and flat (calendar,
+ * student-resource gate) shapes and keys on `code: "entitlement_required"` — never on status,
+ * since the status differs by surface and a 403 `forbidden` is not a denial. Returns the
+ * `canAccessFeature` key that was refused, or null. Pages are not rewired to it yet (Wave 4).
+ */
+export function getEntitlementDenial(error: unknown): EntitlementDenial | null {
+  if (!isApiError(error)) return null;
+  return readEntitlementDenial(error.details);
 }
 
 /**
@@ -255,6 +330,13 @@ export function resolveOnboardingErrorMessage(
 
   if (!isApiError(error)) return generic;
   if (error.status !== 400 && error.status !== 403) return generic;
+
+  // G1-02: a refusal the server CODED carries copy the server wrote for this person
+  // (packages/shared profile-role-choice-schema). Show it as sent. This is AS-3-safe: the
+  // code is from a closed list, so an uncurated string can never arrive this way.
+  if (roleChoiceErrorCodeSchema.safeParse(error.code).success) {
+    return error.message;
+  }
 
   const message = error.message.toLowerCase();
   if (message.includes("date of birth")) {

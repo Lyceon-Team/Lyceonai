@@ -1,9 +1,14 @@
 import { ReactNode, useState } from "react";
+import { runtimeRoleSchema } from "@lyceon/shared/runtime-role-schema";
+import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { csrfFetch } from "@/lib/csrf";
-import { loginPathWithReturn } from "@lyceon/shared/return-path";
+import { useProfileQuery } from "@/hooks/useProfileQuery";
+import {
+  loginPathWithReturn,
+  onboardingPathWithReturn,
+} from "@lyceon/shared/return-path";
+import { profileGateSchema } from "@lyceon/shared/profile-gate-schema";
 import { ReconsentModal } from "@/components/legal/ReconsentModal";
 import { outstandingLegalSchema } from "@shared/legal-consent";
 import {
@@ -13,24 +18,24 @@ import {
 
 type UserRole = "student" | "guardian" | "admin";
 
-interface RequireRoleProps {
+type RequireRoleProps = {
   allow: UserRole[];
   children: ReactNode;
-}
+};
 
-interface AuthUserResponse {
-  authenticated?: boolean;
-  user?: {
-    profileCompletedAt?: string | null;
-    requiredProfileComplete?: boolean;
-    guardianConsentRequired?: boolean;
-    outstandingLegal?: unknown;
-    [key: string]: any;
-  } | null;
+/**
+ * The path AND query the user was opening. wouter's `location` is the pathname only, so the
+ * query (the guardian deep link's `?code=…`) comes from `window.location` where there is one.
+ */
+function intendedPath(location: string): string {
+  return typeof window === "undefined"
+    ? location
+    : `${window.location.pathname}${window.location.search}`;
 }
 
 export function RequireRole({ allow, children }: RequireRoleProps) {
-  const { user, authLoading, isAdmin, isGuardian } = useSupabaseAuth();
+  const { user, authLoading, isAdmin, isGuardian, accountUnavailable } =
+    useSupabaseAuth();
   const [location] = useLocation();
 
   // Was the guardian re-consent prompt waved away? Two sources, deliberately.
@@ -41,28 +46,13 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // `useEffect` would be the derived-state anti-pattern (Coding Standards §11.4).
   const [dismissedThisMount, setDismissedThisMount] = useState(false);
 
-  // Fetch profile completion status from canonical /api/profile endpoint
-  const { data: authData, isLoading: profileLoading } =
-    useQuery<AuthUserResponse>({
-      queryKey: ["/api/profile"],
-      retry: false,
-      enabled: !!user, // only fetch when user is authenticated
-      queryFn: async () => {
-        const response = await csrfFetch("/api/profile", {
-          credentials: "include",
-        });
-
-        if (response.status === 401 || response.status === 403) {
-          return { authenticated: false, user: null };
-        }
-
-        if (!response.ok) {
-          throw new Error(`Profile hydration failed: ${response.status}`);
-        }
-
-        return response.json();
-      },
-    });
+  // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the ONE
+  // profile query (key, fetch function, 401/403 → `{ authenticated: false }`) shared with the
+  // auth provider, which has already filled it by the time `user` is set — so this reads the
+  // cache instead of issuing a second request.
+  const { data: authData, isLoading: profileLoading } = useProfileQuery({
+    enabled: !!user, // only fetch when user is authenticated
+  });
 
   if (authLoading || (user && profileLoading)) {
     return (
@@ -75,24 +65,30 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     );
   }
 
+  // G2-02: the server refused this session as ROLE_UNRECOGNIZED. Not a sign-out, so not /login —
+  // the next sign-in would be refused the same way and loop back.
+  if (!user && accountUnavailable) {
+    return <AccountUnavailable />;
+  }
+
   if (!user) {
     // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
     // Carry the intended destination — path AND query — into the login redirect so the guardian
     // deep link (`/guardian?code=…`) survives sign-in. The value is sanitised by the ONE shared
     // return-path module before it is written and again where it is read; an off-origin or
     // un-allowlisted destination collapses to plain /login.
-    const intended =
-      typeof window === "undefined"
-        ? location
-        : `${window.location.pathname}${window.location.search}`;
-    return <Redirect to={loginPathWithReturn(intended)} replace />;
+    return (
+      <Redirect to={loginPathWithReturn(intendedPath(location))} replace />
+    );
   }
 
-  const userRole: UserRole = isAdmin
-    ? "admin"
-    : isGuardian
-      ? "guardian"
-      : "student";
+  // G2-02: the role is PARSED, never defaulted. This used to fall through to "student" for
+  // anything that was not admin or guardian, so an unknown role saw student pages.
+  const parsedRole = runtimeRoleSchema.safeParse(user.role);
+  if (!parsedRole.success) {
+    return <AccountUnavailable />;
+  }
+  const userRole: UserRole = parsedRole.data;
 
   const isAllowed =
     allow.includes(userRole) || (isAdmin && allow.includes("admin"));
@@ -110,26 +106,52 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // Enforce profile completion (includes terms acceptance) for non-admin users.
   // Skip this check if we're already on /profile/complete to avoid redirect loops.
   const isProfileCompletePage = location === "/profile/complete";
-  const profileCompletedAt = authData?.user?.profileCompletedAt;
-  const requiredProfileComplete = authData?.user?.requiredProfileComplete;
-  const guardianConsentRequired = authData?.user?.guardianConsentRequired;
+  // @spec [Coding Standards §3.2, §7.1; register UI-10] | @implemented [2026-09-29]
+  // plain English: the wire payload is `unknown` and is parsed by the shared schema — this used
+  // to be an `interface` with an untyped index signature. A payload that does not parse yields no
+  // profile facts, so `needsOnboarding` below is true: the same fail-closed answer a missing
+  // `profileCompletedAt` always gave.
+  const gate = profileGateSchema.safeParse(authData);
+  const gateUser = gate.success ? gate.data.user : null;
+  const profileCompletedAt = gateUser?.profileCompletedAt;
+  const requiredProfileComplete = gateUser?.requiredProfileComplete;
+  const guardianConsentRequired = gateUser?.guardianConsentRequired;
 
   // NO LEGAL DOCUMENT APPEARS IN THIS LIST, AND NONE EVER SHOULD.
   // `requiredConsentsComplete === false` sat here once; it is gone, along with
   // the flag itself. What remains are two facts about an INCOMPLETE ACCOUNT —
   // no profile yet — and one condition from the Terms:
   //
-  // `guardianConsentRequired` is the under-13 rule: a student under 13 cannot
-  // use LYCEON until a guardian connects. That is not a consent gate, it is the
-  // basis of the under-13 position, and it routes to a screen built to get them
-  // connected — link code, guardian email — rather than a wall.
   const needsOnboarding =
-    guardianConsentRequired === true ||
-    requiredProfileComplete === false ||
-    !profileCompletedAt;
+    requiredProfileComplete === false || !profileCompletedAt;
 
   if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
-    return <Redirect to="/profile/complete" replace />;
+    // @spec [AS-5; register UI-03] | @implemented [2026-09-29] | plain English: the page the
+    // user was opening rides through onboarding as `?next=` (sanitised by the shared module;
+    // an un-allowlisted location collapses to plain /profile/complete), and the onboarding
+    // page lands on it when the profile is complete.
+    return (
+      <Redirect to={onboardingPathWithReturn(intendedPath(location))} replace />
+    );
+  }
+
+  // `guardianConsentRequired` is the under-13 rule (R6, SCL-187): a student under
+  // 13 cannot use LYCEON until a guardian link is active. That is not a consent
+  // gate, it is the basis of the under-13 position, and it routes to a screen
+  // built to get them connected — the link code, the email invite, the guardian
+  // list — rather than a wall. The SERVER enforces it on every learning request
+  // (403 GUARDIAN_LINK_REQUIRED); this only spares the student refused pages.
+  const isGuardianRequiredPage = location === "/guardian-required";
+  const needsGuardianLink =
+    userRole === "student" && guardianConsentRequired === true;
+
+  if (
+    !isAdmin &&
+    !isProfileCompletePage &&
+    !isGuardianRequiredPage &&
+    needsGuardianLink
+  ) {
+    return <Redirect to="/guardian-required" replace />;
   }
 
   // @spec [LYCEON consent capture §6]
@@ -138,7 +160,7 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // same one the server's own type is inferred from. A malformed entry becomes
   // an empty list rather than a modal rendering `undefined` at someone.
   const outstanding = outstandingLegalSchema.safeParse(
-    authData?.user?.outstandingLegal ?? [],
+    gateUser?.outstandingLegal ?? [],
   );
   const outstandingLegal = outstanding.success ? outstanding.data : [];
 

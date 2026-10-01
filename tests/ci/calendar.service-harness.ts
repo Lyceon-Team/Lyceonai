@@ -26,7 +26,7 @@ export type QueryState = {
   table: string;
   columns: string;
   head: boolean;
-  op: "select" | "upsert" | "insert";
+  op: "select" | "upsert" | "insert" | "update";
   payload: unknown;
   filters: { kind: string; column: string; value: unknown }[];
   mode: "list" | "single" | "maybeSingle";
@@ -50,6 +50,15 @@ type FakeBuilder = {
     options?: { count?: string; head?: boolean },
   ): FakeBuilder;
   upsert(row: unknown, options?: { onConflict?: string }): FakeBuilder;
+  /**
+   * The real client has this and this fake did not, which is how a defect stayed invisible
+   * here for weeks. `upsertStudyProfile` writes an EXISTING profile with `.update()` —
+   * `.upsert()` renders as `INSERT … ON CONFLICT`, and PostgreSQL checks NOT NULL on the
+   * INSERT arm before resolving the conflict, so a partial body raised 23502 against a row
+   * that already had every column. A fake with no constraints could not show that, and a
+   * fake with no `.update()` could not even show the fix. (Brief 16 follow-up.)
+   */
+  update(row: unknown): FakeBuilder;
   insert(row: unknown): Promise<FakeReply>;
   eq(column: string, value: unknown): FakeBuilder;
   neq(column: string, value: unknown): FakeBuilder;
@@ -126,6 +135,11 @@ export function makeFakeClient(options: {
         state.payload = row;
         return api;
       },
+      update(row) {
+        state.op = "update";
+        state.payload = row;
+        return api;
+      },
       // An insert with no `.select()` resolves on its own rather than returning a builder,
       // which is how `@supabase/supabase-js` behaves and how `recordRun` awaits it.
       insert(row) {
@@ -178,13 +192,23 @@ export function makeFakeClient(options: {
   };
 }
 
-/** The six §8.1/§12.5/§10.2 rows, as `calendar_runtime_config` holds them. */
+/**
+ * The §8.1/§12.5/§10.2 rows this layer reads, as `calendar_runtime_config` holds them —
+ * every key in `CALENDAR_CONFIG_KEYS`, because the accessor throws on the first one missing.
+ * (The count was previously given as "six" while the list held nine; a number that drifts
+ * every time a key is added is worse than no number.)
+ */
 export const CONFIG_ROWS: { key: string; value: unknown }[] = [
   { key: "daily_minutes_min", value: 15 },
   { key: "daily_minutes_max", value: 180 },
   { key: "daily_minutes_presets", value: [15, 30, 45, 60, 90, 120] },
   { key: "target_exam_date_max_days", value: 540 },
   { key: "weekly_job_interval_minutes", value: 1440 },
+  // §8.1, 20261010000000. The cadence the frequency control opens on — a surface prefill,
+  // which is why the generator never reads it.
+  { key: "default_full_length_interval_weeks", value: 2 },
+  { key: "default_full_length_weekday", value: 6 },
+  { key: "final_exam_lead_days", value: 7 },
   { key: "horizon_days", value: 14 },
   { key: "generator_version", value: "20260917140000" },
   // §17.1's "~N min" readout. Calendar-owned (SCL-08-F); its practice counterpart lives in
@@ -234,6 +258,7 @@ export const PROFILE_ROW = {
   study_days_mask: 127,
   daily_minutes: 60,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto" as const,
   setup_completed_at: "2026-09-01T00:00:00.000Z",
 };
@@ -279,6 +304,12 @@ export type ScenarioOptions = {
     trigger: string;
     created_at: string;
   } | null;
+  /**
+   * `input_snapshot.degraded` on the version rows, as `calendar_persist_version` merges it
+   * (Brief 14). `unknown[]` on purpose: the reader must survive marker STRINGS ("mastery"),
+   * entries of other kinds, and malformed ones, so a test has to be able to hand it those.
+   */
+  degraded?: readonly unknown[];
 };
 
 /**
@@ -309,7 +340,15 @@ export function makeScenarioClient(options: ScenarioOptions = {}): FakeClient {
           return okReply([
             {
               version_no: 3,
-              input_snapshot: { profile: { study_days_mask: 127 } },
+              input_snapshot: {
+                profile: { study_days_mask: 127 },
+                // Absent by default, which is the ordinary plan: nothing degraded, no exam
+                // suppressed. A default of [] would read the same to the code but would hide
+                // the "key missing entirely" case the reader also has to survive.
+                ...(options.degraded === undefined
+                  ? {}
+                  : { degraded: options.degraded }),
+              },
             },
           ]);
         }

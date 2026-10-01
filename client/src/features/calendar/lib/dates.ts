@@ -190,6 +190,17 @@ export function longDate(date: string): string {
   return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""} ${dayOfMonth(date)} ${monthName(date)}`;
 }
 
+/**
+ * "5 December" — day and month, no weekday and no year, for a date read inside a sentence
+ * ("about 5 practice tests before 5 December").
+ *
+ * Here rather than in the component that needed it first: the settings sheet had its own
+ * copy, with its own month array, which is the duplication this file exists to prevent.
+ */
+export function dayAndMonth(date: string): string {
+  return `${dayOfMonth(date)} ${monthName(date)}`;
+}
+
 /** "Mon 21 Sep" — compact, for toasts and the move picker. */
 export function shortDate(date: string): string {
   return `${shortWeekday(date)} ${dayOfMonth(date)} ${monthName(date).slice(0, 3)}`;
@@ -208,4 +219,14 @@ export function rangeLabel(view: "week" | "month", cursor: string): string {
     return `${dayOfMonth(first)} – ${dayOfMonth(last)} ${monthName(first)}`;
   }
   return `${dayOfMonth(first)} ${monthName(first).slice(0, 3)} – ${dayOfMonth(last)} ${monthName(last).slice(0, 3)}`;
+}
+
+/**
+ * Today in the viewer's browser zone, as `YYYY-MM-DD`. Moved here from the guardian calendar
+ * page (G4-03) so the guardian Dashboard's countdown and week use the same "today" as the
+ * calendar tab. Every day's status is still the server's, in the student's zone.
+ */
+export function browserLocalToday(now: Date = new Date()): string {
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
 }

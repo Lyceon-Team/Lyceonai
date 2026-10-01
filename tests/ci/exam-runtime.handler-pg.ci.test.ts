@@ -126,7 +126,7 @@ function authStub() {
     requireSupabaseAuth: pass,
     requireStudentOrAdmin: pass,
     requireProfileComplete: pass,
-    requireConsentCompliance: pass,
+    requireGuardianLinkForUnder13: pass,
   };
 }
 vi.mock("../../server/middleware/supabase-auth.js", () => authStub());
@@ -260,7 +260,9 @@ describe.skipIf(!PG_AVAILABLE)("Exam runtime handlers → real PG", () => {
       .set("x-test-user", DENIED)
       .send(bad);
     expect(r403.status).toBe(403);
-    expect(r403.body.error.code).toBe("forbidden");
+    // SCL-185 (UI-01): same 403, the paid-feature denial code, and the refused key.
+    expect(r403.body.error.code).toBe("entitlement_required");
+    expect(r403.body.error.details).toEqual({ feature: "exam_full_length" });
 
     const r400 = await request(app)
       .post("/api/tests/sessions")

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  fullLengthsBeforeTarget,
   isStudyDay,
   makeStudyProfileUpsertSchema,
   maskOfStudyDows,
@@ -35,6 +36,7 @@ describe("study profile read shape", () => {
     study_days_mask: 62,
     daily_minutes: 45,
     full_length_weekday: 6,
+    full_length_interval_weeks: 2,
     planner_mode: "auto",
     setup_completed_at: "2026-09-01T18:00:00Z",
   };
@@ -181,6 +183,146 @@ describe("profile upsert", () => {
   it("refuses a field the profile does not have", () => {
     expect(upsert({ planner_mode: "auto", streak: 4, idempotency_key: KEY }).success).toBe(
       false,
+    );
+  });
+});
+
+/**
+ * `full_length_pair` (20261010000000) makes the weekday and the interval one decision in the
+ * database. These are the tests that make it one decision at the BOUNDARY too, so the refusal
+ * is a 400 that names the field rather than a 23514 the service reports as a write failure.
+ *
+ * The body is a partial update, so "send both or neither" is what makes the merged row
+ * provably valid without this schema ever reading the stored one.
+ */
+describe("the exam schedule is one setting (full_length_pair)", () => {
+  const both = (weekday: number | null, weeks: number | null) =>
+    upsert({
+      full_length_weekday: weekday,
+      full_length_interval_weeks: weeks,
+      idempotency_key: KEY,
+    });
+
+  it("accepts a day and a cadence together", () => {
+    expect(both(6, 2).success).toBe(true);
+    expect(both(0, 1).success).toBe(true);
+    expect(both(3, 4).success).toBe(true);
+  });
+
+  it("accepts both null — 'I'll add them myself' is an answer", () => {
+    expect(both(null, null).success).toBe(true);
+  });
+
+  it("refuses a weekday with no cadence, and says which field is missing", () => {
+    const result = upsert({ full_length_weekday: 6, idempotency_key: KEY });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+      "full_length_interval_weeks",
+    );
+  });
+
+  it("refuses a cadence with no weekday, and says which field is missing", () => {
+    const result = upsert({ full_length_interval_weeks: 2, idempotency_key: KEY });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
+      "full_length_weekday",
+    );
+  });
+
+  it("refuses half an 'off': one null and one set is neither on nor off", () => {
+    expect(both(6, null).success).toBe(false);
+    expect(both(null, 2).success).toBe(false);
+  });
+
+  it("refuses a cadence outside the four §8.1 offers", () => {
+    expect(both(6, 5).success).toBe(false);
+    expect(both(6, 0).success).toBe(false);
+    expect(both(6, -1).success).toBe(false);
+    expect(both(6, 2.5).success).toBe(false);
+  });
+
+  it("leaves a body that names NEITHER half alone — the pair it does not touch stays valid", () => {
+    expect(upsert({ daily_minutes: 60, idempotency_key: KEY }).success).toBe(true);
+  });
+});
+
+
+/**
+ * The count behind "about N practice tests before 5 December". One function, shared with
+ * nothing else: it exists so the promise and the plan come from the same arithmetic.
+ */
+describe("fullLengthsBeforeTarget (§8.1 readout)", () => {
+  const base = {
+    today: "2026-09-27" as const, // a Sunday (Postgres DOW 0)
+    intervalWeeks: 2,
+    preferredWeekday: 6, // Saturday
+    targetExamDate: "2026-12-05" as const, // also a Saturday
+    finalExamLeadDays: 7,
+  };
+
+  /**
+   * DERIVED BY HAND, then confirmed against the same steps the generator takes:
+   *
+   *   rehearsal  2026-12-05 − 7 = 2026-11-28, already a Saturday      -> counts
+   *   cadence    from 2026-09-27: +14 = 10-11 (Sun) -> snap to 10-17  -> counts
+   *              +14 = 10-31 (Sat)                                    -> counts
+   *              +14 = 11-14 (Sat)                                    -> counts
+   *              +14 = 11-28 (Sat)  — the rehearsal's date            -> already counted
+   *              +14 = 12-12        — inside the lead window          -> stop
+   *
+   * Four distinct dates. The fifth step lands ON the rehearsal, and a student sits one
+   * exam that day, not two — which is why this returns a set size and not a trip count.
+   */
+  it("counts four for a fortnightly Saturday student with a 5 December target", () => {
+    expect(fullLengthsBeforeTarget(base)).toBe(4);
+  });
+
+  it("counts the rehearsal and a coinciding cadence date ONCE", () => {
+    // Shift the target by a week so the series no longer lands on the rehearsal: the same
+    // run-up now yields five sittings rather than four, which is the coincidence showing up
+    // as the one date it was.
+    expect(
+      fullLengthsBeforeTarget({ ...base, targetExamDate: "2026-12-12" }),
+    ).toBe(5);
+  });
+
+  it("counts more often for a weekly student and less for a monthly one", () => {
+    const weekly = fullLengthsBeforeTarget({ ...base, intervalWeeks: 1 });
+    const monthly = fullLengthsBeforeTarget({ ...base, intervalWeeks: 4 });
+    expect(weekly).not.toBeNull();
+    expect(monthly).not.toBeNull();
+    expect(weekly as number).toBeGreaterThan(base.intervalWeeks);
+    expect(monthly as number).toBeLessThan(weekly as number);
+  });
+
+  it("is unanswerable without a cadence — both halves, not just one", () => {
+    expect(
+      fullLengthsBeforeTarget({ ...base, intervalWeeks: null }),
+    ).toBeNull();
+    expect(
+      fullLengthsBeforeTarget({ ...base, preferredWeekday: null }),
+    ).toBeNull();
+  });
+
+  it("is unanswerable without a target date — the caller says 'every 2 weeks' instead", () => {
+    expect(
+      fullLengthsBeforeTarget({ ...base, targetExamDate: null }),
+    ).toBeNull();
+  });
+
+  it("counts nothing when the target is already inside the lead window", () => {
+    expect(
+      fullLengthsBeforeTarget({ ...base, targetExamDate: "2026-10-01" }),
+    ).toBe(0);
+  });
+
+  it("never counts a sitting inside the lead window, whatever the lead is", () => {
+    // A 21-day lead pushes both the rehearsal and the last cadence dates out.
+    const long = fullLengthsBeforeTarget({ ...base, finalExamLeadDays: 21 });
+    expect(long as number).toBeLessThan(
+      fullLengthsBeforeTarget(base) as number,
     );
   });
 });

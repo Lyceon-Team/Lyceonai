@@ -33,6 +33,20 @@ const ESTIMATES = {
   review_seconds_per_unit: 120,
 };
 
+/** §8.1's readout constants. STUDENT payload only — §16 gives a guardian no controls. */
+const EXAM_PLANNING = {
+  final_exam_lead_days: 7,
+  default_full_length_interval_weeks: 2,
+  default_full_length_weekday: 6,
+};
+
+/** Brief 14 Step 4. The dates `calendar_place_full_lengths` REFUSED to place because both
+ *  the intended weekday occurrence and the +7-day alternative were user-overridden. Owner
+ *  ruling 2026-09-26: both surfaces carry it — "that is precisely the silence this whole
+ *  change exists to end". Non-empty on purpose: an empty array would round-trip past a
+ *  wrong element type. */
+const FULL_LENGTH_SUPPRESSIONS = ["2026-10-17", "2026-10-31"];
+
 /** §8.1's bounds, on the ready payload since 2026-09-22 so §17.3's settings sheet can
  *  offer the same presets the server validates against. */
 const BOUNDS = {
@@ -49,6 +63,7 @@ const PROFILE = {
   study_days_mask: 62,
   daily_minutes: 45,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto",
   setup_completed_at: "2026-09-01T18:00:00Z",
 } as const;
@@ -135,6 +150,8 @@ describe("GET /api/calendar", () => {
       profile: PROFILE,
       bounds: BOUNDS,
       estimates: ESTIMATES,
+      exam_planning: EXAM_PLANNING,
+      full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
       days: [DAY],
       facts: FACTS,
       streak: STREAK,
@@ -169,6 +186,9 @@ describe("GET /api/calendar", () => {
         daily_minutes_min: 15,
         daily_minutes_max: 180,
         target_exam_date_max_days: 540,
+        default_full_length_interval_weeks: 2,
+        default_full_length_weekday: 6,
+        final_exam_lead_days: 7,
       },
     };
     const parsed = calendarResponseSchema.safeParse(payload);
@@ -205,6 +225,8 @@ describe("GET /api/calendar", () => {
         profile: PROFILE,
         bounds: BOUNDS,
         estimates: ESTIMATES,
+        exam_planning: EXAM_PLANNING,
+        full_length_suppressions: [],
         days: [],
         facts: FACTS,
         streak: STREAK,
@@ -440,6 +462,9 @@ describe("guardian read (§16, R-08-22)", () => {
     expect(serialised).not.toContain("is_user_override");
     expect(serialised).not.toContain("version_no");
     expect(serialised).not.toContain("membership_type");
+    // G3-03 (G-AUD-24): the student day carries a zone; the guardian day does not.
+    expect(DAY).toHaveProperty("timezone");
+    expect(guardianDay).not.toHaveProperty("timezone");
   });
 
   it("keeps the facts a guardian is entitled to see", () => {
@@ -461,6 +486,9 @@ describe("guardian read (§16, R-08-22)", () => {
       // refused — which is the point of listing them in every guardian fixture.
       target_score: 1400,
       target_exam_date: "2026-12-05",
+      // Owner ruling 2026-09-26: the guardian sees the suppression too — "a fact about the
+      // plan, not a control and not a profile field", the same category as the projection.
+      full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
       days: [toGuardianCalendarDay(DAY)],
       facts: FACTS,
       streak: STREAK,
@@ -476,6 +504,7 @@ describe("guardian read (§16, R-08-22)", () => {
         estimates: ESTIMATES,
         target_score: 1400,
         target_exam_date: "2026-12-05",
+        full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
         days: [DAY],
         facts: FACTS,
         streak: STREAK,
@@ -499,6 +528,9 @@ describe("guardian read (§16, R-08-22)", () => {
           daily_minutes_min: 15,
           daily_minutes_max: 180,
           target_exam_date_max_days: 540,
+          default_full_length_interval_weeks: 2,
+          default_full_length_weekday: 6,
+          final_exam_lead_days: 7,
         },
       }).success,
     ).toBe(false);
@@ -513,6 +545,7 @@ describe("guardian read (§16, R-08-22)", () => {
       estimates: ESTIMATES,
       target_score: 1400,
       target_exam_date: "2026-12-05",
+      full_length_suppressions: FULL_LENGTH_SUPPRESSIONS,
       days: [],
       facts: FACTS,
       streak: STREAK,
@@ -533,6 +566,9 @@ describe("guardian read (§16, R-08-22)", () => {
       ["study_days_mask", 127],
       ["daily_minutes", 60],
       ["full_length_weekday", 6],
+      // Brief 14's new column. The suppression DATES reach the guardian; the cadence that
+      // produced them does not — it is a control, and §16 admits no controls.
+      ["full_length_interval_weeks", 2],
       ["planner_mode", "auto"],
       ["setup_completed_at", "2026-09-01T00:00:00Z"],
       ["bounds", {}],
@@ -558,6 +594,7 @@ describe("guardian read (§16, R-08-22)", () => {
     const base = {
       status: "ready" as const,
       estimates: ESTIMATES,
+      full_length_suppressions: [],
       days: [],
       facts: FACTS,
       streak: STREAK,

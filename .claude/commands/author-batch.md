@@ -8,8 +8,38 @@ You are the batch-authoring orchestrator. Run this procedure exactly — do not 
 ## Arguments
 
 Parse `$ARGUMENTS` as optional filters: `section`, `domain`, `skill`, `difficulty`, `count` (per skill×difficulty leaf; default 1).
-- **No filter** → full batch: all 29 skills × difficulties {1,2,3} = 87, plus 3 extra hard questions on the three highest-frequency skills = 90.
+- **No filter** → full batch of 90 questions, **domain-weighted** per `taxonomy.json` `domain_weights` and `section_split`.
 - Any filter narrows the target leaf set accordingly (e.g. `difficulty=3` → 29 hard, one per skill; `domain="Algebra"` → Algebra's 5 skills × 3; `skill="Circles" difficulty=2 count=5` → 5).
+
+### Domain-weighted allocation (full batch, no filter)
+
+Read `taxonomy.json` → `section_split` (M: 60, RW: 30) and `domain_weights`. For each section, allocate questions per domain:
+
+```
+domain_qs = round(section_qs × domain_weight)
+```
+
+Adjust rounding so the section total is exact (add/subtract 1 from the largest domain if needed).
+
+Within each domain, distribute across skills and difficulties:
+1. Each skill gets at least 1 question at difficulty 2 (Medium) — this is the coverage floor.
+2. Remaining questions are distributed round-robin across (skill, difficulty) combinations, cycling through difficulties {1, 3, 2} (Easy, Hard, Medium priority).
+3. If domain_qs < num_skills (e.g., PSDA with 7 skills but only 9 questions), all skills still get at least 1 question.
+
+**Concrete full-batch allocation (90 questions):**
+
+| Domain | Weight | Qs | Skills | Per-skill |
+|--------|--------|----|--------|-----------|
+| Algebra | 35% | 21 | 5 | 4-5 each |
+| Advanced Math | 35% | 21 | 3 | 7 each |
+| PSDA | 15% | 9 | 7 | 1-2 each |
+| Geometry & Trig | 15% | 9 | 4 | 2-3 each |
+| Information & Ideas | 30% | 9 | 3 | 3 each |
+| Craft & Structure | 30% | 9 | 3 | 3 each |
+| Expression of Ideas | 20% | 6 | 2 | 3 each |
+| Standard English Conventions | 20% | 6 | 2 | 3 each |
+
+The expanded leaf set is `(section, domain, skill, difficulty, count)` — some leaves will have count > 1 (e.g., AM skills), others count = 1, and low-weight domains may skip some difficulty tiers for some skills.
 
 ## Step 0 — Verify subagent registration (fail-closed precondition)
 
@@ -32,7 +62,7 @@ Read `content/canonical/taxonomy.json`. Expand the filter into a concrete list o
 
 ## Step 2 — Allocate disjoint assignments
 
-Group target leaves by `domain`. **Split any domain whose total question count exceeds 12** into two assignments by disjoint skill subsets (at full batch: Algebra 15 → 2, Problem Solving and Data Analysis 21 → 2). Every leaf is owned by exactly one assignment — no overlap. Assign each a unique part-file path: `infra/supabase/seed/parts/batch_<NNN>/<domain-slug>[_a|_b].ndjson`.
+Group target leaves by `domain`. **Split any domain whose total question count exceeds 12** into two assignments by disjoint skill subsets (at full weighted batch: Algebra 21 → 2, Advanced Math 21 → 2). Every leaf is owned by exactly one assignment — no overlap. Assign each a unique part-file path: `infra/supabase/seed/parts/batch_<NNN>/<domain-slug>[_a|_b].ndjson`.
 
 ## Step 3 — Dispatch workers in waves
 

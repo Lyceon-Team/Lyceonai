@@ -69,6 +69,14 @@ vi.mock("../../server/middleware/subject-resolver", async () => {
       _res: express.Response,
       next: express.NextFunction,
     ) => {
+      // The real resolver only runs behind requireSupabaseAuth, so a caller always exists; the
+      // G2-04 link gate after it reads that caller and fails closed without one.
+      (req as express.Request & { user?: unknown }).user ??= {
+        id: "wire-guardian",
+        role: "guardian",
+        isAdmin: false,
+        isGuardian: true,
+      };
       req.subject = { studentId: SCENARIO_STUDENT, via: "guardian" };
       next();
     },
@@ -267,15 +275,16 @@ describe("the guardian calendar's wire body parses with the client's own schema 
     // from. The two admitted profile fields are named above; every other profile column is
     // still absent, and that is the half of the amended clause this asserts.
     //
-    // The TOP-LEVEL KEY SET, exactly. This is a better statement of the amended clause than
-    // a substring sweep, and I know because my first attempt swept for "timezone" and went
-    // red: `timezone` is a legitimate per-DAY field of the guardian read model, telling the
-    // client which zone `local_date` belongs to. It is not the profile's timezone setting.
-    // A sweep cannot tell those apart; a key set can.
+    // The TOP-LEVEL KEY SET, exactly. (It once had to be a key set because the guardian day
+    // carried a per-day `timezone`; G3-03 removed that, so the sweep below can now say "no
+    // timezone anywhere", which is what Doc 05F §16 says.)
     expect(Object.keys(parsedBody).sort()).toEqual([
       "days",
       "estimates",
       "facts",
+      // Owner ruling 2026-09-26: a fact about the plan, in the same category as
+      // `projection` below it.
+      "full_length_suppressions",
       "projection",
       "status",
       "streak",
@@ -287,6 +296,12 @@ describe("the guardian calendar's wire body parses with the client's own schema 
       "study_days_mask",
       "daily_minutes",
       "full_length_weekday",
+      // §16 as amended (SCL-173) admits `target_score` and `target_exam_date` and no other
+      // profile column. The cadence is a scheduling input with no guardian path — and it
+      // arrived AFTER that amendment, so it is named here rather than left to the key-set
+      // assertion above: a new profile column is exactly the kind of field that reaches a
+      // guardian payload by accident.
+      "full_length_interval_weeks",
       "planner_mode",
       "setup_completed_at",
       "bounds",
@@ -301,6 +316,23 @@ describe("the guardian calendar's wire body parses with the client's own schema 
     expect(serialized).not.toContain("explanation_key");
     expect(serialized).not.toContain("is_user_override");
     expect(serialized).not.toContain("version_no");
+
+    // G3-03 (audit G-AUD-24, Doc 05F §16 "no timezone"): no `timezone` key at ANY depth of
+    // the RAW wire body — not the client's parse, which a schema could narrow on its own —
+    // with the day asserted present above, so this cannot pass on an empty payload.
+    const wireKeys: string[] = [];
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) value.forEach(walk);
+      else if (value !== null && typeof value === "object")
+        for (const [k, v] of Object.entries(value)) {
+          wireKeys.push(k);
+          walk(v);
+        }
+    };
+    walk(response.body);
+    expect(wireKeys).toContain("local_date");
+    expect(wireKeys.filter((k) => /time_?zone|^tz$/i.test(k))).toEqual([]);
+    expect(JSON.stringify(response.body)).not.toMatch(/timezone/i);
   });
 
   it("names the envelope key in the raw body, so the fix is visible if it regresses", async () => {

@@ -27,12 +27,26 @@ INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'writer-c@example.test', '{}'::jsonb);
 
 -- A student who studies Mon-Fri (mask 62 = bits 1..5), 60 minutes, exams on
--- Saturday, with two measured domains so the weighted branch runs.
+-- Saturday every 2 weeks, with two measured domains so the weighted branch runs.
+--
+-- SETUP IS FOURTEEN DAYS BACK, AND THAT IS NOW LOAD-BEARING (20261011000000).
+-- These three used to set up `now()`, and Z-03 relied on an exam being placed
+-- inside the horizon anyway -- which was true only because the retired rule
+-- anchored the series on the first preferred weekday ON OR AFTER setup, so a
+-- student who set up today got an exam within the week. Placement is now
+-- arithmetic: the first sitting is `interval_weeks x 7` days after setup, so for
+-- a fortnightly student who set up today it falls on day 15 of a 14-day horizon
+-- and is CORRECTLY absent. That is the anchor defect being fixed, not a
+-- regression, and a fixture that sets up today can no longer carry a gate about
+-- where exams land. Backdating by one interval makes these students ones whose
+-- cadence is genuinely due, which is what Z-03 was always trying to describe.
+-- The offset is one interval, not a literal date, so it holds on any weekday.
 INSERT INTO public.student_study_profile
-  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-VALUES ('11111111-1111-1111-1111-111111111111', 'America/Chicago', 62, 60, 6, 1400, now()),
-       ('22222222-2222-2222-2222-222222222222', 'America/Chicago', 62, 60, 6, 1400, now()),
-       ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'America/Chicago', 62, 60, 6, 1400, now());
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+   full_length_interval_weeks, target_score, setup_completed_at)
+VALUES ('11111111-1111-1111-1111-111111111111', 'America/Chicago', 62, 60, 6, 2, 1400, now() - interval '14 days'),
+       ('22222222-2222-2222-2222-222222222222', 'America/Chicago', 62, 60, 6, 2, 1400, now() - interval '14 days'),
+       ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'America/Chicago', 62, 60, 6, 2, 1400, now() - interval '14 days');
 
 INSERT INTO public.student_domain_mastery
   (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
@@ -80,8 +94,15 @@ BEGIN
   -- and full_length (E9b, 20261004010000) have since been enabled, so the gate
   -- now reads the live list rather than asserting a state the product has left.
   --
-  -- S1 has a Saturday full_length_weekday, so with full_length enabled the
-  -- formula places an exam and it must reach the persisted plan.
+  -- S1 has a Saturday full_length_weekday and a fortnightly cadence whose first
+  -- sitting falls inside this horizon (see the fixture note above -- setup is
+  -- backdated one interval precisely so that it does), so with full_length
+  -- enabled the formula places an exam and it must reach the persisted plan.
+  --
+  -- NOTE WHAT THIS DOES *NOT* CLAIM after 20261011000000: that an enabled engine
+  -- plus a weekday always yields an exam. A monthly student, or one who set up
+  -- today, legitimately sees none inside fourteen days. The guarantee is about
+  -- this fixture's cadence being due, not about every student's.
   SELECT count(DISTINCT b.block_type), string_agg(DISTINCT b.block_type, ',' ORDER BY b.block_type)
     INTO v_n, v_txt
   FROM public.calendar_current_plan cp JOIN public.calendar_blocks b ON b.block_id = cp.block_id
@@ -627,15 +648,16 @@ INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
   ('cccccccc-0000-0000-0000-000000000006', 'weekly-unent@example.test',   '{}'::jsonb);
 
 INSERT INTO public.student_study_profile
-  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, planner_mode, setup_completed_at)
+  (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+   full_length_interval_weeks, target_score, planner_mode, setup_completed_at)
 VALUES
-  ('cccccccc-0000-0000-0000-000000000001', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
-  ('cccccccc-0000-0000-0000-000000000002', 'America/Chicago', 62, 60, 6, 1400, 'custom', now()),
-  ('cccccccc-0000-0000-0000-000000000003', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
-  ('cccccccc-0000-0000-0000-000000000004', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000001', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000002', 'America/Chicago', 62, 60, 6, 2, 1400, 'custom', now()),
+  ('cccccccc-0000-0000-0000-000000000003', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now()),
+  ('cccccccc-0000-0000-0000-000000000004', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now()),
   -- Setup UNFINISHED. Not a skip: absent from the population entirely (R-08-04).
-  ('cccccccc-0000-0000-0000-000000000005', 'America/Chicago', 62, 60, 6, 1400, 'auto',   NULL),
-  ('cccccccc-0000-0000-0000-000000000006', 'America/Chicago', 62, 60, 6, 1400, 'auto',   now());
+  ('cccccccc-0000-0000-0000-000000000005', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   NULL),
+  ('cccccccc-0000-0000-0000-000000000006', 'America/Chicago', 62, 60, 6, 2, 1400, 'auto',   now());
 
 -- Entitlement for everyone EXCEPT ...006, who exists to make the
 -- skipped_no_entitlement arm reachable. entitlement_active reads
@@ -1146,8 +1168,9 @@ BEGIN
   VALUES (S, 'writer-input@example.test', '{}'::jsonb);
 
   INSERT INTO public.student_study_profile
-    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday, target_score, setup_completed_at)
-  VALUES (S, 'America/Chicago', 126, 60, 6, 1400, now());
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 126, 60, 6, 2, 1400, now());
 
   INSERT INTO public.student_domain_mastery
     (student_id, section, domain, mastery_level, mastery_score, mastery_pct, event_count_total, constants_snapshot_hash)
@@ -1557,8 +1580,8 @@ BEGIN
   -- the student reached the end of the flow.
   INSERT INTO public.student_study_profile
     (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
-     target_score, target_exam_date, setup_completed_at)
-  VALUES (S, 'America/Chicago', 62, 60, 6, NULL, NULL, now());
+     full_length_interval_weeks, target_score, target_exam_date, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, 6, 2, NULL, NULL, now());
 
   INSERT INTO public.student_domain_mastery
     (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
@@ -1591,6 +1614,1036 @@ BEGIN
   RAISE NOTICE '    OK Z-52 both target fields NULL -> accepted plan with % block(s), and they stayed NULL', v_n;
 END;
 $notarget$;
+
+
+-- ----------------------------------------------------------------------------
+-- Z-53 .. Z-55 — full_length_interval_weeks and the pair
+--                (Doc 05F §8.1 / R-08-27 as amended; 20261010000000)
+--
+-- The cadence is the student's, so the profile has to be able to state it and
+-- must not be able to state half of it. Z-53 and Z-54 are the two halves of
+-- `full_length_pair`: a weekday with no interval and an interval with no
+-- weekday are both refused, and (NULL, NULL) — the student who wants no
+-- automatic exams — is accepted.
+--
+-- WHY THE REJECTIONS ARE ASSERTED BY SQLSTATE AND NOT BY MESSAGE TEXT: a CHECK
+-- violation is 23514 whatever the constraint is named, and the constraint name
+-- is asserted separately so a rename cannot make this gate pass vacuously
+-- against some OTHER check on the same row.
+-- ----------------------------------------------------------------------------
+DO $flpair$
+DECLARE
+  S CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000001';
+  v_state text;
+  v_name  text;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (S, 'fl-pair@example.test')
+    ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES (S, 'fl-pair@example.test', 'student')
+    ON CONFLICT DO NOTHING;
+
+  ---------------------------------------------------------------- Z-53a
+  -- A weekday with no interval: "Saturdays, at a frequency nobody picked".
+  BEGIN
+    INSERT INTO public.student_study_profile
+      (student_id, timezone, study_days_mask, daily_minutes,
+       full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+    VALUES (S, 'America/Chicago', 62, 60, 6, NULL, 1400, now());
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53a a weekday with no interval was accepted — full_length_pair is not enforcing';
+  EXCEPTION
+    WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS v_name = CONSTRAINT_NAME;
+      IF v_name <> 'full_length_pair' THEN
+        RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53a rejected by the wrong constraint (%), so the pair rule is untested here', v_name;
+      END IF;
+  END;
+
+  ---------------------------------------------------------------- Z-53b
+  -- An interval with no weekday: "every 2 weeks, on no day".
+  BEGIN
+    INSERT INTO public.student_study_profile
+      (student_id, timezone, study_days_mask, daily_minutes,
+       full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+    VALUES (S, 'America/Chicago', 62, 60, NULL, 2, 1400, now());
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53b an interval with no weekday was accepted — full_length_pair is not enforcing';
+  EXCEPTION
+    WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS v_name = CONSTRAINT_NAME;
+      IF v_name <> 'full_length_pair' THEN
+        RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53b rejected by the wrong constraint (%), so the pair rule is untested here', v_name;
+      END IF;
+  END;
+
+  ---------------------------------------------------------------- Z-53c
+  -- 5 weeks is not one of the four cadences §8.1 offers. Asserted because the
+  -- pair CHECK alone would admit it.
+  BEGIN
+    INSERT INTO public.student_study_profile
+      (student_id, timezone, study_days_mask, daily_minutes,
+       full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+    VALUES (S, 'America/Chicago', 62, 60, 6, 5, 1400, now());
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-53c an interval of 5 weeks was accepted — the column CHECK admits a cadence no surface can produce';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  ---------------------------------------------------------------- Z-54
+  -- (NULL, NULL) is the ONE encoding of "no automatic full-lengths", and it
+  -- must be storable: it is what "I'll add them myself" writes (§8.1).
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes,
+     full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, NULL, NULL, 1400, now());
+
+  PERFORM 1 FROM public.student_study_profile
+   WHERE student_id = S
+     AND full_length_weekday IS NULL AND full_length_interval_weeks IS NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-54 the both-NULL profile did not survive the write';
+  END IF;
+
+  RAISE NOTICE '    OK Z-53 each half alone is refused (and 5 weeks with it); Z-54 both-NULL is accepted';
+END;
+$flpair$;
+
+
+-- ----------------------------------------------------------------------------
+-- Z-55. The BACKFILL, run against a row shaped like the ones it was written for.
+--
+-- The migration's UPDATE cannot be observed after the fact — by the time any
+-- gate runs, it has already happened and `full_length_pair` makes its input
+-- shape unrepresentable. So this gate RECONSTRUCTS that shape: it drops the
+-- pair constraint, writes the pre-migration row (weekday set, interval NULL),
+-- re-runs the migration's statement verbatim, and asserts the result.
+--
+-- Dropping a constraint inside a gate is safe here and only here: this whole
+-- file runs in one transaction that ends in ROLLBACK, so the drop never
+-- outlives the run.
+--
+-- RE-ADDING IT IS A SECOND ASSERTION, and the more valuable one. ADD CONSTRAINT
+-- validates every existing row, so it re-validates every fixture this file has
+-- inserted. If any of them sets a weekday without an interval, this is where it
+-- surfaces — which is the failure mode that adding the pair to a live schema
+-- actually has.
+-- ----------------------------------------------------------------------------
+DO $flbackfill$
+DECLARE
+  S CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000002';
+  v_iw  smallint;
+  v_n   int;
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (S, 'fl-backfill@example.test')
+    ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES (S, 'fl-backfill@example.test', 'student')
+    ON CONFLICT DO NOTHING;
+
+  ALTER TABLE public.student_study_profile DROP CONSTRAINT full_length_pair;
+
+  -- The pre-migration row: a student who chose Saturdays under the old model,
+  -- where the cadence lived in config and not on the profile.
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes,
+     full_length_weekday, full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S, 'America/Chicago', 62, 60, 6, NULL, 1400, now());
+
+  -- Verbatim from 20261010000000 PART 2.
+  UPDATE public.student_study_profile
+     SET full_length_interval_weeks = 2
+   WHERE full_length_weekday IS NOT NULL
+     AND full_length_interval_weeks IS NULL;
+
+  SELECT full_length_interval_weeks INTO v_iw
+  FROM public.student_study_profile WHERE student_id = S;
+
+  IF v_iw IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-55 the backfill left interval_weeks = % on a weekday row, not 2 — existing students would lose the every-2-weeks spacing they already had', coalesce(v_iw::text, 'NULL');
+  END IF;
+
+  -- A no-exam student must NOT be given a cadence by the backfill. dddddddd-...001
+  -- is this file's NULL-weekday fixture.
+  SELECT count(*) INTO v_n FROM public.student_study_profile
+   WHERE full_length_weekday IS NULL AND full_length_interval_weeks IS NOT NULL;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-55 the backfill invented a cadence for % student(s) who declined automatic exams', v_n;
+  END IF;
+
+  ALTER TABLE public.student_study_profile
+    ADD CONSTRAINT full_length_pair
+    CHECK ((full_length_interval_weeks IS NULL) = (full_length_weekday IS NULL));
+
+  RAISE NOTICE '    OK Z-55 the backfill sets 2 on weekday rows, leaves no-exam rows alone, and every fixture in this file re-validates against the pair';
+END;
+$flbackfill$;
+
+
+-- ----------------------------------------------------------------------------
+-- Z-56 .. Z-59, Z-70 — exam placement is arithmetic on the student's choice
+--                       (formula sheet §2 Step 2 as rewritten; 20261011000000)
+--
+-- THESE GATES DISCOVER THEIR OWN DATES. They call
+-- `calendar_place_full_lengths` to learn where it puts an exam, then override
+-- that date and assert how the answer changes. Nothing is hardcoded to a
+-- weekday or a calendar date, because the last four gates of this class were
+-- green Monday to Friday and red every weekend (#903): a fixture that assumes
+-- "today is a study day" is a fixture that fails two days in seven.
+--
+-- They also do NOT restate the arithmetic. A gate that recomputed the expected
+-- date would be a second implementation of the rule it is checking, and it
+-- would agree with a wrong port for exactly the same reason the port was wrong.
+-- ----------------------------------------------------------------------------
+DO $placement$
+DECLARE
+  -- THREE students, because one fixture cannot honestly carry all four claims.
+  -- Z-56 needs its setup date INSIDE the horizon (a date outside it is trivially
+  -- exam-free and would prove nothing). Z-57/Z-58 need the first sitting early
+  -- enough that its +7 shift is still inside the horizon. Z-59 needs a rehearsal
+  -- and NO cadence exam competing with it. Those are incompatible in one profile,
+  -- and the first attempt here failed exactly on that: a setup-today weekly
+  -- student's first exam is at +7, so its shift landed at +14, off the end.
+  S_SETUP CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000010';
+  S_SHIFT CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000011';
+  S_REH   CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000012';
+  -- Z-70 needs a FOURTH, and for the same reason the other three are separate:
+  -- it needs the LAST cadence date in the horizon overridden while an EARLIER one
+  -- survives. On S_SHIFT that state is already spent -- Z-58 blocks both
+  -- occurrences, so nothing is left placed and "the answer is still non-trivial"
+  -- could not be asserted.
+  S_TAIL  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000013';
+  v_today   date := (now() AT TIME ZONE 'America/Chicago')::date;
+  v_dates   date[];
+  v_input   jsonb;
+  v_out     jsonb;
+  v_lead    integer;
+  v_first   date;
+  v_shift   date;
+  v_reh     date;
+  v_last    date;
+  v_hd      integer;   -- horizon_days AS THIS BLOCK SEES IT, not 14 (see Z-70)
+  v_iv      integer;
+  v_tdates  date[];
+  v_n       int;
+
+BEGIN
+  -- THIS BLOCK STATES ITS OWN PRECONDITION. Earlier gates in this file narrow
+  -- `enabled_block_types` to ["practice"] and then ["practice","review"] and never
+  -- put full_length back (lines ~1202 and ~1270), and the whole file runs in ONE
+  -- transaction, so config state is inherited by everything downstream. With
+  -- full_length disabled the BUILDER nulls `full_length_weekday` by design, and
+  -- placement then has nothing to place -- these gates would have passed vacuously
+  -- against an empty payload, which is the failure mode they exist to catch.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice","review","full_length"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  SELECT (value #>> '{}')::integer INTO v_lead
+  FROM public.calendar_runtime_config WHERE key = 'final_exam_lead_days';
+
+  -- READ, NEVER ASSUME, 14. Z-51 sets horizon_days to 28 (line ~1528) and this file
+  -- is ONE transaction, so every gate after it sees 28 -- the same inheritance the
+  -- Z-56 preamble warns about for enabled_block_types. Z-70's whole case is "the
+  -- shifted date falls past the horizon END", so a hardcoded 14 would put its
+  -- precondition 14 days off and let it pass against the wrong arm. It did, on the
+  -- first draft: the gate reported OK while the function had placed an exam at
+  -- today+14, inside the real 28-day window and correctly so.
+  SELECT (value #>> '{}')::integer INTO v_hd
+  FROM public.calendar_runtime_config WHERE key = 'horizon_days';
+  -- The interval that puts the SECOND sitting as late as the horizon allows while its
+  -- +7 still falls off the end: sittings are at today+1 and today+1+7*iv, so iv is the
+  -- largest whole number of weeks with today+1+7*iv <= today+v_hd-1. Derived, not
+  -- written, so this gate holds at 14 (iv=1) and at 28 (iv=3) alike.
+  v_iv := (v_hd - 2) / 7;
+  IF v_iv < 1 OR v_iv > 4 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 horizon_days=% needs interval_weeks=%, outside the CHECK''s 1..4 — the fixture cannot be built',
+      v_hd, v_iv;
+  END IF;
+  -- Its own date array, spanning the horizon the FUNCTION will use. Handing the
+  -- builder 14 dates while the function reasons over 28 is how the first draft
+  -- managed to assert a bound nothing in the system was using.
+  v_tdates := ARRAY(SELECT g::date FROM generate_series(v_today, v_today + (v_hd - 1), interval '1 day') g);
+
+  v_dates := ARRAY(SELECT g::date FROM generate_series(v_today, v_today + 13, interval '1 day') g);
+
+  INSERT INTO auth.users (id, email) VALUES
+    (S_SETUP, 'place-setup@example.test'),
+    (S_SHIFT, 'place-shift@example.test'),
+    (S_REH,   'place-reh@example.test'),
+    (S_TAIL,  'place-tail@example.test')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES
+    (S_SETUP, 'place-setup@example.test', 'student'),
+    (S_SHIFT, 'place-shift@example.test', 'student'),
+    (S_REH,   'place-reh@example.test',   'student'),
+    (S_TAIL,  'place-tail@example.test',  'student')
+  ON CONFLICT DO NOTHING;
+
+  -- All three study every day, so nothing below depends on which weekday CI runs.
+  -- Every weekday is expressed as an OFFSET from today, never a literal.
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, target_exam_date, setup_completed_at)
+  VALUES
+    -- Z-56: sets up TODAY, so the setup date is in the horizon and the claim bites.
+    (S_SETUP, 'America/Chicago', 127, 120, EXTRACT(DOW FROM v_today)::integer,
+     1, 1400, v_today + 120, now()),
+    -- Z-57/Z-58: setup one interval back minus a day, so the first sitting is
+    -- tomorrow and its +7 shift is still comfortably inside the horizon.
+    (S_SHIFT, 'America/Chicago', 127, 120, EXTRACT(DOW FROM v_today + 1)::integer,
+     1, 1400, v_today + 120, now() - interval '6 days'),
+    -- Z-59: MONTHLY, so no cadence exam competes with the rehearsal inside 14 days,
+    -- and a target placed so the rehearsal lands on today+3.
+    (S_REH, 'America/Chicago', 127, 120, EXTRACT(DOW FROM v_today + 3)::integer,
+     4, 1400, v_today + 3 + v_lead, now()),
+    -- Z-70: set up one interval-week back minus a day so the first sitting is tomorrow,
+    -- with the interval chosen above so the SECOND sitting is the last the horizon
+    -- holds and its +7 falls off the end. Target far beyond the horizon, so no
+    -- rehearsal competes for the two-per-horizon cap.
+    (S_TAIL, 'America/Chicago', 127, 120, EXTRACT(DOW FROM v_today + 1)::integer,
+     v_iv, 1400, v_today + v_hd + 120, now() - interval '6 days');
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
+     event_count_total, constants_snapshot_hash)
+  SELECT u, 'M', 'Algebra', 0, 0, 0, 10, 'h' FROM unnest(ARRAY[S_SETUP,S_SHIFT,S_REH,S_TAIL]) u
+  UNION ALL
+  SELECT u, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h' FROM unnest(ARRAY[S_SETUP,S_SHIFT,S_REH,S_TAIL]) u
+  ON CONFLICT DO NOTHING;
+
+  ---------------------------------------------------------------- Z-56
+  -- THE SETUP DAY IS NEVER AN EXAM DAY. The retired rule anchored the series on
+  -- the first preferred weekday ON OR AFTER setup, so a student who set up on
+  -- their chosen weekday got an exam that same day -- one of the two production
+  -- defects.
+  --
+  -- WHY IT CANNOT, as of 20261013000000, is no longer "the series starts a full
+  -- interval later" -- that rule is itself retired, because spending the first
+  -- interval before the first sitting put a fortnightly student's first exam past
+  -- the end of their first horizon (Z-68). The first sitting is now the first
+  -- preferred weekday STRICTLY AFTER the setup date, and strictly-after is what
+  -- keeps this claim true: `setup + 1` is already past the setup day, so the snap
+  -- forward lands on the NEXT occurrence of that weekday. This fixture is weekly
+  -- and sets up ON its preferred weekday, so it is the case that distinguishes
+  -- "strictly after" from "on or after" -- the two rules differ here and nowhere
+  -- else in this file.
+  v_input := public.calendar_build_plan_input(S_SETUP, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  -- Presence before absence: prove the payload is non-trivial first, or the
+  -- absence below passes for the wrong reason (CLAUDE.md).
+  SELECT count(*) INTO v_n FROM jsonb_array_elements(v_out -> 'placed');
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-56 placed nothing at all, so "nothing on the setup day" proves nothing';
+  END IF;
+  IF (v_input #>> '{profile,setup_date}')::date <> v_today THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-56 fixture setup_date is % not today, so it is outside the horizon and the claim is vacuous',
+      v_input #>> '{profile,setup_date}';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+             WHERE (f ->> 'date')::date = (v_input #>> '{profile,setup_date}')::date) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-56 an exam was placed on the setup date (%) — the anchor defect is back',
+      v_input #>> '{profile,setup_date}';
+  END IF;
+  RAISE NOTICE '    OK Z-56 setup date % is in the horizon and holds no exam, while % block(s) were placed', v_today, v_n;
+
+  ---------------------------------------------------------------- Z-57
+  -- AN OVERRIDDEN PREFERRED DATE SHIFTS BY EXACTLY ONE WEEK, never 1..6 days: a
+  -- 1..6 day shift cannot satisfy V-02, and it would move the student's test off
+  -- the day they chose.
+  v_input := public.calendar_build_plan_input(S_SHIFT, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+  SELECT min((f ->> 'date')::date) INTO v_first
+  FROM jsonb_array_elements(v_out -> 'placed') f WHERE f ->> 'explanation_key' = 'exam_cadence';
+  IF v_first IS NULL OR v_first + 7 > v_today + 13 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-57 fixture first exam % leaves no room in the horizon for a +7 shift', v_first;
+  END IF;
+
+  PERFORM public.calendar_edit_day(S_SHIFT, v_first, '[]'::jsonb, 'v1', NULL);
+  v_input := public.calendar_build_plan_input(S_SHIFT, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+  v_shift := v_first + 7;
+
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+             WHERE (f ->> 'date')::date = v_first) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-57 the overridden date % still holds an exam', v_first;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+                 WHERE (f ->> 'date')::date = v_shift AND f ->> 'explanation_key' = 'exam_cadence') THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-57 the exam did not move to % (one week on); placed = %',
+      v_shift, v_out -> 'placed';
+  END IF;
+  IF EXTRACT(DOW FROM v_shift)::integer
+     <> public.calendar_require_int(v_input -> 'profile', 'full_length_weekday') THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-57 the shifted date % is off the student''s full-length weekday, which V-02 refuses', v_shift;
+  END IF;
+  IF jsonb_array_length(v_out -> 'suppressed') <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-57 a date that shifted cleanly was also reported suppressed: %', v_out -> 'suppressed';
+  END IF;
+  RAISE NOTICE '    OK Z-57 an overridden % shifted to % (+7, same weekday), with no suppression reported', v_first, v_shift;
+
+  ---------------------------------------------------------------- Z-58
+  -- BOTH OCCURRENCES OVERRIDDEN RECORDS A SUPPRESSION rather than dropping the
+  -- exam silently. Silence is the defect this replaces: on one production profile
+  -- an edited day swallowed the only exam in the horizon with no trace anywhere,
+  -- and no refresh or profile change would ever have fixed it.
+  PERFORM public.calendar_edit_day(S_SHIFT, v_shift, '[]'::jsonb, 'v1', NULL);
+  v_input := public.calendar_build_plan_input(S_SHIFT, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+             WHERE (f ->> 'date')::date IN (v_first, v_shift)) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-58 an exam was placed on a date the student blocked';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(v_out -> 'suppressed') t WHERE t::date = v_first) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-58 both occurrences blocked and NOTHING recorded — the silent drop is back. suppressed = %',
+      v_out -> 'suppressed';
+  END IF;
+  RAISE NOTICE '    OK Z-58 both occurrences blocked -> suppression recorded for %, not a silent drop', v_first;
+
+  ---------------------------------------------------------------- Z-59
+  -- THE FINAL REHEARSAL IS NEVER SHIFTED. It is anchored to the real test rather
+  -- than to a cadence, and a student who blocks that day has made their own call.
+  --
+  -- Asserted on the FUNCTION, not through a persisted plan, deliberately: at the
+  -- persist layer an overridden date is ALSO removed by calendar_drop_unowned_dates,
+  -- so a plan-level assertion could not tell "the rehearsal was never shifted" from
+  -- "the output filter took it away".
+  v_input := public.calendar_build_plan_input(S_REH, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+  SELECT (f ->> 'date')::date INTO v_reh
+  FROM jsonb_array_elements(v_out -> 'placed') f WHERE f ->> 'explanation_key' = 'final_rehearsal';
+  IF v_reh IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-59 no rehearsal in the horizon, so "never shifted" is untested; placed = %',
+      v_out -> 'placed';
+  END IF;
+
+  PERFORM public.calendar_edit_day(S_REH, v_reh, '[]'::jsonb, 'v1', NULL);
+  v_input := public.calendar_build_plan_input(S_REH, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+                 WHERE (f ->> 'date')::date = v_reh AND f ->> 'explanation_key' = 'final_rehearsal') THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-59 the rehearsal moved or vanished when its day was blocked; placed = %',
+      v_out -> 'placed';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements_text(v_out -> 'suppressed') t WHERE t::date = v_reh) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-59 the rehearsal was reported suppressed; it is never shifted and never suppressed';
+  END IF;
+  RAISE NOTICE '    OK Z-59 the rehearsal stayed on % with its day blocked — unshifted and unsuppressed', v_reh;
+
+  ---------------------------------------------------------------- Z-70
+  -- A SHIFT THAT LANDS PAST THE HORIZON IS NOT A SUPPRESSION. It is the third arm
+  -- of the override rule, and until now the only one with nothing holding it.
+  --
+  -- The rule has three answers for an overridden cadence date: shift it +7 (Z-57),
+  -- record a suppression when that week is blocked too (Z-58), and -- when the +7
+  -- falls beyond the horizon -- place nothing AND say nothing, because that sitting
+  -- has not been cancelled, it simply belongs to the next horizon. The generator
+  -- says so in as many words (`-- NOT a suppression. That exam simply belongs to a
+  -- later horizon`, 20261013000000 line ~188) and the oracle agrees
+  -- (docs/Spec/calendar_formula_reference.py: `if nxt > horizon[-1]: continue`).
+  --
+  -- WHY NEITHER FIXTURE NOR PARITY COULD HOLD IT, which is why it is a writer gate.
+  -- `generate()` in the oracle does `exams, _suppressed = exam_dates(...)` and drops
+  -- the second value, so no plan the parity gate compares can witness a suppression
+  -- at all -- the whole suppression rule is invisible to it by construction. A
+  -- mutation deleting this arm changed 0 of the 13 fixtures and 0 of the 3000 seeded
+  -- suite cases, while being reachable in 162,848 of 3,561,600 placement inputs
+  -- swept (Brief 18 census, docs/plans/Calendar_Rule_Branch_Coverage_Census.md).
+  --
+  -- WHAT A REGRESSION HERE DOES TO A STUDENT: `full_length_suppressions` reaches the
+  -- client (packages/shared/src/calendar/api.ts, FullLengthSuppressionNotice), so
+  -- recording this case tells them their practice test was cancelled when it was only
+  -- scheduled for next fortnight.
+  v_input := public.calendar_build_plan_input(S_TAIL, v_tdates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  -- Presence before absence, in two parts. (1) TWO cadence sittings are in the
+  -- horizon, so blocking the later one still leaves an answer to inspect; a gate
+  -- whose expected output is an empty `placed` cannot tell "correctly placed
+  -- nothing here" from "the function returned nothing at all".
+  SELECT count(*) INTO v_n
+  FROM jsonb_array_elements(v_out -> 'placed') f WHERE f ->> 'explanation_key' = 'exam_cadence';
+  IF v_n < 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 fixture put % cadence sitting(s) in the horizon, needs 2 (one to block, one to survive); placed = %',
+      v_n, v_out -> 'placed';
+  END IF;
+  SELECT max((f ->> 'date')::date) INTO v_last
+  FROM jsonb_array_elements(v_out -> 'placed') f WHERE f ->> 'explanation_key' = 'exam_cadence';
+
+  -- (2) The case really is THIS arm and not Z-57's. If the last sitting's +7 still
+  -- fits inside the horizon the rule would shift it, and everything below would pass
+  -- for the wrong reason.
+  IF v_last + 7 <= v_today + (v_hd - 1) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 last sitting % has room for a +7 shift inside the horizon (ends %) — this is Z-57''s case, not the out-of-horizon one',
+      v_last, v_today + (v_hd - 1);
+  END IF;
+
+  PERFORM public.calendar_edit_day(S_TAIL, v_last, '[]'::jsonb, 'v1', NULL);
+  v_input := public.calendar_build_plan_input(S_TAIL, v_tdates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+             WHERE (f ->> 'date')::date = v_last) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 the overridden last sitting % still holds an exam', v_last;
+  END IF;
+  -- The earlier sitting is untouched, so the absence above is an absence and not a
+  -- silent collapse of the whole series.
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+                 WHERE f ->> 'explanation_key' = 'exam_cadence') THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 blocking the LAST sitting emptied the series; the earlier one should survive. placed = %',
+      v_out -> 'placed';
+  END IF;
+  -- THE LOAD-BEARING ASSERTION. Nothing was cancelled, so nothing is reported.
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements_text(v_out -> 'suppressed') t WHERE t::date = v_last) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 % was reported suppressed, but its +7 lands past the horizon end (%) — that sitting belongs to a later horizon and has not been cancelled. suppressed = %',
+      v_last, v_today + (v_hd - 1), v_out -> 'suppressed';
+  END IF;
+  IF jsonb_array_length(v_out -> 'suppressed') <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 nothing on this fixture is blocked twice, yet a suppression was reported: %',
+      v_out -> 'suppressed';
+  END IF;
+  -- The other half of the same guard. The arm exists because the shifted date is
+  -- PAST THE HORIZON, so the failure it prevents is not only a false suppression --
+  -- it is also using that date. Without this line, deleting the arm outright places
+  -- an exam beyond the window and every assertion above still passes.
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_out -> 'placed') f
+             WHERE (f ->> 'date')::date > v_today + (v_hd - 1)) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-70 a full-length was placed past the horizon end (%): %',
+      v_today + (v_hd - 1), v_out -> 'placed';
+  END IF;
+  RAISE NOTICE '    OK Z-70 blocked last sitting % (its +7 = % is past the horizon end %, horizon_days=%, interval=%w) -> placed nothing there, suppressed nothing, earlier sitting kept',
+    v_last, v_last + 7, v_today + (v_hd - 1), v_hd, v_iv;
+END;
+$placement$;
+
+
+-- The shared form fixture, included HERE rather than at the top of the file so no earlier
+-- gate's counts see its rows. Same helper as the E3, E4 and E9b gates.
+\ir lib/exam-form-fixture.sql
+
+-- ============================================================================
+-- Brief 14 Step 5 — the two practice-test notifications (Z-60 .. Z-67)
+-- ============================================================================
+-- @spec [Doc-05F_V1.0 §8.1, §12.5 (the daily-job pattern), §13 (progress is the
+--        allocator over engine events), §18 (job outcomes);
+--        contracts/notifications.contract.md §2.2, §2.3, §5.1, §5.2, §8.1;
+--        owner ruling 2026-09-26 ("two event types, not one with a kind in the
+--        payload")]
+--
+-- THE FIXTURE IS A REAL PLAN, not hand-inserted rows. `calendar_persist_version`
+-- generates it and the exam block is READ BACK out of `calendar_current_plan`,
+-- because a hand-built plan row can assert a shape the generator never emits --
+-- which is how a fixture and a bug agree with each other and the suite stays
+-- green (CLAUDE.md, SCL-137).
+--
+--   Z-60  the week notice fires on the student's local MONDAY, for that week's exam
+--   Z-61  ... and on no other day of the week
+--   Z-62  the day-before notice fires when the exam is tomorrow, and not otherwise
+--   Z-63  the defaulted clock and an explicit now() agree, so p_now cannot drift
+--   Z-64  ONE block yields TWO notifications -- the event type is in the hash
+--   Z-65  a rerun writes nothing: 'duplicate', and the counts do not move
+--   Z-66  a completed sitting suppresses the notice ('skipped_complete'), and the
+--         rule is derived in ONE function with ONE call site
+--   Z-67  an unentitled student is a recorded skip, not a silent one; and the
+--         payload carries the block id and the date and nothing else
+-- ============================================================================
+DO $examnotify$
+DECLARE
+  S     CONSTANT uuid := 'eeeeeeee-0000-0000-0000-00000000000a';
+  S_UN  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-00000000000b';
+  k_tz  CONSTANT text := 'America/Chicago';
+  v_r        jsonb;
+  v_exam     date;
+  v_block    uuid;
+  v_monday   timestamptz;
+  v_daybefore timestamptz;
+  v_kinds    text[];
+  v_out      text;
+  v_events   integer;
+  v_msgs     integer;
+  v_events2  integer;
+  v_msgs2    integer;
+  v_payload  jsonb;
+  v_n        integer;
+BEGIN
+  -- full_length has to be ON for the generator to place one. Stated here rather than
+  -- leaned on: the seeded value has changed twice already, and a gate that assumes it
+  -- goes red for the one reason a gate must never go red -- being out of date.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice","review","full_length"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+    (S,    'exam-notify@example.test',       '{}'::jsonb),
+    (S_UN, 'exam-notify-unent@example.test', '{}'::jsonb);
+
+  -- Saturday exams every 2 weeks, set up 14 days ago so the first sitting falls INSIDE
+  -- the horizon (placement is arithmetic from setup since 20261011000000).
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, setup_completed_at)
+  VALUES (S,    k_tz, 127, 60, 6, 2, 1400, now() - interval '14 days'),
+         (S_UN, k_tz, 127, 60, 6, 2, 1400, now() - interval '14 days');
+
+  -- S is entitled; S_UN deliberately is not, which is what makes the
+  -- skipped_no_entitlement arm reachable rather than theoretical.
+  INSERT INTO public.entitlements (profile_id, tier, status) VALUES (S, 'premium', 'active');
+
+  -- A sittable form for Z-66's completed exam, from the shared fixture.
+  PERFORM pg_temp.exam_fixture_make_form('eeee0f00-0000-4000-8000-0000000000f1', 'EN');
+
+  v_r := public.calendar_persist_version(S, 'setup', 'student', 'v1',
+           'eeeeeeee-0000-0000-0000-0000000000a1');
+  IF v_r ->> 'validator_result' <> 'accepted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-60 setup was not accepted: %', v_r;
+  END IF;
+  PERFORM public.calendar_persist_version(S_UN, 'setup', 'student', 'v1',
+            'eeeeeeee-0000-0000-0000-0000000000b1');
+
+  -- The exam, as the GENERATOR placed it. Not a date this gate chose.
+  SELECT cp.scheduled_date, cp.block_id INTO v_exam, v_block
+  FROM public.calendar_current_plan cp
+  JOIN public.calendar_blocks b ON b.block_id = cp.block_id AND b.student_id = cp.student_id
+  WHERE cp.student_id = S AND b.block_type = 'full_length'
+  ORDER BY cp.scheduled_date
+  LIMIT 1;
+
+  IF v_block IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-60 no full_length block in the plan, so every check below would pass vacuously';
+  END IF;
+
+  -- Noon local on the two days that matter, so no assertion rides on a DST edge.
+  v_monday    := (date_trunc('week', v_exam::timestamp) + interval '12 hours') AT TIME ZONE k_tz;
+  v_daybefore := ((v_exam - 1)::timestamp + interval '12 hours') AT TIME ZONE k_tz;
+
+  ---------------------------------------------------------------- Z-60
+  SELECT array_agg(kind ORDER BY kind) INTO v_kinds
+  FROM public.calendar_exam_notification_candidates(500, v_monday)
+  WHERE student_id = S AND block_id = v_block;
+
+  IF v_kinds IS DISTINCT FROM ARRAY['full_length_week'] THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-60 on the local Monday of the exam week the kinds due were %, expected exactly {full_length_week}',
+      coalesce(v_kinds::text, 'none');
+  END IF;
+  RAISE NOTICE '    OK Z-60 the week notice is due on the local Monday of the week holding the % exam', v_exam;
+
+  ---------------------------------------------------------------- Z-61
+  -- Tuesday through Sunday: no week notice. Six days asserted, not one, because
+  -- "fires on Monday" and "fires every day" are indistinguishable from a single day.
+  FOR v_n IN 1..6 LOOP
+    IF EXISTS (
+      SELECT 1 FROM public.calendar_exam_notification_candidates(500, v_monday + (v_n || ' days')::interval)
+      WHERE student_id = S AND block_id = v_block AND kind = 'full_length_week'
+    ) THEN
+      RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-61 the week notice was also due % day(s) after the Monday', v_n;
+    END IF;
+  END LOOP;
+  RAISE NOTICE '    OK Z-61 the week notice is due on the Monday and on none of the other six days';
+
+  ---------------------------------------------------------------- Z-62
+  SELECT array_agg(kind ORDER BY kind) INTO v_kinds
+  FROM public.calendar_exam_notification_candidates(500, v_daybefore)
+  WHERE student_id = S AND block_id = v_block;
+
+  IF NOT (v_kinds @> ARRAY['full_length_tomorrow']) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-62 the day before the % exam the kinds due were %, with no full_length_tomorrow',
+      v_exam, coalesce(v_kinds::text, 'none');
+  END IF;
+  -- And not on the day itself, nor two days before.
+  IF EXISTS (
+    SELECT 1 FROM public.calendar_exam_notification_candidates(500, v_daybefore + interval '1 day')
+    WHERE student_id = S AND block_id = v_block AND kind = 'full_length_tomorrow'
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-62 full_length_tomorrow was still due ON the exam day';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.calendar_exam_notification_candidates(500, v_daybefore - interval '1 day')
+    WHERE student_id = S AND block_id = v_block AND kind = 'full_length_tomorrow'
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-62 full_length_tomorrow was due TWO days before the exam';
+  END IF;
+  RAISE NOTICE '    OK Z-62 the day-before notice is due on % only -- not on the exam day, not two days out', v_exam - 1;
+
+  ---------------------------------------------------------------- Z-63
+  -- The default and the thing it defaults to. A parameter the job never passes is a
+  -- parameter that can drift away from `now()`; this is what stops it.
+  SELECT count(*) INTO v_n FROM (
+    SELECT student_id, block_id, kind FROM public.calendar_exam_notification_candidates(500)
+    EXCEPT
+    SELECT student_id, block_id, kind FROM public.calendar_exam_notification_candidates(500, now())
+  ) d;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-63 the defaulted clock and an explicit now() disagree on % row(s)', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-63 calendar_exam_notification_candidates() and (..., now()) return the same rows';
+
+  ---------------------------------------------------------------- Z-64
+  -- ONE BLOCK, TWO NOTIFICATIONS. This is the owner's ruling made observable: the
+  -- event type is part of notification_event_id's hash input, so the two kinds are two
+  -- ids. Derive the id from the block alone -- one type with a kind in the payload --
+  -- and the second emit is swallowed by the ON CONFLICT that makes the first
+  -- idempotent. That is the plant recorded in the PR.
+  IF public.notification_event_id('full_length_week', v_block::text)
+     = public.notification_event_id('full_length_tomorrow', v_block::text) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 the two kinds hash to ONE event id, so one block can only ever notify once';
+  END IF;
+
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_week', v_exam, k_tz);
+  IF v_out <> 'emitted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 the week notice returned % rather than emitted', v_out;
+  END IF;
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_tomorrow', v_exam, k_tz);
+  IF v_out <> 'emitted' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 the day-before notice returned % rather than emitted -- one block must yield two', v_out;
+  END IF;
+
+  SELECT count(*) INTO v_events FROM public.notification_events
+   WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow');
+  IF v_events <> 2 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 expected 2 events for one exam, got %', v_events;
+  END IF;
+
+  -- The channel rule, §2.3: the week notice in_app, the day-before in_app + email.
+  -- The STUDENT alone is the recipient -- no guardian row, at either kind.
+  SELECT count(*) INTO v_msgs FROM public.notification_messages m
+   JOIN public.notification_events e USING (event_id)
+   WHERE e.subject_profile_id = S AND e.event_type IN ('full_length_week','full_length_tomorrow');
+  IF v_msgs <> 3 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 expected 3 message rows (week in_app; tomorrow in_app + email), got %', v_msgs;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.notification_messages m
+    JOIN public.notification_events e USING (event_id)
+    WHERE e.event_type IN ('full_length_week','full_length_tomorrow')
+      AND m.recipient_profile_id <> S
+  ) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-64 a practice-test notice was addressed to somebody other than the student';
+  END IF;
+  RAISE NOTICE '    OK Z-64 one exam block yields TWO events and 3 message rows, all addressed to the student';
+
+  ---------------------------------------------------------------- Z-65
+  -- The rerun. "None on a rerun" (Brief 14 Step 5's own validation), asserted on the
+  -- COUNTS and not only on the return value: a writer could report duplicate and still
+  -- have inserted.
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_week', v_exam, k_tz);
+  IF v_out <> 'duplicate' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-65 a replayed week notice returned % rather than duplicate', v_out;
+  END IF;
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_tomorrow', v_exam, k_tz);
+  IF v_out <> 'duplicate' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-65 a replayed day-before notice returned % rather than duplicate', v_out;
+  END IF;
+
+  SELECT count(*) INTO v_events2 FROM public.notification_events
+   WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow');
+  SELECT count(*) INTO v_msgs2 FROM public.notification_messages m
+   JOIN public.notification_events e USING (event_id)
+   WHERE e.subject_profile_id = S AND e.event_type IN ('full_length_week','full_length_tomorrow');
+  IF v_events2 <> v_events OR v_msgs2 <> v_msgs THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-65 a rerun changed the counts: events %->%, messages %->%',
+      v_events, v_events2, v_msgs, v_msgs2;
+  END IF;
+  RAISE NOTICE '    OK Z-65 a rerun returns duplicate and writes nothing (% events, % messages, unchanged)', v_events2, v_msgs2;
+
+  ---------------------------------------------------------------- Z-66
+  -- "NOTHING IF THE BLOCK IS ALREADY COMPLETE", observed rather than asserted. A
+  -- completed sitting inside the exam's own local day makes the notice a skip.
+  --
+  -- The completeness rule has ONE derivation and ONE call site. Both are checked here:
+  -- the function answers correctly about the new sitting, and grep over pg_proc finds
+  -- exactly one body that calls it.
+  IF public.calendar_full_length_complete(S, v_exam, k_tz) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 the block reads complete before any sitting exists';
+  END IF;
+
+  -- The form comes from the SHARED exam fixture (\ir'd above), not a hand-built row: it is
+  -- the fixture three other gates already use, and a second minimal form here would be a
+  -- second answer to "what does a form look like".
+  --
+  -- The SITTING is inserted directly, and that is the right call rather than a shortcut. The
+  -- whole contract of `calendar_full_length_complete` is (student, state, completed_at), and
+  -- the sitting has to be complete on a FUTURE date -- the exam the generator just placed --
+  -- which no amount of walking a real exam through the runtime can produce without moving
+  -- the clock afterwards anyway. Every NOT NULL column is supplied, `actor_id` READ FROM THE
+  -- PROFILE rather than set to the student id (SCL-151: the pseudonymous grouping key is not
+  -- the identity key, and a fixture that conflates them teaches the next reader to).
+  INSERT INTO public.test_sessions
+    (student_id, test_form_id, state, mode, started_at, completed_at, grace_expires_at,
+     attempt_number_for_form, is_first_seen_form_attempt, actor_id)
+  SELECT S, f.id, 'completed', 'strict',
+         (v_exam::timestamp + interval '8 hours')  AT TIME ZONE k_tz,
+         (v_exam::timestamp + interval '11 hours') AT TIME ZONE k_tz,
+         (v_exam::timestamp + interval '23 hours') AT TIME ZONE k_tz,
+         1, true, pr.actor_id
+  FROM public.test_forms f
+  CROSS JOIN public.profiles pr
+  WHERE pr.id = S
+  ORDER BY f.id
+  LIMIT 1;
+
+  -- THE INSERT IS ASSERTED, because the first draft of this gate did not and the insert
+  -- silently matched zero rows: `test_forms` was empty, so `FROM test_forms LIMIT 1` wrote
+  -- nothing and the completeness check below was measuring an absent sitting. It reddened
+  -- only because the assertion happened to be the positive one. A fixture that can quietly
+  -- insert nothing is the "fails green" shape, one layer down.
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 the completed sitting inserted % rows, not 1 -- there is nothing for the completeness check to find', v_n;
+  END IF;
+
+  IF NOT public.calendar_full_length_complete(S, v_exam, k_tz) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 a completed sitting inside the exam day did not read as complete';
+  END IF;
+  -- And not on the neighbouring days: the window is the block's OWN local day, half-open.
+  IF public.calendar_full_length_complete(S, v_exam - 1, k_tz)
+     OR public.calendar_full_length_complete(S, v_exam + 1, k_tz) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 the completeness window leaked into an adjacent local day';
+  END IF;
+
+  -- A block whose sitting is done is never notified about -- even for a kind that has
+  -- not been sent yet, which is what makes this the RULE and not the replay guard.
+  DELETE FROM public.notification_events
+   WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow');
+  v_out := public.calendar_emit_exam_notification(S, v_block, 'full_length_week', v_exam, k_tz);
+  IF v_out <> 'skipped_complete' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 a completed exam still returned % rather than skipped_complete', v_out;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.notification_events
+              WHERE subject_profile_id = S AND event_type IN ('full_length_week','full_length_tomorrow')) THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 a completed exam was notified about anyway';
+  END IF;
+
+  SELECT count(*) INTO v_n
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname <> 'calendar_full_length_complete'
+    AND p.prosrc LIKE '%calendar_full_length_complete%';
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-66 completeness is derived through % function bodies, not 1 -- a second caller is a second answer', v_n;
+  END IF;
+  RAISE NOTICE '    OK Z-66 a completed sitting suppresses the notice; the rule has one definition and one caller';
+
+  ---------------------------------------------------------------- Z-67
+  -- The unentitled student is RECORDED, not filtered: `skipped_no_entitlement` is a
+  -- calendar_job_runs outcome, and §12.5's doctrine is that a student the job passed
+  -- over silently is a student nobody can explain afterwards.
+  SELECT outcome INTO v_out
+  FROM public.calendar_exam_notification_candidates(500, v_daybefore)
+  WHERE student_id = S_UN LIMIT 1;
+  IF v_out IS DISTINCT FROM 'skipped_no_entitlement' THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-67 the unentitled student''s outcome was % -- expected skipped_no_entitlement (absent means filtered away)',
+      coalesce(v_out, 'NULL (notify)');
+  END IF;
+
+  -- The payload rule (contract §8.1): the block id and the date the template renders,
+  -- and nothing else. No form id -- that names a specific paper.
+  PERFORM public.calendar_emit_exam_notification(S_UN, v_block, 'full_length_tomorrow', v_exam, k_tz);
+  SELECT payload INTO v_payload FROM public.notification_events
+   WHERE subject_profile_id = S_UN AND event_type = 'full_length_tomorrow';
+  IF v_payload IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-67 no event row to inspect, so the payload rule is untested';
+  END IF;
+  IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(v_payload) k)
+     IS DISTINCT FROM ARRAY['block_id','local_date'] THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-67 the payload keys are %, expected exactly {block_id, local_date}', v_payload;
+  END IF;
+  RAISE NOTICE '    OK Z-67 an unentitled student is a recorded skip, and the payload is {block_id, local_date} exactly';
+END;
+$examnotify$;
+
+-- ===========================================================================
+-- Z-68 .. Z-69 — the FIRST SITTING comes before the first interval
+--
+-- @spec [Doc 05F formula sheet §2 Step 2 (corrected 2026-09-29); migration
+--        20261013000000] | @implemented [2026-09-29]
+--
+-- THE DEFECT THESE PIN, from production rather than from reasoning. Profile
+-- 59ce67c7: Mon-Fri study days, Saturday tests, fortnightly, set up 29 Sep, no
+-- target. The old rule spent the first interval BEFORE the first sitting:
+--
+--   29 Sep + (2 x 7) = 13 Oct  ->  next Saturday = 17 Oct
+--   horizon          = 29 Sep .. 12 Oct
+--
+-- so the first exam fell one Saturday past the end of the window. The Saturdays
+-- inside it were owned plan dates carrying nothing. For a fortnightly student
+-- that is not bad luck, it is arithmetic: the first interval always consumes the
+-- horizon. Monthly is worse. WEEKLY IS THE ONLY CADENCE THAT WORKED, which is
+-- why Z-56..Z-59 — every one of them weekly or monthly-with-a-rehearsal — went
+-- green over it for two days.
+--
+-- Z-68 is that student. Z-69 is the other end of the same rule: once a sitting
+-- has happened the interval DOES apply, and a rule that simply always started at
+-- +1 day would put the next exam a week later for a fortnightly student.
+-- ===========================================================================
+DO $firstsitting$
+DECLARE
+  S_NEW  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000020';
+  S_AFT  CONSTANT uuid := 'eeeeeeee-0000-0000-0000-000000000021';
+  k_tz   CONSTANT text := 'America/Chicago';
+  v_today  date := (now() AT TIME ZONE k_tz)::date;
+  v_dates  date[];
+  v_input  jsonb;
+  v_out    jsonb;
+  v_first  date;
+  v_exday  date;   -- the first NON-study day after today; the fixture's preferred weekday
+  v_examwd integer;
+  v_sat    date;
+  v_last   date;
+  v_n      integer;
+BEGIN
+  -- Same precondition as Z-56..Z-59: earlier gates in this one-transaction file
+  -- narrow `enabled_block_types`, and with full_length off the BUILDER nulls the
+  -- weekday, so these would pass vacuously against an empty payload.
+  UPDATE public.calendar_runtime_config
+     SET value = '["practice","review","full_length"]'::jsonb
+   WHERE key = 'enabled_block_types';
+
+  v_dates := ARRAY(SELECT g::date FROM generate_series(v_today, v_today + 13, interval '1 day') g);
+
+  INSERT INTO auth.users (id, email) VALUES
+    (S_NEW, 'first-sitting-new@example.test'),
+    (S_AFT, 'first-sitting-after@example.test')
+  ON CONFLICT DO NOTHING;
+  INSERT INTO public.profiles (id, email, role) VALUES
+    (S_NEW, 'first-sitting-new@example.test',   'student'),
+    (S_AFT, 'first-sitting-after@example.test', 'student')
+  ON CONFLICT DO NOTHING;
+
+  -- THE PRODUCTION SHAPE: study Mon-Fri (mask 62), sit tests on a weekday that is
+  -- NOT a study day, FORTNIGHTLY, set up today, no target date.
+  --
+  -- THE EXAM WEEKDAY IS DERIVED FROM THE MASK, not written as an offset, and that
+  -- is the second draft. `today + 2` was a Thursday on the day this was written —
+  -- inside mask 62 — so the gate reddened on its own "must not be a study day"
+  -- assertion. An offset cannot express "not a study day" without knowing which
+  -- weekday CI runs; the mask can. The first Saturday or Sunday after today is at
+  -- most six days out, so it is always inside a fourteen-day horizon.
+  SELECT g::date INTO v_exday
+  FROM generate_series(v_today + 1, v_today + 7, interval '1 day') g
+  WHERE (62 & (1 << EXTRACT(DOW FROM g)::integer)) = 0
+  ORDER BY g LIMIT 1;
+  IF v_exday IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 mask 62 left no non-study day in seven, which is arithmetically impossible — the mask convention has changed';
+  END IF;
+  v_examwd := EXTRACT(DOW FROM v_exday)::integer;
+  INSERT INTO public.student_study_profile
+    (student_id, timezone, study_days_mask, daily_minutes, full_length_weekday,
+     full_length_interval_weeks, target_score, target_exam_date, setup_completed_at)
+  VALUES
+    (S_NEW, k_tz, 62, 120, v_examwd,
+     2, 1400, NULL, now()),
+    -- Z-69: same cadence, set up three weeks ago, and a sitting COMPLETED on the
+    -- most recent occurrence of the preferred weekday. The next one must be a
+    -- full fortnight from THAT, not a week.
+    (S_AFT, k_tz, 62, 120, v_examwd,
+     2, 1400, NULL, now() - interval '21 days')
+  ON CONFLICT (student_id) DO UPDATE SET
+    study_days_mask            = EXCLUDED.study_days_mask,
+    full_length_weekday        = EXCLUDED.full_length_weekday,
+    full_length_interval_weeks = EXCLUDED.full_length_interval_weeks,
+    target_exam_date           = EXCLUDED.target_exam_date,
+    setup_completed_at         = EXCLUDED.setup_completed_at;
+
+  INSERT INTO public.student_domain_mastery
+    (student_id, section, domain, mastery_level, mastery_score, mastery_pct,
+     event_count_total, constants_snapshot_hash)
+  SELECT u, 'M', 'Algebra', 0, 0, 0, 10, 'h' FROM unnest(ARRAY[S_NEW,S_AFT]) u
+  UNION ALL
+  SELECT u, 'RW', 'Craft and Structure', 4, 0, 0, 10, 'h' FROM unnest(ARRAY[S_NEW,S_AFT]) u
+  ON CONFLICT DO NOTHING;
+
+  ---------------------------------------------------------------- Z-68
+  -- A NEW FORTNIGHTLY STUDENT SEES A SITTING IN THEIR FIRST HORIZON.
+  v_input := public.calendar_build_plan_input(S_NEW, v_dates);
+  v_out   := public.calendar_place_full_lengths(v_input);
+
+  -- The precondition first: if the builder handed placement no weekday, an empty
+  -- payload below would mean "full_length is off", not "the rule is wrong".
+  IF (v_input #>> '{profile,full_length_weekday}') IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 the builder nulled full_length_weekday, so this gate would prove nothing';
+  END IF;
+  IF (v_input #>> '{profile,setup_date}')::date <> v_today THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 fixture setup_date is % not today', v_input #>> '{profile,setup_date}';
+  END IF;
+
+  SELECT count(*), min((f ->> 'date')::date) INTO v_n, v_first
+  FROM jsonb_array_elements(v_out -> 'placed') f;
+
+  -- THE ASSERTION THE PRODUCTION PROFILE FAILED. Under the retired rule this is
+  -- zero, and the whole horizon carries no exam.
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 a new fortnightly student got NO sitting in their first horizon (% .. %) — this is the production defect, back',
+      v_today, v_today + 13;
+  END IF;
+  -- And it is the first preferred weekday strictly after setup, not merely "some
+  -- exam somewhere in the window".
+  IF v_first <> v_exday THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 the first sitting is % — expected %, the first preferred weekday strictly after the setup date',
+      v_first, v_exday;
+  END IF;
+  -- The exam day is NOT a study day (mask 62 = Mon..Fri), and that is deliberate.
+  IF (v_input #>> '{profile,study_days_mask}')::integer & (1 << EXTRACT(DOW FROM v_first)::integer) <> 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-68 the fixture put the exam on a STUDY day, so "an exam day need not be a study day" is untested here';
+  END IF;
+  RAISE NOTICE '    OK Z-68 a new fortnightly student gets their first sitting on % (day % of a 14-day horizon), on a non-study day', v_first, v_first - v_today;
+
+  ---------------------------------------------------------------- Z-69
+  -- AFTER A COMPLETED SITTING, THE NEXT IS A FULL INTERVAL LATER.
+  --
+  -- The mirror of Z-68. A rule that always started at "setup + 1, snapped" would
+  -- pass Z-68 and put this student's next exam SEVEN days out instead of
+  -- fourteen, quietly doubling everyone's exam load after their first test.
+  -- The most recent occurrence of the preferred weekday STRICTLY before today, so
+  -- the sitting is in the past and `+14` from it can still land in the horizon.
+  SELECT g::date INTO v_sat
+  FROM generate_series(v_today - 7, v_today - 1, interval '1 day') g
+  WHERE EXTRACT(DOW FROM g)::integer = v_examwd
+  ORDER BY g DESC LIMIT 1;
+  IF v_sat IS NULL THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 no occurrence of weekday % in the seven days before today', v_examwd;
+  END IF;
+
+  INSERT INTO public.test_sessions
+    (student_id, test_form_id, state, mode, started_at, completed_at, grace_expires_at,
+     attempt_number_for_form, is_first_seen_form_attempt, actor_id)
+  SELECT S_AFT, f.id, 'completed', 'strict',
+         (v_sat::timestamp + interval '8 hours')  AT TIME ZONE k_tz,
+         (v_sat::timestamp + interval '11 hours') AT TIME ZONE k_tz,
+         (v_sat::timestamp + interval '23 hours') AT TIME ZONE k_tz,
+         1, true, pr.actor_id
+  FROM public.test_forms f
+  CROSS JOIN public.profiles pr
+  WHERE pr.id = S_AFT
+  ORDER BY f.id
+  LIMIT 1;
+
+  -- ASSERT THE INSERT, for the reason Z-66 records: `FROM test_forms LIMIT 1`
+  -- against an empty table writes nothing, and a gate measuring an absent sitting
+  -- reads exactly like one measuring a correct sitting.
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 seeded % completed sitting(s), not 1 — there is nothing for the interval to run from', v_n;
+  END IF;
+
+  v_input := public.calendar_build_plan_input(S_AFT, v_dates);
+  v_last  := (v_input #>> '{exams,last_completed_local_date}')::date;
+  IF v_last IS DISTINCT FROM v_sat THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 the builder reports last_completed_local_date = %, expected % — the sitting did not reach placement',
+      coalesce(v_last::text, 'NULL'), v_sat;
+  END IF;
+
+  v_out := public.calendar_place_full_lengths(v_input);
+  SELECT count(*), min((f ->> 'date')::date) INTO v_n, v_first
+  FROM jsonb_array_elements(v_out -> 'placed') f;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 nothing was placed after the completed sitting, so the interval is untested';
+  END IF;
+  IF v_first <> v_sat + 14 THEN
+    RAISE EXCEPTION 'CALENDAR_WRITER_GATE_FAILED: Z-69 the sitting after one completed on % is %, expected % — a full fortnight from the sitting, not % (one week)',
+      v_sat, v_first, v_sat + 14, v_sat + 7;
+  END IF;
+  RAISE NOTICE '    OK Z-69 a sitting completed % is followed by % — a full fortnight, not a week', v_sat, v_first;
+END;
+$firstsitting$;
 
 
 ROLLBACK;

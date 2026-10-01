@@ -19,6 +19,8 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { isStudentNoLongerLinkedError } from "@/lib/api-error";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import type {
   CalendarResponse,
   GuardianCalendarResponse,
@@ -62,8 +64,7 @@ export function useCalendar(
     queryKey: calendarKeys.range(from, to, timezone),
     queryFn: () => fetchCalendar(from, to, timezone),
     enabled: options?.enabled ?? true,
-    refetchOnWindowFocus: true,
-    staleTime: 30_000,
+    ...QUERY_FRESHNESS.calendarRange,
     retry: 1,
     /**
      * §17.7. Stepping a week is a NEW query key — a different range is a different
@@ -118,7 +119,7 @@ export function usePrefetchAdjacentRange(
         void client.prefetchQuery({
           queryKey: calendarKeys.range(range.from, range.to, timezone),
           queryFn: () => fetchCalendar(range.from, range.to, timezone),
-          staleTime: 30_000,
+          staleTime: QUERY_FRESHNESS.calendarRange.staleTime,
         });
       }
     };
@@ -151,8 +152,7 @@ export function useStreak(options?: {
     queryKey: calendarKeys.streak(),
     queryFn: fetchStreak,
     enabled: options?.enabled ?? true,
-    refetchOnWindowFocus: true,
-    staleTime: 60_000,
+    ...QUERY_FRESHNESS.calendarStreak,
     retry: 1,
   });
 }
@@ -175,8 +175,9 @@ export function useGuardianCalendar(
     queryKey: calendarKeys.guardianRange(studentId, from, to),
     queryFn: () => fetchGuardianCalendar(studentId, from, to),
     enabled: (options?.enabled ?? true) && studentId.length > 0,
-    refetchOnWindowFocus: true,
-    staleTime: 30_000,
-    retry: 1,
+    ...QUERY_FRESHNESS.calendarRange,
+    // G3-04: a 404 means the link is gone; retrying it only delays saying so.
+    retry: (failureCount, error) =>
+      !isStudentNoLongerLinkedError(error) && failureCount < 1,
   });
 }

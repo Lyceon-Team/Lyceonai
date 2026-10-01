@@ -1,0 +1,5 @@
+# Server-side duration_ms (app request log, event "request"), Vercel runtime logs, deployment dpl_BVg8L2SH73rP3RuQvLbqR3hS5FgN, window 2026-09-29T21:21:20Z..21:22:05Z
+# matched to the client requests in warm.txt by x-request-id
+/api/profile                 1582 765 392 356 416 470 526 459 304 370   -> sorted 304 356 370 392 416 459 470 526 765 1582, median 438 ms (n=10)
+/api/progress/kpis           572 486 625 484 508 524 596 601 479 831    -> sorted 479 484 486 508 524 572 596 601 625 831, median 548 ms (n=10)
+/api/practice/sessions/open  217 200 186 181 202 187 174 199            -> sorted 174 181 186 187 199 200 202 217, median 193 ms (n=8; 2 log entries had no body)

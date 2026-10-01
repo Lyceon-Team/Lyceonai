@@ -36,23 +36,27 @@
  * The last chip refuses instead, which is the same rule stated where they can see it.
  */
 import { useState } from "react";
-import type {
-  PlanningEstimates,
-  StudyProfile,
-  StudyProfileBounds,
+import {
+  type ExamPlanning,
+  type PlanningEstimates,
+  type StudyProfile,
+  type StudyProfileBounds,
 } from "@lyceon/shared/calendar";
 import { addDays } from "../lib/dates";
+import {
+  EXAM_FREQUENCIES,
+  examCadenceNote,
+  WEEKDAYS,
+} from "../copy/exam-cadence";
 
-/** Sunday-is-0 — the Postgres DOW convention `study_days_mask` and `full_length_weekday` use. */
-const DAYS: readonly { dow: number; label: string; full: string }[] = [
-  { dow: 0, label: "Sun", full: "Sunday" },
-  { dow: 1, label: "Mon", full: "Monday" },
-  { dow: 2, label: "Tue", full: "Tuesday" },
-  { dow: 3, label: "Wed", full: "Wednesday" },
-  { dow: 4, label: "Thu", full: "Thursday" },
-  { dow: 5, label: "Fri", full: "Friday" },
-  { dow: 6, label: "Sat", full: "Saturday" },
-];
+/**
+ * §8.1's four cadences and the weekday table, from `copy/exam-cadence` — the SAME tables the
+ * setup form's controls are built from. `-1` stands for None in both chip rows: a chip needs a
+ * number to key on and the wire value is null.
+ */
+const FREQUENCIES = EXAM_FREQUENCIES;
+
+const DAYS = WEEKDAYS;
 
 /**
  * The zones offered in the picker. A list, not a bound, because there is no server-served
@@ -78,6 +82,7 @@ export type SettingsDraft = {
   target_exam_date: string | null;
   target_score: number | null;
   full_length_weekday: number | null;
+  full_length_interval_weeks: number | null;
   planner_mode: "auto" | "custom";
 };
 
@@ -85,6 +90,8 @@ export type SettingsSheetProps = {
   profile: StudyProfile;
   bounds: StudyProfileBounds;
   estimates: PlanningEstimates;
+  /** §8.1's readout needs `final_exam_lead_days`; §17 forbids a literal for it. */
+  examPlanning: ExamPlanning;
   today: string;
   onSave: (draft: SettingsDraft) => void;
   onClose: () => void;
@@ -97,13 +104,55 @@ export type SettingsSheetProps = {
   replanOffer: { onConfirm: () => void; onDismiss: () => void } | null;
 };
 
+/**
+ * HALF A PAIR IS UNSAVEABLE, and Save says so rather than the server saying it.
+ *
+ * `full_length_pair` refuses (weekday, null) and (null, cadence); Step 2's Zod refinement
+ * returns a clean 400 for either. But a 400 a student could have been walked around is a
+ * design failure, not a validation success.
+ *
+ * NO CHIP CAN REACH THIS ANY MORE — both rows move both halves, so the draft is always whole.
+ * It stays as the guard behind that, and it is EXPORTED so a test can reach a draft the
+ * interaction cannot build: an unreachable guard that nothing asserts is an unreachable guard
+ * that quietly stops working.
+ */
+export function examPairIncomplete(
+  draft: Pick<
+    SettingsDraft,
+    "full_length_weekday" | "full_length_interval_weeks"
+  >,
+): boolean {
+  return (
+    (draft.full_length_interval_weeks === null) !==
+    (draft.full_length_weekday === null)
+  );
+}
+
 /** §17.3's live readout. Derived, never stored — Coding Standards §11.4. */
 export function scheduleSummary(
   draft: Pick<
     SettingsDraft,
-    "study_days_mask" | "daily_minutes" | "full_length_weekday"
+    | "study_days_mask"
+    | "daily_minutes"
+    | "full_length_weekday"
+    | "full_length_interval_weeks"
   >,
   estimates: PlanningEstimates,
+  /**
+   * The count needs the target date and the lead window, and NOTHING else.
+   *
+   * It used to take the whole `ExamPlanning` object, which made the prefill
+   * (`default_full_length_interval_weeks`) a dependency of a readout that never reads it — so
+   * one call site spread the object and the other passed the one field it knew was used, and
+   * only `tsc -p tsconfig.ci.json` could tell them apart. `pnpm -s run build` cannot: vite
+   * strips types without checking them, so the client is typechecked by that config alone.
+   * Naming the field is what makes the two call sites agree.
+   */
+  cadence: {
+    targetExamDate: string | null;
+    today: string;
+    finalExamLeadDays: number;
+  },
 ): string {
   const days = DAYS.filter(
     (day) => ((draft.study_days_mask >> day.dow) & 1) === 1,
@@ -116,12 +165,13 @@ export function scheduleSummary(
       (draft.daily_minutes * 60) / estimates.practice_seconds_per_unit / 5,
     ) * 5;
   const workPart = `about ${questions} question${questions === 1 ? "" : "s"} a day`;
-  const test = DAYS.find((day) => day.dow === draft.full_length_weekday);
-  const testPart =
-    test === undefined
-      ? "no automatic practice tests"
-      : `practice tests on ${test.full}s`;
-  return `${dayPart} · ${workPart} · ${testPart}`;
+  return `${dayPart} · ${workPart} · ${examCadenceNote({
+    weekday: draft.full_length_weekday,
+    intervalWeeks: draft.full_length_interval_weeks,
+    targetExamDate: cadence.targetExamDate,
+    today: cadence.today,
+    finalExamLeadDays: cadence.finalExamLeadDays,
+  })}`;
 }
 
 function Chips({
@@ -165,6 +215,7 @@ export function SettingsSheet({
   profile,
   bounds,
   estimates,
+  examPlanning,
   today,
   onSave,
   onClose,
@@ -179,11 +230,21 @@ export function SettingsSheet({
     target_exam_date: profile.target_exam_date,
     target_score: profile.target_score,
     full_length_weekday: profile.full_length_weekday,
+    full_length_interval_weeks: profile.full_length_interval_weeks,
     planner_mode: profile.planner_mode,
   }));
   const [lastDayRefused, setLastDayRefused] = useState(false);
 
   const latestExamDate = addDays(today, bounds.target_exam_date_max_days);
+
+  /**
+   * The cadence a day-pick adopts when the student has not chosen one. From the server
+   * (§17: no client literal), and the SAME value the setup form opens on, so "pick a day"
+   * means the same thing in both places.
+   */
+  const defaultIntervalWeeks = examPlanning.default_full_length_interval_weeks;
+
+  const pairIncomplete = examPairIncomplete(draft);
   const zones = COMMON_TIMEZONES.includes(profile.timezone)
     ? COMMON_TIMEZONES
     : [profile.timezone, ...COMMON_TIMEZONES];
@@ -285,6 +346,20 @@ export function SettingsSheet({
             </div>
           </div>
 
+          {/*
+            THE PAIR IS ENFORCED HERE, NOT JUST IN THE SCHEMA. `full_length_pair` refuses a
+            weekday without a cadence and vice versa, and Step 2's Zod refinement turns that
+            into a 400 — but a student should never MEET either. Both handlers below move
+            both halves, so no sequence of chip taps can build a half-set pair:
+
+              None on either control  -> both null
+              a day, nothing else set -> the cadence defaults to the config prefill
+              a cadence, no day yet   -> the day stays null and SAVE IS DISABLED (below),
+                                         because guessing a Saturday for them would be
+                                         inventing a choice they did not make
+
+            The schema is the backstop. This is the interaction.
+          */}
           <Chips
             label="Practice test day"
             testId="settings-full-length"
@@ -298,6 +373,39 @@ export function SettingsSheet({
               setDraft({
                 ...draft,
                 full_length_weekday: value < 0 ? null : value,
+                // Picking None clears BOTH. Picking a day adopts the prefill cadence if the
+                // student has not chosen one, so the commonest path needs one tap.
+                full_length_interval_weeks:
+                  value < 0
+                    ? null
+                    : (draft.full_length_interval_weeks ??
+                      defaultIntervalWeeks),
+              })
+            }
+          />
+
+          <Chips
+            label="Practice test frequency"
+            testId="settings-full-length-frequency"
+            options={[
+              { value: -1, label: "None" },
+              ...FREQUENCIES.map((f) => ({ value: f.value, label: f.label })),
+            ]}
+            isOn={(value) => value === (draft.full_length_interval_weeks ?? -1)}
+            onPick={(value) =>
+              setDraft({
+                ...draft,
+                full_length_interval_weeks: value < 0 ? null : value,
+                // None clears both. A cadence with no day yet adopts Saturday, the same way
+                // the setup form does and for the same reason — half a pair is refused by
+                // `full_length_pair`, and a student who has just said they want practice
+                // tests should not meet a dead Save button they have to decode. The day is
+                // one chip away if Saturday is wrong.
+                full_length_weekday:
+                  value < 0
+                    ? null
+                    : (draft.full_length_weekday ??
+                      examPlanning.default_full_length_weekday),
               })
             }
           />
@@ -342,7 +450,11 @@ export function SettingsSheet({
           </div>
 
           <p className="note" data-testid="settings-summary">
-            {scheduleSummary(draft, estimates)}
+            {scheduleSummary(draft, estimates, {
+              targetExamDate: draft.target_exam_date,
+              today,
+              finalExamLeadDays: examPlanning.final_exam_lead_days,
+            })}
           </p>
 
           {error === null ? null : (
@@ -387,7 +499,7 @@ export function SettingsSheet({
           <button
             type="button"
             className="btn primary"
-            disabled={pending}
+            disabled={pending || pairIncomplete}
             data-testid="settings-save"
             onClick={() => onSave(draft)}
           >

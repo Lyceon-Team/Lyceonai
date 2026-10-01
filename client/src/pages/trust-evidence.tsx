@@ -167,10 +167,10 @@ export default function TrustEvidencePage() {
                 <CardContent>
                   <Button asChild variant="outline" size="sm">
                     <Link
-                      href="/tutor"
+                      href="/chat"
                       className="inline-flex items-center gap-1"
                     >
-                      Open /tutor <ChevronRight className="h-4 w-4" />
+                      Open the tutor <ChevronRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </CardContent>

@@ -41,7 +41,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
@@ -65,6 +65,7 @@ import {
 import {
   buildReviewPool,
   buildReviewPoolSummary,
+  decodeSourceSessionsCursor,
   type ReviewPoolRow,
 } from "../services/review-pool";
 import {
@@ -76,6 +77,7 @@ import {
   reviewPoolQuerySchema,
   reviewResumeBodySchema,
   reviewSkipBodySchema,
+  type ReviewPoolSessionsCursor,
   type ReviewPoolSpec,
 } from "@lyceon/shared";
 import type { ReviewSessionItemRow } from "../../packages/shared/src/review-table-schema";
@@ -1412,7 +1414,7 @@ router.get(
   "/pool",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1427,10 +1429,28 @@ router.get(
       });
     }
 
+    // UI-16: the past-session picker is paged by an opaque cursor; a malformed one is
+    // a 400, never a silent first page.
+    let sessionsCursor: ReviewPoolSessionsCursor | null = null;
+    if (parsed.data.sessions_cursor !== undefined) {
+      sessionsCursor = decodeSourceSessionsCursor(
+        parsed.data.sessions_cursor,
+        requestId,
+      );
+      if (!sessionsCursor) {
+        return res.status(400).json({
+          error: "invalid_payload",
+          issues: [{ path: ["sessions_cursor"], message: "malformed cursor" }],
+          requestId,
+        });
+      }
+    }
+
     const summary = await buildReviewPoolSummary({
       studentId,
       tz: parsed.data.tz ?? null,
       requestId,
+      sessionsCursor,
     });
     if (!summary.ok) {
       return res.status(500).json({
@@ -1448,7 +1468,7 @@ router.get(
   "/sessions/open",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1503,7 +1523,7 @@ router.post(
   "/sessions",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     // As in diagnostic-routes: the canonical `SupabaseUser`, not an inline shape that makes
@@ -1591,7 +1611,7 @@ router.get(
   "/sessions/:sessionId/state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1647,7 +1667,7 @@ router.get(
   "/sessions/:sessionId/next",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1685,7 +1705,7 @@ router.post(
   "/sessions/:sessionId/resume",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1752,7 +1772,7 @@ router.post(
   "/sessions/:sessionId/terminate",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1798,7 +1818,7 @@ router.post(
   "/sessions/:sessionId/calculator-state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     const studentId = requireStudentId(req, res);
@@ -1845,7 +1865,7 @@ router.post(
   "/answer",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitReviewAnswer,
 );
@@ -1854,7 +1874,7 @@ router.post(
   "/sessions/:sessionId/skip",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitReviewSkip,
 );

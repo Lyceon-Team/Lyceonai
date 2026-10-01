@@ -47,7 +47,9 @@ import {
   launchBodySchema,
 } from "@lyceon/shared";
 import { logger } from "../logger";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 import { sendPaymentRequired } from "../lib/http-errors";
+import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { EntitlementService } from "../services/entitlement-service";
 import { getStudentActivityStreak } from "../services/activity-streak";
@@ -81,7 +83,7 @@ export const calendarRouter = Router();
 export const streakRouter = Router();
 
 /** §16: the one feature key this surface gates on. Never the entitlement predicate directly. */
-export const CALENDAR_FEATURE_KEY = "calendar_access";
+export const CALENDAR_FEATURE_KEY = "calendar_access" satisfies EntitlementFeatureKey;
 
 /** §7 / §15: the two rate-limited surfaces, seeded by `20260917140000`. */
 export const CALENDAR_PLAN_REGENERATE_BUCKET = "calendar_plan_regenerate";
@@ -98,6 +100,23 @@ const dayRegenerateRateLimit = singleBucketRateLimit(
 
 // ── The response shapes (§8.2) ──────────────────────────────────────────────
 
+/**
+ * EVERY 400 FROM THIS SURFACE NAMES ITS FAILING FIELD IN THE LOG.
+ *
+ * This is the one place the calendar writes an error response, so it is the one place the
+ * rule has to hold — a per-handler log would be eleven chances to forget it, and the handler
+ * that forgot would be the one being diagnosed. Brief 16 Step 4.
+ *
+ * The cost of not having it was measured: eight consecutive 400s on a new student's setup
+ * save, and the only way to learn WHICH field was rejected was to reproduce the request.
+ * `fieldErrors` was already in the response body the student's browser received; it was
+ * simply never written down on the server side, so the operator diagnosing it had the
+ * refusal and not the reason.
+ *
+ * `logRejectedRequest` lives in `server/lib/validation-log.ts` and is shared with every
+ * other router that has a single error-writing chokepoint. It reads field PATHS only, never
+ * Zod's message strings — those quote the rejected value on an enum failure (§12.1).
+ */
 function sendError(
   res: Response,
   status: number,
@@ -106,6 +125,13 @@ function sendError(
   requestId: string | undefined,
   details?: unknown,
 ): Response {
+  if (status === 400) {
+    logRejectedRequest("CALENDAR_ROUTES", details, {
+      code,
+      requestId,
+      ...routeOf(res),
+    });
+  }
   return res.status(status).json({
     error:
       details === undefined ? { message, code } : { message, code, details },
@@ -192,7 +218,8 @@ async function entitled(
     "a caller without calendar_access was shown the upgrade CTA",
     { path: req.path, requestId: req.requestId },
   );
-  sendPaymentRequired(res, req.requestId);
+  // SCL-185 (UI-01): same 402 and flat shape; the body names the refused feature.
+  sendPaymentRequired(res, CALENDAR_FEATURE_KEY, req.requestId);
   return false;
 }
 
@@ -408,19 +435,10 @@ function sendLaunchFailure(
         "CALENDAR_NOT_FOUND",
         requestId,
       );
-    case "not_today":
-      // §15.1 step 1. `when` travels so the client can offer the right control — "Do it
-      // now" for a past day, nothing at all for a future one.
-      return sendError(
-        res,
-        409,
-        failure.when === "past"
-          ? "That day has passed."
-          : "That day has not started yet.",
-        "CALENDAR_NOT_TODAY",
-        requestId,
-        { when: failure.when },
-      );
+    // `not_today` / CALENDAR_NOT_TODAY is RETIRED (R-08-34, owner ruling 2026-09-29). The
+    // service no longer refuses a block for its date, so there is no arm to map. The code
+    // string is deliberately not kept as a dead branch: this switch is exhaustive over
+    // `LaunchFailure`, so removing the union member is what made tsc point here.
     case "already_complete":
       return sendError(
         res,

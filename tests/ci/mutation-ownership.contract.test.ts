@@ -12,7 +12,6 @@ import guardianRoutes from "../../server/routes/guardian-routes";
 // the router and service they exercised. Guardian and practice cases are unchanged.
 const accountMocks = vi.hoisted(() => ({
   revokeGuardianLink: vi.fn(),
-  isGuardianLinkedToStudent: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(),
   // Step 6 (Q7): the revoke route reads party-hood before delegating, so a missing mock here
   // is `undefined` at the call site and the route 500s BEFORE `revokeGuardianLink` — which is
@@ -40,7 +39,6 @@ vi.mock("../../server/lib/account", () => ({
   // W3-3: the grant path now records the billing country on the profile.
   setProfileCountryCode: vi.fn(async () => undefined),
   revokeGuardianLink: accountMocks.revokeGuardianLink,
-  isGuardianLinkedToStudent: accountMocks.isGuardianLinkedToStudent,
   getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
   getGuardianLinkById: vi.fn(),
   getAnyGuardianLinkForPair: accountMocks.getAnyGuardianLinkForPair,
@@ -53,7 +51,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   requireStudentOrAdmin: (req: any, res: any, next: any) => next(),
   requireSupabaseAdmin: (req: any, res: any, next: any) => next(),
   requireProfileComplete: (_req: any, _res: any, next: any) => next(),
-  requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
+  requireGuardianLinkForUnder13: (_req: any, _res: any, next: any) => next(),
   getSupabaseAdmin: vi.fn(
     () => require("../../apps/api/src/lib/supabase-server").supabaseServer,
   ),
@@ -149,10 +147,6 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
   generateToken: () => "test-csrf-token",
 }));
 
-vi.mock("../../server/middleware/guardian-entitlement", () => ({
-  requireGuardianEntitlement: (req: any, res: any, next: any) => next(),
-}));
-
 function buildApp(): Express {
   const app = express();
   app.use(express.json());
@@ -183,7 +177,6 @@ describe("Mutation Ownership Contract", () => {
 
   describe("Surface Ownership Verification", () => {
     it("Guardian: revoke link delegates to account service", async () => {
-      accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
       accountMocks.getAnyGuardianLinkForPair.mockResolvedValue({
         id: "11111111-1111-1111-1111-111111111111",
         guardian_profile_id: "guardian-1",

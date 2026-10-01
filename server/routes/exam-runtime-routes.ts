@@ -12,7 +12,8 @@
  * (GET /forms — SCL-147; GET and PUT the module workspace — SCL-145), and nothing
  * else — no form publish, no report (04C's own router), no outbox re-drive. Every handler runs, in this order:
  *   1. auth       — req.user from supabaseAuthMiddleware (mount also requires it);
- *   2. entitlement — canAccessFeature(user.id, 'exam_full_length'), 403 forbidden;
+ *   2. entitlement — canAccessFeature(user.id, 'exam_full_length'), 403 entitlement_required
+ *                    with details.feature (SCL-185, UI-01);
  *   3. Zod        — params and body through the shared schemas, 400 invalid_request;
  *   4. domain     — one exam-runtime-service call (session ownership, grace, state
  *                   and timing are decided in SQL, by server time);
@@ -27,7 +28,7 @@ import { Router, type Request, type Response } from "express";
 import type { ZodTypeAny, z } from "zod";
 import {
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
@@ -46,6 +47,7 @@ import {
   type ExamFailure,
   type ExamResult,
 } from "../services/exam-runtime-service";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 import {
   examAnswerRequestSchema,
   examCreateSessionRequestSchema,
@@ -55,6 +57,7 @@ import {
   examSessionParamsSchema,
   examWorkspaceSaveRequestSchema,
 } from "../../packages/shared/src/exam-runtime-schema";
+import { ENTITLEMENT_REQUIRED_CODE } from "../../packages/shared/src/entitlement-denial";
 
 // Defined beside the service so a non-route caller (the calendar adapter) reads the same
 // key without importing this router; re-exported so existing importers are unchanged.
@@ -65,11 +68,27 @@ const router = Router();
 
 // ── Response helpers (§8.2) ─────────────────────────────────────────────────
 
+/**
+ * Every exam refusal, including its 400s — which is why the log line lives here rather than
+ * at each of the eleven `parseOr400` call sites.
+ *
+ * `failure.details` already carries `parsed.error.flatten()` on a validation refusal; it was
+ * put in the RESPONSE and never written down, so a 400 on this surface named its field to
+ * the browser and nothing to the operator. Shared with `calendar-routes`, which measured the
+ * cost of that: see `server/lib/validation-log.ts`.
+ */
 function sendFailure(
   res: Response,
   failure: ExamFailure,
   requestId: string | undefined,
 ): Response {
+  if (failure.status === 400) {
+    logRejectedRequest(COMPONENT, failure.details, {
+      code: failure.code,
+      requestId,
+      ...routeOf(res),
+    });
+  }
   return res.status(failure.status).json({
     error:
       failure.details === undefined
@@ -136,12 +155,17 @@ async function authorizeExamCaller(
         requestId: req.requestId,
       },
     );
+    // @spec [Doc-04A_V2.2 §16.1 step 2, §16.2; SCL-185 (UI-01)] | @implemented [2026-09-29]
+    // plain English: the status stays 403 (§16.2); the code is the platform's paid-feature
+    // denial and names the refused `canAccessFeature` key, so the client tells "not paid"
+    // apart from the session-ownership 403 (`forbidden`) without reading the status.
     sendFailure(
       res,
       {
         status: 403,
-        code: "forbidden",
+        code: ENTITLEMENT_REQUIRED_CODE,
         message: "Full-length exams need an active subscription.",
+        details: { feature: EXAM_FEATURE_KEY },
       },
       req.requestId,
     );
@@ -174,7 +198,7 @@ function parseOr400<S extends ZodTypeAny>(
   return parsed.data;
 }
 
-const studentGuards = [requireProfileComplete, requireConsentCompliance];
+const studentGuards = [requireProfileComplete, requireGuardianLinkForUnder13];
 
 // ── §16 endpoints ───────────────────────────────────────────────────────────
 

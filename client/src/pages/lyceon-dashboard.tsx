@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
+import { useProgressKpis } from "@/hooks/useProgressKpis";
 import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
 import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
 import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
@@ -41,15 +42,15 @@ interface KpiMetric {
 
 interface KpiResponse {
   timezone: string;
+  // SCL-186 / owner ruling 6 (2026-09-29): the payload still carries `accuracy` on `week`
+  // and `recency`. This page never renders it, so the type does not declare it.
   week: {
     questionsSolved: number;
-    accuracy: number | null;
     explanations?: Record<string, KpiExplanation>;
   };
   recency: {
     window: number;
     totalAttempts: number;
-    accuracy: number | null;
     explanations?: Record<string, KpiExplanation>;
   } | null;
   metrics?: KpiMetric[];
@@ -109,16 +110,11 @@ export default function LyceonDashboard() {
     data: kpiData,
     isLoading: kpiLoading,
     error: kpiError,
-  } = useQuery<KpiResponse>({
-    queryKey: ["/api/progress/kpis"],
-    enabled: !!user,
-    refetchInterval: 60000,
-  });
+  } = useProgressKpis<KpiResponse>(!!user);
 
   const {
     data: estimateData,
     isLoading: estimateLoading,
-    error: estimateError,
   } = useQuery<EstimateResponse>({
     queryKey: ["/api/progress/projection"],
     queryFn: fetchScoreEstimate,
@@ -155,14 +151,25 @@ export default function LyceonDashboard() {
     [kpiData?.metrics],
   );
 
-  const weekAccuracy = Number(kpiData?.week?.accuracy ?? 0);
   const weekQuestions = Number(kpiData?.week?.questionsSolved ?? 0);
   const weekQuestionsChange =
     metricById.get("week_questions")?.explanation?.whyThisChanged ??
     "Scored events in the last 7 days.";
-  const weekAccuracyChange =
-    metricById.get("week_accuracy")?.explanation?.whyThisChanged ??
-    "Current 7-day window.";
+  /**
+   * @spec [SCL-186 (strikes Doc 05 Parent §12.2 "your recency-weighted accuracy is Y%");
+   *   owner ruling 6, 2026-09-29; Doc 05 AC#20] | @implemented [2026-09-29] |
+   * plain English: the second weekly tile used to show the 7-day accuracy percentage. No raw
+   * accuracy figure is shown to a student any more (mastery is shown as its level only, on
+   * the mastery page), so the tile shows the current streak instead: a count of the
+   * student's own activity already in this payload (`metrics[id=current_streak]`). A
+   * missing or non-numeric value renders "-", never a substituted number.
+   */
+  const streakMetric = metricById.get("current_streak");
+  const currentStreakDays =
+    typeof streakMetric?.value === "number" ? streakMetric.value : null;
+  const currentStreakChange =
+    streakMetric?.explanation?.whyThisChanged ??
+    "Consecutive days with scored practice.";
 
   const getGreeting = () => {
     const hour = DateTime.local().hour;
@@ -249,17 +256,17 @@ export default function LyceonDashboard() {
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold mb-3">
-                      Accuracy (7d)
+                      Current Streak (days)
                     </p>
                     {kpiLoading ? (
                       <Skeleton className="h-10 w-28 mb-2" />
                     ) : (
                       <p className="text-5xl font-semibold text-foreground leading-none">
-                        {weekQuestions > 0 ? `${weekAccuracy}%` : "-"}
+                        {currentStreakDays ?? "-"}
                       </p>
                     )}
                     <p className="text-sm text-muted-foreground mt-3">
-                      {weekAccuracyChange}
+                      {currentStreakChange}
                     </p>
                   </div>
                 </div>
@@ -501,7 +508,7 @@ export default function LyceonDashboard() {
                 <p className="text-sm font-medium">Current live signals</p>
                 <p className="text-sm text-muted-foreground">
                   {weekQuestions} questions solved this week
-                  {weekQuestions > 0 ? ` at ${weekAccuracy}% accuracy` : "."}
+.
                 </p>
               </div>
 

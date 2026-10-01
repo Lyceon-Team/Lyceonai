@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { queryClient } from "@/lib/queryClient";
+import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
 import { csrfFetch } from "@/lib/csrf";
 import { getClientInstanceId } from "@/lib/client-instance";
-import {
-  type RuntimeContractDisabledState,
-  parseRuntimeContractDisabledFromPayload,
-} from "@/lib/runtime-contract-disable";
 import { isSubmittableAnswer } from "@/lib/practice-submission";
 import {
   type EngineConfig,
@@ -271,8 +269,6 @@ export function useCanonicalPractice(
     "created" | "active" | "completed" | "abandoned"
   >("created");
   const [calculatorState, setCalculatorState] = useState<unknown | null>(null);
-  const [runtimeDisabled, setRuntimeDisabled] =
-    useState<RuntimeContractDisabledState | null>(null);
 
   const [score, setScore] = useState({
     correct: 0,
@@ -313,9 +309,6 @@ export function useCanonicalPractice(
   }, []);
 
   const ensureSession = useCallback(async () => {
-    if (runtimeDisabled) {
-      throw new Error(`${runtimeDisabled.code}: ${runtimeDisabled.message}`);
-    }
     if (sessionId && !forceTakeover) return sessionId;
 
     // Deduplicate strict-mode or concurrent calls for the same session setup
@@ -399,16 +392,6 @@ export function useCanonicalPractice(
         };
       }
 
-      const disabled = parseRuntimeContractDisabledFromPayload(
-        engine.domain,
-        startRes.status,
-        startPayloadBody,
-      );
-      if (disabled) {
-        setRuntimeDisabled(disabled);
-        throw new Error(`${disabled.code}: ${disabled.message}`);
-      }
-
       if (!startRes.ok) {
         throw new Error(
           startPayloadBody?.message ||
@@ -443,7 +426,6 @@ export function useCanonicalPractice(
     engine,
     forceTakeover,
     initialSessionId,
-    runtimeDisabled,
     section,
     sessionId,
     sessionSpec,
@@ -457,7 +439,6 @@ export function useCanonicalPractice(
   ]);
 
   const fetchNextQuestion = useCallback(async () => {
-    if (runtimeDisabled) return null;
     setIsLoading(true);
     setError(null);
 
@@ -473,18 +454,6 @@ export function useCanonicalPractice(
       );
 
       const nextPayloadBody = await nextRes.json().catch(() => null);
-      const disabled = parseRuntimeContractDisabledFromPayload(
-        engine.domain,
-        nextRes.status,
-        nextPayloadBody,
-      );
-      if (disabled) {
-        setRuntimeDisabled(disabled);
-        setError(`${disabled.code}: ${disabled.message}`);
-        setQuestion(null);
-        setSessionItemId(null);
-        return null;
-      }
 
       if (!nextRes.ok) {
         throw new Error(`Failed to load next question (${nextRes.status})`);
@@ -523,17 +492,10 @@ export function useCanonicalPractice(
     } finally {
       setIsLoading(false);
     }
-  }, [
-    clientInstanceId,
-    engine,
-    ensureSession,
-    resetPerQuestionState,
-    runtimeDisabled,
-  ]);
+  }, [clientInstanceId, engine, ensureSession, resetPerQuestionState]);
 
   const submitAnswer = useCallback(
     async (opts: { skipped: boolean }) => {
-      if (runtimeDisabled) return null;
       if (!question) return;
 
       if (!opts.skipped && !isSubmittableAnswer(question, currentAnswer)) {
@@ -588,16 +550,6 @@ export function useCanonicalPractice(
         });
 
         const payloadBody = await res.json().catch(() => null);
-        const disabled = parseRuntimeContractDisabledFromPayload(
-          engine.domain,
-          res.status,
-          payloadBody,
-        );
-        if (disabled) {
-          setRuntimeDisabled(disabled);
-          setError(`${disabled.code}: ${disabled.message}`);
-          return null;
-        }
 
         if (!res.ok) {
           throw new Error(`Failed to submit answer (${res.status})`);
@@ -607,6 +559,10 @@ export function useCanonicalPractice(
           | PracticeAnswerResponse
           | PracticeSkipResponse;
         if (data.state) setSessionState(data.state);
+        // Owner ruling 2026-10-01: the KPI read no longer polls, so the answer that completes
+        // the session marks it stale (practice and review both run through this hook).
+        if (data.state === "completed")
+          void invalidateProgressKpis(queryClient);
 
         if (data.stats) {
           setScore((prev) => mergeStats(prev, data.stats));
@@ -662,7 +618,6 @@ export function useCanonicalPractice(
       fetchNextQuestion,
       question,
       sessionItemId,
-      runtimeDisabled,
     ],
   );
 
@@ -678,7 +633,6 @@ export function useCanonicalPractice(
   }, [question, submitAnswer]);
 
   const terminateSession = useCallback(async () => {
-    if (runtimeDisabled) return null;
     if (!sessionId) return null;
     if (sessionState === "completed" || sessionState === "abandoned")
       return { state: sessionState };
@@ -695,15 +649,6 @@ export function useCanonicalPractice(
     });
 
     const payloadBody = await res.json().catch(() => null);
-    const disabled = parseRuntimeContractDisabledFromPayload(
-      engine.domain,
-      res.status,
-      payloadBody,
-    );
-    if (disabled) {
-      setRuntimeDisabled(disabled);
-      throw new Error(`${disabled.code}: ${disabled.message}`);
-    }
 
     if (!res.ok) {
       throw new Error(`Failed to terminate session (${res.status})`);
@@ -717,11 +662,10 @@ export function useCanonicalPractice(
       setCalculatorState(null);
     }
     return data;
-  }, [clientInstanceId, engine, runtimeDisabled, sessionId, sessionState]);
+  }, [clientInstanceId, engine, sessionId, sessionState]);
 
   const persistCalculatorState = useCallback(
     async (nextCalculatorState: unknown | null) => {
-      if (runtimeDisabled) return null;
       if (!sessionId) return null;
       if (sessionState === "completed" || sessionState === "abandoned")
         return null;
@@ -740,15 +684,6 @@ export function useCanonicalPractice(
       });
 
       const payloadBody = await res.json().catch(() => null);
-      const disabled = parseRuntimeContractDisabledFromPayload(
-        engine.domain,
-        res.status,
-        payloadBody,
-      );
-      if (disabled) {
-        setRuntimeDisabled(disabled);
-        throw new Error(`${disabled.code}: ${disabled.message}`);
-      }
 
       if (!res.ok) {
         throw new Error(`Failed to persist calculator state (${res.status})`);
@@ -765,12 +700,13 @@ export function useCanonicalPractice(
       setCalculatorState(value ?? null);
       return value ?? null;
     },
-    [clientInstanceId, engine, runtimeDisabled, sessionId, sessionState],
+    [clientInstanceId, engine, sessionId, sessionState],
   );
 
   useEffect(() => {
     fetchNextQuestion();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Mount-only by design: the first question loads once; later loads are driven
+    // by the student's actions, not by `fetchNextQuestion`'s identity changing.
   }, []);
 
   return {
@@ -805,7 +741,6 @@ export function useCanonicalPractice(
     calculatorState,
     persistCalculatorState,
     submitBlocked,
-    runtimeDisabled,
     setForceTakeover,
     /** The served item's id — what a scoped LISA conversation anchors to (W4-1). */
     sessionItemId,

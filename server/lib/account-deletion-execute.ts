@@ -490,7 +490,11 @@ async function applyRequestedSuppression(
 
   if (!requested) return;
 
-  const result = await defaultSuppressionTransport().add(address);
+  // The evidence side is keyed by log id alone and never linked back to a profile, so the
+  // suppression log names no recipient at all (owner ruling OQ-17, 2026-09-30).
+  const result = await defaultSuppressionTransport().add(address, {
+    recipientProfileId: null,
+  });
   if (result.ok) {
     await recordSuppressionOutcome(admin, logId, "applied", requestId);
     logger.info(
@@ -582,7 +586,9 @@ async function retryFailedSuppressions(
   for (const row of pendingRows) {
     const logId = String(row.log_id);
     const address = String(row.subject_email);
-    const result = await defaultSuppressionTransport().add(address);
+    const result = await defaultSuppressionTransport().add(address, {
+      recipientProfileId: null,
+    });
     if (result.ok) {
       await recordSuppressionOutcome(admin, logId, "applied", requestId);
       resolved += 1;
@@ -1016,6 +1022,7 @@ export async function executeDueDeletions(
           await sendAccountDeletionCompletedEmail({
             deletionRequestId: pending.id,
             email: recipientEmail,
+            recipientProfileId: pending.profile_id,
             completedAt,
             requestId,
           });

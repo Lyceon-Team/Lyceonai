@@ -10,7 +10,8 @@
  *   T3  a consent record stores slug, version and hash, and the hash is the
  *       SHA-256 of the file that was served
  *   T4  `current: null` is an unpublished state, not an error
- *   T5  no document body remains in client/src/lib/legal.ts
+ *   T5  no document body remains in client source (UI-06 deleted
+ *       client/src/lib/legal.ts, the one file T5 used to read)
  *
  * trade-offs: T1, T2 and T4 exercise the loader against a temporary legal/
  * tree rather than the real one, so a case like `current: null` can be set up
@@ -355,45 +356,71 @@ describe("T4 — `current: null` is an unpublished state, not an error", () => {
 
 // ── T5 ──────────────────────────────────────────────────────────────────
 
-describe("T5 — no document body remains in client/src/lib/legal.ts", () => {
-  const raw = fs.readFileSync(
-    path.join(REPO_ROOT, "client/src/lib/legal.ts"),
-    "utf-8",
-  );
+/**
+ * @spec [LYCEON legal versioning Phase 2 §6; register UI-06] | @implemented [2026-09-29]
+ * plain English: T5 used to read `client/src/lib/legal.ts` and assert that no
+ * document body survived in it. UI-06 deleted that module outright (it had no
+ * importer left), so the claim T5 protects — legal bodies live in `legal/`, not
+ * in client code — is now asserted across ALL client source instead of one file.
+ * A body pasted into any client module, including a revived `legal.ts`, goes red.
+ *
+ * Comments are stripped before asserting a sentence is ABSENT, for the reason
+ * the original T5 gave: files record what was deleted and why, and an absence
+ * test that read prose would force the record to be deleted to go green.
+ */
+describe("T5 — no document body remains in client source", () => {
+  const CLIENT_SRC = path.join(REPO_ROOT, "client/src");
+  const DISTINCTIVE_SENTENCES = [
+    "We collect information you provide directly",
+    "By using Lyceon, you agree",
+    "This Privacy Policy explains how we collect",
+  ];
 
-  /**
-   * Comments are stripped before asserting a name is ABSENT. The file's header
-   * deliberately records what was deleted and why — `lastUpdated: '2024-12-22'`,
-   * 151 `Lyceon`s, the missing version field. An absence test that read comments
-   * would force the file to delete the explanation of the defect in order to go
-   * green, trading the record for a passing grep. (Learned the same way on
-   * shared/seo/public-meta.ts.)
-   */
-  const legalTs = raw
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  const clientSources = (
+    fs.readdirSync(CLIENT_SRC, {
+      recursive: true,
+      encoding: "utf-8",
+    }) as string[]
+  )
+    .filter((relative) => /\.(ts|tsx)$/.test(relative))
+    .filter((relative) => !/\.test\.(ts|tsx)$/.test(relative))
+    .map((relative) => ({
+      relative,
+      code: fs
+        .readFileSync(path.join(CLIENT_SRC, relative), "utf-8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, ""),
+    }));
 
-  it("carries no `sections` array", () => {
-    expect(legalTs).not.toMatch(/\bsections\s*:/);
+  it("scans a non-trivial client tree (presence before absence)", () => {
+    // An empty scan would pass every absence assertion below for the wrong reason.
+    expect(clientSources.length).toBeGreaterThan(100);
+    expect(clientSources.map((s) => s.relative)).toContain(
+      path.join("lib", "legal-content.ts"),
+    );
   });
 
-  it("carries no `lastUpdated` field", () => {
-    expect(legalTs).not.toMatch(/lastUpdated\s*:/);
+  it("the probe sentences are real legal text, so the sweep can bite", () => {
+    // At least one probe must occur in the published corpus; otherwise the
+    // sweep below would be checking for strings nothing could ever paste in.
+    const privacy = fs.readFileSync(
+      path.join(REAL_LEGAL, "privacy-policy", "v4", "en.md"),
+      "utf-8",
+    );
+    expect(privacy).toContain("This Privacy Policy explains how we collect");
   });
 
-  it("is a registry, not a document store", () => {
-    // 1,037 lines before; the registry is a small fraction of that. The bound
-    // is deliberately loose — it fails on a body coming back, not on a comment.
-    expect(legalTs.split("\n").length).toBeLessThan(260);
+  it("the retired client registry client/src/lib/legal.ts stays deleted", () => {
+    expect(fs.existsSync(path.join(CLIENT_SRC, "lib", "legal.ts"))).toBe(false);
   });
 
-  it("contains none of the distinctive sentences it used to serve", () => {
-    for (const sentence of [
-      "We collect information you provide directly",
-      "By using Lyceon, you agree",
-      "This Privacy Policy explains how we collect",
-    ]) {
-      expect(legalTs).not.toContain(sentence);
+  it("no client module contains the distinctive sentences it used to serve", () => {
+    for (const { relative, code } of clientSources) {
+      for (const sentence of DISTINCTIVE_SENTENCES) {
+        expect(code, `${relative} embeds "${sentence}"`).not.toContain(
+          sentence,
+        );
+      }
     }
   });
 });

@@ -1,6 +1,7 @@
 import { Request, Response, Router } from "express";
 import { randomBytes, createHash } from "node:crypto";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getSupabaseAdmin,
   requireSupabaseAuth,
@@ -88,6 +89,64 @@ export const recoverDeletionSchema = z.object({
 });
 
 type DeletionAdminClient = ReturnType<typeof getSupabaseAdmin>;
+
+/**
+ * @spec [Doc-01 §40.2 step 4 and §40.2.1 Phase 3, as amended by SCL-190] | @implemented
+ *   [2026-09-30; scope changed 2026-10-01] |
+ * plain English: at deletion-request time, revoke every OTHER session the account holds, on
+ * every other device, and keep the one that asked. Supabase's admin API revokes by the user's
+ * own access token, not by user id — `auth.admin.signOut(jwt, 'others')` revokes every refresh
+ * token of that user except the session `jwt` belongs to.
+ *
+ * SCOPE `others`, NOT `global` (owner ruling 2026-10-01, register F-44, SCL-190 amended). The
+ * first build used `'global'`, which also signed out the requesting browser: the product's own
+ * reload — meant to show `PendingDeletionScreen` (rendered app-wide for a pending account,
+ * `client/src/App.tsx:444`) with its cancel button — landed on `/login` instead (observed in
+ * production 2026-10-01). Keeping the requester's session loses nothing: the pending-deletion gate
+ * (`enforceDeletionLock`) confines it to the allowlisted paths, and that screen's only two calls,
+ * `GET /api/profile` and `POST /api/account/cancel-deletion`, are both on the list. (Doc 01
+ * prescribed `auth.admin.signOutUser(profileId)`, a method `@supabase/auth-js` does not have:
+ * the call threw on every request and revoked nothing; register F-32.) The token is the
+ * authenticated request's own, read from the request's SSR client (`req.supabase`), whose
+ * session the auth middleware has already validated and, if needed, refreshed — the cookie on
+ * `req.cookies` may still hold the pre-refresh token.
+ *
+ * Trade-offs (owner ruling, Brief 6): no ban — the recovery email must still let the student
+ * sign in to cancel. Access tokens already issued stay valid until they expire (up to about an
+ * hour); the pending-deletion gate (`server/middleware/supabase-auth.ts`) refuses those
+ * sessions outside its allowed set, so it is the backstop.
+ *
+ * Edge cases: best-effort. The deletion is already committed, so a failure here never fails the
+ * request; it is logged at ERROR with the event name and request id only — no person field, no
+ * token, no provider message.
+ */
+export async function revokeSessionsAtDeletionRequest(
+  admin: DeletionAdminClient,
+  sessionClient: SupabaseClient | undefined,
+  requestId: string | undefined,
+): Promise<void> {
+  try {
+    const session = sessionClient
+      ? (await sessionClient.auth.getSession()).data.session
+      : null;
+    if (!session) {
+      throw new Error("no session on the authenticated request");
+    }
+    const { error } = await admin.auth.admin.signOut(
+      session.access_token,
+      "others",
+    );
+    if (error) throw error;
+  } catch {
+    logger.error(
+      "DELETION",
+      "signout_best_effort_failed",
+      "Session revoke failed after deletion request; continuing (the pending-deletion gate remains the backstop)",
+      undefined,
+      { requestId },
+    );
+  }
+}
 
 type RecoveryResult =
   | { ok: true; profileId: string }
@@ -263,25 +322,9 @@ router.post(
             .status(500)
             .json({ error: "Failed to queue account for deletion", requestId });
         }
-        // @spec [Doc-01 §40.2.1 Phase 3] session-kill at request time — best-effort
-        // defense-in-depth. A throw must not 500 the request after deletion was queued.
-        try {
-          await admin.auth.admin.signOutUser(userId);
-        } catch (signOutErr) {
-          logger.error(
-            "DELETION",
-            "signout_best_effort_failed",
-            "Session-kill failed after deletion request — continuing (best-effort)",
-            {
-              userId,
-              error:
-                signOutErr instanceof Error
-                  ? signOutErr.message
-                  : String(signOutErr),
-              requestId,
-            },
-          );
-        }
+        // @spec [Doc-01 §40.2.1 Phase 3, SCL-190] session revoke at request time — best-effort
+        // defense in depth; never fails the request after the deletion was queued.
+        await revokeSessionsAtDeletionRequest(admin, req.supabase, requestId);
         // §40.2.1 Phase 4 / rulings R8+R9: confirmation email with the 7-day recovery link, sent
         // directly (it carries the token) and keyed by the request row id. Best-effort: the
         // deletion is committed; a mail failure is logged inside the sender, never surfaced.
@@ -292,6 +335,7 @@ router.post(
             await sendAccountDeletionScheduledEmail({
               deletionRequestId: result.requestRowId,
               email,
+              recipientProfileId: userId,
               rawToken: result.rawToken,
               scheduledHardDeleteAt: result.scheduledHardDeleteAt,
               requestId,

@@ -30,11 +30,17 @@ import request from "supertest";
 // up must fail these cases rather than ship open.
 import { requiresEntitlement } from "../../server/routes/student-resources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readEntitlementDenial } from "../../packages/shared/src/entitlement-denial";
 import {
   RULE_4_COLUMNS,
   findRule4Keys,
 } from "../../packages/shared/src/rule4-columns";
-import { STUDENT_RESOURCE_PATHS } from "../../packages/shared/src/student-resources";
+import {
+  STUDENT_EXAM_PATHS,
+  STUDENT_RESOURCE_PATHS,
+  guardianKpiOverallResponseSchema,
+  studentKpiOverallResponseSchema,
+} from "../../packages/shared/src/student-resources";
 
 const STUDENT = "11111111-1111-4111-8111-111111111111";
 const GUARDIAN = "22222222-2222-4222-8222-222222222222";
@@ -45,6 +51,11 @@ const POISON = Object.fromEntries(RULE_4_COLUMNS.map((k) => [k, "LEAKED"]));
 
 const rows: Record<string, unknown[]> = {};
 const decision = vi.fn();
+/**
+ * Reads that fail, as `table:columns` exactly as the code selects them. Targeted by column list,
+ * not by table, so one read can fail while its table's other reads still answer.
+ */
+const failingReads = new Set<string>();
 
 function resetRows() {
   rows.student_domain_mastery = [
@@ -95,7 +106,8 @@ function resetRows() {
       events_total: 40, events_last_7d: 12, events_last_30d: 30,
       accuracy_overall: 0.7, accuracy_last_7d: 0.75, accuracy_last_30d: 0.7,
       current_streak_days: 3, longest_streak_days: 9, sections_active: 2,
-      last_active_at: "2026-08-01", ...POISON,
+      // Active NOW, so the stored streak of 3 is current (G-NEW-16 zeroes a stale one).
+      last_active_at: new Date().toISOString(), ...POISON,
     },
   ];
   rows.student_section_projections = [
@@ -128,6 +140,9 @@ function resetRows() {
     { key: "daily_minutes_presets", value: [15, 30, 45, 60, 90, 120] },
     { key: "target_exam_date_max_days", value: 540 },
     { key: "weekly_job_interval_minutes", value: 1440 },
+    { key: "default_full_length_interval_weeks", value: 2 },
+    { key: "default_full_length_weekday", value: 6 },
+    { key: "final_exam_lead_days", value: 7 },
     { key: "horizon_days", value: 14 },
     { key: "generator_version", value: "20260917140000" },
     // The review half of §17.1's estimate. Calendar-owned (SCL-08-F), unlike its practice
@@ -145,6 +160,7 @@ function resetRows() {
       study_days_mask: 127,
       daily_minutes: 60,
       full_length_weekday: 6,
+      full_length_interval_weeks: 2,
       planner_mode: "auto",
       setup_completed_at: "2026-08-01T00:00:00.000Z",
       last_acknowledged_nonstudent_version_no: 0,
@@ -207,10 +223,21 @@ const CALENDAR_DATE = new Date().toISOString().slice(0, 10);
 function fakeClient() {
   return {
     from(table: string) {
-      const result = { data: rows[table] ?? [], error: null };
+      let columns = "";
+      const failed = (): boolean => failingReads.has(`${table}:${columns}`);
+      const readError = { message: "planted read failure" };
+      const result = (): { data: unknown[] | null; error: { message: string } | null } =>
+        failed() ? { data: null, error: readError } : { data: rows[table] ?? [], error: null };
+      const one = async () =>
+        failed()
+          ? { data: null, error: readError }
+          : { data: (rows[table] ?? [])[0] ?? null, error: null };
       const builder: Record<string, unknown> = {};
       Object.assign(builder, {
-        select: () => builder,
+        select: (cols?: string) => {
+          columns = cols ?? "";
+          return builder;
+        },
         eq: () => builder,
         neq: () => builder,
         gt: () => builder,
@@ -225,9 +252,9 @@ function fakeClient() {
         order: () => builder,
         limit: () => builder,
         insert: async () => ({ error: null }),
-        single: async () => ({ data: (rows[table] ?? [])[0] ?? null, error: null }),
-        maybeSingle: async () => ({ data: (rows[table] ?? [])[0] ?? null, error: null }),
-        then: (f?: (v: typeof result) => unknown) => Promise.resolve(result).then(f),
+        single: one,
+        maybeSingle: one,
+        then: (f?: (v: ReturnType<typeof result>) => unknown) => Promise.resolve(result()).then(f),
       });
       return builder;
     },
@@ -251,14 +278,33 @@ vi.mock("../../server/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-type Req = express.Request & { user?: { id: string; role: string }; requestId?: string };
+type Req = express.Request & {
+  user?: {
+    id: string;
+    role: string;
+    is_under_13: boolean;
+    isGuardian: boolean;
+    isAdmin: boolean;
+  };
+  requestId?: string;
+};
 
 async function call(principal: string, studentId: string, path: string) {
   const router = (await import("../../server/routes/student-resources")).default;
   const app = express();
   app.use((req, _res, next) => {
     const r = req as Req;
-    r.user = { id: principal, role: principal === GUARDIAN ? "guardian" : "student" };
+    // A real session always carries the derived `is_under_13`; G2-06 refuses a student without it
+    // (age unknown), and G2-04 would ask for a link for an under-13 one. This student is 13+.
+    // `isGuardian`/`isAdmin` as the real middleware derives them from `role`
+    // (server/middleware/supabase-auth.ts, "Attach user to request").
+    r.user = {
+      id: principal,
+      role: principal === GUARDIAN ? "guardian" : "student",
+      is_under_13: false,
+      isGuardian: principal === GUARDIAN,
+      isAdmin: false,
+    };
     r.requestId = "req-sr";
     next();
   });
@@ -268,10 +314,34 @@ async function call(principal: string, studentId: string, path: string) {
 
 const ALL_PATHS = Object.values(STUDENT_RESOURCE_PATHS);
 
+/** SCL-188 (G3-01): the KPI routes answer a guardian with the streak only. */
+const GUARDIAN_NARROWED_KPI_PATHS: ReadonlySet<string> = new Set([
+  STUDENT_RESOURCE_PATHS.kpiOverall,
+  STUDENT_RESOURCE_PATHS.kpiSections,
+  STUDENT_RESOURCE_PATHS.kpiDomains,
+]);
+
+/** Every key, at every depth, of a JSON value. */
+function allKeys(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const v of value) allKeys(v, out);
+  } else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      out.push(k);
+      allKeys(v, out);
+    }
+  }
+  return out;
+}
+
+/** R3's counters in either spelling: `events_last_7d`/`eventsTotal`, `accuracy_*`/`accuracyPct`, `week_*`/`week`. */
+const REMOVED_COUNTER_KEY = /^(events|accuracy|week)([_A-Z]|$)/i;
+
 describe("subject-scoped resources — one route, two callers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetRows();
+    failingReads.clear();
     decision.mockReturnValue("allow");
   });
 
@@ -283,6 +353,8 @@ describe("subject-scoped resources — one route, two callers", () => {
       expect(findRule4Keys(res.body)).toEqual([]);
     });
 
+    // Skills are refused to a guardian outright (SCL-194), asserted under §10.4 below.
+    if (path === STUDENT_RESOURCE_PATHS.masterySkills) continue;
     it(`ANTI-LEAK ${path} — no RULE-4 key at any depth, as GUARDIAN`, async () => {
       const res = await call(GUARDIAN, STUDENT, path);
       expect(res.status).toBe(200);
@@ -342,6 +414,7 @@ describe("subject-scoped resources — one route, two callers", () => {
   it("PROVENANCE — the guardian body IS the student body, byte for byte", async () => {
     for (const path of ALL_PATHS) {
       if (path === STUDENT_RESOURCE_PATHS.masterySkills) continue; // §10.4, asserted below
+      if (GUARDIAN_NARROWED_KPI_PATHS.has(path)) continue; // SCL-188, asserted below
       const self = await call(STUDENT, STUDENT, path);
       const guardian = await call(GUARDIAN, STUDENT, path);
       expect(guardian.status).toBe(self.status);
@@ -353,24 +426,191 @@ describe("subject-scoped resources — one route, two callers", () => {
     // If a handler rebuilt the body for one audience, this field would appear on one side
     // only. It must appear on both (it does not, because fields are NAMED) — the assertion
     // is that the two paths agree, not that the field is present.
-    rows.student_section_kpi = [
-      { section: "M", events_total: 1, accuracy_overall: 1, current_streak_days: 1, last_active_at: null, freshlyAddedField: "x" },
+    // (Driven through projections since SCL-188: the KPI routes now answer a guardian with
+    // the streak only, by design, so they are no longer a parity route.)
+    rows.student_section_projections = [
+      { section: "M", projected_score_mid: 600, projected_score_low: 570, projected_score_high: 630, relevant_question_count: 40, computed_at: "2026-08-01", freshlyAddedField: "x" },
     ];
-    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
-    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
+    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
     expect(guardian.body).toEqual(self.body);
     expect(JSON.stringify(self.body)).not.toContain("freshlyAddedField");
   });
 
-  // -- §10.4 SKILLS DENIAL ----------------------------------------------------
-  it("SKILLS — a guardian gets 200 and an empty list, never 403 (Doc 05B §10.4)", async () => {
-    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);
-    expect(guardian.status).toBe(200);
-    expect(guardian.body.skills).toEqual([]);
-    // `catalogEmpty` reports on the QUESTION BANK, not on the caller's permissions. Saying
-    // "the catalogue is empty" here would be a claim about the bank made from a denial.
-    expect(guardian.body.catalogEmpty).toBe(false);
+  // -- SCL-188 / G3-01: A GUARDIAN GETS THE STREAK, AND ONLY THE STREAK ------------
+  describe("G3-01 — the KPI routes answer a guardian with the streak only", () => {
+    it("PRESENCE FIRST — the student's own kpi/overall still carries every counter", async () => {
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      expect(self.status).toBe(200);
+      // Non-vacuity: the fixture row has non-zero 7-day and 30-day counters, and they arrive.
+      expect(self.body.week.questionsSolved).toBe(12);
+      expect(self.body.week.accuracy).toBe(75);
+      // THE STRICT CHECK LIVES HERE, NOT IN PRODUCTION (owner ruling 2026-09-30, #994). The
+      // production parse STRIPS, so a builder field added without a schema update would be
+      // dropped silently for a student; this asserts the parse is the identity on real route
+      // output, at every depth, so that field fails CI instead.
+      expect(studentKpiOverallResponseSchema.parse(self.body)).toEqual(self.body);
+      expect(allKeys(self.body).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
+
+    it("WIRE — the guardian kpi/overall is exactly { ok, currentStreakDays, requestId }", async () => {
+      const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      expect(guardian.status).toBe(200);
+      // The value is the row's, not a default: the fixture's current_streak_days is 3.
+      expect(guardian.body.currentStreakDays).toBe(3);
+      expect(Object.keys(guardian.body).sort()).toEqual([
+        "currentStreakDays",
+        "ok",
+        "requestId",
+      ]);
+      // STRICT: a removed field reappearing fails the shared schema, not only this list.
+      expect(guardianKpiOverallResponseSchema.safeParse(guardian.body).success).toBe(true);
+    });
+
+    for (const path of GUARDIAN_NARROWED_KPI_PATHS) {
+      it(`WIRE ${path} — no events_*, accuracy_* or week_* key at any depth, as GUARDIAN`, async () => {
+        const guardian = await call(GUARDIAN, STUDENT, path);
+        expect(guardian.status).toBe(200);
+        expect(allKeys(guardian.body).filter((k) => REMOVED_COUNTER_KEY.test(k))).toEqual([]);
+        // And no metric id naming one, which is how `week_questions` travelled before.
+        expect(JSON.stringify(guardian.body)).not.toMatch(/week_|accuracy|events/i);
+      });
+    }
+
+    it("sections and domains are 200 and empty for a guardian (Doc 05B §10.4 semantics)", async () => {
+      const selfSections = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+      expect(selfSections.body.sections.length).toBeGreaterThan(0); // presence, student side
+      const sections = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+      const domains = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiDomains);
+      expect(sections.status).toBe(200);
+      expect(sections.body.sections).toEqual([]);
+      expect(domains.status).toBe(200);
+      expect(domains.body.domains).toEqual([]);
+    });
+
+    it("STUDENT, production posture: an unknown key is dropped at any depth and logged once, never a 500", async () => {
+      const { toStudentKpiOverallWire } = await import(
+        "../../server/services/canonical-runtime-views"
+      );
+      const { logger } = await import("../../server/logger");
+      // The REAL builder's output, through the real route, plus two keys no schema names.
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const { ok: _ok, requestId: _rid, ...view } = self.body;
+      const planted = {
+        ...view,
+        surpriseTop: 1,
+        week: { ...view.week, surpriseNested: 2 },
+      };
+      vi.mocked(logger.warn).mockClear();
+
+      const out = toStudentKpiOverallWire(planted);
+      toStudentKpiOverallWire(planted); // a second request: no second warning
+
+      expect(out).toEqual(view);
+      expect(out).not.toHaveProperty("surpriseTop");
+      expect(out.week).not.toHaveProperty("surpriseNested");
+      const warned = vi
+        .mocked(logger.warn)
+        .mock.calls.filter((c) => c[1] === "kpi_overall_unknown_key_dropped")
+        .map((c) => (c[3] as { path: string }).path)
+        .sort();
+      expect(warned).toEqual(["surpriseTop", "week.surpriseNested"]);
+      // Path names only: the log carries `{ path }` and nothing of the payload.
+      for (const c of vi.mocked(logger.warn).mock.calls) {
+        expect(Object.keys(c[3] as object)).toEqual(["path"]);
+      }
+    });
+
+    it("the identity check itself goes red when a key is stripped (gate self-check)", async () => {
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const planted = { ...self.body, week: { ...self.body.week, surpriseNested: 2 } };
+      expect(studentKpiOverallResponseSchema.parse(planted)).not.toEqual(planted);
+    });
+
+    it("the strict schema itself refuses a reappearing counter (gate self-check)", () => {
+      const planted = { ok: true, currentStreakDays: 3, events_last_7d: 12 };
+      expect(guardianKpiOverallResponseSchema.safeParse(planted).success).toBe(false);
+      expect(allKeys({ a: [{ accuracyPct: 1 }] }).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
   });
+
+  // -- G-NEW-16: THE STREAK AS OF TODAY, ONE ANSWER ON EVERY SURFACE ------------
+  describe("G-NEW-16 — the streak is as of today, on the calendar and on kpi/overall alike", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const lastActive = (daysAgo: number): void => {
+      const row = rows.student_overall_kpi![0] as Record<string, unknown>;
+      row.last_active_at = new Date(Date.now() - daysAgo * DAY_MS).toISOString();
+    };
+    const streaks = async (): Promise<unknown[]> => {
+      const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+      const metric = (studentKpi.body.metrics as { id: string; value: number }[]).find(
+        (m) => m.id === "current_streak",
+      );
+      return [guardianKpi.body.currentStreakDays, metric?.value, calendar.body.streak.current];
+    };
+
+    it("last active 3 days ago: the streak reads 0 on every surface (stored value is 3)", async () => {
+      lastActive(3);
+      expect(await streaks()).toEqual([0, 0, 0]);
+    });
+
+    it("last active yesterday: the streak is kept on every surface", async () => {
+      lastActive(1);
+      expect(await streaks()).toEqual([3, 3, 3]);
+    });
+
+    it("active today: the streak is kept on every surface", async () => {
+      lastActive(0);
+      expect(await streaks()).toEqual([3, 3, 3]);
+    });
+
+    // Owner decision 2026-10-01: when the zone cannot be read the streak is UNKNOWN (`null`) on
+    // every surface, and never a 500 — it is a decoration, as the calendar already treated it.
+    it("the zone cannot be read: 200 everywhere, and the streak is null on every surface", async () => {
+      lastActive(1);
+      // Presence first: with the read healthy the streak is a real number on every surface.
+      expect(await streaks()).toEqual([3, 3, 3]);
+      failingReads.add("student_study_profile:timezone");
+      const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+      expect([guardianKpi.status, studentKpi.status, calendar.status]).toEqual([200, 200, 200]);
+      expect(guardianKpiOverallResponseSchema.safeParse(guardianKpi.body).success).toBe(true);
+      expect(studentKpiOverallResponseSchema.safeParse(studentKpi.body).success).toBe(true);
+      expect(await streaks()).toEqual([null, null, null]);
+    });
+  });
+
+  // -- §10.4 SKILLS DENIAL ----------------------------------------------------
+  // Owner ruling 2026-10-01 (#1013 review, item 2), SCL-194: guardians see no skills,
+  // anywhere. The skills read refuses a guardian with 403 and a logged code — replacing
+  // §10.4's "200 and an empty list" — and the refusal is the ROLE's, decided before the
+  // resolver reads anything about the student, so it is the same 403 for a linked, an
+  // unlinked and an unentitled student: the answer says nothing about the student at all.
+  it.each([
+    ["linked and entitled", "allow"],
+    ["not linked", "not_linked"],
+    ["entitlement lapsed", "student_unentitled"],
+  ] as const)(
+    "SKILLS — a guardian gets 403 with a logged code (%s), never a skill row",
+    async (_label, outcome) => {
+      const { logger } = await import("../../server/logger");
+      decision.mockReturnValue(outcome);
+      const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);
+      expect(guardian.status).toBe(403);
+      expect(guardian.body.error).toBe("Student access required");
+      expect(guardian.body).not.toHaveProperty("skills");
+      expect(JSON.stringify(guardian.body)).not.toMatch(/skill_code|Algebra/);
+      // The resolver never ran: nothing about this student was read to answer a guardian.
+      expect(decision).not.toHaveBeenCalled();
+      const logged = vi
+        .mocked(logger.warn)
+        .mock.calls.filter((c) => c[1] === "guardian_blocked");
+      expect(logged).toHaveLength(1);
+    },
+  );
 
   it("SKILLS — the student gets their rows from the same route", async () => {
     const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);
@@ -471,10 +711,19 @@ describe("subject-scoped resources — one route, two callers", () => {
           STUDENT_RESOURCE_PATHS.masterySkills,
           // Doc 05F §16: the calendar is premium, gated on the SUBJECT`s entitlement.
           STUDENT_RESOURCE_PATHS.calendar,
+          // G1 (04C §2.6 condition 2): exam results need the full-length feature.
+          STUDENT_EXAM_PATHS.tests,
+          STUDENT_EXAM_PATHS.testReport,
         ].sort(),
       );
       expect(gated.map(([, key]) => key).sort()).toEqual(
-        ["calendar_access", "mastery_detail", "mastery_detail"].sort(),
+        [
+          "calendar_access",
+          "mastery_detail",
+          "mastery_detail",
+          "exam_full_length",
+          "exam_full_length",
+        ].sort(),
       );
       expect(open.map(([path]) => path).sort()).toEqual(
         [
@@ -487,12 +736,35 @@ describe("subject-scoped resources — one route, two callers", () => {
       );
     });
 
-    it.each(gated)("402s %s when its feature is denied", async (path) => {
+    // SCL-185 (UI-01): same 402, same flat shape; the code is the platform's paid-feature
+    // denial and `details.feature` is the table's key for THIS path — read back through the
+    // one reader the client uses.
+    it.each(gated)("402s %s when its feature (%s) is denied", async (path, key) => {
       decision.mockReturnValue("allow");
       rows.entitlement_features = []; // unknown key -> canAccessFeature fails closed
       const res = await call(STUDENT, STUDENT, path);
       expect(res.status).toBe(402);
-      expect(res.body.code).toBe("PAYMENT_REQUIRED");
+      expect(res.body).toEqual({
+        error: "Subscription required",
+        code: "entitlement_required",
+        message: "An active subscription is required to see this.",
+        details: { feature: key },
+        requestId: "req-sr",
+      });
+      expect(readEntitlementDenial(res.body)).toEqual({
+        feature: key,
+        message: "An active subscription is required to see this.",
+      });
+    });
+
+    it.each([
+      STUDENT_RESOURCE_PATHS.masteryDomains,
+      STUDENT_RESOURCE_PATHS.masterySkills,
+    ])("UI-01 allow: a paid student is served %s (mastery_detail granted)", async (path) => {
+      decision.mockReturnValue("allow");
+      const res = await call(STUDENT, STUDENT, path);
+      expect(res.status).toBe(200);
+      expect(readEntitlementDenial(res.body)).toBeNull();
     });
 
     it.each(open)("still serves %s under the same denial", async (path) => {

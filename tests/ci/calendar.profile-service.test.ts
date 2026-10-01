@@ -29,6 +29,7 @@ type ProfileRow = {
   study_days_mask: number;
   daily_minutes: number;
   full_length_weekday: number | null;
+  full_length_interval_weeks: number | null;
   planner_mode: "auto" | "custom";
   setup_completed_at: string | null;
 };
@@ -40,6 +41,7 @@ const COMPLETE: ProfileRow = {
   study_days_mask: 62,
   daily_minutes: 60,
   full_length_weekday: 6,
+  full_length_interval_weeks: 2,
   planner_mode: "auto",
   setup_completed_at: "2026-09-01T00:00:00.000Z",
 };
@@ -47,7 +49,7 @@ const COMPLETE: ProfileRow = {
 /**
  * What the upsert reads back: the stored row merged over the prior one, minus the key
  * the service sends to identify the row. `studyProfileSchema` is `.strict()`, so the
- * fake has to hand back exactly the eight columns the SELECT names.
+ * fake has to hand back exactly the nine columns the SELECT names.
  */
 function mergedRow(
   existing: ProfileRow | null,
@@ -68,20 +70,41 @@ let stored: Record<string, unknown> | null;
  * @param existing the row already in `student_study_profile`, or null for a create.
  * @param knownZones the zones `calendar_is_known_timezone` answers true for.
  */
+/**
+ * A profile write is an UPSERT on create and an UPDATE on an existing row, and the service
+ * chooses between them deliberately: `.upsert()` renders as `INSERT … ON CONFLICT`, whose
+ * INSERT arm PostgreSQL checks for NOT NULL before resolving the conflict, so writing a
+ * partial body that way raised 23502 against a row that already had every column. These
+ * resolvers accept either, and `storedOp` records WHICH — so the choice is assertable here
+ * rather than only against real SQL.
+ */
+function isWrite(state: QueryState): boolean {
+  return state.op === "upsert" || state.op === "update";
+}
+
+/** The op the last profile write used. Reset by `scenario`. */
+let storedOp: QueryState["op"] | null = null;
+
 function scenario(options: {
   existing: ProfileRow | null;
   knownZones?: readonly string[];
   persistFails?: boolean;
 }): void {
   stored = null;
-  const known = options.knownZones ?? ["America/New_York", "America/Chicago", "Asia/Tokyo"];
+  storedOp = null;
+  const known = options.knownZones ?? [
+    "America/New_York",
+    "America/Chicago",
+    "Asia/Tokyo",
+  ];
 
   client = makeFakeClient({
     tables: {
       calendar_runtime_config: () => okReply(CONFIG_ROWS),
       student_study_profile: (state: QueryState) => {
-        if (state.op === "upsert") {
+        if (isWrite(state)) {
           stored = state.payload as Record<string, unknown>;
+          storedOp = state.op;
           return okReply(mergedRow(options.existing, stored));
         }
         return okReply(options.existing);
@@ -104,9 +127,8 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
-const { upsertStudyProfile, FALLBACK_TIMEZONE } = await import(
-  "../../server/services/calendar/profile-service"
-);
+const { upsertStudyProfile, FALLBACK_TIMEZONE } =
+  await import("../../server/services/calendar/profile-service");
 
 /** The upserted row, minus the keys the service always sends. */
 function storedRow(): Record<string, unknown> {
@@ -135,7 +157,10 @@ describe("timezone fails open (sheet §8 item 19)", () => {
   it("stores a zone the database recognises exactly as given", async () => {
     scenario({ existing: COMPLETE });
 
-    await upsertStudyProfile(STUDENT, { timezone: "Asia/Tokyo", idempotency_key: KEY });
+    await upsertStudyProfile(STUDENT, {
+      timezone: "Asia/Tokyo",
+      idempotency_key: KEY,
+    });
 
     expect(storedRow().timezone).toBe("Asia/Tokyo");
   });
@@ -146,8 +171,9 @@ describe("timezone fails open (sheet §8 item 19)", () => {
       tables: {
         calendar_runtime_config: () => okReply(CONFIG_ROWS),
         student_study_profile: (state) => {
-          if (state.op === "upsert") {
+          if (isWrite(state)) {
             stored = state.payload as Record<string, unknown>;
+            storedOp = state.op;
             return okReply(mergedRow(COMPLETE, stored));
           }
           return okReply(COMPLETE);
@@ -155,7 +181,8 @@ describe("timezone fails open (sheet §8 item 19)", () => {
       },
       rpcs: {
         calendar_is_known_timezone: () => errReply("connection reset"),
-        calendar_persist_version: () => okReply({ version_no: 7, validator_result: "accepted" }),
+        calendar_persist_version: () =>
+          okReply({ version_no: 7, validator_result: "accepted" }),
       },
     });
     client = failing;
@@ -209,6 +236,44 @@ describe("§8.1 bounds come from config", () => {
     expect(storedRow().daily_minutes).toBe(90);
   });
 
+  /**
+   * WHICH WRITE, not just what was written.
+   *
+   * `.upsert()` on an existing row is the defect: its INSERT arm names only the keys the
+   * body carried, PostgreSQL checks NOT NULL there before resolving the conflict, and a
+   * partial body — which §8.1's settings sheet is documented to send — raised 23502 against
+   * a row that already had every column. The 200/500 of it is proved against real SQL in
+   * `calendar.profile-upsert.pg.ci.test.ts`; what is proved HERE is the choice, because this
+   * is the layer that makes it and a fake has no constraints to fail.
+   *
+   * The create case is the other half: it must stay an upsert. That is what settles two
+   * first saves racing each other — `ON CONFLICT DO UPDATE` turns the loser into an update
+   * instead of a 23505 — and an UPDATE on a row that does not exist would match nothing.
+   */
+  it("UPDATES an existing row, rather than upserting a partial one", async () => {
+    scenario({ existing: COMPLETE });
+
+    await upsertStudyProfile(STUDENT, {
+      daily_minutes: 90,
+      idempotency_key: KEY,
+    });
+
+    expect(storedOp).toBe("update");
+  });
+
+  it("UPSERTS on create, which is what makes two first saves safe", async () => {
+    scenario({ existing: null });
+
+    await upsertStudyProfile(STUDENT, {
+      timezone: "America/New_York",
+      study_days_mask: 62,
+      daily_minutes: 60,
+      idempotency_key: KEY,
+    });
+
+    expect(storedOp).toBe("upsert");
+  });
+
   it("refuses a body that changes nothing", async () => {
     scenario({ existing: COMPLETE });
 
@@ -232,7 +297,10 @@ describe("a create needs the inputs R-08-03 says the student states", () => {
     if (result.ok) return;
     expect(result.error.kind).toBe("incomplete");
     if (result.error.kind !== "incomplete") return;
-    expect([...result.error.missing].sort()).toEqual(["daily_minutes", "study_days_mask"]);
+    expect([...result.error.missing].sort()).toEqual([
+      "daily_minutes",
+      "study_days_mask",
+    ]);
   });
 
   it("does not invent a default for either of them", async () => {
@@ -249,9 +317,14 @@ describe("a create needs the inputs R-08-03 says the student states", () => {
 
 describe("setup_completed_at is derived, never sent", () => {
   it("is stamped by the write that first gives the row a target score", async () => {
-    scenario({ existing: { ...COMPLETE, target_score: null, setup_completed_at: null } });
+    scenario({
+      existing: { ...COMPLETE, target_score: null, setup_completed_at: null },
+    });
 
-    await upsertStudyProfile(STUDENT, { target_score: 1400, idempotency_key: KEY });
+    await upsertStudyProfile(STUDENT, {
+      target_score: 1400,
+      idempotency_key: KEY,
+    });
 
     expect(typeof storedRow().setup_completed_at).toBe("string");
   });
@@ -259,7 +332,10 @@ describe("setup_completed_at is derived, never sent", () => {
   it("is not re-stamped once setup is already complete", async () => {
     scenario({ existing: COMPLETE });
 
-    await upsertStudyProfile(STUDENT, { target_score: 1500, idempotency_key: KEY });
+    await upsertStudyProfile(STUDENT, {
+      target_score: 1500,
+      idempotency_key: KEY,
+    });
 
     expect(storedRow().setup_completed_at).toBeUndefined();
   });
@@ -270,9 +346,14 @@ describe("setup_completed_at is derived, never sent", () => {
   // answered. Leaving the old assertion would strand every student who skips the field —
   // no stamp, so the read keeps answering `setup_required` and the popup reopens forever.
   it("IS stamped by the first write, with no target score anywhere in it", async () => {
-    scenario({ existing: { ...COMPLETE, target_score: null, setup_completed_at: null } });
+    scenario({
+      existing: { ...COMPLETE, target_score: null, setup_completed_at: null },
+    });
 
-    await upsertStudyProfile(STUDENT, { daily_minutes: 45, idempotency_key: KEY });
+    await upsertStudyProfile(STUDENT, {
+      daily_minutes: 45,
+      idempotency_key: KEY,
+    });
 
     expect(storedRow().setup_completed_at).toEqual(expect.any(String));
   });
@@ -291,7 +372,9 @@ describe("§12.1 profile_change", () => {
     if (!result.ok) return;
     expect(result.value.version_no).toBe(7);
 
-    const persist = client.rpcs.find((call) => call.fn === "calendar_persist_version");
+    const persist = client.rpcs.find(
+      (call) => call.fn === "calendar_persist_version",
+    );
     expect(persist?.args.p_trigger).toBe("profile_change");
     expect(persist?.args.p_initiated_by).toBe("student");
     expect(persist?.args.p_idempotency_key).toBe(KEY);
@@ -310,15 +393,24 @@ describe("§12.1 profile_change", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.version_no).toBeUndefined();
-    expect(client.rpcs.some((call) => call.fn === "calendar_persist_version")).toBe(false);
+    expect(
+      client.rpcs.some((call) => call.fn === "calendar_persist_version"),
+    ).toBe(false);
   });
 
   it("does NOT regenerate before setup completes — R-08-04 puts that on first open", async () => {
-    scenario({ existing: { ...COMPLETE, target_score: null, setup_completed_at: null } });
+    scenario({
+      existing: { ...COMPLETE, target_score: null, setup_completed_at: null },
+    });
 
-    await upsertStudyProfile(STUDENT, { daily_minutes: 45, idempotency_key: KEY });
+    await upsertStudyProfile(STUDENT, {
+      daily_minutes: 45,
+      idempotency_key: KEY,
+    });
 
-    expect(client.rpcs.some((call) => call.fn === "calendar_persist_version")).toBe(false);
+    expect(
+      client.rpcs.some((call) => call.fn === "calendar_persist_version"),
+    ).toBe(false);
   });
 
   it("keeps the saved profile when the regeneration fails — the setting IS saved", async () => {

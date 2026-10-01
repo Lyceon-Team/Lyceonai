@@ -31,6 +31,14 @@
     {
       "path": "/api/internal/calendar-weekly-regen",
       "schedule": "30 5 * * *"
+    },
+    {
+      "path": "/api/internal/calendar-exam-notify",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/internal/exam-score-renewal",
+      "schedule": "30 6 * * *"
     }
   ],
   "routes": [

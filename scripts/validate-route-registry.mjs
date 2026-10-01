@@ -47,7 +47,24 @@ function extractAppRoutes() {
     const routePath = match[1];
     routes.add(routePath);
   }
-  
+
+  // G4-01: the guardian routes are mounted from one table (GUARDIAN_ROUTES), so they are read
+  // from that table rather than restated in App.tsx. Fail loudly if App.tsx stops mounting it
+  // or the table stops declaring paths — a silent zero would let the registry drift.
+  if (content.includes('GUARDIAN_ROUTES')) {
+    const guardianRoutesPath = path.join(projectRoot, 'client/src/features/guardian/routes.tsx');
+    const guardianContent = fs.readFileSync(guardianRoutesPath, 'utf-8');
+    const pathRegex = /\bpath:\s*"([^"]+)"/g;
+    let found = 0;
+    while ((match = pathRegex.exec(guardianContent)) !== null) {
+      routes.add(match[1]);
+      found += 1;
+    }
+    if (found === 0) {
+      throw new Error('GUARDIAN_ROUTES is mounted in App.tsx but declares no paths');
+    }
+  }
+
   return Array.from(routes).sort();
 }
 

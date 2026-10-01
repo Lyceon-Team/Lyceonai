@@ -1,15 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Redirect, useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  ShieldAlert,
-  UserRound,
-} from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { AlertCircle, CheckCircle2, Loader2, UserRound } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { GuardianConnectRequired } from "@/components/auth/GuardianConnectRequired";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,26 +22,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { csrfFetch } from "@/lib/csrf";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  PROFILE_QUERY_KEY,
+  useProfileQuery,
+  type ProfileRole,
+} from "@/hooks/useProfileQuery";
 import { resolveOnboardingErrorMessage } from "@/lib/api-error";
-
-type ProfileRole = "student" | "guardian" | "admin";
-
-interface ProfileHydrationResponse {
-  authenticated?: boolean;
-  user?: {
-    id: string;
-    email?: string | null;
-    display_name?: string | null;
-    role?: ProfileRole;
-    guardianConsentRequired?: boolean;
-    requiredProfileComplete?: boolean;
-    profileCompletedAt?: string | null;
-    /** The student's own connection code, shown on the under-13 screen. */
-    studentLinkCode?: string | null;
-  } | null;
-}
+import {
+  postAuthDestination,
+  returnPathFromSearch,
+} from "@lyceon/shared/return-path";
 
 interface ProfileCompletionResponse {
   success: boolean;
@@ -56,7 +41,6 @@ interface ProfileCompletionResponse {
     role: ProfileRole;
   };
   guardianConsentRequired: boolean;
-  guardianConsentRequestId?: string | null;
 }
 
 function calculateAge(dateOfBirth: string): number | null {
@@ -76,46 +60,53 @@ function calculateAge(dateOfBirth: string): number | null {
   return age;
 }
 
-function resolvePostCompletionPath(role: ProfileRole | undefined): string {
-  return role === "guardian" ? "/guardian" : "/dashboard";
+/**
+ * @spec [AS-5; AS-3 landing matrix; register UI-03] | @implemented [2026-09-29]
+ * plain English: where a completed profile lands. The return path that rode through onboarding
+ * (`/profile/complete?next=…`, written by the login page, RequireRole or the OAuth callback) is
+ * read from THIS page's query and re-sanitised by the shared module; it wins only when the role
+ * may open it — a guardian is never sent to a student page. Otherwise the role default. An
+ * unknown role is treated as a student, as before. Read at call time (not captured at mount)
+ * so it is always the current URL.
+ *
+ * G2-04 (merged from `main`): an under-13 student with no active guardian link goes to the
+ * linking page ahead of any return path — the server refuses every learning request until a
+ * guardian connects, so the return path would only bounce.
+ */
+function resolvePostCompletionPath(
+  role: ProfileRole | undefined,
+  guardianLinkRequired: boolean,
+): string {
+  if (role !== "guardian" && role !== "admin" && guardianLinkRequired) {
+    return "/guardian-required";
+  }
+  const next =
+    typeof window !== "undefined"
+      ? returnPathFromSearch(window.location.search)
+      : null;
+  return postAuthDestination({
+    role: role ?? "student",
+    needsOnboarding: false,
+    next,
+  });
 }
 
 export default function ProfileComplete() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { refreshUser } = useSupabaseAuth();
 
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState<"student" | "guardian">("student");
   const [dateOfBirth, setDateOfBirth] = useState("");
-  const [guardianEmail, setGuardianEmail] = useState("");
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
-  const {
-    data: hydration,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery<ProfileHydrationResponse>({
-    queryKey: ["/api/profile"],
-    retry: false,
-    queryFn: async () => {
-      const response = await csrfFetch("/api/profile", {
-        credentials: "include",
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        return { authenticated: false, user: null };
-      }
-
-      if (!response.ok) {
-        throw new Error(`Failed to load profile (${response.status})`);
-      }
-
-      return response.json();
-    },
-  });
+  // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the one
+  // shared profile query; its 401/403 → `{ authenticated: false }` answer is the one this page
+  // already redirected on.
+  const { data: hydration, isLoading, error, refetch } = useProfileQuery();
 
   const profile = hydration?.user ?? null;
   const isAuthenticated = hydration?.authenticated !== false && !!profile;
@@ -148,9 +139,8 @@ export default function ProfileComplete() {
         body: JSON.stringify({
           displayName: displayName.trim(),
           role,
-          dateOfBirth: role === "student" ? dateOfBirth : null,
-          guardianEmail:
-            role === "student" ? guardianEmail.trim() || null : null,
+          // G1-02 (R10): guardians give their date of birth too, through the same field.
+          dateOfBirth,
           marketingOptIn,
         }),
       });
@@ -159,22 +149,24 @@ export default function ProfileComplete() {
     },
     onSuccess: async (result) => {
       setErrorMessage("");
-      await queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
-
-      if (result.guardianConsentRequired) {
-        toast({
-          title: "Guardian verification sent",
-          description:
-            "A verification email was sent to the guardian address. We will unlock access after verification.",
-        });
-        return;
-      }
+      await queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
 
       toast({
         title: "Profile completed",
-        description: "Your onboarding is now complete.",
+        description: result.guardianConsentRequired
+          ? "Next, connect a guardian to your account."
+          : "Your onboarding is now complete.",
       });
-      navigate(resolvePostCompletionPath(result.profile.role));
+      // G1-02: the session's role must be the one just written BEFORE navigating. The
+      // guardian dashboard gates on the auth context's `isGuardian`; without this refresh it
+      // still read the pre-completion 'student' and bounced a new guardian to /dashboard.
+      await refreshUser();
+      navigate(
+        resolvePostCompletionPath(
+          result.profile.role,
+          result.guardianConsentRequired,
+        ),
+      );
     },
     onError: (error: unknown) => {
       // @spec [contracts/auth-standard-flow.contract.md AS-2, AS-3 / §0] | @implemented 2026-06-20
@@ -199,13 +191,8 @@ export default function ProfileComplete() {
       return;
     }
 
-    if (role === "student" && !dateOfBirth) {
-      setErrorMessage("Date of birth is required for student accounts.");
-      return;
-    }
-
-    if (isUnder13 && !guardianEmail.trim()) {
-      setErrorMessage("Guardian email is required for users under 13.");
+    if (!dateOfBirth) {
+      setErrorMessage("Please enter your date of birth to continue.");
       return;
     }
 
@@ -217,11 +204,34 @@ export default function ProfileComplete() {
   }
 
   if (profile?.role === "admin") {
-    return <Redirect to="/dashboard" />;
+    return <Redirect to={resolvePostCompletionPath("admin", false)} />;
   }
 
-  if (profile?.requiredProfileComplete && profile?.profileCompletedAt) {
-    return <Redirect to={resolvePostCompletionPath(profile.role)} />;
+  /**
+   * G-NEW-03: an ALREADY-completed profile redirects on render — but not the one this page is
+   * completing. `onSuccess` refetches `/api/profile` before `refreshUser()` has updated the
+   * session role, so for that interval the refetched profile said "completed guardian" while
+   * the auth context still said "student". Redirecting on it sent the new guardian to
+   * /guardian as a student; `RequireRole` bounced them to /dashboard, whose widgets called
+   * `/api/progress/kpis` and `/projection` (403 `guardian_blocked`, production 2026-09-29).
+   * While the completion is in flight or done, the one navigation is `onSuccess`'s, after
+   * the refresh.
+   */
+  const completing =
+    completionMutation.isPending || completionMutation.isSuccess;
+  if (
+    !completing &&
+    profile?.requiredProfileComplete &&
+    profile?.profileCompletedAt
+  ) {
+    return (
+      <Redirect
+        to={resolvePostCompletionPath(
+          profile.role,
+          profile.guardianConsentRequired === true,
+        )}
+      />
+    );
   }
 
   if (isLoading) {
@@ -281,25 +291,6 @@ export default function ProfileComplete() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/*
-            THE UNDER-13 SCREEN, not a notice above a form they cannot use.
-            This was a one-paragraph Alert saying verification "is still
-            required" and telling them to submit the form again — a wall with an
-            apology. Owner ruling 2026-09-16: it must hand over the means. The
-            code is here and copyable, the guardian email is here, and where to
-            find both again is written down.
-          */}
-          {profile?.guardianConsentRequired && (
-            <GuardianConnectRequired
-              studentLinkCode={profile?.studentLinkCode ?? null}
-              guardianEmail={guardianEmail}
-              onGuardianEmailChange={setGuardianEmail}
-              onSend={() => completionMutation.mutate()}
-              sending={completionMutation.isPending}
-              sent={completionMutation.isSuccess}
-            />
-          )}
-
           {errorMessage && (
             <Alert
               className="border-amber-200 bg-amber-50"
@@ -344,45 +335,34 @@ export default function ProfileComplete() {
               </Select>
             </div>
 
-            {role === "student" && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="date-of-birth">Date Of Birth</Label>
-                  <Input
-                    id="date-of-birth"
-                    data-testid="input-date-of-birth"
-                    type="date"
-                    value={dateOfBirth}
-                    onChange={(event) => setDateOfBirth(event.target.value)}
-                    required
-                  />
-                  {age !== null && (
-                    <p className="text-xs text-muted-foreground">
-                      Age detected: {age}
-                    </p>
-                  )}
-                </div>
-
-                {isUnder13 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="guardian-email">Guardian Email</Label>
-                    <Input
-                      id="guardian-email"
-                      data-testid="input-guardian-email"
-                      type="email"
-                      value={guardianEmail}
-                      onChange={(event) => setGuardianEmail(event.target.value)}
-                      placeholder="guardian@example.com"
-                      required
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      We only mark guardian consent after verified guardian flow
-                      completion.
-                    </p>
-                  </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="date-of-birth">Date Of Birth</Label>
+                <Input
+                  id="date-of-birth"
+                  data-testid="input-date-of-birth"
+                  type="date"
+                  value={dateOfBirth}
+                  onChange={(event) => setDateOfBirth(event.target.value)}
+                  required
+                />
+                {age !== null && (
+                  <p className="text-xs text-muted-foreground">
+                    Age detected: {age}
+                  </p>
                 )}
               </div>
-            )}
+
+              {isUnder13 && (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-under-13-next-step"
+                >
+                  Under 13: after this step you&apos;ll connect a guardian with
+                  your link code before you can start practising.
+                </p>
+              )}
+            </div>
 
             <div className="flex items-start space-x-2 pt-1">
               <Checkbox
@@ -412,8 +392,6 @@ export default function ProfileComplete() {
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Saving...
                 </>
-              ) : profile?.guardianConsentRequired ? (
-                "Resend Guardian Verification"
               ) : (
                 <>
                   <CheckCircle2 className="h-4 w-4 mr-2" />

@@ -51,6 +51,7 @@ import {
   err,
   guardianCalendarResponseSchema,
   isStudyDay,
+  linkedSessionSchema,
   ok,
   planBlockSchema,
   postgresDowOfLocalDate,
@@ -58,6 +59,7 @@ import {
   type ActivityUnit,
   type BlockLaunchState,
   type CalendarDayInput,
+  type LinkedSession,
   type CalendarEngine,
   type CalendarReadyResponse,
   type CalendarResponse,
@@ -201,8 +203,8 @@ async function readLaunchStates(
   studentId: string,
   blockIds: readonly string[],
   requestId?: string,
-): Promise<BlockLaunchState[]> {
-  if (blockIds.length === 0) return [];
+): Promise<{ states: BlockLaunchState[]; links: LinkedSession[] }> {
+  if (blockIds.length === 0) return { states: [], links: [] };
 
   const { data, error } = await supabaseServer
     .from("calendar_block_launches")
@@ -220,17 +222,31 @@ async function readLaunchStates(
       "calendar_block_launches could not be read; blocks will not show as in progress",
       { ...classifyError(error), requestId },
     );
-    return [];
+    // Fail OPEN on BOTH halves. Without the links, a work-ahead block reads 0/target and the
+    // work shows as extra on the day it happened — the pre-R-08-34 answer. That is a cosmetic
+    // loss on a read that could not see its own launch rows, and it is the same posture the
+    // `states` half has always taken.
+    return { states: [], links: [] };
   }
 
   // Highest sequence first, so the first row seen for a block is its latest launch.
   const latest = new Map<string, { engine: string; sessionId: string }>();
+  // EVERY row, not just the latest (R-08-34). A block launched twice owns both sessions, and
+  // the work from the abandoned first one is still that block's work (§7.7). Same query — the
+  // `.order()` above already returns all of them, so this costs no round trip.
+  const links: LinkedSession[] = [];
   for (const row of data ?? []) {
     if (
       typeof row.block_id !== "string" ||
       typeof row.engine_session_id !== "string"
     )
       continue;
+    const parsedLink = linkedSessionSchema.safeParse({
+      block_id: row.block_id,
+      engine: row.engine,
+      engine_session_id: row.engine_session_id,
+    });
+    if (parsedLink.success) links.push(parsedLink.data);
     if (latest.has(row.block_id)) continue;
     latest.set(row.block_id, {
       engine: String(row.engine),
@@ -249,20 +265,23 @@ async function readLaunchStates(
     });
     if (parsed.success) states.push(parsed.data);
   }
-  return states;
+  return { states, links };
 }
 
 /**
  * The study-days mask each version had in force, keyed by `version_no`. Read from
  * `input_snapshot`, which is the frozen profile the generator planned against (§10.1).
  */
-async function readMasksByVersion(
+async function readSnapshotFactsByVersion(
   studentId: string,
   versionNos: readonly number[],
   requestId?: string,
-): Promise<Map<number, number>> {
+): Promise<{ masks: Map<number, number>; suppressions: string[] }> {
   const masks = new Map<number, number>();
-  if (versionNos.length === 0) return masks;
+  // A Set, because two versions in one window can both carry the same suppressed date and a
+  // student should be told about it once.
+  const suppressed = new Set<string>();
+  if (versionNos.length === 0) return { masks, suppressions: [] };
 
   const { data, error } = await supabaseServer
     .from("calendar_plan_versions")
@@ -279,7 +298,7 @@ async function readMasksByVersion(
       "plan input snapshots could not be read; study days fall back to the current profile",
       { ...classifyError(error), requestId },
     );
-    return masks;
+    return { masks, suppressions: [] };
   }
 
   for (const row of data ?? []) {
@@ -287,12 +306,30 @@ async function readMasksByVersion(
     const snapshot: unknown = row.input_snapshot;
     if (typeof snapshot !== "object" || snapshot === null) continue;
     const profile: unknown = (snapshot as { profile?: unknown }).profile;
-    if (typeof profile !== "object" || profile === null) continue;
-    const mask: unknown = (profile as { study_days_mask?: unknown })
-      .study_days_mask;
-    if (typeof mask === "number") masks.set(row.version_no, mask);
+    if (typeof profile === "object" && profile !== null) {
+      const mask: unknown = (profile as { study_days_mask?: unknown })
+        .study_days_mask;
+      if (typeof mask === "number") masks.set(row.version_no, mask);
+    }
+
+    // The suppressions, off the SAME row this function already fetched — no second round
+    // trip. Narrowed field by field and never spread: `input_snapshot` is the whole
+    // PlanInput, mastery included, and a spread here would put all of it one layer from a
+    // response (CLAUDE.md's anti-leak chokepoint rule).
+    const degraded: unknown = (snapshot as { degraded?: unknown }).degraded;
+    if (!Array.isArray(degraded)) continue;
+    for (const entry of degraded) {
+      // Marker STRINGS ("mastery", "review_queue") sit in the same array and are not ours.
+      if (typeof entry !== "object" || entry === null) continue;
+      const kind: unknown = (entry as { kind?: unknown }).kind;
+      const date: unknown = (entry as { date?: unknown }).date;
+      if (kind === "full_length_suppressed" && typeof date === "string") {
+        suppressed.add(date);
+      }
+    }
   }
-  return masks;
+  // Sorted, so the payload is stable across reads and a diff of two responses means something.
+  return { masks, suppressions: [...suppressed].sort() };
 }
 
 /** §12.7, verbatim: highest ACCEPTED, non-student version above the watermark. */
@@ -352,6 +389,18 @@ type AssembledRange = {
   days: CalendarDayInput[];
   units: ActivityUnit[];
   launches: BlockLaunchState[];
+  /**
+   * Every launch row for the blocks in the window (R-08-34). The allocator uses it to give a
+   * unit to the block it was launched FROM rather than to the day it happened on.
+   */
+  linkedSessions: LinkedSession[];
+  /**
+   * Dates the generator gave up on because the student's own day edits blocked both
+   * occurrences (formula sheet §2 Step 2 item 4). Read out of the stored snapshots' own
+   * `degraded[]`, so this is what the plan the student is LOOKING AT actually recorded —
+   * not a recomputation that could disagree with it.
+   */
+  fullLengthSuppressions: string[];
 };
 
 async function assembleRange(
@@ -370,11 +419,12 @@ async function assembleRange(
     .filter((id): id is string => typeof id === "string");
   const versionNos = [...new Set(planRows.map((row) => row.version_no))];
 
-  const [blocks, launches, masks] = await Promise.all([
+  const [blocks, launches, snapshotFacts] = await Promise.all([
     readBlocks(studentId, blockIds, requestId),
     readLaunchStates(studentId, blockIds, requestId),
-    readMasksByVersion(studentId, versionNos, requestId),
+    readSnapshotFactsByVersion(studentId, versionNos, requestId),
   ]);
+  const masks = snapshotFacts.masks;
 
   // One entry per date in the window, then the plan rows fill the ones a version owns.
   const byDate = new Map<string, CalendarDayInput>();
@@ -449,7 +499,15 @@ async function assembleRange(
     day.blocks.sort((a, b) => a.display_ordinal - b.display_ordinal);
 
   const units = await readActivityUnits(studentId, days, requestId);
-  return { profile, today, days, units, launches };
+  return {
+    profile,
+    today,
+    days,
+    units,
+    launches: launches.states,
+    linkedSessions: launches.links,
+    fullLengthSuppressions: snapshotFacts.suppressions,
+  };
 }
 
 /**
@@ -562,6 +620,7 @@ export async function readCalendar(
     days: range.days,
     units: range.units,
     launches: range.launches,
+    linked_sessions: range.linkedSessions,
   });
 
   const [streak, diagnostic, change, projection] = await Promise.all([
@@ -584,6 +643,16 @@ export async function readCalendar(
     // `calendar_build_plan_input` snapshots into `engine_planning`, so the estimate the
     // student reads is the budget the plan was built against.
     estimates: config.estimates,
+    // §8.1's frequency readout. STUDENT ONLY, and for the same reason `enabled_block_types`
+    // is: it exists to make a CONTROL truthful, and §16 gives a guardian no controls. The
+    // guardian payload below omits it.
+    exam_planning: {
+      final_exam_lead_days: config.finalExamLeadDays,
+      default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+      default_full_length_weekday: config.defaultFullLengthWeekday,
+    },
+    // Formula sheet §2 Step 2 item 4. Always present, `[]` when nothing was lost.
+    full_length_suppressions: range.fullLengthSuppressions,
     // §17.2. From the config accessor, never a literal — the picker must offer exactly what
     // V-03 accepts. The guardian payload below deliberately omits it (§16: no write path).
     enabled_block_types: [...config.enabledBlockTypes],
@@ -712,6 +781,9 @@ async function setupDefaults(
     daily_minutes_min: config.bounds.daily_minutes_min,
     daily_minutes_max: config.bounds.daily_minutes_max,
     target_exam_date_max_days: config.bounds.target_exam_date_max_days,
+    default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
+    default_full_length_weekday: config.defaultFullLengthWeekday,
+    final_exam_lead_days: config.finalExamLeadDays,
   };
 }
 
@@ -781,6 +853,7 @@ export async function readGuardianCalendar(
     days: range.days,
     units: range.units,
     launches: range.launches,
+    linked_sessions: range.linkedSessions,
   });
 
   // Independent reads, so they go together — the same shape as the student path above.
@@ -797,6 +870,10 @@ export async function readGuardianCalendar(
     // The SAME estimates the student's payload carries — owner ruling 2026-09-22: the
     // parent view is identical to the student's, and minutes are not among §16's exclusions.
     estimates: config.estimates,
+    // The SAME dates, by owner ruling 2026-09-26: a suppression is a fact about the plan,
+    // the category §16 as amended already admits. Only the COPY differs — the guardian's
+    // line states it and never instructs, because they have no day menu to be sent to.
+    full_length_suppressions: range.fullLengthSuppressions,
     // §16 as amended 2026-09-26: R-08-22 reversed, and "no profile" narrowed to admit these
     // two. Read off the profile this function ALREADY loaded to resolve the timezone — no
     // second query, and no chance of the header disagreeing with the plan it sits above.

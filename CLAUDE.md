@@ -62,6 +62,25 @@ This rule overrides any instruction to the contrary.
 Annotate every implementation:
 `@spec [Doc-ID_version, §section] | @implemented [YYYY-MM-DD] | plain English: what it does, expected outcome, trade-offs, edge cases`
 
+**An annotation that describes its own status must be updated when that status changes.**
+
+A comment saying "the ruling said X; this is wider, deliberately" is accurate when written and
+misleading the moment the deviation is ratified. It reads as an open question, and it invites the
+next person either to re-litigate a settled one or to narrow the code back to the original wording.
+So when a deviation is ruled on, the annotation records **the ruling and its date** alongside the
+reasoning, rather than continuing to describe itself as a deviation.
+
+**This is the inverse of the stale-comment rule.** That one catches a comment the code outran;
+this one catches a comment that stopped tracking a *decision*. Both produce the same failure — a
+reader acting on something that was true once.
+
+> `FUNDING_SUBSCRIPTION_STATUSES` in `server/lib/stripe/guardian-subscriptions.ts` opened "THE
+> RULING SAID 'ACTIVE'; THIS IS WIDER, DELIBERATELY", which was exactly right at the time. The
+> owner ratified the wider set hours later, on the reasoning rather than the wording — and the
+> sentence then read as an unratified deviation still awaiting a decision, one narrowing away from
+> reopening the pre-webhook window the check exists to close. The neighbouring page cap had the
+> opposite gap: ruled on, and recording no ruling at all. (Learned 2026-09-29, owner ruling: #962.)
+
 ## Verify before you say "done"
 
 Never report success on assertion alone. Run the check and show the evidence (command + output):
@@ -94,6 +113,29 @@ grep -ln 'FUNCTION public\.<name>' supabase/migrations/*.sql | sort | tail -1
 This has now fired **six times** (M2, M9, M17, M31, M90–M93, M96) — twice in the change that
 prompted this rule, where six mutations stopped biting at once because that change's own
 migration superseded their targets. Owner ruling 2026-09-25: it belongs in the working rules.
+
+## A plant must mutate the call site under test
+
+**A mutation applied to the wrong occurrence is a dead plant reading as a live one.**
+
+`const items = subscription.items?.data ?? []` appeared three times in
+`server/lib/stripe/webhook-handler.ts`; a first-match replace hit the single-student writer, which
+the tests never exercise. The plant applied cleanly, the suite stayed green, and that read as "the
+test doesn't catch this" when it was "the mutation never reached the code." Same class as the dead
+migration mutation above, arrived at through a different door.
+
+Before accepting a plant that comes back green, confirm the mutation landed on the path the test
+executes — **by line number, not by pattern**. A plant that fails to fail is a finding; a plant
+that never applied is nothing at all.
+
+The two are told apart by looking, not by inference:
+
+```bash
+grep -n '<the anchor>' <file>      # how many occurrences, and which one the test runs
+```
+
+Learned 2026-09-29 (#962), where re-pointing one plant from the single-student writer to the
+guardian writer turned it from green to reddening three cases.
 
 ## "Is it deployed?" — ask the catalog, never the ledger
 
@@ -152,6 +194,17 @@ So, when a test guards a boundary:
   green while they do (`tests/ci/calendar.service-harness.ts` is the calendar's).
 - **Assert presence before absence.** An anti-leak assertion over an empty collection passes
   for the wrong reason; prove the payload is non-trivial first.
+- **A fixture that collapses two values cannot disprove their independence.** If the claim is
+  that two things differ, the fixture must be able to make them differ. "Each entitlement carries
+  its own `stripe_subscription_item_id`" passed for the wrong reason: every fixture gave each
+  subscription exactly one item, so `items[0].id` and `item.id` were the same value and no
+  mutation could separate them. The repair is a fixture with the shape that CAN disprove it —
+  here a two-item subscription, which is also the shape live production data still has
+  (`sub_1UB8p5DPtjyWEVqErGBHVFQF`). (Learned 2026-09-29: #962.)
+- **An assertion a sibling can satisfy is not an assertion.** `toContain("student-link-code")`
+  was satisfied by `student-link-code-missing`, and three inline 500s sharing one `try` meant
+  deleting one log was masked by its neighbour — so the coverage check passed on the wrong
+  statement. Match the whole token, and pair each assertion one-to-one with the site it guards.
 - A round-trip test — real producer through real consumer — catches what neither side's own
   tests can, because the mismatch lives between them.
 
@@ -167,23 +220,32 @@ Before implementing scheduling, queueing, retries, alerting, tracing, or any oth
 
 This applies to spec implementation too: where a spec section names a managed service (e.g. Doc 03C §8 names Cloud Tasks queues), implement it with that service rather than an application-layer equivalent.
 
-## Branch targeting — four integration branches, never `main`
+## Branch targeting — seven integration branches, never `main`
 
-Four long-lived integration branches exist. Route every PR to the correct one by scope:
+Seven long-lived integration branches exist. Route every PR to the correct one by scope:
 
 | Branch | Scope | Examples |
 |---|---|---|
 | `questions` | Question bank creation **only** | Batch authoring, taxonomy edits, seed SQL, ingestion pipeline |
 | `lisa` | AI tutor / LISA work | Tutor runtime, context/memory, RAG, LISA API, tutor-adjacent tests |
-| `stripe` | Billing / entitlement vertical **and WS-GL** | Stripe surface, entitlement writes, the guardian-link and guardian-consent data layer |
-| `cleanup` | Everything else | Spec alignment, auth, mastery, practice engine, frontend, CI, docs |
+| `calendar` | Study-calendar vertical | Plan generation, `calendar_validate_plan`, calendar schema gates, calendar surfaces |
+| `exam` | Full-length exams | Exam runtime and session state, scoring, score reports, review unlock |
+| `guardian` | Guardian-facing surfaces | Guardian dashboard, guardian projections, guardian exam results |
+| `review` | Review vertical | Review pool and session runtime, `review-canonical`, review surfaces |
+| `cleanup` | Everything else — **including billing / entitlement and WS-GL** | Spec alignment, auth, mastery, practice engine, Stripe surface, entitlement writes, the guardian-link and guardian-consent data layer, frontend, CI, docs |
 
-**Why WS-GL routes to `stripe`, not `cleanup`.** The governing charter
+**`stripe` no longer exists; billing routes to `cleanup`.** The 2026-08-24 ruling sent the
+billing / entitlement vertical and WS-GL to a `stripe` branch on the grounds that the governing charter
 (`docs/plans/Stripe_Vertical_Session_Charter.md`), the SCL register entries it depends on, and its own
-defect record (`docs/plans/WS-GL_Guardian_Link_Data_Layer.md`) all live on `stripe` and nowhere else —
-`git ls-tree origin/cleanup -- docs/plans/` returns none of them. WS-GL also unblocks the guardian-paid
-billing path. Splitting a workstream from its dependencies to satisfy a scope table is the wrong trade;
-the table is corrected to match reality instead. Owner ruling, 2026-08-24.
+defect record (`docs/plans/WS-GL_Guardian_Link_Data_Layer.md`) lived on `stripe` and nowhere else.
+That branch has since merged and been deleted from the remote (`git ls-remote --heads origin stripe`
+returns nothing), and its premise went with it: those files are now on `cleanup`, on `main`, and on
+every other integration branch — `git ls-tree origin/cleanup -- docs/plans/` returns both. The
+dependencies and the workstream are no longer separated by routing billing to `cleanup`, so billing,
+entitlement and WS-GL route there. Owner brief, 2026-09-29.
+
+**A routing rule pointing at a deleted branch sends the next agent nowhere.** Verify a target branch
+still exists before trusting this table: `git ls-remote --heads origin <branch>`.
 
 **Never open a PR against `main`.** Karl owns all merges to `main`.
 

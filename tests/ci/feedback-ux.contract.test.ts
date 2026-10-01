@@ -50,8 +50,11 @@ describe("Feedback UX hardening contract", () => {
    * inline shape — is in the list.
    */
   it("routes every premium denial through the one CTA component", () => {
+    // W4-11: chat draws `LisaUpgradeCard`, which is the one CTA component with
+    // LISA's pitch. Pinned in two steps so neither link can quietly go.
+    expect(read("client/src/pages/chat.tsx")).toContain("LisaUpgradeCard");
     const surfaces = [
-      "client/src/pages/chat.tsx",
+      "client/src/components/tutor/LisaUpgradeCard.tsx",
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
       // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
       // this list; every remaining surface keeps the same assertion.
@@ -76,6 +79,8 @@ describe("Feedback UX hardening contract", () => {
   it("lets no surface name a billing route for itself", () => {
     const surfaces = [
       "client/src/pages/chat.tsx",
+      "client/src/components/tutor/LisaUpgradeCard.tsx",
+      "client/src/components/tutor/ScopedTutorPanel.tsx",
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
       // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
       // this list; every remaining surface keeps the same assertion.
@@ -189,10 +194,17 @@ describe("Feedback UX hardening contract", () => {
   });
 
   it("preserves structured API errors in guardian subscription paywall", () => {
+    // G4-09: the poller reads billing status through the one shared reader, which is where
+    // the structured parse now lives.
     const guardianPaywall = read(
       "client/src/components/guardian/CheckoutReturnPoller.tsx",
     );
-    expect(guardianPaywall).toContain("parseApiErrorFromResponse");
+    // UI-14 (2026-09-29): the poller reads billing status through the one
+    // shared hook, and the structured-error parse moved there with the fetch.
+    const billingStatusHook = read("client/src/hooks/useBillingStatusQuery.ts");
+    expect(guardianPaywall).toContain("useBillingStatusQuery");
+    expect(billingStatusHook).toContain("parseApiErrorFromResponse");
     expect(guardianPaywall).not.toContain("throw new Error(data.error");
+    expect(billingStatusHook).not.toContain("throw new Error(data.error");
   });
 });

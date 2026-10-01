@@ -14,7 +14,7 @@
 
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpApiError } from "@/lib/api-error";
 
@@ -45,9 +45,14 @@ const useConversationsMock = vi.fn();
 const useCreateConversationMock = vi.fn();
 const useResumeConversationMock = vi.fn();
 
+// `/chat` with a conversation selected by default; the New-session case clears it.
+const wouterState = vi.hoisted(() => ({
+  search: "?conversationId=test-conv-id",
+}));
+
 vi.mock("wouter", () => ({
   useLocation: () => ["/chat", vi.fn()],
-  useSearch: () => "?conversationId=test-conv-id",
+  useSearch: () => wouterState.search,
 }));
 
 vi.mock("@/hooks/tutor-client", () => ({
@@ -100,6 +105,7 @@ function createWrapper() {
 describe("Chat page — raw server errors never surface", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    wouterState.search = "?conversationId=test-conv-id";
     useSendMessageMock.mockReturnValue(idleMutation);
     useEndConversationMock.mockReturnValue(idleMutation);
     useResumeConversationMock.mockReturnValue(idleMutation);
@@ -149,4 +155,46 @@ describe("Chat page — raw server errors never surface", () => {
       }
     },
   );
+
+  // @spec [Doc-03B_V2 §11, LISA-FE-RAW-SERVER-TEXT] | @implemented [2026-09-29]
+  // plain English: carried over from the retired tutor landing page's test
+  // (UI-04): starting a new session that fails must show curated copy, never
+  // the server's own message. `/chat` is now the only place to start one.
+  it("a failed New session shows curated copy, never raw server text", async () => {
+    const raw =
+      "vertex-ai: model-armor template lyceon-lisa-input-v1 rejected input at filter=PI_JAILBREAK";
+    wouterState.search = "";
+    useConversationMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    });
+    useCreateConversationMock.mockReturnValue({
+      ...idleMutation,
+      isIdle: false,
+      isError: true,
+      status: "error" as const,
+      error: new HttpApiError({
+        status: 500,
+        code: "orchestration_failed",
+        message: raw,
+      }),
+    });
+
+    const { default: ChatPage } = await import("./chat");
+    render(<ChatPage />, { wrapper: createWrapper() });
+
+    // Presence first: the failure IS reported, so the absence below is not
+    // an empty page passing for the wrong reason.
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts.map((a) => a.textContent).join(" ")).toMatch(
+      /couldn.t start a session/i,
+    );
+
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain(raw);
+    for (const word of raw.split(/\s+/).filter((w) => w.length > 4)) {
+      expect(body).not.toContain(word);
+    }
+  });
 });

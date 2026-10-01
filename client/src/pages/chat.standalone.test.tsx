@@ -220,7 +220,10 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
       ],
     });
 
-    createMut.mutateAsync = vi.fn().mockResolvedValue({
+    // W4-11: the page calls `mutate` and reads failures off `.error` — the
+    // `mutateAsync` + empty `catch {}` that swallowed the 403 is gone.
+    createMut.mutate = vi.fn();
+    const created = {
       conversation_id: "new-conv-999",
       reused: false,
       entry_mode: "general",
@@ -233,7 +236,11 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
       resolved_scope: {},
       created_at: "2026-09-23T10:10:00Z",
       updated_at: "2026-09-23T10:10:00Z",
-    });
+    };
+    createMut.mutate.mockImplementation(
+      (_input: unknown, opts?: { onSuccess?: (c: typeof created) => void }) =>
+        opts?.onSuccess?.(created),
+    );
 
     const { default: ChatPage } = await import("./chat");
     render(<ChatPage />, { wrapper: createWrapper() });
@@ -246,8 +253,8 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
       fireEvent.click(newSessionBtn);
     });
 
-    expect(createMut.mutateAsync).toHaveBeenCalledOnce();
-    const callArgs = createMut.mutateAsync.mock.calls[0][0];
+    expect(createMut.mutate).toHaveBeenCalledOnce();
+    const callArgs = createMut.mutate.mock.calls[0][0];
     expect(callArgs.entry_mode).toBe("general");
     expect(callArgs.idempotency_key).toBeTruthy();
     expect(callArgs.idempotency_key).not.toBe("old-conv-1");
@@ -669,5 +676,42 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
     expect(
       screen.getAllByRole("button", { name: /new session/i }).length,
     ).toBeGreaterThan(0);
+    // No further page: no "Load more" control.
+    expect(screen.queryByTestId("button-load-more-sessions")).toBeNull();
+  });
+
+  // ── UI-16: the sidebar loads the next server page on request ───────
+  // @spec [Doc-03B_V4.1 §8.3, §8.5] | @implemented [2026-09-29]
+  it("9. when the server reports has_more, 'Load more sessions' fetches the next page", async () => {
+    mockSearch = "";
+    useConversationMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    });
+    const fetchNextPage = vi.fn(async () => undefined);
+    useConversationsMock.mockReturnValue({
+      data: {
+        conversations: [],
+        pagination: { has_more: true, next_cursor: "opaque" },
+      },
+      isLoading: false,
+      error: null,
+      hasNextPage: true,
+      isFetchingNextPage: false,
+      fetchNextPage,
+    });
+    useSendMessageMock.mockReturnValue(idleMutation());
+    useEndConversationMock.mockReturnValue(idleMutation());
+    useResumeConversationMock.mockReturnValue(idleMutation());
+    useCreateConversationMock.mockReturnValue(idleMutation());
+
+    const { default: ChatPage } = await import("./chat");
+    render(<ChatPage />, { wrapper: createWrapper() });
+
+    const buttons = screen.getAllByTestId("button-load-more-sessions");
+    expect(buttons.length).toBeGreaterThan(0);
+    fireEvent.click(buttons[0]!);
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 });

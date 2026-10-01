@@ -104,7 +104,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-weight: 600;
   font-size: 17px;
   letter-spacing: -0.02em;
@@ -140,7 +140,7 @@
 }
 .lyceon-calendar .mini h4 {
   margin: 0;
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 13.5px;
   font-weight: 600;
   color: #e8eaf2;
@@ -205,7 +205,7 @@
 }
 .lyceon-calendar .legend h4 {
   margin: 0 0 9px;
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 13.5px;
   font-weight: 600;
   color: #e8eaf2;
@@ -261,7 +261,7 @@
   border-bottom: 1px solid var(--line);
 }
 .lyceon-calendar .range {
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -350,7 +350,7 @@
   color: var(--ink-2);
 }
 .lyceon-calendar .stat b {
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
@@ -441,7 +441,7 @@
   letter-spacing: 0.02em;
 }
 .lyceon-calendar .dnum {
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 25px;
   font-weight: 600;
   letter-spacing: -0.03em;
@@ -512,7 +512,7 @@
  * colours, so the card's density is unchanged.
  */
 .lyceon-calendar .block .ttl {
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-weight: 600;
   font-size: 14.5px;
   letter-spacing: -0.01em;
@@ -692,7 +692,7 @@
   box-shadow: inset 0 0 0 2px var(--math);
 }
 .lyceon-calendar .mnum {
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 14px;
   font-weight: 600;
   align-self: flex-start;
@@ -751,7 +751,7 @@
   color: var(--muted);
 }
 .lyceon-calendar .facts b {
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 16px;
   font-weight: 600;
   color: var(--ink);
@@ -804,7 +804,7 @@
 }
 .lyceon-calendar .sheet h3 {
   margin: 0;
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -863,7 +863,7 @@
 }
 .lyceon-calendar .why b {
   display: block;
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-weight: 600;
   color: var(--ink);
   margin-bottom: 3px;
@@ -1238,7 +1238,7 @@
 }
 .lyceon-calendar .offcard b {
   display: block;
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 14px;
   color: #6b3407;
   margin-bottom: 2px;
@@ -1285,7 +1285,7 @@
   color: var(--muted);
 }
 .lyceon-calendar .streakline b {
-  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-family: inherit;
   font-weight: 600;
   color: var(--ink);
   font-size: 13.5px;
@@ -1298,7 +1298,7 @@
 .lyceon-calendar .top .countline b {
   color: var(--ink);
   font-weight: 600;
-  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-family: inherit;
   font-size: 13.5px;
 }
 
@@ -1314,7 +1314,7 @@
 .lyceon-calendar .item[data-item="target"] .ptarget b {
   color: var(--ink);
   font-weight: 600;
-  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-family: inherit;
   font-size: 28px;
   letter-spacing: -0.02em;
 }
@@ -1329,7 +1329,7 @@
 .lyceon-calendar .item[data-item="range"] .prange b {
   color: var(--ink);
   font-weight: 600;
-  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-family: inherit;
   font-size: 20px;
   letter-spacing: -0.025em;
   line-height: 1;
@@ -1386,7 +1386,7 @@
 }
 .lyceon-calendar .modal h2 {
   margin: 0;
-  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-family: inherit;
   font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -1438,7 +1438,7 @@
   gap: 10px;
 }
 .lyceon-calendar .scoreline b {
-  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-family: inherit;
   font-size: 30px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -1468,7 +1468,7 @@
 }
 .lyceon-calendar .cta b {
   display: block;
-  font-family: "Bricolage Grotesque", var(--display-fallback, inherit);
+  font-family: inherit;
   font-size: 15px;
   margin-bottom: 3px;
 }
@@ -1530,7 +1530,7 @@
   letter-spacing: 0.04em;
 }
 .lyceon-calendar .daychip .dnum {
-  font-family: "Bricolage Grotesque";
+  font-family: serif;
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
@@ -1632,5 +1632,57 @@
   }
   .lyceon-calendar .sheet.on {
     transform: translateY(0);
+  }
+}
+
+/*
+ * Phone centring, below 640px (owner decision 2026-10-01 on PR 1003, item 10). On a phone
+ * the header's lines, the selected day's heading and the facts footer centre; everything
+ * inside a block card stays as it is. SHARED, by R11: the student's calendar on a phone
+ * centres the same way, and nothing here reaches 640px or wider, so desktop is unchanged
+ * (`tests/e2e/student-calendar.spec.ts`, byte-compared at 1440). Placed after the 767px block
+ * so it wins over that block's `start` alignment at the same specificity.
+ */
+@media (max-width: 639px) {
+  .lyceon-calendar .top {
+    justify-items: center;
+    text-align: center;
+  }
+  .lyceon-calendar .slot,
+  .lyceon-calendar .slot[data-slot^="C"],
+  .lyceon-calendar .slot[data-slot^="R"] {
+    justify-content: center;
+  }
+  .lyceon-calendar .dayhead {
+    text-align: center;
+  }
+  .lyceon-calendar .dnum {
+    justify-content: center;
+  }
+  .lyceon-calendar .facts {
+    justify-content: center;
+    text-align: center;
+  }
+  /*
+   * Block cards centre their whole content on a phone too (owner review 2026-10-01, final
+   * round item 1, replacing "card content stays left" for block cards only; domain and exam
+   * cards are unchanged). The 9px left inset that clears the tone bar is mirrored on the
+   * right, so the centred title, "~N min" line, scope chips and progress bar sit on the
+   * card's centre line rather than 4.5px right of it.
+   */
+  .lyceon-calendar .block {
+    text-align: center;
+  }
+  .lyceon-calendar .block .ttl,
+  .lyceon-calendar .block .dom {
+    justify-content: center;
+  }
+  .lyceon-calendar .block .ttl,
+  .lyceon-calendar .block .sub,
+  .lyceon-calendar .block .dom {
+    padding-right: 9px;
+  }
+  .lyceon-calendar .block .progress {
+    margin-right: 9px;
   }
 }

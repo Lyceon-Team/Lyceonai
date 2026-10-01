@@ -15,6 +15,13 @@
  * code) fails the parse instead of reaching a student. The disclosure text is NOT
  * here: 04C §15.1 makes it payload data, read from score_disclosure_versions.
  *
+ * SERVER-SIDE REPORT (SCL-180 amended 2026-09-29, owner ruling 7; @implemented
+ * [2026-09-29]): the `scored` / `partial_scored` payloads here carry `domain_breakdown`
+ * with correct/total. They are what the report service builds, and are NOT the student
+ * wire shape: the student route sends `toStudentExamReport` output
+ * (`exam-student-report-schema.ts`, seven segments per domain, no counts); the guardian
+ * route sends `toGuardianExamReport` output (correct/total, per SCL-180).
+ *
  * trade-offs: `voided` is in the state enum (04C §5.1) but has no payload schema:
  * no voiding workflow exists (04C §11.6, MVP-reserved), so nothing can produce it.
  */
@@ -25,6 +32,7 @@ import {
   examSectionStateSchema,
   examSessionStateSchema,
 } from "./exam-runtime-schema";
+import { canonicalDomainSchema, sectionOfDomain } from "./calendar/scope";
 
 // ── §5.1 ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +94,42 @@ export const examDisclosureSchema = z
     full_text_url: z.string().min(1),
   })
   .strict();
+
+// ── Score breakdown (G1; 04C §8.1/§9.1 as amended by SCL-180) ──────────────────
+
+/**
+ * @spec [Doc-04C §8.1/§9.1, §2.3; Doc 04 Parent Q9 as amended by SCL-180; E7b owner
+ *        ruling (the Score breakdown tab)] | @implemented [2026-09-27]
+ * plain English: one row per (scored section, domain): items served and items right.
+ * Domain-level only, by construction: `.strict()` refuses a skill, a module, a path or a
+ * question id, and `domain` is the canonical enum, so a skill code cannot pass as one.
+ * The domain must belong to the row's section, and correct can never exceed total.
+ */
+export const examDomainBreakdownRowSchema = z
+  .object({
+    section: examSectionSchema,
+    domain: canonicalDomainSchema,
+    correct: z.number().int().nonnegative(),
+    total: z.number().int().positive(),
+  })
+  .strict()
+  .refine((r) => sectionOfDomain(r.domain) === r.section, {
+    message: "domain does not belong to section",
+  })
+  .refine((r) => r.correct <= r.total, {
+    message: "correct exceeds total",
+  });
+export type ExamDomainBreakdownRow = z.infer<
+  typeof examDomainBreakdownRowSchema
+>;
+
+export const examDomainBreakdownSchema = z
+  .array(examDomainBreakdownRowSchema)
+  .refine(
+    (rows) =>
+      new Set(rows.map((r) => `${r.section}|${r.domain}`)).size === rows.length,
+    { message: "duplicate (section, domain) row" },
+  );
 
 const reportBase = {
   session_id: z.string().uuid(),
@@ -154,6 +198,7 @@ export const examReportScoredSchema = z
         })
         .strict(),
     ),
+    domain_breakdown: examDomainBreakdownSchema,
     disclosure: examDisclosureSchema,
     review_unlocked: z.literal(true),
   })
@@ -203,6 +248,8 @@ export const examReportPartialSchema = z
     ),
     completed_sections: z.array(examSectionSchema),
     incomplete_sections: z.array(examSectionSchema),
+    /** Scored sections only: nothing is counted beside a score that does not exist. */
+    domain_breakdown: examDomainBreakdownSchema,
     disclosure: examDisclosureSchema,
     partial_disclosure: z.object({ summary: z.string().min(1) }).strict(),
     review_unlocked: z.literal(true),

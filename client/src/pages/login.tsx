@@ -7,7 +7,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { humanAuthError } from "@/lib/auth-error-messages";
-import { returnPathFromSearch } from "@lyceon/shared/return-path";
+import {
+  postAuthDestination,
+  returnPathFromSearch,
+} from "@lyceon/shared/return-path";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -35,28 +38,41 @@ export default function Login() {
       // account, and the under-13 rule, which is a condition of the Terms rather
       // than a consent state.
       const needsOnboarding =
-        user.guardianConsentRequired === true ||
-        user.requiredProfileComplete === false ||
-        !user.profile_completed_at;
-
-      let destination = user.role === "guardian" ? "/guardian" : "/dashboard";
+        user.requiredProfileComplete === false || !user.profile_completed_at;
+      // G2-04: an under-13 student with no active guardian link goes to the linking page.
+      const needsGuardianLink =
+        user.role === "student" && user.guardianConsentRequired === true;
 
       // @spec [AS-5 allowlisted `next`; owner brief 2026-09-15 Part B] | @implemented [2026-09-15]
       // A return path captured by RequireRole (`/login?next=…`) wins over the role default —
       // but only after it passes the ONE shared sanitiser (same-origin, relative, allowlisted),
       // and never ahead of onboarding: an incomplete account still goes to /profile/complete.
-      const returnPath =
+      //
+      // @spec [AS-5; AS-3 landing matrix; register UI-03] | @implemented [2026-09-29]
+      // plain English: the decision is the shared `postAuthDestination`. Onboarding no longer
+      // drops the return path — it rides along as /profile/complete?next=… and the onboarding
+      // page lands on it once the profile is complete. A return path the role cannot open
+      // (a guardian with next=/calendar) falls back to the role default. Admins bypass
+      // onboarding, as before.
+      const next =
         typeof window !== "undefined"
           ? returnPathFromSearch(window.location.search)
           : null;
-      if (returnPath) destination = returnPath;
 
-      // Admins bypass onboarding requirements
-      if (user.role !== "admin" && needsOnboarding) {
-        destination = "/profile/complete";
-      }
-
-      navigate(destination);
+      // G2-04 (merged from `main`): a complete under-13 student with no active guardian link
+      // goes to the linking page ahead of any return path; the server refuses every learning
+      // request until a guardian connects, so a `next` there would only bounce. Onboarding
+      // still comes first, exactly as on `main`.
+      const onboardingFirst = user.role !== "admin" && needsOnboarding;
+      navigate(
+        !onboardingFirst && needsGuardianLink
+          ? "/guardian-required"
+          : postAuthDestination({
+              role: user.role,
+              needsOnboarding: onboardingFirst,
+              next,
+            }),
+      );
     }
   }, [isAuthenticated, authLoading, user, navigate]);
 

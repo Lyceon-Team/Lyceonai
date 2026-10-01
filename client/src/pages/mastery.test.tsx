@@ -17,7 +17,7 @@
 //   stay green if the server's name changed.
 import React from "react";
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 
 const queryMock = vi.hoisted(() => ({ useQuery: vi.fn() }));
 vi.mock("@tanstack/react-query", async (importActual) => {
@@ -25,8 +25,7 @@ vi.mock("@tanstack/react-query", async (importActual) => {
   return { ...actual, useQuery: queryMock.useQuery };
 });
 // The page reads the signed-in student's id to build its subject-scoped URLs. The provider
-// is not mounted in a unit render, so the hook is stubbed — same pattern as
-// guardian-dashboard.history.test.tsx.
+// is not mounted in a unit render, so the hook is stubbed.
 vi.mock("@/contexts/SupabaseAuthContext", () => ({
   useSupabaseAuth: () => ({
     user: { id: "11111111-1111-4111-8111-111111111111" },
@@ -95,7 +94,51 @@ function domainNode(level: (typeof LEVELS)[number], domain: string) {
   return { section: "M" as const, domain, ...level };
 }
 
+/**
+ * The pill on ONE domain's card. The grid always draws all eight canonical domains (owner
+ * decision 2026-10-01), so "the" pill on the page is no longer unique — each case reads the
+ * card of the domain it served.
+ */
+function pillOf(domain: string): HTMLElement {
+  const card = document.querySelector<HTMLElement>(`[data-domain="${domain}"]`);
+  if (card === null) throw new Error(`no card for ${domain}`);
+  return within(card).getByTestId("level-pill");
+}
+
 describe("MasteryPage — domain grid", () => {
+  // Owner decision 2026-10-01 on #1003 (R11): the student page draws all eight too.
+  it("a student with only four domain rows still sees all eight domains", () => {
+    mockQueries({
+      domains: ok({
+        ok: true,
+        domains: [
+          { section: "RW" as const, domain: "Craft and Structure", ...LEVELS[4] },
+          { section: "RW" as const, domain: "Expression of Ideas", ...LEVELS[2] },
+          domainNode(LEVELS[5], "Algebra"),
+          domainNode(LEVELS[1], "Geometry and Trigonometry"),
+        ],
+      }),
+    });
+    render(<MasteryPage />);
+    const grid = screen.getByTestId("domain-grid");
+    expect(grid.children.length).toBe(8);
+    for (const domain of [
+      "Algebra",
+      "Advanced Math",
+      "Problem Solving and Data Analysis",
+      "Geometry and Trigonometry",
+      "Craft and Structure",
+      "Information and Ideas",
+      "Standard English Conventions",
+      "Expression of Ideas",
+    ]) {
+      expect(screen.getByText(domain)).toBeTruthy();
+    }
+    expect(
+      screen.getAllByTestId("level-pill").filter((p) => p.textContent === "Not enough answers yet"),
+    ).toHaveLength(4);
+  });
+
   it.each(LEVELS)(
     "renders the $levelKey state on a domain card by its server-supplied name",
     (level) => {
@@ -105,7 +148,7 @@ describe("MasteryPage — domain grid", () => {
       render(<MasteryPage />);
 
       expect(screen.getByText("Algebra")).toBeTruthy();
-      const pill = screen.getByTestId("level-pill");
+      const pill = pillOf("Algebra");
       expect(pill.textContent).toBe(level.displayName);
       // The key travels with the pill, so a case cannot pass by accidentally matching
       // another level whose name happens to be similar.
@@ -125,7 +168,7 @@ describe("MasteryPage — domain grid", () => {
     });
     render(<MasteryPage />);
 
-    const pills = screen.getAllByTestId("level-pill");
+    const pills = [pillOf("Algebra"), pillOf("Advanced Math")];
     expect(pills.map((p) => p.textContent)).toEqual([
       "Not enough answers yet",
       "Foundations",
@@ -149,7 +192,8 @@ describe("MasteryPage — domain grid", () => {
     });
     render(<MasteryPage />);
 
-    expect(screen.getAllByTestId("level-pill")).toHaveLength(3);
+    // Eight cards (three served, five filled), all unmeasured — and still one CTA.
+    expect(screen.getAllByTestId("level-pill")).toHaveLength(8);
     expect(screen.getAllByTestId("grid-cta")).toHaveLength(1);
   });
 
@@ -172,10 +216,28 @@ describe("MasteryPage — domain grid", () => {
     mockQueries({
       domains: ok({
         ok: true,
-        domains: LEVELS.map((level, i) => domainNode(level, `Domain ${i}`)),
+        // Six canonical domains, one per level, so every served level is really drawn (a
+        // made-up domain name is not).
+        domains: LEVELS.map((level, i) => ({
+          ...level,
+          ...(
+            [
+              { section: "M", domain: "Algebra" },
+              { section: "M", domain: "Advanced Math" },
+              { section: "M", domain: "Problem Solving and Data Analysis" },
+              { section: "M", domain: "Geometry and Trigonometry" },
+              { section: "RW", domain: "Craft and Structure" },
+              { section: "RW", domain: "Information and Ideas" },
+            ] as const
+          )[i]!,
+        })),
       }),
     });
     const { container } = render(<MasteryPage />);
+    // Presence first: every served level is on the page.
+    expect(
+      new Set(screen.getAllByTestId("level-pill").map((p) => p.dataset.levelKey)).size,
+    ).toBe(LEVELS.length);
 
     // tierToBarPercent mapped a tier to 25/60/100 and drew a bar from it — a precision
     // claim the mastery model never made. It does not come back, in any form.
