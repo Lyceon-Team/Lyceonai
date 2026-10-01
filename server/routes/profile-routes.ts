@@ -289,6 +289,10 @@ router.patch("/", async (req: Request, res: Response) => {
     // Admin (or any role outside student/guardian) is never self-assigned. Refused before
     // anything is read, so no profile state is needed to say no.
     if (requestedRole !== null && !isSelfAssignableRole(requestedRole)) {
+      logger.warn("PROFILE", "role_choice_refused", "Role choice refused", {
+        code: NOT_SELF_ASSIGNABLE.code,
+        requestId: req.requestId,
+      });
       return sendRoleChoiceRefusal(res, NOT_SELF_ASSIGNABLE);
     }
 
@@ -312,6 +316,13 @@ router.patch("/", async (req: Request, res: Response) => {
     }
 
     if (existingProfile.role === "admin") {
+      // G-NEW-12: the response keeps its existing shape; the log names the branch.
+      logger.warn(
+        "PROFILE",
+        "admin_onboarding_refused",
+        "Admin profile refused on the onboarding endpoint",
+        { code: "ADMIN_PROFILE_NOT_ONBOARDABLE", requestId: req.requestId },
+      );
       return res.status(403).json({
         error: "Admin profile onboarding is not supported on this endpoint",
       });
@@ -503,6 +514,12 @@ router.post("/date-of-birth", async (req: Request, res: Response) => {
   if (!user) return;
 
   if (user.role !== "guardian") {
+    logger.warn(
+      "PROFILE",
+      "date_of_birth_fill_refused",
+      "Date of birth fill refused for a non-guardian",
+      { code: NOT_SELF_ASSIGNABLE.code, requestId: req.requestId },
+    );
     return sendRoleChoiceRefusal(res, NOT_SELF_ASSIGNABLE);
   }
 

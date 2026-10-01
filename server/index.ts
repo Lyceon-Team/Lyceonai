@@ -82,6 +82,7 @@ import {
 } from "../packages/shared/src/notifications-schema";
 import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
+import { finalErrorHandler } from "./middleware/final-error-handler";
 
 const app = express();
 app.disable("x-powered-by");
@@ -753,55 +754,9 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(staticPath, "index.html"));
 });
 
-// Final error boundary for uncaught route errors
-app.use((err: any, req: Request, res: Response, next: any) => {
-  const requestId = (req as any).requestId || logger.generateRequestId();
-
-  const csrfError =
-    err?.code === "EBADCSRFTOKEN" ||
-    err?.name === "CSRFError" ||
-    (typeof err?.message === "string" &&
-      err.message.toLowerCase().includes("csrf"));
-
-  if (csrfError) {
-    return res.status(403).json({
-      error: {
-        code: "csrf_blocked",
-        message: "Request blocked by CSRF protection",
-      },
-      requestId,
-    });
-  }
-
-  logger.error(
-    "HTTP",
-    "unhandled_error",
-    `Unhandled error in ${req.method} ${req.path}`,
-    err,
-    {
-      method: req.method,
-      path: req.path,
-      statusCode: err?.status || 500,
-      hasBody: req.body !== undefined && req.body !== null,
-      hasCookieHeader: !!req.headers.cookie,
-      hasAuthorizationHeader: !!req.headers.authorization,
-    },
-    {
-      requestId,
-      userId: req.user?.id,
-      ip: req.ip,
-    },
-  );
-
-  if (res.headersSent) {
-    return next(err);
-  }
-
-  return res.status(err?.status || 500).json({
-    error: "Internal server error",
-    requestId,
-  });
-});
+// Final error boundary for uncaught route errors (G-NEW-12: extracted, and its CSRF 403 now logs
+// its code before it answers; see server/middleware/final-error-handler.ts).
+app.use(finalErrorHandler);
 // Production environment validation (warn but don't crash)
 const PORT = parseInt(process.env.PORT || "5000", 10);
 if (process.env.NODE_ENV === "production") {
