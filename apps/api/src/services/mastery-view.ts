@@ -36,9 +36,9 @@ import {
  *   emission — which is what the rule says it should be.
  *
  * WHY THE SCOPE NARROWING IS A PARAMETER, NOT A SECOND IMPLEMENTATION.
- *   Guardians see domain grain and no drill-down. That is expressed by the guardian route
- *   simply never calling `readSkillPanelView` — there is no guardian skill endpoint to call
- *   it from. The narrowing is the absence of a call, not a different derivation.
+ *   Guardians see domain grain and no drill-down. The skills route refuses a guardian outright
+ *   (403 before the resolver, SCL-194), so the skill view below is only ever built for the
+ *   student. The narrowing is a refusal at the route, not a different derivation.
  *
  * expected outcome: identical `domains` payloads for the same student, whoever asked.
  * trade-offs: the guardian route can no longer shape its own response. That is the point.

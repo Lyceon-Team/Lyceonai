@@ -17,9 +17,11 @@
  * for three. One route cannot disagree with itself.
  *
  * THE ONE PERMITTED ROLE-AWARE BRANCH IS ABOVE THE HANDLERS. RB-05B-V1-05 allows exactly one
- * — the path-layer authorization check — and `resolveSubject` is it. `/mastery/skills` reads
- * `req.subject.via` to apply §10.4's empty list, and that value was decided by the resolver,
- * not re-derived here. `scripts/ci/subject-resolver-chokepoint-gate.mjs` fails the build if
+ * — the path-layer authorization check — and `resolveSubject` is it. Handlers that differ by
+ * caller read `req.subject.via` (the KPI routes' guardian projection, SCL-188; the exam
+ * report's guardian shape, SCL-189; the student-only link routes), and that value was decided
+ * by the resolver, not re-derived here. `/mastery/skills` refuses a guardian before the
+ * resolver runs (SCL-194). `scripts/ci/subject-resolver-chokepoint-gate.mjs` fails the build if
  * any handler in this file references the caller's role or a guardian link table.
  */
 import { Router, type Request, type Response } from "express";

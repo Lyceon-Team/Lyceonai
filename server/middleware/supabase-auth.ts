@@ -888,8 +888,9 @@ export async function requireGuardianLinkForUnder13(
 
 /**
  * Middleware to require completed onboarding profile before feature access.
- * Blocks when profile_completed_at is null — covers both "DOB not yet set" and
- * "under-13 awaiting guardian consent" at a single server-side enforcement point.
+ * Blocks when profile_completed_at is null ("DOB not yet set"). An under-13 student is gated
+ * separately, on every request, by the live link check `requireGuardianLinkForUnder13` (G2-04);
+ * there is no stored consent state.
  * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
  */
 export function requireProfileComplete(
