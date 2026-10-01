@@ -1381,7 +1381,7 @@ jobs:
       # per student — the stored-flag design; a learning read and checkout ungated; the gate
       # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
       # its assertion red, each reverted byte-identically in a trap.
-      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7)
+      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
         env:
           PGHOST: localhost
           PGPORT: "5432"

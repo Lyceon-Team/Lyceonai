@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Under-13 link gate (G2-04) and the known-age check (G2-06) — PLANT self-test (P1-P7)
+# Under-13 link gate (G2-04) and the known-age check (G2-06) — PLANT self-test (P1-P8)
 # ============================================================================
 # @spec [Guardian_Closure_Plan G2-04; owner ruling R6; SCL-187 rule 1]
 #       | @implemented [2026-09-29]
@@ -106,7 +106,7 @@ run_plant() {
 
 snapshot_all
 
-echo "=== Under-13 link gate plants (P1-P7) ==="
+echo "=== Under-13 link gate plants (P1-P8) ==="
 
 # --- P1: the gate never reads the link (always passes) ----------------------
 mutate "$AUTH" \
@@ -115,10 +115,15 @@ mutate "$AUTH" \
 run_plant P1 "under-13, unlinked" "an unlinked under-13 student reaches learning endpoints"
 
 # --- P2: requireStudentOrAdmin stops ending in the link gate ----------------
+# Anchored on requireStudentOrAdmin's own comment as well as its last line: since Brief 8,
+# requireStudentAccount ends in the same `return requireGuardianLinkForUnder13(...)`, and a
+# plant on the wrong occurrence is a dead plant reading as a live one (CLAUDE.md).
 mutate "$AUTH" \
-  '  return requireGuardianLinkForUnder13(req, res, next);
+  '  // inherits it; it replaces the stored-consent check that stood here.
+  return requireGuardianLinkForUnder13(req, res, next);
 }' \
-  '  return next();
+  '  // inherits it; it replaces the stored-consent check that stood here.
+  return next();
 }' || exit 2
 run_plant P2 "under-13, unlinked" "the student-or-admin mounts lose the link gate"
 
@@ -167,6 +172,22 @@ mutate "$AUTH" \
   '  if (typeof user.is_under_13 !== "boolean") {' \
   '  if (false && typeof user.is_under_13 !== "boolean") {' || exit 2
 run_plant P7 "age unknown" "a student with no date of birth reaches learning endpoints"
+
+# --- P8 (Brief 8): requireStudentAccount stops ending in the link gate --------
+# The background and reference-search mounts sit behind requireStudentAccount, which the sweep
+# classifies as link-gated; this proves the sweep reaches them through it.
+mutate "$AUTH" \
+  '      extra: { code: "ROLE_NOT_PERMITTED" },
+    });
+  }
+  return requireGuardianLinkForUnder13(req, res, next);
+}' \
+  '      extra: { code: "ROLE_NOT_PERMITTED" },
+    });
+  }
+  return next();
+}' || exit 2
+run_plant P8 "under-13, unlinked" "the student-account mounts (background, reference search) lose the link gate"
 
 echo
 echo "plants fired: $PASSES, did not fire / errored: $FAILURES"
