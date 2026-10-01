@@ -413,8 +413,6 @@ app.use("/api/internal", awaitTutorConfig, internalMemoryRoutes);
 // Internal retention sweep (OIDC-gated; Cloud Scheduler per-tier jobs per Doc 03 §14.2).
 app.use("/api/internal", internalRetentionRoutes);
 
-// Guardian Consent Routes (Publicly accessible for verification)
-
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
 // PATCH /api/profile - profile completion/update route

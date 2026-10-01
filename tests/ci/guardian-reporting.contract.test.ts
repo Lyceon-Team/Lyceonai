@@ -428,7 +428,16 @@ describe("Guardian reporting runtime contract", () => {
     });
   });
 
-  it("returns linked students list and emits guardian_dashboard_viewed", async () => {
+  /**
+   * INSTRUMENT CONTROL as well as a roster case. The revoke and fail-closed cases below assert
+   * that NO row reaches `audit_logs` from this layer; "no row" and "no instrument" look the
+   * same, so this case — the real route writing a real `guardian_dashboard_viewed` row through
+   * the same capture — is what makes those negative assertions mean something. (The row's
+   * real-Postgres proof is `tests/ci/guardian-access-audit.pg.ci.test.ts`; that file cannot
+   * stand in for this capture.) It replaced the old control, which called a writer module no
+   * production code used (deleted in the guardian closeout).
+   */
+  it("returns linked students list and emits guardian_dashboard_viewed (INSTRUMENT)", async () => {
     const router = (await import("../../server/routes/guardian-routes"))
       .default;
     const app = buildApp("guardian");
@@ -536,12 +545,13 @@ describe("Guardian reporting runtime contract", () => {
    * MUTATIONS STAGED FOR THE THREE REVOKE-AUDIT ASSERTIONS, and the assertion each one reds.
    * Run 2026-08-28; baseline 8/8 green before and after every restore.
    *
-   *   M1. In the supabase mock below, change `if (table === "audit_logs")` to `if (false)`.
-   *       → reds `expect(...).toMatchObject(...)` in the INSTRUMENT case. 1 of 8.
-   *       Proves the capture is real, so "no revoke row" below means absence, not blindness.
+   *   M1. In the supabase mock above, change `if (table === "audit_logs")` to `if (false)`.
+   *       → reds `expect(dashboardViewed).toBeDefined()` in the INSTRUMENT case ("returns
+   *       linked students list …"). Proves the capture is real, so "no revoke row" below
+   *       means absence, not blindness.
    *
-   *   M2. In `guardian-routes.ts`, add an `auditGuardianLink({action:"guardian_link_revoked"})`
-   *       call on the successful unlink path.
+   *   M2. In `guardian-routes.ts`, add a `supabaseServer.from("audit_logs").insert({ action:
+   *       "guardian_link_revoked", … })` on the successful unlink path.
    *       → reds the `expect(unlinkSuccess).toBeUndefined()` in the last case. 1 of 8.
    *       This is the regression the case exists for: a duplicate, best-effort row beside the
    *       transactional one.
@@ -552,42 +562,6 @@ describe("Guardian reporting runtime contract", () => {
    *       same case, one assertion ABOVE M2's. 1 of 8. Two mutations, two assertion layers,
    *       so neither case is carrying the other.
    */
-  /**
-   * INSTRUMENT CONTROL for the two cases below.
-   *
-   * Both of them assert that NO `guardian_link_revoked` row reaches `audit_logs` from this
-   * layer. After adoption-plan step 4 that is true because the revoke audit row is written
-   * inside `revoke_guardian_link_audited`, in the same transaction as the status change, and
-   * `guardian-routes.ts` no longer calls `auditGuardianLink` for a transition at all.
-   *
-   * An assertion that a capture array does not contain something is worthless if the capture
-   * is broken — "no row" and "no instrument" are indistinguishable. Everything else in this
-   * file that used `guardianAuditInserts` was one of those two revoke cases, so nothing else
-   * proves the capture still works. This does, directly: call the writer once and see the row.
-   * If the `audit_logs` branch of the supabase mock is ever removed, this reds first and names
-   * why the negative assertions stopped meaning anything.
-   */
-  it("INSTRUMENT: the audit_logs capture still records a row when the writer runs", async () => {
-    const { auditGuardianLink } =
-      await import("../../server/services/guardian-link-audit");
-    await auditGuardianLink({
-      action: "guardian_link_denied",
-      actorProfileId: "guardian-1",
-      targetProfileId: "student-1",
-      changes: { reason: "instrument_control" },
-    });
-
-    expect(
-      guardianAuditInserts.find(
-        (row: any) => row.action === "guardian_link_denied",
-      ),
-      "the audit_logs capture is broken — the negative assertions below prove nothing",
-    ).toMatchObject({
-      actor_profile_id: "guardian-1",
-      target_profile_id: "student-1",
-    });
-  });
-
   it("fails closed on unlink conflict when link is no longer active, and writes no revoke audit row", async () => {
     // A party with an ACTIVE link, so the route reaches `revokeGuardianLink` and the domain
     // conflict below is what produces the 409 — not the route's own party check.
@@ -633,9 +607,10 @@ describe("Guardian reporting runtime contract", () => {
    *   regression rather than a formality — re-adding the call is the most natural way for
    *   someone to "restore" this test's old assertion.
    *
-   * The audit row itself is proven where it is now written: `guardian-link-student-side
-   * .pg.ci.test.ts` reads it back out of a real `audit_logs` table, and its FAIL-CLOSED pair
-   * proves the row and the status change stand or fall together. A mocked account layer
+   * The audit row itself is proven where it is now written: `guardian-unlinked.pg.ci.test.ts`
+   * (A4.2's revoke) reads it back out of a real `audit_logs` table, and
+   * `guardian-revoke-party.pg.ci.test.ts` proves a refused revoke writes neither the row nor
+   * the status change. A mocked account layer
    * cannot see a write that happens inside the function it replaced, and pretending otherwise
    * is how the assertion would go vacuous instead of moving.
    */

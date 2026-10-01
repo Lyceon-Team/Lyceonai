@@ -438,40 +438,6 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
   },
 });
 
-// Supabase client with anon key (enforces RLS)
-// Lazy initialization with environment-based error handling
-let _supabaseAnon: SupabaseClient | null = null;
-const supabaseAnon = new Proxy({} as SupabaseClient, {
-  get(_target, prop) {
-    if (!_supabaseAnon) {
-      const url = process.env.SUPABASE_URL;
-      const key = process.env.SUPABASE_ANON_KEY;
-
-      if (!url || !key) {
-        if (isTestEnvironment()) {
-          // In test environment, return placeholder client
-          _supabaseAnon = createClient(
-            "https://placeholder.supabase.co",
-            "placeholder-key",
-          );
-        } else {
-          // In production/dev, throw on first use
-          throw new Error(
-            "SUPABASE_URL and SUPABASE_ANON_KEY must be set in production/development",
-          );
-        }
-      } else {
-        _supabaseAnon = createClient(url, key);
-      }
-    }
-    const value = (_supabaseAnon as any)[prop];
-    if (typeof value === "function") {
-      return value.bind(_supabaseAnon);
-    }
-    return value;
-  },
-});
-
 /**
  * @spec [Doc-01_V8 Identity/Access; Coding Standards §6.1 server-authoritative auth | AUTH-001]
  * @implemented 2026-06-15
@@ -922,8 +888,9 @@ export async function requireGuardianLinkForUnder13(
 
 /**
  * Middleware to require completed onboarding profile before feature access.
- * Blocks when profile_completed_at is null — covers both "DOB not yet set" and
- * "under-13 awaiting guardian consent" at a single server-side enforcement point.
+ * Blocks when profile_completed_at is null ("DOB not yet set"). An under-13 student is gated
+ * separately, on every request, by the live link check `requireGuardianLinkForUnder13` (G2-04);
+ * there is no stored consent state.
  * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
  */
 export function requireProfileComplete(
@@ -1081,11 +1048,4 @@ export function requireStudentOrAdmin(
  */
 export function getSupabaseAdmin() {
   return supabaseAdmin;
-}
-
-/**
- * Get Supabase anon client (enforces RLS)
- */
-export function getSupabaseAnon() {
-  return supabaseAnon;
 }

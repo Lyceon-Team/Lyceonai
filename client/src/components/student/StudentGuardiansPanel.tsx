@@ -49,11 +49,11 @@ import {
   type StudentGuardianLinkView,
 } from "../../../../packages/shared/src/student-resources";
 
-export const STUDENT_GUARDIAN_LINKS_QUERY_KEY = [
+const STUDENT_GUARDIAN_LINKS_QUERY_KEY = [
   "student-guardian-links",
 ] as const;
 /** G-NEW-11: one cache entry per student, as `studentLinkCodeQueryKey`. */
-export function studentGuardianLinksQueryKey(studentId: string) {
+function studentGuardianLinksQueryKey(studentId: string) {
   return [...STUDENT_GUARDIAN_LINKS_QUERY_KEY, studentId] as const;
 }
 

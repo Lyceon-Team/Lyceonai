@@ -331,8 +331,7 @@ export function Router() {
         />
 
         {/* Guardian routes (G4-01) — one table, guardian role only (G2-01; the server refuses
-            admins too). The retired /students/:id/* guardian pages redirect from the same
-            table. */}
+            admins too). */}
         {GUARDIAN_ROUTES.map(({ path, Page }) => (
           <Route
             key={path}

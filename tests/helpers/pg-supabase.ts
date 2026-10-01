@@ -525,7 +525,7 @@ export function pgConnConfig(database: string): {
  * one definition of "a database with this repo's schema in it".
  *
  * WHY IT LIVES HERE. Four test files had already inlined their own `applyMigrations`
- * (`guardian-link.pg.ci.test.ts`, `guardian-link-student-side.pg.ci.test.ts`,
+ * (the two guardian-link PG suites, since deleted with the email link flow;
  * `diagnostic.handler-pg.ci.test.ts`, `entitlement-write-path.ci.test.ts`). Adding a
  * fifth, sixth and seventh copy for the three files converted on 2026-09-01 is the
  * divergence CLAUDE.md forbids by name, so the canonical version is extracted here and
