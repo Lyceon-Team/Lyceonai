@@ -120,6 +120,8 @@ type Gate = "student_or_admin" | "student_only";
 function gateOf(handle: unknown): Gate | null {
   if (handle === auth.requireStudentOrAdmin) return "student_or_admin";
   if (handle === auth.requireStudentOnly) return "student_only";
+  // Brief 8: the student-account gate (background, reference search) refuses guardians too.
+  if (handle === auth.requireStudentAccount) return "student_only";
   return null;
 }
 

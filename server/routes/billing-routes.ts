@@ -83,7 +83,10 @@ import {
   blocksCheckout,
 } from "../lib/stripe/country-eligibility";
 import { getTier1Countries } from "../lib/entitlement-runtime-config";
-import { billingCheckoutRequestSchema } from "../../packages/shared/src/billing-schema";
+import {
+  billingCheckoutRequestSchema,
+  deriveBillingManagedBy,
+} from "../../packages/shared/src/billing-schema";
 
 import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
@@ -810,6 +813,8 @@ router.get(
           // The guardian's access is DERIVED, and saying so is the difference
           // between a correct answer and a coincidentally equal one.
           source: "guardian_linked_student",
+          // F-40: a guardian always manages their own customer.
+          managedBy: "self",
           requestId,
         });
       } catch (err: unknown) {
@@ -871,6 +876,11 @@ router.get(
         lapsed: display.lapsed,
         hasBillingAccount: customerId !== null,
         isPaid: display.effectiveAccess,
+        // F-40 (Brief 8 ruling 5): who manages this plan. `guardian` hides the Manage button.
+        managedBy: deriveBillingManagedBy({
+          hasSubscription: Boolean(entitlement?.stripe_subscription_id),
+          isStripeCustomer: customerId !== null,
+        }),
         requestId,
       });
     } catch (err: unknown) {
