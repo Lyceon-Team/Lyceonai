@@ -171,15 +171,16 @@ function MasteryWidget({ studentId }: { studentId: string }): JSX.Element {
   return (
     <div className="flex flex-col gap-5">
       {(["RW", "M"] as const).map((section) => {
-        const own = domains.filter((d) => d.section === section);
-        if (own.length === 0) return null;
+        // All four of the section's domains, whatever rows were served (owner decision
+        // 2026-10-01): `DomainGrid` draws the canonical list and fills a missing one as
+        // "Not enough answers yet".
         return (
           <div key={section} className="flex flex-col gap-3">
             <h3 className="m-0 text-base font-semibold text-muted-foreground">
               {EXAM_SECTION_LABEL[section]}
             </h3>
             {/* No `onOpen`: no Skills drill-down on a guardian surface. */}
-            <DomainGrid domains={own} />
+            <DomainGrid domains={domains} sections={[section]} />
           </div>
         );
       })}

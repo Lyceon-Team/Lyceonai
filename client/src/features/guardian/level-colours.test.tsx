@@ -63,12 +63,20 @@ describe("G4-07 mastery level colours", () => {
     const pills = grids.flatMap((g) => within(g).getAllByTestId("level-pill"));
     const served = (
       masteryDomains() as {
-        domains: { levelKey: string; displayName: string }[];
+        domains: { domain: string; levelKey: string; displayName: string }[];
       }
     ).domains;
-    expect(pills).toHaveLength(served.length);
-    for (const [i, pill] of pills.entries()) {
-      const want = served[i]!;
+    // All eight domains are drawn (owner decision 2026-10-01); each SERVED one is read on
+    // its own card.
+    expect(pills).toHaveLength(8);
+    for (const want of served) {
+      const card = grids
+        .map((g) =>
+          g.querySelector<HTMLElement>(`[data-domain="${want.domain}"]`),
+        )
+        .find((c) => c !== null);
+      expect(card).toBeTruthy();
+      const pill = within(card!).getByTestId("level-pill");
       expect(pill.dataset.levelKey).toBe(want.levelKey);
       expect(pill.textContent).toBe(want.displayName);
       const key = masteryLevelKeySchema.parse(want.levelKey);

@@ -7,6 +7,14 @@
  * plain English: the snapshots were written against `MasteryPage` BEFORE its domain grid
  * moved into the shared `DomainGrid`, and are unchanged by the move: every level state across
  * both sections, and the all-unmeasured grid with its single CTA.
+ *
+ * UPDATED DELIBERATELY, 2026-10-01 (owner decision on #1003: the grid always shows the eight
+ * domains, four per section; R11 — the student page changes with the guardian's). Both
+ * fixtures serve fewer than eight rows, so each snapshot now draws all eight cards in the
+ * canonical order (`CANONICAL_DOMAINS_BY_SECTION`, Math first — the order the server already
+ * sends), the missing ones as "Not enough answers yet", and each card carries `data-domain`.
+ * Checked when updating: with text, `data-domain`, `data-level-key` and `aria-label` set
+ * aside, every card's markup and the page around the grid are byte-identical to before.
  */
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

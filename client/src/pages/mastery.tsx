@@ -182,8 +182,9 @@ export default function MasteryPage() {
   const domains = data?.domains ?? [];
   // Derived in the render body — no useEffect for a value that is a pure function of the
   // fetched data (Coding Standards §11.4).
-  const allUnmeasured =
-    domains.length > 0 && domains.every((d) => d.levelKey === "unmeasured");
+  // The grid draws all eight domains whatever is served, filling any missing one as
+  // unmeasured — so "nothing measured" is "no served domain is measured", empty included.
+  const allUnmeasured = domains.every((d) => d.levelKey === "unmeasured");
 
   return (
     <AppShell showFooter>
