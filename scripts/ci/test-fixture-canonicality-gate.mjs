@@ -60,11 +60,13 @@ const REPO_ROOT = resolve(new URL("../..", import.meta.url).pathname);
 
 /**
  * The canonical pairing, read from the committed application source rather than
- * restated here. Parsing the literal out of question-bank-contract.ts keeps this gate
+ * restated here. Parsing the literal out of canonical-domains.ts keeps this gate
  * from becoming the third copy of the list it exists to defend.
  */
 function loadCanonicalDomains() {
-  const contractPath = resolve(REPO_ROOT, "shared/question-bank-contract.ts");
+  // The pairing lives in the browser-safe `shared/canonical-domains.ts` since 2026-10-01
+  // (moved verbatim; `question-bank-contract.ts` re-exports it).
+  const contractPath = resolve(REPO_ROOT, "shared/canonical-domains.ts");
   const source = readFileSync(contractPath, "utf8");
   const sf = ts.createSourceFile(
     contractPath,
@@ -105,7 +107,7 @@ function loadCanonicalDomains() {
     // Not "no domains" — a failed parse. The two are different answers and only one
     // of them may pass.
     console.error(
-      "FAIL: could not parse CANONICAL_DOMAINS_BY_SECTION out of shared/question-bank-contract.ts.",
+      "FAIL: could not parse CANONICAL_DOMAINS_BY_SECTION out of shared/canonical-domains.ts.",
     );
     console.error(
       "      The gate has no canonical list to check against, which is a broken gate, not a clean tree.",

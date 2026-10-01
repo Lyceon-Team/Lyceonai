@@ -1,7 +1,6 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
@@ -13,13 +12,13 @@ import {
   fetchMasteryDomains,
   fetchMasterySkills,
   skillsForDomain,
-  type MasteryDomainNode,
   type MasterySection,
   type MasterySkillNode,
 } from "@/lib/masteryApi";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { LevelPill } from "@/components/mastery/LevelPill";
+import { DomainGrid } from "@/components/mastery/DomainGrid";
 
 /**
  * @spec [owner ruling 2026-08-20 RULE 1 (six level names), RULE 4 (nine columns never
@@ -183,8 +182,9 @@ export default function MasteryPage() {
   const domains = data?.domains ?? [];
   // Derived in the render body — no useEffect for a value that is a pure function of the
   // fetched data (Coding Standards §11.4).
-  const allUnmeasured =
-    domains.length > 0 && domains.every((d) => d.levelKey === "unmeasured");
+  // The grid draws all eight domains whatever is served, filling any missing one as
+  // unmeasured — so "nothing measured" is "no served domain is measured", empty included.
+  const allUnmeasured = domains.every((d) => d.levelKey === "unmeasured");
 
   return (
     <AppShell showFooter>
@@ -250,44 +250,10 @@ export default function MasteryPage() {
 
         {!isLoading && !error && !selected && (
           <>
-            <div
-              className="grid grid-cols-1 sm:grid-cols-2 gap-4"
-              data-testid="domain-grid"
-            >
-              {domains.map((node: MasteryDomainNode) => (
-                <Card
-                  key={`${node.section}-${node.domain}`}
-                  className="bg-card/80 border-border/60"
-                >
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold tracking-tight">
-                      {node.domain}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex items-center justify-between gap-3">
-                    <LevelPill
-                      levelKey={node.levelKey}
-                      displayName={node.displayName}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setSelected({
-                          section: node.section,
-                          domain: node.domain,
-                        })
-                      }
-                      data-testid="domain-open"
-                      aria-label={`View skills in ${node.domain}`}
-                    >
-                      Skills
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <DomainGrid
+              domains={domains}
+              onOpen={(target) => setSelected(target)}
+            />
 
             {allUnmeasured && (
               // RULE 6 again, at grid level: one CTA for the whole page when nothing has

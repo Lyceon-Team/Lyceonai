@@ -114,12 +114,26 @@ export const getQueryFn: <T>(options: {
   };
 
 /**
+ * The full-page navigation the onboarding redirect uses. A full load (not a client route
+ * change) so `RequireRole`'s cached `/api/profile` — staleTime Infinity — is read afresh and
+ * agrees with the page it lands on. An object so a test can observe it; jsdom cannot navigate.
+ */
+export const navigation = {
+  assign(path: string): void {
+    window.location.assign(path);
+  },
+};
+
+/**
  * G2-06: any query or mutation refused with 403 PROFILE_INCOMPLETE sends the student to profile
- * completion. One place, so no page has to know the code. A no-op when already there (no loop).
+ * completion; G-NEW-10: 403 GUARDIAN_LINK_REQUIRED (an under-13 student whose last active
+ * guardian link was just revoked) sends them to /guardian-required at once, instead of leaving
+ * them on a page of refused requests until the next reload. One place, so no page has to know
+ * the codes. A no-op when already there (no loop).
  */
 export function redirectForOnboarding(
   error: unknown,
-  navigate: (path: string) => void = (path) => window.location.assign(path),
+  navigate: (path: string) => void = (path) => navigation.assign(path),
 ): void {
   const path = onboardingRedirectFor(error);
   if (!path || typeof window === "undefined") return;

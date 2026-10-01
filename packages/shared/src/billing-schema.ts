@@ -223,3 +223,47 @@ export const billingPlansResponseSchema = z.object({
   plans: z.array(billingPlanMetadataSchema),
   requestId: z.string().optional(),
 });
+
+/**
+ * What GET /api/billing/status returns — ONE shape for every banner that reads it.
+ *
+ * @spec [Guardian_Closure_Plan G4-09 (G-AUD-26); Doc 01 V8 §31.1–§31.3 (a guardian's access
+ *       derives from a linked student); SCL-029; Coding Standards §7.1, §7.2]
+ * @implemented [2026-09-30]
+ *
+ * plain English: the route has two branches — the self-paying student and the guardian — and
+ * both write the same ten keys; the guardian branch adds `hasActiveLink` (§31.3's fold) and
+ * `source: "guardian_linked_student"` (the answer is derived, and says so). Expected outcome:
+ * every client reader parses this once, in `useBillingStatus`, instead of four readers each
+ * casting `res.json()` to a private type that declared whichever subset it happened to read.
+ * That was G-AUD-26: three cache keys, four types, no parse — so a renamed key read as
+ * `undefined` and every banner keyed on it vanished without an error.
+ *
+ * trade-offs: `plan` and `stripeStatus` stay strings, not enums. `stripeStatus` carries the
+ * entitlement status or `"missing"`, and the client only ever DISPLAYS it; an enum here would
+ * be a second copy of the genesis status list that the server does not import. The booleans
+ * are what anything decides on, and those are exact.
+ *
+ * edge cases: the object strips unknown keys (the client's posture for every read); the
+ * round-trip test in `tests/ci/identity-entitlement.contract.test.ts` holds the route to the
+ * `.strict()` form of this schema on both branches, so a key the route adds without adding it
+ * here fails CI rather than being silently dropped.
+ */
+export const billingStatusResponseSchema = z.object({
+  plan: z.string().min(1),
+  stripeStatus: z.string().min(1),
+  currentPeriodEnd: z.string().nullable(),
+  stripeSubscriptionId: z.string().nullable(),
+  effectiveAccess: z.boolean(),
+  needsPaymentUpdate: z.boolean(),
+  lapsed: z.boolean(),
+  hasBillingAccount: z.boolean(),
+  isPaid: z.boolean(),
+  /** Guardian branch only: is this guardian linked to any student at all (§31.3). */
+  hasActiveLink: z.boolean().optional(),
+  /** Guardian branch only: the answer is derived from a linked student, never owned. */
+  source: z.literal("guardian_linked_student").optional(),
+  requestId: z.string().optional(),
+});
+
+export type BillingStatus = z.infer<typeof billingStatusResponseSchema>;

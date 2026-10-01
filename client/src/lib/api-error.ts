@@ -1,5 +1,8 @@
 import { roleChoiceErrorCodeSchema } from "@lyceon/shared/profile-role-choice-schema";
-import { PROFILE_INCOMPLETE } from "@lyceon/shared/guardian-link-gate";
+import {
+  GUARDIAN_LINK_REQUIRED,
+  PROFILE_INCOMPLETE,
+} from "@lyceon/shared/guardian-link-gate";
 import {
   readEntitlementDenial,
   type EntitlementDenial,
@@ -149,6 +152,8 @@ function normalizeReason(value: string | undefined): string | undefined {
  * @spec [Guardian_Closure_Plan G2-06 (G-NEW-09)] | @implemented [2026-09-29]
  *
  * plain English: where a refused request should send the student, or null. A 403
+ * `GUARDIAN_LINK_REQUIRED` (G-NEW-10) means an under-13 student has no active guardian link,
+ * so they belong on /guardian-required. A 403
  * `PROFILE_INCOMPLETE` means the server will not serve learning until the profile — and so the
  * age — is known, so the student belongs on profile completion. Pure: the query client's caches
  * call it for every failed query and mutation (`redirectForOnboarding` in ./queryClient).
@@ -160,6 +165,14 @@ export function onboardingRedirectFor(error: unknown): string | null {
     normalizeCode(error.code) === PROFILE_INCOMPLETE
   ) {
     return "/profile/complete";
+  }
+  // G-NEW-10: the under-13 link gate (G2-04) refuses every learning request with this code
+  // once the student has no active guardian link — including mid-session, after a revoke.
+  if (
+    error.status === 403 &&
+    normalizeCode(error.code) === GUARDIAN_LINK_REQUIRED
+  ) {
+    return "/guardian-required";
   }
   return null;
 }

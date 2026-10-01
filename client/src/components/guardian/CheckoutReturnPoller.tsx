@@ -28,7 +28,7 @@
  * who by the platform's own predicate had full access was locked out of
  * everything — including the only surface where they could have fixed it. A
  * payment-health notice is a BANNER above the dashboard, never a screen in
- * front of it; `guardian-dashboard.tsx` renders one.
+ * front of it; `GuardianShell` renders one on every guardian page (`GuardianPaymentBanner`).
  *
  * WHAT THIS NO LONGER DOES, AND WHY. It used to own the guardian purchase
  * surface: a pricing page with a student picker, rendered only while
@@ -60,20 +60,31 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 
+/**
+ * How long the processing state polls before it gives up and says so.
+ *
+ * G4-09 (G-AUD-26): THE TIMEOUT NOW STOPS THE POLLING. `refetchInterval` used to be cleared
+ * only when `effectiveAccess` came back true, so after the "taking longer than expected" card
+ * appeared the query kept hitting `/api/billing/status` every two seconds for as long as the
+ * tab stayed open — and the card itself appeared only because those refetches happened to
+ * re-render. A timer now ends the polling at the timeout; "Check again" is a single read.
+ */
+export const POLLING_TIMEOUT_MS = 60_000;
+const POLL_INTERVAL_MS = 2_000;
+
 interface CheckoutReturnPollerProps {
   children: React.ReactNode;
 }
 
 export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
-  const [pollingStartTime, setPollingStartTime] = useState<number | null>(null);
-
   const urlParams =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search)
       : null;
   const checkoutSuccess = urlParams?.get("checkout") === "success";
-  const POLLING_TIMEOUT_MS = 60000;
-  const [shouldPoll, setShouldPoll] = useState(checkoutSuccess);
+  const [timedOut, setTimedOut] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const shouldPoll = checkoutSuccess && !timedOut && !confirmed;
 
   // @spec [student-ui register UI-14] | @implemented [2026-09-29] | plain English: the shared
   // billing-status query (one key with the guardian dashboard and the premium prompt); only the
@@ -82,22 +93,21 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
     data: billingStatus,
     isLoading: billingLoading,
     refetch,
-  } = useBillingStatusQuery({ refetchInterval: shouldPoll ? 2000 : false });
+  } = useBillingStatusQuery({
+    refetchInterval: shouldPoll ? POLL_INTERVAL_MS : false,
+  });
 
   useEffect(() => {
-    if (billingStatus?.effectiveAccess && shouldPoll) {
-      setShouldPoll(false);
-    }
-  }, [billingStatus?.effectiveAccess, shouldPoll]);
+    if (billingStatus?.effectiveAccess) setConfirmed(true);
+  }, [billingStatus?.effectiveAccess]);
 
   useEffect(() => {
-    if (checkoutSuccess && !pollingStartTime) {
-      setPollingStartTime(Date.now());
-    }
-  }, [checkoutSuccess, pollingStartTime]);
+    if (!checkoutSuccess) return;
+    const timer = setTimeout(() => setTimedOut(true), POLLING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [checkoutSuccess]);
 
-  const isPollingTimeout =
-    pollingStartTime && Date.now() - pollingStartTime > POLLING_TIMEOUT_MS;
+  const isPollingTimeout = timedOut;
 
   if (
     checkoutSuccess &&
@@ -106,13 +116,16 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
     !isPollingTimeout
   ) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF]">
+      <div
+        className="min-h-screen flex items-center justify-center bg-brand-cream"
+        data-testid="checkout-processing"
+      >
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-[#0F2E48]" />
-          <p className="text-[#0F2E48] text-lg font-medium">
+          <Loader2 className="h-8 w-8 animate-spin text-brand-navy" />
+          <p className="text-brand-navy text-lg font-medium">
             Processing your payment...
           </p>
-          <p className="text-[#0F2E48]/70 text-sm">
+          <p className="text-brand-navy/70 text-base">
             This usually takes just a few seconds.
           </p>
         </div>
@@ -127,13 +140,16 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
     isPollingTimeout
   ) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4">
+      <div
+        className="min-h-screen flex items-center justify-center bg-brand-cream p-4"
+        data-testid="checkout-timeout"
+      >
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-amber-100 flex items-center justify-center">
               <AlertTriangle className="h-8 w-8 text-amber-600" />
             </div>
-            <CardTitle className="text-2xl text-[#0F2E48]">
+            <CardTitle className="text-2xl text-brand-navy">
               Payment Processing
             </CardTitle>
             <CardDescription className="text-base">
@@ -144,12 +160,12 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
             <Alert className="border-amber-200 bg-amber-50">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800">
-                If this persists, click "Manage Subscription" below to verify
-                your payment status.
+                Stripe has your payment; we are waiting for it to confirm. Check
+                again in a minute, or refresh this page later.
               </AlertDescription>
             </Alert>
             <Button
-              onClick={() => refetch()}
+              onClick={() => void refetch()}
               variant="outline"
               className="w-full"
             >
@@ -163,10 +179,10 @@ export function CheckoutReturnPoller({ children }: CheckoutReturnPollerProps) {
 
   if (billingLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF]">
+      <div className="min-h-screen flex items-center justify-center bg-brand-cream">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-[#0F2E48]" />
-          <p className="text-[#0F2E48]">Checking subscription status...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-brand-navy" />
+          <p className="text-brand-navy">Checking subscription status...</p>
         </div>
       </div>
     );

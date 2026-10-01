@@ -213,6 +213,8 @@ export type CalendarViewProps = {
    * names its own.
    */
   backHref: string;
+  /** G4-04: the guardian Calendar tab hides "← Dashboard" (the Dashboard is the tab beside it). */
+  hideBackLink?: boolean;
   mutations?: CalendarMutations;
 };
 
@@ -231,6 +233,7 @@ export function CalendarView({
   onRangeChange,
   schedule,
   backHref,
+  hideBackLink = false,
   mutations,
 }: CalendarViewProps): JSX.Element {
   const [view, setView] = useState<"week" | "month">("week");
@@ -460,6 +463,8 @@ export function CalendarView({
     <div className="lyceon-calendar">
       <div className={`app${setup === undefined ? "" : " blur"}`}>
         <LeftRail
+          // The guardian shell carries the logo; the rail does not repeat it (item 6).
+          hideBrand={viewer === "guardian"}
           name={viewerName}
           subtitle={
             readOnly
@@ -512,6 +517,7 @@ export function CalendarView({
         <div className="main">
           <TopBar
             backHref={backHref}
+            hideBackLink={hideBackLink}
             viewer={viewer}
             targetScore={targetScore}
             projection={projection}

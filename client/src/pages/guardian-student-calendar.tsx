@@ -32,38 +32,37 @@
  * timezone, the study-day mask, the daily minutes, the exam weekday and the planner mode.
  * They are not on the payload, so there is nothing here to forward.
  *
- * edge cases: §17.5's guardian pre-setup state is a plain "Not set up yet" — a guardian
- * cannot run setup, so offering the sheet would be offering a control that cannot work.
+ * edge cases: §17.5's guardian pre-setup state says, naming the student, that they have not
+ * set up a plan yet — a guardian cannot run setup, so offering the sheet would be offering a
+ * control that cannot work. Every non-plan state is the guardian surface's shared one
+ * (G4-06, `features/guardian/GuardianStates.tsx`).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRoute } from "wouter";
+import { useCallback, useState } from "react";
+import { useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { calendarKeys, useGuardianCalendar } from "@/features/calendar/api";
 import { CalendarView } from "@/features/calendar/CalendarView";
+import { CalendarSkeleton } from "@/features/calendar/components/CalendarStates";
 import {
-  CalendarError,
-  CalendarPremiumGate,
-  CalendarSkeleton,
-  GuardianNotSetUp,
-  GuardianStudentNoLongerLinked,
-  isEntitlementDenial,
-} from "@/features/calendar/components/CalendarStates";
-import { useForgetGuardianStudent } from "@/hooks/useGuardianStudents";
-import { isStudentNoLongerLinkedError } from "@/lib/api-error";
-import { rangeForView, startOfWeek } from "@/features/calendar/lib/dates";
+  GuardianNotSetUpState,
+  GuardianReadFailureState,
+  possessive,
+  useCurrentStudentName,
+  useGuardianReadFailure,
+} from "@/features/guardian/GuardianStates";
+import {
+  browserLocalToday,
+  rangeForView,
+  startOfWeek,
+} from "@/features/calendar/lib/dates";
 import { guardianViewModel } from "@/features/calendar/lib/view-model";
 import "@/features/calendar/calendar.css";
 
-function localToday(): string {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
-
 export default function GuardianStudentCalendarPage(): JSX.Element {
-  const today = localToday();
-  const [, params] = useRoute("/students/:studentId/calendar");
-  const studentId = params?.studentId ?? "";
+  const today = browserLocalToday();
+  // G4-01: the student comes from whichever route mounts this page
+  // (`/guardian/:studentId/calendar`); the retired `/students/:id/calendar` redirects there.
+  const { studentId = "" } = useParams<{ studentId?: string }>();
   const queryClient = useQueryClient();
 
   const [range, setRange] = useState(() =>
@@ -72,18 +71,13 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
   const calendar = useGuardianCalendar(studentId, range.from, range.to);
 
   /**
-   * G3-04: a 404 here means the link is gone. Drop this student's cached reads and refetch the
-   * roster, ONCE per student — the effect changes the cache, so it must not re-run on the
-   * refetch its own removal can cause.
+   * G3-04 / G4-06: a 404 here means the link is gone — the student's cached reads are dropped
+   * and the roster refetched, once per student, inside `useGuardianReadFailure`; the layout
+   * then shows the revoked state. A 402 is the lapsed state, named, with the guardian's own
+   * call to action (never the student-facing upgrade card this page used to show).
    */
-  const noLongerLinked = isStudentNoLongerLinkedError(calendar.error);
-  const forgetStudent = useForgetGuardianStudent();
-  const forgotten = useRef<string | null>(null);
-  useEffect(() => {
-    if (!noLongerLinked || forgotten.current === studentId) return;
-    forgotten.current = studentId;
-    forgetStudent(studentId);
-  }, [noLongerLinked, studentId, forgetStudent]);
+  const name = useCurrentStudentName();
+  const failure = useGuardianReadFailure(studentId, calendar.error);
 
   const onRangeChange = useCallback(
     (view: "week" | "month", cursor: string) => {
@@ -92,31 +86,38 @@ export default function GuardianStudentCalendarPage(): JSX.Element {
     [],
   );
 
-  if (noLongerLinked || forgotten.current === studentId) {
-    return <GuardianStudentNoLongerLinked />;
-  }
-  if (calendar.isLoading) return <CalendarSkeleton />;
-  // §16: guardian visibility is derived from link AND student entitlement, so a lapsed
-  // student's calendar answers 402 to their guardian too.
-  if (isEntitlementDenial(calendar.error)) return <CalendarPremiumGate />;
-  if (calendar.isError || calendar.data === undefined) {
+  if (calendar.isLoading) return <CalendarSkeleton hideBrand />;
+  if (failure !== null || calendar.data === undefined) {
     return (
-      <CalendarError
-        error={calendar.error}
-        onRetry={() =>
-          void queryClient.invalidateQueries({
-            queryKey: calendarKeys.guardianRanges(),
-          })
-        }
-      />
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
+        <GuardianReadFailureState
+          failure={failure ?? "error"}
+          name={name}
+          studentId={studentId}
+          what={`${possessive(name)} calendar`}
+          onRetry={() =>
+            void queryClient.invalidateQueries({
+              queryKey: calendarKeys.guardianRanges(),
+            })
+          }
+        />
+      </div>
     );
   }
 
-  if (calendar.data.status === "setup_required") return <GuardianNotSetUp />;
+  if (calendar.data.status === "setup_required") {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
+        <GuardianNotSetUpState name={name} />
+      </div>
+    );
+  }
 
   return (
     <CalendarView
       backHref="/guardian"
+      // G4-04: the calendar is a tab inside the guardian shell; the Dashboard is its neighbour.
+      hideBackLink
       model={guardianViewModel(calendar.data)}
       today={today}
       viewerName="Study plan"

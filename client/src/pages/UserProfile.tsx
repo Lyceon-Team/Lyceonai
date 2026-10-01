@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/layout/app-shell";
+import { GuardianShell } from "@/components/layout/GuardianShell";
+import { guardianPaths } from "@/features/guardian/paths";
 import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
 import { StudentGuardiansPanel } from "@/components/student/StudentGuardiansPanel";
 import { PageCard } from "@/components/common/page-card";
@@ -44,10 +46,14 @@ import {
   Mail,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
+import {
+  billingStatusLabel,
+  useBillingStatusQuery,
+} from "@/hooks/useBillingStatusQuery";
 import { resolveCtaDestination } from "@/lib/billing-cta";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { SessionNotice } from "@/components/feedback/SessionNotice";
@@ -55,7 +61,6 @@ import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCa
 import { EmailNotificationsCard } from "@/components/account/EmailNotificationsCard";
 import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
-import { useBillingStatusQuery } from "@/hooks/useBillingStatusQuery";
 
 type RoleSwitchTarget = "student" | "guardian" | "teacher";
 
@@ -98,6 +103,13 @@ export default function UserProfile() {
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { user, signOut, isGuardian } = useSupabaseAuth();
+  /**
+   * G4-08: a guardian's /profile is a guardian page — the guardian shell (one shell on every
+   * guardian page, G4-01) with guardian sections only: no Progress tab (the student's own
+   * practice figures) and billing pointing to Linked students & billing (G4-10). Chosen by
+   * role for presentation only; every read on this page is authorised server-side.
+   */
+  const Shell = isGuardian ? GuardianShell : AppShell;
   const [roleSwitchTarget, setRoleSwitchTarget] =
     useState<RoleSwitchTarget>("student");
   const [roleSwitchMessage, setRoleSwitchMessage] = useState("");
@@ -120,7 +132,7 @@ export default function UserProfile() {
     isError: billingStatusError,
     error: billingStatusErrorObj,
     refetch: refetchBillingStatus,
-  } = useBillingStatusQuery({ enabled: !!user });
+  } = useBillingStatusQuery({ enabled: !!user && !isGuardian });
 
   // Logout handler
   const handleLogout = async () => {
@@ -210,7 +222,7 @@ export default function UserProfile() {
 
   if (profileLoading) {
     return (
-      <AppShell>
+      <Shell>
         <div className="min-h-[60vh] flex items-center justify-center">
           <div className="text-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent mx-auto mb-3" />
@@ -219,7 +231,7 @@ export default function UserProfile() {
             </p>
           </div>
         </div>
-      </AppShell>
+      </Shell>
     );
   }
 
@@ -228,7 +240,7 @@ export default function UserProfile() {
       (profileErrorObj as Error)?.message ??
       toUserFacingMessage(profileErrorObj).message;
     return (
-      <AppShell>
+      <Shell>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
           {isSessionError(profileErrorObj) ? (
             <SessionNotice
@@ -244,14 +256,14 @@ export default function UserProfile() {
             />
           )}
         </div>
-      </AppShell>
+      </Shell>
     );
   }
 
   // Empty state when no profile data
   if (!profileUser) {
     return (
-      <AppShell>
+      <Shell>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
           <EmptyState
             title="No Profile Data"
@@ -262,12 +274,12 @@ export default function UserProfile() {
             }}
           />
         </div>
-      </AppShell>
+      </Shell>
     );
   }
 
   return (
-    <AppShell>
+    <Shell>
       <div className="container mx-auto py-8 px-4 sm:px-6 lg:px-8 max-w-6xl">
         {/* Page Header */}
         <div className="mb-8">
@@ -344,15 +356,19 @@ export default function UserProfile() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-4 bg-secondary/60">
+          <TabsList
+            className={`grid w-full ${isGuardian ? "grid-cols-3" : "grid-cols-4"} bg-secondary/60`}
+          >
             <TabsTrigger value="profile" data-testid="tab-profile">
               <User className="h-4 w-4 mr-2" />
               Profile
             </TabsTrigger>
-            <TabsTrigger value="progress" data-testid="tab-progress">
-              <TrendingUp className="h-4 w-4 mr-2" />
-              Progress
-            </TabsTrigger>
+            {!isGuardian && (
+              <TabsTrigger value="progress" data-testid="tab-progress">
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Progress
+              </TabsTrigger>
+            )}
             <TabsTrigger value="settings" data-testid="tab-settings">
               <Settings className="h-4 w-4 mr-2" />
               Settings
@@ -532,7 +548,8 @@ export default function UserProfile() {
             </Card>
           </TabsContent>
 
-          {/* Progress Tab */}
+          {/* Progress Tab — the student's own figures. A guardian has no trigger for it (G4-08),
+              and Radix mounts only the active tab's content, so it never renders for them. */}
           <TabsContent value="progress" className="space-y-6">
             <Alert>
               <AlertCircle className="h-4 w-4" />
@@ -654,109 +671,135 @@ export default function UserProfile() {
 
           {/* Billing Tab */}
           <TabsContent value="billing" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
-                  Subscription
-                </CardTitle>
-                <CardDescription>
-                  Manage your subscription and billing information
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {billingStatusLoading ? (
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      Loading live billing status...
-                    </AlertDescription>
-                  </Alert>
-                ) : billingStatusError ? (
-                  isSessionError(billingStatusErrorObj) ? (
-                    <SessionNotice
-                      message={
-                        (billingStatusErrorObj as Error)?.message ??
-                        toUserFacingMessage(billingStatusErrorObj).message
-                      }
-                      onRefreshSession={() => window.location.reload()}
-                    />
-                  ) : (
-                    <RecoveryNotice
-                      message={
-                        (billingStatusErrorObj as Error)?.message ??
-                        toUserFacingMessage(billingStatusErrorObj).message
-                      }
-                      onRetry={() => void refetchBillingStatus()}
-                    />
-                  )
-                ) : (
-                  <>
+            {isGuardian ? (
+              // G4-10: a guardian's billing is per student and lives with the students.
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5" />
+                    Billing
+                  </CardTitle>
+                  <CardDescription className="text-base">
+                    Each student&rsquo;s subscription, and billing for every
+                    student you pay for, are on Linked students &amp; billing.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button asChild className="min-h-[48px] text-base">
+                    <Link
+                      href={guardianPaths.students}
+                      data-testid="profile-guardian-billing"
+                    >
+                      Linked students &amp; billing
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5" />
+                    Subscription
+                  </CardTitle>
+                  <CardDescription>
+                    Manage your subscription and billing information
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {billingStatusLoading ? (
                     <Alert>
-                      <Star className="h-4 w-4" />
+                      <AlertCircle className="h-4 w-4" />
                       <AlertDescription>
-                        Subscription access is server-authoritative and sourced
-                        from the canonical entitlement state.
+                        Loading live billing status...
                       </AlertDescription>
                     </Alert>
-
-                    <div className="rounded-lg border p-4 space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        Current status
-                      </p>
-                      <p className="font-medium">
-                        {billingStatus?.stripeStatus
-                          ? billingStatus.stripeStatus.replace("_", " ")
-                          : "unknown"}
-                      </p>
-                      {billingStatus?.hasActiveLink === false && (
-                        <p className="text-sm text-muted-foreground">
-                          Link a student account first to unlock guardian
-                          premium billing.
-                        </p>
-                      )}
-                    </div>
-
-                    {hasManageableSubscription ? (
-                      <Button
-                        onClick={() => portal.open()}
-                        disabled={portal.isPending}
-                        data-testid="button-manage-subscription"
-                      >
-                        {portal.isPending
-                          ? "Opening portal..."
-                          : "Manage Subscription"}
-                      </Button>
-                    ) : (
-                      /**
-                       * ROLE-AWARE, THROUGH THE ONE RESOLVER.
-                       *
-                       * This navigated every role to `/upgrade`, which
-                       * `App.tsx` registers as
-                       * `RequireRole allow={["student","admin"]}`. A guardian
-                       * WITH a linked student passed the `disabled` check, so
-                       * the button was enabled, pressed, and bounced straight
-                       * back to `/guardian` by `RequireRole` — the control
-                       * existed, the server was correct, and the two did not
-                       * meet. `resolveCtaDestination` makes that unwritable.
-                       */
-                      <Button
-                        onClick={() =>
-                          navigate(resolveCtaDestination({ isGuardian }))
+                  ) : billingStatusError ? (
+                    isSessionError(billingStatusErrorObj) ? (
+                      <SessionNotice
+                        message={
+                          (billingStatusErrorObj as Error)?.message ??
+                          toUserFacingMessage(billingStatusErrorObj).message
                         }
-                        disabled={billingStatus?.hasActiveLink === false}
-                        data-testid="button-upgrade-subscription"
-                      >
-                        {isGuardian ? "Go to your dashboard" : "View Plans"}
-                      </Button>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                        onRefreshSession={() => window.location.reload()}
+                      />
+                    ) : (
+                      <RecoveryNotice
+                        message={
+                          (billingStatusErrorObj as Error)?.message ??
+                          toUserFacingMessage(billingStatusErrorObj).message
+                        }
+                        onRetry={() => void refetchBillingStatus()}
+                      />
+                    )
+                  ) : (
+                    <>
+                      <Alert>
+                        <Star className="h-4 w-4" />
+                        <AlertDescription>
+                          Subscription access is server-authoritative and
+                          sourced from the canonical entitlement state.
+                        </AlertDescription>
+                      </Alert>
+
+                      <div className="rounded-lg border p-4 space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          Current status
+                        </p>
+                        <p className="font-medium">
+                          {billingStatus
+                            ? billingStatusLabel(billingStatus)
+                            : "unknown"}
+                        </p>
+                        {billingStatus?.hasActiveLink === false && (
+                          <p className="text-sm text-muted-foreground">
+                            Link a student account first to unlock guardian
+                            premium billing.
+                          </p>
+                        )}
+                      </div>
+
+                      {hasManageableSubscription ? (
+                        <Button
+                          onClick={() => portal.open()}
+                          disabled={portal.isPending}
+                          data-testid="button-manage-subscription"
+                        >
+                          {portal.isPending
+                            ? "Opening portal..."
+                            : "Manage Subscription"}
+                        </Button>
+                      ) : (
+                        /**
+                         * ROLE-AWARE, THROUGH THE ONE RESOLVER.
+                         *
+                         * This navigated every role to `/upgrade`, which
+                         * `App.tsx` registers as
+                         * `RequireRole allow={["student","admin"]}`. A guardian
+                         * WITH a linked student passed the `disabled` check, so
+                         * the button was enabled, pressed, and bounced straight
+                         * back to `/guardian` by `RequireRole` — the control
+                         * existed, the server was correct, and the two did not
+                         * meet. `resolveCtaDestination` makes that unwritable.
+                         */
+                        <Button
+                          onClick={() =>
+                            navigate(resolveCtaDestination({ isGuardian }))
+                          }
+                          disabled={billingStatus?.hasActiveLink === false}
+                          data-testid="button-upgrade-subscription"
+                        >
+                          {"View Plans"}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>
-    </AppShell>
+    </Shell>
   );
 }

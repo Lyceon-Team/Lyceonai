@@ -33,8 +33,13 @@ export const STUDENT_OVERALL_KPI_ROW = {
   current_streak_days: 4,
   longest_streak_days: 9,
   sections_active: 2,
-  last_active_at: "2026-09-28T15:00:00.000Z",
+  // Today: since G-NEW-16 the builder serves the streak AS OF TODAY, so a last active day
+  // before yesterday would read 0. Dated now, the stored 4 is the current streak.
+  last_active_at: new Date().toISOString(),
 } as const;
+
+/** `student_study_profile.timezone`, read by `currentStreakAsOfToday` (G-NEW-16). */
+export const STUDENT_TIMEZONE = "America/New_York";
 
 /** `practice_runtime_config.quota_reset_timezone`, read by the builder's timezone step. */
 export const QUOTA_RESET_TIMEZONE = "America/New_York";
@@ -44,6 +49,9 @@ type StubResult = { data: unknown; error: null };
 function rowFor(table: string): StubResult {
   if (table === "student_overall_kpi") {
     return { data: STUDENT_OVERALL_KPI_ROW, error: null };
+  }
+  if (table === "student_study_profile") {
+    return { data: { timezone: STUDENT_TIMEZONE }, error: null };
   }
   if (table === "practice_runtime_config") {
     return { data: { value: QUOTA_RESET_TIMEZONE }, error: null };
@@ -68,7 +76,8 @@ function chainFor(table: string): StubChain {
   return chain;
 }
 
-/** Stand-in for `supabaseServer`: answers only the two reads the KPI builder makes. */
+/** Stand-in for `supabaseServer`: answers only the reads the KPI builder makes (the KPI row, the
+ * platform zone, and since G-NEW-16 the student's own zone). */
 export const supabaseServerStub = {
   from: (table: string): StubChain => chainFor(table),
 };
