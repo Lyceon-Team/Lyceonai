@@ -1296,12 +1296,62 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-under-13-link-gate.json \
             --file tests/ci/under-13-link-gate.pg.ci.test.ts
 
+      # @spec [SCL-195; Brief 8 rulings 1 and 3] | @implemented [2026-10-01]
+      # Settings background and reference search on real PG: the committed snapshot loaded by the
+      # real import script; every Zod boundary; partial update and clear; guardian/admin refused;
+      # account deletion removes the rows; search floor, cap and ledger rate limit. Verdict read
+      # from vitest's JSON report: a PG-backed suite that skips is a vacuous pass.
+      - name: Student background + reference search (SCL-195) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/student-background.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-student-background.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-student-background.json \
+            --file tests/ci/student-background.pg.ci.test.ts
+
+      # @spec [Brief 8 ruling 4; owner choice 2026-10-01] | @implemented [2026-10-01]
+      # The password-recovery grant behind /update-password: single use, expiry, TTL bounds,
+      # removed with the account, and not executable by anon/authenticated.
+      - name: Password recovery grant (Brief 8 ruling 4) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/password-recovery-grant.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-password-recovery-grant.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-password-recovery-grant.json \
+            --file tests/ci/password-recovery-grant.pg.ci.test.ts
+
+      # @spec [Brief 8 ruling 5; register F-40] | @implemented [2026-10-01]
+      # GET /api/billing/status managedBy over real entitlement and profile rows: guardian-paid,
+      # self-paid, no plan; the student branch makes no Stripe call.
+      - name: Billing managedBy (F-40) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/billing-managed-by.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-billing-managed-by.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-billing-managed-by.json \
+            --file tests/ci/billing-managed-by.pg.ci.test.ts
+
       # The G2-04 assertions are worth what their plants prove. One product-source mutation per
       # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
       # per student — the stored-flag design; a learning read and checkout ungated; the gate
       # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
       # its assertion red, each reverted byte-identically in a trap.
-      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7)
+      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
         env:
           PGHOST: localhost
           PGPORT: "5432"

@@ -9,8 +9,8 @@
  *
  * plain English: imports the REAL Express app and classifies every /api endpoint by the gate
  * functions in its chain (function identity, via tests/helpers/router-endpoints). An endpoint is
- * LINK-GATED when its chain holds `requireStudentOrAdmin` (which ends in the link gate) or
- * `requireGuardianLinkForUnder13` itself. Every other /api endpoint must be in the approved
+ * LINK-GATED when its chain holds `requireStudentOrAdmin` or `requireStudentAccount` (each ends in
+ * the link gate) or `requireGuardianLinkForUnder13` itself. Every other /api endpoint must be in the approved
  * allowed set or on a surface that is not the student's at all — so a learning route added without
  * the gate fails the classification case, and there is no list of learning routes to go stale.
  *
@@ -181,6 +181,8 @@ type Gate = "link" | "student_only";
 
 function gateOf(handle: unknown): Gate | null {
   if (handle === auth.requireStudentOrAdmin) return "link";
+  // Brief 8: the student-account gate (background) ends in the link gate the same way.
+  if (handle === auth.requireStudentAccount) return "link";
   if (
     "requireGuardianLinkForUnder13" in auth &&
     handle === auth.requireGuardianLinkForUnder13

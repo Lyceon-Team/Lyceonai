@@ -37,6 +37,7 @@ const PENDING = billingStatusResponseSchema.parse({
   hasBillingAccount: true,
   isPaid: false,
   source: "guardian_linked_student",
+  managedBy: "self",
   requestId: "req-1",
 });
 

@@ -1077,6 +1077,47 @@ export function requireStudentOrAdmin(
 }
 
 /**
+ * @spec [Brief 8 ruling 1 (owner, 2026-10-01): the background endpoints are "student-only, no
+ *       entitlement check"; SCL-187 rule 1 (APPLIED); Coding Standards §6.1, §11.3]
+ * | @implemented [2026-10-01]
+ *
+ * plain English: the gate for a surface that holds the STUDENT's own data and nobody else's —
+ * Settings → Profile background. Only `role === 'student'` passes: a guardian gets 403
+ * `ROLE_NOT_PERMITTED` (guardians never see or touch these fields), and so does an admin, because
+ * an admin has no student background to edit and no admin surface reads one. Then the live
+ * under-13 link gate, as on every student surface the calendar's dream-school picker shares.
+ *
+ * Why not `requireStudentOrAdmin`: it admits admins. Why not `requireStudentOnly`: that is LISA's
+ * gate and refuses every under-13 account outright (Doc 03 §12.5), which is right for the tutor
+ * and wrong here — a linked under-13 student may use the calendar, and so its picker.
+ */
+export function requireStudentAccount(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) {
+    return sendNoUser(req, res);
+  }
+  if (req.user.isAdmin || req.user.role !== "student") {
+    logger.warn(
+      "AUTH",
+      "role_not_permitted",
+      "Non-student role attempted to access a student-account surface",
+      { userId: req.user.id, role: req.user.role, path: req.path },
+      { requestId: req.requestId },
+    );
+    return sendForbidden(res, {
+      error: "Role not permitted",
+      message: "Only students can access this feature.",
+      requestId: req.requestId,
+      extra: { code: "ROLE_NOT_PERMITTED" },
+    });
+  }
+  return requireGuardianLinkForUnder13(req, res, next);
+}
+
+/**
  * Get Supabase admin client (bypasses RLS - use carefully!)
  */
 export function getSupabaseAdmin() {

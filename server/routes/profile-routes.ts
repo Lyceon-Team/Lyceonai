@@ -17,10 +17,15 @@ import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state";
-import { setDateOfBirthRequestSchema } from "../../packages/shared/src/profile-role-choice-schema";
+import {
+  dateOfBirthSchema,
+  setDateOfBirthRequestSchema,
+} from "../../packages/shared/src/profile-role-choice-schema";
 import {
   decideRoleChoice,
+  dateOfBirthRefusal,
   guardianAgeRefusal,
+  INVALID_DATE_OF_BIRTH,
   isSelfAssignableRole,
   loadRoleChoiceFacts,
   NOT_SELF_ASSIGNABLE,
@@ -129,7 +134,9 @@ function outstandingLegalDocs(
 const profileCompletionSchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   role: z.enum(["student", "guardian"]),
-  dateOfBirth: z.string().optional().nullable(),
+  // F-41: a real calendar date, through the shared schema (Brief 8 ruling 6). Not-in-the-future
+  // and plausibility need today's date, so `dateOfBirthRefusal` applies them below.
+  dateOfBirth: dateOfBirthSchema.optional().nullable(),
   guardianEmail: z.string().email().optional().nullable(),
   marketingOptIn: z.boolean().optional().default(false),
 });
@@ -363,6 +370,11 @@ router.patch("/", async (req: Request, res: Response) => {
     // Validate request body
     const validation = profileCompletionSchema.safeParse(req.body);
     if (!validation.success) {
+      // F-41: a malformed date of birth is the person's input being wrong, so it gets the coded
+      // refusal the onboarding page shows verbatim (AS-3), not the generic "Invalid profile data".
+      if (validation.error.issues.some((issue) => issue.path[0] === "dateOfBirth")) {
+        return sendRoleChoiceRefusal(res, INVALID_DATE_OF_BIRTH);
+      }
       return res.status(400).json({
         error: "Invalid profile data",
         details: validation.error.errors,
@@ -398,6 +410,22 @@ router.patch("/", async (req: Request, res: Response) => {
     const effectiveDateOfBirth = dateOfBirthLocked
       ? storedDateOfBirth
       : (data.dateOfBirth ?? null);
+
+    // F-41: a NEW date of birth must be a plausible past date. A stored (locked) one is not
+    // re-judged: it was accepted when it was written, and refusing it now would lock the person
+    // out of their own profile. An under-13 date is ACCEPTED here — see `dateOfBirthRefusal`.
+    if (!dateOfBirthLocked && effectiveDateOfBirth) {
+      const dobRefusal = dateOfBirthRefusal(effectiveDateOfBirth, new Date());
+      if (dobRefusal) {
+        logger.warn(
+          "PROFILE",
+          "date_of_birth_refused",
+          "Date of birth refused at onboarding",
+          { code: dobRefusal.code, requestId: req.requestId },
+        );
+        return sendRoleChoiceRefusal(res, dobRefusal);
+      }
+    }
 
     if (data.role === "student" && !effectiveDateOfBirth) {
       return res.status(400).json({
