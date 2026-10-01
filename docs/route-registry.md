@@ -37,9 +37,6 @@ This document is the single authoritative registry of:
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
 | `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge`, `/api/me/streak` | ACTIVE |
-| `/students/:studentId/calendar` | guardian | free | Redirect→`/guardian/:studentId/calendar` (G4-01) | N/A | ACTIVE |
-| `/students/:studentId/tests` | guardian | free | Redirect→`/guardian/:studentId/exams` (G4-01) | N/A | ACTIVE |
-| `/students/:studentId/tests/:sessionId` | guardian | free | Redirect→`/guardian/:studentId/exams/:sessionId` (G4-01) | N/A | ACTIVE |
 | `/tests` | student, admin | entitled (exam_full_length, enforced by every backing route) | TestsHomePage | `/api/tests/forms`, `/api/tests/sessions`, `/api/tests/sessions/:session_id/sections/:section/modules/:module/start` | ACTIVE |
 | `/tests/:sessionId` | student, admin | entitled (exam_full_length) | ExamSessionPage (begin, Module 2 hand-off, break) | `/api/tests/sessions/:session_id/state`, `…/modules/:module/start`, `/api/tests/forms` | ACTIVE |
 | `/tests/:sessionId/:section/:module` | student, admin | entitled (exam_full_length) | ExamModulePage (the URL only shows the server's position; any other module redirects) | `…/state`, `…/modules/:module/items`, `…/modules/:module/workspace` (GET, PUT), `/api/tests/answer`, `…/sections/:section/heartbeat`, `…/modules/:module/submit`, `…/modules/:module/start` | ACTIVE |

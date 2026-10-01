@@ -33,6 +33,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | A11 | A | Unrouted pages; modules with no importer; modules only tests import (guardian scope) | none found | none found |
 | A12 | A | `features/calendar/components/Chrome.tsx` `export` on `TargetFact`, `StreakFact`, `CountdownFact`, `ProjectionFact` | HANDED OFF (calendar) | HANDED OFF |
 | G1 | G | `client/src/features/guardian/routes.tsx` — the three `/students/:studentId/{calendar,tests,tests/:sessionId}` redirects, `RedirectStudent`, `RedirectExam`, and the never-read `redirect` field | DELETE (owner, 2026-10-01: delete, and repoint the exam spec) | PLANNED |
+| G2 | G | `tests/e2e/exam-disclosure.spec.ts` guardian step (exam vertical's local-only spec): fails at the guardian exam page because the exam e2e harness serves no `/api/guardian/students` roster, which the Wave 4 shell (G4-06) reads first | HANDED OFF (exam) | HANDED OFF |
 | B1 | B | `server/services/guardian-link-audit.ts` (whole module: `auditGuardianLink`, `GuardianLinkAuditAction`) | DELETE (with the old INSTRUMENT case, its only caller; see D1) | DELETED (`ee27f61`) |
 | B2 | B | `server/lib/account.ts` re-exports `GuardianLinkStatus`, `GUARDIAN_LINK_ERROR`, `GuardianLinkError` | DELETE the three re-exports (keep `GuardianLink`) | DELETED (`ee27f61`) |
 | B3 | B | `server/lib/auth-role.ts` `parseRuntimeRole` — the `'parent' → 'guardian'` role-normalising branch | DELETE the branch | DELETED (`ee27f61`) |
@@ -64,9 +65,9 @@ Every row's evidence is a command run on this branch with its real output pasted
 | E5 | E | `tests/e2e/guardian-surfaces.spec.ts` (and the shared-component specs `student-calendar`, `student-mastery`) — the only proof of R12, phone centring and the meter's width — run by no CI job | FIX (Step 3: one CI job) | PLANNED |
 | E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa) | HANDED OFF |
 | E7 | E | `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI | EDIT | EDITED (`6cabf88`) |
-| F1 | F | 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read` | DROP (one migration) | PLANNED |
-| F2 | F | `public.guardian_can_view_student(uuid)`, `public.guardian_can_view_student_as(uuid, uuid)` | DROP (same migration, after F1) | PLANNED |
-| F3 | F | `profiles.consent_given_at` | DROP (same migration) | PLANNED |
+| F1 | F | 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read` | DROP (one migration) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
+| F2 | F | `public.guardian_can_view_student(uuid)`, `public.guardian_can_view_student_as(uuid, uuid)` | DROP (same migration, after F1) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
+| F3 | F | `profiles.consent_given_at` | DROP (same migration) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
 | F4 | F | `guardian_view_decision`, `guardian_link_audit`, `revoke_guardian_link_audited`, `create_active_guardian_link_audited` | KEEP | KEEP |
 | F5 | F | `profiles.guardian_profile_id` (+ `idx_profiles_guardian_profile`, its FK) and `profiles.guardian_email` | HANDED OFF (cleanup, with G-NEW-08) | HANDED OFF |
 | F6 | F | `student_skill_mastery_student_read`, `student_skill_kpi_student_read` | HANDED OFF (cleanup) | HANDED OFF |
@@ -440,6 +441,28 @@ tests/e2e/exam-disclosure.spec.ts:121:  await guardian.goto(`/students/${STUDENT
 tests/e2e/guardian-surfaces.spec.ts:113:    const ada = `/api/students/${F.ADA}`;
 tests/e2e/guardian-surfaces.spec.ts:119:    if (p.startsWith(`/api/students/${F.CY}/`)) {
 … 2 more line(s)
+```
+
+### G2 — `tests/e2e/exam-disclosure.spec.ts` guardian step (exam vertical's local-only spec): fails at the guardian exam page because the exam e2e harness serves no `/api/guardian/students` roster, which the Wave 4 shell (G4-06) reads first
+
+**Action:** HANDED OFF (exam). Pre-existing since Wave 4: at `6cabf88` (redirect still present) it fails identically — the redirect lands on the same page, which shows "We couldn't load your students". Not run in CI. The spec's URL is repointed in this PR (G1); the harness needs the roster route.
+
+```
+$ grep -n "app.use\|router\|/api/guardian" tests/e2e/exam-harness/server.ts | head
+4: * @spec [E7b owner ruling 6: "Auth stubbed to one student, real routers, real SQL,
+9: * plain English: mounts the REAL /api/tests routers (runtime + 04C report) and, since E9b,
+10: * the REAL /api/calendar and /api/me routers, over a throwaway database built from this
+11: * repo's migrations. Since G2 it also mounts the REAL /api/students router (the subject
+46:  app.use(express.json());
+49:  app.use((req: Request, _res: Response, next: NextFunction) => {
+73:  app.use("/api/tests", runtimeRouter);
+74:  app.use("/api/tests", reportRouter);
+76:  app.use("/api/calendar", calendarRouter);
+77:  app.use("/api/me", streakRouter);
+```
+```
+$ grep -n 'guardian.goto' tests/e2e/exam-disclosure.spec.ts
+121:  await guardian.goto(`/students/${STUDENT}/tests/${sid}`);
 ```
 
 

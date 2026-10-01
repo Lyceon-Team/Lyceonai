@@ -60,8 +60,8 @@ import "@/features/calendar/calendar.css";
 
 export default function GuardianStudentCalendarPage(): JSX.Element {
   const today = browserLocalToday();
-  // G4-01: the student comes from whichever route mounts this page
-  // (`/guardian/:studentId/calendar`); the retired `/students/:id/calendar` redirects there.
+  // G4-01: the student comes from the route that mounts this page
+  // (`/guardian/:studentId/calendar`).
   const { studentId = "" } = useParams<{ studentId?: string }>();
   const queryClient = useQueryClient();
 
