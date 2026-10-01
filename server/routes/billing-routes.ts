@@ -561,6 +561,66 @@ router.post(
               "I am 18 or older and authorised to use this payment method. I agree to the LYCEON Billing Terms, and I understand this subscription renews automatically until I cancel.",
           },
         },
+        /**
+         * SHOW THE PROMOTION-CODE FIELD AT CHECKOUT.
+         *
+         * @spec [Doc-09_V1.0 §5.4 "Promotional / referral / scholarship tiers —
+         *        discount codes... Stripe supports promotional pricing as a
+         *        first-class mechanism; Lyceon may activate as growth/conversion
+         *        experiments warrant", and §5.6: a promotional tier added in
+         *        Stripe "automatically becomes operational without Doc 09 needing
+         *        to be amended to permit it" — so this needs no SCL entry;
+         *        SCL-072 (the refund comparison that makes it safe);
+         *        owner brief 2026-10-01]
+         * @implemented [2026-10-01]
+         *
+         * plain English: Checkout hides the promotion-code field unless the
+         * session asks for it. This asks. Expected outcome: a customer can enter
+         * a code the owner created in the Dashboard, and Stripe applies it and
+         * shows the reduced amount on its own page. Trade-off: none that reaches
+         * our code — a code changes the CHARGED amount, and nothing on the
+         * entitlement path reads an amount.
+         *
+         * ONE PARAMETER, BOTH PATHS. This object is built once and passed to the
+         * single `checkout.sessions.create` call below, so the guardian and
+         * self-pay paths get it from the same place. They diverge only in
+         * `line_items`, the two `metadata` bags, the success/cancel URL and
+         * `client_reference_id` — never in session behaviour, which is why this
+         * is one edit rather than two.
+         *
+         * MUTUALLY EXCLUSIVE WITH `discounts`, AND THE COMPILER WILL NOT SAY SO.
+         * Stripe rejects a session carrying both. The pinned SDK does NOT encode
+         * that: `allow_promotion_codes?: boolean` ("Enables user redeemable
+         * promotion codes") and `discounts?: Array<SessionCreateParams.Discount>`
+         * are declared as independent optional fields (stripe@20.4.1,
+         * `types/Checkout/SessionsResource.d.ts:20` and `:119`), neither doc
+         * comment mentions the other, and a grep of `types/Checkout/` for any
+         * exclusivity wording returns nothing. So `tsc` would accept both and the
+         * failure would arrive as a runtime rejection on a real purchase. Nothing
+         * sets `discounts` anywhere in this repo today, and the test named below
+         * is the only thing that will notice if something starts to —
+         * `tests/ci/checkout-promotion-codes.contract.test.ts`.
+         *
+         * REFUNDS NEEDED NO CHANGE, and that is not luck. SCL-072 already rules
+         * that the full-versus-partial comparison uses `Charge.amount` and
+         * cumulative `Charge.amount_refunded` and never a list price —
+         * `decideRefundRevocation` in `server/lib/stripe/refund.ts` takes no price
+         * at all — and its header names promotion codes explicitly as the reason.
+         * `event-surface.ts` likewise already subscribes `promotion_code.created`
+         * and `.updated` as observability-only, citing the same ruling. The
+         * groundwork for this parameter was laid before it was asked for.
+         *
+         * NOTHING VALIDATES THE PAID AMOUNT AGAINST LIST PRICE, checked rather
+         * than assumed: `amount_total` appears nowhere on the entitlement path
+         * (its only mention is a comment explaining why it is NOT used), and
+         * every `unit_amount` read is display-only (`/api/billing/plans`,
+         * `public-pricing-routes.ts`). A discounted charge cannot fail a check,
+         * because there is no such check to fail.
+         *
+         * The codes themselves are the owner's, created in the Dashboard. This
+         * parameter only decides whether the field is shown.
+         */
+        allow_promotion_codes: true,
         metadata: sessionMetadata,
         subscription_data: { metadata: sessionMetadata },
       };
