@@ -1663,4 +1663,26 @@
     justify-content: center;
     text-align: center;
   }
+  /*
+   * Block cards centre their whole content on a phone too (owner review 2026-10-01, final
+   * round item 1, replacing "card content stays left" for block cards only; domain and exam
+   * cards are unchanged). The 9px left inset that clears the tone bar is mirrored on the
+   * right, so the centred title, "~N min" line, scope chips and progress bar sit on the
+   * card's centre line rather than 4.5px right of it.
+   */
+  .lyceon-calendar .block {
+    text-align: center;
+  }
+  .lyceon-calendar .block .ttl,
+  .lyceon-calendar .block .dom {
+    justify-content: center;
+  }
+  .lyceon-calendar .block .ttl,
+  .lyceon-calendar .block .sub,
+  .lyceon-calendar .block .dom {
+    padding-right: 9px;
+  }
+  .lyceon-calendar .block .progress {
+    margin-right: 9px;
+  }
 }

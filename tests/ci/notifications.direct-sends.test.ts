@@ -456,3 +456,28 @@ describe("notification logs carry no recipient address (OQ-17)", () => {
     }
   });
 });
+
+/**
+ * Guardians see no skills, anywhere (owner ruling 2026-10-01, #1013 review item 2; SCL-194) —
+ * including in what the invite email promises a guardian will see.
+ */
+describe("the guardian invite promises no skills (SCL-194)", () => {
+  it("states what a guardian sees, and no skill is part of it", async () => {
+    const { guardianLinkInviteEmail } =
+      await import("../../server/lib/notifications/templates/guardian-link-invite");
+    const email = guardianLinkInviteEmail({
+      studentDisplayName: "Ada",
+      code: "ABCD-1234",
+      redeemUrl: "https://lyceon.example/guardian/link?code=ABCD-1234",
+      expiresAt: "2026-10-08T00:00:00.000Z",
+    });
+    for (const part of [email.subject, email.text, email.html]) {
+      // Presence first: the body really states what a guardian can see.
+      if (part !== email.subject) {
+        expect(part).toContain("As a guardian you can see");
+        expect(part).toContain("mastery by domain");
+      }
+      expect(part).not.toMatch(/skill/i);
+    }
+  });
+});
