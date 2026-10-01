@@ -16,7 +16,7 @@
  * into a short window here, and the data that does not says so explicitly.
  *
  * Trade-offs: a short window is a ceiling on staleness, not a polling interval — nothing here
- * refetches on a timer except the KPI entry, which already did. Mutations that change one of
+ * refetches on a timer (the KPI entry's 60 s interval was removed 2026-10-01). Mutations that change one of
  * these resources still invalidate it (profile completion invalidates the profile key), so the
  * window only bounds changes made OUTSIDE this tab.
  *
@@ -60,10 +60,12 @@ export const QUERY_FRESHNESS = {
   pricing: { staleTime: HOUR_MS },
 
   /**
-   * `GET /api/progress/kpis` on the dashboard — the one timer that already existed. Kept at
-   * its previous 60 s interval; the dashboard is the surface a student leaves open.
+   * `GET /api/progress/kpis` (`useProgressKpis`). No timer (owner ruling 2026-10-01): refetch on
+   * window focus, and on session completion through `invalidateProgressKpis`. KPIs only move when
+   * the student answers questions. It replaced a 60 s interval that cost every open dashboard 60
+   * requests an hour. The window only stops a focus event from re-reading a fresh copy.
    */
-  kpis: { refetchInterval: MINUTE_MS },
+  kpis: { staleTime: 30 * SECOND_MS, refetchOnWindowFocus: true },
 
   /**
    * `GET /api/calendar` (range reads, guardian projection, adjacent-range prefetch). Doc 05F

@@ -745,12 +745,19 @@ app.get("/legal/:slug", (req, res, next) => {
 });
 app.use(express.static(staticPath));
 
+// @spec [Coding Standards §8.2, §8.3; student-ui register F-42, owner ruling 2026-10-01] |
+// @implemented [2026-10-01] | plain English: any `/api` request that no route answered gets the
+// API's JSON 404, whatever the method. It used to be answered only for GET (inside the SPA
+// fallback below); a POST, PUT, PATCH or DELETE fell through to Express's default HTML
+// `Cannot POST …` page, so a client parsing JSON got HTML (seen in production 2026-10-01). The
+// body is unchanged from the GET one, which tests and callers already read.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "API endpoint not found" });
+});
+
 // SPA fallback - serve index.html for all non-API routes
 // Private routes (dashboard, practice, etc.) get plain SPA shell
 app.get("*", (req, res) => {
-  if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "API endpoint not found" });
-  }
   res.sendFile(path.join(staticPath, "index.html"));
 });
 

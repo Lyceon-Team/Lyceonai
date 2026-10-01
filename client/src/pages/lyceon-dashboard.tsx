@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { DateTime } from "luxon";
 import { Link, useLocation } from "wouter";
 import { AppShell } from "@/components/layout/app-shell";
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
+import { useProgressKpis } from "@/hooks/useProgressKpis";
 import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
 import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
 import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
@@ -110,12 +110,7 @@ export default function LyceonDashboard() {
     data: kpiData,
     isLoading: kpiLoading,
     error: kpiError,
-  } = useQuery<KpiResponse>({
-    queryKey: ["/api/progress/kpis"],
-    enabled: !!user,
-    // UI-14: the one timer the dashboard already had, now named in the freshness config.
-    refetchInterval: QUERY_FRESHNESS.kpis.refetchInterval,
-  });
+  } = useProgressKpis<KpiResponse>(!!user);
 
   const {
     data: estimateData,
