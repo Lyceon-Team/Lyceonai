@@ -452,6 +452,28 @@ const PHONE_CENTRING: readonly {
         selector: ".lyceon-calendar .facts",
         mode: "lines",
       },
+      // Owner review 2026-10-01, final round item 1: on a phone everything inside a block
+      // card centres too — title, "~N min" line, scope chips and progress bar.
+      {
+        what: "block-card title",
+        selector: ".lyceon-calendar .col .block .ttl",
+        mode: "text",
+      },
+      {
+        what: "block-card meta line",
+        selector: ".lyceon-calendar .col .block .sub",
+        mode: "text",
+      },
+      {
+        what: "block-card scope chips",
+        selector: ".lyceon-calendar .col .block .dom",
+        mode: "lines",
+      },
+      {
+        what: "block-card progress bar",
+        selector: ".lyceon-calendar .col .block .progress",
+        mode: "box",
+      },
     ],
   },
   {
