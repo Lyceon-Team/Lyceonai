@@ -242,6 +242,16 @@ jobs:
       - name: Guardian token gate (no hex literals, no sub-16px text, type floor current)
         run: node scripts/ci/guardian-token-gate.mjs
 
+      # Guardian closeout, Part B step 4: no unused export and no test-only module in guardian
+      # scope (scripts/ci/guardian-dead-code-gate.mjs — the TypeScript compiler API over the
+      # repository's import graph, no new dependency). The self-test runs FIRST: it plants an
+      # unused export and a test-only module and requires the gate to name each, so a gate that
+      # has gone blind reads as a failure here rather than as a clean tree.
+      - name: Guardian dead-code gate self-test (planted findings must be named)
+        run: bash scripts/ci/guardian-dead-code-gate.selftest.sh
+      - name: Guardian dead-code gate (zero unused exports in guardian scope)
+        run: node scripts/ci/guardian-dead-code-gate.mjs
+
       # A published legal version directory is the evidence of what somebody
       # agreed to — ARL § 17602(a)(4) requires producing that exact text three
       # years later. Editing one destroys the evidence while the consent record
