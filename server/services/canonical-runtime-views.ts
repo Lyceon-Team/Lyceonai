@@ -1,10 +1,13 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import type {
-  CompleteExamResult,
-  FullLengthSessionHistoryItem,
-} from "../../apps/api/src/services/fullLengthExam";
 import { logger } from "../logger";
 import { getQuotaResetTimezone } from "../lib/account";
+import {
+  studentKpiOverallSchema,
+  type ExplainedKpiMetric,
+  type GuardianKpiOverall,
+  type KpiExplanation,
+  type StudentKpiOverall as StudentKpiView,
+} from "../../packages/shared/src/student-resources";
 import {
   diagnosticStateSchema,
   type DiagnosticState,
@@ -12,50 +15,13 @@ import {
 
 export const CANONICAL_RUNTIME_VIEW_VERSION = "kpi_truth_v1";
 
-export interface KpiExplanation {
-  ruleId: string;
-  whatThisMeans: string;
-  whyThisChanged: string;
-  whatToDoNext: string;
-}
-
-export interface ExplainedKpiMetric {
-  id: string;
-  label: string;
-  kind: "official" | "weighted" | "diagnostic";
-  unit: "count" | "percent" | "minutes" | "seconds" | "score";
-  value: number | null;
-  explanation: KpiExplanation;
-}
-
-export interface StudentKpiView {
-  modelVersion: string;
-  timezone: string;
-  week: {
-    questionsSolved: number; // events_last_7d (a scored event == an answered question)
-    accuracy: number | null; // round(accuracy_last_7d * 100); null when no events
-    explanations: Record<string, KpiExplanation>;
-  };
-  recency: {
-    window: number; // 30-day trend window
-    totalAttempts: number; // events_last_30d
-    accuracy: number | null; // round(accuracy_last_30d * 100); null when no events
-    explanations: Record<string, KpiExplanation>;
-  } | null;
-  metrics: ExplainedKpiMetric[];
-  gating: {
-    historicalTrends: {
-      allowed: boolean;
-      requiredPlan: "paid";
-      reason: string;
-    };
-  };
-  measurementModel: {
-    official: string[];
-    weighted: string[];
-    diagnostic: string[];
-  };
-}
+// G3-01 (SCL-188): the KPI view's shapes are INFERRED from the shared kpi/overall schema, so
+// the wire contract and this builder cannot drift. Re-exported under their old names.
+export type {
+  KpiExplanation,
+  ExplainedKpiMetric,
+  StudentKpiOverall as StudentKpiView,
+} from "../../packages/shared/src/student-resources";
 
 function guidanceForMetric(metricId: string, value: number | null): string {
   if (value === null) {
@@ -123,7 +89,10 @@ function metricListToExplanationMap(
  * rather than restating "no events means null" — a second copy is how one surface starts
  * telling a parent their child scored 0% when the truth is that nothing was measured.
  */
-export function toAccuracyPercent(fraction: unknown, events: number): number | null {
+export function toAccuracyPercent(
+  fraction: unknown,
+  events: number,
+): number | null {
   if (events <= 0) return null;
   if (typeof fraction !== "number" || !Number.isFinite(fraction)) return null;
   return Math.round(Math.max(0, Math.min(1, fraction)) * 100);
@@ -325,6 +294,91 @@ export async function buildStudentKpiViewFromCanonical(
       diagnostic: metrics.map((m) => m.id),
     },
   };
+}
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01, owner ruling R3]
+ *   | @implemented [2026-09-30]
+ *
+ * plain English: the guardian's KPI read. It SELECTs `current_streak_days` and nothing else, so
+ * the counters a guardian is not shown are never read for them, not read and then dropped. No
+ * row yet is a streak of 0 — the same answer the student view gives for a new student.
+ * A failed read throws; it is never a zero.
+ */
+export async function readGuardianKpiOverall(
+  studentId: string,
+): Promise<GuardianKpiOverall> {
+  const { data, error } = await supabaseServer
+    .from("student_overall_kpi")
+    .select("current_streak_days")
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to fetch overall KPI: ${error.message}`);
+  }
+  const raw: unknown = (data as { current_streak_days?: unknown } | null)
+    ?.current_streak_days;
+  return {
+    currentStreakDays:
+      typeof raw === "number" && Number.isFinite(raw)
+        ? Math.max(0, Math.round(raw))
+        : 0,
+  };
+}
+
+/** Every key path present in `raw` and absent from `parsed` — names only, never values. */
+function droppedKeyPaths(raw: unknown, parsed: unknown, at = ""): string[] {
+  if (Array.isArray(raw) && Array.isArray(parsed)) {
+    return raw.flatMap((item, i) =>
+      droppedKeyPaths(item, parsed[i], `${at}[]`),
+    );
+  }
+  if (
+    raw === null ||
+    typeof raw !== "object" ||
+    parsed === null ||
+    typeof parsed !== "object"
+  ) {
+    return [];
+  }
+  const kept = parsed as Record<string, unknown>;
+  return Object.entries(raw as Record<string, unknown>).flatMap(
+    ([key, value]) => {
+      const path = at === "" ? key : `${at}.${key}`;
+      return key in kept ? droppedKeyPaths(value, kept[key], path) : [path];
+    },
+  );
+}
+
+/** Paths already warned about in this process: each is logged once, not per request. */
+const warnedDroppedKpiPaths = new Set<string>();
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01; owner ruling
+ *   2026-09-30 (#994): "student kpi/overall parses with strip, unknown keys dropped and
+ *   logged once as a warning, not strict"] | @implemented [2026-09-30]
+ *
+ * plain English: the student's own `kpi/overall` on its way to the wire. The shared schema
+ * STRIPS unknown keys at every depth, so a field the builder gains without a schema update is
+ * dropped rather than turning a student's dashboard into a 500. Each dropped key PATH is
+ * logged once per process as a warning — the path only (e.g. `week.newCounter`), never a
+ * value, so the log carries no student data. CI is where such a field is meant to be caught:
+ * `tests/ci/student-resources.contract.test.ts` asserts this parse is the identity on real
+ * route output. The guardian branch does not use this; it stays strict.
+ */
+export function toStudentKpiOverallWire(view: unknown): StudentKpiView {
+  const parsed = studentKpiOverallSchema.parse(view);
+  for (const path of droppedKeyPaths(view, parsed)) {
+    if (warnedDroppedKpiPaths.has(path)) continue;
+    warnedDroppedKpiPaths.add(path);
+    logger.warn(
+      "KPI",
+      "kpi_overall_unknown_key_dropped",
+      "Student kpi/overall carried a key its schema does not name; dropped",
+      { path },
+    );
+  }
+  return parsed;
 }
 
 export interface ScoreEstimate {
@@ -591,137 +645,6 @@ export async function buildScoreEstimateFromCanonical(
   };
 }
 
-export interface FullTestKpiInput {
-  scaledTotal: number;
-  scaledRw: number;
-  scaledMath: number;
-  totalCorrect: number;
-  totalQuestions: number;
-}
-
-export function buildFullTestKpis(
-  input: FullTestKpiInput,
-): ExplainedKpiMetric[] {
-  const accuracyPercent =
-    input.totalQuestions > 0
-      ? Math.round((input.totalCorrect / input.totalQuestions) * 100)
-      : 0;
-
-  return [
-    {
-      id: "official_sat_score",
-      label: "Official SAT Score",
-      kind: "official",
-      unit: "score",
-      value: null,
-      explanation: {
-        ruleId: "RULE_OFFICIAL_SCORE_UNAVAILABLE",
-        whatThisMeans:
-          "Official SAT scores come only from College Board reports.",
-        whyThisChanged:
-          "Lyceon practice tests produce diagnostic estimates, not official scores.",
-        whatToDoNext:
-          "Use this result for study planning, then validate on the next official or proctored benchmark.",
-      },
-    },
-    {
-      id: "estimated_scaled_total",
-      label: "Estimated Scaled Total",
-      kind: "weighted",
-      unit: "score",
-      value: input.scaledTotal,
-      explanation: {
-        ruleId: "RULE_ESTIMATED_SCALED_TOTAL",
-        whatThisMeans:
-          "Weighted estimate mapped from this test's raw performance only.",
-        whyThisChanged:
-          "Value reflects this completed test's section performance, not an average across tests.",
-        whatToDoNext:
-          "Compare this estimate to your prior test and focus next sessions on the lower section score.",
-      },
-    },
-    {
-      id: "estimated_scaled_rw",
-      label: "Estimated Scaled RW",
-      kind: "weighted",
-      unit: "score",
-      value: input.scaledRw,
-      explanation: {
-        ruleId: "RULE_ESTIMATED_RW",
-        whatThisMeans:
-          "Weighted section estimate for Reading & Writing from this test.",
-        whyThisChanged:
-          "Computed from RW module outcomes in this session only.",
-        whatToDoNext:
-          "If RW is lower than Math, assign your next two sessions to RW weak domains.",
-      },
-    },
-    {
-      id: "estimated_scaled_math",
-      label: "Estimated Scaled Math",
-      kind: "weighted",
-      unit: "score",
-      value: input.scaledMath,
-      explanation: {
-        ruleId: "RULE_ESTIMATED_MATH",
-        whatThisMeans: "Weighted section estimate for Math from this test.",
-        whyThisChanged:
-          "Computed from Math module outcomes in this session only.",
-        whatToDoNext:
-          "If Math is lower than RW, prioritize medium-to-hard math sets with post-set error review.",
-      },
-    },
-    {
-      id: "diagnostic_accuracy",
-      label: "Diagnostic Accuracy",
-      kind: "diagnostic",
-      unit: "percent",
-      value: accuracyPercent,
-      explanation: {
-        ruleId: "RULE_DIAGNOSTIC_ACCURACY",
-        whatThisMeans: "Raw percent correct on this completed test session.",
-        whyThisChanged:
-          "Reflects this test only; previous tests are not averaged into this value.",
-        whatToDoNext:
-          "Use missed-question patterns to build your next targeted practice block.",
-      },
-    },
-  ];
-}
-
-export function fullTestMeasurementModel() {
-  return {
-    official: ["official_sat_score"],
-    weighted: [
-      "estimated_scaled_total",
-      "estimated_scaled_rw",
-      "estimated_scaled_math",
-    ],
-    diagnostic: ["diagnostic_accuracy"],
-  };
-}
-
-export type StudentFullLengthReportView = CompleteExamResult & {
-  kpis: ExplainedKpiMetric[];
-  measurementModel: ReturnType<typeof fullTestMeasurementModel>;
-};
-
-export function buildStudentFullLengthReportView(
-  report: CompleteExamResult,
-): StudentFullLengthReportView {
-  return {
-    ...report,
-    kpis: buildFullTestKpis({
-      scaledTotal: report.scaledScore.total,
-      scaledRw: report.scaledScore.RW,
-      scaledMath: report.scaledScore.M,
-      totalCorrect: report.rawScore.total.correct,
-      totalQuestions: report.rawScore.total.total,
-    }),
-    measurementModel: fullTestMeasurementModel(),
-  };
-}
-
 /**
  * @spec [Doc-05C_V1.0 §7.4; owner rulings Q1 + Q2, 2026-08-17] @implemented 2026-08-17
  *
@@ -827,106 +750,4 @@ export async function readAnsweredQuestionCount(
   // A null count with no error should not happen with head+exact, but "the
   // database did not tell us" is not "the student answered nothing".
   return typeof count === "number" ? count : null;
-}
-
-/**
- * @spec [Doc 04C invariant #7 — guardian payloads are a strict SUBSET of the student
- *   payload, derived via a projection function rather than independently constructed;
- *   SCL-075 (PROPOSED) — the guardian exam session list has no owning document, capability
- *   kept and to be specified] | @implemented [2026-08-24]
- *
- * plain English: one projection of the full-length session history, and a guardian
- * narrowing of it.
- *
- * WHY THIS EXISTS. The two routes each mapped `listExamSessions` inline, and the two maps
- * had drifted in three ways at once:
- *   1. SHAPE — the student spread `...session` (every field the service returns, forever);
- *      the guardian named six fields.
- *   2. PRIVILEGE — the student gated `reportAvailable` on the student's paid access; the
- *      guardian did not gate it at all, so a guardian could be told a report was available
- *      when the student's own entitlement said otherwise. That is the same defect closed in
- *      #644 for historical trends, in a second place, and it is why extraction is not
- *      cosmetic: two inline maps cannot disagree if there is only one map.
- *   3. INVENTION — the guardian emitted `reviewAvailable: false` for an endpoint that does
- *      not exist (removed in #644).
- *
- * The student projection is the single derivation. The guardian projection is that result
- * with `reviewAvailable` removed — structurally a subset, not a re-derivation, so a field
- * added to the student item reaches the guardian automatically and a field the student does
- * not have cannot be added to the guardian.
- *
- * `hasPaidAccess` is the STUDENT's, on both paths. The caller resolves it; this function
- * never guesses it, and there is no default — an unresolved entitlement is the caller's
- * problem to fail closed on, not this function's to paper over.
- */
-export type StudentExamSessionListItem = {
-  sessionId: string;
-  status: string;
-  currentSection: string | null;
-  currentModule: number | null;
-  testFormId: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  reportAvailable: boolean;
-  reviewAvailable: boolean;
-};
-
-export type GuardianExamSessionListItem = Omit<
-  StudentExamSessionListItem,
-  "reviewAvailable"
->;
-
-export function projectStudentExamSessionList(
-  sessions: FullLengthSessionHistoryItem[],
-  opts: { hasPaidAccess: boolean },
-): StudentExamSessionListItem[] {
-  // FIELDS ARE NAMED, NEVER SPREAD.
-  //   `...session` was what both routes did, and the guardian anti-leak gate caught it the
-  //   moment the two were unified: the gate drives `listExamSessions` with rows carrying
-  //   every RULE-4 column and a spread carries all of them to the client. CLAUDE.md states
-  //   the rule directly — "a new field on a spread object bypasses per-field null-outs and
-  //   opens a leak one layer up" (MA-07 #419). The service emits exactly these nine fields
-  //   today, so naming them changes nothing now; what it changes is the FUTURE, where a
-  //   tenth field has to be added here deliberately instead of arriving unreviewed.
-  return sessions.map((session) => ({
-    sessionId: session.sessionId,
-    status: session.status,
-    currentSection: session.currentSection,
-    currentModule: session.currentModule,
-    testFormId: session.testFormId,
-    startedAt: session.startedAt,
-    completedAt: session.completedAt,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    reportAvailable: session.status === "completed" && opts.hasPaidAccess,
-    reviewAvailable: session.status === "completed",
-  }));
-}
-
-export function projectGuardianExamSessionList(
-  sessions: FullLengthSessionHistoryItem[],
-  opts: { hasPaidAccess: boolean },
-): GuardianExamSessionListItem[] {
-  // Derived FROM the student projection, never alongside it.
-  return projectStudentExamSessionList(sessions, opts).map(
-    ({ reviewAvailable: _reviewAvailable, ...rest }) => rest,
-  );
-}
-
-export function projectGuardianFullLengthReportView(
-  view: StudentFullLengthReportView,
-) {
-  return {
-    sessionId: view.sessionId,
-    estimatedScore: {
-      rw: view.scaledScore.RW,
-      math: view.scaledScore.M,
-      total: view.scaledScore.total,
-    },
-    completedAt: view.completedAt,
-    kpis: view.kpis,
-    measurementModel: view.measurementModel,
-  };
 }

@@ -111,8 +111,11 @@ describe("guardian template preview (tests 3 and 4)", () => {
       screen.getByText(/what you.ll see once you link a student/i),
     ).toBeTruthy();
     // The SAME tile component the real progress card renders, in its locked
-    // variant — not a lookalike that could drift.
-    expect(screen.getAllByTestId("guardian-metric-tile-locked").length).toBe(3);
+    // variant — not a lookalike that could drift. G3-01 (R3): one tile, the streak; the
+    // 7-day questions and accuracy tiles are removed from the preview as from the dashboard.
+    expect(screen.getAllByTestId("guardian-metric-tile-locked").length).toBe(1);
+    expect(screen.queryByText(/Questions Attempted/i)).toBeNull();
+    expect(screen.queryByText(/^Accuracy$/i)).toBeNull();
   });
 
   /**
@@ -134,7 +137,7 @@ describe("guardian template preview (tests 3 and 4)", () => {
 
     /**
      * SCOPED TO THE VALUE SLOTS, not to the whole card — and the distinction is
-     * the invariant's, not a convenience. "Questions Attempted (7d)" is a
+     * the invariant's, not a convenience. "Day Streak" is a
      * LABEL: it names a window, asserts nothing about a child, and is the same
      * string the real dashboard shows. What must never appear is a FIGURE in a
      * slot a reader would take for measured progress. So the assertion is on
@@ -145,7 +148,7 @@ describe("guardian template preview (tests 3 and 4)", () => {
     const valueSlots = Array.from(
       preview?.querySelectorAll('[data-testid="guardian-metric-value"]') ?? [],
     );
-    expect(valueSlots.length).toBe(3);
+    expect(valueSlots.length).toBe(1);
     for (const slot of valueSlots) {
       expect(slot.textContent?.trim() ?? "").toBe("");
     }

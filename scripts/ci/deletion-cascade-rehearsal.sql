@@ -130,10 +130,21 @@ BEGIN
   -- ==================================================================
   -- SEED: L1-11 review_schedule
   -- ==================================================================
-  INSERT INTO public.review_schedule (student_id, question_id, ease_factor)
-  VALUES
-    (v_target,  v_question_id, 2.5),
-    (v_control, v_question_id, 2.5);
+  -- R2: the SM-2 shape is gone. An entry is now a miss or skip with provenance
+  -- (ruled plan ruling 14). source_item_id must differ per row: the writer's
+  -- idempotency key is UNIQUE (source_engine, source_item_id).
+  INSERT INTO public.review_schedule (
+    id, student_id, question_id, queued_at,
+    source_engine, source_session_id, source_item_id, source_outcome
+  ) VALUES
+    ('0b000001-0000-4000-8000-000000000001',
+     v_target,  v_question_id, now(), 'practice',
+     'cccccccc-cccc-cccc-cccc-cccccccccccc',
+     '0a000001-0000-4000-8000-000000000001', 'incorrect'),
+    ('0b000001-0000-4000-8000-000000000002',
+     v_control, v_question_id, now(), 'practice',
+     'dddddddd-dddd-dddd-dddd-dddddddddddd',
+     '0a000001-0000-4000-8000-000000000002', 'incorrect');
 
   -- ==================================================================
   -- SEED: L1-12 student_kpi_rollups_current (SCL-004)
@@ -171,26 +182,32 @@ BEGIN
   -- ==================================================================
   -- SEED: L2 review sessions/items/attempts
   -- ==================================================================
-  INSERT INTO public.review_sessions (id, student_id, status, source_origin, client_instance_id, actor_id)
+  -- R2: source_origin is gone; the envelope now mirrors practice_sessions
+  -- (mode/filters/target_count/platform).
+  INSERT INTO public.review_sessions (id, student_id, status, mode, filters, target_count, platform, client_instance_id, actor_id)
   VALUES
-    ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_target,  'completed', 'practice', 'inst-target', (SELECT actor_id FROM public.profiles WHERE id = v_target)),
-    ('ffffffff-ffff-ffff-ffff-ffffffffffff', v_control, 'completed', 'practice', 'inst-control', (SELECT actor_id FROM public.profiles WHERE id = v_control));
+    ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_target,  'completed', 'queue', '{}'::jsonb, 1, 'web', 'inst-target', (SELECT actor_id FROM public.profiles WHERE id = v_target)),
+    ('ffffffff-ffff-ffff-ffff-ffffffffffff', v_control, 'completed', 'queue', '{}'::jsonb, 1, 'web', 'inst-control', (SELECT actor_id FROM public.profiles WHERE id = v_control));
 
   INSERT INTO public.review_session_items (
     id, session_id, student_id, ordinal, question_id,
     question_stem, question_options, question_correct_answer, question_explanation,
     question_domain, question_skill, question_difficulty, question_section,
-    status, actor_id
+    status, occurred_at, queue_entry_id, actor_id
   ) VALUES (
     '11111111-1111-1111-1111-111111111111',
     'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_target, 1, v_question_id,
     'Test stem', '[{"key":"A","text":"opt A"}]'::jsonb, 'A', 'Explanation',
-    'Algebra', 'ALG.01', 2, 'M', 'answered', (SELECT actor_id FROM public.profiles WHERE id = v_target)
+    'Algebra', 'ALG.01', 2, 'M', 'answered', now(),
+    '0b000001-0000-4000-8000-000000000001',
+    (SELECT actor_id FROM public.profiles WHERE id = v_target)
   ), (
     '22222222-2222-2222-2222-222222222222',
     'ffffffff-ffff-ffff-ffff-ffffffffffff', v_control, 1, v_question_id,
     'Test stem', '[{"key":"A","text":"opt A"}]'::jsonb, 'A', 'Explanation',
-    'Algebra', 'ALG.01', 2, 'M', 'answered', (SELECT actor_id FROM public.profiles WHERE id = v_control)
+    'Algebra', 'ALG.01', 2, 'M', 'answered', now(),
+    '0b000001-0000-4000-8000-000000000002',
+    (SELECT actor_id FROM public.profiles WHERE id = v_control)
   );
 
   INSERT INTO public.review_error_attempts (
@@ -320,38 +337,29 @@ BEGIN
   RAISE NOTICE '(G) OK  unknown privacy mode raises correctly';
 
   -- ==================================================================
-  -- (I) OPERATOR-FK PREFLIGHT GUARD: config references block cascade
+  -- (I) OPERATOR ATTRIBUTION: config references no longer BLOCK the cascade
   -- ==================================================================
-  -- Seed TARGET as an operator in mastery_constants, run cascade, assert
-  -- PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES raised and NOTHING deleted
-  -- (fail-closed proof). Then clear the ref so (B) cascade proceeds.
+  -- REVERSED 2026-09-17 ("Declarative FK Actions, Not an Enumerated Cascade").
+  -- This section used to assert that an operator-config reference RAISED
+  -- PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES and deleted nothing. The 36
+  -- operator-attribution edges are now ON DELETE SET NULL, the preflight loop is
+  -- gone, and the row keeps its value, its timestamp and its history entry while
+  -- losing the name. Blocking erasure to preserve an attributor's name is not a
+  -- trade this platform can make; "blocks forever with no terminal state" was the
+  -- defect the redesign exists to end.
+  --
+  -- So the attribution is seeded here and deliberately LEFT IN PLACE: the cascade
+  -- in (B) must now succeed with it present, and (I2) below asserts the severance
+  -- rather than the block.
   UPDATE public.mastery_constants SET updated_by_profile_id = v_target
    WHERE key = 'POSITION_HALF_LIFE';
 
-  BEGIN
-    v_blocked := false;
-    SELECT (public.execute_account_deletion_cascade(v_target, 'hard_delete')) INTO v_result;
-    RAISE EXCEPTION '(I) cascade did NOT raise for profile with operator config references';
-  EXCEPTION WHEN OTHERS THEN
-    v_blocked := true;
-    IF SQLERRM NOT LIKE '%PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES%' THEN
-      RAISE EXCEPTION '(I) wrong error message: %', SQLERRM;
-    END IF;
-  END;
-  IF NOT v_blocked THEN
-    RAISE EXCEPTION '(I) operator-FK guard should have blocked cascade';
-  END IF;
-
-  SELECT count(*) INTO v_count FROM public.student_skill_mastery WHERE student_id = v_target;
-  IF v_count = 0 THEN RAISE EXCEPTION '(I) FAIL-CLOSED VIOLATED: TARGET student_skill_mastery deleted despite guard'; END IF;
-
-  SELECT count(*) INTO v_count FROM public.profiles WHERE id = v_target;
-  IF v_count <> 1 THEN RAISE EXCEPTION '(I) FAIL-CLOSED VIOLATED: TARGET profile missing despite guard'; END IF;
-
-  UPDATE public.mastery_constants SET updated_by_profile_id = NULL
+  SELECT count(*) INTO v_count FROM public.mastery_constants
    WHERE updated_by_profile_id = v_target;
-
-  RAISE NOTICE '(I) OK  operator-FK preflight guard fires and is fail-closed (TARGET intact); cleared for cascade';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION '(I) seed failed: expected 1 mastery_constants row attributed to TARGET, saw %', v_count;
+  END IF;
+  RAISE NOTICE '(I) OK  operator attribution seeded and LEFT IN PLACE; the cascade must now proceed';
 
   -- ==================================================================
   -- (B) EXECUTE CASCADE on TARGET
@@ -362,6 +370,24 @@ BEGIN
     RAISE EXCEPTION '(B) cascade returned status=%, expected completed. Full: %', v_result->>'status', v_result;
   END IF;
   RAISE NOTICE '(B) OK  cascade returned completed: %', v_result;
+
+  -- ==================================================================
+  -- (I2) POST-CASCADE: the governance row SURVIVES with a NULL attributor
+  -- ==================================================================
+  -- The other half of the reversal. SET NULL is the anonymization primitive
+  -- (Doc 05E §3 Rule 4 / §5): the record stays, the identity link is severed.
+  SELECT count(*) INTO v_count FROM public.mastery_constants
+   WHERE key = 'POSITION_HALF_LIFE';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION '(I2) mastery_constants row was DELETED by the cascade; SET NULL must keep it (saw %)', v_count;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.mastery_constants
+   WHERE updated_by_profile_id = v_target;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION '(I2) attribution to the deleted profile survived the cascade: % row(s)', v_count;
+  END IF;
+  RAISE NOTICE '(I2) OK  governance row survives with a NULL attributor';
 
   -- ==================================================================
   -- (C) POST-CASCADE: TARGET has 0 rows in ALL in-scope tables
@@ -597,8 +623,13 @@ BEGIN
     INSERT INTO public.student_kpi_rollups_current (student_id, scope, scope_key, payload, computed_at)
     VALUES (v_anon, 'section', 'M', '{"events_total": 10}'::jsonb, now());
 
-    INSERT INTO public.review_schedule (student_id, question_id, ease_factor)
-    VALUES (v_anon, v_question_id, 2.5);
+    INSERT INTO public.review_schedule (
+      id, student_id, question_id, queued_at,
+      source_engine, source_session_id, source_item_id, source_outcome
+    ) VALUES (
+      '0b000001-0000-4000-8000-000000000003',
+      v_anon, v_question_id, now(), 'practice',
+      v_anon_ps_id, '0a000001-0000-4000-8000-000000000003', 'incorrect');
 
     -- L2 seeds (activity — will be RETAINED, identity-decoupled)
     INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id, status, actor_id)
@@ -618,18 +649,19 @@ BEGIN
       'anon-attempt-1', v_anon_actor
     );
 
-    INSERT INTO public.review_sessions (id, student_id, status, source_origin, client_instance_id, actor_id)
-    VALUES (v_anon_rs_id, v_anon, 'completed', 'practice', 'inst-anon', v_anon_actor);
+    INSERT INTO public.review_sessions (id, student_id, status, mode, filters, target_count, platform, client_instance_id, actor_id)
+    VALUES (v_anon_rs_id, v_anon, 'completed', 'queue', '{}'::jsonb, 1, 'web', 'inst-anon', v_anon_actor);
 
     INSERT INTO public.review_session_items (
       id, session_id, student_id, ordinal, question_id,
       question_stem, question_options, question_correct_answer, question_explanation,
       question_domain, question_skill, question_difficulty, question_section,
-      status, actor_id
+      status, occurred_at, queue_entry_id, actor_id
     ) VALUES (
       v_anon_rsi_id, v_anon_rs_id, v_anon, 1, v_question_id,
       'Test stem', '[{"key":"A","text":"opt A"}]'::jsonb, 'A', 'Explanation',
-      'Algebra', 'ALG.01', 2, 'M', 'answered', v_anon_actor
+      'Algebra', 'ALG.01', 2, 'M', 'answered', now(),
+      '0b000001-0000-4000-8000-000000000003', v_anon_actor
     );
 
     INSERT INTO public.review_error_attempts (
@@ -803,5 +835,5 @@ BEGIN
   DELETE FROM public.profiles WHERE id = v_control;
   DELETE FROM auth.users WHERE id = v_control;
 
-  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: hard-delete + anonymize + exact-target + control-untouched + idempotent + guards + operator-FK-guard + no-path-back proven (zero residue; storage purge deferred to PR-4 API layer)';
+  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: hard-delete + anonymize + exact-target + control-untouched + idempotent + guards + operator-attribution-severance + no-path-back proven (zero residue; storage purge deferred to PR-4 API layer)';
 END $$;

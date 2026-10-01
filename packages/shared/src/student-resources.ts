@@ -36,9 +36,34 @@ export const STUDENT_RESOURCE_PATHS = {
   kpiOverall: "/kpi/overall",
   projectionsSections: "/projections/sections",
   projectionsSnapshots: "/projections/snapshots",
+  /**
+   * Doc 05F §16 as amended by the formula sheet §8 item 14: the guardian calendar read is
+   * `/api/students/:studentId/calendar` through the existing subject resolver, NOT a
+   * `/api/guardian/…` path. The student's own rich surface is `GET /api/calendar`; this one
+   * serves the narrow `{ days, facts, streak }` projection to whoever the resolver admits,
+   * student and guardian alike, because a route that cannot tell them apart cannot give
+   * them different answers.
+   */
+  calendar: "/calendar",
 } as const;
 
 export type StudentResourceKey = keyof typeof STUDENT_RESOURCE_PATHS;
+
+/**
+ * @spec [Doc-04C §12 as amended by SCL-181; Doc 04 Parent Q9 as amended by SCL-180]
+ *   | @implemented [2026-09-27]
+ *
+ * G1 — a linked guardian reads a student's full-length exam results on this mount, behind
+ * the same resolver, rather than at 04C §12.1's `/api/guardian/students/…` (SCL-181). A
+ * sibling of `STUDENT_RESOURCE_PATHS`, not a member: `testReport` carries a second path
+ * parameter, and every loop over the resource table calls each path verbatim. The shapes
+ * live in `exam-guardian-report-schema.ts`; like the calendar, one narrow payload is served
+ * to whoever the resolver admits — the student's full report stays at `/api/tests/…`.
+ */
+export const STUDENT_EXAM_PATHS = {
+  tests: "/tests",
+  testReport: "/tests/:sessionId/report",
+} as const;
 
 /**
  * @spec [Doc 01 V8 §36.1 Initiation; owner ruling 2026-08-27 Q3 — link actions mount on the
@@ -224,4 +249,92 @@ export const projectionSnapshotsResponseSchema = z.object({
 });
 export type ProjectionSnapshotsResponse = z.infer<
   typeof projectionSnapshotsResponseSchema
+>;
+
+// ---------------------------------------------------------------------------
+// kpi/overall — two audiences, two shapes (G3-01, SCL-188).
+// ---------------------------------------------------------------------------
+
+/**
+ * @spec [Doc 05B §10 as amended by SCL-188; Guardian_Closure_Plan G3-01, owner ruling R3]
+ *   | @implemented [2026-09-30]
+ *
+ * plain English: the one schema for `GET /api/students/:studentId/kpi/overall`. The student
+ * gets the full KPI view (`studentKpiOverallSchema`); a linked guardian gets the streak and
+ * nothing else (`guardianKpiOverallSchema`). The server's `StudentKpiView` is inferred from
+ * this schema; there is no second definition.
+ *
+ * TWO POSTURES, ONE PER AUDIENCE (owner ruling 2026-09-30, #994):
+ *   - GUARDIAN: `.strict()`. A counter added to the guardian branch fails the server's own
+ *     parse — a 500 — instead of reaching a parent's screen. A leak is worse than an outage.
+ *   - STUDENT: Zod's default STRIP, at every depth. An unknown key is dropped (and the server
+ *     logs it once, `toStudentKpiOverallWire`), so a field added to the builder without a schema
+ *     update cannot 500 a student's own dashboard. What catches that field is CI, not
+ *     production: the wire-contract test asserts the parse is the identity on real route
+ *     output (`parse(body)` deep-equals `body`), which fails the moment anything is stripped.
+ */
+export const kpiExplanationSchema = z.object({
+  ruleId: z.string(),
+  whatThisMeans: z.string(),
+  whyThisChanged: z.string(),
+  whatToDoNext: z.string(),
+});
+export type KpiExplanation = z.infer<typeof kpiExplanationSchema>;
+
+export const explainedKpiMetricSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  kind: z.enum(["official", "weighted", "diagnostic"]),
+  unit: z.enum(["count", "percent", "minutes", "seconds", "score"]),
+  value: z.number().nullable(),
+  explanation: kpiExplanationSchema,
+});
+export type ExplainedKpiMetric = z.infer<typeof explainedKpiMetricSchema>;
+
+export const studentKpiOverallSchema = z.object({
+  modelVersion: z.string(),
+  timezone: z.string(),
+  week: z.object({
+    questionsSolved: z.number().int().min(0),
+    accuracy: accuracyPercentSchema,
+    explanations: z.record(kpiExplanationSchema),
+  }),
+  recency: z
+    .object({
+      window: z.number().int().positive(),
+      totalAttempts: z.number().int().min(0),
+      accuracy: accuracyPercentSchema,
+      explanations: z.record(kpiExplanationSchema),
+    })
+    .nullable(),
+  metrics: z.array(explainedKpiMetricSchema),
+  gating: z.object({
+    historicalTrends: z.object({
+      allowed: z.boolean(),
+      requiredPlan: z.literal("paid"),
+      reason: z.string(),
+    }),
+  }),
+  measurementModel: z.object({
+    official: z.array(z.string()),
+    weighted: z.array(z.string()),
+    diagnostic: z.array(z.string()),
+  }),
+});
+export type StudentKpiOverall = z.infer<typeof studentKpiOverallSchema>;
+
+/** R3: the streak, and nothing about how many questions or how many were right. */
+export const guardianKpiOverallSchema = z
+  .object({ currentStreakDays: z.number().int().min(0) })
+  .strict();
+export type GuardianKpiOverall = z.infer<typeof guardianKpiOverallSchema>;
+
+/** The wire envelopes, as `resource()` sends them: `{ ok: true, ...body, requestId }`. */
+const kpiEnvelope = { ok: z.literal(true), requestId: z.string().optional() };
+export const studentKpiOverallResponseSchema =
+  studentKpiOverallSchema.extend(kpiEnvelope);
+export const guardianKpiOverallResponseSchema =
+  guardianKpiOverallSchema.extend(kpiEnvelope);
+export type GuardianKpiOverallResponse = z.infer<
+  typeof guardianKpiOverallResponseSchema
 >;

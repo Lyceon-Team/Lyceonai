@@ -105,6 +105,10 @@ const REQUIRED_COLUMNS: Record<TutorTable, string[]> = {
     "assignment_key",
     "initialization_snapshot",
     "status",
+    "title",
+    "surface",
+    "crisis_paused_at",
+    "ended_at",
     "created_at",
     "updated_at",
   ],
@@ -122,6 +126,7 @@ const REQUIRED_COLUMNS: Record<TutorTable, string[]> = {
     "source_question_row_id",
     "source_question_canonical_id",
     "client_turn_id",
+    "status",
     "created_at",
   ],
   tutor_instruction_assignments: [
@@ -198,6 +203,10 @@ const REQUIRED_COLUMNS: Record<TutorTable, string[]> = {
     "action",
     "added_at",
     "added_by",
+    "category",
+    "version",
+    "source",
+    "enabled",
   ],
   // §18.7 — injection detection events (service-role only)
   tutor_injection_log: [
@@ -231,7 +240,12 @@ const REQUIRED_ENUMS: Array<{
   {
     table: "tutor_conversations",
     column: "status",
-    values: ["active", "closed", "abandoned"],
+    values: ["active", "closed", "abandoned", "ended"],
+  },
+  {
+    table: "tutor_conversations",
+    column: "surface",
+    values: ["standalone", "practice", "review"],
   },
   {
     table: "tutor_conversations",
@@ -247,6 +261,11 @@ const REQUIRED_ENUMS: Array<{
     table: "tutor_messages",
     column: "content_kind",
     values: ["message", "suggestion", "consent_prompt", "system_note"],
+  },
+  {
+    table: "tutor_messages",
+    column: "status",
+    values: ["pending", "completed", "failed"],
   },
   {
     table: "tutor_instruction_assignments",
@@ -294,7 +313,13 @@ const REQUIRED_ENUMS: Array<{
   {
     table: "tutor_injection_signatures",
     column: "action",
-    values: ["flag", "reject", "silent_redirect"],
+    values: [
+      "flag",
+      "reject",
+      "silent_redirect",
+      "stop_and_review",
+      "stop_and_safeguarding_review",
+    ],
   },
 ];
 
@@ -503,8 +528,9 @@ export function assertTutorSchemaProof(proof: SchemaProof): string[] {
   }
 
   for (const enumCheck of REQUIRED_ENUMS) {
+    const colPattern = new RegExp(`\\b${enumCheck.column}\\b`);
     const matchingCheck = proof.checks[enumCheck.table].find((check) =>
-      check.constraint_def.includes(`${enumCheck.column}`),
+      colPattern.test(check.constraint_def),
     );
     if (!matchingCheck) {
       failures.push(

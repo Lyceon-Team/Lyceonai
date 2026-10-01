@@ -713,10 +713,6 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Trust Evidence</h2>
         <p style="color:#555; margin:0;">Public evidence for auth, RLS, logging redaction, and security headers.</p>
       </a>
-      <a href="/tutor" style="display:block; padding: 1.25rem; background:#f8f9fa; border-radius: 8px; text-decoration:none; color:inherit;">
-        <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Tutor Transparency</h2>
-        <p style="color:#555; margin:0;">Boundaries, privacy, and pedagogy for the Lyceon tutor experience.</p>
-      </a>
       <a href="/legal" style="display:block; padding: 1.25rem; background:#f8f9fa; border-radius: 8px; text-decoration:none; color:inherit;">
         <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Legal & Policy Hub</h2>
         <p style="color:#555; margin:0;">Privacy policy, student terms, trust and safety, and community guidelines.</p>
@@ -729,7 +725,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
       <li>Cookie-backed auth enforcement in Supabase auth middleware for protected user routes.</li>
       <li>Role-based access control on server routes for student, guardian, and admin paths.</li>
-      <li>Supabase RLS policies in migrations for practice, progress, guardian-link, review-errors, and exam tables.</li>
+      <li>Supabase RLS policies in migrations for practice, progress, guardian-link, review, and exam tables.</li>
       <li>Privacy-safe logging and monitoring with redaction of tokens, cookies, and secrets.</li>
       <li>Security response headers for browser hardening and transport protection.</li>
     </ul>
@@ -768,7 +764,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <section style="margin-bottom: 2rem;">
       <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Data Isolation (RLS)</h2>
       <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-        <li>Supabase migrations enable RLS for practice, progress, review-errors, full-length exam, guardian-link, and legal acceptance tables.</li>
+        <li>Supabase migrations enable RLS for practice, progress, review, full-length exam, guardian-link, and legal acceptance tables.</li>
         <li>Policies scope read/write access to <code>auth.uid()</code> for user-owned rows.</li>
         <li>Service-role policies are explicit and limited to server-side operations.</li>
       </ul>
@@ -787,55 +783,6 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Certification Claims</h2>
       <p style="color: #555; line-height: 1.6; margin: 0;">
         No third-party certification claim is made here unless explicitly and verifiably published.
-      </p>
-    </section>
-  </article>
-  ${footerHtml}
-</main>`
-  },
-  "/tutor": {
-    ...requirePublicMeta("/tutor"),
-    bodyHtml: `
-<main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
-  <article>
-    <header style="margin-bottom: 1.5rem; text-align: center;">
-      <h1 style="font-size: 2rem; margin-bottom: 0.5rem; color: #0F2E48;">Tutor Safety, Privacy, and Pedagogy</h1>
-      <p style="color: #555; line-height: 1.6;">
-        Lyceon’s tutor is SAT-aligned (not SAT-official) and designed to guide learning with clear boundaries and transparent data use.
-      </p>
-    </header>
-
-    <section style="margin-bottom: 2rem;">
-      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Boundaries & Safety</h2>
-      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-        <li>No answer leakage before submission; explanations are for learning, not shortcuts.</li>
-        <li>Not intended for live or proctored exams.</li>
-        <li>Aligned to SAT-style practice without claiming official SAT status.</li>
-      </ul>
-    </section>
-
-    <section style="margin-bottom: 2rem;">
-      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Privacy & Data Use</h2>
-      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-        <li>Student data is not sold and not used for targeted advertising.</li>
-        <li>Families can request deletion; de-identified aggregates may be retained for learning improvements.</li>
-        <li>Students control learning actions; guardian access is read-only.</li>
-      </ul>
-    </section>
-
-    <section style="margin-bottom: 2rem;">
-      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Pedagogy & Adaptation</h2>
-      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-        <li>Skill-level diagnostics guide what students practice next.</li>
-        <li>Step-by-step explanations emphasize reasoning and method.</li>
-        <li>Review loops target weak areas with fresh practice.</li>
-      </ul>
-    </section>
-
-    <section style="margin-bottom: 2rem;">
-      <p style="color: #555;">
-        Explore more: <a href="/trust" style="color: #0F2E48;">Trust Center</a> ·
-        <a href="/legal/privacy-policy" style="color: #0F2E48;">Privacy Policy</a>
       </p>
     </section>
   </article>

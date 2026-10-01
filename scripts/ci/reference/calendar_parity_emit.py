@@ -1,12 +1,29 @@
 """Emit parity cases as JSONL for scripts/ci/calendar-parity.ts.
 
-Imports scripts/ci/reference/calendar_formula_reference.py and does not modify
-it: the oracle stays byte-untouched, and this file only reshapes its inputs and
-outputs so the same snapshot can be handed to the PL/pgSQL RPCs.
+Imports docs/Spec/calendar_formula_reference.py and does not modify it: the
+oracle stays byte-untouched, and this file only reshapes its inputs and outputs
+so the same snapshot can be handed to the PL/pgSQL RPCs.
 
-Two responsibilities, and no third:
+The oracle and the fixtures live in ONE place, docs/Spec/, and CI reads them
+there. There used to be a second copy under scripts/ci/ with a byte-identity
+check guarding the pair; the pair was the defect and the check was a workaround
+for it. One file cannot drift from itself (owner ruling, 2026-09-17).
+
+Three responsibilities, and no fourth:
   1. P dict  ->  Doc 05F §10.1 snapshot (what calendar_compute_plan takes).
   2. reference plan  ->  the fixtures' four-element serialization.
+  3. P dict  ->  the fixtures' `exam_placement` block, BOTH halves of Step 2's return.
+
+WHY (3) EXISTS. `generate()` does `exams, _suppressed = exam_dates(...)` and drops the
+second value, so a suppression can never appear in a plan -- and the gate therefore
+could not see the suppression rule at all. Every fixture carried an `exam_placement`
+block and nothing in the repository read it; the fixture named
+`exam_both_occurrences_overridden_suppressed` could only witness the ABSENCE of a
+block on a date, which passes identically whatever the reason. Brief 18's census
+measured the consequence: deleting the suppression arm changed 0 of the 13 fixtures
+and 0 of 3000 suite cases (docs/plans/Calendar_Rule_Branch_Coverage_Census.md).
+Emitting it here makes it comparable against `calendar_place_full_lengths`' own
+return, which does carry both halves.
 
 Usage:
   calendar_parity_emit.py fixtures
@@ -17,30 +34,26 @@ Usage:
 import json
 import random
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+SPEC = HERE.parents[2] / "docs" / "Spec"
+sys.path.insert(0, str(SPEC))
 import calendar_formula_reference as ref  # noqa: E402
 
-FIXTURES = json.loads((HERE.parent / "fixtures" / "calendar_formula_fixtures.json").read_text())
+FIXTURES = json.loads((SPEC / "calendar_formula_fixtures.json").read_text())
 
-# The oracle abbreviates; the database uses the canonical strings that
-# supabase/migrations/20260816010000_canonical_domain_checks.sql constrains
-# questions and practice_session_items to. Same eight, same order.
-FULL = {
-    "ALG":  "Algebra",
-    "ADV":  "Advanced Math",
-    "PSDA": "Problem Solving and Data Analysis",
-    "GEO":  "Geometry and Trigonometry",
-    "II":   "Information and Ideas",
-    "CS":   "Craft and Structure",
-    "EOI":  "Expression of Ideas",
-    "SEC":  "Standard English Conventions",
-}
-SHORT = {v: k for k, v in FULL.items()}
-assert [FULL[d] for d in ref.DOMAINS] == FIXTURES["canonical_domain_order"] or True
+# The oracle, the fixtures and the RPCs all speak the canonical eight domain
+# names in full, exactly as production stores them
+# (supabase/migrations/20260816010000_canonical_domain_checks.sql). There is no
+# mapping layer: a translation step between the oracle and the database is a
+# place for a difference to hide, which is the opposite of what a parity gate is
+# for.
+assert ref.DOMAINS == FIXTURES["canonical_domain_order"], (
+    "the oracle's DOMAINS and the fixtures' canonical_domain_order must be the "
+    "same eight strings in the same order"
+)
 
 
 def _iso(d):
@@ -51,7 +64,16 @@ def constants_for_db():
     """The oracle's C, with canonical_domain_order in the database's own strings."""
     c = dict(ref.C)
     c["weight_by_level"] = {str(k): v for k, v in ref.C["weight_by_level"].items()}
-    c["canonical_domain_order"] = [FULL[d] for d in ref.DOMAINS]
+    c["canonical_domain_order"] = list(ref.DOMAINS)
+    # E9b / SCL-169. The oracle has no weak_level_max KEY: its weak rule is the
+    # literal `L <= 1` (the why() line in the reference). The database reads the
+    # same threshold from calendar_runtime_config so that the plan-input builder's
+    # weak_domains and the generator's explanation step share one definition. This
+    # line states the oracle's literal as that constant -- it does not invent a
+    # value -- and the constants check below then pins the database row to it,
+    # while every case's per-domain explanation keys prove the SQL reads it the
+    # way the oracle applies it.
+    c["weak_level_max"] = 1
     return c
 
 
@@ -65,9 +87,10 @@ def snapshot(P):
             "daily_minutes": P["daily_minutes"],
             "target_exam_date": _iso(P["target_exam_date"]),
             "full_length_weekday": P["full_length_weekday"],
+            "full_length_interval_weeks": P["full_length_interval_weeks"],
         },
         "mastery": [
-            {"section": ref.SEC[d], "domain": FULL[d], "mastery_level": P["levels"][d]}
+            {"section": ref.SEC[d], "domain": d, "mastery_level": P["levels"][d]}
             for d in ref.DOMAINS
         ],
         "review_due_by_date": [
@@ -79,15 +102,52 @@ def snapshot(P):
             "days_since_exam": P["days_since_exam"],
             "missed_count": P["last_exam_missed_count"],
             "reviewed": P["last_exam_reviewed"],
-            "weak_domains": [FULL[d] for d in P["exam_weak_domains"]],
+            "weak_domains": list(P["exam_weak_domains"]),
+            # E9b / SCL-170. The generator names the exam in the exam-review block's
+            # session scope, and the builder always emits the id alongside the date.
+            # The oracle does not model session ids (the projection compared below
+            # carries no review scope), so a completed exam gets a fixed synthetic
+            # id -- deterministic, so the same case always emits the same snapshot.
+            "source_session_id": (
+                "00000000-0000-4000-8000-000000000e9b" if P["last_exam_date"] else None
+            ),
         },
         "recent_planned_by_domain": [
-            {"domain": FULL[d], "count": c} for d, c in P["recent_planned_by_domain"].items()
+            {"domain": d, "count": c} for d, c in P["recent_planned_by_domain"].items()
+        ],
+        # THE FIXTURES CARRY BARE DATES; THE SNAPSHOT CARRIES THE LIVE SHAPE.
+        # calendar_build_plan_input emits {scheduled_date, is_user_override} for EVERY
+        # horizon date that has a plan row, not just the overridden ones, and
+        # calendar_place_full_lengths filters on the flag (the same predicate V-14 uses).
+        # So the bridge has to build that shape, with the flag true: a fixture's
+        # `current_overrides` entry means precisely "the student overrode this date".
+        # Handing the RPC a bare list here would have tested a snapshot the builder
+        # never produces — and the SQL would then have had to read bare strings, which
+        # in production would treat every planned date as an override.
+        "current_overrides": [
+            {"scheduled_date": _iso(x), "is_user_override": True}
+            for x in P["current_overrides"]
         ],
         "enabled_block_types": ["practice"],
         "engine_planning": dict(ref.ENG),
         "constants": constants_for_db(),
         "degraded": [],
+    }
+
+
+def exam_placement(P):
+    """The fixtures' `exam_placement` block: Step 2's return, BOTH values.
+
+    Shaped to match `calendar_place_full_lengths`' own jsonb after projection --
+    `placed` keyed by ISO date, `suppressed` a sorted list of ISO dates. Sorted on
+    both sides so the comparison is about the CONTENT and not about the order two
+    different languages happened to build a map in.
+    """
+    horizon = [P["today"] + timedelta(days=i) for i in range(ref.C["horizon_days"])]
+    placed, suppressed = ref.exam_dates(P, horizon)
+    return {
+        "placed": {d.isoformat(): k for d, k in sorted(placed.items())},
+        "suppressed": sorted(d.isoformat() for d in suppressed),
     }
 
 
@@ -124,7 +184,9 @@ def build_P(inp):
         last_exam_missed_count=inp["last_exam_missed_count"],
         last_exam_reviewed=inp["last_exam_reviewed"],
         review_due_by_date={d(k): v for k, v in inp["review_due_by_date"].items()},
-        recent_planned_by_domain=dict(inp["recent_planned_by_domain"]))
+        recent_planned_by_domain=dict(inp["recent_planned_by_domain"]),
+        full_length_interval_weeks=inp["full_length_interval_weeks"],
+        current_overrides=[d(x) for x in inp["current_overrides"]])
 
 
 def emit(name, P, stored=None):
@@ -135,6 +197,7 @@ def emit(name, P, stored=None):
         "deterministic_v1": serialize(det),
         "fallback_v1": serialize(fb),
         "deterministic_v1_explanations": explanations(det),
+        "exam_placement": exam_placement(P),
     }
     if stored is not None:
         case["stored"] = stored
@@ -145,8 +208,15 @@ def main():
     mode = sys.argv[1]
     if mode == "fixtures":
         for name, fx in FIXTURES["fixtures"].items():
+            # A fixture missing `exam_placement` is a HARD failure, never a skipped
+            # comparison: a gate that quietly stops checking one of its three
+            # claims is the failure mode this whole file is arranged against.
+            if "exam_placement" not in fx:
+                raise SystemExit(f"fixture {name!r} has no exam_placement block")
             emit(name, build_P(fx["input"]),
-                 stored={"deterministic_v1": fx["deterministic_v1"], "fallback_v1": fx["fallback_v1"]})
+                 stored={"deterministic_v1": fx["deterministic_v1"],
+                         "fallback_v1": fx["fallback_v1"],
+                         "exam_placement": fx["exam_placement"]})
     elif mode == "suite":
         n, seed = int(sys.argv[2]), int(sys.argv[3])
         rng = random.Random(seed)

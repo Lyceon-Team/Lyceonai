@@ -1,0 +1,678 @@
+// @vitest-environment jsdom
+/**
+ * §17.5 — nothing is required, nothing blocks.
+ *
+ * @spec [Doc 05F §17.5, §8.1; SCL-130] | @implemented [2026-09-24]
+ *
+ * The case that matters most is the FIRST one: a student who answers nothing and presses
+ * straight through must end up with a real profile. Production is the reason — 104 students
+ * and one profile, because the only surface collecting this had a required field in it.
+ */
+import React from "react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
+import { EXAM_FREQUENCIES, WEEKDAYS } from "../copy/exam-cadence";
+import { SetupPopup, type SetupAnswers } from "./SetupPopup";
+
+afterEach(cleanup);
+
+const DEFAULTS: CalendarSetupDefaults = {
+  timezone: "America/Chicago",
+  daily_minutes_presets: [15, 30, 45, 60, 90, 120],
+  daily_minutes_min: 15,
+  daily_minutes_max: 180,
+  target_exam_date_max_days: 365,
+  // §8.1's two server-owned constants, REQUIRED on the defaults since Brief 14 Step 2. The
+  // form opens the frequency control on the first and reads the countdown off the second, so
+  // a fixture without them describes a payload the route cannot send.
+  default_full_length_interval_weeks: 2,
+  default_full_length_weekday: 6,
+  final_exam_lead_days: 7,
+};
+
+const TODAY = "2026-09-24";
+
+function open(over: Partial<React.ComponentProps<typeof SetupPopup>> = {}): {
+  submitted: SetupAnswers[];
+  dismissed: () => number;
+} {
+  const submitted: SetupAnswers[] = [];
+  const onDismiss = vi.fn();
+  render(
+    <SetupPopup
+      defaults={DEFAULTS}
+      today={TODAY}
+      entitled
+      onSubmit={(a) => submitted.push(a)}
+      onDismiss={onDismiss}
+      onUpgrade={vi.fn()}
+      pending={false}
+      error={null}
+      {...over}
+    />,
+  );
+  return { submitted, dismissed: () => onDismiss.mock.calls.length };
+}
+
+describe("pressing straight through", () => {
+  it("writes a REAL profile without the student answering anything", () => {
+    const { submitted } = open();
+
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted).toHaveLength(1);
+    const body = submitted[0]!;
+    // The schedule fields carry the selections the student SAW, so the profile describes
+    // a real week rather than an empty one.
+    expect(body.study_days_mask).toBeGreaterThan(0);
+    expect(body.daily_minutes).toBe(60);
+    // ...but the OPTIONAL test weekday is not one of them. R-08-27 makes it optional, and a
+    // full-length spends its whole day's budget, so pressing straight through must not book
+    // a recurring exam the student never chose. Null is "no automatic exams".
+    expect(body.full_length_weekday).toBeNull();
+    expect(body.timezone.length).toBeGreaterThan(0);
+  });
+
+  // R-08-27 makes the full-length weekday OPTIONAL, and a full-length spends the whole of
+  // its day's budget — no practice, no review is placed beside it. So the resting state of
+  // this row has to be unanswered: a pre-selected chip books a recurring exam, and spends a
+  // day of study time a week, on a decision the student never made. It opened on Saturday
+  // until the owner's 2026-09-26 ruling (a).
+  //
+  // The second case is the guard on the first. "Do not pre-select Saturday" is not "Saturday
+  // is wrong" — the real SAT is sat on a Saturday morning and §928's own worked example is a
+  // Saturday exam, so the chip must still store 6 when the student picks it. Without this,
+  // the obvious over-correction (dropping Saturday, or coercing the weekday) passes.
+  /**
+   * THE DAY ROW OPENS ON THE SERVED DEFAULT, exactly as the cadence row beside it does.
+   *
+   * This case asserted None, and Brief 17 Step 2 reverses the DISPLAY: the two halves of one
+   * decision were showing the student two different answers to "is there a default here?",
+   * and `full_length_pair` refuses a profile carrying one half without the other.
+   *
+   * R-08-27 IS NOT REPEALED BY SHOWING IT, which is the whole reason the display and the
+   * payload are separate questions here. A full-length spends a whole day's budget, so it
+   * must be a choice the student made — the press-through case below still asserts both
+   * halves go out null.
+   */
+  it("the test-day row opens on the SERVED default, not on None", () => {
+    open();
+    // The row lives on the schedule panel, reached without answering anything.
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    const row = screen.getByTestId("calendar-setup-fl");
+    const chips = Array.from(row.querySelectorAll("button"));
+    const pressed = chips.filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    expect(pressed).toHaveLength(1);
+    // Read off the served value, not the label "Sat", so a form that hardcoded Saturday
+    // still fails the next case.
+    expect(pressed[0]!.textContent).toBe(
+      WEEKDAYS.find((w) => w.dow === DEFAULTS.default_full_length_weekday)!
+        .label,
+    );
+    // Prove the row is non-trivial first: every weekday is on offer plus None.
+    expect(chips.length).toBe(8);
+  });
+
+  it("serves 0 and presses 'Sun' — the day DISPLAY follows the server too", () => {
+    open({ defaults: { ...DEFAULTS, default_full_length_weekday: 0 } });
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    const pressed = Array.from(
+      screen.getByTestId("calendar-setup-fl").querySelectorAll("button"),
+    ).filter((c) => c.getAttribute("aria-pressed") === "true");
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]!.textContent).toBe("Sun");
+  });
+
+  it("choosing Saturday still stores Saturday (the weekday itself is untouched)", () => {
+    const { submitted } = open();
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    const row = screen.getByTestId("calendar-setup-fl");
+    const sat = Array.from(row.querySelectorAll("button")).find(
+      (c) => c.textContent === "Sat",
+    )!;
+    fireEvent.click(sat);
+    expect(sat.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.full_length_weekday).toBe(6);
+  });
+
+  it("no control is ever disabled or required — there is nothing to fail", () => {
+    open();
+    const cont = screen.getByTestId(
+      "calendar-setup-continue",
+    ) as HTMLButtonElement;
+    expect(cont.disabled).toBe(false);
+    for (const el of Array.from(
+      document.querySelectorAll<HTMLInputElement>("input"),
+    )) {
+      expect(el.required).toBe(false);
+    }
+  });
+});
+
+describe("the test date is optional", () => {
+  it('"I haven\'t picked a date yet" stores NULL, not the placeholder in the input', () => {
+    const { submitted } = open();
+
+    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.target_exam_date).toBeNull();
+  });
+
+  it("disables the date input when the opt-out is checked", () => {
+    open();
+    const date = screen.getByTestId(
+      "calendar-setup-exam-date",
+    ) as HTMLInputElement;
+    expect(date.disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
+    expect(date.disabled).toBe(true);
+  });
+
+  it("a chosen date IS stored", () => {
+    const { submitted } = open();
+    fireEvent.change(screen.getByTestId("calendar-setup-exam-date"), {
+      target: { value: "2026-11-07" },
+    });
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.target_exam_date).toBe("2026-11-07");
+  });
+});
+
+describe("the live countdown on the score step", () => {
+  it('reads "N days to go" from the chosen date', () => {
+    open();
+    fireEvent.change(screen.getByTestId("calendar-setup-exam-date"), {
+      target: { value: "2026-10-24" },
+    });
+    // 2026-09-24 → 2026-10-24 is 30 days. Asserted as arithmetic, not as a literal.
+    expect(screen.getByTestId("calendar-setup-score-note").textContent).toBe(
+      `out of 1600 · ${30} days to go`,
+    );
+  });
+
+  it("drops the countdown — not to zero — when there is no date", () => {
+    open();
+    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
+    const note = screen.getByTestId("calendar-setup-score-note").textContent;
+    expect(note).toBe("out of 1600");
+    expect(note).not.toMatch(/\b0 days\b/);
+  });
+
+  it("the slider moves the readout", () => {
+    open();
+    fireEvent.change(screen.getByTestId("calendar-setup-score"), {
+      target: { value: "1200" },
+    });
+    expect(screen.getByTestId("calendar-setup-score-out").textContent).toBe(
+      "1200",
+    );
+  });
+});
+
+describe("skipping", () => {
+  it("Skip on step 1 sends BOTH target fields as null", () => {
+    const { submitted } = open();
+
+    fireEvent.click(screen.getByTestId("calendar-setup-skip-1"));
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    // Skip means "no answer from me" — so the slider's resting position is not stored as
+    // if the student had chosen it.
+    expect(submitted[0]!.target_score).toBeNull();
+    expect(submitted[0]!.target_exam_date).toBeNull();
+    // …and the schedule half is still real, so there is still a plan to build.
+    expect(submitted[0]!.study_days_mask).toBeGreaterThan(0);
+  });
+
+  it("moving the slider after Skip counts as an answer again", () => {
+    const { submitted } = open();
+    fireEvent.click(screen.getByTestId("calendar-setup-skip-1"));
+    fireEvent.click(screen.getByTestId("calendar-setup-back"));
+    fireEvent.change(screen.getByTestId("calendar-setup-score"), {
+      target: { value: "1500" },
+    });
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.target_score).toBe(1500);
+  });
+});
+
+describe("dismissing", () => {
+  it("the × dismisses and saves nothing", () => {
+    const { submitted, dismissed } = open();
+    fireEvent.click(screen.getByTestId("calendar-setup-dismiss"));
+    expect(dismissed()).toBe(1);
+    expect(submitted).toHaveLength(0);
+  });
+
+  it("Escape dismisses", () => {
+    const { dismissed } = open();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(dismissed()).toBe(1);
+  });
+
+  it("clicking the backdrop dismisses; clicking the card does not", () => {
+    const { dismissed } = open();
+    fireEvent.click(screen.getByTestId("calendar-setup-popup"));
+    expect(dismissed()).toBe(1);
+    fireEvent.click(
+      screen.getByTestId("calendar-setup-popup").querySelector(".card")!,
+    );
+    expect(dismissed()).toBe(1);
+  });
+});
+
+describe("a free student — Step 3's third panel", () => {
+  it("saves first, THEN shows what they would get", () => {
+    const { submitted } = open({ entitled: false });
+
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    // The order is the claim: the write already happened, so the panel's "saved either
+    // way" is a fact rather than a promise.
+    expect(submitted).toHaveLength(1);
+    expect(screen.getByTestId("calendar-setup-upgrade")).toBeTruthy();
+  });
+
+  it("labels the last press for what it does", () => {
+    open({ entitled: false });
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    expect(screen.getByTestId("calendar-setup-done").textContent).toBe(
+      "See what I'd get",
+    );
+  });
+
+  it("an entitled student builds the plan and never sees the panel", () => {
+    open({ entitled: true });
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    expect(screen.getByTestId("calendar-setup-done").textContent).toBe(
+      "Build my plan",
+    );
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(screen.queryByTestId("calendar-setup-upgrade")).toBeNull();
+  });
+});
+
+describe("the schedule step keeps at least one study day", () => {
+  it("declines to unselect the last one rather than saving a mask of 0", () => {
+    const { submitted } = open();
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+
+    const chips = screen
+      .getByTestId("calendar-setup-days")
+      .querySelectorAll("button");
+    // Turn every day off; the control should refuse the final one.
+    for (const chip of Array.from(chips)) fireEvent.click(chip);
+    for (const chip of Array.from(chips)) fireEvent.click(chip);
+
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.study_days_mask).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Brief 14 Step 4 — the frequency control on the SETUP form.
+ *
+ * @spec [Doc 05F §8.1, §17.5; owner ruling 2026-09-26 (Brief 14, option A)]
+ * | @implemented [2026-09-27]
+ *
+ * The pair is enforced HERE as well as in the schema, and that is deliberate rather than
+ * belt-and-braces: `calendarProfileUpsertSchema` refuses a body naming one half and not the
+ * other, so a form that could emit half a pair would put a 400 in front of a student who
+ * answered the question correctly. The interaction cannot produce one.
+ */
+describe("the practice-test frequency (Brief 14)", () => {
+  function scheduleStep(): void {
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+  }
+
+  function chipsOf(testId: string): HTMLButtonElement[] {
+    return Array.from(
+      screen.getByTestId(testId).querySelectorAll("button"),
+    ) as HTMLButtonElement[];
+  }
+
+  /**
+   * THE CHIP THAT LOOKS PRESSED AND THE VALUE THAT IS SENT ARE TWO DIFFERENT QUESTIONS, and
+   * from Brief 16 Step 3 this row answers them differently.
+   *
+   * This case used to assert None was pressed, because a cadence seeded into the SUBMITTED
+   * value left the pair half set at rest and the answer-nothing path met a 400. The owner's
+   * Step 3 ruling keeps that outcome and changes the display: the control opens on
+   * `default_full_length_interval_weeks`, the day row stays unanswered per R-08-27, pressing
+   * through with neither answered still sends both null, and picking a day adopts what is
+   * shown. The two cases below are the two halves, and BOTH are needed — an implementation
+   * that seeds the submitted value passes the first and fails the second, which is exactly
+   * the defect this display used to be a workaround for.
+   */
+  it("opens on the SERVED default, not on None", () => {
+    open();
+    scheduleStep();
+
+    const chips = chipsOf("calendar-setup-fl-frequency");
+    expect(chips.map((c) => c.textContent)).toEqual([
+      "None",
+      "Weekly",
+      "Every 2 weeks",
+      "Every 3 weeks",
+      "Monthly",
+    ]);
+    const pressed = chips.filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    expect(pressed).toHaveLength(1);
+    // `default_full_length_interval_weeks` is 2 in DEFAULTS. Read off the served value
+    // rather than the literal "Every 2 weeks", so a form that hardcoded the cadence would
+    // still fail this — see the next case, which serves 4.
+    expect(pressed[0]!.textContent).toBe(
+      EXAM_FREQUENCIES.find(
+        (f) => f.value === DEFAULTS.default_full_length_interval_weeks,
+      )!.label,
+    );
+  });
+
+  it("serves 4 and presses 'Monthly' — the DISPLAY follows the server too", () => {
+    open({ defaults: { ...DEFAULTS, default_full_length_interval_weeks: 4 } });
+    scheduleStep();
+
+    const pressed = chipsOf("calendar-setup-fl-frequency").filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    expect(pressed).toHaveLength(1);
+    expect(pressed[0]!.textContent).toBe("Monthly");
+  });
+
+  it("but pressing through with NEITHER answered still sends both null", () => {
+    const { submitted } = open();
+    scheduleStep();
+    // Nothing touched on the exam rows — the row is showing "Every 2 weeks" the whole time.
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted).toHaveLength(1);
+    // R-08-27 and `full_length_pair`, both still intact. The prefill was never credited to
+    // a student who said nothing; it was only ever shown to them.
+    expect(submitted[0]!.full_length_interval_weeks).toBeNull();
+    expect(submitted[0]!.full_length_weekday).toBeNull();
+  });
+
+  /**
+   * THE PAIR SURVIVES A CHANGE OF MIND, and these two cases exist because it did not.
+   *
+   * Every other case here presses None LAST, so none of them could see it: after an
+   * explicit None the cadence is ANSWERED-as-null, and a later day pick that adopted "the
+   * cadence on screen" adopted that null. The student got `{weekday: 6, interval: null}` —
+   * half a pair, refused by the Step 2 refinement and by `full_length_pair`, which is the
+   * exact 400 class Brief 16 exists to remove, reintroduced by its own Step 3.
+   *
+   * SCL-183 item (1) is the rule being kept: "the UI supplies the other half whenever the
+   * student answers one." Answering the day is answering one.
+   */
+  it("None on the DAY row, then a day: the pair is WHOLE", () => {
+    const { submitted } = open();
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "None")!,
+    );
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "Sat")!,
+    );
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.full_length_weekday).toBe(6);
+    // The served default, read off DEFAULTS rather than written as 2, so a fixture change
+    // moves the expectation with it.
+    expect(submitted[0]!.full_length_interval_weeks).toBe(
+      DEFAULTS.default_full_length_interval_weeks,
+    );
+  });
+
+  it("None on the FREQUENCY row, then a day: the pair is WHOLE", () => {
+    const { submitted } = open({
+      defaults: { ...DEFAULTS, default_full_length_interval_weeks: 3 },
+    });
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl-frequency").find(
+        (c) => c.textContent === "None",
+      )!,
+    );
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "Tue")!,
+    );
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.full_length_weekday).toBe(2);
+    // Serves 3, so a fix that hardcoded 2 fails here.
+    expect(submitted[0]!.full_length_interval_weeks).toBe(3);
+  });
+
+  /**
+   * THE ROOT CAUSE, NOT THE TWO INSTANCES.
+   *
+   * The two cases above are the sequences that were broken. This is the rule they are
+   * instances of, asserted over EVERY ordered pair of taps across both exam rows — 12 chips
+   * in all, so 144 sequences, each one pressed through to a payload.
+   *
+   * `full_length_pair` is `((interval IS NULL) = (weekday IS NULL))`. The form's whole job
+   * on these two rows is that no student can reach a body the constraint refuses, so that
+   * is what is asserted, once, over the interaction space rather than over the sequences
+   * somebody thought to write down. A third row, a fifth cadence or a new "clear" control
+   * is covered the day it is added.
+   */
+  it("NO sequence of taps on the two exam rows can emit half a pair", () => {
+    const rows = ["calendar-setup-fl", "calendar-setup-fl-frequency"] as const;
+
+    // Enumerate the chips once, from a throwaway render, so the matrix is derived from the
+    // form rather than from a list that can fall behind it.
+    const probe = open();
+    scheduleStep();
+    const taps: { row: (typeof rows)[number]; label: string }[] = [];
+    for (const row of rows) {
+      for (const chip of chipsOf(row)) {
+        taps.push({ row, label: chip.textContent ?? "" });
+      }
+    }
+    cleanup();
+    // Presence before absence: a matrix built from an empty render would make every
+    // assertion below vacuous.
+    expect(taps.length).toBeGreaterThanOrEqual(12);
+    void probe;
+
+    for (const first of taps) {
+      for (const second of taps) {
+        const { submitted } = open();
+        scheduleStep();
+        for (const tap of [first, second]) {
+          fireEvent.click(
+            chipsOf(tap.row).find((c) => c.textContent === tap.label)!,
+          );
+        }
+        fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+        const body = submitted[0]!;
+        const dayOff = body.full_length_weekday === null;
+        const weeksOff = body.full_length_interval_weeks === null;
+        expect({
+          sequence: `${first.label} then ${second.label}`,
+          dayOff,
+          weeksOff,
+        }).toEqual({
+          sequence: `${first.label} then ${second.label}`,
+          dayOff: weeksOff,
+          weeksOff,
+        });
+        cleanup();
+      }
+    }
+  });
+
+  it("pressing None on the frequency row keeps None pressed", () => {
+    const { submitted } = open();
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl-frequency").find(
+        (c) => c.textContent === "None",
+      )!,
+    );
+    const pressed = chipsOf("calendar-setup-fl-frequency").filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    // An ANSWER of None has to stick. If the row went back to showing the default, the
+    // student's only way to say "no tests" would be a chip that undoes itself.
+    expect(pressed[0]!.textContent).toBe("None");
+
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.full_length_interval_weeks).toBeNull();
+    expect(submitted[0]!.full_length_weekday).toBeNull();
+  });
+
+  it("adopts whatever the SERVER prefills when a day is named, never a literal", () => {
+    const { submitted } = open({
+      defaults: { ...DEFAULTS, default_full_length_interval_weeks: 4 },
+    });
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "Sun")!,
+    );
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.full_length_weekday).toBe(0);
+    // 4, from the payload — not the 2 a literal would have hardcoded.
+    expect(submitted[0]!.full_length_interval_weeks).toBe(4);
+  });
+
+  it("pressing straight through sends BOTH halves as null — no weekday, no cadence", () => {
+    const { submitted } = open();
+
+    scheduleStep();
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    // The weekday row opens unanswered (R-08-27), so the cadence prefill must not survive
+    // into the body on its own: half a pair is exactly what the upsert refuses.
+    expect(submitted[0]!.full_length_weekday).toBeNull();
+    expect(submitted[0]!.full_length_interval_weeks).toBeNull();
+  });
+
+  it("choosing a DAY sends the prefilled cadence with it", () => {
+    const { submitted } = open();
+    scheduleStep();
+
+    const sat = chipsOf("calendar-setup-fl").find(
+      (c) => c.textContent === "Sat",
+    )!;
+    fireEvent.click(sat);
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.full_length_weekday).toBe(6);
+    // The served default, adopted by the act of naming a day — not a literal 2 in the form.
+    expect(submitted[0]!.full_length_interval_weeks).toBe(2);
+  });
+
+  it("choosing a CADENCE with no day named adopts Saturday, so the pair is whole", () => {
+    const { submitted } = open();
+    scheduleStep();
+
+    const weekly = chipsOf("calendar-setup-fl-frequency").find(
+      (c) => c.textContent === "Weekly",
+    )!;
+    fireEvent.click(weekly);
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.full_length_interval_weeks).toBe(1);
+    // Saturday because the real SAT is sat on one, and #928's worked example is a Saturday
+    // exam. The student can move it; what they cannot do is end up with a cadence and no day.
+    expect(submitted[0]!.full_length_weekday).toBe(6);
+  });
+
+  it("None on the frequency clears BOTH halves, even after a day was chosen", () => {
+    const { submitted } = open();
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "Sat")!,
+    );
+    fireEvent.click(
+      chipsOf("calendar-setup-fl-frequency").find(
+        (c) => c.textContent === "None",
+      )!,
+    );
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.full_length_weekday).toBeNull();
+    expect(submitted[0]!.full_length_interval_weeks).toBeNull();
+  });
+
+  it("None on the DAY clears both too — either control is the whole decision", () => {
+    const { submitted } = open();
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl-frequency").find(
+        (c) => c.textContent === "Weekly",
+      )!,
+    );
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "None")!,
+    );
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+
+    expect(submitted[0]!.full_length_weekday).toBeNull();
+    expect(submitted[0]!.full_length_interval_weeks).toBeNull();
+  });
+
+  it("the note says what the choice MEANS — counted against the date they gave", () => {
+    open();
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "Sat")!,
+    );
+    fireEvent.click(
+      chipsOf("calendar-setup-fl-frequency").find(
+        (c) => c.textContent === "Every 3 weeks",
+      )!,
+    );
+
+    // Step 1's date is still in hand (TODAY + 60 days = 2026-11-23), so the readout COUNTS.
+    // The figure comes from `fullLengthsBeforeTarget` — the generator's own steps — which is
+    // why it is a promise the plan can keep rather than a client-side estimate.
+    expect(screen.getByTestId("calendar-setup-note").textContent).toContain(
+      "about 3 practice tests before 23 November, on Saturdays",
+    );
+  });
+
+  it("falls back to the RATE once the student says they have no date", () => {
+    open();
+    // The opt-out is on step 1, so this is the ordinary order: no date, then the schedule.
+    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
+    scheduleStep();
+
+    fireEvent.click(
+      chipsOf("calendar-setup-fl").find((c) => c.textContent === "Sat")!,
+    );
+    fireEvent.click(
+      chipsOf("calendar-setup-fl-frequency").find(
+        (c) => c.textContent === "Every 3 weeks",
+      )!,
+    );
+
+    // A count would have to invent a window to count against. The rate is the honest answer,
+    // and it is the same sentence the settings sheet prints in the same situation.
+    expect(screen.getByTestId("calendar-setup-note").textContent).toContain(
+      "a practice test every 3 weeks, on Saturdays",
+    );
+  });
+});

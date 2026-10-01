@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/review/sessions/{{reviewSessionId}}/next?client_instance_id={{clientInstanceId}}"
+method: GET
+order: 3500

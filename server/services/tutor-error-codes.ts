@@ -17,6 +17,7 @@
  */
 
 import { Response } from "express";
+import { logRejectedRequest, routeOf } from "../lib/validation-log";
 
 // ── Error code definition ───────────────────────────────────────────
 
@@ -134,12 +135,48 @@ export const TUTOR_CONVERSATION_ALREADY_CLOSED: TutorErrorCode = {
   message: "This conversation was already closed.",
 } as const;
 
+/** @spec [CC Brief "LISA Session Lifecycle" §5.1] */
+export const TUTOR_CONVERSATION_ALREADY_ENDED: TutorErrorCode = {
+  httpStatus: 409,
+  code: "conversation_already_ended",
+  message: "This session has already been ended.",
+} as const;
+
+/** @spec [CC Brief "LISA Session Lifecycle" §5.4] */
+export const TUTOR_CONVERSATION_CRISIS_PAUSED: TutorErrorCode = {
+  httpStatus: 409,
+  code: "conversation_crisis_paused",
+  message:
+    "This session is paused because a crisis response was provided. Resume the session first.",
+} as const;
+
+/** @spec [CC Brief "LISA Session Lifecycle" §5.4] */
+export const TUTOR_CONVERSATION_NOT_PAUSED: TutorErrorCode = {
+  httpStatus: 409,
+  code: "conversation_not_paused",
+  message: "This session is not currently paused.",
+} as const;
+
 /** @spec [Doc-03B_V2 §5.9] */
 export const TUTOR_IDEMPOTENCY_CONFLICT: TutorErrorCode = {
   httpStatus: 409,
   code: "idempotency_conflict",
   message:
     "A conflicting request with the same idempotency key was already processed.",
+} as const;
+
+/**
+ * @spec [Doc-03B_V4.1 §14.2, §14.3 "Retry during in_progress execution"]
+ * @implemented 2026-09-23
+ * A retry arrived while the first attempt for this client_turn_id is still
+ * running. The client waits `retry_after_ms` and retries with the SAME id;
+ * it must not rotate (§14.2).
+ */
+export const TUTOR_IDEMPOTENCY_IN_PROGRESS: TutorErrorCode = {
+  httpStatus: 409,
+  code: "idempotency_in_progress",
+  message:
+    "This message is still being processed. Wait a moment and try again.",
 } as const;
 
 /** @spec [Doc-03B_V2 §6.9, AUDIT-007] */
@@ -203,7 +240,11 @@ export const TUTOR_ERROR_CODES = {
   conversation_not_found: TUTOR_CONVERSATION_NOT_FOUND,
   conversation_closed: TUTOR_CONVERSATION_CLOSED,
   conversation_already_closed: TUTOR_CONVERSATION_ALREADY_CLOSED,
+  conversation_already_ended: TUTOR_CONVERSATION_ALREADY_ENDED,
+  conversation_crisis_paused: TUTOR_CONVERSATION_CRISIS_PAUSED,
+  conversation_not_paused: TUTOR_CONVERSATION_NOT_PAUSED,
   idempotency_conflict: TUTOR_IDEMPOTENCY_CONFLICT,
+  idempotency_in_progress: TUTOR_IDEMPOTENCY_IN_PROGRESS,
   idempotency_lookup_failed: TUTOR_IDEMPOTENCY_LOOKUP_FAILED,
   canonical_write_failed: TUTOR_CANONICAL_WRITE_FAILED,
   orchestration_auth_failed: TUTOR_ORCHESTRATION_AUTH_FAILED,
@@ -251,6 +292,18 @@ export function sendTutorError(
   details?: unknown,
 ): Response {
   const entry = TUTOR_ERROR_CODES[errorCode];
+  // Every tutor 400 (`invalid_input`, `pii_in_envelope`) names its failing field in the log.
+  // All six call sites already hand this `parsed.error.flatten()` and it only ever reached
+  // the client. PATHS only — never Zod's message strings, which on this surface could carry
+  // a fragment of a student's own message into a log line (§12.1). Shared helper:
+  // `server/lib/validation-log.ts`.
+  if (entry.httpStatus === 400) {
+    logRejectedRequest("TUTOR_ROUTES", details, {
+      code: entry.code,
+      requestId: res.req?.requestId,
+      ...routeOf(res),
+    });
+  }
   const body: TutorErrorResponse = {
     error: {
       message: entry.message,

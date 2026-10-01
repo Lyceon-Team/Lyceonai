@@ -70,6 +70,7 @@ function sendCsrfBlocked(
     "origin_blocked",
     "Request blocked by CSRF origin validation",
     {
+      code: "csrf_blocked",
       method: req.method,
       path: req.path,
       reason,

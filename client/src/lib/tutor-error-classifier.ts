@@ -27,7 +27,7 @@ import { isApiError, type ApiError } from "@/lib/api-error";
 export type TutorErrorAction =
   | "retry_send" // Reset mutation, let student resend
   | "retry_delayed" // Reset mutation after retry_after_ms, auto-resend
-  | "navigate_tutor" // Redirect to /tutor (conversation invalid)
+  | "navigate_tutor" // Go to /chat (conversation invalid); /tutor is retired (UI-04)
   | "upgrade" // Show premium upgrade CTA
   | "reload" // Refresh the page (session issues)
   | "informational"; // Show message, no action (denial states)

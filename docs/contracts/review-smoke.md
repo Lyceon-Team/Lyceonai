@@ -1,95 +1,126 @@
-# Review Unlock Smoke (Three-Mode Canonical Runtime)
+# Review Smoke — Queue Runtime (three pool modes)
 
-Purpose: confirm all three review modes are served from persisted session outcomes only and remain fail-closed without raw-bank fallback.
+Purpose: confirm the review vertical works end to end against production — a practice
+miss reaches the queue, a review session serves it, and the outcome moves the queue the
+right way.
 
-Scope: UI trigger, backend routes, and DB persistence for canonical review runtime.
+Scope: the review API (R3) and the two database triggers (R2). No UI (R4), no calendar
+(R5).
 
-Hard gates:
-- All three modes must work end-to-end:
-  - `all_past_mistakes`
-  - `by_practice_session`
-  - `by_full_length_session`
-- No review runtime reads from raw `questions`.
-- Review remains hard-killed until review tables exist in live DB.
-- Post-unlock gate: run immediately after removing the review hard-kill guard. Any failure requires re-locking Review.
+Rewritten 2026-09-21 for the rebuilt vertical. The previous version described the
+pre-R1 design — `/api/review-errors`, SM-2 scheduling, a runtime hard-kill guard, and
+review "derived from persisted attempt snapshots". None of that exists: R1 deleted the
+runtime, R2 replaced the schema, and ruling 19 has content come from the
+`servable_questions` join at prefill.
+
+## Hard gates
+
+- All three pool modes work end to end: `queue`, `session`, `filter`.
+- **No review runtime reads raw `questions`.** The only source is `servable_questions`
+  (published, not issue-flagged). Enforced statically by
+  `tests/ci/runtime-materialization-law.ci.test.ts`.
+- **Anti-leak:** create, state and next never carry `correct_answer` or `explanation`.
+  Both are `null` pre-submit; the answer response reveals them.
+- **Nothing but a trigger writes the queue.** `review_schedule` and
+  `review_error_attempts` have no API writer. If a smoke run shows an API-side write,
+  stop — that is the defect R2 was built to make impossible.
+- Review is free: no entitlement check, no daily quota (ruling 10).
 
 ## Preconditions
-- Review hard-kill guard still enabled until DB is ready.
-- Review tables are present (see DB verification).
 
-## Runtime route map
-- GET `/api/review-errors` (summary queue; mode-aware)
-  - `?mode=all_past_mistakes`
-  - `?mode=by_practice_session&practice_session_id=<uuid>`
-  - `?mode=by_full_length_session&full_length_session_id=<uuid>`
-- POST `/api/review-errors/sessions` (start session; mode-aware)
-- GET `/api/review-errors/sessions/:sessionId/state`
-- POST `/api/review-errors/attempt`
+- R2's migration (`20260921000000_review_queue_runtime.sql`) applied.
+- A test student with at least one practice miss or skip already in the queue.
+- `review_schedule` has at least one `active` row for that student whose question is
+  still servable.
+
+## Route map
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/review/pool?tz=<IANA>` | Counts + past sessions for the pickers. Invalid `tz` → UTC, logged, never 500. |
+| GET | `/api/review/sessions/open` | `created` and `active` only — abandoned and completed never appear (ruling 17). |
+| POST | `/api/review/sessions` | Body `{ mode, filters, client_instance_id?, idempotency_key?, target_count? }`. |
+| POST | `/api/review/sessions/:sessionId/resume` | |
+| POST | `/api/review/sessions/:sessionId/terminate` | |
+| POST | `/api/review/sessions/:sessionId/calculator-state` | |
+| GET | `/api/review/sessions/:sessionId/next?client_instance_id=…` | |
+| GET | `/api/review/sessions/:sessionId/state` | |
+| POST | `/api/review/answer` | |
+| POST | `/api/review/sessions/:sessionId/skip` | |
+
+`filters` by mode: `queue` → `{}`; `session` → `{ source_engine, source_session_id }`;
+`filter` → `{ sections?, domains?, skills?, difficulties? }`.
 
 ## Smoke sequence (record evidence)
-1. **All past mistakes summary**
-   - API: GET `/api/review-errors?mode=all_past_mistakes`
-   - Evidence: summary + queue from persisted attempt snapshots only.
-   - Gate: no raw `questions` read.
 
-2. **By practice session summary**
-   - API: GET `/api/review-errors?mode=by_practice_session&practice_session_id=<uuid>`
-   - Evidence: only attempts from that session.
-   - Gate: missing `practice_session_id` returns 400.
+1. **Pool summary.** `GET /api/review/pool?tz=America/Chicago`.
+   Evidence: `total`, the three facet arrays, and at least one entry in `sessions` with
+   a local date/time. Gate: `timezoneFallback` is `false` for a real zone and `true`
+   with `timezone: "UTC"` for a junk one — and the junk one is still a 200.
 
-3. **By full-length session summary**
-   - API: GET `/api/review-errors?mode=by_full_length_session&full_length_session_id=<uuid>`
-   - Evidence: only attempts from that full-length session.
-   - Gate: missing `full_length_session_id` returns 400.
+2. **Create, queue mode.** `POST /api/review/sessions` with `{ "mode": "queue" }`.
+   Evidence: `review_sessions` row with `mode='queue'`, `status='created'`;
+   `review_session_items` count equals the pool size; item 1 is already `served`;
+   every item has a non-null `queue_entry_id`.
+   Gate: the item ordinals follow `queued_at` then `question_id` — oldest first.
 
-4. **Start session (each mode)**
-   - API: POST `/api/review-errors/sessions`
-   - Body: `{ mode, filter, practice_session_id | full_length_session_id, client_instance_id, idempotency_key }`
-   - Evidence: `review_sessions` row created; `review_session_items` materialized; first item served.
+3. **Create replay.** Repeat step 2 with the same `idempotency_key`.
+   Evidence: the same `sessionId`, `replayed: true`, and no new items.
 
-5. **Submit + advance**
-   - API: POST `/api/review-errors/attempt`
-   - Evidence: `review_error_attempts` row created, `review_session_items.status` updated, event logged.
+4. **Next.** `GET .../next?client_instance_id=…`.
+   Evidence: `question.correct_answer` is `null`, `question.explanation` is `null`, and
+   `question.options[].id` are opaque `opt_…` tokens with no A–D letter anywhere in the
+   payload. Gate: any answer-bearing field here fails the smoke outright.
 
-6. **Resume**
-   - API: GET `/api/review-errors/sessions/:sessionId/state`
-   - Evidence: same served item and option tokens, no re-materialization.
+5. **Wrong answer.** `POST /api/review/answer` with a deliberately wrong option.
+   Evidence: response reveals `correctOptionId` (or `correctAnswer` for a grid-in) and
+   `explanation`; a `review_error_attempts` row exists whose `id` EQUALS the
+   `review_session_items.id`; the old `review_schedule` row is `superseded` with
+   `closed_at` set, and a NEW `active` row exists for the same question with a strictly
+   later `queued_at` (back of the line, ruling 7).
+
+6. **Correct answer.** Answer the next item correctly.
+   Evidence: an attempt row, and the question's `review_schedule` row is `graduated`
+   with `closed_by_item_id` equal to the item id. No new active row.
+
+7. **Skip.** `POST .../skip`.
+   Evidence: **no** `review_error_attempts` row for that item, and the question is
+   requeued with `source_outcome='skipped'` (ruling 16, R2 check 7).
+
+8. **Mastery.** `SELECT * FROM canonical_mastery_events(...)` for the student.
+   Evidence: the review answers appear with `source_family='review'`,
+   `event_source_kind='review_error_attempt'`, and `event_id` equal to the review item
+   id. Gate: no duplicate event ids between the practice and review branches.
+
+9. **Session mode.** Create with
+   `{ "mode": "session", "filters": { "source_engine": "practice", "source_session_id": "<uuid>" } }`.
+   Evidence: the pool contains only questions this student queued from that session and
+   which are still open — including one missed there, graduated, and missed again.
+
+10. **Filter mode.** Create with `{ "mode": "filter", "filters": { "sections": ["M"] } }`.
+    Evidence: every item is section M. Gate: an empty selection returns **422**
+    `REVIEW_POOL_EMPTY`, not 500, and creates no session row.
+
+11. **Ownership.** Repeat steps 4 and 5 as a second student against the first
+    student's `sessionId`. Evidence: 404 on both — not 403, which would confirm the id.
 
 ## Evidence template
+
 ```
 Date:
 Environment:
-User:
-Mode:
-SessionId:
-ClientInstanceId:
+Student:
+Timezone tested:
 
-1) Summary
-- requestId:
-- status:
-- reviewQueue length:
-- summary.sessionMode:
-- summary.sessionId:
-
-2) Start session
-- requestId:
-- status:
-- review_sessions.id:
-- review_session_items count:
-
-3) Submit
-- requestId:
-- status:
-- review_error_attempts id:
-- review_session_items.status:
-
-4) Resume
-- requestId:
-- status:
-- currentItem.id:
-- option_token_map stable: yes/no
-
-5) Raw-bank guard
-- evidence source:
-- questions table reads: none
+1) Pool summary        total:            fallback:
+2) Create (queue)      sessionId:        items:          first item status:
+3) Replay              same sessionId:   replayed:
+4) Next                correct_answer:   explanation:    option ids:
+5) Wrong answer        attempt id == item id:   superseded row:   new active queued_at:
+6) Correct answer      graduated row:    closed_by_item_id:
+7) Skip                attempt rows for item (expect 0):    requeued outcome:
+8) Mastery             source_family:    event_id == item id:
+9) Session mode        pool size:        all from source session:
+10) Filter mode        all section M:    empty-selection status (expect 422):
+11) Ownership          cross-student next / answer (expect 404 / 404):
 ```

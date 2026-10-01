@@ -28,7 +28,6 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import {
-  GUARDIAN_LINK_ERROR,
   GuardianLinkError,
   GUARDIAN_LINK_COLUMNS,
   GUARDIAN_LINK_SQLSTATE,
@@ -301,21 +300,9 @@ import { resolveEntitlementDisplay } from "./entitlement-display";
 // entitlements keyed on profile_id and no account_id indirection.
 // See WS-GL_Stage1_Audit.md §1 blocker B-3.
 //
-// getAllAccountsForUser is still imported by account-routes.ts (/api/account/status).
-// That route returns { hasAccount: false } when the query returns empty,
-// which is the correct degraded behavior. The route itself is a separate
-// cleanup item — it does not cause 500s.
-
-/**
- * Stub — getAllAccountsForUser reads from the non-existent account_members
- * table. Returns empty so /api/account/status degrades to { hasAccount: false }
- * instead of throwing PGRST205 on every request.
- */
-export async function getAllAccountsForUser(
-  _userId: string,
-): Promise<Array<{ accountId: string; role: string; createdAt: string }>> {
-  return [];
-}
+// getAllAccountsForUser survived as a stub returning [] for GET /api/account/status. That route
+// (and POST /api/account/select) was deleted as unused (student-ui register UI-06, 2026-09-29),
+// so the stub went with it.
 
 /**
  * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181]
@@ -340,6 +327,14 @@ interface Entitlement {
   current_period_start: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  /**
+   * SCL-191 / migration 20261015000000: the profile being CHARGED, when it is not the student.
+   * NULL means self-paid — and also means "written before this column existed", which reads as
+   * self-paid on purpose: the post-exam renewal flow then asks the student rather than nobody.
+   * Doc 01 §36.4 is why it has to be a fact about our row rather than one that lives only in
+   * Stripe subscription metadata: the payer is the party asked "keep or cancel?".
+   */
+  payer_profile_id: string | null;
 }
 
 export type PairPremiumSource = "student" | "guardian" | "both" | "none";
@@ -480,7 +475,7 @@ export async function getEntitlementForProfile(
   const { data, error } = await supabaseServer
     .from("entitlements")
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end, payer_profile_id",
     )
     .eq("profile_id", profileId)
     .maybeSingle();
@@ -522,7 +517,7 @@ export async function getEntitlementsBySubscriptionId(
   const { data, error } = await supabaseServer
     .from("entitlements")
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end, payer_profile_id",
     )
     .eq("stripe_subscription_id", stripeSubscriptionId)
     // Deterministic order so a fan-out revokes in a stable, reproducible
@@ -560,7 +555,7 @@ export async function upsertEntitlement(
     .from("entitlements")
     .upsert({ profile_id: profileId, ...updates }, { onConflict: "profile_id" })
     .select(
-      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+      "profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end, payer_profile_id",
     )
     .single();
 
@@ -651,6 +646,39 @@ export async function setProfileStripeCustomerId(
     throw new Error(
       `Failed to set stripe_customer_id on profile: ${error.message}`,
     );
+  }
+}
+
+/**
+ * @spec [Doc-03_V3 §4.6 (regional crisis resource "based on billing address
+ *        country"), §12.3, INV-03-08; closure plan W3-3] @implemented 2026-09-25
+ *
+ * plain English: record the student's billing country on their profile, so the
+ * crisis and safeguarding responses name that country's resources rather than
+ * falling back to the US ones.
+ *
+ * expected outcome: `profiles.country_code` holds the ISO 3166-1 alpha-2 code
+ * the INV-03-08 grant gate just approved for this student.
+ *
+ * trade-offs / edge cases:
+ *  - The ONE writer of this column, called only from the entitlement writers in
+ *    `webhook-handler.ts`, and only on a grant — so the value is always one the
+ *    Tier-1 gate accepted, never a raw or unvalidated string.
+ *  - Guardian-paid: the country is the PAYER's billing country, written to each
+ *    funded student. Doc 03 §12.3 names the billing address as authoritative.
+ *  - Idempotent: the same event replayed writes the same value.
+ */
+export async function setProfileCountryCode(
+  profileId: string,
+  countryCode: string,
+): Promise<void> {
+  const { error } = await supabaseServer
+    .from("profiles")
+    .update({ country_code: countryCode })
+    .eq("id", profileId);
+
+  if (error) {
+    throw new Error(`Failed to set country_code on profile: ${error.message}`);
   }
 }
 

@@ -6,8 +6,12 @@ import json, random
 from datetime import date, timedelta
 from collections import Counter
 
-DOMAINS = ["ALG","ADV","PSDA","GEO","II","CS","EOI","SEC"]          # canonical order (tie-break only)
-SEC = {"ALG":"M","ADV":"M","PSDA":"M","GEO":"M","II":"RW","CS":"RW","EOI":"RW","SEC":"RW"}
+DOMAINS = ["Algebra", "Advanced Math", "Problem Solving and Data Analysis", "Geometry and Trigonometry",
+           "Information and Ideas", "Craft and Structure", "Expression of Ideas", "Standard English Conventions"]
+# The canonical eight, in full, exactly as production stores them (student_domain_mastery.domain,
+# practice_session_items.question_domain, calendar_runtime_config.canonical_domain_order).
+# No codes, no aliases, no mapping layer: the oracle, the fixtures and the RPCs speak one vocabulary.
+SEC = {d: ("M" if i < 4 else "RW") for i, d in enumerate(DOMAINS)}
 
 C = dict(   # calendar_runtime_config (launch defaults) — integers only; ratios in basis points
     horizon_days=14,
@@ -16,7 +20,7 @@ C = dict(   # calendar_runtime_config (launch defaults) — integers only; ratio
     weight_by_level={0:5, 1:4, 2:3, 3:2, 4:1}, null_level_weight=3,   # mastery_levels: L0 Foundations (weakest) .. L4 Strong; NULL unmeasured
     post_exam_emphasis_days=7, post_exam_multiplier=2,
     min_domain_questions=5, max_domains_per_block=4, granularity=5,
-    full_length_every_n_occurrences=2, full_length_min_gap_days=7, final_exam_lead_days=7, max_full_length_per_horizon=2,
+    default_full_length_interval_weeks=2, default_full_length_weekday=6, final_exam_lead_days=7, max_full_length_per_horizon=2,
     taper_days=3, taper_ratio_bp=5000,
 )
 ENG = dict(practice_seconds_per_unit=90, review_seconds_per_unit=120)   # snapshotted from practice config / SCL-08-F
@@ -40,24 +44,61 @@ def weights(P):
     return w, why
 
 def exam_dates(P, horizon):
-    """Step 2 — full-length placement. Precedence: rehearsal → lead window → min gap → cadence → cap."""
+    """Step 2 — full-length placement. Arithmetic on what the student chose; no anchor, no occurrence counting.
+
+    From the last completed full-length (or the setup date when there is none), add interval_weeks x 7 days,
+    then take the next preferred weekday ON OR AFTER that. Repeat through the horizon. If the resulting date is
+    one the student has overridden, take the NEXT occurrence of the same weekday (+7) — never a different weekday,
+    because a 1..6 day shift can never satisfy validator V-02, and because the student picked that day. If that
+    one is overridden too, place nothing and record a suppression: silence is the failure this rule replaced.
+
+    The final rehearsal is unchanged and is never shifted: it walks BACK from the target date to the preferred
+    weekday, which is the one fixed point in the schedule.
+
+    Returns (placed, suppressed) — placed maps date -> explanation key; suppressed lists dates given up on.
+    """
     wd = P["full_length_weekday"]
-    if wd is None: return {}
-    exam = P["target_exam_date"]; placed = {}
+    iv = P.get("full_length_interval_weeks")
+    if wd is None or iv is None: return {}, []
+    exam = P["target_exam_date"]; placed = {}; suppressed = []
+    overrides = set(P.get("current_overrides", ()))
+
+    # (1) the final rehearsal — backwards from the target, never shifted
     if exam:
         d = exam - timedelta(days=C["final_exam_lead_days"])
         while dow(d) != wd: d -= timedelta(days=1)
         if horizon[0] <= d <= horizon[-1]: placed[d] = "final_rehearsal"
-    anchor = P["setup_date"]
-    while dow(anchor) != wd: anchor += timedelta(days=1)
-    for D in horizon:
+
+    # (2) the series — one interval after the last exam, or after setup
+    # The FIRST sitting is the first preferred weekday strictly AFTER the anchor; every later one is
+    # interval_weeks after its predecessor. Starting a whole interval out put a fortnightly student's
+    # first exam on day 14-20 of a 14-day horizon, so they never saw one; "strictly after" still makes
+    # a setup-day exam unreachable, which is what the anchor rule got wrong in the other direction.
+    # After a completed sitting the interval applies from it; before the first one it does not, or a
+    # fortnightly student's first exam lands past the horizon and they never see one.
+    if P["last_exam_date"]:
+        first = P["last_exam_date"] + timedelta(days=iv * 7)
+    else:
+        first = P["setup_date"] + timedelta(days=1)
+    while dow(first) != wd: first += timedelta(days=1)
+    cursor = None
+    while True:
+        d = first if cursor is None else cursor + timedelta(days=iv * 7)
+        if d > horizon[-1]: break
+        cursor = d                                           # the series advances on the intended date, not the shifted one
+        if d < horizon[0] or d in placed: continue
         if len(placed) >= C["max_full_length_per_horizon"]: break
-        if dow(D) != wd or D in placed or D < anchor: continue
-        if ((D - anchor).days // 7) % C["full_length_every_n_occurrences"] != 0: continue
-        if exam and (D >= exam or (exam - D).days < C["final_exam_lead_days"]): continue
-        others = list(placed) + ([P["last_exam_date"]] if P["last_exam_date"] else [])
-        if all(abs((D - e).days) >= C["full_length_min_gap_days"] for e in others): placed[D] = "exam_cadence"
-    return placed
+        target_ok = lambda x: not exam or (x < exam and (exam - x).days >= C["final_exam_lead_days"])
+        if d in overrides:
+            nxt = d + timedelta(days=7)
+            if nxt > horizon[-1]:
+                continue                                     # not a suppression: it simply belongs to a later horizon
+            if nxt in overrides or nxt in placed or not target_ok(nxt):
+                suppressed.append(d); continue               # the student blocked both occurrences — say so, never drop silently
+            d = nxt
+        if not target_ok(d) or d in placed: continue
+        placed[d] = "exam_cadence"
+    return placed, suppressed
 
 def split_mix(Q, picks, w):
     """Step 5b — largest-remainder split of Q across picked domains, multiples of `granularity`, each ≥ min."""
@@ -83,7 +124,7 @@ def split_mix(Q, picks, w):
 def generate(P):
     start = P["today"]; horizon = [start + timedelta(days=i) for i in range(C["horizon_days"])]
     study = {D for D in horizon if (P["study_days_mask"] >> dow(D)) & 1}
-    exams = exam_dates(P, horizon)
+    exams, _suppressed = exam_dates(P, horizon)
     W = weights(P)
     allocated = Counter(P.get("recent_planned_by_domain", {}))   # deficit state seeded from the last 28 days of plan rows (snapshot input)
     planned_total = sum(allocated.values())
@@ -167,7 +208,10 @@ def rand_snapshot(rng):
     last = T - timedelta(days=rng.randint(1, 30)) if rng.random() < 0.4 else None
     return dict(today=T, setup_date=T - timedelta(days=rng.randint(0, 60)), study_days_mask=rng.randint(1, 127),
                 daily_minutes=rng.choice([15, 30, 45, 60, 90, 120, 180]), levels=levels,
-                target_exam_date=(T + timedelta(days=exam_in)) if exam_in else None, full_length_weekday=rng.choice([None, 0, 1, 2, 3, 4, 5, 6]),
+                target_exam_date=(T + timedelta(days=exam_in)) if exam_in else None,
+                **(dict(full_length_weekday=None, full_length_interval_weeks=None) if rng.random() < 0.2
+                   else dict(full_length_weekday=rng.randint(0, 6), full_length_interval_weeks=rng.choice([1, 2, 3, 4]))),   # both or neither, as the DB CHECK requires
+                current_overrides=[T + timedelta(days=i) for i in range(14) if rng.random() < 0.15],
                 last_exam_date=last, days_since_exam=(T - last).days if last else None, exam_weak_domains=rng.sample(DOMAINS, 2) if last else [],
                 last_exam_missed_count=rng.choice([0, 8, 25, 60]) if last else None, last_exam_reviewed=rng.random() < 0.5,
                 review_due_by_date={T + timedelta(days=i): rng.choice([0, 0, 3, 10, 25]) for i in range(14)},
@@ -202,7 +246,7 @@ def suite(N=3000, seed=1):
         for a in exdates:
             if exam and (a >= exam or (exam - a).days < C["final_exam_lead_days"]): viol["exam_in_lead_window"] += 1
             for b in exdates:
-                if a < b and (b - a).days < C["full_length_min_gap_days"]: viol["exam_gap"] += 1
+                if a < b and (b - a).days < 7: viol["exams_same_week"] += 1
             nxt = [D for D in p1 if D > a and (P["study_days_mask"] >> dow(D)) & 1 and D not in exdates]
             if nxt and not any(b[0] == "review" and b[3].startswith("exam_review") for b in p1[nxt[0]]) and not (exam and (exam - nxt[0]).days <= 0): viol["exam_review_missing"] += 1
         W = weights(P)
@@ -226,7 +270,7 @@ def generate_fallback(P):
     No mastery, no per-date review queue, no plan history. Same output shape and validator as deterministic_v1."""
     start = P["today"]; horizon = [start + timedelta(days=i) for i in range(C["horizon_days"])]
     study = {D for D in horizon if (P["study_days_mask"] >> dow(D)) & 1}
-    exams = exam_dates(P, horizon)                                            # Step 2 needs only the profile
+    exams, _suppressed = exam_dates(P, horizon)                               # Step 2 needs only the profile
     due = sum(P.get("review_due_by_date", {}).values())                       # a single total is enough here
     exam_review_pending = None
     if P.get("last_exam_date") and not P.get("last_exam_reviewed", True):
@@ -280,7 +324,7 @@ def suite_fallback(N=3000, seed=1):
         for a in exdates:
             if exam and (a >= exam or (exam - a).days < C["final_exam_lead_days"]): viol["exam_in_lead_window"] += 1
             for b in exdates:
-                if a < b and (b - a).days < C["full_length_min_gap_days"]: viol["exam_gap"] += 1
+                if a < b and (b - a).days < 7: viol["exams_same_week"] += 1
             nxt = [D for D in p1 if D > a and (P["study_days_mask"] >> dow(D)) & 1 and D not in exdates]
             if nxt and not any(b[0] == "review" and b[3].startswith("exam_review") for b in p1[nxt[0]]) and not (exam and (exam - nxt[0]).days <= 0): viol["exam_review_missing"] += 1
     return dict(N=N, violations=dict(viol), mean_budget_utilization=round(sum(util) / len(util), 3))

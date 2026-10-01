@@ -107,7 +107,14 @@ All of the following mutating endpoints are protected by CSRF:
 ### Question Routes (server/index.ts)
 - POST /api/questions/validate
 - POST /api/questions/feedback
-- POST /api/review-errors/attempt
+
+### Review Routes (review-canonical.ts, mounted with doubleCsrfProtection)
+- POST /api/review/sessions
+- POST /api/review/answer
+- POST /api/review/sessions/:sessionId/skip
+- POST /api/review/sessions/:sessionId/resume
+- POST /api/review/sessions/:sessionId/terminate
+- POST /api/review/sessions/:sessionId/calculator-state
 
 ### Tutor Routes (tutor-runtime.ts)
 - POST /api/tutor/messages

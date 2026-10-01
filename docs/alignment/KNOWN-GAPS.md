@@ -683,7 +683,17 @@ delete the nine files, but do not leave them looking like coverage; (4) diff
 
 ## CONSENT-FLOW-SCHEMA-MISMATCH (P0 — blocks every under-13 signup)
 
-**Status:** OPEN. Found 2026-08-28 during the step-8 pre-deletion audit
+**Status:** RESOLVED 2026-09-29 via PR #978 (https://github.com/Lyceon-Team/Lyceonai/pull/978), row G2-05 of
+`docs/plans/Guardian_Closure_Plan.md` (owner ruling R6). Not repaired — removed. The consent-token
+flow is deleted: `PATCH /api/profile` no longer reads or writes `guardian_consent_requests`, no longer
+sends the consent email (whose link pointed at a page that never existed), and no longer withholds
+`profile_completed_at` from an under-13 student; `profiles.guardian_consent` is no longer read as a
+stored flag (derived from an active guardian link instead). A redeemed guardian link replaces the email
+consent, per SCL-187. Proof: `tests/ci/consent-flow-removed.pg.ci.test.ts` (red: the PATCH returned
+500 exactly as described below; green: 200, no consent row). The now-writerless table itself is not
+dropped in that PR — its drop needs the deletion cascade rewritten (see the PR).
+
+Original record: Found 2026-08-28 during the step-8 pre-deletion audit
 (`docs/SpecAudit/consent-flow-preflight-audit.md`). Reported, not fixed — the repair is larger than
 the step it was found inside, and a half-migrated consent flow is worse than a uniformly broken one.
 

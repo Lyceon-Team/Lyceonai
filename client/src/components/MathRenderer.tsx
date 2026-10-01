@@ -67,9 +67,32 @@ export function MathRenderer({
   );
 }
 
+/**
+ * `rawStart`/`rawEnd` are the token's [start, end) in the SOURCE string (UTF-16
+ * indexes, delimiters and escapes included), so a caller can map rendered pieces
+ * back to offsets in the original text (the exam passage highlighter, E7b).
+ */
 type Token =
-  | { type: 'text'; content: string }
-  | { type: 'math'; content: string; displayMode: boolean; wrapper?: 'dollar' | 'slash' };
+  | { type: 'text'; content: string; rawStart: number; rawEnd: number }
+  | {
+      type: 'math';
+      content: string;
+      displayMode: boolean;
+      wrapper?: 'dollar' | 'slash';
+      rawStart: number;
+      rawEnd: number;
+    };
+
+export type MathContentToken = Token;
+
+/**
+ * @spec [E7b decision log D5 (passage highlights leave maths whole)] | @implemented [2026-09-25]
+ * plain English: the tokenizer MathRenderer itself uses, exported so the exam passage
+ * view splits text from maths exactly as MathRenderer would — one tokenizer, not two.
+ */
+export function tokenizeMathContent(content: string): MathContentToken[] {
+  return tokenizeContent(content, false);
+}
 
 function processMixedContentSafely(content: string, defaultDisplayMode: boolean): DocumentFragment {
   const fragment = document.createDocumentFragment();
@@ -126,12 +149,18 @@ function tokenizeContent(content: string, defaultDisplayMode: boolean): Token[] 
 
   let i = 0;
   let textBuf = '';
+  let textStart = 0;
 
   const flushText = () => {
     if (textBuf.length > 0) {
-      tokens.push({ type: 'text', content: textBuf });
+      tokens.push({ type: 'text', content: textBuf, rawStart: textStart, rawEnd: i });
       textBuf = '';
     }
+  };
+  const appendText = (piece: string, width: number) => {
+    if (textBuf.length === 0) textStart = i;
+    textBuf += piece;
+    i += width;
   };
 
   while (i < content.length) {
@@ -139,8 +168,7 @@ function tokenizeContent(content: string, defaultDisplayMode: boolean): Token[] 
 
     // Handle escaped dollars \$
     if (ch === '\\' && i + 1 < content.length && content[i + 1] === '$') {
-      textBuf += '$';
-      i += 2;
+      appendText('$', 2);
       continue;
     }
 
@@ -151,13 +179,12 @@ function tokenizeContent(content: string, defaultDisplayMode: boolean): Token[] 
       if (end !== -1) {
         flushText();
         const latex = content.slice(start, end).trim();
-        tokens.push({ type: 'math', content: latex, displayMode: true, wrapper: 'slash' });
+        tokens.push({ type: 'math', content: latex, displayMode: true, wrapper: 'slash', rawStart: i, rawEnd: end + 2 });
         i = end + 2; // skip "\]"
         continue;
       }
       // no closing -> treat as text
-      textBuf += '\\[';
-      i += 2;
+      appendText('\\[', 2);
       continue;
     }
 
@@ -168,13 +195,12 @@ function tokenizeContent(content: string, defaultDisplayMode: boolean): Token[] 
       if (end !== -1) {
         flushText();
         const latex = content.slice(start, end).trim();
-        tokens.push({ type: 'math', content: latex, displayMode: false, wrapper: 'slash' });
+        tokens.push({ type: 'math', content: latex, displayMode: false, wrapper: 'slash', rawStart: i, rawEnd: end + 2 });
         i = end + 2; // skip "\)"
         continue;
       }
       // no closing -> treat as text
-      textBuf += '\\(';
-      i += 2;
+      appendText('\\(', 2);
       continue;
     }
 
@@ -185,13 +211,12 @@ function tokenizeContent(content: string, defaultDisplayMode: boolean): Token[] 
       if (end !== -1) {
         flushText();
         const latex = content.slice(start, end).trim();
-        tokens.push({ type: 'math', content: latex, displayMode: true, wrapper: 'dollar' });
+        tokens.push({ type: 'math', content: latex, displayMode: true, wrapper: 'dollar', rawStart: i, rawEnd: end + 2 });
         i = end + 2;
         continue;
       }
       // No closing $$ -> treat as text
-      textBuf += '$$';
-      i += 2;
+      appendText('$$', 2);
       continue;
     }
 
@@ -207,23 +232,23 @@ function tokenizeContent(content: string, defaultDisplayMode: boolean): Token[] 
           content: latex,
           displayMode: defaultDisplayMode,
           wrapper: 'dollar',
+          rawStart: i,
+          rawEnd: end + 1,
         });
         i = end + 1;
         continue;
       }
       // No closing $ -> treat as text
-      textBuf += '$';
-      i += 1;
+      appendText('$', 1);
       continue;
     }
 
     // Normal character
-    textBuf += ch;
-    i += 1;
+    appendText(ch, 1);
   }
 
   flushText();
-  if (tokens.length === 0) tokens.push({ type: 'text', content });
+  if (tokens.length === 0) tokens.push({ type: 'text', content, rawStart: 0, rawEnd: content.length });
 
   return tokens;
 }

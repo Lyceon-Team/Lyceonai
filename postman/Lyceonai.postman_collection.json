@@ -12,7 +12,6 @@
 		{ "key": "testPassword", "value": "TestPassword123!", "type": "string" },
 		{ "key": "adminEmail", "value": "admin@example.com", "type": "string" },
 		{ "key": "adminPassword", "value": "AdminPassword123!", "type": "string" },
-		{ "key": "adminPasscode", "value": "", "type": "string" },
 		{ "key": "guardianEmail", "value": "guardian@example.com", "type": "string" },
 		{ "key": "guardianPassword", "value": "GuardianPass123!", "type": "string" },
 		{ "key": "questionId", "value": "REPLACE_ME", "type": "string" },
@@ -160,18 +159,6 @@
 					}
 				},
 				{
-					"name": "Admin Provision",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"passcode\": \"{{adminPasscode}}\"\n}"
-						},
-						"url": { "raw": "{{baseUrl}}/api/auth/admin-provision", "host": ["{{baseUrl}}"], "path": ["api","auth","admin-provision"] }
-					}
-				},
-				{
 					"name": "Reset Password",
 					"request": {
 						"method": "POST",
@@ -217,30 +204,6 @@
 							"raw": "{\n  \"display_name\": \"Test User\"\n}"
 						},
 						"url": { "raw": "{{baseUrl}}/api/profile", "host": ["{{baseUrl}}"], "path": ["api","profile"] }
-					}
-				}
-			]
-		},
-		{
-			"name": "⚖️ Legal",
-			"item": [
-				{
-					"name": "Accept Legal Document",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"documentSlug\": \"student-terms\",\n  \"version\": \"1.0\"\n}"
-						},
-						"url": { "raw": "{{baseUrl}}/api/legal/accept", "host": ["{{baseUrl}}"], "path": ["api","legal","accept"] }
-					}
-				},
-				{
-					"name": "Get Legal Acceptances",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/legal/acceptances", "host": ["{{baseUrl}}"], "path": ["api","legal","acceptances"] }
 					}
 				}
 			]
@@ -365,84 +328,6 @@
 			]
 		},
 		{
-			"name": "📋 Full-Length Exams",
-			"item": [
-				{
-					"name": "Create Exam Session",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"type": "text/javascript",
-								"exec": [
-									"if (pm.response.code === 200 || pm.response.code === 201) {",
-									"    var json = pm.response.json();",
-									"    if (json.id) pm.collectionVariables.set('fullLengthSessionId', json.id);",
-									"}"
-								]
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/full-length/sessions", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions"] }
-					}
-				},
-				{
-					"name": "Get Current Session",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/current", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","current"] }
-					}
-				},
-				{
-					"name": "Start Exam",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/start", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","start"] }
-					}
-				},
-				{
-					"name": "Submit Exam Answer",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"A\"\n}"
-						},
-						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/answer", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","answer"] }
-					}
-				},
-				{
-					"name": "Submit Module",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/module/submit", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","module","submit"] }
-					}
-				},
-				{
-					"name": "Continue from Break",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/break/continue", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","break","continue"] }
-					}
-				},
-				{
-					"name": "Complete Exam",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/complete", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","complete"] }
-					}
-				}
-			]
-		},
-		{
 			"name": "🤖 AI Tutor",
 			"item": [
 				{
@@ -463,43 +348,10 @@
 			"name": "❓ Questions",
 			"item": [
 				{
-					"name": "Get Questions List",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/questions", "host": ["{{baseUrl}}"], "path": ["api","questions"] }
-					}
-				},
-				{
-					"name": "Get Question by ID",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/questions/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api","questions","{{questionId}}"] }
-					}
-				},
-				{
 					"name": "Get Question Stats",
 					"request": {
 						"method": "GET",
 						"url": { "raw": "{{baseUrl}}/api/questions/stats", "host": ["{{baseUrl}}"], "path": ["api","questions","stats"] }
-					}
-				},
-				{
-					"name": "Get Question Feed",
-					"request": {
-						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/questions/feed", "host": ["{{baseUrl}}"], "path": ["api","questions","feed"] }
-					}
-				},
-				{
-					"name": "Submit Question Feedback",
-					"request": {
-						"method": "POST",
-						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"feedback\": \"This question has a typo in option B.\"\n}"
-						},
-						"url": { "raw": "{{baseUrl}}/api/questions/feedback", "host": ["{{baseUrl}}"], "path": ["api","questions","feedback"] }
 					}
 				}
 			]
@@ -538,13 +390,13 @@
 			]
 		},
 		{
-			"name": "🔄 Review Errors",
+			"name": "🔄 Review",
 			"item": [
 				{
-					"name": "Get Incorrect Answers",
+					"name": "Get Review Pool",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/review-errors", "host": ["{{baseUrl}}"], "path": ["api","review-errors"] }
+						"url": { "raw": "{{baseUrl}}/api/review/pool?tz=America/New_York", "host": ["{{baseUrl}}"], "path": ["api","review","pool"], "query": [{ "key": "tz", "value": "America/New_York" }] }
 					}
 				},
 				{
@@ -566,14 +418,25 @@
 					"request": {
 						"method": "POST",
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
-						"url": { "raw": "{{baseUrl}}/api/review-errors/sessions", "host": ["{{baseUrl}}"], "path": ["api","review-errors","sessions"] }
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mode\": \"queue\",\n  \"client_instance_id\": \"{{clientInstanceId}}\",\n  \"idempotency_key\": \"{{$guid}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/review/sessions", "host": ["{{baseUrl}}"], "path": ["api","review","sessions"] }
 					}
 				},
 				{
 					"name": "Get Review Session State",
 					"request": {
 						"method": "GET",
-						"url": { "raw": "{{baseUrl}}/api/review-errors/sessions/{{reviewSessionId}}/state", "host": ["{{baseUrl}}"], "path": ["api","review-errors","sessions","{{reviewSessionId}}","state"] }
+						"url": { "raw": "{{baseUrl}}/api/review/sessions/{{reviewSessionId}}/state?client_instance_id={{clientInstanceId}}", "host": ["{{baseUrl}}"], "path": ["api","review","sessions","{{reviewSessionId}}","state"], "query": [{ "key": "client_instance_id", "value": "{{clientInstanceId}}" }] }
+					}
+				},
+				{
+					"name": "Get Next Review Item",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/review/sessions/{{reviewSessionId}}/next?client_instance_id={{clientInstanceId}}", "host": ["{{baseUrl}}"], "path": ["api","review","sessions","{{reviewSessionId}}","next"], "query": [{ "key": "client_instance_id", "value": "{{clientInstanceId}}" }] }
 					}
 				},
 				{
@@ -583,9 +446,9 @@
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"B\",\n  \"sessionId\": \"{{reviewSessionId}}\"\n}"
+							"raw": "{\n  \"sessionId\": \"{{reviewSessionId}}\",\n  \"sessionItemId\": \"{{reviewSessionItemId}}\",\n  \"selectedOptionId\": \"{{reviewOptionToken}}\"\n}"
 						},
-						"url": { "raw": "{{baseUrl}}/api/review-errors/attempt", "host": ["{{baseUrl}}"], "path": ["api","review-errors","attempt"] }
+						"url": { "raw": "{{baseUrl}}/api/review/answer", "host": ["{{baseUrl}}"], "path": ["api","review","answer"] }
 					}
 				}
 			]

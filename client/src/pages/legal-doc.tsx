@@ -131,12 +131,10 @@ export default function LegalDocPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Button asChild variant="ghost" size="sm" className="gap-2">
-              <Link href="/legal">
-                <a className="inline-flex items-center gap-2">
-                  <ChevronLeft className="h-4 w-4" />
-                  <span className="hidden sm:inline">Back to Legal Hub</span>
-                  <span className="sm:hidden">Back</span>
-                </a>
+              <Link href="/legal" className="inline-flex items-center gap-2">
+                <ChevronLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Back to Legal Hub</span>
+                <span className="sm:hidden">Back</span>
               </Link>
             </Button>
 

@@ -104,6 +104,19 @@ const tutorConfigKeySchemas = {
     schema: z.number().int().positive(),
     default: 5,
   },
+  // @spec [Doc-03B_V4.1 §8.3] | @implemented [2026-09-29] | plain English:
+  // the conversation list's page size when the client sends no `limit`, and
+  // the most it may ask for. Key names are the spec's own; no row is seeded,
+  // so the spec values below serve until an operator writes one. The wire
+  // schema also caps `limit` at 100, so a DB value above that cannot widen it.
+  "validation.pagination_default": {
+    schema: z.number().int().positive(),
+    default: 20,
+  },
+  "validation.pagination_max": {
+    schema: z.number().int().positive(),
+    default: 100,
+  },
 } as const;
 
 type TutorConfigKey = keyof typeof tutorConfigKeySchemas;
@@ -138,6 +151,7 @@ const configRowSchema = z.object({
 
 const cache: Map<string, unknown> = new Map();
 let cacheLoaded = false;
+let bootLoadPromise: Promise<void> | null = null;
 
 /**
  * Coerce a JSONB `value` column according to its `value_type` tag.
@@ -240,10 +254,18 @@ export class TutorConfig {
     }
 
     cacheLoaded = true;
+    // The effective value of every key this module defines, so the log shows
+    // what the runtime actually uses rather than leaving it to be assumed.
+    // Config values are operational settings, not secrets or student data.
+    const effective: Record<string, unknown> = {};
+    for (const k of Object.keys(tutorConfigKeySchemas) as TutorConfigKey[]) {
+      effective[k] = TutorConfig.get(k);
+    }
     logger.info(
       "TUTOR_CONFIG",
       "cache_loaded",
       `Loaded ${cache.size} config keys from tutor_context_runtime_config`,
+      { keyCount: cache.size, effective },
     );
 
     return new Map(cache);
@@ -267,15 +289,12 @@ export class TutorConfig {
     const entry = tutorConfigKeySchemas[key];
     const raw = cache.get(key);
 
+    // Absent key → the spec default. No per-call warning: it fired on every
+    // request for as long as loadAll() was never called (production, four
+    // times a minute), and a warning that always fires is one nobody reads.
+    // Whether config came from the database is reported once, at boot, by
+    // bootLoad() — `cache_loaded` at INFO or `boot_load_failed` at ERROR.
     if (raw === undefined || raw === null) {
-      if (!cacheLoaded) {
-        logger.warn(
-          "TUTOR_CONFIG",
-          "cache_not_loaded",
-          `TutorConfig.get("${key}") called before loadAll; returning default`,
-          { key },
-        );
-      }
       return entry.default as TutorConfigValue<K>;
     }
 
@@ -291,6 +310,58 @@ export class TutorConfig {
     }
 
     return result.data as TutorConfigValue<K>;
+  }
+
+  /**
+   * @spec [Doc-03A_V3.0 §18.7; owner ruling 2026-09-24 (W4-3: enable)]
+   * | @implemented [2026-09-24]
+   *
+   * plain English: loads config from the database ONCE per process, at boot.
+   * Single-flight — every caller gets the same promise — and it never
+   * rejects: a failed load is logged at ERROR (`boot_load_failed`) and the
+   * process keeps serving the spec defaults, which is exactly what it served
+   * before this was wired. `loadAll()` itself still throws for callers that
+   * need the failure (refreshCache).
+   *
+   * trade-offs: no retry. A failed boot load leaves defaults in place until
+   * the next cold start or an explicit refreshCache(); the ERROR line is the
+   * signal. Retrying inside a request path would put a database round trip
+   * on student turns.
+   */
+  static bootLoad(): Promise<void> {
+    if (bootLoadPromise) return bootLoadPromise;
+    bootLoadPromise = TutorConfig.loadAll().then(
+      () => undefined,
+      (err: unknown) => {
+        logger.error(
+          "TUTOR_CONFIG",
+          "boot_load_failed",
+          "TutorConfig boot load failed; serving spec defaults",
+          { message: err instanceof Error ? err.message : String(err) },
+        );
+      },
+    );
+    return bootLoadPromise;
+  }
+
+  /**
+   * Resolves when the boot load has settled (loaded or failed), or after
+   * `timeoutMs`, whichever is first. Never rejects. Requests that read config
+   * await this so a cold-start request cannot race the boot load and read a
+   * default the database overrides; after the first settle it is a resolved
+   * promise. The timeout bounds the wait if the database hangs — the request
+   * then proceeds on defaults, and the load keeps going for later requests.
+   */
+  static async whenBooted(timeoutMs: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    try {
+      await Promise.race([TutorConfig.bootLoad(), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**
@@ -359,5 +430,12 @@ export class TutorConfig {
    */
   static isCacheLoaded(): boolean {
     return cacheLoaded;
+  }
+
+  /** Test-only: forget the cache and the boot promise. */
+  static _resetForTests(): void {
+    cache.clear();
+    cacheLoaded = false;
+    bootLoadPromise = null;
   }
 }

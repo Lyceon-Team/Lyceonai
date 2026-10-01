@@ -18,7 +18,7 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
 
 ### `../apps/api/src/routes/questions`
 - **Import**: [server/index.ts](server/index.ts#L26-L34)
-- **Symbols**: `getQuestions`, `getRandomQuestions`, `getQuestionCount`, `getQuestionStats`, `getQuestionsFeed`, `getRecentQuestions`, `getQuestionById`, `getReviewErrors`, `submitQuestionFeedback`
+- **Symbols**: `getQuestions`, `getRandomQuestions`, `getQuestionCount`, `getQuestionStats`, `getQuestionsFeed`, `getRecentQuestions`, `getQuestionById`, `submitQuestionFeedback`
 - **Mounts**:
   - `app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, getQuestions)`
   - `app.get("/api/questions/recent", requireSupabaseAuth, requireStudentOrAdmin, getRecentQuestions)`
@@ -27,14 +27,12 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
   - `app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats)`
   - `app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed)`
   - `app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById)`
-  - `app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors)`
-  - `app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer)` (owner import: `server/routes/review-session-routes.ts`)
   - `app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback)`
 - **Transitive deps in apps/api**: `../lib/supabase-server`, `../middleware/auth`
 
 ### Content/Review Runtime Truth Notes
 - `POST /api/questions/validate` is intentionally unmounted (404 runtime contract).
-- Canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`.
+- The `/api/review-errors*` routes and `server/routes/review-session-routes.ts` were deleted by R1. The review vertical's only runtime is `/api/review/*` from `server/routes/review-canonical.ts` (R3).
 
 ### `../apps/api/src/routes/weakness`
 - **Import**: [server/index.ts](server/index.ts#L65)

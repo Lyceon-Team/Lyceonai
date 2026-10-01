@@ -5,28 +5,42 @@
  * @spec [Doc_05F_formula_sheet.md §6 "Parity gate"; Doc-05F_V1.0 §10.3 validator;
  *        INV-08-06 as amended by sheet §8 item 7]
  *
- * scripts/ci/reference/calendar_formula_reference.py is the oracle, as
- * validation_sweep.py is for Doc 04B. This gate runs the nine committed
- * fixtures and the seeded suite — suite(N, seed) and suite_fallback(N, seed),
- * regenerated from rand_snapshot and never stored — through BOTH the reference
- * and the PL/pgSQL RPCs, and fails on any byte difference or any suite
- * violation.
+ * docs/Spec/calendar_formula_reference.py is the oracle, as validation_sweep.py
+ * is for Doc 04B. This gate runs every committed fixture and the seeded
+ * suite — suite(N, seed) and suite_fallback(N, seed), regenerated from
+ * rand_snapshot and never stored — through BOTH the reference and the PL/pgSQL
+ * RPCs, and fails on any byte difference or any suite violation.
+ *
+ * THE ORACLE IS ONE FILE. It and the fixtures are read from docs/Spec/ directly.
+ * There used to be a second copy under scripts/ci/ and a byte-identity check
+ * guarding the pair; the pair was the defect and the check was a workaround for
+ * it. A single file cannot drift from itself, so the check has nothing left to
+ * detect and is gone along with the copies (owner ruling, 2026-09-17).
+ *
+ * There is also no domain-name mapping. The oracle, the fixtures and the RPCs
+ * all speak the canonical eight names in full — a translation step between the
+ * oracle and the database is a place for a difference to hide, which is the
+ * opposite of what a parity gate is for.
  *
  * It checks six things:
- *   0. The oracle exists in exactly one state. docs/Spec/ carries reader copies
- *      of the reference and the fixtures; scripts/ci/ carries the ones CI runs.
- *      Two copies of an oracle that can drift apart is not an oracle, and
- *      docs/Spec/ is read-only to Claude Code, so a divergence could only be
- *      fixed by the owner — which is exactly why it must fail loudly.
  *   1. calendar_runtime_config carries exactly the oracle's constants, so a
  *      config edit that diverges from the formula fails CI instead of silently
  *      changing every student's plan.
- *   2. Each fixture's stored output still reproduces from the reference.
+ *   2. Each fixture's stored output still reproduces from the reference —
+ *      including its `exam_placement` block.
  *   3. calendar_compute_plan and calendar_compute_plan_fallback reproduce the
  *      reference byte-for-byte on every case, mix ORDER included.
  *   4. The per-domain explanation keys — the oracle's fifth tuple element,
  *      which the fixtures do not store — match the RPC's scope.mix entries.
+ *  4b. calendar_place_full_lengths' OWN return — `placed` and `suppressed` both —
+ *      matches the oracle's Step 2, on every case. This one is not redundant with
+ *      (3): `generate()` drops `exam_dates`' second value, so a suppression never
+ *      reaches a plan and the whole suppression rule was invisible here. See the
+ *      ExamPlacement type below for what that cost.
  *   5. calendar_validate_plan accepts every generated plan.
+ *
+ * Both counters are self-checked at the end: a comparison that stops running is a
+ * failure, not a quiet pass.
  *
  * The gate runs against PostgreSQL 17 in CI, matching prod: security_invoker
  * semantics and integer-division edges are exactly what it exists to prove.
@@ -34,8 +48,12 @@
  * Connection via standard PG* env. Usage:
  *   tsx scripts/ci/calendar-parity.ts [--suite-n 3000] [--suite-seed 1]
  */
+/* eslint-disable no-console -- CI gate: its console output IS its interface, and the
+   14 statements this rule already flagged here are every line an operator reads when
+   the gate fails. Disabled at the file, in the same form scripts/probe/*.ts uses, rather
+   than one disable-next-line per report line. The standing rule is that a wave
+   lint-cleans the files it touches. */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // pg ships no types and @types/pg is not a dependency here; scripts/ci/types/pg.d.ts
@@ -48,22 +66,24 @@ const EMITTER = path.join(ROOT, 'scripts', 'ci', 'reference', 'calendar_parity_e
 const PYTHON = process.env.PYTHON ?? 'python3';
 const BATCH = 250;
 
-/** The oracle abbreviates the eight domains; the database uses the canonical strings. */
-const SHORT_BY_DOMAIN: ReadonlyMap<string, string> = new Map([
-  ['Algebra', 'ALG'],
-  ['Advanced Math', 'ADV'],
-  ['Problem Solving and Data Analysis', 'PSDA'],
-  ['Geometry and Trigonometry', 'GEO'],
-  ['Information and Ideas', 'II'],
-  ['Craft and Structure', 'CS'],
-  ['Expression of Ideas', 'EOI'],
-  ['Standard English Conventions', 'SEC'],
-]);
-
 type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
 type BlockMix = Record<string, number> | null;
 type SerializedBlock = [string, BlockMix, number, string];
 type SerializedPlan = Record<string, SerializedBlock[]>;
+/**
+ * Step 2's return, BOTH halves — `placed` keyed by date, `suppressed` a list of them.
+ *
+ * WHY THIS IS HERE AT ALL. The oracle's `generate()` does
+ * `exams, _suppressed = exam_dates(...)` and drops the second value, so no plan this
+ * gate compares can witness a suppression: the whole suppression rule was invisible to
+ * parity by construction. Every fixture carried an `exam_placement` block and nothing in
+ * the repository read it, which made `exam_both_occurrences_overridden_suppressed` a
+ * fixture that could only witness the ABSENCE of a block on a date — a claim that passes
+ * identically whether the rule suppressed correctly, used the wrong anchor, or hit the
+ * cap. Brief 18's census measured it: deleting the suppression arm changed 0 of 13
+ * fixtures and 0 of 3000 suite cases (docs/plans/Calendar_Rule_Branch_Coverage_Census.md).
+ */
+type ExamPlacement = { placed: Record<string, string>; suppressed: string[] };
 
 type ParityCase = {
   name: string;
@@ -71,7 +91,12 @@ type ParityCase = {
   deterministic_v1: SerializedPlan;
   fallback_v1: SerializedPlan;
   deterministic_v1_explanations: Record<string, Record<string, string>>;
-  stored?: { deterministic_v1: SerializedPlan; fallback_v1: SerializedPlan };
+  exam_placement: ExamPlacement;
+  stored?: {
+    deterministic_v1: SerializedPlan;
+    fallback_v1: SerializedPlan;
+    exam_placement: ExamPlacement;
+  };
 };
 
 type PlanBlock = {
@@ -84,24 +109,23 @@ type PlanBlock = {
 type PlanDay = { date: string; blocks: PlanBlock[] };
 type Plan = { generator: string; days: PlanDay[] };
 type ValidatorResult = { result: string; violations?: JsonValue };
-type ParityRow = { idx: string; det: Plan; fb: Plan; vdet: ValidatorResult; vfb: ValidatorResult };
-
-/**
- * The oracle must be one artifact. If docs/Spec/ carries a reader copy, it has
- * to be byte-identical to the file CI actually executes — otherwise the
- * canonical corpus and the gate can disagree about what the formula is, and the
- * corpus is the one that wins arguments.
- *
- * Absent copies are fine: this asserts identity where a copy exists, it does not
- * require one.
- */
-const ORACLE_COPIES: ReadonlyArray<readonly [string, string]> = [
-  ['docs/Spec/calendar_formula_reference.py', 'scripts/ci/reference/calendar_formula_reference.py'],
-  ['docs/Spec/calendar_formula_fixtures.json', 'scripts/ci/fixtures/calendar_formula_fixtures.json'],
-];
+/** `calendar_place_full_lengths`' own jsonb: `placed` an array, `suppressed` dates. */
+type RpcPlacement = {
+  placed?: { date: string; explanation_key: string }[] | null;
+  suppressed?: string[] | null;
+};
+type ParityRow = {
+  idx: string;
+  det: Plan;
+  fb: Plan;
+  fl: RpcPlacement;
+  vdet: ValidatorResult;
+  vfb: ValidatorResult;
+};
 
 const failures: string[] = [];
 let comparisons = 0;
+let placementComparisons = 0;
 
 function fail(message: string): void {
   failures.push(message);
@@ -144,9 +168,7 @@ function project(plan: Plan): SerializedPlan {
         mix = {};
         if (b.scope.level === 'domain') {
           for (const e of b.scope.mix ?? []) {
-            const short = SHORT_BY_DOMAIN.get(e.domain);
-            if (short === undefined) throw new Error(`unknown canonical domain ${e.domain}`);
-            mix[short] = e.count;
+            mix[e.domain] = e.count;
           }
         } else {
           if (b.section === null) throw new Error('section-level practice block with no section');
@@ -159,6 +181,28 @@ function project(plan: Plan): SerializedPlan {
   return out;
 }
 
+/**
+ * `calendar_place_full_lengths`' return, reduced to the fixtures' `exam_placement` shape.
+ *
+ * `placed` is an ARRAY in the database (jsonb sorts object keys, and the RPC builds it in
+ * placement order); the oracle keys it by date. Both sides go through `canonPlacement`
+ * below, so the comparison is about the dates and their explanation keys and not about
+ * the order two languages happened to build a map in.
+ */
+function projectPlacement(fl: RpcPlacement): ExamPlacement {
+  const placed: Record<string, string> = {};
+  for (const e of fl.placed ?? []) placed[e.date] = e.explanation_key;
+  return { placed, suppressed: [...(fl.suppressed ?? [])] };
+}
+
+/** Both sides, key-sorted, as one string — so a diff is a diff and nothing else. */
+function canonPlacement(p: ExamPlacement): string {
+  const placed = Object.keys(p.placed)
+    .sort()
+    .map((k) => [k, p.placed[k]]);
+  return JSON.stringify({ placed, suppressed: [...p.suppressed].sort() });
+}
+
 /** The oracle's fifth tuple element: per-domain explanation keys, by "date#index". */
 function projectExplanations(plan: Plan): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {};
@@ -167,9 +211,7 @@ function projectExplanations(plan: Plan): Record<string, Record<string, string>>
       if (b.block_type !== 'practice' || b.scope.level !== 'domain') return;
       const m: Record<string, string> = {};
       for (const e of b.scope.mix ?? []) {
-        const short = SHORT_BY_DOMAIN.get(e.domain);
-        if (short === undefined) throw new Error(`unknown canonical domain ${e.domain}`);
-        m[short] = e.explanation_key;
+        m[e.domain] = e.explanation_key;
       }
       out[`${day.date}#${i}`] = m;
     });
@@ -190,35 +232,6 @@ function sameExplanations(a: Record<string, string>, b: Record<string, string>):
   const kb = Object.keys(b).sort();
   if (ka.length !== kb.length || ka.some((k, i) => k !== kb[i])) return false;
   return ka.every((k) => a[k] === b[k]);
-}
-
-function checkOracleCopies(): void {
-  const before = failures.length;
-  let checked = 0;
-  for (const [specPath, ciPath] of ORACLE_COPIES) {
-    const spec = path.join(ROOT, specPath);
-    const ci = path.join(ROOT, ciPath);
-    if (!existsSync(spec)) continue;
-    if (!existsSync(ci)) {
-      fail(`${ciPath} is missing, but ${specPath} exists — CI has no oracle to run`);
-      continue;
-    }
-    checked += 1;
-    if (!readFileSync(spec).equals(readFileSync(ci))) {
-      fail(
-        `${specPath} and ${ciPath} have diverged. The oracle must be one artifact; ` +
-          `docs/Spec is the canonical corpus and is read-only to Claude Code, so this one is the owner's to reconcile.`,
-      );
-    }
-  }
-  const added = failures.length - before;
-  console.log(
-    added > 0
-      ? `    FAIL ${added} docs/Spec reader copy/copies have diverged from the files CI runs`
-      : checked === 0
-        ? '    OK no docs/Spec reader copy of the oracle to cross-check'
-        : `    OK ${checked} docs/Spec reader copy/copies are byte-identical to the files CI runs`,
-  );
 }
 
 async function checkConstants(client: PgClient): Promise<void> {
@@ -246,21 +259,27 @@ async function checkConstants(client: PgClient): Promise<void> {
   );
 }
 
+/** Set from the fixture file when the fixture pass runs; the self-check below reads it. */
+let fixtureCount = 0;
+
 async function runCases(client: PgClient, label: string, cases: ParityCase[]): Promise<void> {
   const before = failures.length;
   for (let off = 0; off < cases.length; off += BATCH) {
     const part = cases.slice(off, off + BATCH);
     const { rows } = await client.query<ParityRow>(
-      `SELECT t.idx::text AS idx, p.det AS det, p.fb AS fb, v.vdet AS vdet, v.vfb AS vfb
+      `SELECT t.idx::text AS idx, p.det AS det, p.fb AS fb, p.fl AS fl, v.vdet AS vdet, v.vfb AS vfb
          FROM (SELECT s, idx,
                       ARRAY(SELECT jsonb_array_elements_text(s -> 'enabled_block_types')) AS enabled
                  FROM unnest($1::jsonb[]) WITH ORDINALITY AS u(s, idx)) t,
          LATERAL (SELECT public.calendar_compute_plan(t.s) AS det,
-                         public.calendar_compute_plan_fallback(t.s) AS fb) p,
+                         public.calendar_compute_plan_fallback(t.s) AS fb,
+                         public.calendar_place_full_lengths(t.s) AS fl) p,
          LATERAL (SELECT public.calendar_validate_plan('generated', t.s,
-                           public.calendar_plan_to_output(p.det, 'parity', t.enabled)) AS vdet,
+                           pg_temp.parity_narrow(
+                             public.calendar_plan_to_output(p.det, 'parity', t.enabled), t.s)) AS vdet,
                          public.calendar_validate_plan('generated', t.s,
-                           public.calendar_plan_to_output(p.fb, 'parity', t.enabled)) AS vfb) v
+                           pg_temp.parity_narrow(
+                             public.calendar_plan_to_output(p.fb, 'parity', t.enabled), t.s)) AS vfb) v
         ORDER BY t.idx`,
       [part.map((c) => JSON.stringify(c.snapshot))],
     );
@@ -277,6 +296,14 @@ async function runCases(client: PgClient, label: string, cases: ParityCase[]): P
           if (JSON.stringify(c[g]) !== JSON.stringify(c.stored[g])) {
             fail(`${c.name}/${g}: the reference no longer reproduces the stored fixture`);
           }
+        }
+        const wantStored = canonPlacement(c.stored.exam_placement);
+        const gotRef = canonPlacement(c.exam_placement);
+        if (wantStored !== gotRef) {
+          fail(
+            `${c.name}/exam_placement: the reference no longer reproduces the stored block` +
+              `\n      stored = ${wantStored}\n      ref    = ${gotRef}`,
+          );
         }
       }
 
@@ -310,6 +337,20 @@ async function runCases(client: PgClient, label: string, cases: ParityCase[]): P
         if (a === undefined || b === undefined || !sameExplanations(a, b)) {
           fail(`${c.name}: per-domain explanation keys differ at ${k}: rpc=${JSON.stringify(a)} ref=${JSON.stringify(b)}`);
         }
+      }
+
+      // (4b) THE SUPPRESSION LIST, compared against the RPC's own return rather than
+      // against the plan — which is the only place it appears at all. This runs on every
+      // case, fixture and suite alike, so the arms of the override rule are now held on
+      // every input this gate sees instead of on none.
+      placementComparisons += 1;
+      const gotPlacement = canonPlacement(projectPlacement(row.fl));
+      const wantPlacement = canonPlacement(c.exam_placement);
+      if (gotPlacement !== wantPlacement) {
+        fail(
+          `${c.name}/exam_placement: calendar_place_full_lengths differs from the oracle` +
+            `\n      rpc = ${gotPlacement}\n      ref = ${wantPlacement}`,
+        );
       }
 
       // (5) the validator accepts what the generators produce
@@ -360,6 +401,40 @@ async function main(): Promise<void> {
     database: process.env.PGDATABASE ?? 'postgres',
   });
   await client.connect();
+
+  // WHY THE VALIDATED OUTPUT IS NARROWED, AND ONLY THE VALIDATED ONE.
+  //
+  // calendar_persist_version does not validate what calendar_compute_plan produced. It
+  // validates that output after THREE filters -- calendar_carry_started,
+  // calendar_drop_today_for_system and calendar_drop_unowned_dates -- and the last of
+  // those removes any date `generated_for.dates` does not name, "chiefly one the student
+  // has overridden" (its own COMMENT). The generator deliberately walks the whole horizon
+  // and never reads generated_for.dates, so overridden dates leave it and are dropped
+  // downstream, before any validator sees them.
+  //
+  // This gate used not to send `current_overrides` at all, so V-14 ("generated may not
+  // take over a date the student has overridden") could never fire here. Now that
+  // placement needs overrides, the snapshot carries them -- and validating the RAW output
+  // made the gate assert something production never does: 372 of 424 comparisons failed
+  // on V-14 while the plans themselves matched the oracle exactly.
+  //
+  // So the narrowing is applied to the output fed to the validator, and NOT to the plan
+  // compared against the oracle: the oracle plans those dates too, and hiding them from
+  // the comparison would weaken the very thing this gate exists to check. pg_temp keeps
+  // the helper session-local, so nothing is added to the database under test.
+  await client.query(`
+    CREATE FUNCTION pg_temp.parity_narrow(p_output jsonb, p_input jsonb) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE AS $fn$
+      SELECT jsonb_set(p_output, '{dates}', COALESCE((
+        SELECT jsonb_agg(d ORDER BY d ->> 'scheduled_date')
+        FROM jsonb_array_elements(COALESCE(p_output -> 'dates', '[]'::jsonb)) d
+        WHERE NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements(
+                     COALESCE(p_input -> 'current_overrides', '[]'::jsonb)) o
+           WHERE (o ->> 'is_user_override')::boolean
+             AND (o ->> 'scheduled_date') = (d ->> 'scheduled_date'))
+      ), '[]'::jsonb))
+    $fn$;`);
   try {
     const { rows } = await client.query<{ v: string; major: string }>(
       "SELECT version() AS v, split_part(current_setting('server_version'), '.', 1) AS major",
@@ -381,14 +456,16 @@ async function main(): Promise<void> {
       console.log(`    OK server major is ${major}, as required`);
     }
 
-    console.log('==> the oracle exists in exactly one state');
-    checkOracleCopies();
-
     console.log('==> calendar_runtime_config vs the oracle constants');
     await checkConstants(client);
 
-    console.log('==> nine committed fixtures');
-    await runCases(client, 'fixtures', emitCases(['fixtures']));
+    const fixtureCases = emitCases(['fixtures']);
+    // The COUNT COMES FROM THE FILE, never a literal. It read `9` in two places and the
+    // owner's twelfth fixture made both wrong at once -- one of them the self-check that
+    // exists to catch a gate which silently compared nothing.
+    fixtureCount = fixtureCases.length;
+    console.log(`==> ${fixtureCount} committed fixtures`);
+    await runCases(client, 'fixtures', fixtureCases);
 
     console.log(`==> seeded suite (N=${suiteN}, seed=${suiteSeed}), regenerated, never stored`);
     await runCases(client, 'suite', emitCases(['suite', String(suiteN), String(suiteSeed)]));
@@ -404,12 +481,20 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   // A gate that compared nothing exits 0 and proves nothing. Refuse that.
-  const expected = (9 + suiteN) * 2;
+  const expected = (fixtureCount + suiteN) * 2;
   if (comparisons !== expected) {
     console.error(`\nFAIL: compared ${comparisons} plans, expected ${expected} — the gate did not run what it claims to run`);
     process.exit(1);
   }
-  console.log(`\nOK: ${comparisons} plan comparisons, byte-exact against the oracle`);
+  // The same rule for the placement comparison, counted separately: it is one per case,
+  // not two, and an `exam_placement` block that stopped being read is exactly the state
+  // this comparison was added to end.
+  const expectedPlacements = fixtureCount + suiteN;
+  if (placementComparisons !== expectedPlacements) {
+    console.error(`\nFAIL: compared ${placementComparisons} exam_placement blocks, expected ${expectedPlacements} — the placement comparison did not run`);
+    process.exit(1);
+  }
+  console.log(`\nOK: ${comparisons} plan comparisons and ${placementComparisons} exam_placement comparisons, byte-exact against the oracle`);
 }
 
 main().catch((err: unknown) => {

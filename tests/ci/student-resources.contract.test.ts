@@ -30,11 +30,17 @@ import request from "supertest";
 // up must fail these cases rather than ship open.
 import { requiresEntitlement } from "../../server/routes/student-resources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readEntitlementDenial } from "../../packages/shared/src/entitlement-denial";
 import {
   RULE_4_COLUMNS,
   findRule4Keys,
 } from "../../packages/shared/src/rule4-columns";
-import { STUDENT_RESOURCE_PATHS } from "../../packages/shared/src/student-resources";
+import {
+  STUDENT_EXAM_PATHS,
+  STUDENT_RESOURCE_PATHS,
+  guardianKpiOverallResponseSchema,
+  studentKpiOverallResponseSchema,
+} from "../../packages/shared/src/student-resources";
 
 const STUDENT = "11111111-1111-4111-8111-111111111111";
 const GUARDIAN = "22222222-2222-4222-8222-222222222222";
@@ -67,6 +73,8 @@ function resetRows() {
   // (`00000000000000_genesis.sql:206`): premium, and enabled.
   rows.entitlement_features = [
     { feature_key: "mastery_detail", required_tier: "premium", enabled: true },
+    // Doc 05F §16. Seeded by genesis (`00000000000000_genesis.sql:226`): premium, enabled.
+    { feature_key: "calendar_access", required_tier: "premium", enabled: true },
   ];
   rows.canonical_skill_catalog = [
     { section: "M", domain: "Algebra", skill: "Linear Equations in One Variable" },
@@ -107,9 +115,103 @@ function resetRows() {
   // which would 500 every KPI case here — so the seed mirrors the WS-2 config seed.
   rows.practice_runtime_config = [
     { key: "quota_reset_timezone", value: "America/Chicago" },
+    // Doc 05F §17.1's "~N min" readout. Doc 02B §41 owns practice timing, so the calendar
+    // READS this row rather than copying the value into its own config table (§20's audit
+    // rule). `loadCalendarConfig` throws when it is missing — a loud failure at the
+    // accessor (§18) — which would 500 the calendar cases below.
+    { key: "target_seconds_per_question", value: 90 },
   ];
   rows.audit_logs = [];
+
+  // -- Doc 05F calendar (the /calendar resource) -----------------------------
+  // Every row carries POISON, exactly as the tables do, so a pass proves the route strips
+  // it. The profile row additionally carries `last_acknowledged_nonstudent_version_no` —
+  // a real column the SELECT does not name — because this fake ignores column projection,
+  // and a read that handed the row object to a `.strict()` parser would break on it.
+  rows.calendar_runtime_config = [
+    { key: "daily_minutes_min", value: 15 },
+    { key: "daily_minutes_max", value: 180 },
+    { key: "daily_minutes_presets", value: [15, 30, 45, 60, 90, 120] },
+    { key: "target_exam_date_max_days", value: 540 },
+    { key: "weekly_job_interval_minutes", value: 1440 },
+    { key: "default_full_length_interval_weeks", value: 2 },
+    { key: "default_full_length_weekday", value: 6 },
+    { key: "final_exam_lead_days", value: 7 },
+    { key: "horizon_days", value: 14 },
+    { key: "generator_version", value: "20260917140000" },
+    // The review half of §17.1's estimate. Calendar-owned (SCL-08-F), unlike its practice
+    // counterpart above.
+    { key: "review_estimated_seconds_per_item", value: 120 },
+    // §17.2's engine picker; the config accessor requires it, so an unseeded key is a
+    // loud 500 here rather than an empty picker in front of a student.
+    { key: "enabled_block_types", value: ["practice", "review"] },
+  ];
+  rows.student_study_profile = [
+    {
+      timezone: "America/Chicago",
+      target_exam_date: null,
+      target_score: 1400,
+      study_days_mask: 127,
+      daily_minutes: 60,
+      full_length_weekday: 6,
+      full_length_interval_weeks: 2,
+      planner_mode: "auto",
+      setup_completed_at: "2026-08-01T00:00:00.000Z",
+      last_acknowledged_nonstudent_version_no: 0,
+      ...POISON,
+    },
+  ];
+  rows.calendar_plan_versions = [
+    { version_no: 3, input_snapshot: { profile: { study_days_mask: 127 } }, ...POISON },
+  ];
+  rows.calendar_current_plan = [
+    {
+      scheduled_date: CALENDAR_DATE,
+      timezone: "America/Chicago",
+      is_user_override: false,
+      version_no: 3,
+      block_id: CALENDAR_BLOCK_ID,
+      display_ordinal: 1,
+      membership_type: "created",
+      ...POISON,
+    },
+  ];
+  rows.calendar_blocks = [
+    {
+      block_id: CALENDAR_BLOCK_ID,
+      scheduled_date: CALENDAR_DATE,
+      block_type: "practice",
+      section: "M",
+      // `explanation_key` at BOTH levels, which is what §16 withholds — the block's own key
+      // and the per-domain one inside the mix. The guardian projection must drop both.
+      scope: { level: "domain", mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }] },
+      target_count: 20,
+      source: "auto",
+      derived_from_block_id: null,
+      explanation_key: "weighted",
+      ...POISON,
+    },
+  ];
+  rows.calendar_block_launches = [];
+  rows.practice_session_items = [];
 }
+
+const CALENDAR_BLOCK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+
+/**
+ * TODAY, SO THE BLOCK IS ACTUALLY IN THE PAYLOAD.
+ *
+ * The route takes `from`/`to` from the query and this suite sends none, so the window is the
+ * student`s local today … +13. A fixed date would fall outside it, the day list would be
+ * fourteen EMPTY days, and every anti-leak assertion below would pass because there was
+ * nothing to leak — the vacuous-coverage failure this file`s header exists to prevent.
+ *
+ * The UTC date is used rather than the Chicago one because the two differ by at most a day
+ * and BOTH are inside a fourteen-day window that starts today. The suite therefore does not
+ * depend on what hour it runs at, only that the block lands somewhere in the window — which
+ * `the guardian payload really contains the block` below asserts outright.
+ */
+const CALENDAR_DATE = new Date().toISOString().slice(0, 10);
 
 /** A query builder that ignores filters and hands back the table's fixture rows. */
 function fakeClient() {
@@ -120,6 +222,15 @@ function fakeClient() {
       Object.assign(builder, {
         select: () => builder,
         eq: () => builder,
+        neq: () => builder,
+        gt: () => builder,
+        // The calendar read filters a date range on occurred_at. They ignore
+        // their arguments like every other filter here: this fake is the ROW layer, and a
+        // fake that filtered would hide the stripping these cases exist to prove.
+        gte: () => builder,
+        lte: () => builder,
+        lt: () => builder,
+        not: () => builder,
         in: () => builder,
         order: () => builder,
         limit: () => builder,
@@ -150,14 +261,23 @@ vi.mock("../../server/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-type Req = express.Request & { user?: { id: string; role: string }; requestId?: string };
+type Req = express.Request & {
+  user?: { id: string; role: string; is_under_13: boolean };
+  requestId?: string;
+};
 
 async function call(principal: string, studentId: string, path: string) {
   const router = (await import("../../server/routes/student-resources")).default;
   const app = express();
   app.use((req, _res, next) => {
     const r = req as Req;
-    r.user = { id: principal, role: principal === GUARDIAN ? "guardian" : "student" };
+    // A real session always carries the derived `is_under_13`; G2-06 refuses a student without it
+    // (age unknown), and G2-04 would ask for a link for an under-13 one. This student is 13+.
+    r.user = {
+      id: principal,
+      role: principal === GUARDIAN ? "guardian" : "student",
+      is_under_13: false,
+    };
     r.requestId = "req-sr";
     next();
   });
@@ -166,6 +286,29 @@ async function call(principal: string, studentId: string, path: string) {
 }
 
 const ALL_PATHS = Object.values(STUDENT_RESOURCE_PATHS);
+
+/** SCL-188 (G3-01): the KPI routes answer a guardian with the streak only. */
+const GUARDIAN_NARROWED_KPI_PATHS: ReadonlySet<string> = new Set([
+  STUDENT_RESOURCE_PATHS.kpiOverall,
+  STUDENT_RESOURCE_PATHS.kpiSections,
+  STUDENT_RESOURCE_PATHS.kpiDomains,
+]);
+
+/** Every key, at every depth, of a JSON value. */
+function allKeys(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const v of value) allKeys(v, out);
+  } else if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      out.push(k);
+      allKeys(v, out);
+    }
+  }
+  return out;
+}
+
+/** R3's counters in either spelling: `events_last_7d`/`eventsTotal`, `accuracy_*`/`accuracyPct`, `week_*`/`week`. */
+const REMOVED_COUNTER_KEY = /^(events|accuracy|week)([_A-Z]|$)/i;
 
 describe("subject-scoped resources — one route, two callers", () => {
   beforeEach(() => {
@@ -189,6 +332,46 @@ describe("subject-scoped resources — one route, two callers", () => {
     });
   }
 
+  // -- §16: the calendar payload is NARROW, and really is a payload ----------
+  it("the guardian payload really contains the block, and none of §16`s withheld keys", async () => {
+    const res = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+
+    expect(res.status).toBe(200);
+    // NON-VACUITY FIRST. Without this, every assertion below passes on an empty day list.
+    const day = res.body.days.find(
+      (d: { local_date: string }) => d.local_date === CALENDAR_DATE,
+    );
+    expect(day, `no day for ${CALENDAR_DATE} in the payload`).toBeDefined();
+    expect(day.blocks).toHaveLength(1);
+    expect(day.blocks[0].block.block_id).toBe(CALENDAR_BLOCK_ID);
+    expect(day.blocks[0].block.target_count).toBe(20);
+
+    // Now the withholding, at BOTH levels — the block`s own key and the per-domain one
+    // inside the practice mix, which is the leak a spread-based projection reopens.
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain("explanation_key");
+    expect(body).not.toContain("weighted");
+    expect(body).not.toContain("version_no");
+    expect(body).not.toContain("is_user_override");
+    expect(body).not.toContain("membership_type");
+    // `target_score` WAS on this list until 2026-09-26. R-08-22 is reversed and §16's
+    // separate "no profile" clause is narrowed to admit the exam date too, so the two are
+    // asserted PRESENT here and the remaining profile columns carry the withholding.
+    expect(res.body.target_score).toBe(1400);
+    expect(res.body).toHaveProperty("target_exam_date");
+    expect(body).not.toContain("study_days_mask");
+    expect(body).not.toContain("daily_minutes");
+    expect(body).not.toContain("planner_mode");
+    expect(body).not.toContain("setup_completed_at");
+    // §16 gives a guardian the same FACTS, so those are present rather than withheld.
+    expect(res.body.facts.blocks_total).toBe(1);
+    expect(Object.keys(res.body.streak).sort()).toEqual([
+      "current",
+      "history_complete",
+      "longest",
+    ]);
+  });
+
   it("the walk itself can see a leak (gate self-check)", () => {
     // A gate that cannot fail is not a gate. This proves `findRule4Keys` reports a nested
     // occurrence, so an empty result above means "clean", not "never looked".
@@ -201,6 +384,7 @@ describe("subject-scoped resources — one route, two callers", () => {
   it("PROVENANCE — the guardian body IS the student body, byte for byte", async () => {
     for (const path of ALL_PATHS) {
       if (path === STUDENT_RESOURCE_PATHS.masterySkills) continue; // §10.4, asserted below
+      if (GUARDIAN_NARROWED_KPI_PATHS.has(path)) continue; // SCL-188, asserted below
       const self = await call(STUDENT, STUDENT, path);
       const guardian = await call(GUARDIAN, STUDENT, path);
       expect(guardian.status).toBe(self.status);
@@ -212,13 +396,112 @@ describe("subject-scoped resources — one route, two callers", () => {
     // If a handler rebuilt the body for one audience, this field would appear on one side
     // only. It must appear on both (it does not, because fields are NAMED) — the assertion
     // is that the two paths agree, not that the field is present.
-    rows.student_section_kpi = [
-      { section: "M", events_total: 1, accuracy_overall: 1, current_streak_days: 1, last_active_at: null, freshlyAddedField: "x" },
+    // (Driven through projections since SCL-188: the KPI routes now answer a guardian with
+    // the streak only, by design, so they are no longer a parity route.)
+    rows.student_section_projections = [
+      { section: "M", projected_score_mid: 600, projected_score_low: 570, projected_score_high: 630, relevant_question_count: 40, computed_at: "2026-08-01", freshlyAddedField: "x" },
     ];
-    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
-    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
+    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
     expect(guardian.body).toEqual(self.body);
     expect(JSON.stringify(self.body)).not.toContain("freshlyAddedField");
+  });
+
+  // -- SCL-188 / G3-01: A GUARDIAN GETS THE STREAK, AND ONLY THE STREAK ------------
+  describe("G3-01 — the KPI routes answer a guardian with the streak only", () => {
+    it("PRESENCE FIRST — the student's own kpi/overall still carries every counter", async () => {
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      expect(self.status).toBe(200);
+      // Non-vacuity: the fixture row has non-zero 7-day and 30-day counters, and they arrive.
+      expect(self.body.week.questionsSolved).toBe(12);
+      expect(self.body.week.accuracy).toBe(75);
+      // THE STRICT CHECK LIVES HERE, NOT IN PRODUCTION (owner ruling 2026-09-30, #994). The
+      // production parse STRIPS, so a builder field added without a schema update would be
+      // dropped silently for a student; this asserts the parse is the identity on real route
+      // output, at every depth, so that field fails CI instead.
+      expect(studentKpiOverallResponseSchema.parse(self.body)).toEqual(self.body);
+      expect(allKeys(self.body).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
+
+    it("WIRE — the guardian kpi/overall is exactly { ok, currentStreakDays, requestId }", async () => {
+      const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      expect(guardian.status).toBe(200);
+      // The value is the row's, not a default: the fixture's current_streak_days is 3.
+      expect(guardian.body.currentStreakDays).toBe(3);
+      expect(Object.keys(guardian.body).sort()).toEqual([
+        "currentStreakDays",
+        "ok",
+        "requestId",
+      ]);
+      // STRICT: a removed field reappearing fails the shared schema, not only this list.
+      expect(guardianKpiOverallResponseSchema.safeParse(guardian.body).success).toBe(true);
+    });
+
+    for (const path of GUARDIAN_NARROWED_KPI_PATHS) {
+      it(`WIRE ${path} — no events_*, accuracy_* or week_* key at any depth, as GUARDIAN`, async () => {
+        const guardian = await call(GUARDIAN, STUDENT, path);
+        expect(guardian.status).toBe(200);
+        expect(allKeys(guardian.body).filter((k) => REMOVED_COUNTER_KEY.test(k))).toEqual([]);
+        // And no metric id naming one, which is how `week_questions` travelled before.
+        expect(JSON.stringify(guardian.body)).not.toMatch(/week_|accuracy|events/i);
+      });
+    }
+
+    it("sections and domains are 200 and empty for a guardian (Doc 05B §10.4 semantics)", async () => {
+      const selfSections = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+      expect(selfSections.body.sections.length).toBeGreaterThan(0); // presence, student side
+      const sections = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+      const domains = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiDomains);
+      expect(sections.status).toBe(200);
+      expect(sections.body.sections).toEqual([]);
+      expect(domains.status).toBe(200);
+      expect(domains.body.domains).toEqual([]);
+    });
+
+    it("STUDENT, production posture: an unknown key is dropped at any depth and logged once, never a 500", async () => {
+      const { toStudentKpiOverallWire } = await import(
+        "../../server/services/canonical-runtime-views"
+      );
+      const { logger } = await import("../../server/logger");
+      // The REAL builder's output, through the real route, plus two keys no schema names.
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const { ok: _ok, requestId: _rid, ...view } = self.body;
+      const planted = {
+        ...view,
+        surpriseTop: 1,
+        week: { ...view.week, surpriseNested: 2 },
+      };
+      vi.mocked(logger.warn).mockClear();
+
+      const out = toStudentKpiOverallWire(planted);
+      toStudentKpiOverallWire(planted); // a second request: no second warning
+
+      expect(out).toEqual(view);
+      expect(out).not.toHaveProperty("surpriseTop");
+      expect(out.week).not.toHaveProperty("surpriseNested");
+      const warned = vi
+        .mocked(logger.warn)
+        .mock.calls.filter((c) => c[1] === "kpi_overall_unknown_key_dropped")
+        .map((c) => (c[3] as { path: string }).path)
+        .sort();
+      expect(warned).toEqual(["surpriseTop", "week.surpriseNested"]);
+      // Path names only: the log carries `{ path }` and nothing of the payload.
+      for (const c of vi.mocked(logger.warn).mock.calls) {
+        expect(Object.keys(c[3] as object)).toEqual(["path"]);
+      }
+    });
+
+    it("the identity check itself goes red when a key is stripped (gate self-check)", async () => {
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const planted = { ...self.body, week: { ...self.body.week, surpriseNested: 2 } };
+      expect(studentKpiOverallResponseSchema.parse(planted)).not.toEqual(planted);
+    });
+
+    it("the strict schema itself refuses a reappearing counter (gate self-check)", () => {
+      const planted = { ok: true, currentStreakDays: 3, events_last_7d: 12 };
+      expect(guardianKpiOverallResponseSchema.safeParse(planted).success).toBe(false);
+      expect(allKeys({ a: [{ accuracyPct: 1 }] }).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
   });
 
   // -- §10.4 SKILLS DENIAL ----------------------------------------------------
@@ -328,12 +611,22 @@ describe("subject-scoped resources — one route, two callers", () => {
         [
           STUDENT_RESOURCE_PATHS.masteryDomains,
           STUDENT_RESOURCE_PATHS.masterySkills,
+          // Doc 05F §16: the calendar is premium, gated on the SUBJECT`s entitlement.
+          STUDENT_RESOURCE_PATHS.calendar,
+          // G1 (04C §2.6 condition 2): exam results need the full-length feature.
+          STUDENT_EXAM_PATHS.tests,
+          STUDENT_EXAM_PATHS.testReport,
         ].sort(),
       );
-      expect(gated.map(([, key]) => key)).toEqual([
-        "mastery_detail",
-        "mastery_detail",
-      ]);
+      expect(gated.map(([, key]) => key).sort()).toEqual(
+        [
+          "calendar_access",
+          "mastery_detail",
+          "mastery_detail",
+          "exam_full_length",
+          "exam_full_length",
+        ].sort(),
+      );
       expect(open.map(([path]) => path).sort()).toEqual(
         [
           STUDENT_RESOURCE_PATHS.kpiSections,
@@ -345,12 +638,35 @@ describe("subject-scoped resources — one route, two callers", () => {
       );
     });
 
-    it.each(gated)("402s %s when its feature is denied", async (path) => {
+    // SCL-185 (UI-01): same 402, same flat shape; the code is the platform's paid-feature
+    // denial and `details.feature` is the table's key for THIS path — read back through the
+    // one reader the client uses.
+    it.each(gated)("402s %s when its feature (%s) is denied", async (path, key) => {
       decision.mockReturnValue("allow");
       rows.entitlement_features = []; // unknown key -> canAccessFeature fails closed
       const res = await call(STUDENT, STUDENT, path);
       expect(res.status).toBe(402);
-      expect(res.body.code).toBe("PAYMENT_REQUIRED");
+      expect(res.body).toEqual({
+        error: "Subscription required",
+        code: "entitlement_required",
+        message: "An active subscription is required to see this.",
+        details: { feature: key },
+        requestId: "req-sr",
+      });
+      expect(readEntitlementDenial(res.body)).toEqual({
+        feature: key,
+        message: "An active subscription is required to see this.",
+      });
+    });
+
+    it.each([
+      STUDENT_RESOURCE_PATHS.masteryDomains,
+      STUDENT_RESOURCE_PATHS.masterySkills,
+    ])("UI-01 allow: a paid student is served %s (mastery_detail granted)", async (path) => {
+      decision.mockReturnValue("allow");
+      const res = await call(STUDENT, STUDENT, path);
+      expect(res.status).toBe(200);
+      expect(readEntitlementDenial(res.body)).toBeNull();
     });
 
     it.each(open)("still serves %s under the same denial", async (path) => {

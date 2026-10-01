@@ -8,7 +8,6 @@ import { GUARDIAN_LINK_ERROR } from "../../packages/shared/src/guardian-link-sch
 
 const accountMocks = {
   revokeGuardianLink: vi.fn(),
-  isGuardianLinkedToStudent: vi.fn(),
   getAllGuardianStudentLinks: vi.fn(),
   ensureAccountForUser: vi.fn(),
   // Step 6 (Q7). Both readers answer party-hood, which is what decides 404-versus-409.
@@ -37,10 +36,12 @@ function linkRow(over: Record<string, unknown> = {}) {
   };
 }
 
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. Dead full-length mocks (buildStudentFullLengthReportView, projectGuardianFullLengthReportView, the fullLengthExam
+// service mock)
+// removed; they stubbed deleted exports and fed no assertion here.
 const kpiMocks = {
   buildStudentKpiViewFromCanonical: vi.fn(),
-  buildStudentFullLengthReportView: vi.fn(),
-  projectGuardianFullLengthReportView: vi.fn(),
 };
 const weaknessViewMocks = {
   buildWeaknessSkillsView: vi.fn(async () => ({
@@ -152,24 +153,9 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
   };
 });
 
-vi.mock("../../server/middleware/guardian-entitlement", () => ({
-  requireGuardianEntitlement: (req: any, res: any, next: any) => {
-    if (req.headers["x-entitled"] === "false") {
-      return res
-        .status(402)
-        .json({ error: "Subscription required", code: "PAYMENT_REQUIRED" });
-    }
-    next();
-  },
-}));
-
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
   doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
   generateToken: () => "test-csrf-token",
-}));
-
-vi.mock("../../server/lib/durable-rate-limiter", () => ({
-  createDurableRateLimiter: () => (_req: any, _res: any, next: any) => next(),
 }));
 
 const kpiAccessMocks = {
@@ -267,9 +253,6 @@ vi.mock("../../server/logger", () => ({
     error: vi.fn(),
   },
 }));
-vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
-  getExamReport: vi.fn(),
-}));
 vi.mock("../../apps/api/src/services/weakness-view", () => ({
   buildWeaknessSkillsView: weaknessViewMocks.buildWeaknessSkillsView,
 }));
@@ -340,7 +323,6 @@ describe("Guardian reporting runtime contract", () => {
     vi.clearAllMocks();
     systemEventInserts.length = 0;
     guardianAuditInserts.length = 0;
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getEntitlementForProfile.mockResolvedValue(null);
     entitlementMocks.isEntitlementActiveForProfile.mockResolvedValue(false);
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
@@ -439,12 +421,6 @@ describe("Guardian reporting runtime contract", () => {
         ],
       },
     });
-    kpiMocks.buildStudentFullLengthReportView.mockImplementation(
-      (report: any) => report,
-    );
-    kpiMocks.projectGuardianFullLengthReportView.mockImplementation(
-      (view: any) => view,
-    );
     weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValue({
       ok: true,
       count: 0,
@@ -468,16 +444,19 @@ describe("Guardian reporting runtime contract", () => {
       display_name: "Student One",
     });
 
-    const dashboardViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_dashboard_viewed",
+    // G1-04: the event goes to audit_logs (system_event_logs does not exist in any schema),
+    // in the link events' shape. The real-PG proof is tests/ci/guardian-access-audit.pg.ci.test.ts.
+    const dashboardViewed = guardianAuditInserts.find(
+      (row) => row.action === "guardian_dashboard_viewed",
     );
     expect(dashboardViewed).toBeDefined();
     expect(dashboardViewed).toMatchObject({
-      user_id: "guardian-1",
-      details: expect.objectContaining({
+      actor_profile_id: "guardian-1",
+      context: expect.objectContaining({
         linked_student_count: 1,
       }),
     });
+    expect(systemEventInserts).toHaveLength(0);
   });
 
   /**
@@ -547,8 +526,8 @@ describe("Guardian reporting runtime contract", () => {
 
     expect(response.status).toBe(500);
     expect(response.body.error).toBe("Internal server error");
-    const dashboardViewed = systemEventInserts.find(
-      (row) => row.event_type === "guardian_dashboard_viewed",
+    const dashboardViewed = guardianAuditInserts.find(
+      (row) => row.action === "guardian_dashboard_viewed",
     );
     expect(dashboardViewed).toBeUndefined();
   });
@@ -610,7 +589,6 @@ describe("Guardian reporting runtime contract", () => {
   });
 
   it("fails closed on unlink conflict when link is no longer active, and writes no revoke audit row", async () => {
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     // A party with an ACTIVE link, so the route reaches `revokeGuardianLink` and the domain
     // conflict below is what produces the 409 — not the route's own party check.
     accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
@@ -662,7 +640,6 @@ describe("Guardian reporting runtime contract", () => {
    * is how the assertion would go vacuous instead of moving.
    */
   it("keeps valid unlink transition behavior and leaves the revoke audit row to the transaction", async () => {
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getAnyGuardianLinkForPair.mockResolvedValue(linkRow());
     // `revokeGuardianLink` returns the revoked row now (§36.3 needs `revoked_at`,
     // `revoked_by_profile_id` and `revocation_reason` to be observable).

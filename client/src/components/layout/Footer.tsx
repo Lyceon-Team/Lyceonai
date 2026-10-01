@@ -10,9 +10,7 @@ export default function Footer() {
       { label: "SAT Math", href: "/digital-sat/math" },
       { label: "SAT Reading & Writing", href: "/digital-sat/reading-writing" },
     ],
-    resources: [
-      { label: "Blog", href: "/blog" },
-    ],
+    resources: [{ label: "Blog", href: "/blog" }],
     legal: [
       { label: "Trust & Safety", href: "/trust" },
       { label: "Legal Hub", href: "/legal" },
@@ -26,11 +24,12 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-6 py-12">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
           <div className="col-span-2 md:col-span-1">
-            <Link href="/">
-              <a className="flex items-center gap-2 text-foreground mb-4">
-                <GraduationCap className="h-5 w-5" />
-                <span className="font-bold">Lyceon</span>
-              </a>
+            <Link
+              href="/"
+              className="flex items-center gap-2 text-foreground mb-4"
+            >
+              <GraduationCap className="h-5 w-5" />
+              <span className="font-bold">Lyceon</span>
             </Link>
             <p className="text-sm text-muted-foreground">
               Study Smarter, Score Higher.
@@ -42,10 +41,11 @@ export default function Footer() {
             <ul className="space-y-2">
               {footerLinks.product.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href}>
-                    <a className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      {link.label}
-                    </a>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {link.label}
                   </Link>
                 </li>
               ))}
@@ -57,10 +57,11 @@ export default function Footer() {
             <ul className="space-y-2">
               {footerLinks.resources.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href}>
-                    <a className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      {link.label}
-                    </a>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {link.label}
                   </Link>
                 </li>
               ))}
@@ -72,10 +73,11 @@ export default function Footer() {
             <ul className="space-y-2">
               {footerLinks.legal.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href}>
-                    <a className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      {link.label}
-                    </a>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {link.label}
                   </Link>
                 </li>
               ))}

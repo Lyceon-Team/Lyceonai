@@ -1,8 +1,14 @@
-import { Link } from 'wouter';
-import { getAllPosts, getAllCategories, formatDate } from '@/lib/blog';
-import { Calendar, Tag, ArrowRight } from 'lucide-react';
-import PublicLayout from '@/components/layout/PublicLayout';
-import { Container, Hero, Card, Breadcrumb, Section } from '@/components/layout/primitives';
+import { Link } from "wouter";
+import { getAllPosts, getAllCategories, formatDate } from "@/lib/blog";
+import { Calendar, Tag, ArrowRight } from "lucide-react";
+import PublicLayout from "@/components/layout/PublicLayout";
+import {
+  Container,
+  Hero,
+  Card,
+  Breadcrumb,
+  Section,
+} from "@/components/layout/primitives";
 
 export default function BlogPage() {
   const posts = getAllPosts();
@@ -11,10 +17,10 @@ export default function BlogPage() {
   return (
     <PublicLayout>
       <Container>
-        <Breadcrumb items={[
-          { label: 'Home', href: '/' },
-          { label: 'Blog' },
-        ]} className="pt-8" />
+        <Breadcrumb
+          items={[{ label: "Home", href: "/" }, { label: "Blog" }]}
+          className="pt-8"
+        />
 
         <Hero
           title="SAT Prep Blog"
@@ -44,12 +50,10 @@ export default function BlogPage() {
                   {post.category}
                 </span>
               </div>
-              <Link href={`/blog/${post.slug}`}>
-                <a className="block group">
-                  <h2 className="text-xl font-semibold mb-2 group-hover:opacity-80 transition-opacity">
-                    {post.title}
-                  </h2>
-                </a>
+              <Link href={`/blog/${post.slug}`} className="block group">
+                <h2 className="text-xl font-semibold mb-2 group-hover:opacity-80 transition-opacity">
+                  {post.title}
+                </h2>
               </Link>
               <p className="text-muted-foreground mb-4">{post.description}</p>
               <div className="flex items-center justify-between">
@@ -64,10 +68,11 @@ export default function BlogPage() {
                     </span>
                   ))}
                 </div>
-                <Link href={`/blog/${post.slug}`}>
-                  <a className="flex items-center gap-1 text-sm font-medium text-foreground hover:opacity-80">
-                    Read more <ArrowRight className="w-4 h-4" />
-                  </a>
+                <Link
+                  href={`/blog/${post.slug}`}
+                  className="flex items-center gap-1 text-sm font-medium text-foreground hover:opacity-80"
+                >
+                  Read more <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
             </Card>
@@ -76,14 +81,18 @@ export default function BlogPage() {
 
         <Section className="py-16">
           <Card className="text-center">
-            <h2 className="text-2xl font-semibold mb-4">Ready to Start Practicing?</h2>
+            <h2 className="text-2xl font-semibold mb-4">
+              Ready to Start Practicing?
+            </h2>
             <p className="text-muted-foreground mb-6">
-              Put these tips into action with adaptive SAT practice and guided review.
+              Put these tips into action with adaptive SAT practice and guided
+              review.
             </p>
-            <Link href="/digital-sat">
-              <a className="inline-block px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity">
-                Explore SAT Prep
-              </a>
+            <Link
+              href="/digital-sat"
+              className="inline-block px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity"
+            >
+              Explore SAT Prep
             </Link>
           </Card>
         </Section>

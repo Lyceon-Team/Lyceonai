@@ -366,8 +366,14 @@ describe("C4 — checkout collects consent and the webhook records it", () => {
     // `payer_profile_id` is set only by the guardian route. Stamping every
     // checkout row 'parent' would assert a guardian relationship for people who
     // have none.
-    expect(webhook).toMatch(/guardianPayerId \? \("parent" as const\)/);
-    expect(webhook).toMatch(/: \("student" as const\)/);
+    //
+    // WHITESPACE-TOLERANT ON PURPOSE. This used to require the ternary on ONE
+    // line, which pinned the assertion to an 86-character line Prettier wraps —
+    // so formatting the file reddened a test about actor types. The claim is
+    // that the value is DERIVED from the presence of the guardian payer id, not
+    // how the derivation is laid out.
+    expect(webhook).toMatch(/guardianPayerId\s*\?\s*\("parent" as const\)/);
+    expect(webhook).toMatch(/:\s*\("student" as const\)/);
   });
 });
 
@@ -444,8 +450,12 @@ describe("C5 — the re-consent prompt blocks everyone except a guardian", () =>
     const needs = /const needsOnboarding =([\s\S]*?);/.exec(guard);
     expect(needs, "needsOnboarding not found").not.toBeNull();
     expect(needs?.[1]).not.toContain("requiredConsentsComplete");
-    // Both halves of that flag are still enforced, separately.
-    expect(needs?.[1]).toContain("guardianConsentRequired");
+    // Both halves of that flag are still enforced, separately. G2-04: the under-13 half has
+    // its own condition and its own page (/guardian-required), not the onboarding form.
+    const guardianLink = /const needsGuardianLink =([\s\S]*?);/.exec(guard);
+    expect(guardianLink, "needsGuardianLink not found").not.toBeNull();
+    expect(guardianLink?.[1]).toContain("guardianConsentRequired");
+    expect(needs?.[1]).not.toContain("guardianConsentRequired");
     expect(guard).toContain("outstandingLegal.length > 0");
   });
 

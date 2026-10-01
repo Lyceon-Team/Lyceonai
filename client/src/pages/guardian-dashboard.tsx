@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { Redirect } from "wouter";
+import { Link, Redirect } from "wouter";
 import { linkCodeFromSearch } from "@/lib/link-code-prefill";
 import {
   Card,
@@ -18,9 +18,12 @@ import { csrfFetch } from "@/lib/csrf";
 import {
   parseApiErrorFromResponse,
   getPremiumDenialReason,
+  isApiError,
+  isStudentNoLongerLinkedError,
 } from "@/lib/api-error";
 import {
   GUARDIAN_STUDENTS_QUERY_KEY,
+  useForgetGuardianStudent,
   useGuardianStudents,
   type LinkedStudent,
 } from "@/hooks/useGuardianStudents";
@@ -38,10 +41,11 @@ import {
   Users,
   Plus,
   Clock,
-  Target,
   AlertCircle,
   CheckCircle,
   UserMinus,
+  CalendarDays,
+  ClipboardList,
   RefreshCw,
   AlertTriangle,
   CreditCard,
@@ -55,50 +59,16 @@ import { GuardianTemplatePreview } from "@/components/guardian/GuardianTemplateP
 import { GuardianMetricTile } from "@/components/guardian/GuardianMetricTile";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { studentLabel } from "@/hooks/useGuardianStudents";
+import {
+  BILLING_STATUS_QUERY_KEY,
+  useBillingStatusQuery,
+} from "@/hooks/useBillingStatusQuery";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
-import { studentResourceUrl } from "@lyceon/shared/student-resources";
+import {
+  guardianKpiOverallResponseSchema,
+  studentResourceUrl,
+} from "@lyceon/shared/student-resources";
 import { LevelPill } from "@/components/mastery/LevelPill";
-
-interface StudentSummary {
-  student: {
-    id: string;
-    displayName: string | null;
-  };
-  progress: {
-    questionsAttempted: number;
-    accuracy: number | null;
-    currentStreakDays: number;
-  };
-  metrics?: Array<{
-    id: string;
-    label: string;
-    kind: "official" | "weighted" | "diagnostic";
-    unit: "count" | "percent" | "minutes" | "seconds" | "score";
-    value: number | null;
-    explanation?: {
-      whatThisMeans?: string;
-    };
-  }>;
-}
-
-interface GuardianBillingStatus {
-  isPaid: boolean;
-  effectiveAccess: boolean;
-  /** From §31.3's fold; see CheckoutReturnPoller for why its four predecessors are gone. */
-  hasActiveLink?: boolean;
-  /**
-   * A payment on the conferring student's subscription needs attention.
-   *
-   * IT IS A BANNER, NOT A GATE — owner ruling 2026-09-03. This field used to
-   * make `SubscriptionPaywall` (now `CheckoutReturnPoller`) replace the whole dashboard, which locked out a
-   * guardian whose student was `past_due` and therefore, per SCL-029, still
-   * fully entitled. Reading it here and rendering a dismissible notice ABOVE
-   * the dashboard is the whole of its job now.
-   */
-  needsPaymentUpdate?: boolean;
-  /** A subscription exists on the conferring student and grants nothing. */
-  lapsed?: boolean;
-}
 
 export default function GuardianDashboard() {
   const { isGuardian, isAuthenticated, authLoading } = useSupabaseAuth();
@@ -119,12 +89,20 @@ export default function GuardianDashboard() {
       : linkCodeFromSearch(window.location.search),
   );
   const [linkError, setLinkError] = useState<string | null>(null);
+  // G1-02: a guardian created before R10 has no date of birth; redeem asks for it once.
+  const [needsDateOfBirth, setNeedsDateOfBirth] = useState(false);
+  const [guardianDateOfBirth, setGuardianDateOfBirth] = useState("");
   const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null,
   );
   const [unlinkStudentId, setUnlinkStudentId] = useState<string | null>(null);
   const [unlinkStudentName, setUnlinkStudentName] = useState<string>("");
+  /** G3-04: who stopped being linked while selected — the notice's subject. */
+  const [noLongerLinkedName, setNoLongerLinkedName] = useState<string | null>(
+    null,
+  );
+  const forgetStudent = useForgetGuardianStudent();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [paymentNoticeDismissed, setPaymentNoticeDismissed] = useState(false);
@@ -165,7 +143,9 @@ export default function GuardianDashboard() {
          */
         throw await parseApiErrorFromResponse(res, "Failed to fetch summary");
       }
-      return res.json() as Promise<StudentSummary>;
+      // G3-01 (SCL-188): parsed, never cast. The schema is `.strict()`, so a counter that
+      // reappears on the guardian branch fails here rather than rendering.
+      return guardianKpiOverallResponseSchema.parse(await res.json());
     },
     enabled: !!selectedStudentId,
   });
@@ -205,17 +185,13 @@ export default function GuardianDashboard() {
     ? weaknessData.domains
     : null;
 
-  const { data: billingStatus } = useQuery({
-    queryKey: ["guardian-billing-status"],
-    queryFn: async () => {
-      const res = await csrfFetch("/api/billing/status", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to fetch billing status");
-      return res.json() as Promise<GuardianBillingStatus>;
-    },
+  // @spec [student-ui register UI-14; Doc 01 V8 §31.3] | @implemented [2026-09-29] | plain
+  // English: the shared billing-status query. `["guardian-billing-status"]` was the same GET
+  // answered by the same route for the same session (the route branches on the session's role),
+  // so it folded into the one key the checkout poller below already reads — one request, not two.
+  // `needsPaymentUpdate` is a banner, never a gate (owner ruling 2026-09-03).
+  const { data: billingStatus } = useBillingStatusQuery({
     enabled: isGuardian && isAuthenticated,
-    retry: 1,
   });
   /**
    * SCL-080: the guardian REDEEMS a code the student shared. This replaced an email
@@ -233,12 +209,12 @@ export default function GuardianDashboard() {
         // that named a version would be asserting what it was shown.
         body: JSON.stringify({ code, acceptParentGuardianTerms: true }),
       });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(
-          data.error?.message || data.error || "Could not use that code",
-        );
-      return data;
+      // G1-02: keep the status AND the code. A bare Error dropped the code, so a refusal the
+      // server had already explained (no date of birth, under 18) could not be acted on.
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(res, "Could not use that code");
+      }
+      return res.json();
     },
     onSuccess: () => {
       // The link is LIVE on this response — there is nothing to wait for, so the copy
@@ -250,8 +226,13 @@ export default function GuardianDashboard() {
       setIsRateLimited(false);
       setLastUpdated(new Date());
       queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
+      // A link changes `hasActiveLink` and the derived access (§31.3).
+      queryClient.invalidateQueries({ queryKey: BILLING_STATUS_QUERY_KEY });
     },
     onError: (err: Error) => {
+      if (isApiError(err) && err.code === "GUARDIAN_DATE_OF_BIRTH_REQUIRED") {
+        setNeedsDateOfBirth(true);
+      }
       if (
         err.message.includes("Too many") ||
         err.message.includes("rate limit")
@@ -267,6 +248,37 @@ export default function GuardianDashboard() {
     },
   });
 
+  /**
+   * G1-02: the one-time date-of-birth fill, then the same redeem again. The server decides
+   * the age rule; this only carries the date and shows the server's own message.
+   */
+  const dateOfBirthMutation = useMutation({
+    mutationFn: async (dateOfBirth: string) => {
+      const res = await csrfFetch("/api/profile/date-of-birth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ dateOfBirth }),
+      });
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(
+          res,
+          "Could not save your date of birth",
+        );
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setNeedsDateOfBirth(false);
+      setLinkError(null);
+      const code = linkCode.trim();
+      if (code.length > 0) linkMutation.mutate(code);
+    },
+    onError: (err: Error) => {
+      setLinkError(err.message);
+    },
+  });
+
   const unlinkMutation = useMutation({
     mutationFn: async (studentId: string) => {
       const res = await csrfFetch(`/api/guardian/link/${studentId}`, {
@@ -277,13 +289,17 @@ export default function GuardianDashboard() {
       if (!res.ok) throw new Error(data.error || "Failed to unlink student");
       return data;
     },
-    onSuccess: () => {
+    // G3-04: the unlinked id comes from the mutation's own VARIABLES, not from dialog state.
+    // Closing the dialog clears `unlinkStudentId` while the request is in flight, so the old
+    // `selectedStudentId === unlinkStudentId` compared against null and left the unlinked
+    // student's panels on screen. Their cached reads are dropped too, so nothing redraws them.
+    onSuccess: (_data, studentId) => {
       setUnlinkStudentId(null);
       setUnlinkStudentName("");
-      if (selectedStudentId === unlinkStudentId) {
-        setSelectedStudentId(null);
-      }
-      queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
+      setSelectedStudentId((current) => (current === studentId ? null : current));
+      forgetStudent(studentId);
+      // A link changes `hasActiveLink` and the derived access (§31.3).
+      queryClient.invalidateQueries({ queryKey: BILLING_STATUS_QUERY_KEY });
     },
     onError: (err: Error) => {
       setLinkError(err.message);
@@ -310,6 +326,37 @@ export default function GuardianDashboard() {
     // only spares the round trip for whitespace and case.
     linkMutation.mutate(normalised);
   };
+
+  /**
+   * @spec [Guardian_Closure_Plan G3-04; owner ruling R7; audit G-AUD-06/19]
+   *   | @implemented [2026-09-30]
+   *
+   * plain English: the selected student is no longer linked — a per-student read answered 404
+   * (the resolver's answer for "not yours", Doc 05B §10.3), or a roster refetch no longer lists
+   * them (unlinked elsewhere). The dashboard says so in words, clears the selection so their
+   * panels go, drops their cached reads and refetches the roster. A 404 is never offered a
+   * "Try again": the link does not come back by retrying.
+   *
+   * An effect, not derived state: it CHANGES things (selection, cache, a refetch). The
+   * condition it acts on is derived in the render body from fetched data.
+   */
+  const rosterIds = Array.isArray(studentsData?.students)
+    ? studentsData.students.map((student) => student.id)
+    : null;
+  const selectedNoLongerLinked =
+    selectedStudentId !== null &&
+    (isStudentNoLongerLinkedError(summaryError) ||
+      isStudentNoLongerLinkedError(weaknessError) ||
+      (rosterIds !== null && !rosterIds.includes(selectedStudentId)));
+  useEffect(() => {
+    if (!selectedNoLongerLinked || selectedStudentId === null) return;
+    const gone = Array.isArray(studentsData?.students)
+      ? studentsData.students.find((student) => student.id === selectedStudentId)
+      : undefined;
+    setNoLongerLinkedName(gone ? studentLabel(gone) : "This student");
+    setSelectedStudentId(null);
+    forgetStudent(selectedStudentId);
+  }, [selectedNoLongerLinked, selectedStudentId, studentsData, forgetStudent]);
 
   const handleUnlinkClick = (student: LinkedStudent) => {
     setUnlinkStudentId(student.id);
@@ -353,19 +400,6 @@ export default function GuardianDashboard() {
   const selectedStudent =
     students?.find((student) => student.id === selectedStudentId) ?? null;
 
-  /**
-   * The guardian summary IS the student KPI envelope with the metric list narrowed — there
-   * is no `progress` object any more, because `progress.questionsAttempted` and
-   * `metrics[id=week_questions].value` were the same number twice. Derived in the render
-   * body: a pure function of fetched data never belongs in a useEffect (§11.4).
-   */
-  const summaryMetricValue = (id: string): number | null => {
-    const metric = summaryData?.metrics?.find(
-      (candidate: { id: string; value: number | null }) => candidate.id === id,
-    );
-    const value = metric?.value;
-    return value === null || value === undefined ? null : Number(value);
-  };
   const showPaidUnlinkedCta =
     billingStatus?.hasActiveLink === false && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint =
@@ -584,6 +618,44 @@ export default function GuardianDashboard() {
                     .
                   </span>
                 </label>
+                {needsDateOfBirth && (
+                  <form
+                    className="mt-4 flex flex-col sm:flex-row gap-3 items-end"
+                    data-testid="guardian-dob-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (guardianDateOfBirth) {
+                        dateOfBirthMutation.mutate(guardianDateOfBirth);
+                      }
+                    }}
+                  >
+                    <div className="flex-1">
+                      <Label htmlFor="guardian-date-of-birth">
+                        Your date of birth
+                      </Label>
+                      <Input
+                        id="guardian-date-of-birth"
+                        data-testid="guardian-dob-input"
+                        type="date"
+                        value={guardianDateOfBirth}
+                        onChange={(e) => setGuardianDateOfBirth(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      data-testid="guardian-dob-submit"
+                      disabled={
+                        dateOfBirthMutation.isPending || !guardianDateOfBirth
+                      }
+                      className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
+                    >
+                      {dateOfBirthMutation.isPending
+                        ? "Saving..."
+                        : "Save and link"}
+                    </Button>
+                  </form>
+                )}
                 {linkError && (
                   <Alert
                     className={`mt-4 ${isRateLimited ? "bg-amber-50 border-amber-200" : "border-border/70 bg-card/70"}`}
@@ -719,7 +791,10 @@ export default function GuardianDashboard() {
                       >
                         <div className="flex items-center justify-between">
                           <button
-                            onClick={() => setSelectedStudentId(student.id)}
+                            onClick={() => {
+                              setNoLongerLinkedName(null);
+                              setSelectedStudentId(student.id);
+                            }}
                             className="flex-1 text-left"
                           >
                             <div className="font-medium">
@@ -750,6 +825,55 @@ export default function GuardianDashboard() {
                               </div>
                             )}
                           </button>
+                          {/*
+                            @spec [Doc_05F_Study_Calendar, §16 guardian view,
+                                   formula sheet item 14 — the guardian read]
+                            | @implemented [2026-09-22]
+
+                            The guardian's way in to THIS student's calendar.
+                            Per student, not one global link, because the route
+                            is scoped to a student id and a guardian may have
+                            several.
+
+                            Always rendered, never gated on
+                            `has_active_entitlement`. The route derives
+                            visibility server-side from link AND the STUDENT's
+                            entitlement (§16), and answers 402 itself when that
+                            fails. Hiding the link on a hunch about entitlement
+                            would be the client deciding access, which §7.12
+                            forbids — and it would leave a guardian whose
+                            student just paid with no way to reach the page
+                            until this component happened to refetch.
+                          */}
+                          <Link href={`/students/${student.id}/calendar`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-[#0F2E48]"}`}
+                              title={`View ${student.display_name || student.email.split("@")[0]}'s calendar`}
+                              data-testid={`guardian-calendar-link-${student.id}`}
+                            >
+                              <CalendarDays className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          {/*
+                            G1 (SCL-181) — the student's practice test results.
+                            Always rendered, for the calendar link's reason above:
+                            the route answers 402/404 itself.
+                          */}
+                          <Link href={`/students/${student.id}/tests`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`ml-1 ${selectedStudentId === student.id ? "text-white/70 hover:text-white hover:bg-white/10" : "text-[#0F2E48]/60 hover:text-[#0F2E48]"}`}
+                              title={`View ${student.display_name || student.email.split("@")[0]}'s practice test results`}
+                              data-testid={`guardian-tests-link-${student.id}`}
+                            >
+                              <ClipboardList className="h-4 w-4" />
+                            </Button>
+                          </Link>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -769,6 +893,24 @@ export default function GuardianDashboard() {
                 )}
               </CardContent>
             </Card>
+
+            {noLongerLinkedName !== null && (
+              <Alert data-testid="guardian-student-no-longer-linked">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span>
+                    {noLongerLinkedName} is no longer linked to your account.
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNoLongerLinkedName(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
 
             {selectedStudentId && (
               <>
@@ -803,7 +945,7 @@ export default function GuardianDashboard() {
                       {selectedStudent?.display_name ||
                         selectedStudent?.email?.split("@")[0] ||
                         "Student"}
-                      's activity in the last 7 days
+                      's study streak
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -832,56 +974,17 @@ export default function GuardianDashboard() {
                         THE SAME COMPONENT the template preview renders in its
                         `locked` variant. One tile, two states — so the preview
                         cannot drift into a lookalike of a card it no longer
-                        resembles.
+                        resembles. G3-01 (R3): the streak is the one tile; the
+                        7-day questions and accuracy tiles are gone, and the
+                        server no longer sends their counters to a guardian.
                       */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <GuardianMetricTile
                             label="Day Streak"
                             icon={<Clock className="h-5 w-5" />}
-                            value={summaryMetricValue("current_streak") ?? "--"}
-                          />
-                          <GuardianMetricTile
-                            label="Questions Attempted (7d)"
-                            icon={<Target className="h-5 w-5" />}
-                            value={summaryMetricValue("week_questions") ?? "--"}
-                          />
-                          <GuardianMetricTile
-                            label="Accuracy"
-                            icon="%"
-                            value={
-                              summaryMetricValue("week_accuracy") !== null
-                                ? `${summaryMetricValue("week_accuracy")}%`
-                                : "--"
-                            }
+                            value={summaryData.currentStreakDays}
                           />
                         </div>
-                        {summaryData.metrics &&
-                          summaryData.metrics.length > 0 && (
-                            <div className="grid sm:grid-cols-2 gap-3">
-                              {summaryData.metrics.slice(0, 4).map((metric) => (
-                                <div
-                                  key={metric.id}
-                                  className="rounded-lg border border-border/60 bg-secondary/35 p-3"
-                                >
-                                  <p className="text-sm font-medium text-[#0F2E48]">
-                                    {metric.label}
-                                  </p>
-                                  <p className="text-xs text-[#0F2E48]/65 mt-1">
-                                    {metric.explanation?.whatThisMeans ||
-                                      "Runtime-backed KPI metric"}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        {summaryMetricValue("week_questions") === 0 && (
-                          <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
-                            <p className="text-amber-800 text-sm">
-                              No practice activity in the last 7 days. Encourage
-                              your student to start a practice session.
-                            </p>
-                          </div>
-                        )}
                       </div>
                     ) : (
                       <div className="text-center py-12 px-4">

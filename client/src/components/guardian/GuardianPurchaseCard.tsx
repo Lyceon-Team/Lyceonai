@@ -31,6 +31,7 @@
  */
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import {
   Card,
   CardContent,
@@ -53,6 +54,10 @@ import {
 } from "@/lib/billing-client";
 import { studentLabel, type LinkedStudent } from "@/hooks/useGuardianStudents";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
+import {
+  deriveBillingPlanPricing,
+  monthlyAmountFrom,
+} from "../../../../packages/shared/src/billing-pricing";
 
 function formatPrice(amountCents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", {
@@ -87,7 +92,6 @@ export function GuardianPurchaseCard({
     null,
   );
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [itemAdded, setItemAdded] = useState(false);
   const portal = useBillingPortal();
 
   /**
@@ -122,27 +126,29 @@ export function GuardianPurchaseCard({
   >({
     queryKey: ["billing-plans"],
     queryFn: getBillingPlans,
+    // UI-14: live prices change when the owner reprices, not within a session.
+    staleTime: QUERY_FRESHNESS.pricing.staleTime,
   });
   const prices = Array.isArray(pricesData) ? pricesData : [];
+  /**
+   * The basis for the saving badges: the monthly plan's own live amount from
+   * this same response. Before this the badge read `price.savingsPercent`, a
+   * field `GET /api/billing/plans` has never sent — so on this card the badge
+   * was dead code that never rendered, and on `/upgrade` the identically-named
+   * field was filled from a hardcoded table. Same missing field, two different
+   * wrong outcomes.
+   */
+  const monthlyAmountCents = monthlyAmountFrom(prices);
 
   const checkoutMutation = useMutation({
     mutationFn: async (plan: BillingPlan) => {
       // The subject travels with the purchase (§20, §31.4, §36.4).
-      // `startSubscriptionCheckout` redirects to Stripe on `checkout_session`
-      // and returns without redirecting on `item_added`, which is why the
-      // outcome is inspected rather than discarded.
+      // `startSubscriptionCheckout` always redirects to Stripe: every guardian
+      // purchase, first or fifth, is a Checkout Session (owner ruling
+      // 2026-09-29, one subscription per student).
       return startSubscriptionCheckout(plan, {
         studentProfileId: selectedStudentId ?? undefined,
       });
-    },
-    onSuccess: (outcome) => {
-      // Adding a student to an existing guardian subscription completes
-      // server-side with no redirect. Saying so is the difference between a
-      // finished purchase and a button that appeared to do nothing.
-      if (outcome.kind === "item_added") {
-        setItemAdded(true);
-        setSelectedStudentId(null);
-      }
     },
     onError: (err: unknown) => {
       /**
@@ -183,15 +189,6 @@ export function GuardianPurchaseCard({
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {itemAdded && (
-          <Alert className="border-green-600/40 bg-green-50">
-            <AlertDescription className="text-green-800">
-              Student added to your existing subscription. Their access starts
-              now and the charge appears on your next invoice.
-            </AlertDescription>
-          </Alert>
-        )}
-
         <div className="space-y-2" data-testid="student-picker">
           <label
             htmlFor="checkout-student"
@@ -206,7 +203,6 @@ export function GuardianPurchaseCard({
             value={selectedStudentId ?? ""}
             onChange={(e) => {
               setCheckoutError(null);
-              setItemAdded(false);
               setSelectedStudentId(e.target.value || null);
             }}
           >
@@ -244,10 +240,21 @@ export function GuardianPurchaseCard({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {prices.map((price) => {
+              const { savingsPercent } = deriveBillingPlanPricing(
+                price,
+                monthlyAmountCents,
+              );
               const savingsBadge =
-                typeof price.savingsPercent === "number" &&
-                price.savingsPercent > 0
-                  ? `Save ${price.savingsPercent.toFixed(1)}%`
+                savingsPercent !== null && savingsPercent > 0
+                  ? `Save ${savingsPercent.toFixed(1)}%`
+                  : null;
+              // `amountCents` is nullable on the contract — an unconfigured
+              // price id or a Stripe outage. It was typed non-null here, so
+              // `formatPrice(null)` rendered "$NaN" into the guardian's choice
+              // of plan. No amount, no amount shown.
+              const headlinePrice =
+                price.amountCents !== null && price.currency !== null
+                  ? formatPrice(price.amountCents, price.currency)
                   : null;
               return (
                 <button
@@ -271,8 +278,11 @@ export function GuardianPurchaseCard({
                   <div className="text-lg font-semibold text-[#0F2E48]">
                     {price.label}
                   </div>
-                  <div className="text-2xl font-bold text-[#0F2E48] mt-1">
-                    {formatPrice(price.amountCents, price.currency)}
+                  <div
+                    className="text-2xl font-bold text-[#0F2E48] mt-1"
+                    data-testid={`guardian-price-${price.plan}`}
+                  >
+                    {headlinePrice ?? "—"}
                   </div>
                   <div className="text-sm text-[#0F2E48]/60">
                     {price.intervalLabel}
@@ -325,7 +335,6 @@ export function GuardianPurchaseCard({
             data-testid="guardian-purchase-submit"
             onClick={() => {
               setCheckoutError(null);
-              setItemAdded(false);
               if (!selectedStudentId) {
                 // No selection means NO REQUEST: the server would answer 400
                 // STUDENT_NOT_SELECTED, and a round trip to learn what the form

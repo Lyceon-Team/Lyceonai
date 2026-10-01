@@ -34,6 +34,8 @@ Three email lanes exist. This contract governs exactly one.
 **C0.3** `contact@lyceon.ai` does not appear in any file under `server/`, `apps/`, `packages/`, `client/`, or `supabase/`.
 *Violated if:* `grep -rn "contact@lyceon.ai" server apps packages client supabase` returns anything.
 
+> **Amended 2026-09-29 (Guardian_Closure_Plan G2-05, owner ruling R6):** the guardian consent request email was removed with the email-consent flow — a redeemed guardian link replaces it. Three direct sends remain (deletion-scheduled, guardian link invite, deletion-completed); every mention of the consent request below is historical, and `tests/ci/notifications.direct-sends.test.ts` now asserts it is gone rather than wired.
+
 **C0.4** Four transactional emails are direct sends, not notification events: the guardian consent request (R7, 2026-09-03 — the recipient has no account by definition; every message row is addressed to a profile), the deletion-scheduled recovery email (R8 — it carries a credential that can never sit in a persisted, recipient-readable payload), the guardian link invite (2026-09-15 — the recipient has no profile row, same ruling as R7), and the deletion-completed notice (2026-09-15, SCL-083 PROPOSED — by the time it is sent the recipient's profile row has been deleted by the cascade, so no message row could be addressed to it; see C0.6). Each is sent at its request site through `server/lib/notifications/direct-sends.ts` → `transport.ts`, from `NOTIFICATION_FROM_EMAIL`, with a deterministic `Idempotency-Key` derived from durable state. For the three request-row sends that is the row id: `guardian-consent-request:<guardian_consent_requests.id>`, `account-deletion-scheduled:<account_deletion_requests.id>` and `account-deletion-completed:<account_deletion_requests.id>` (the row id is read into the executor before the cascade deletes the row; the key outlives the row on purpose — a second cron pass can never re-send because the row is gone). The invite has no row of its own and no `guardian_links` row exists before redemption, so its key is derived from the durable state the email carries: `guardian-link-invite:<student_profile_id>:<profiles.student_link_code_issued_at ISO>:<sha256(normalised address)[0:32]>` — one email per (live code, address); a regenerated code or another address is a new key; the address never appears in the key. Nothing about any of the four messages (address, body, token, code) is persisted by this lane.
 *Violated if:* a `notification_events` row exists with any of the four types; the consent route, the deletion route, the invite route or the deletion executor no longer calls its sender (`tests/ci/notifications.direct-sends.test.ts` greps all four call sites); a captured send lacks its state-derived key, or an invite key contains an `@`; or a token, code or address appears in any notification table.
 
@@ -47,8 +49,8 @@ Three email lanes exist. This contract governs exactly one.
 
 ## 1. Schema
 
-**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked` and `guardian_unlinked` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; adding a type is a CHECK change plus a row in §2.3).
-*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than `guardian_linked` and `guardian_unlinked`; or `confdeltype` of the profiles FK is not `c`.
+**C1.1** `public.notification_events(event_id uuid PK, event_type text, subject_profile_id uuid FK → profiles(id) ON DELETE CASCADE, payload jsonb, created_at)`, with `event_type` restricted by CHECK to exactly `guardian_linked`, `guardian_unlinked`, `full_length_week`, `full_length_tomorrow`, `exam_score_report_requested` and `renewal_decision_requested` (launch scope after rulings R7/R8 was `guardian_linked` alone; `guardian_unlinked` added 2026-09-15 by `20260915000000_guardian_unlinked_event.sql`; the two practice-test notices added 2026-09-27 by `20261012000000_calendar_exam_notifications.sql`; the two post-exam notices added 2026-09-30 by `20261015000000_exam_score_renewal_decision.sql` (SCL-191); adding a type is a CHECK change plus a row in §2.3).
+*Violated if:* `pg_get_constraintdef` of `notification_events_type_check` lists any value other than those six; or `confdeltype` of the profiles FK is not `c`.
 
 **C1.2** `public.notification_messages(message_id uuid PK, event_id FK → notification_events ON DELETE CASCADE, recipient_profile_id FK → profiles(id) ON DELETE CASCADE, channel ∈ {in_app,email}, status ∈ {queued,sent,delivered,bounced,complained,failed}, provider_message_id, attempts, last_error, seen_at, read_at, archived_at, sent_at, delivered_at, created_at)` with `UNIQUE (event_id, recipient_profile_id, channel)`.
 *Violated if:* any listed column, CHECK, or the unique constraint is absent in `information_schema` / `pg_constraint`; or either FK's `confdeltype` is not `c`.
@@ -78,10 +80,36 @@ Three email lanes exist. This contract governs exactly one.
 |---|---|---|---|
 | `guardian_linked` | the student | student: `in_app`; guardian: `in_app`, `email` | `create_active_guardian_link_audited` |
 | `guardian_unlinked` | the student | the party who did NOT revoke (`v_target`, derived once inside the function): `in_app`, `email`; the revoker: nothing | `revoke_guardian_link_audited` |
+| `full_length_week` | the student | the student: `in_app` | `calendar_emit_exam_notification` |
+| `full_length_tomorrow` | the student | the student: `in_app`, `email` | `calendar_emit_exam_notification` |
+| `exam_score_report_requested` | the student | the student: `in_app`, `email` | `exam_score_renewal_emit` |
+| `renewal_decision_requested` | the student | the PAYER — `entitlements.payer_profile_id`, or the student when it is NULL: `in_app`, `email` | `exam_score_renewal_emit` |
 
 Not event types (see §0.4): the guardian consent request, the deletion-scheduled email and the guardian link INVITE (the student's current code, sent to an address with no profile row; `sendGuardianLinkInviteEmail`, keyed on student id + code issue time + a hash of the address) are direct sends.
 
-*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; or an event row exists whose type is not in this table.
+The two practice-test rows are Brief 14 Step 5 (Doc 05F §8.1), added 2026-09-27. The student is
+both subject and sole recipient: a practice test is the work, and Doc 01 §38.1 gives a guardian
+aggregates rather than the student's nudges — there is no guardian message row at either kind.
+The CHANNEL SPLIT is a judgement the brief did not rule on and the owner may reverse in one line:
+the day-before notice carries `email` because it is time-critical and a bell nobody opens is not a
+notification, and the week-ahead notice does not, because §12.2 says minimise contact on a minor's
+surface and the student sees the week when they open the calendar. It is one `jsonb_build_array`
+in `calendar_emit_exam_notification` plus this row.
+
+The two POST-EXAM rows are SCL-191, added 2026-09-30. The SUBJECT is the student on both — the
+student is who the notification is about, and `subject_profile_id` is what the account-deletion
+cascade follows — while the RECIPIENT differs, because the two rows ask two different questions.
+The score is the student's, so the student is asked for it. The money is the payer's, so the payer
+is asked about it: Doc 01 §36.4 already prompts a paying guardian "you are still paying for this
+student's subscription — keep or cancel?", and this is the same question at a different moment.
+On a SELF-PAID subscription those are one person, and `exam_score_renewal_emit`'s caller
+(`noticesFor` in `server/services/exam-score-renewal/job.ts`) sends the score prompt ONLY, so a
+student does not get two emails on the same morning about the same sitting. On the `billing_cycle`
+anchor there is no sitting, so only `renewal_decision_requested` is sent (owner ruling 2026-09-30
+#1). A guardian NEVER receives `exam_score_report_requested`: Doc 01 §38.1 gives a guardian
+aggregates rather than the student's own SAT result.
+
+*Violated if:* a `guardian_linked` event has a message for any profile other than its student and the linking guardian, or the guardian lacks an `email` row, or the student has an `email` row; a `guardian_unlinked` event has any message for the profile recorded as `revoked_by_profile_id` on its link, or fewer than two rows (`in_app` + `email`) for the other party; a `full_length_week` or `full_length_tomorrow` event has a message for any profile other than its subject student, or a `full_length_week` event has an `email` row, or a `full_length_tomorrow` event lacks one; an `exam_score_report_requested` event has a message for any profile other than its subject student, or lacks either channel; a `renewal_decision_requested` event has a message for any profile other than its subject's `entitlements.payer_profile_id` (or the subject itself where that is NULL), or lacks either channel; a self-paid student receives both post-exam types for one occasion; or an event row exists whose type is not in this table.
 
 **C2.4** `in_app` rows are delivered on insert: `status='delivered'`, `delivered_at = created_at`. The row is the delivery.
 *Violated if:* an `in_app` row exists with `status <> 'delivered'` or `delivered_at IS NULL`.
@@ -139,7 +167,17 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 ## 5. Idempotency
 
 **C5.1** `event_id` is deterministic: `public.notification_event_id(event_type, source_id)` = the first 16 bytes of `sha256(event_type || ':' || source_id)` with the RFC 4122 version nibble set to 5 and the variant bits set to `10`. The TypeScript derivation in `server/lib/notifications/event-id.ts` produces the identical uuid.
-*Violated if:* for any `(event_type, source_id)` the SQL and TypeScript results differ, or two calls with the same inputs differ.
+
+THE EVENT TYPE BEING IN THE HASH IS LOAD-BEARING, not incidental. It is what lets ONE source row
+carry several independently-idempotent notifications: the `guardian_linked` and `guardian_unlinked`
+ids for one link row, and the `full_length_week` and `full_length_tomorrow` ids for one exam block.
+A design that put the distinction in the payload instead (`{"kind": ...}`) would derive one id per
+source row, and every notification after the first would be swallowed by the ON CONFLICT of C5.2 —
+silently, because a swallowed replay and a swallowed second message are the same no-op. That is why
+the owner's 2026-09-26 ruling on Brief 14 Step 5 was "two event types, not one with a kind in the
+payload", and it is the plant behind gate `Z-64` in `scripts/ci/calendar-writer-gates.sql`.
+
+*Violated if:* for any `(event_type, source_id)` the SQL and TypeScript results differ, or two calls with the same inputs differ; or two event types derive one id for one source id.
 
 **C5.2** Emit is a no-op on replay: calling `emit_notification_event` twice with the same `p_event_id` leaves event and message counts unchanged (`ON CONFLICT DO NOTHING` on both inserts).
 *Violated if:* the second call raises, or any count changes.
@@ -192,8 +230,8 @@ Legal transitions. Anything not listed is illegal; an illegal transition request
 
 ## 8. Payload rule (non-negotiable)
 
-**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else. For `guardian_unlinked`: `{ "link_id": uuid, "student_display_name": text, "guardian_display_name": text }` and nothing else — never `revocation_reason`, which is free text often written by a minor and becomes student-readable under RLS the moment it is written.
-*Violated if:* a `guardian_linked` or `guardian_unlinked` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, a revocation reason, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
+**C8.1** `payload` holds identifiers and rendering parameters only. For `guardian_linked`: `{ "link_id": uuid, "student_display_name": text }` and nothing else. For `guardian_unlinked`: `{ "link_id": uuid, "student_display_name": text, "guardian_display_name": text }` and nothing else — never `revocation_reason`, which is free text often written by a minor and becomes student-readable under RLS the moment it is written. For `full_length_week` and `full_length_tomorrow`: `{ "block_id": uuid, "local_date": "YYYY-MM-DD" }` and nothing else — never `form_id`, which names a specific exam paper and would be content about the assessment sitting in a persisted, recipient-readable row, and which the notice does not need in order to say a practice test is coming.
+*Violated if:* a `guardian_linked`, `guardian_unlinked`, `full_length_week` or `full_length_tomorrow` payload has any other key, or any payload contains question content, responses, tutor data, session detail, an email address, a token, a revocation reason, a form id, or a date of birth (Doc 01 §38.1/§38.2; Doc 01A §14).
 
 **C8.2** Nothing addressed to a guardian carries more than aggregate/identity data.
 *Violated if:* an email or in-app body rendered for a guardian recipient contains any of the §38.1 "no" categories.

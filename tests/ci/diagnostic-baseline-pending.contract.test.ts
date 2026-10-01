@@ -17,13 +17,15 @@
  * status they do not have.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const resolvePaidKpiAccessForUser = vi.fn();
 const buildStudentKpiViewFromCanonical = vi.fn();
 const buildScoreEstimateFromCanonical = vi.fn();
-const buildStudentFullLengthReportView = vi.fn((x: unknown) => x);
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. Dead full-length mocks (buildStudentFullLengthReportView)
+// removed; they stubbed deleted exports and fed no assertion here.
 const readDiagnosticBaseline = vi.fn();
 const readDiagnosticState = vi.fn();
 const readAnsweredQuestionCount = vi.fn();
@@ -36,7 +38,6 @@ vi.mock("../../server/services/kpi-access", () => ({
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
-  buildStudentFullLengthReportView,
   readDiagnosticBaseline,
   readDiagnosticState,
   readAnsweredQuestionCount,
@@ -208,16 +209,49 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
     expect(arm).not.toContain("Start Diagnostic");
   });
 
-  it("ScoreProjectionCard has a baseline_pending branch that does not prompt", () => {
-    const src = read("client/src/components/progress/ScoreProjectionCard.tsx");
-    const start = src.indexOf('data.estimateStatus === "baseline_pending"');
-    const end = src.indexOf('data.estimateStatus === "no_baseline"');
-    expect(start).toBeGreaterThan(-1);
-    expect(start).toBeLessThan(end);
-    const arm = src.slice(start, end);
-    expect(arm).toContain("Your baseline is being calculated.");
-    expect(arm.toLowerCase()).not.toContain(
-      "complete the\n              diagnostic",
-    );
+  /**
+   * @spec [Doc-05C_V1.0 §7.4; register UI-06] | @implemented [2026-09-29]
+   * plain English: this used to read `ScoreProjectionCard.tsx`, the second
+   * surface with a no_baseline render arm. UI-06 deleted that card (it had no
+   * importer). The rule it pinned is about ANY surface, so it is now a sweep:
+   * every client module that renders an arm on `estimateStatus === "no_baseline"`
+   * (a ternary `?` or an `if (...)`) must carry a `baseline_pending` arm BEFORE
+   * it, so a student whose diagnostic is done never falls through to the prompt.
+   * A new or revived estimate surface is caught without editing this test.
+   * Edge case: the dashboard's `shouldShow={... === "no_baseline"}` is an
+   * exact-match gate, not a render arm, and is pinned by its own test above.
+   */
+  it("every client surface with a no_baseline render arm has a baseline_pending arm before it", () => {
+    const noBaselineArm = /estimateStatus\s*===\s*"no_baseline"\s*[?)]/;
+    const pendingArm = /estimateStatus\s*===\s*"baseline_pending"/;
+    const surfaces = (
+      readdirSync(resolve(process.cwd(), "client/src"), {
+        recursive: true,
+        encoding: "utf8",
+      }) as string[]
+    )
+      .filter((rel) => /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel))
+      .map((rel) => ({
+        rel,
+        code: read(`client/src/${rel}`)
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/^\s*\/\/.*$/gm, ""),
+      }))
+      .filter(({ code }) => noBaselineArm.test(code));
+
+    // Presence before absence: the dashboard hero is such a surface, so an
+    // empty sweep means the pattern broke, not that the rule holds.
+    expect(surfaces.map((s) => s.rel)).toContain("pages/lyceon-dashboard.tsx");
+
+    for (const { rel, code } of surfaces) {
+      const pendingAt = code.search(pendingArm);
+      expect(pendingAt, `${rel} has no baseline_pending arm`).toBeGreaterThan(
+        -1,
+      );
+      expect(
+        pendingAt,
+        `${rel} renders no_baseline before baseline_pending`,
+      ).toBeLessThan(code.search(noBaselineArm));
+    }
   });
 });

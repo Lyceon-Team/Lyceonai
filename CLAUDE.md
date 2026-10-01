@@ -62,6 +62,25 @@ This rule overrides any instruction to the contrary.
 Annotate every implementation:
 `@spec [Doc-ID_version, §section] | @implemented [YYYY-MM-DD] | plain English: what it does, expected outcome, trade-offs, edge cases`
 
+**An annotation that describes its own status must be updated when that status changes.**
+
+A comment saying "the ruling said X; this is wider, deliberately" is accurate when written and
+misleading the moment the deviation is ratified. It reads as an open question, and it invites the
+next person either to re-litigate a settled one or to narrow the code back to the original wording.
+So when a deviation is ruled on, the annotation records **the ruling and its date** alongside the
+reasoning, rather than continuing to describe itself as a deviation.
+
+**This is the inverse of the stale-comment rule.** That one catches a comment the code outran;
+this one catches a comment that stopped tracking a *decision*. Both produce the same failure — a
+reader acting on something that was true once.
+
+> `FUNDING_SUBSCRIPTION_STATUSES` in `server/lib/stripe/guardian-subscriptions.ts` opened "THE
+> RULING SAID 'ACTIVE'; THIS IS WIDER, DELIBERATELY", which was exactly right at the time. The
+> owner ratified the wider set hours later, on the reasoning rather than the wording — and the
+> sentence then read as an unratified deviation still awaiting a decision, one narrowing away from
+> reopening the pre-webhook window the check exists to close. The neighbouring page cap had the
+> opposite gap: ruled on, and recording no ruling at all. (Learned 2026-09-29, owner ruling: #962.)
+
 ## Verify before you say "done"
 
 Never report success on assertion alone. Run the check and show the evidence (command + output):
@@ -71,6 +90,123 @@ pnpm -s run build && pnpm test
 ```
 
 A task is open until: build passes, tests pass, no invariant violated, result reproducible. Passing CI is necessary, not sufficient.
+
+## A migration that replaces a function body orphans its mutations
+
+A mutation in `scripts/ci/*.mutations.sh` bites by editing the migration that *currently
+defines* a function. The moment a newer migration `CREATE OR REPLACE`s that function, every
+mutation still aimed at the old home edits a body the pipeline immediately overwrites — so the
+mutation applies cleanly, the suite passes, and the proof is gone. **Mutations fail silently
+upward: a dead mutation is indistinguishable from a passing one.**
+
+So: **a change that replaces a function body must re-point every mutation aimed at that
+function's previous home, in the same change** — and must show each re-pointed mutation still
+reddening its target test, because an anchor that no longer matches is a dead mutation too.
+
+Before adding or moving a function-body mutation, find the LAST migration defining that
+function — not the first, not the one the mutation names:
+
+```bash
+grep -ln 'FUNCTION public\.<name>' supabase/migrations/*.sql | sort | tail -1
+```
+
+This has now fired **six times** (M2, M9, M17, M31, M90–M93, M96) — twice in the change that
+prompted this rule, where six mutations stopped biting at once because that change's own
+migration superseded their targets. Owner ruling 2026-09-25: it belongs in the working rules.
+
+## A plant must mutate the call site under test
+
+**A mutation applied to the wrong occurrence is a dead plant reading as a live one.**
+
+`const items = subscription.items?.data ?? []` appeared three times in
+`server/lib/stripe/webhook-handler.ts`; a first-match replace hit the single-student writer, which
+the tests never exercise. The plant applied cleanly, the suite stayed green, and that read as "the
+test doesn't catch this" when it was "the mutation never reached the code." Same class as the dead
+migration mutation above, arrived at through a different door.
+
+Before accepting a plant that comes back green, confirm the mutation landed on the path the test
+executes — **by line number, not by pattern**. A plant that fails to fail is a finding; a plant
+that never applied is nothing at all.
+
+The two are told apart by looking, not by inference:
+
+```bash
+grep -n '<the anchor>' <file>      # how many occurrences, and which one the test runs
+```
+
+Learned 2026-09-29 (#962), where re-pointing one plant from the single-student writer to the
+guardian writer turned it from green to reddening three cases.
+
+## "Is it deployed?" — ask the catalog, never the ledger
+
+`schema_migrations` **stopped recording in June**. Migrations are applied out of band, so the
+ledger reports every migration since as unapplied. It is not a defect and it is not being fixed;
+it is simply not evidence. A report of "authored but not applied" sourced from it is a false
+claim about production, and it has been made.
+
+Answer the question from the catalog, against the database being asked about:
+
+| the question | the authority |
+|---|---|
+| is this function's body live? | `pg_proc.prosrc` — normalise CRs, then compare or `md5` |
+| is this constraint still there? | `pg_constraint` (and `pg_attribute` for a column) |
+| is this config value live? | the config table itself, e.g. `calendar_runtime_config` |
+| does this table/column exist? | `information_schema` / `pg_class` |
+
+Owner-run against production: never query or write production yourself. State what you would run
+and hand it over, or say the deployment state is unverified from here — which is honest, where a
+ledger reading is not.
+
+**A consequence of not reading production: your deployment picture only changes when the owner
+tells you.** It has no other input, so it goes stale silently and a stale picture reads exactly
+like a current one. Treat what you believe about production as stale unless THIS turn updated it,
+and say which turn it came from when it matters — "applied, per the owner's report of
+2026-09-25", never a bare "applied". Carrying a previous turn's deployment state forward as
+present fact is the same false claim as sourcing it from the ledger, arrived at by a slower
+route. (Owner ruling 2026-09-25.) Where a migration's effect can be pinned in CI, pin it: gates `B-01` and
+`B-02` in `scripts/ci/calendar-schema-gates.sql` are the pattern — assert the body of whatever
+function is live at the end of the migration pipeline. (Learned 2026-09-24: five calendar
+migrations reported unapplied were all live in production.)
+
+## The test layer has weaker guarantees than the code it guards
+
+**`tsconfig.json` excludes `**/*.test.ts` and `**/*.test.tsx`**, so `strict`,
+`noUnusedLocals` and `noUncheckedIndexedAccess` never see a test file. `pnpm -s run build`
+passing says nothing about them. The lint bot on a PR is standing where the compiler would
+otherwise be — treat its findings on test files as compiler errors, not style notes.
+
+The consequence that matters is not dead imports; it is **fixtures**. A hand-written fixture
+can assert a shape nothing in the system produces, and then both the fixture and the code it
+guards pass against something neither of them emits. Two instances, both found the hard way:
+
+- `violations: ["V-05", "V-10"]` — bare strings, where `calendar_validate_plan` has only ever
+  returned objects (`{rule, date, detail}`). The fixture agreed with the bug, so the suite
+  stayed green while production served `rule_ids=[]`. (SCL-137.)
+- The guardian calendar's payload and its schema were each tested against hand-written
+  objects, and neither test ever saw the route's `{ok: true, ...}` envelope. A 200 rendered an
+  error state. (SCL-171's sibling finding, `tests/ci/calendar.wire-contract.test.ts`.)
+
+So, when a test guards a boundary:
+
+- **Derive the fixture from real output**, not from what the shape ought to be. Call the real
+  function, or the real route, and assert on what comes back.
+- **One scenario, shared.** Two hand-built fixtures for one resource drift, and both files stay
+  green while they do (`tests/ci/calendar.service-harness.ts` is the calendar's).
+- **Assert presence before absence.** An anti-leak assertion over an empty collection passes
+  for the wrong reason; prove the payload is non-trivial first.
+- **A fixture that collapses two values cannot disprove their independence.** If the claim is
+  that two things differ, the fixture must be able to make them differ. "Each entitlement carries
+  its own `stripe_subscription_item_id`" passed for the wrong reason: every fixture gave each
+  subscription exactly one item, so `items[0].id` and `item.id` were the same value and no
+  mutation could separate them. The repair is a fixture with the shape that CAN disprove it —
+  here a two-item subscription, which is also the shape live production data still has
+  (`sub_1UB8p5DPtjyWEVqErGBHVFQF`). (Learned 2026-09-29: #962.)
+- **An assertion a sibling can satisfy is not an assertion.** `toContain("student-link-code")`
+  was satisfied by `student-link-code-missing`, and three inline 500s sharing one `try` meant
+  deleting one log was masked by its neighbour — so the coverage check passed on the wrong
+  statement. Match the whole token, and pair each assertion one-to-one with the site it guards.
+- A round-trip test — real producer through real consumer — catches what neither side's own
+  tests can, because the mismatch lives between them.
 
 ## Tooling
 
@@ -84,23 +220,32 @@ Before implementing scheduling, queueing, retries, alerting, tracing, or any oth
 
 This applies to spec implementation too: where a spec section names a managed service (e.g. Doc 03C §8 names Cloud Tasks queues), implement it with that service rather than an application-layer equivalent.
 
-## Branch targeting — four integration branches, never `main`
+## Branch targeting — seven integration branches, never `main`
 
-Four long-lived integration branches exist. Route every PR to the correct one by scope:
+Seven long-lived integration branches exist. Route every PR to the correct one by scope:
 
 | Branch | Scope | Examples |
 |---|---|---|
 | `questions` | Question bank creation **only** | Batch authoring, taxonomy edits, seed SQL, ingestion pipeline |
 | `lisa` | AI tutor / LISA work | Tutor runtime, context/memory, RAG, LISA API, tutor-adjacent tests |
-| `stripe` | Billing / entitlement vertical **and WS-GL** | Stripe surface, entitlement writes, the guardian-link and guardian-consent data layer |
-| `cleanup` | Everything else | Spec alignment, auth, mastery, practice engine, frontend, CI, docs |
+| `calendar` | Study-calendar vertical | Plan generation, `calendar_validate_plan`, calendar schema gates, calendar surfaces |
+| `exam` | Full-length exams | Exam runtime and session state, scoring, score reports, review unlock |
+| `guardian` | Guardian-facing surfaces | Guardian dashboard, guardian projections, guardian exam results |
+| `review` | Review vertical | Review pool and session runtime, `review-canonical`, review surfaces |
+| `cleanup` | Everything else — **including billing / entitlement and WS-GL** | Spec alignment, auth, mastery, practice engine, Stripe surface, entitlement writes, the guardian-link and guardian-consent data layer, frontend, CI, docs |
 
-**Why WS-GL routes to `stripe`, not `cleanup`.** The governing charter
+**`stripe` no longer exists; billing routes to `cleanup`.** The 2026-08-24 ruling sent the
+billing / entitlement vertical and WS-GL to a `stripe` branch on the grounds that the governing charter
 (`docs/plans/Stripe_Vertical_Session_Charter.md`), the SCL register entries it depends on, and its own
-defect record (`docs/plans/WS-GL_Guardian_Link_Data_Layer.md`) all live on `stripe` and nowhere else —
-`git ls-tree origin/cleanup -- docs/plans/` returns none of them. WS-GL also unblocks the guardian-paid
-billing path. Splitting a workstream from its dependencies to satisfy a scope table is the wrong trade;
-the table is corrected to match reality instead. Owner ruling, 2026-08-24.
+defect record (`docs/plans/WS-GL_Guardian_Link_Data_Layer.md`) lived on `stripe` and nowhere else.
+That branch has since merged and been deleted from the remote (`git ls-remote --heads origin stripe`
+returns nothing), and its premise went with it: those files are now on `cleanup`, on `main`, and on
+every other integration branch — `git ls-tree origin/cleanup -- docs/plans/` returns both. The
+dependencies and the workstream are no longer separated by routing billing to `cleanup`, so billing,
+entitlement and WS-GL route there. Owner brief, 2026-09-29.
+
+**A routing rule pointing at a deleted branch sends the next agent nowhere.** Verify a target branch
+still exists before trusting this table: `git ls-remote --heads origin <branch>`.
 
 **Never open a PR against `main`.** Karl owns all merges to `main`.
 
@@ -115,6 +260,24 @@ When opening a PR, set its base to the integration branch that matches the scope
 ## Unified code across agents & sessions
 
 Multiple subagents and parallel sessions work this repo. They must produce **one coherent codebase**, not several divergent ones. Before writing a helper, type, schema, pattern, or constant: **search for an existing canonical one and consume it** — never fork a second version. Shared primitives (`packages/shared` schemas/types, DB utilities, the logger, identity helpers) are single-source-of-truth; extend the canonical definition, don't duplicate it. Foundations land before the work that depends on them. When integrating parallel work, verify it reuses existing primitives and follows established patterns rather than introducing a parallel approach. Divergence and duplication are defects, even when no two edits touch the same line.
+
+**Never re-declare inline a shape a canonical type already describes.** A hand-rolled
+`{ id: string; role?: string }` for a value that has a canonical type does not merely duplicate
+it — it *narrows* it, and the fields it drops become invisible to everyone reading that scope.
+The author then reaches for the nearest field that compiles. This is not a style preference; it
+is how a silent data defect gets written:
+
+> `server/routes/diagnostic-routes.ts` declared `user` as `{ id: string; role?: string }`.
+> `SupabaseUser` carries `actor_id: string`. With no `actor_id` in scope, the author wrote
+> `const actorId = userId` — the pseudonymous grouping key set to the identity key it exists to
+> survive. 205 production rows, weeks green, three guards blind to it. `review-canonical.ts`
+> did the same with `{ id?: string; actor_id?: string }`, making the field optional and
+> inviting `?? studentId`. (Learned 2026-09-25: SCL-151, #894.)
+
+Import the canonical type (`SupabaseUser` from `server/middleware/supabase-auth.ts` for the
+authenticated user) and, where a required field is somehow absent, **fail closed** — a 500 beats
+substituting a plausible value, because writing the wrong value *is* the defect. Watch for this
+anywhere a route, service, or handler re-states a shape the canonical type already has.
 
 ## Plan before implementing
 

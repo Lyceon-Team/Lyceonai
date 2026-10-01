@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{baseUrl}}/api/review/answer"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "sessionId": "{{reviewSessionId}}",
+      "sessionItemId": "{{reviewSessionItemId}}",
+      "selectedOptionId": "{{reviewOptionToken}}"
+    }
+order: 4000

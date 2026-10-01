@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 
 // Import + re-export from canonical-id.ts (browser-safe module) so existing
 // consumers of question-bank-contract.ts are not broken, and the local
@@ -431,31 +431,6 @@ export function isCanonicalRuntimeQuestion(
 }
 
 /**
- * @spec [Doc 02B §14/§20 Serving Questions; HALT-8 anti-leak] | @implemented 2026-06-16
- * plain English: validate an ALREADY-student-safe row — one SELECTed WITHOUT answer-bearing
- * columns (no correct_answer / correct_variants) — for RENDERABILITY only. Answer correctness
- * was already enforced at ingestion (QA validator) + the DB discriminated CHECK, so the serving
- * path must NOT re-require fields it deliberately did not select (QUESTIONS-SERVING-001:
- * isCanonicalRuntimeQuestion requires those fields and would drop every safe-selected row).
- * Checks: a valid canonical id, a normalizable section, a stem, and the renderable option shape
- * for the item_type (mcq → 4 A–D options; grid_in → NO options, renders numeric entry).
- */
-export function isStudentSafeRuntimeQuestion(
-  row: CanonicalQuestionRowLike,
-): boolean {
-  if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
-  if (!normalizeSectionCode(row.section_code ?? null)) return false;
-  if (!normalizeText(row.stem)) return false;
-  const itemType = normalizeItemType(
-    row.item_type ?? row.question_type ?? null,
-  );
-  if (itemType === "grid_in") {
-    return !hasCanonicalOptionSet(row.options ?? null);
-  }
-  return hasCanonicalOptionSet(row.options ?? null);
-}
-
-/**
  * @spec [genesis questions DDL; grid-in-extension.sql; Doc-02A_V6 §13/§16] | @implemented 2026-06-14
  * plain English: reconciles a genesis questions row onto the contract's legacy field names
  * so the single canonical serializer/validators keep working. Maps id→canonical_id,
@@ -726,6 +701,61 @@ export function parseStudentSafeOptionTokenMap(
   return parseStoredOptionTokenMap(raw);
 }
 
+/**
+ * @spec [Doc-02B_V4 §16; Doc-04A_V2.2 §11.1 (stored mcq answer is the canonical
+ *        letter); E6 ruling "shuffle same as practice and review"]
+ * | @implemented [2026-09-24]
+ *
+ * plain English: the one rule for turning what a student selected on a shuffled
+ * screen into the canonical option key. A served token resolves through the map the
+ * server persisted when it shuffled; anything that is not a token is read as a
+ * canonical letter A-D. Extracted verbatim from practice's gradeAnswer so practice,
+ * review and the full-length exam resolve selections with the SAME code.
+ * expected outcome: a canonical key, or null when the selection is neither a served
+ * token nor a letter. trade-offs: the letter fallback is practice's behaviour, kept
+ * so the three engines stay one; a client that sends a letter gets that canonical
+ * letter, which reveals nothing (it does not know which letter is correct).
+ * edge cases: an empty selection resolves to null.
+ */
+export function resolveSelectedCanonicalKey(
+  selected: string,
+  optionTokenMap: Readonly<Record<string, string>>,
+): string | null {
+  const mappedKeyFromToken = selected ? optionTokenMap[selected] : null;
+  return mappedKeyFromToken ?? normalizeAnswerKey(selected ?? null);
+}
+
+const PRE_SUBMIT_ASSET_ROLES = new Set(["stimulus", "option"]);
+const KNOWN_ASSET_KINDS = new Set(["svg", "table", "image"]);
+
+// @spec [Doc-02A_V6 §16; Doc-02B_V4 §14/§20] | @implemented [2026-07-24]
+// Moved verbatim from server/routes/practice-canonical.ts on 2026-09-24 (E6): practice,
+// review and the full-length exam serialize pre-submit assets through this one filter.
+// Fail-closed: only v:1 structured payloads with a valid items array are
+// understood. Unknown versions, missing structure, legacy flat formats, or
+// any unrecognized shape → null (exclude). Items with missing/unknown role
+// or kind are dropped individually; if nothing survives, return null.
+export function filterAssetsPreSubmit(assets: unknown | null): unknown | null {
+  if (assets == null) return null;
+  if (typeof assets !== "object") return null;
+
+  const obj = assets as Record<string, unknown>;
+  if (obj.v !== 1 || !Array.isArray(obj.items)) {
+    return null;
+  }
+
+  const filtered = (obj.items as Array<Record<string, unknown>>).filter(
+    (item) =>
+      typeof item.role === "string" &&
+      PRE_SUBMIT_ASSET_ROLES.has(item.role) &&
+      typeof item.kind === "string" &&
+      KNOWN_ASSET_KINDS.has(item.kind),
+  );
+
+  if (filtered.length === 0) return null;
+  return { v: 1, items: filtered };
+}
+
 export function buildStudentSafeOptionTokens(
   options: ReadonlyArray<CanonicalMcOption>,
   order?: ReadonlyArray<CanonicalOptionKey>,
@@ -747,6 +777,61 @@ export function buildStudentSafeOptionTokens(
     optionTokenMap[token] = key;
     safeOptions.push({ id: token, text: option.text });
   }
+
+  return { optionOrder, optionTokenMap, safeOptions };
+}
+
+/**
+ * @spec [Doc-02B_V4 §16; ruled plan §2 "Copied from practice unchanged"] | @implemented [2026-09-21]
+ *
+ * plain English: the per-serve A-D option shuffle, promoted out of
+ * practice-canonical.ts so practice and review run the SAME code rather than two
+ * copies that can drift. What it does: Fisher-Yates over the option array, then
+ * mints one opaque token per option. Expected outcome: `option_order` records the
+ * serve order and `option_token_map` maps token -> canonical key, both persisted on
+ * the session item, so a re-read reproduces the same screen without re-shuffling.
+ *
+ * trade-offs: the RNG is `crypto.randomInt`, unseeded, NOT packages/shared/src/rng.ts.
+ * That file's contract (rng.ts:3-8) is that QUESTION SELECTION be reproducible from
+ * its inputs; its `seededShuffle` derives from profile+filter+session, which the
+ * client partly knows. Deriving option order from that would make the shuffle
+ * predictable, which is the opposite of what an anti-leak shuffle is for. The
+ * determinism this shuffle owes is replay determinism, and that comes from storage:
+ * the order is written to the row once and read back thereafter. Brief R3 §2.1's
+ * "not Math.random()" constraint is met; its pointer at rng.ts is not, deliberately.
+ *
+ * edge cases: an empty or single-element array is returned as a fresh copy, unshuffled
+ * (the loop body never runs). The input is never mutated.
+ */
+export function fisherYates<T>(items: readonly T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = randomInt(0, i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+/**
+ * @spec [Doc-02B_V4 §16; Coding Standards §5.2] | @implemented [2026-09-21]
+ * plain English: shuffle the options, then tokenize them. The single implementation
+ * behind both engines' serve paths. expected outcome: `{ optionOrder, optionTokenMap,
+ * safeOptions }` — safeOptions carries only `{ id: token, text }`, never the canonical
+ * letter, which is the anti-leak property. trade-offs: none; this is a verbatim move of
+ * practice's private `buildServedOptions`. edge cases: a non-canonical option set is the
+ * caller's problem — callers gate on `hasCanonicalOptionSet` before calling.
+ */
+export function buildServedOptions(options: ReadonlyArray<CanonicalMcOption>): {
+  optionOrder: string[];
+  optionTokenMap: Record<string, string>;
+  safeOptions: StudentSafeOption[];
+} {
+  const shuffled = fisherYates(options);
+  const optionOrder = shuffled.map((o) => o.key);
+  const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(
+    shuffled,
+    optionOrder,
+  );
 
   return { optionOrder, optionTokenMap, safeOptions };
 }

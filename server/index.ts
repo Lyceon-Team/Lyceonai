@@ -20,25 +20,9 @@ import rateLimit from "express-rate-limit";
 // Any duplicate tutor route under apps/api/** must remain unmounted.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
 import tutorRuntimeRouter from "./routes/tutor-runtime";
+import { TutorConfig } from "./services/tutor-config";
 import { legalRouter } from "./routes/legal-routes.js";
-import fullLengthExamRouter from "./routes/full-length-exam-routes";
-import {
-  getQuestions,
-  getRandomQuestions,
-  getQuestionCount,
-  getQuestionStats,
-  getQuestionsFeed,
-  getRecentQuestions,
-  getQuestionById,
-  getReviewErrors,
-  submitQuestionFeedback,
-} from "./routes/questions-runtime";
-import {
-  startReviewErrorSession,
-  getReviewErrorSessionState,
-  submitReviewSessionAnswer,
-  getRecentReviewSessions,
-} from "./routes/review-session-routes";
+import { getQuestionStats } from "./routes/questions-runtime";
 import {
   supabaseAuthMiddleware,
   enforceDeletionLock,
@@ -65,14 +49,19 @@ import {
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
+import { calendarRouter, streakRouter } from "./routes/calendar-routes";
+import { scoreReportRouter } from "./routes/score-report-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
-import healthRoutes from "./routes/health-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
+import { apiCacheControlDefault } from "./middleware/api-cache-control";
 import practiceCanonicalRouter from "./routes/practice-canonical";
+import reviewCanonicalRouter from "./routes/review-canonical";
+import examRuntimeRouter from "./routes/exam-runtime-routes";
+import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
@@ -93,6 +82,7 @@ import {
 } from "../packages/shared/src/notifications-schema";
 import { adminCrisisReviewRouter } from "./routes/admin-crisis-review";
 import { logger } from "./logger";
+import { finalErrorHandler } from "./middleware/final-error-handler";
 
 const app = express();
 app.disable("x-powered-by");
@@ -104,6 +94,8 @@ app.set("trust proxy", 1);
 // Request ID middleware - must be first to track all requests
 app.use(requestIdMiddleware);
 app.use(securityHeadersMiddleware());
+// F-27: every /api response is private, no-store unless its route sets a listed public header.
+app.use("/api", apiCacheControlDefault);
 
 // Core middleware
 app.use(corsAllowlist());
@@ -370,6 +362,19 @@ const googleOAuthCallbackLimiter = rateLimit({
   message: { error: "Too many OAuth callback requests" },
 });
 
+// @spec [Doc-03A_V3.0 §18.7; owner ruling 2026-09-24 (W4-3)] | @implemented [2026-09-24]
+// Tutor runtime config is read from tutor_context_runtime_config ONCE per
+// process, starting at module load — on Vercel the app module is the boot
+// (app.listen below never runs there). Until this was wired, every key served
+// its hardcoded default on every request. The two routers that read config
+// wait for the load to settle (bounded at 3s) so a cold-start request cannot
+// race it. A failed load logs ERROR boot_load_failed and serves defaults.
+const TUTOR_CONFIG_BOOT_WAIT_MS = 3_000;
+void TutorConfig.bootLoad();
+const awaitTutorConfig: express.RequestHandler = (_req, _res, next) => {
+  TutorConfig.whenBooted(TUTOR_CONFIG_BOOT_WAIT_MS).then(() => next(), next);
+};
+
 // Canonical tutor runtime endpoints:
 // POST /api/tutor/conversations
 // POST /api/tutor/messages
@@ -383,6 +388,7 @@ app.use(
   requireSupabaseAuth,
   requireStudentOnly,
   doubleCsrfProtection,
+  awaitTutorConfig,
   tutorRuntimeRouter,
 );
 
@@ -403,7 +409,7 @@ app.use("/api/auth", supabaseAuthRoutes);
 // Internal cron-only endpoints (CRON_SECRET-gated; e.g. scheduled legal-acceptance outbox drain).
 app.use("/api/internal", internalCronRoutes);
 // Internal memory routes (OIDC-gated; Cloud Tasks compaction writeback per Doc 03C §8.3).
-app.use("/api/internal", internalMemoryRoutes);
+app.use("/api/internal", awaitTutorConfig, internalMemoryRoutes);
 // Internal retention sweep (OIDC-gated; Cloud Scheduler per-tier jobs per Doc 03 §14.2).
 app.use("/api/internal", internalRetentionRoutes);
 
@@ -418,7 +424,6 @@ app.use(
   doubleCsrfProtection,
   profileRoutes,
 );
-
 
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
 // principal; every read/write is a recipient-scoped SQL function.
@@ -440,6 +445,38 @@ app.use(
   requireSupabaseAuth,
   doubleCsrfProtection,
   studentResourceRoutes,
+);
+
+// Doc 05F §15. The student's own calendar surface. `requireStudentOrAdmin` because every
+// route here is the student acting on their OWN plan — a guardian is view-only (§16) and
+// reads through /api/students/:studentId/calendar, which is role-blind by construction.
+// The calendar_access entitlement check is inside the handlers, applied to the subject, so
+// a 402 carries the shared CTA payload rather than a bare middleware denial.
+app.use(
+  "/api/calendar",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentOrAdmin,
+  calendarRouter,
+);
+
+// Doc 05F §15 / INV-08-20 and formula sheet §8 item 11: GET /api/me/streak is served to a
+// student of ANY tier and carries NO calendar_access check. It is mounted on its own path
+// with its own router so that gate is absent by construction and cannot be acquired by
+// someone adding middleware to the calendar mount above.
+app.use("/api/me", requireSupabaseAuth, requireStudentOrAdmin, streakRouter);
+
+// SCL-191. The post-exam score report and retake answer. `requireStudentOrAdmin` because every
+// route is the student answering about their OWN sitting and their OWN subscription; a paying
+// guardian has no write route here and acts in the Customer Portal instead (Doc 01 §928). There
+// is deliberately NO entitlement middleware: the authorisation is the prompt we sent, checked in
+// the service, so a caller cannot answer an occasion we never raised — see the router's header.
+app.use(
+  "/api/score-report",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentOrAdmin,
+  scoreReportRouter,
 );
 // Score Projection endpoint (College Board weighted algorithm)
 app.get(
@@ -471,139 +508,26 @@ app.get(
 );
 // Admin crisis review surface — SEPARATE from /api/tutor/* per SCL-025.
 // §3.1 stands unchanged (student-only on /api/tutor/*). This is a different
-// authorization axis per SCL-025: read-only, scoped to crisis_flagged conversations,
-// every read audit-logged.
-// @spec [Doc-03_V3 §21.3, SCL-025]
-app.use("/api/admin/crisis-review", adminCrisisReviewRouter);
-
-// Questions API Routes (Supabase-authenticated, student/admin only)
-// Wrap getQuestions to match frontend format expectations
-app.get(
-  "/api/questions",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  async (req, res) => {
-    const originalJson = res.json.bind(res);
-    res.json = function (data: any) {
-      if (Array.isArray(data)) {
-        return originalJson.call(res, {
-          questions: data,
-          meta: { total: data.length },
-        });
-      }
-      return originalJson.call(res, data);
-    };
-    return getQuestions(req, res);
-  },
+// authorization axis per SCL-025: scoped to crisis_flagged conversations, every
+// read audit-logged. NOT read-only: POST /cases/:id/claim and
+// POST /cases/:id/disposition change case state, so the router is mounted with
+// doubleCsrfProtection like every other browser-facing mutating router (see the
+// CSRF note at the top of this file). GETs are ignored by the middleware. The
+// admin pages already send the token (apiRequest → csrfFetch).
+// @spec [Doc-03_V3 §21.3, SCL-025; closure plan W2-9] | @implemented [2026-09-24]
+app.use(
+  "/api/admin/crisis-review",
+  doubleCsrfProtection,
+  adminCrisisReviewRouter,
 );
 
-app.get("/api/questions/recent", async (req, res) => {
-  // Allow anonymous access to recent questions for public preview
-  const originalJson = res.json.bind(res);
-  res.json = function (data: any) {
-    if (Array.isArray(data)) {
-      return originalJson.call(res, {
-        questions: data,
-        meta: { total: data.length },
-      });
-    }
-    return originalJson.call(res, data);
-  };
-  return getRecentQuestions(req, res);
-});
-
-app.get(
-  "/api/questions/random",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  async (req, res) => {
-    const originalJson = res.json.bind(res);
-    res.json = function (data: any) {
-      if (Array.isArray(data)) {
-        return originalJson.call(res, {
-          questions: data,
-          meta: { total: data.length },
-        });
-      }
-      return originalJson.call(res, data);
-    };
-    return getRandomQuestions(req, res);
-  },
-);
-
-app.get(
-  "/api/questions/count",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getQuestionCount,
-);
+// Questions API: only the stats route survives. The list, recent, random, count, feed, :id
+// and feedback routes were deleted as unused (student-ui register UI-05, 2026-09-29).
 app.get(
   "/api/questions/stats",
   requireSupabaseAuth,
-  requireStudentOrAdmin,
+  requireSupabaseAdmin,
   getQuestionStats,
-);
-app.get(
-  "/api/questions/feed",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getQuestionsFeed,
-);
-
-// SECURE: Single question endpoint - never leaks answers
-app.get(
-  "/api/questions/:id",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getQuestionById,
-);
-
-// Review errors endpoint - authenticated students can review their failed attempts
-app.get(
-  "/api/review-errors",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getReviewErrors,
-);
-
-app.get(
-  "/api/review-errors/recent-sessions",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getRecentReviewSessions,
-);
-
-// Review errors attempt endpoint - records student attempts during error review
-app.post(
-  "/api/review-errors/sessions",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  startReviewErrorSession,
-);
-app.get(
-  "/api/review-errors/sessions/:sessionId/state",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  getReviewErrorSessionState,
-);
-app.post(
-  "/api/review-errors/attempt",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  submitReviewSessionAnswer,
-);
-
-// Answer validation endpoint (questionId passed in request body for flexibility)
-
-// Question feedback endpoint (thumbs up/down)
-app.post(
-  "/api/questions/feedback",
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  doubleCsrfProtection,
-  submitQuestionFeedback,
 );
 
 // Guardian Routes (requires Supabase auth + guardian role)
@@ -635,9 +559,6 @@ app.use("/api/billing", billingRoutes);
 // Account Routes (bootstrap, status, deletion)
 app.use("/api/account", accountRoutes);
 app.use("/api/account", accountDeletionRoutes);
-
-// Health Routes (schema and credential verification)
-app.use("/api/health", healthRoutes);
 
 // Practice reference routes (bootstrap/filtering only; not runtime delivery)
 app.get(
@@ -675,29 +596,46 @@ app.use(
   practiceCanonicalRouter,
 );
 
-// Full-Length Exam Routes (Bluebook-style SAT exams)
-// All routes require Supabase auth and are student-only
+// Full-length exam runtime (Doc 04A §16 student surface only — no admin routes)
+// @spec [Doc-04A_V2.2 §16, §16.1; E6] | @implemented [2026-09-24]
+// Practice's middleware stack: auth, student-or-admin, then CSRF (the middleware
+// ignores GET/HEAD/OPTIONS). Entitlement (exam_full_length) is step 2 of every
+// handler, inside the router, after auth.
 app.use(
-  "/api/full-length",
+  "/api/tests",
   requireSupabaseAuth,
   requireStudentOrAdmin,
-  fullLengthExamRouter,
+  doubleCsrfProtection,
+  examRuntimeRouter,
 );
 
-// Debug route to identify server version and routes in prod
-app.get("/api/_whoami", (_req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(404).json({ error: "Not found" });
-  }
+// Full-length exam score report (Doc 04C §16.1 student reads only)
+// @spec [Doc-04C_V1.0 §16.1, §16.5; E7a] | @implemented [2026-09-25]
+// Same stack as the runtime. Ownership is decided before entitlement inside the
+// router (04C §16.5): a lapsed entitlement on an OWNED session is a 200
+// `unavailable` payload, a missing or foreign session a bare 403.
+app.use(
+  "/api/tests",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  examReportRouter,
+);
 
-  res.json({
-    service: "lyceon-api",
-    env: process.env.NODE_ENV || "development",
-    version: "1.0.0",
-    routes: ["tutor/conversations", "tutor/messages"],
-    timestamp: new Date().toISOString(),
-  });
-});
+// Review Canonical Routes (the mistake queue — practice's loop, a different pool)
+// @spec [Doc-02B_V4 §16; ruled plan §2; brief R3 §2.2] | @implemented [2026-09-21]
+// The middleware stack is practice's, identically: auth, student-or-admin, then CSRF
+// (the middleware ignores GET/HEAD/OPTIONS, so it covers exactly the writes). There is
+// deliberately NO entitlement gate and NO usage-limit call — review is free and
+// unlimited (ruled plan ruling 10). The concurrent-session cap inside the router is a
+// resource guard, not a quota.
+app.use(
+  "/api/review",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  reviewCanonicalRouter,
+);
 
 // Serve static frontend files in production
 const staticPath = path.join(process.cwd(), "dist", "public");
@@ -816,55 +754,9 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(staticPath, "index.html"));
 });
 
-// Final error boundary for uncaught route errors
-app.use((err: any, req: Request, res: Response, next: any) => {
-  const requestId = (req as any).requestId || logger.generateRequestId();
-
-  const csrfError =
-    err?.code === "EBADCSRFTOKEN" ||
-    err?.name === "CSRFError" ||
-    (typeof err?.message === "string" &&
-      err.message.toLowerCase().includes("csrf"));
-
-  if (csrfError) {
-    return res.status(403).json({
-      error: {
-        code: "csrf_blocked",
-        message: "Request blocked by CSRF protection",
-      },
-      requestId,
-    });
-  }
-
-  logger.error(
-    "HTTP",
-    "unhandled_error",
-    `Unhandled error in ${req.method} ${req.path}`,
-    err,
-    {
-      method: req.method,
-      path: req.path,
-      statusCode: err?.status || 500,
-      hasBody: req.body !== undefined && req.body !== null,
-      hasCookieHeader: !!req.headers.cookie,
-      hasAuthorizationHeader: !!req.headers.authorization,
-    },
-    {
-      requestId,
-      userId: req.user?.id,
-      ip: req.ip,
-    },
-  );
-
-  if (res.headersSent) {
-    return next(err);
-  }
-
-  return res.status(err?.status || 500).json({
-    error: "Internal server error",
-    requestId,
-  });
-});
+// Final error boundary for uncaught route errors (G-NEW-12: extracted, and its CSRF 403 now logs
+// its code before it answers; see server/middleware/final-error-handler.ts).
+app.use(finalErrorHandler);
 // Production environment validation (warn but don't crash)
 const PORT = parseInt(process.env.PORT || "5000", 10);
 if (process.env.NODE_ENV === "production") {
@@ -991,11 +883,6 @@ if (isMainModule) {
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
     console.log(`  POST   /api/auth/signout`);
-    console.log(`\n❓ Questions API (requires Supabase auth):`);
-    console.log(`  GET    /api/questions`);
-    console.log(`  GET    /api/questions/recent`);
-    console.log(`  GET    /api/questions/random`);
-    console.log(`  POST   /api/questions/feedback`);
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  POST   /api/practice/sessions`);
     console.log(`  POST   /api/practice/sessions/:sessionId/terminate`);
@@ -1003,17 +890,6 @@ if (isMainModule) {
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`  GET    /api/practice/reference/questions`);
-    console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
-    console.log(`  POST   /api/full-length/sessions`);
-    console.log(`  GET    /api/full-length/sessions`);
-    console.log(`  GET    /api/full-length/sessions/current`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/start`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/answer`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/module/submit`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/break/continue`);
-    console.log(`  POST   /api/full-length/sessions/:sessionId/complete`);
-    console.log(`  GET    /api/full-length/sessions/:sessionId/report`);
-    console.log(`  GET    /api/full-length/sessions/:sessionId/review`);
   });
 
   // Graceful shutdown

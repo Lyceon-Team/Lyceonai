@@ -14,7 +14,7 @@ import { RequireRole } from "./RequireRole";
 const queryMock = vi.hoisted(() => ({ useQuery: vi.fn() }));
 
 let authState: {
-  user: { id: string } | null;
+  user: { id: string; role: "student" | "guardian" | "admin" } | null;
   authLoading: boolean;
   isAdmin: boolean;
   isGuardian: boolean;
@@ -23,7 +23,10 @@ let authState: {
 let location = "/dashboard";
 let authData: { user: Record<string, unknown> | null } = { user: null };
 
-vi.mock("@tanstack/react-query", () => ({
+// UI-14: RequireRole reads the profile through the shared `useProfileQuery`, which builds its
+// options with `queryOptions` — so the real module is kept and only `useQuery` is replaced.
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQuery: queryMock.useQuery,
 }));
 
@@ -106,9 +109,12 @@ describe("RequireRole declarative onboarding gate", () => {
     );
   });
 
-  it("redirects an incomplete student to /profile/complete before the feature page", () => {
+  // WAS: expected plain "/profile/complete". Register UI-03 (2026-09-29): the page being
+  // opened rides through onboarding as `?next=`.
+  it("redirects an incomplete student to /profile/complete before the feature page, carrying it", () => {
+    window.history.replaceState({}, "", "/dashboard");
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,
@@ -123,14 +129,77 @@ describe("RequireRole declarative onboarding gate", () => {
     };
     render(React.createElement(RequireRole, { allow: ["student"] }, child));
     expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
-      "/profile/complete",
+      "/profile/complete?next=%2Fdashboard",
     );
     expect(screen.queryByTestId("child")).toBeNull();
   });
 
+  it("UI-03 an incomplete student opening a /tests deep link keeps it through onboarding", () => {
+    location = "/tests/s-1";
+    window.history.replaceState({}, "", "/tests/s-1");
+    authState = {
+      user: { id: "u1", role: "student" },
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    authData = {
+      user: { profileCompletedAt: null, requiredProfileComplete: false },
+    };
+    render(React.createElement(RequireRole, { allow: ["student"] }, child));
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+      "/profile/complete?next=%2Ftests%2Fs-1",
+    );
+  });
+
+  it("UI-03 an un-allowlisted location is not carried into onboarding", () => {
+    location = "/not-a-route";
+    window.history.replaceState({}, "", "/not-a-route?x=1");
+    authState = {
+      user: { id: "u1", role: "student" },
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    authData = {
+      user: { profileCompletedAt: null, requiredProfileComplete: false },
+    };
+    render(React.createElement(RequireRole, { allow: ["student"] }, child));
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+      "/profile/complete",
+    );
+  });
+
+  /**
+   * UI-10: the /api/profile payload is `unknown` and parsed by the shared schema. A payload that
+   * does not parse yields no profile facts, so the gate fails CLOSED to onboarding — the old
+   * `any` index signature let a truthy non-string `profileCompletedAt` open the page.
+   */
+  it("UI-10 a malformed profile payload fails closed to onboarding, never renders the page", () => {
+    window.history.replaceState({}, "", "/dashboard");
+    authState = {
+      user: { id: "u1", role: "student" },
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    authData = {
+      user: {
+        profileCompletedAt: 1,
+        requiredProfileComplete: true,
+        guardianConsentRequired: false,
+      },
+    };
+    render(React.createElement(RequireRole, { allow: ["student"] }, child));
+    expect(screen.queryByTestId("child")).toBeNull();
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+      "/profile/complete?next=%2Fdashboard",
+    );
+  });
+
   it("renders children once onboarding is complete", () => {
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,
@@ -148,9 +217,69 @@ describe("RequireRole declarative onboarding gate", () => {
     expect(screen.queryByTestId("redirect")).toBeNull();
   });
 
+  describe("G2-04: an under-13 student with no active guardian link", () => {
+    const gatedStudent = {
+      profileCompletedAt: "2026-09-29T00:00:00.000Z",
+      requiredProfileComplete: true,
+      guardianConsentRequired: true,
+    };
+
+    it("is sent to /guardian-required from a feature page", () => {
+      authState = {
+        user: { id: "u13", role: "student" },
+        authLoading: false,
+        isAdmin: false,
+        isGuardian: false,
+      };
+      authData = { user: gatedStudent };
+      render(React.createElement(RequireRole, { allow: ["student"] }, child));
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/guardian-required",
+      );
+      expect(screen.queryByTestId("child")).toBeNull();
+    });
+
+    it("sees the linking page itself (no redirect loop)", () => {
+      location = "/guardian-required";
+      authState = {
+        user: { id: "u13", role: "student" },
+        authLoading: false,
+        isAdmin: false,
+        isGuardian: false,
+      };
+      authData = { user: gatedStudent };
+      render(React.createElement(RequireRole, { allow: ["student"] }, child));
+      expect(screen.getByTestId("child")).toBeInTheDocument();
+      expect(screen.queryByTestId("redirect")).toBeNull();
+    });
+
+    it("an incomplete profile still goes to /profile/complete first", () => {
+      authState = {
+        user: { id: "u13", role: "student" },
+        authLoading: false,
+        isAdmin: false,
+        isGuardian: false,
+      };
+      authData = {
+        user: {
+          ...gatedStudent,
+          profileCompletedAt: null,
+          requiredProfileComplete: false,
+        },
+      };
+      // UI-03 (merged with G2-04): onboarding still comes first, and the page being opened
+      // rides along as the allowlisted return path.
+      window.history.replaceState({}, "", "/dashboard");
+      render(React.createElement(RequireRole, { allow: ["student"] }, child));
+      expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+        "/profile/complete?next=%2Fdashboard",
+      );
+    });
+  });
+
   it("never gates an admin on onboarding (renders children even when incomplete)", () => {
     authState = {
-      user: { id: "a1" },
+      user: { id: "a1", role: "admin" },
       authLoading: false,
       isAdmin: true,
       isGuardian: false,
@@ -166,7 +295,7 @@ describe("RequireRole declarative onboarding gate", () => {
   it("does not re-redirect when already on /profile/complete (no loop)", () => {
     location = "/profile/complete";
     authState = {
-      user: { id: "u1" },
+      user: { id: "u1", role: "student" },
       authLoading: false,
       isAdmin: false,
       isGuardian: false,

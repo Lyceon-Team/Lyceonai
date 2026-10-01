@@ -7,7 +7,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
@@ -16,7 +16,7 @@ import {
 } from "../../apps/api/src/lib/rate-limit-ledger";
 import {
   hasCanonicalOptionSet,
-  buildStudentSafeOptionTokens,
+  buildServedOptions,
   buildStudentSafeOptionsFromStoredMap,
   type CanonicalMcOption,
   type CanonicalItemType,
@@ -31,6 +31,8 @@ import {
   parseCorrectVariants,
   parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
+  resolveSelectedCanonicalKey,
+  filterAssetsPreSubmit,
   resolveCanonicalDomain,
   resolveClientInstanceBinding,
   normalizeSectionCode,
@@ -57,7 +59,11 @@ import {
  * Storage differs (idempotency keys vs uniqueness checks), but behavior is consistent.
  */
 
-type PracticeLifecycleState = "created" | "active" | "completed" | "abandoned";
+export type PracticeLifecycleState =
+  | "created"
+  | "active"
+  | "completed"
+  | "abandoned";
 
 type McOption = CanonicalMcOption;
 
@@ -122,7 +128,12 @@ type SessionRow = {
   actor_id: string;
 };
 
-type SessionItemRow = Omit<PracticeSessionItemRow, "question_difficulty"> & {
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export type SessionItemRow = Omit<
+  PracticeSessionItemRow,
+  "question_difficulty"
+> & {
   question_difficulty: string | number | null;
 };
 
@@ -250,8 +261,20 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
 
 const ACTIVE_DB_STATUSES = ["active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
+type TerminalDbStatus = (typeof TERMINAL_DB_STATUSES)[number];
+/**
+ * F-24 (2026-09-30, type-only): `isTerminalDbStatus(status)` on a `string` status did not
+ * type-check against the narrow tuple. Same boolean, as a type guard.
+ */
+function isTerminalDbStatus(status: string): status is TerminalDbStatus {
+  return TERMINAL_DB_STATUSES.some((terminal) => terminal === status);
+}
+// @spec [Doc-02A_V6 §16; register F-33; owner ruling Brief 6] | @implemented [2026-09-30] | plain
+// English: every column `toCanonicalQuestionFromSessionItem` reads must be selected here. It used to
+// omit `question_assets` and `question_estimated_time_seconds`, so every question rebuilt from a
+// session item was served with `assets: null` (tests/ci/practice.served-assets.ci.test.ts).
 const SESSION_ITEM_SELECT =
-  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_domain, question_skill, question_difficulty, question_item_type, question_correct_variants, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
+  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_assets, question_estimated_time_seconds, question_domain, question_skill, question_difficulty, question_item_type, question_correct_variants, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
 
 let _cachedRateLimiter: ReturnType<typeof rateLimit> | null = null;
 let _cachedRateLimiterConfig: { windowMs: number; max: number } | null = null;
@@ -286,7 +309,9 @@ function getPracticeAnswerRateLimiter(config: PracticeConfig) {
 // No FALLBACK_PRACTICE_CONFIG — config doctrine requires all values from practice_runtime_config.
 // If the DB read fails, loadPracticeConfigFromDb throws (fail-fast).
 
-async function practiceAnswerRateLimiter(
+// Exported 2026-09-21 (brief R3): review reuses this rather than forking a
+// second copy. No signature or behaviour change.
+export async function practiceAnswerRateLimiter(
   req: Request,
   res: Response,
   next: () => void,
@@ -296,6 +321,8 @@ async function practiceAnswerRateLimiter(
     config = await loadPracticeConfig();
   } catch {
     logger.warn(
+      "PRACTICE_ANSWER",
+      "rate_limit_config_unavailable",
       "Rate limiter config unavailable; rejecting request (fail-closed)",
     );
     res.status(503).json({
@@ -449,7 +476,9 @@ function asSessionMetadata(metadata: unknown): SessionMetadata {
 
 // @spec [Doc-02B_V4 §14] | @implemented [2026-06-27]
 // Single lifecycle source: practice_sessions.status column. metadata.lifecycle_state retired.
-function normalizeSessionState(status: string): PracticeLifecycleState {
+// Exported 2026-09-21 (brief R3): review reuses this rather than forking a
+// second copy. No signature or behaviour change.
+export function normalizeSessionState(status: string): PracticeLifecycleState {
   if (status === "completed") return "completed";
   if (status === "abandoned") return "abandoned";
   if (status === "created") return "created";
@@ -558,29 +587,11 @@ function safeParseOptions(raw: unknown): McOption[] {
   return options;
 }
 
-function fisherYates<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = crypto.randomInt(0, i + 1);
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-function buildServedOptions(options: McOption[]): {
-  optionOrder: string[];
-  optionTokenMap: Record<string, string>;
-  safeOptions: StudentSafeOption[];
-} {
-  const shuffled = fisherYates(options);
-  const optionOrder = shuffled.map((o) => o.key);
-  const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(
-    shuffled,
-    optionOrder,
-  );
-
-  return { optionOrder, optionTokenMap, safeOptions };
-}
+// The option shuffle moved to shared/question-bank-contract.ts on 2026-09-21
+// (brief R3 §2.1) so review runs the SAME code, not a second copy. The private
+// `fisherYates`/`buildServedOptions` that lived here are gone; `buildServedOptions`
+// is now imported at the top of this file. Behaviour is unchanged — the move was
+// verbatim, `crypto.randomInt` included.
 
 // @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
 // Builds the server-side serving record from a genesis-reconciled `questions` row.
@@ -613,15 +624,20 @@ export function toCanonicalQuestionForServing(
         ? q.passage
         : null,
     options: isGridIn ? [] : safeParseOptions(q.options),
-    difficulty: q.difficulty ?? null,
+    // F-24 (2026-09-30, type-only): `difficulty` is `unknown` on the row type; every real source
+    // returns `difficulty int` (select_practice_pool_random, review-pool), so this narrow passes
+    // the same values through as the old `?? null` did.
+    difficulty:
+      typeof q.difficulty === "string" || typeof q.difficulty === "number"
+        ? q.difficulty
+        : null,
     domain: typeof q.domain === "string" ? q.domain : null,
     skill: typeof q.skill === "string" ? q.skill : null,
     subskill: typeof q.subskill === "string" ? q.subskill : null,
-    exam: typeof q.exam === "string" ? q.exam : null,
-    structure_cluster_id:
-      typeof q.structure_cluster_id === "string"
-        ? q.structure_cluster_id
-        : null,
+    // No `questions` column carries `exam` or `structure_cluster_id` (no migration defines either),
+    // so these were always null; the session-item mapper below already writes `exam: null`.
+    exam: null,
+    structure_cluster_id: null,
     correct_answer: correctAnswer,
     explanation:
       typeof q.explanation === "string" && q.explanation.trim().length > 0
@@ -642,8 +658,37 @@ export function toCanonicalQuestionForServing(
 // Reconstructs the server-side serving record from a persisted practice_session_items
 // snapshot. Branches on question_item_type: MCQ requires 4-option canonical set + A–D key;
 // grid-in requires empty options + raw correct_answer + correct_variants array.
-function toCanonicalQuestionFromSessionItem(
-  item: SessionItemRow,
+/**
+ * The snapshot columns a persisted session item carries, and the ONLY columns
+ * `toCanonicalQuestionFromSessionItem` reads. Named separately from `SessionItemRow`
+ * (2026-09-21, brief R3) because review's items live in a different table with a
+ * different owner column: both `practice_session_items` and `review_session_items`
+ * satisfy this shape structurally, so one reconstitution function serves both without
+ * a cast and without a second copy.
+ */
+export type QuestionSnapshotRow = Pick<
+  SessionItemRow,
+  | "question_id"
+  | "question_stem"
+  | "question_passage"
+  | "question_options"
+  | "question_correct_answer"
+  | "question_explanation"
+  | "question_option_metadata"
+  | "question_domain"
+  | "question_skill"
+  | "question_difficulty"
+  | "question_section"
+  | "question_item_type"
+  | "question_correct_variants"
+  | "question_assets"
+  | "question_estimated_time_seconds"
+>;
+
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export function toCanonicalQuestionFromSessionItem(
+  item: QuestionSnapshotRow,
 ): CanonicalQuestionForServing | null {
   const canonicalId = String(item.question_id ?? "").trim();
   const stem = String(item.question_stem ?? "").trim();
@@ -711,7 +756,9 @@ function toCanonicalQuestionFromSessionItem(
 }
 
 // Grid-in has no options to tokenize — short-circuit to [].
-function buildSafeOptionsForItem(
+// Exported 2026-09-21 (brief R3): review reuses this rather than forking a
+// second copy. No signature or behaviour change.
+export function buildSafeOptionsForItem(
   q: CanonicalQuestionForServing,
   optionOrder: string[] | null,
   optionTokenMap: Record<string, string> | null,
@@ -729,34 +776,10 @@ function normalizeSafeDifficulty(value: unknown): string | number | null {
   return null;
 }
 
-const PRE_SUBMIT_ASSET_ROLES = new Set(["stimulus", "option"]);
-const KNOWN_ASSET_KINDS = new Set(["svg", "table", "image"]);
-
-// @spec [Doc-02A_V6 §16; Doc-02B_V4 §14/§20] | @implemented [2026-07-24]
-// Fail-closed: only v:1 structured payloads with a valid items array are
-// understood. Unknown versions, missing structure, legacy flat formats, or
-// any unrecognized shape → null (exclude). Items with missing/unknown role
-// or kind are dropped individually; if nothing survives, return null.
-export function filterAssetsPreSubmit(assets: unknown | null): unknown | null {
-  if (assets == null) return null;
-  if (typeof assets !== "object") return null;
-
-  const obj = assets as Record<string, unknown>;
-  if (obj.v !== 1 || !Array.isArray(obj.items)) {
-    return null;
-  }
-
-  const filtered = (obj.items as Array<Record<string, unknown>>).filter(
-    (item) =>
-      typeof item.role === "string" &&
-      PRE_SUBMIT_ASSET_ROLES.has(item.role) &&
-      typeof item.kind === "string" &&
-      KNOWN_ASSET_KINDS.has(item.kind),
-  );
-
-  if (filtered.length === 0) return null;
-  return { v: 1, items: filtered };
-}
+// filterAssetsPreSubmit moved to shared/question-bank-contract.ts on 2026-09-24 (E6) so
+// the exam serializer consumes the same sanitizer without a domain -> routes import.
+// Re-exported here so existing importers are unchanged.
+export { filterAssetsPreSubmit };
 
 // @spec [Doc 02B §14/§20 Serving Questions; Doc 02 Preamble §12 INV-02-08] | @implemented 2026-06-14
 // Single canonical serializer — no second inline question shape. We pass item_type through
@@ -809,17 +832,33 @@ export type SessionItemInsertContext = {
   sessionId: string;
   userId: string;
   actorId: string;
-  clientInstanceId: string;
+  /**
+   * The binding written onto the first (served) item. `null` when the caller has none — the
+   * diagnostic start accepts a request without `client_instance_id`, and the column is nullable;
+   * a null binding is treated as unbound and the first requester binds it
+   * (`resolveClientInstanceBinding`). Typed `string` before 2026-09-30, which the diagnostic
+   * caller violated (F-24).
+   */
+  clientInstanceId: string | null;
   now: string;
+  /**
+   * Which column owns the row. Practice's items are keyed by `user_id`; review's by
+   * `student_id`, and renaming review's would break the deletion and anonymization
+   * functions (ruled plan §2 row 8). Added 2026-09-21 so both engines share ONE
+   * definition of the 30-column snapshot shape instead of two that drift. Omitted
+   * means `user_id`, so every practice call site is unchanged.
+   */
+  ownerColumn?: "user_id" | "student_id";
 };
 
 export function buildSessionItemInsertRows(
   selected: CanonicalQuestionForServing[],
   ctx: SessionItemInsertContext,
 ): Record<string, unknown>[] {
+  const ownerColumn = ctx.ownerColumn ?? "user_id";
   return selected.map((question, index) => ({
     session_id: ctx.sessionId,
-    user_id: ctx.userId,
+    [ownerColumn]: ctx.userId,
     actor_id: ctx.actorId,
     question_id: question.id,
     question_section: question.section_code,
@@ -998,19 +1037,31 @@ async function countSessionItems(sessionId: string): Promise<number> {
   return Number.isFinite(count as number) ? Number(count) : 0;
 }
 
+/**
+ * @spec [Doc-02B_V4 §16; brief R3 §2.1] | @implemented [2026-06-27] | @rescoped [2026-09-21]
+ * plain English: fill option_order/option_token_map on every freshly inserted item of a
+ * session. `table` was added for review, whose items live in review_session_items but
+ * need the identical treatment. expected outcome: practice's call sites are unchanged
+ * and so is their behaviour — the default is practice's table and the thrown message
+ * strings are derived from it, so they read exactly as before. trade-offs: a table name
+ * as a string parameter is looser than two functions, but two functions is the fork this
+ * repo forbids. edge cases: already-hydrated rows are skipped, so it is idempotent; a
+ * grid-in falls out on the hasCanonicalOptionSet guard.
+ */
 export async function hydrateSessionItemOptionTokens(
   sessionId: string,
+  table:
+    | "practice_session_items"
+    | "review_session_items" = "practice_session_items",
 ): Promise<void> {
   const { data, error } = await supabaseServer
-    .from("practice_session_items")
+    .from(table)
     .select("id, question_options, option_order, option_token_map")
     .eq("session_id", sessionId)
     .order("ordinal", { ascending: true });
 
   if (error) {
-    throw new Error(
-      `practice_session_items_option_fetch_failed: ${error.message}`,
-    );
+    throw new Error(`${table}_option_fetch_failed: ${error.message}`);
   }
 
   for (const row of (data ?? []) as any[]) {
@@ -1019,7 +1070,7 @@ export async function hydrateSessionItemOptionTokens(
     if (!hasCanonicalOptionSet(options)) continue;
     const served = buildServedOptions(options);
     const { error: updateError } = await supabaseServer
-      .from("practice_session_items")
+      .from(table)
       .update({
         option_order: served.optionOrder,
         option_token_map: served.optionTokenMap,
@@ -1027,9 +1078,7 @@ export async function hydrateSessionItemOptionTokens(
       .eq("id", row.id);
 
     if (updateError) {
-      throw new Error(
-        `practice_session_items_option_update_failed: ${updateError.message}`,
-      );
+      throw new Error(`${table}_option_update_failed: ${updateError.message}`);
     }
   }
 }
@@ -1284,7 +1333,14 @@ async function updateSessionLifecycle(
   }
 }
 
-async function startOrReplaySession(args: {
+/**
+ * Exported for the calendar's practice adapter (Doc 05F §9.2), which launches a
+ * block into a real practice session and must go through THIS function so the
+ * idempotency key, the session limit and the client-instance binding all behave
+ * exactly as they do for a student pressing Start on the practice page. A second
+ * create path would be a second contract.
+ */
+export async function startOrReplaySession(args: {
   userId: string;
   actorId: string;
   role: string | undefined;
@@ -1475,6 +1531,8 @@ async function startOrReplaySession(args: {
     } catch (e) {
       if (e instanceof RateLimitUnavailableError) {
         logger.warn(
+          "PRACTICE_SESSION",
+          "quota_dry_run_unavailable",
           "Quota dry-run unavailable at session creation; failing closed",
         );
         return {
@@ -1699,7 +1757,8 @@ async function startOrReplaySession(args: {
   }
 
   const firstInsertedItem = Array.isArray(insertedItems)
-    ? insertedItems.find((row: SessionItemRow) => Number(row.ordinal) === 1)
+    ? // The insert selects only `id, ordinal`; the row type comes from that select (F-24).
+      insertedItems.find((row) => Number(row.ordinal) === 1)
     : null;
 
   if (firstInsertedItem) {
@@ -1853,7 +1912,7 @@ async function serveNextForSession(args: {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return args.res.status(409).json({
       error: "session_closed",
@@ -2110,7 +2169,7 @@ router.get(
   "/sessions/open",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2135,7 +2194,9 @@ router.get(
     }
 
     const enhancedSessions = await Promise.all(
-      (sessions || []).map(async (s: SessionRow) => {
+      // The select above omits `user_id` (the rows are already scoped to this user), so the row
+      // is `SessionRow` without it (F-24).
+      (sessions || []).map(async (s: Omit<SessionRow, "user_id">) => {
         const { count } = await supabaseServer
           .from("practice_session_items")
           .select("*", { count: "exact", head: true })
@@ -2184,7 +2245,7 @@ router.post(
   "/sessions/:sessionId/resume",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2296,7 +2357,7 @@ router.post(
   "/sessions",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2371,7 +2432,7 @@ router.post(
   "/sessions/:sessionId/terminate",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2415,10 +2476,15 @@ router.post(
     //
     // BUG-4. This wrote completed_at while setting status='abandoned'. completed_at
     // is the completion signal; stamping it on abandonment makes abandoned work
-    // read as finished work to anything that inspects the column. review_sessions
-    // has carried a separate abandoned_at since 20260610020000 and writes the
-    // matching one (server/routes/review-session-routes.ts:684) — this is the same
-    // shape, not a new convention.
+    // read as finished work to anything that inspects the column.
+    //
+    // @corrected [R2, 2026-09-21] This comment used to justify itself by claiming
+    // review_sessions "has carried a separate abandoned_at since 20260610020000"
+    // and cite review-session-routes.ts:684. Both were false: that migration gave
+    // review_sessions neither abandoned_at nor completed_at, and the file it cited
+    // was deleted in R1. practice_sessions was the FIRST table to carry the pair,
+    // not the second. review_sessions only gained it in 20260921000000, by
+    // mirroring what this migration established here.
     //
     // practice_sessions_abandoned_not_completed (migration 20260817020000) rejects
     // the old pair outright, so the defect cannot be reintroduced silently: it
@@ -2441,7 +2507,7 @@ router.post(
   "/sessions/:sessionId/calculator-state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2490,7 +2556,7 @@ router.post(
     if (
       sessionState === "completed" ||
       sessionState === "abandoned" ||
-      TERMINAL_DB_STATUSES.includes(owned.session.status)
+      isTerminalDbStatus(owned.session.status)
     ) {
       return res.status(409).json({
         error: "session_closed",
@@ -2528,7 +2594,7 @@ router.get(
   "/sessions/:sessionId/next",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2578,7 +2644,7 @@ router.get(
   "/sessions/:sessionId/state",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   async (req, res) => {
     const requestId = (req as any).requestId;
     const user = (req as any).user;
@@ -2691,7 +2757,9 @@ async function findSessionItemForSubmission(
 // Unified grader — MCQ key-match vs grid-in correct_variants array membership.
 // Grid-in grades against the snapshot correct_variants, NOT parseGridInValue.
 // Fail closed on malformed data — no fallback grading path.
-type GradeResult =
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export type GradeResult =
   | {
       ok: true;
       isCorrect: boolean;
@@ -2701,7 +2769,9 @@ type GradeResult =
     }
   | { ok: false; status: number; error: string; message: string };
 
-function gradeAnswer(
+// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
+// rather than copying it. No signature or behaviour change.
+export function gradeAnswer(
   canonicalQuestion: CanonicalQuestionForServing,
   selectedAnswer: string,
   optionTokenMap: Record<string, string> | null,
@@ -2758,11 +2828,11 @@ function gradeAnswer(
     };
   }
 
-  const mappedKeyFromToken = selectedAnswer
-    ? optionTokenMap[selectedAnswer]
-    : null;
-  const selectedCanonicalKey =
-    mappedKeyFromToken ?? normalizeAnswerKey(selectedAnswer ?? null);
+  // One resolution rule for practice, review and the full-length exam (E6).
+  const selectedCanonicalKey = resolveSelectedCanonicalKey(
+    selectedAnswer,
+    optionTokenMap,
+  );
 
   if (!selectedCanonicalKey) {
     return {
@@ -3055,28 +3125,31 @@ export async function captureDiagnosticBaseline(
     // 23505 = unique_violation from the partial unique index → baseline already
     // captured. This is the expected idempotent path for a second diagnostic.
     if (insertError.code === "23505") {
-      logger.info("[diagnostic] baseline already captured (idempotent no-op)", {
-        requestId,
-        userId,
-      });
+      logger.info(
+        "DIAGNOSTIC_BASELINE",
+        "baseline_already_captured",
+        "[diagnostic] baseline already captured (idempotent no-op)",
+        { requestId, userId },
+      );
       return;
     }
     // Any other error is logged but non-fatal — baseline capture must not block
     // the answer response.
-    logger.info("[diagnostic] baseline insert failed (non-fatal)", {
-      requestId,
-      userId,
-      error: insertError.message,
-      code: insertError.code,
-    });
+    logger.info(
+      "DIAGNOSTIC_BASELINE",
+      "baseline_insert_failed",
+      "[diagnostic] baseline insert failed (non-fatal)",
+      { requestId, userId, error: insertError.message, code: insertError.code },
+    );
     return;
   }
 
-  logger.info("[diagnostic] baseline captured", {
-    requestId,
-    userId,
-    sections: nonNull.map((r) => r.section),
-  });
+  logger.info(
+    "DIAGNOSTIC_BASELINE",
+    "baseline_captured",
+    "[diagnostic] baseline captured",
+    { requestId, userId, sections: nonNull.map((r) => r.section) },
+  );
 }
 
 export async function submitPracticeAnswer(req: Request, res: Response) {
@@ -3168,7 +3241,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -3757,7 +3830,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status)
+    isTerminalDbStatus(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -3947,7 +4020,7 @@ router.post(
   "/answer",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitPracticeAnswer,
 );
@@ -3955,7 +4028,7 @@ router.post(
   "/sessions/:sessionId/skip",
   requireSupabaseAuth,
   requireProfileComplete,
-  requireConsentCompliance,
+  requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
   submitPracticeSkip,
 );

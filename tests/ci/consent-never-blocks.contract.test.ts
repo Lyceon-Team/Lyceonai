@@ -273,11 +273,22 @@ describe("N3 — the write paths fail open", () => {
 // ── N4 ──────────────────────────────────────────────────────────────────
 
 describe("N4 — the under-13 screen hands over the means", () => {
-  const screen = readCode(
-    "client/src/components/auth/GuardianConnectRequired.tsx",
+  // G2-04: the screen is the /guardian-required PAGE, built from the canonical panels (owner
+  // approval 2026-09-29). The markers below live in those panels; the page must render both.
+  const page = readCode("client/src/pages/guardian-required.tsx");
+  const codePanel = readCode(
+    "client/src/components/student/StudentLinkCodePanel.tsx",
+  );
+  const guardiansPanel = readCode(
+    "client/src/components/student/StudentGuardiansPanel.tsx",
   );
 
-  it("shows the code, a copy control and a guardian email field", () => {
+  it("renders the canonical link-code and guardian panels, not a second copy of either", () => {
+    expect(page).toContain("<StudentLinkCodePanel studentId={user.id} />");
+    expect(page).toContain("<StudentGuardiansPanel studentId={user.id} />");
+  });
+
+  it("shows the code, a copy control, a guardian email invite and the guardian list", () => {
     // A wall states a rule and stops. A screen hands over every means of
     // satisfying it.
     // EXACT ATTRIBUTES, not substrings. An earlier draft asserted
@@ -286,37 +297,38 @@ describe("N4 — the under-13 screen hands over the means", () => {
     // test green, and the plant caught it. A marker that a neighbouring marker
     // can satisfy is not an assertion.
     for (const marker of [
-      "student-link-code",
-      "copy-link-code",
-      "input-guardian-email",
-      "send-guardian-invite",
+      "student-link-code-value",
+      "student-link-code-copy",
+      "student-link-code-regenerate",
+      "student-link-invite-email",
+      "student-link-invite-submit",
     ]) {
-      expect(screen, `the screen has no ${marker}`).toContain(
+      expect(codePanel, `the code panel has no ${marker}`).toContain(
         `data-testid="${marker}"`,
       );
     }
+    expect(guardiansPanel).toContain('data-testid="student-guardians-panel"');
   });
 
-  it("says where to find both again, for whoever closes the tab", () => {
-    const text = read("client/src/components/auth/GuardianConnectRequired.tsx");
-    expect(text).toMatch(/Settings\s*→\s*Guardian/);
+  it("says what happens next, for whoever closes the tab", () => {
+    expect(page).toMatch(/come back to this page\s+whenever you sign in/);
   });
 
   it("links the Terms rather than restating the rule", () => {
-    expect(screen).toContain("/legal/student-terms");
-  });
-
-  it("degrades usefully when there is no code yet", () => {
-    expect(screen).toContain('data-testid="student-link-code-missing"');
+    expect(page).toContain("/legal/student-terms");
   });
 
   it("is reached by the under-13 condition, never by a consent state", () => {
     const guard = readCode("client/src/components/auth/RequireRole.tsx");
-    const needs = /const needsOnboarding =([\s\S]*?);/.exec(guard);
-    expect(needs, "needsOnboarding not found").not.toBeNull();
+    const needs = /const needsGuardianLink =([\s\S]*?);/.exec(guard);
+    expect(needs, "needsGuardianLink not found").not.toBeNull();
     expect(needs?.[1]).toContain("guardianConsentRequired");
-    // No legal document may ever appear in this list again.
-    expect(needs?.[1]).not.toContain("outstandingLegal");
-    expect(needs?.[1]).not.toContain("requiredConsentsComplete");
+    const onboarding = /const needsOnboarding =([\s\S]*?);/.exec(guard);
+    expect(onboarding, "needsOnboarding not found").not.toBeNull();
+    // No legal document may ever appear in either list.
+    for (const list of [needs?.[1], onboarding?.[1]]) {
+      expect(list).not.toContain("outstandingLegal");
+      expect(list).not.toContain("requiredConsentsComplete");
+    }
   });
 });

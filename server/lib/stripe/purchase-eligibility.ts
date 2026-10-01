@@ -23,14 +23,20 @@
  * a per-profile question and does not consult the fold.
  *
  * WHY IT IS NOT THE GUARDIAN ROUTE'S EXISTING CHECK, LIFTED.
- * `subscriptionAlreadyFundsStudent` asks a different question of a different
- * source: "does THIS guardian's subscription already carry an item for this
+ * `aSubscriptionAlreadyFundsStudent` asks a different question of a different
+ * source: "does one of THIS guardian's subscriptions already fund this
  * student?" — a fact about Stripe, answerable before any webhook has landed.
  * This asks "does this student hold an entitlement, from anyone?" — a fact
  * about our database, true only after the webhook writes. Both are kept,
- * because the item check closes the window in which the row does not yet
+ * because the Stripe-side check closes the window in which the row does not yet
  * exist. Two questions, two sources, one answer each: that is not the
  * duplication Charter §7 forbids.
+ *
+ * @revised [2026-09-29] That check used to read SubscriptionITEMS, because a
+ * guardian's students shared one subscription. Under one subscription per
+ * student it reads subscription metadata instead. The question, and the reason
+ * both checks exist, are unchanged — which is why deleting it when the add-item
+ * path went would have re-opened the very window the incident above records.
  */
 import { EntitlementService } from "../../services/entitlement-service";
 

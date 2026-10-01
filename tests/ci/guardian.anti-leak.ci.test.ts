@@ -51,7 +51,6 @@ import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
 
 const GUARDIAN_ID = "guardian-1";
 const STUDENT_ID = "student-1";
-const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 
 // ---------------------------------------------------------------------------
 // The forbidden sets
@@ -143,9 +142,8 @@ function assertNoForbiddenKeys(
 // ---------------------------------------------------------------------------
 
 const accountMocks = {
-  isGuardianLinkedToStudent: vi.fn(async () => true),
   getAllGuardianStudentLinks: vi.fn(async () => [
-    { student_user_id: STUDENT_ID },
+    { student_profile_id: STUDENT_ID },
   ]),
   revokeGuardianLink: vi.fn(),
   ensureAccountForUser: vi.fn(async () => ({ id: "acc-1" })),
@@ -199,33 +197,11 @@ const kpiMocks = {
   })),
 };
 
-const examMocks = {
-  listExamSessions: vi.fn(async () => [
-    {
-      sessionId: SESSION_ID,
-      status: "completed",
-      startedAt: "2026-08-01T00:00:00.000Z",
-      completedAt: "2026-08-01T03:00:00.000Z",
-      createdAt: "2026-08-01T00:00:00.000Z",
-      module2_path: "B", // Doc 04C §2.3 — never student/guardian-facing.
-      ...INTERNAL_COLUMNS,
-    },
-  ]),
-  /**
-   * `buildStudentFullLengthReportView` does `...report` — a SPREAD, which is precisely the
-   * MA-07 chokepoint (#419): a new field on a spread object bypasses per-field null-outs.
-   * So the internal columns are injected HERE, upstream of both real builders, and both the
-   * student view and the guardian projection are left REAL. Mocking the projection would
-   * have made this case pass vacuously by stripping in the double.
-   */
-  getExamReport: vi.fn(async () => ({
-    sessionId: SESSION_ID,
-    scaledScore: { total: 1200, rw: 600, math: 600 },
-    rawScore: { total: { correct: 40, total: 54 } },
-    sections: [{ section: "M", scaledScore: 600, ...INTERNAL_COLUMNS }],
-    ...INTERNAL_COLUMNS,
-  })),
-};
+// E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+// pending Doc 04 rebuild. The `examMocks` double for apps/api/src/services/fullLengthExam
+// (listExamSessions / getExamReport seeded with INTERNAL_COLUMNS) is deleted with that
+// service. No guardian route imported it after #675 removed the guardian exam reads, so
+// it fed nothing this gate walks; every real assertion below is unchanged.
 
 vi.mock("../../server/lib/account", () => accountMocks);
 vi.mock("../../apps/api/src/services/mastery-read", async () => {
@@ -246,7 +222,6 @@ vi.mock("../../server/services/canonical-runtime-views", async () => {
   // builder's view directly, so the route itself is what this gate walks.
   return { ...actual, ...kpiMocks };
 });
-vi.mock("../../apps/api/src/services/fullLengthExam", () => examMocks);
 vi.mock("../../server/services/kpi-access", async () => {
   const actual = await vi.importActual<
     typeof import("../../server/services/kpi-access")
@@ -273,13 +248,6 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
     },
   };
 });
-vi.mock("../../server/middleware/guardian-entitlement", () => ({
-  requireGuardianEntitlement: (
-    _req: unknown,
-    _res: unknown,
-    next: () => void,
-  ) => next(),
-}));
 vi.mock("../../server/middleware/guardian-role", () => ({
   requireGuardianRole: () => (_req: unknown, _res: unknown, next: () => void) =>
     next(),
@@ -289,12 +257,6 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
     next(),
   generateToken: () => "test-csrf-token",
 }));
-vi.mock("../../server/lib/durable-rate-limiter", () => ({
-  createDurableRateLimiter:
-    () => (_req: unknown, _res: unknown, next: () => void) =>
-      next(),
-}));
-
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: (table: string) => {
@@ -314,34 +276,50 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
       // The fake HONOURS `.select(...)`, projecting to the named columns. Without that,
       // a route that regressed to `.select("*")` would look identical to one naming a safe
       // column list — the check would pass on both, which is no check at all.
-      let projected = rows;
-      const builder = {
-        select: (columns?: string) => {
-          if (typeof columns === "string" && columns !== "*") {
-            const names = columns.split(",").map((c) => c.trim());
-            projected = rows.map((row) =>
+      //
+      // G1-10: it now honours `.eq()` and `.in()` too. It ignored both, which is how a
+      // links fixture naming a column guardian_links has never had (`student_user_id`)
+      // still produced a one-student roster: the route asked for `id IN (undefined)` and
+      // the fake answered with every row anyway.
+      type Row = Record<string, unknown>;
+      let filtered: Row[] = rows as Row[];
+      let columns: string[] | null = null;
+      const resolve = (): Row[] =>
+        columns === null
+          ? filtered
+          : filtered.map((row) =>
               Object.fromEntries(
-                names
-                  .filter((n) => n in (row as Record<string, unknown>))
-                  .map((n) => [n, (row as Record<string, unknown>)[n]]),
+                (columns as string[])
+                  .filter((n) => n in row)
+                  .map((n) => [n, row[n]]),
               ),
-            ) as typeof rows;
+            );
+      const builder = {
+        select: (cols?: string) => {
+          if (typeof cols === "string" && cols !== "*") {
+            columns = cols.split(",").map((c) => c.trim());
           }
           return builder;
         },
-        eq: () => builder,
-        in: () => builder,
+        eq: (col: string, val: unknown) => {
+          filtered = filtered.filter((row) => row[col] === val);
+          return builder;
+        },
+        in: (col: string, vals: unknown[]) => {
+          filtered = filtered.filter((row) => vals.includes(row[col]));
+          return builder;
+        },
         gte: () => builder,
         lte: () => builder,
         order: () => builder,
         limit: () => builder,
         insert: async () => ({ error: null }),
-        single: async () => ({ data: projected[0] ?? null, error: null }),
-        maybeSingle: async () => ({ data: projected[0] ?? null, error: null }),
+        single: async () => ({ data: resolve()[0] ?? null, error: null }),
+        maybeSingle: async () => ({ data: resolve()[0] ?? null, error: null }),
         then: (
           onfulfilled?: (v: { data: unknown[]; error: null }) => unknown,
         ) =>
-          Promise.resolve({ data: projected, error: null }).then(onfulfilled),
+          Promise.resolve({ data: resolve(), error: null }).then(onfulfilled),
       };
       return builder;
     },
@@ -372,9 +350,8 @@ async function buildGuardianApp() {
 describe("Guardian surfaces strip every RULE-4 column, at every depth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
-      { student_user_id: STUDENT_ID },
+      { student_profile_id: STUDENT_ID },
     ]);
   });
 
@@ -389,6 +366,12 @@ describe("Guardian surfaces strip every RULE-4 column, at every depth", () => {
       "/api/guardian/students",
     );
     expect(res.status).toBe(200);
+    // G1-10 (audit G-AUD-15d): PRESENCE BEFORE ABSENCE. An empty roster contains no
+    // forbidden key either, so without this the walk below passes for the wrong reason.
+    // The fixture used `student_user_id`, a column guardian_links has never had, so the route
+    // looked up `[undefined]` and only a fake that ignored `.in()` kept the list non-empty.
+    expect(res.body.students).toHaveLength(1);
+    expect(res.body.students[0].id).toBe(STUDENT_ID);
     assertNoForbiddenKeys("students", res.body, RULE_4_KEYS);
   }, 15000);
 

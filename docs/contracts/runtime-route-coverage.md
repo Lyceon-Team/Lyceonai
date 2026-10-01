@@ -6,10 +6,7 @@ This matrix proves contract-disable enforcement coverage for mounted runtime dom
 |---|---|---|
 | `app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, practiceCanonicalRouter)` | `practice` | `unlocked` |
 | `app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter)` | `full-length` | `unlocked` |
-| `GET /api/review-errors` | `review` | `unlocked` |
-| `POST /api/review-errors/sessions` | `review` | `unlocked` |
-| `GET /api/review-errors/sessions/:sessionId/state` | `review` | `unlocked` |
-| `POST /api/review-errors/attempt` | `review` | `unlocked` |
+| `app.use("/api/review", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, reviewCanonicalRouter)` | `review` | `unlocked` |
 | `app.use("/api/practice/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, diagnosticRouter)` | `diagnostic` | `unlocked` |
 
 Direct `/api/practice*` routes mounted outside `/api/practice`:
@@ -20,3 +17,9 @@ Direct `/api/practice*` routes mounted outside `/api/practice`:
 | `GET /api/practice/reference/questions` | bootstrap/reference setup surface | intentionally left enabled |
 
 Mounted runtime endpoints in scope are unlocked and enforced by auth/middleware guards in `server/index.ts`.
+
+Updated 2026-09-21 (R3). The four `/api/review-errors/*` rows named a runtime deleted in
+R1; review is now one mount, `/api/review`, with practice's middleware stack. The
+`review` domain key in `runtime-contract-disable.ts` is retained: it is the shared
+"this runtime is disabled by contract" copy used by all three engines, not the R1
+hard-kill guard.

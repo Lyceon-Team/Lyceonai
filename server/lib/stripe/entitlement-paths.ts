@@ -103,7 +103,6 @@ export const PRE_DISPATCH_GATES: readonly string[] = [
 
 const WH = "server/lib/stripe/webhook-handler.ts";
 const ES = "server/lib/stripe/event-surface.ts";
-const BR = "server/routes/billing-routes.ts";
 
 type PathSpec = {
   readonly path: string;
@@ -199,7 +198,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     idempotency:
       "event id insert-once; upsert on profile_id; refund keyed on subscription id with a body constant across the retry (Errors.d.ts:252-253) + charge.amount_refunded pre-check",
     gateTest: "tests/ci/stripe-country-denial-remediation.contract.test.ts",
-    callSite: `${WH}:2542`,
+    callSite: `${WH}:2580`,
     callSiteExpect:
       "await fulfilCheckoutSession(session, event.type, event.id)",
   }),
@@ -231,7 +230,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     idempotency:
       "event id insert-once; upsert on profile_id; refund keyed on subscription id with a body constant across the retry (Errors.d.ts:252-253) + charge.amount_refunded pre-check",
     gateTest: "tests/ci/stripe-country-denial-remediation.contract.test.ts",
-    callSite: `${WH}:2542`,
+    callSite: `${WH}:2580`,
     callSiteExpect:
       "await fulfilCheckoutSession(session, event.type, event.id)",
   }),
@@ -244,7 +243,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
       "none — SCL-071: grants nothing, and is NOT a revocation of something never granted",
     idempotency: "event id insert-once",
     gateTest: "tests/ci/stripe-settlement.contract.test.ts",
-    callSite: `${WH}:2550`,
+    callSite: `${WH}:2588`,
     callSiteExpect: 'event.type === "checkout.session.async_payment_failed"',
   }),
   definePath({
@@ -262,7 +261,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "writeEntitlementsForAllItems | writeEntitlementFromSubscription",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2689`,
+    callSite: `${WH}:2727`,
     callSiteExpect: "await writeEntitlementFromSubscription(",
   }),
   definePath({
@@ -280,7 +279,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "writeEntitlementsForAllItems | writeEntitlementFromSubscription",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2689`,
+    callSite: `${WH}:2727`,
     callSiteExpect: "await writeEntitlementFromSubscription(",
   }),
   definePath({
@@ -291,7 +290,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "writeEntitlementFromSubscription (tier=free)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2689`,
+    callSite: `${WH}:2727`,
     callSiteExpect: "await writeEntitlementFromSubscription(",
   }),
   definePath({
@@ -304,7 +303,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
       "The revoke arrives later through customer.subscription.updated/deleted",
     idempotency: "event id insert-once; cancel_at_period_end is idempotent",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2458`,
+    callSite: `${WH}:2496`,
     callSiteExpect: "await handleCustomerUpdated(event)",
   }),
   definePath({
@@ -315,7 +314,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "handleCustomerDeleted -> revokeAllProfiles (tier=free)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-customer-deleted.contract.test.ts",
-    callSite: `${WH}:2453`,
+    callSite: `${WH}:2491`,
     callSiteExpect: "await handleCustomerDeleted(event)",
   }),
   definePath({
@@ -332,7 +331,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "revokeAllProfiles (pause_collection first, SCL-073)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-dispute.contract.test.ts",
-    callSite: `${WH}:2468`,
+    callSite: `${WH}:2506`,
     callSiteExpect: "await handleDisputeCreated(event)",
   }),
   definePath({
@@ -351,7 +350,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "rederiveEntitlementsForSubscription (resume first, SCL-073)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-lifecycle-gate.contract.test.ts",
-    callSite: `${WH}:2473`,
+    callSite: `${WH}:2511`,
     callSiteExpect: "await handleDisputeClosed(event)",
   }),
   definePath({
@@ -368,7 +367,7 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     writer: "revokeAllProfiles (pause_collection first, SCL-048/072)",
     idempotency: "event id insert-once; upsert on profile_id",
     gateTest: "tests/ci/stripe-refund.contract.test.ts",
-    callSite: `${WH}:2463`,
+    callSite: `${WH}:2501`,
     callSiteExpect: "await handleRefundUpdated(event)",
   }),
 
@@ -468,26 +467,25 @@ export const ENTITLEMENT_PATHS: readonly EntitlementPath[] = [
     callSiteExpect: '"promotion_code.updated": ignored(',
   }),
 
-  // ---- The one non-webhook granting path ---------------------------------
-  definePath({
-    path: "Guardian adds a student (add-item)",
-    trigger: CHECKOUT_ROUTE_TRIGGER,
-    direction: "grant",
-    gates: [
-      GATES.AUTH,
-      GATES.SHAPE,
-      GATES.SELECTION_AUTH,
-      GATES.COUNTRY,
-      GATES.SUBJECT_AUTH,
-    ],
-    writer:
-      "subscriptionItems.create; the row is written by customer.subscription.updated",
-    idempotency:
-      "already-funded guard refuses a second item for the same student",
-    gateTest: "tests/ci/identity-entitlement.contract.test.ts",
-    callSite: `${BR}:371`,
-    callSiteExpect: "deniesEntitlement(eligibility)",
-  }),
+  // ---- There is no non-webhook granting path -----------------------------
+  //
+  // @revised [2026-09-29 — owner ruling: one subscription per student]
+  //
+  // A row used to sit here: "Guardian adds a student (add-item)", the one path
+  // that granted entitlement from a ROUTE rather than a webhook. It called
+  // `subscriptionItems.create` on the guardian's existing subscription and let
+  // `customer.subscription.updated` write the row. It is deleted because it took
+  // no money at the moment of purchase — `create_prorations` put the amount on
+  // the next invoice, up to three months later, with no Checkout page and so no
+  // Billing Terms consent. Every guardian purchase now goes through Checkout, so
+  // `POST /api/billing/checkout` grants nothing directly and has nothing to
+  // declare here; the grant arrives on `checkout.session.completed` through the
+  // row that already describes it.
+  //
+  // `CHECKOUT_ROUTE_TRIGGER` and `isRouteTrigger` are kept rather than removed
+  // with the row: they are what makes a future route-granting path declarable,
+  // and the completeness assertion in
+  // `tests/ci/stripe-entitlement-paths.contract.test.ts` still reads them.
 ];
 
 /**

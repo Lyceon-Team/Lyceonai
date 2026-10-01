@@ -23,16 +23,23 @@ function readCode(filePath: string): string {
 }
 
 describe("Premium CTA wiring contract", () => {
+  /**
+   * @spec [owner ruling 2026-09-03 §3; register UI-06] | @implemented [2026-09-29]
+   * plain English: the third surface here used to be `ScoreProjectionCard.tsx`,
+   * an orphan UI-06 deleted. The live premium lock component is
+   * `PremiumUpgradePrompt` (mastery renders it, asserted below), so it takes
+   * that slot: a dead `href="/"` upgrade link there goes red.
+   */
   it('removes dead "/" upgrade links from known premium lock surfaces', () => {
     const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
     const mastery = read("client/src/pages/mastery.tsx");
-    const projection = read(
-      "client/src/components/progress/ScoreProjectionCard.tsx",
+    const upgradePrompt = read(
+      "client/src/components/billing/PremiumUpgradePrompt.tsx",
     );
 
     expect(dashboard).not.toContain('Link href="/"');
     expect(mastery).not.toContain('href="/"');
-    expect(projection).not.toContain('href="/"');
+    expect(upgradePrompt).not.toContain('href="/"');
   });
 
   /**
@@ -59,11 +66,11 @@ describe("Premium CTA wiring contract", () => {
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
     const userProfile = readCode("client/src/pages/UserProfile.tsx");
 
-    // Quote-agnostic: prettier owns quote style, and pinning it would make a
-    // formatter run read as a behaviour change.
-    expect(userProfile).toMatch(
-      /queryKey:\s*\[["']\/api\/billing\/status["']\]/,
-    );
+    // UI-14 (2026-09-29): the page reads billing status through the ONE shared
+    // hook — one key and one fetch function for every surface — rather than
+    // spelling the key itself. The hook's key is pinned in
+    // tests/ci/query-freshness.contract.test.ts.
+    expect(userProfile).toContain("useBillingStatusQuery");
     // One portal hook, not a fourth copy of the mutation.
     expect(userProfile).toContain("useBillingPortal");
     /**
@@ -90,12 +97,26 @@ describe("Premium CTA wiring contract", () => {
 
   it("routes entitlement denials through premium prompt UX on key premium surfaces", () => {
     const chat = read("client/src/pages/chat.tsx");
-    const fullTest = read("client/src/pages/full-test.tsx");
+    // W4-1: the turn machine (send, retry, and the entitlement-denial mapping)
+    // moved into the shared hook the chat page and the review panel both run.
+    const tutorTurn = read("client/src/hooks/useTutorTurn.ts");
+    const reviewPanel = read(
+      "client/src/components/tutor/ScopedTutorPanel.tsx",
+    );
 
-    expect(chat).toContain("PremiumUpgradePrompt");
-    expect(chat).toContain("mapTutorErrorToPremiumReason");
-    expect(fullTest).toContain("PremiumUpgradePrompt");
-    expect(fullTest).toContain("getPremiumDenialReason");
+    // W4-11: both LISA surfaces draw the LISA upgrade card, which is the one
+    // billing card with LISA's pitch — not a second card.
+    const lisaCard = read("client/src/components/tutor/LisaUpgradeCard.tsx");
+    expect(chat).toContain("LisaUpgradeCard");
+    expect(chat).toContain("useTutorTurn");
+    expect(tutorTurn).toContain("mapTutorErrorToPremiumReason");
+    expect(reviewPanel).toContain("LisaUpgradeCard");
+    expect(reviewPanel).toContain("useTutorTurn");
+    expect(lisaCard).toContain("PremiumUpgradePrompt");
+    expect(lisaCard).toContain("mapTutorErrorToPremiumReason");
+    // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
+    // pending Doc 04 rebuild. The two full-test.tsx assertions (PremiumUpgradePrompt,
+    // getPremiumDenialReason) went with the deleted page; the chat surface is unchanged.
   });
 
   it("keeps the guardian purchase surface wired, and OUT of the access gate", () => {

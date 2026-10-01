@@ -1,0 +1,197 @@
+/**
+ * The UTC window of one student-local calendar day.
+ *
+ * @spec [Doc-05F_V1.0 §8.2 (local dates), §22.4 (midnight, LA);
+ *        Doc_05F_formula_sheet.md §6]
+ * | @implemented [2026-09-18]
+ *
+ * plain English: the adapters ask "what did this student answer on 2026-09-13, in
+ * the timezone that date was planned in". Postgres stores `occurred_at` as an
+ * instant, so that question is a half-open instant range, and this computes it.
+ *
+ * WHY HERE AND NOT IN `@lyceon/shared`. The shared calendar layer is deliberately
+ * `Date`-free and clock-free — it takes local dates as strings and never converts
+ * between zones. Converting a local date to an instant genuinely needs the IANA
+ * database, which `Intl` has and a pure string module does not. Server code may use
+ * `Date`; the shared layer may not. This is the seam.
+ *
+ * expected outcome: §22.4 reproduces. In America/Los_Angeles, 2026-09-13 runs from
+ * 2026-09-13T07:00:00Z to 2026-09-14T07:00:00Z, so a session that starts at 23:50
+ * local has its pre-midnight items on the 13th and the rest on the 14th.
+ *
+ * edge cases: DST. The offset is resolved AT the boundary instant rather than
+ * assumed, by measuring the zone's offset and re-measuring once after applying it —
+ * the standard two-pass fix, which lands correctly on both the spring-forward day
+ * (23 hours) and the fall-back day (25 hours).
+ */
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * The offset of `timeZone` at `instant`, in minutes east of UTC.
+ *
+ * Formats the instant in the zone, reads the wall-clock fields back, and takes the
+ * difference. `Intl` is the only thing in the runtime that knows the IANA rules.
+ */
+function offsetMinutesAt(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+
+  const field = (type: string): number => {
+    const found = parts.find((part) => part.type === type);
+    return found === undefined ? 0 : Number(found.value);
+  };
+
+  // `hour` can come back as 24 for midnight under hour12:false in some runtimes.
+  const hour = field("hour") % 24;
+  const asUtc = Date.UTC(
+    field("year"),
+    field("month") - 1,
+    field("day"),
+    hour,
+    field("minute"),
+    field("second"),
+  );
+  return Math.round((asUtc - instant.getTime()) / 60_000);
+}
+
+/** The instant at which `localDate` begins in `timeZone`. */
+function startOfLocalDay(localDate: string, timeZone: string): Date {
+  const match = ISO_DATE.exec(localDate);
+  if (match === null) {
+    throw new Error(`localDayWindowUtc: ${localDate} is not a YYYY-MM-DD date`);
+  }
+  const naiveUtc = Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+
+  // Pass one: offset at the naive instant. Pass two: re-measure after applying it,
+  // which is what makes a DST boundary land on the right side.
+  const firstGuess = new Date(
+    naiveUtc - offsetMinutesAt(new Date(naiveUtc), timeZone) * 60_000,
+  );
+  const secondOffset = offsetMinutesAt(firstGuess, timeZone);
+  return new Date(naiveUtc - secondOffset * 60_000);
+}
+
+export type LocalDayWindow = {
+  /** Inclusive. */
+  startUtc: string;
+  /** EXCLUSIVE — a half-open range, so no instant belongs to two days. */
+  endUtc: string;
+};
+
+/**
+ * The half-open UTC window `[start, end)` covering one local day.
+ *
+ * Computed from the day's own start and the NEXT day's start rather than
+ * start + 24h, so a 23-hour or 25-hour DST day is the length it actually is.
+ */
+export function localDayWindowUtc(
+  localDate: string,
+  timeZone: string,
+): LocalDayWindow {
+  const match = ISO_DATE.exec(localDate);
+  if (match === null) {
+    throw new Error(`localDayWindowUtc: ${localDate} is not a YYYY-MM-DD date`);
+  }
+  const start = startOfLocalDay(localDate, timeZone);
+  const nextDay = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1),
+  );
+  const nextLocalDate = nextDay.toISOString().slice(0, 10);
+  const end = startOfLocalDay(nextLocalDate, timeZone);
+  return { startUtc: start.toISOString(), endUtc: end.toISOString() };
+}
+
+/**
+ * True when `timeZone` is a zone this runtime knows. The route additionally checks
+ * it against `pg_timezone_names`, which is the database's own list and the
+ * authority — this is the cheap first pass, not the decision.
+ */
+export function isKnownTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Today's date in `timeZone`, as `YYYY-MM-DD`.
+ *
+ * §8.2: "`today` is in `profile.timezone`". Every service that needs the student's
+ * local today comes here, and `now` is a PARAMETER so the services above stay
+ * testable across a midnight boundary without faking the process clock.
+ *
+ * `en-CA` is used for its format, not its locale: it renders Gregorian dates as
+ * `YYYY-MM-DD`, which is the one thing this function must produce. The fields are
+ * read back individually rather than trusting the joined string, so a runtime whose
+ * `en-CA` differs still yields the ISO form.
+ */
+export function localTodayIn(timeZone: string, now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+
+  const field = (type: string): string => {
+    const found = parts.find((part) => part.type === type);
+    return found === undefined ? "" : found.value;
+  };
+
+  const year = field("year").padStart(4, "0");
+  const month = field("month").padStart(2, "0");
+  const day = field("day").padStart(2, "0");
+  const localDate = `${year}-${month}-${day}`;
+  if (!ISO_DATE.test(localDate)) {
+    throw new Error(
+      `localTodayIn: ${timeZone} produced ${localDate}, not a YYYY-MM-DD date`,
+    );
+  }
+  return localDate;
+}
+
+/**
+ * A timestamp column, as an ISO-8601 string, whatever the transport handed back.
+ *
+ * @spec [Doc-05F_V1.0 §9.1 adapter contract (`occurred_at`), §22.4 midnight split]
+ * | @implemented [2026-09-22]
+ *
+ * WHY THIS EXISTS. supabase-js speaks PostgREST over JSON, so a `timestamptz` arrives as a
+ * STRING. `node-postgres` parses the same column into a `Date`. An adapter that guards with
+ * `typeof row.occurred_at !== "string"` is therefore correct in production and silently
+ * wrong against a pg-backed harness — it drops every row, returns no activity units, and
+ * reports it as "the student did nothing today" rather than as an error.
+ *
+ * That is not only a test problem. Dropping a resolved row because its timestamp arrived in
+ * an unexpected shape under-reports a student's progress with nothing anywhere to notice,
+ * which is the same failure mode as the skip predicate. Narrowing `unknown` at the boundary
+ * is what the standards ask for (§3.2), and this is that boundary.
+ *
+ * Returns null for anything that is not a usable instant, so the caller still skips a row it
+ * cannot date rather than inventing one.
+ */
+export function toIsoTimestamp(value: unknown): string | null {
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  return null;
+}

@@ -1,4 +1,0 @@
-$kind: http-request
-url: "{{baseUrl}}/api/full-length/sessions/current"
-method: GET
-order: 2000

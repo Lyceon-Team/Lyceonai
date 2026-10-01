@@ -2,8 +2,9 @@
  * @spec [Doc-01_V8 §20 (verified heading "## **§20 Subscription model**"), §22;
  *        SCL-043 payer identity; SCL-052 one entitlement tier] @implemented 2026-08-20
  *
- * plain English: the billing surface. Five routes: POST /checkout, GET /status,
- * POST /portal, GET /plans, GET /publishable-key.
+ * plain English: the billing surface. Four routes: POST /checkout, GET /status,
+ * POST /portal, GET /plans. (GET /publishable-key was deleted as unused,
+ * student-ui register UI-06, 2026-09-29.)
  *
  * What this serves:
  *  - Self-pay. An unaccompanied student pays for themselves, so the Stripe
@@ -46,12 +47,13 @@
 import { Request, Response, Router } from "express";
 import type Stripe from "stripe";
 import {
+  requireGuardianLinkForUnder13,
   requireSupabaseAuth,
-  sendUnauthenticated,
+  sendNoUser,
+  sendRoleUnrecognized,
 } from "../middleware/supabase-auth";
 import {
   getStripeClient,
-  getStripePublishableKey,
   getPriceId,
   getConfiguredPriceId,
   BILLING_PERIODS,
@@ -66,19 +68,18 @@ import {
 } from "../lib/account";
 import {
   resolveGuardianPurchaseSubject,
-  subscriptionAlreadyFundsStudent,
+  aSubscriptionAlreadyFundsStudent,
 } from "../lib/stripe/guardian-checkout";
+import { listGuardianFundingSubscriptions } from "../lib/stripe/guardian-subscriptions";
 import { evaluateSubjectPurchaseEligibility } from "../lib/stripe/purchase-eligibility";
 import { resolveEntitlementDisplay } from "../lib/entitlement-display";
 import { EntitlementService } from "../services/entitlement-service";
 import {
   checkoutIdempotencyKey,
-  subscriptionItemIdempotencyKey,
   isStripeIdempotencyConflict,
 } from "../lib/stripe/purchase-idempotency";
 import {
   evaluateCountryEligibility,
-  deniesEntitlement,
   blocksCheckout,
 } from "../lib/stripe/country-eligibility";
 import { getTier1Countries } from "../lib/entitlement-runtime-config";
@@ -88,14 +89,7 @@ import { logger } from "../logger";
 import { digestId } from "../lib/stripe/redact";
 import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { normalizeRuntimeRole } from "../lib/auth-role";
-
-/**
- * How many of a guardian's subscriptions to scan when deciding whether to add
- * an item or start one. The product creates at most ONE per payer, so this only
- * has to be large enough to detect the anomaly it fails closed on.
- */
-const GUARDIAN_SUBSCRIPTION_SCAN_LIMIT = 10;
+import { parseRuntimeRole } from "../lib/auth-role";
 
 const router = Router();
 
@@ -124,12 +118,18 @@ router.post(
   "/checkout",
   requireSupabaseAuth,
   doubleCsrfProtection,
+  // G2-04 (owner approval 2026-09-29): an under-13 student with no active guardian link cannot
+  // start a purchase or open the portal. A gate only — no Stripe logic changes. It reads the
+  // CALLER, so a guardian paying for a linked under-13 student passes.
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
 
     if (role === "admin") {
       return res
@@ -226,29 +226,42 @@ router.post(
       let subjectStudentId: string;
 
       /**
-       * §4.8 GUARDIAN-PAID PURCHASE — PER STUDENT. The production call site.
+       * GUARDIAN-PAID PURCHASE — ONE STUDENT, ONE SUBSCRIPTION. The production
+       * call site.
        *
        * @spec [Doc 01 V8 §20 "Who pays"; §31.4; §36.4; SCL-043 payer identity;
        *        SCL-044 payer email; SCL-045 one SubscriptionItem per student;
-       *        Charter §6] | @implemented [2026-08-28 — owner ruling]
+       *        Charter §6] | @implemented [2026-08-28]
+       * @revised [2026-09-29 — owner ruling: one subscription per student; the
+       *           add-item path is deleted]
        *
        * plain English: the guardian picks ONE linked student and pays for that
-       * student. Expected outcome: their first purchase creates a subscription
-       * with a single item; every purchase after adds an item to that same
-       * subscription. Trade-off: two children means two transactions, which is
-       * the point — the alternative charged for children the guardian never
-       * chose. Edge cases: no links, a student they are not linked to, and a
-       * student already funded — all refused before any money moves.
+       * student through Checkout. Expected outcome: every purchase — their first
+       * or their fifth — creates its own subscription, charges the card at that
+       * moment, collects Billing Terms consent and sends a receipt. Trade-off:
+       * one invoice per student, because Stripe has no native consolidation
+       * across separate subscriptions. Edge cases: no links, a student they are
+       * not linked to, a student already funded, and an incomplete view of their
+       * existing subscriptions — all refused before any money moves.
        *
-       * ONE CUSTOMER, ONE SUBSCRIPTION, ONE INVOICE. The second student is a new
-       * SubscriptionItem on the EXISTING subscription, never a second
-       * subscription. Stripe prorates that natively — `proration_behavior`
-       * defaults to `create_prorations` (stripe@20.4.1,
-       * `SubscriptionItemsResource.d.ts`: "The default value is
-       * `create_prorations`", citing
-       * https://docs.stripe.com/billing/subscriptions/prorations) — so the
-       * default is deliberately NOT overridden: the guardian is charged for the
-       * remainder of the current period and everything lands on one invoice.
+       * WHAT THIS REPLACED. A guardian who already had a subscription took an
+       * add-item branch: `subscriptionItems.create` on the existing
+       * subscription, no Checkout Session at all. With `proration_behavior`
+       * unset, Stripe's `create_prorations` default put the amount on the NEXT
+       * invoice — so the guardian was entitled immediately and charged up to
+       * three months later, having seen no price, no confirmation and no
+       * receipt, and having accepted no Billing Terms, because
+       * `consent_collection.terms_of_service` exists only on a Checkout Session.
+       * Observed in production 2026-09-29 05:28:25Z: one
+       * `customer.subscription.updated`, no `checkout.session.completed`,
+       * `latest_invoice` still the one from 2026-09-02. A guardian who cancelled
+       * before the proration was collected had months of free access and a
+       * dispute-shaped argument. Owner ruling: charge at initiation or not at
+       * all.
+       *
+       * ONE IMPLEMENTATION PER OPERATION. There is now a single write path for
+       * every guardian purchase, so there is no branch that can drift from the
+       * other and no second place for a gate to be forgotten.
        */
       if (isGuardian) {
         const activeLinks = await getAllGuardianStudentLinks(payerProfileId);
@@ -280,12 +293,12 @@ router.post(
          * with premium access derived from child A must still be able to buy
          * for child B.
          *
-         * This runs before `subscriptions.list` and before either write branch,
-         * so a refusal creates no Stripe object. It does NOT replace
-         * `subscriptionAlreadyFundsStudent` below — that answers a different
-         * question of a different source (does this guardian's own subscription
-         * already carry an item for this student), and it stays because it
-         * closes the window before the webhook has written the row.
+         * This runs before the Stripe reads and before the write, so a refusal
+         * creates no Stripe object. It does NOT replace
+         * `aSubscriptionAlreadyFundsStudent` below, which answers a different
+         * question of a different source — does a subscription in Stripe already
+         * fund this student — and is true the instant that subscription exists
+         * rather than only after its webhook lands.
          */
         const guardianEligibility =
           await evaluateSubjectPurchaseEligibility(selectedStudentId);
@@ -309,55 +322,85 @@ router.post(
         }
 
         /**
-         * BRANCH FIRST, THEN GATE. The order is the fix.
+         * THE PRE-WEBHOOK WINDOW, CLOSED AGAINST STRIPE ITSELF.
          *
-         * @revised [2026-08-28 — Codex HIGH-3]
+         * `evaluateSubjectPurchaseEligibility` above reads OUR entitlement row,
+         * which exists only once the webhook has landed. Between
+         * `checkout.sessions.create` returning and that event arriving, that
+         * guard allows and `checkoutIdempotencyKey` covers only its 60-second
+         * window. Two submits either side of that boundary would otherwise sell
+         * the same student two subscriptions, and because `upsertEntitlement`
+         * keys on `profile_id` the second would overwrite the first, leaving one
+         * live subscription referenced by no row — exactly what happened to
+         * student `3f18cbe2` (`sub_1U4bqZ…` and `sub_1U8pin…`, both billing
+         * yearly). Reading Stripe closes it, because the subscription is there
+         * the moment it is created.
          *
-         * The gate previously ran BEFORE this lookup, treating `unknown` as a
-         * denial for every guardian. A guardian's FIRST purchase creates a
-         * Customer with no address (there is nowhere to have got one yet), so
-         * the country was always `unknown` and the first purchase was refused
-         * before Stripe could collect an address. The passing test hid it by
-         * handing the freshly created Customer a US address.
-         *
-         * The two branches need DIFFERENT verdicts, which is exactly the split
-         * `country-eligibility.ts` already documents and which I applied
-         * wrongly:
-         *
-         *   first purchase  -> `blocksCheckout`: only a KNOWN ineligible
-         *                      country refuses. `unknown` proceeds, because the
-         *                      address does not exist until the customer types
-         *                      it during Checkout — and the completed-session
-         *                      gate then enforces it before any entitlement.
-         *   add-item        -> `deniesEntitlement`: `unknown` REFUSES. The
-         *                      Customer already has an address by now, so not knowing
-         *                      one is a fault, and this path grants entitlement
-         *                      without a later Checkout gate to catch it.
+         * THE SCAN MUST BE COMPLETE OR IT IS NOT AN ANSWER. A truncated page
+         * makes a subscription that fell off the end indistinguishable from one
+         * that does not exist, so an incomplete scan refuses (503) instead of
+         * concluding "not funded" from a prefix.
          */
-        const existing = await stripe.subscriptions.list({
-          customer: customerId,
-          status: "active",
-          limit: GUARDIAN_SUBSCRIPTION_SCAN_LIMIT,
-        });
-        if (existing.data.length > 1) {
+        const scan = await listGuardianFundingSubscriptions(stripe, customerId);
+        if (!scan.ok) {
           logger.error(
             "BILLING",
             "checkout",
-            "Guardian has several active subscriptions; refusing to guess which to extend",
-            { requestId, payerProfileId, count: existing.data.length },
+            "Could not read this guardian's subscriptions completely; refusing rather than risking a duplicate subscription for one student",
+            { requestId, payerProfileId, code: scan.code },
           );
-          return res.status(409).json({
+          return res.status(503).json({
             error: {
               message:
-                "This account has more than one active subscription. Contact support.",
-              code: "AMBIGUOUS_SUBSCRIPTION",
+                "We could not confirm your existing subscriptions just now. Please try again shortly.",
+              code: scan.code,
             },
             requestId,
           });
         }
 
-        const isAddItem = existing.data.length === 1;
+        if (
+          aSubscriptionAlreadyFundsStudent(
+            scan.subscriptions,
+            selectedStudentId,
+          )
+        ) {
+          logger.info(
+            "BILLING",
+            "checkout",
+            "Guardian purchase refused: a subscription already funds this student",
+            { requestId, payerProfileId, studentProfileId: selectedStudentId },
+          );
+          return res.status(409).json({
+            error: {
+              message: "This student is already covered by a subscription.",
+              code: "STUDENT_ALREADY_FUNDED",
+            },
+            requestId,
+          });
+        }
 
+        /**
+         * THE COUNTRY GATE AT SESSION CREATION — `blocksCheckout`, ALWAYS.
+         *
+         * @revised [2026-09-29] There used to be two verdicts here, chosen by
+         * whether the purchase took the add-item branch: `blocksCheckout` for a
+         * first purchase (only a KNOWN ineligible country refuses, because the
+         * billing address does not exist until the customer types it during
+         * Checkout) and `deniesEntitlement` for add-item (`unknown` refuses too,
+         * because that path granted entitlement with no later Checkout gate to
+         * catch it). With one write path there is one verdict, and it is
+         * `blocksCheckout`.
+         *
+         * THIS IS A BEHAVIOUR CHANGE, NOT A NO-OP, and the next reader should
+         * not have to rediscover it: a repeat purchase from an INELIGIBLE
+         * country is now charged and then refunded rather than refused up front.
+         * Nothing is lost, because `checkout.session.completed` applies
+         * `deniesEntitlement` to the address Checkout collected
+         * (`webhook-handler.ts`, INV-03-08) and `remediateCountryDenial` cancels
+         * the subscription and refunds the charge in full. Coverage is complete;
+         * the moment of refusal moved.
+         */
         const customer = await stripe.customers.retrieve(customerId);
         const payerCountry =
           "deleted" in customer && customer.deleted
@@ -367,10 +410,7 @@ router.post(
           payerCountry,
           await getTier1Countries(),
         );
-        const refuses = isAddItem
-          ? deniesEntitlement(eligibility)
-          : blocksCheckout(eligibility);
-        if (refuses) {
+        if (blocksCheckout(eligibility)) {
           logger.warn(
             "BILLING",
             "checkout",
@@ -379,7 +419,6 @@ router.post(
               requestId,
               payerProfileId,
               verdict: eligibility.verdict,
-              path: isAddItem ? "add_item" : "first_purchase",
             },
           );
           return res.status(403).json({
@@ -392,113 +431,17 @@ router.post(
           });
         }
 
-        const currentSubscription = existing.data[0];
-
-        if (currentSubscription) {
-          // ---- ADD AN ITEM TO THE EXISTING SUBSCRIPTION ----------------
-          if (
-            subscriptionAlreadyFundsStudent(
-              currentSubscription.items?.data ?? [],
-              selectedStudentId,
-            )
-          ) {
-            return res.status(409).json({
-              error: {
-                message:
-                  "This student is already covered by your subscription.",
-                code: "STUDENT_ALREADY_FUNDED",
-              },
-              requestId,
-            });
-          }
-
-          // Metadata is set DIRECTLY on the item here, so this path does not
-          // depend on Checkout propagating `line_items[].metadata` — the one
-          // mechanism §4.8's plan could never verify. Only a guardian's FIRST
-          // purchase goes through Checkout at all.
-          /**
-           * IDEMPOTENT ADD-ITEM. A repeated key inside the window returns the
-           * ORIGINAL item rather than adding a second one, so a double-submit
-           * cannot bill the guardian twice for one student.
-           * `subscriptionAlreadyFundsStudent` above catches the case where the
-           * item is already visible on the retrieved subscription; this catches
-           * the one where two requests are in flight together and neither has
-           * seen the other's item yet.
-           */
-          let item: Stripe.SubscriptionItem;
-          try {
-            item = await stripe.subscriptionItems.create(
-              {
-                subscription: currentSubscription.id,
-                price: priceId,
-                quantity: 1,
-                // proration_behavior deliberately omitted: Stripe's default
-                // `create_prorations` is exactly the wanted behaviour.
-                metadata: { student_profile_id: selectedStudentId },
-              },
-              {
-                idempotencyKey: subscriptionItemIdempotencyKey({
-                  subjectProfileId: selectedStudentId,
-                  subscriptionId: currentSubscription.id,
-                  priceId,
-                  nowMs: Date.now(),
-                }),
-              },
-            );
-          } catch (err: unknown) {
-            if (!isStripeIdempotencyConflict(err)) throw err;
-            // The key was used inside this window with different parameters —
-            // a concurrent attempt for the same student on the same
-            // subscription. NEVER retry without the key: that is the second
-            // charge this exists to prevent.
-            logger.warn(
-              "BILLING",
-              "checkout",
-              "Add-item refused: an attempt for this student is already in flight",
-              {
-                requestId,
-                payerProfileId,
-                studentProfileId: selectedStudentId,
-              },
-            );
-            return res.status(409).json({
-              error: {
-                message:
-                  "A purchase for this student is already being processed. Please wait a moment and refresh.",
-                code: "PURCHASE_IN_FLIGHT",
-              },
-              requestId,
-            });
-          }
-
-          logger.info(
-            "BILLING",
-            "checkout",
-            "Student added to existing subscription",
-            {
-              requestId,
-              payerProfileId,
-              studentProfileId: selectedStudentId,
-              subscriptionId: currentSubscription.id,
-              subscriptionItemId: item.id,
-              plan,
-            },
-          );
-
-          return res.json({
-            kind: "item_added",
-            subscriptionItemId: item.id,
-            requestId,
-          });
-        }
-
-        // ---- FIRST PURCHASE: CREATE THE SUBSCRIPTION VIA CHECKOUT -------
+        // ---- EVERY PURCHASE: CREATE A SUBSCRIPTION VIA CHECKOUT ---------
         //
-        // The subscription metadata names BOTH the payer and the single
-        // student. The payer marks it guardian-paid; the student is the
+        // The subscription metadata names BOTH the payer and the one student it
+        // funds. The payer marks it guardian-paid; the student is the
         // subscription-level fallback the webhook uses when a one-item
-        // subscription's item carries no metadata of its own. That fallback is
-        // what makes this path safe WITHOUT the unverified propagation probe.
+        // subscription's item carries no metadata of its own — and under one
+        // subscription per student, EVERY guardian subscription is a one-item
+        // subscription, so that fallback always applies. It is also what
+        // `aSubscriptionAlreadyFundsStudent` reads on the next purchase, which
+        // is why `subscription_data.metadata` below is load-bearing rather than
+        // bookkeeping.
         lineItems = [
           {
             price: priceId,
@@ -709,9 +652,11 @@ router.get(
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
     if (role === "admin") {
       return res
         .status(403)
@@ -898,12 +843,18 @@ router.post(
   "/portal",
   requireSupabaseAuth,
   doubleCsrfProtection,
+  // G2-04 (owner approval 2026-09-29): an under-13 student with no active guardian link cannot
+  // start a purchase or open the portal. A gate only — no Stripe logic changes. It reads the
+  // CALLER, so a guardian paying for a linked under-13 student passes.
+  requireGuardianLinkForUnder13,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
     const userId = req.user?.id;
-    const role = normalizeRuntimeRole(req.user?.role);
+    // G2-02: parse the role; an unrecognised one is refused, never read as a self-paying student.
+    const role = parseRuntimeRole(req.user?.role);
 
-    if (!userId || !role) return sendUnauthenticated(res, requestId);
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
     if (role === "admin") {
       return res
         .status(403)
@@ -988,6 +939,25 @@ function intervalLabel(
 }
 
 /**
+ * Stripe's `recurring.interval` narrowed to the four values the contract names.
+ *
+ * Stripe types it as a string union today, but this route receives it across a
+ * network boundary from a vendor that may add a value; anything unrecognised
+ * becomes null, which costs the card its per-month equivalent and never a wrong
+ * one. Coding Standards §7.1 — narrow at the boundary rather than assert.
+ */
+function recurringInterval(
+  interval: string | null,
+): "day" | "week" | "month" | "year" | null {
+  return interval === "day" ||
+    interval === "week" ||
+    interval === "month" ||
+    interval === "year"
+    ? interval
+    : null;
+}
+
+/**
  * GET /api/billing/plans — price metadata read live from Stripe.
  *
  * No hardcoded amounts. Doc 09 §1.4 and §5.1 make Stripe canonical for pricing
@@ -1000,7 +970,8 @@ router.get(
   requireSupabaseAuth,
   async (req: Request, res: Response) => {
     const requestId = req.requestId;
-    res.setHeader("Cache-Control", "no-store");
+    // Same as the /api default (F-27); kept explicit because this body is per-payer.
+    res.setHeader("Cache-Control", "private, no-store");
 
     try {
       const stripe = getStripeClient();
@@ -1014,6 +985,8 @@ router.get(
               amountCents: null,
               currency: null,
               intervalLabel: null,
+              interval: null,
+              intervalCount: null,
               stripePriceIdConfigured: false,
             };
           }
@@ -1027,6 +1000,14 @@ router.get(
               price.recurring?.interval ?? null,
               price.recurring?.interval_count ?? null,
             ),
+            // THE INTERVAL AS DATA, NOT ONLY AS PROSE. `intervalLabel` is a
+            // sentence and a sentence cannot be divided; the per-month
+            // equivalent is `unit_amount / months`, so the client needs the
+            // interval itself. Sending only the label is what left `upgrade.tsx`
+            // unable to compute the equivalent and reaching for a hardcoded
+            // table instead.
+            interval: recurringInterval(price.recurring?.interval ?? null),
+            intervalCount: price.recurring?.interval_count ?? null,
             stripePriceIdConfigured: true,
           };
         }),
@@ -1045,23 +1026,5 @@ router.get(
     }
   },
 );
-
-/** GET /api/billing/publishable-key — public by design. */
-router.get("/publishable-key", (req: Request, res: Response) => {
-  const requestId = req.requestId;
-  try {
-    return res.json({ publishableKey: getStripePublishableKey(), requestId });
-  } catch {
-    logger.error(
-      "BILLING",
-      "publishable_key",
-      "STRIPE_PUBLISHABLE_KEY is not configured",
-      { requestId },
-    );
-    return res
-      .status(503)
-      .json({ error: "Billing is not configured", requestId });
-  }
-});
 
 export default router;

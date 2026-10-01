@@ -41,6 +41,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { logger } from "../logger";
+import { validationFieldPaths } from "../lib/validation-log";
 import { executeCompaction } from "../services/tutor-compaction";
 import { executeMemoryRefresh } from "../services/tutor-memory-refresh";
 import { executePendingReconciliation } from "../services/tutor-pending-reconciliation";
@@ -79,7 +80,7 @@ const readOidcConfig: OidcConfigReader = () => ({
 /**
  * Cloud Tasks compaction payload per Doc 03C §8.3.
  */
-const compactionTaskSchema = z.object({
+export const compactionTaskSchema = z.object({
   job_type: z.literal("compaction"),
   conversation_id: z.string().uuid(),
   trigger_reason: z.enum(["close", "threshold", "stale"]),
@@ -98,7 +99,13 @@ router.post(
         "INTERNAL_MEMORY",
         "compact_writeback_invalid_payload",
         "Compaction task payload failed validation",
-        { errors: parsed.error.flatten() },
+        // FIELD PATHS, NOT `flatten()`. `fieldErrors` holds Zod's MESSAGE strings, and a
+        // `z.enum` failure renders as "Invalid enum value. Expected 'a' | 'b', received
+        // 'xyz'" — the rejected value, verbatim, in the line. These payloads are
+        // system-generated and the surface is OIDC-authenticated, so this was hygiene
+        // rather than a student-data breach; it is still the one thing
+        // `validationFieldPaths` exists to make impossible.
+        { fields: validationFieldPaths(parsed.error.flatten()) },
       );
       // 400 so Cloud Tasks does not retry a malformed payload
       res.status(400).json({
@@ -193,7 +200,13 @@ router.post(
         "INTERNAL_MEMORY",
         "memory_refresh_invalid_payload",
         "Memory refresh task payload failed validation",
-        { errors: parsed.error.flatten() },
+        // FIELD PATHS, NOT `flatten()`. `fieldErrors` holds Zod's MESSAGE strings, and a
+        // `z.enum` failure renders as "Invalid enum value. Expected 'a' | 'b', received
+        // 'xyz'" — the rejected value, verbatim, in the line. These payloads are
+        // system-generated and the surface is OIDC-authenticated, so this was hygiene
+        // rather than a student-data breach; it is still the one thing
+        // `validationFieldPaths` exists to make impossible.
+        { fields: validationFieldPaths(parsed.error.flatten()) },
       );
       res.status(400).json({
         error: {
@@ -294,7 +307,13 @@ router.post(
         "INTERNAL_MEMORY",
         "pending_reconciliation_invalid_payload",
         "Pending reconciliation task payload failed validation",
-        { errors: parsed.error.flatten() },
+        // FIELD PATHS, NOT `flatten()`. `fieldErrors` holds Zod's MESSAGE strings, and a
+        // `z.enum` failure renders as "Invalid enum value. Expected 'a' | 'b', received
+        // 'xyz'" — the rejected value, verbatim, in the line. These payloads are
+        // system-generated and the surface is OIDC-authenticated, so this was hygiene
+        // rather than a student-data breach; it is still the one thing
+        // `validationFieldPaths` exists to make impossible.
+        { fields: validationFieldPaths(parsed.error.flatten()) },
       );
       res.status(400).json({
         error: {

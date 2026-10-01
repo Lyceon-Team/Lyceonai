@@ -23,6 +23,10 @@
  *    Cascade FKs handle tutor_messages and tutor_question_links. A
  *    separate delete handles tutor_memory_summaries (no FK cascade from
  *    tutor_conversations).
+ *  - 90d/180d tiers delete outright. They used to archive every expired row
+ *    to BigQuery first and decline when they could not; the owner ruling of
+ *    2026-09-22 removed the archive (Doc 07B §5.4). Neither tier can decline
+ *    any more, which is why both are scheduled for the first time.
  *  - 365d tier: tables (cost telemetry, quota appeals) not yet provisioned.
  *    Returns { ok: false, reason: "365d_tables_not_provisioned" }.
  *  - Dry-run returns count only (SELECT COUNT, no DELETE). Used for
@@ -45,16 +49,12 @@ import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { validationFieldPaths } from "../lib/validation-log";
 import {
   oidcAuthMiddlewareWithConfigGuard,
   type OidcConfigReader,
 } from "../../packages/shared/internal-auth/verify-oidc-middleware";
 import { TIER_HANDLERS } from "../services/retention-sweep";
-import {
-  createBigQueryArchiveClient,
-  ARCHIVE_DATASET_ENV_KEY,
-  type ArchiveClient,
-} from "../services/retention-archive";
 
 const router = Router();
 
@@ -106,48 +106,6 @@ const retentionSweepSchema = z.object({
 // Extracted for testability — injectable client + controllable clock.
 // TIER_HANDLERS imported above; each handler takes (client, dryRun, opts).
 
-// ── BigQuery archive client ─────────────────────────────────────────
-
-/**
- * @spec [Doc-03_V1.1 §14.2, Doc-07B_V1.0 §dataset naming]
- *
- * Lazily created BigQuery client for 90d/180d archival.
- * Created once on first use — the @google-cloud/bigquery package is
- * dynamically required by createBigQueryArchiveClient(), so it doesn't
- * fail at import time in test mode or before the dependency is installed.
- *
- * When BIGQUERY_ARCHIVE_DATASET is not set, archiveClient stays undefined
- * and archive-requiring tiers return ok: false with a clear reason —
- * same safe behaviour as the previous "archival_destination_pending."
- */
-let archiveClient: ArchiveClient | undefined;
-
-function getArchiveClient(): ArchiveClient | undefined {
-  if (archiveClient) return archiveClient;
-
-  const datasetEnv = process.env[ARCHIVE_DATASET_ENV_KEY];
-  if (!datasetEnv) {
-    // No dataset configured — archive client not available. Tiers that
-    // require archival will return ok: false, reason: "archive_client_not_configured".
-    return undefined;
-  }
-
-  try {
-    archiveClient = createBigQueryArchiveClient();
-    return archiveClient;
-  } catch (err: unknown) {
-    logger.warn(
-      "RETENTION_SWEEP",
-      "archive_client_init_failed",
-      "Failed to create BigQuery archive client — 90d/180d tiers will be disabled",
-      {
-        error: err instanceof Error ? err.message : String(err),
-      },
-    );
-    return undefined;
-  }
-}
-
 // ── Route ─────────────────────────────────────────────────────────────
 
 router.post(
@@ -160,7 +118,13 @@ router.post(
         "RETENTION_SWEEP",
         "sweep_invalid_payload",
         "Retention sweep payload failed validation",
-        { errors: parsed.error.flatten() },
+        // FIELD PATHS, NOT `flatten()`. `fieldErrors` holds Zod's MESSAGE strings, and a
+        // `z.enum` failure renders as "Invalid enum value. Expected 'a' | 'b', received
+        // 'xyz'" — the rejected value, verbatim, in the line. These payloads are
+        // system-generated and the surface is OIDC-authenticated, so this was hygiene
+        // rather than a student-data breach; it is still the one thing
+        // `validationFieldPaths` exists to make impossible.
+        { fields: validationFieldPaths(parsed.error.flatten()) },
       );
       res.status(400).json({
         error: {
@@ -185,7 +149,6 @@ router.post(
     try {
       const result = await handler(supabaseServer, dry_run, {
         now: new Date(),
-        archiveClient: getArchiveClient(),
       });
 
       if (!result.ok) {

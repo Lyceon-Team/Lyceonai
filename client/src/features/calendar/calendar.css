@@ -1,0 +1,1636 @@
+/*
+ * @spec [Doc_05F_Study_Calendar, §17.1 layout, §17.7 interaction rules]
+ * @implemented [2026-09-23]
+ *
+ * plain English: the calendar screen's visual contract, taken from the approved prototype
+ * at docs/design/calendar-prototype.html. Expected outcome: the shipped page and the
+ * prototype are the same design.
+ *
+ * DERIVED FROM THE PROTOTYPE MECHANICALLY, NOT RETYPED. Every rule below is the prototype's
+ * own, with one change applied uniformly: each selector is scoped under `.lyceon-calendar`
+ * so the prototype's generic class names (`.top`, `.block`, `.sheet`) cannot collide with
+ * the rest of the app. The prototype's `:root`, `html, body` and `*` rules collapse onto the
+ * scope root for the same reason — this page is mounted inside an app shell and must not
+ * restyle it.
+ *
+ * The four block colours are the ones the brief pins: Math #2563EB, R&W #7C3AED,
+ * Review #B45309, Full-length #334155. They are also registered as shared design tokens in
+ * client/src/styles/tokens.css, and this file consumes them through the same custom-property
+ * names the prototype uses, so there is one definition of each colour and not two.
+ *
+ * trade-offs: a scoped stylesheet rather than Tailwind utilities. tailwind.config.ts caps
+ * the brand palette at "ONLY Cream + Navy"; this screen is four-colour by design, and
+ * expressing the prototype's agenda grid in utilities would have been a re-interpretation
+ * rather than a reproduction.
+ */
+
+.lyceon-calendar {
+  --ink: #10162a;
+  --ink-2: #39415a;
+  --muted: #6b7387;
+  --line: #e4e7ef;
+  --line-2: #eff1f6;
+  --canvas: #ffffff;
+  --surface: #f7f8fb;
+  --rail: #0e1424;
+  /*
+   * The four block colours come from the shared token layer (styles/tokens.css), which
+   * App.tsx imports globally — with a LITERAL FALLBACK each, because the failure mode
+   * without one is silent. The pale tints below are literals, so a page rendering this
+   * stylesheet without the token layer still shows coloured blocks; what disappears is the
+   * left accent bar and the "Today" pill, both of which resolve to nothing. A screenshot
+   * harness rendering the component outside App.tsx is exactly how that was found. The
+   * token stays the source of truth — the fallback only fires when it is absent.
+   */
+  --math: var(--calendar-math, #2563eb);
+  --math-t: #eaf0fe;
+  --rw: var(--calendar-rw, #7c3aed);
+  --rw-t: #f3edfe;
+  --rev: var(--calendar-review, #b45309);
+  --rev-t: #fdf2e1;
+  --exam: var(--calendar-exam, #334155);
+  --exam-t: #ebeff5;
+  --ok: #0e7a55;
+  --warn: #b45309;
+  --r: 10px;
+  --shadow:
+    0 1px 2px rgba(16, 22, 42, 0.06), 0 8px 24px -12px rgba(16, 22, 42, 0.18);
+}
+.lyceon-calendar * {
+  box-sizing: border-box;
+}
+.lyceon-calendar,
+.lyceon-calendar {
+  height: 100%;
+}
+.lyceon-calendar {
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+.lyceon-calendar button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.lyceon-calendar :focus-visible {
+  outline: 2px solid var(--math);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* ---------- shell ---------- */
+.lyceon-calendar .app {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+.lyceon-calendar .rail {
+  background: var(--rail);
+  color: #e8eaf2;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px 16px;
+  overflow-y: auto;
+}
+.lyceon-calendar .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: serif;
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .brand i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--math);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+.lyceon-calendar .who {
+  padding: 11px 12px;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.06);
+}
+.lyceon-calendar .who b {
+  font-weight: 600;
+  display: block;
+}
+.lyceon-calendar .who span {
+  color: #98a0b8;
+  font-size: 12.5px;
+}
+.lyceon-calendar .mini {
+  color: #c7ccdc;
+}
+.lyceon-calendar .mini header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+.lyceon-calendar .mini h4 {
+  margin: 0;
+  font-family: serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #e8eaf2;
+}
+.lyceon-calendar .mini .nav {
+  display: flex;
+  gap: 2px;
+}
+.lyceon-calendar .mini .nav button {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: #98a0b8;
+  line-height: 1;
+}
+.lyceon-calendar .mini .nav button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.lyceon-calendar .mgrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  font-size: 11.5px;
+}
+.lyceon-calendar .mgrid span {
+  text-align: center;
+  color: #79819c;
+  padding: 3px 0;
+}
+.lyceon-calendar .mgrid button {
+  aspect-ratio: 1;
+  border-radius: 5px;
+  color: #c7ccdc;
+  font-size: 11.5px;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+.lyceon-calendar .mgrid button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.lyceon-calendar .mgrid button.off {
+  color: #4d5470;
+}
+.lyceon-calendar .mgrid button.sel {
+  background: var(--math);
+  color: #fff;
+  font-weight: 600;
+}
+.lyceon-calendar .mgrid button.has::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #7c8aa8;
+}
+.lyceon-calendar .mgrid button.sel.has::after {
+  background: rgba(255, 255, 255, 0.8);
+}
+.lyceon-calendar .legend h4 {
+  margin: 0 0 9px;
+  font-family: serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #e8eaf2;
+}
+.lyceon-calendar .legend label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 7px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #c7ccdc;
+}
+.lyceon-calendar .legend label:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.lyceon-calendar .legend input {
+  accent-color: #7c8aa8;
+  width: 14px;
+  height: 14px;
+}
+.lyceon-calendar .legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2.5px;
+  flex: none;
+}
+.lyceon-calendar .rail .foot {
+  margin-top: auto;
+  font-size: 11.5px;
+  color: #6e7690;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  padding-top: 13px;
+}
+/* ---------- main ---------- */
+.lyceon-calendar .main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--canvas);
+}
+/* §17.1 — three zones, two rows each, lifted from the prototype's `.top` grid.
+   L1 back · C1 nav+view · R1 target / L2 edit+refresh · C2 streak+countdown · R2 projected.
+   The prototype's drag-to-rearrange mode is a demo device and is not carried over; the
+   slots it moved around are. */
+.lyceon-calendar .top {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px 26px;
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.lyceon-calendar .range {
+  font-family: serif;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-right: 2px;
+}
+.lyceon-calendar .arrows {
+  display: flex;
+  gap: 4px;
+}
+/* The back control and its divider. Declarations are the prototype's own, scoped
+   under .lyceon-calendar like every other rule in this file. */
+.lyceon-calendar .back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: #fff;
+  text-decoration: none;
+}
+.lyceon-calendar .back:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.lyceon-calendar .topdiv {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  margin: 0 2px;
+}
+.lyceon-calendar .btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.12s;
+}
+.lyceon-calendar .btn:hover {
+  background: var(--surface);
+}
+.lyceon-calendar .btn.icon {
+  width: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  height: 30px;
+}
+.lyceon-calendar .btn.primary {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.lyceon-calendar .btn.primary:hover {
+  background: #1c2440;
+}
+.lyceon-calendar .seg {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.lyceon-calendar .seg button {
+  padding: 6px 13px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.lyceon-calendar .seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+}
+.lyceon-calendar .spacer {
+  flex: 1;
+}
+.lyceon-calendar .stat {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lyceon-calendar .stat b {
+  font-family: serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.lyceon-calendar .chip-mode {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.lyceon-calendar .chip-mode button {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.lyceon-calendar .chip-mode button[aria-pressed="true"] {
+  background: var(--math-t);
+  color: var(--math);
+  font-weight: 600;
+}
+.lyceon-calendar .banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  background: var(--math-t);
+  border-bottom: 1px solid #d7e2fb;
+  font-size: 13px;
+  color: #1b3f91;
+}
+.lyceon-calendar .banner button {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1b3f91;
+  text-decoration: underline;
+}
+/* week grid */
+.lyceon-calendar .scroll {
+  flex: 1;
+  overflow: auto;
+}
+.lyceon-calendar .week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(148px, 1fr));
+  min-height: 100%;
+}
+.lyceon-calendar .col {
+  border-right: 1px solid var(--line-2);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.lyceon-calendar .col:last-child {
+  border-right: 0;
+}
+.lyceon-calendar .col.rest {
+  background: repeating-linear-gradient(
+    135deg,
+    #fcfcfd,
+    #fcfcfd 9px,
+    #f6f7fa 9px,
+    #f6f7fa 18px
+  );
+}
+.lyceon-calendar .col.today {
+  background: #fbfcff;
+}
+.lyceon-calendar .col.drop {
+  background: var(--math-t);
+  box-shadow: inset 0 0 0 2px var(--math);
+}
+.lyceon-calendar .dayhead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: inherit;
+  backdrop-filter: blur(6px);
+  padding: 11px 12px 9px;
+  border-bottom: 1px solid var(--line-2);
+}
+.lyceon-calendar .col.today .dayhead {
+  background: #fbfcff;
+}
+.lyceon-calendar .dow {
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.lyceon-calendar .dnum {
+  font-family: serif;
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.lyceon-calendar .col.today .dnum {
+  color: var(--math);
+}
+.lyceon-calendar .dnum em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--math);
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+}
+.lyceon-calendar .dmeta {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.lyceon-calendar .stack {
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 1;
+}
+.lyceon-calendar .block {
+  border-radius: var(--r);
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  cursor: grab;
+  position: relative;
+  transition:
+    transform 0.1s,
+    box-shadow 0.12s;
+  background: #fff;
+}
+.lyceon-calendar .block:hover {
+  box-shadow: var(--shadow);
+}
+.lyceon-calendar .block:active {
+  cursor: grabbing;
+}
+.lyceon-calendar .block.dragging {
+  opacity: 0.38;
+  transform: scale(0.97);
+}
+.lyceon-calendar .block .bar {
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 3px;
+}
+/*
+ * §17.1 card type. RAISED from the prototype's 13.5px / 10.5px, not copied from it: the
+ * prototype's own values are exactly what the build already shipped, so "per the prototype"
+ * had nothing larger to adopt. The two elements raised are the two the brief names — the
+ * title and the domain chips — and nothing else moved: same padding, same gaps, same four
+ * colours, so the card's density is unchanged.
+ */
+.lyceon-calendar .block .ttl {
+  font-family: serif;
+  font-weight: 600;
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+  padding-left: 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lyceon-calendar .block .sub {
+  padding-left: 9px;
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+.lyceon-calendar .block .dom {
+  padding-left: 9px;
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.lyceon-calendar .block .dom span {
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(16, 22, 42, 0.05);
+  color: var(--ink-2);
+}
+.lyceon-calendar .block.math {
+  background: var(--math-t);
+  border-color: #d9e4fd;
+}
+.lyceon-calendar .block.math .bar {
+  background: var(--math);
+}
+.lyceon-calendar .block.math .ttl {
+  color: #1b3f91;
+}
+.lyceon-calendar .block.rw {
+  background: var(--rw-t);
+  border-color: #e5dafb;
+}
+.lyceon-calendar .block.rw .bar {
+  background: var(--rw);
+}
+.lyceon-calendar .block.rw .ttl {
+  color: #59279e;
+}
+.lyceon-calendar .block.rev {
+  background: var(--rev-t);
+  border-color: #f6e3c4;
+}
+.lyceon-calendar .block.rev .bar {
+  background: var(--rev);
+}
+.lyceon-calendar .block.rev .ttl {
+  color: #8a4309;
+}
+.lyceon-calendar .block.exam {
+  background: var(--exam-t);
+  border-color: #dce2ec;
+}
+.lyceon-calendar .block.exam .bar {
+  background: var(--exam);
+}
+.lyceon-calendar .block.exam .ttl {
+  color: #26324a;
+}
+.lyceon-calendar .block.done {
+  opacity: 0.72;
+}
+.lyceon-calendar .block.done .ttl {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.lyceon-calendar .lock {
+  font-size: 10.5px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.lyceon-calendar .block.locked {
+  cursor: default;
+}
+.lyceon-calendar .progress {
+  margin-top: 7px;
+  margin-left: 9px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(16, 22, 42, 0.1);
+  overflow: hidden;
+}
+.lyceon-calendar .progress i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+.lyceon-calendar .empty {
+  padding: 14px 10px;
+  font-size: 12px;
+  color: #9aa1b4;
+  text-align: center;
+}
+.lyceon-calendar .add {
+  margin: 0 9px 11px;
+  padding: 7px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.lyceon-calendar .col:hover .add {
+  opacity: 1;
+}
+.lyceon-calendar .add:hover {
+  border-color: var(--math);
+  color: var(--math);
+  background: var(--math-t);
+}
+/* month grid */
+.lyceon-calendar .month {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: minmax(112px, 1fr);
+  min-height: 100%;
+}
+.lyceon-calendar .mhead {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 2;
+}
+.lyceon-calendar .mhead div {
+  padding: 9px 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.lyceon-calendar .mcell {
+  border-right: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
+  padding: 7px 8px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lyceon-calendar .mcell.out {
+  background: #fcfcfd;
+}
+.lyceon-calendar .mcell.out .mnum {
+  color: #b9becd;
+}
+.lyceon-calendar .mcell.rest {
+  background: repeating-linear-gradient(
+    135deg,
+    #fcfcfd,
+    #fcfcfd 9px,
+    #f6f7fa 9px,
+    #f6f7fa 18px
+  );
+}
+.lyceon-calendar .mcell.today .mnum {
+  background: var(--math);
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.lyceon-calendar .mcell.drop {
+  background: var(--math-t);
+  box-shadow: inset 0 0 0 2px var(--math);
+}
+.lyceon-calendar .mnum {
+  font-family: serif;
+  font-size: 14px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+.lyceon-calendar .mchip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: grab;
+  min-width: 0;
+}
+.lyceon-calendar .mchip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  flex: none;
+}
+.lyceon-calendar .mchip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lyceon-calendar .mchip.math {
+  background: var(--math-t);
+  color: #1b3f91;
+}
+.lyceon-calendar .mchip.rw {
+  background: var(--rw-t);
+  color: #59279e;
+}
+.lyceon-calendar .mchip.rev {
+  background: var(--rev-t);
+  color: #8a4309;
+}
+.lyceon-calendar .mchip.exam {
+  background: var(--exam-t);
+  color: #26324a;
+}
+/* facts */
+.lyceon-calendar .facts {
+  display: flex;
+  gap: 26px;
+  padding: 11px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.lyceon-calendar .facts div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+}
+.lyceon-calendar .facts b {
+  font-family: serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+/* side sheet */
+.lyceon-calendar .scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 22, 42, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+  z-index: 8;
+}
+.lyceon-calendar .scrim.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.lyceon-calendar .sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 390px;
+  max-width: 92vw;
+  background: #fff;
+  z-index: 9;
+  transform: translateX(100%);
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: -18px 0 40px -24px rgba(16, 22, 42, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+.lyceon-calendar .sheet.on {
+  transform: none;
+}
+.lyceon-calendar .sheet header {
+  padding: 17px 20px 13px;
+  border-bottom: 1px solid var(--line);
+}
+.lyceon-calendar .sheet .kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  margin-bottom: 9px;
+}
+.lyceon-calendar .sheet h3 {
+  margin: 0;
+  font-family: serif;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .sheet .when {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 3px;
+}
+.lyceon-calendar .sheet .body {
+  padding: 17px 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+}
+.lyceon-calendar .field label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.lyceon-calendar .field select,
+.lyceon-calendar .field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+.lyceon-calendar .mixrow {
+  display: grid;
+  grid-template-columns: 1fr 92px 30px;
+  gap: 7px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+.lyceon-calendar .mixrow button {
+  color: var(--muted);
+  height: 30px;
+  border-radius: 7px;
+}
+.lyceon-calendar .mixrow button:hover {
+  background: #fdecec;
+  color: #b4232b;
+}
+.lyceon-calendar .why {
+  background: var(--surface);
+  border-radius: var(--r);
+  padding: 12px 13px;
+  font-size: 13px;
+  color: var(--ink-2);
+  border: 1px solid var(--line-2);
+}
+.lyceon-calendar .why b {
+  display: block;
+  font-family: serif;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+  font-size: 13.5px;
+}
+.lyceon-calendar .sheet footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.lyceon-calendar .sheet footer .btn {
+  flex: 1;
+  text-align: center;
+  padding: 9px;
+}
+.lyceon-calendar .del {
+  color: #b4232b;
+  font-size: 13px;
+  font-weight: 500;
+}
+.lyceon-calendar .hint {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 20px 14px;
+}
+.lyceon-calendar .toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 16px);
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  opacity: 0;
+  transition: 0.2s;
+  z-index: 20;
+  box-shadow: var(--shadow);
+}
+.lyceon-calendar .toast.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lyceon-calendar * {
+    transition: none !important;
+  }
+}
+@media (max-width: 900px) {
+  .lyceon-calendar .app {
+    grid-template-columns: 1fr;
+  }
+  .lyceon-calendar .rail {
+    display: none;
+  }
+  .lyceon-calendar .week {
+    grid-template-columns: repeat(7, minmax(132px, 1fr));
+  }
+}
+
+/*
+ * §17.2's day footer, sited in the week column's header. Hidden until the column is hovered
+ * or something inside it has focus — the same affordance pattern the prototype uses for
+ * "+ Add block", so the grid stays quiet until the student reaches for it. `focus-within`
+ * is what keeps it reachable from the keyboard rather than hover-only.
+ */
+.lyceon-calendar .daymenu {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.lyceon-calendar .col:hover .daymenu,
+.lyceon-calendar .col:focus-within .daymenu {
+  opacity: 1;
+}
+.lyceon-calendar .daymenu button {
+  font-size: 11.5px;
+  color: var(--muted);
+  text-decoration: underline;
+}
+.lyceon-calendar .daymenu button:hover {
+  color: var(--math);
+}
+
+/* The side sheet's kind chip, tinted per block type (the prototype set this inline). */
+.lyceon-calendar .kind-math {
+  background: var(--math-t);
+  color: #1b3f91;
+}
+.lyceon-calendar .kind-rw {
+  background: var(--rw-t);
+  color: #59279e;
+}
+.lyceon-calendar .kind-review {
+  background: var(--rev-t);
+  color: #8a4309;
+}
+.lyceon-calendar .kind-exam {
+  background: var(--exam-t);
+  color: #26324a;
+}
+/* §17.2's create sheet. Deliberately NOT one of the four block tones: nothing has been
+   chosen yet, so borrowing a colour would name an engine the student has not picked. */
+.lyceon-calendar .kind-new {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-2);
+}
+
+/* The mini-month marks today even when it is not the selected week. */
+.lyceon-calendar .mgrid button.is-today {
+  box-shadow: inset 0 0 0 1px var(--math);
+}
+
+.lyceon-calendar .stat .muted {
+  color: var(--muted);
+}
+
+/* ==========================================================================
+ * §17.3 — the settings sheet, the rail's schedule card and the Edit schedule
+ * button. Ported from the approved prototype; the tokens are this file's, so
+ * the colours stay in one place rather than being re-typed as literals.
+ * ========================================================================== */
+
+/* The rail's "Your schedule" card. Absent on the guardian surface — the whole
+   block is conditioned on a prop, not dimmed. */
+.lyceon-calendar .schedcard {
+  padding: 11px 12px;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12.5px;
+  color: #c7ccdc;
+}
+.lyceon-calendar .schedcard b {
+  display: block;
+  color: #e8eaf2;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.lyceon-calendar .schedcard button {
+  margin-top: 8px;
+  width: 100%;
+  padding: 7px;
+  border-radius: 8px;
+  background: var(--math);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.lyceon-calendar .schedcard button:hover {
+  background: #1d4ed8;
+}
+
+/* The top bar's Edit schedule button. */
+.lyceon-calendar .btn.sched {
+  border-color: var(--math);
+  color: var(--math);
+  font-weight: 600;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.lyceon-calendar .btn.sched:hover {
+  background: var(--math-t);
+}
+
+/* Chip groups — study days, minute presets, practice-test day. */
+.lyceon-calendar .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lyceon-calendar .chips button {
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  background: #fff;
+}
+.lyceon-calendar .chips button[aria-pressed="true"] {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+/* Two fields side by side (SAT date + target score). */
+.lyceon-calendar .sheet.set .row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* The Auto plan switch. */
+.lyceon-calendar .toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.lyceon-calendar .toggle small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.lyceon-calendar .switch {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: #cbd2e0;
+  position: relative;
+  flex: none;
+  transition: background 0.15s;
+}
+.lyceon-calendar .switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.lyceon-calendar .switch[aria-checked="true"] {
+  background: var(--math);
+}
+.lyceon-calendar .switch[aria-checked="true"]::after {
+  left: 19px;
+}
+
+.lyceon-calendar .note {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ==========================================================================
+ * §17.2 — the day ⋯ menu and a blocked-out day. Ported from the approved
+ * prototype. A day off is hatched in a WARM tone; a rest day the study-days
+ * mask produced stays the existing cool hatch, because the two mean opposite
+ * things and looking alike would be the whole mistake.
+ * ========================================================================== */
+
+/*
+ * The positioning context the menu anchors to. The prototype adds exactly these two
+ * rules for this; without them `.dmenu-root` would resolve against the page and the
+ * menu would open in the top-left corner of the screen.
+ */
+.lyceon-calendar .dayhead {
+  position: relative;
+}
+.lyceon-calendar .mcell {
+  position: relative;
+}
+
+.lyceon-calendar .dmenu-root {
+  position: absolute;
+  right: 8px;
+  top: 9px;
+}
+.lyceon-calendar .mcell .dmenu-root {
+  top: 5px;
+  right: 5px;
+}
+.lyceon-calendar .dmenu {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+/* Reachable from the keyboard, not hover-only — the same rule the add affordance uses. */
+.lyceon-calendar .col:hover .dmenu,
+.lyceon-calendar .mcell:hover .dmenu,
+.lyceon-calendar .dmenu:focus-visible,
+.lyceon-calendar .dmenu[aria-expanded="true"] {
+  opacity: 1;
+}
+.lyceon-calendar .dmenu:hover {
+  background: var(--line-2);
+  color: var(--ink);
+}
+
+.lyceon-calendar .menu {
+  position: absolute;
+  right: 0;
+  top: 30px;
+  z-index: 12;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+  min-width: 190px;
+  text-align: left;
+}
+.lyceon-calendar .menu button {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  gap: 9px;
+  align-items: center;
+}
+.lyceon-calendar .menu button:hover {
+  background: var(--surface);
+}
+.lyceon-calendar .menu button.danger {
+  color: #9a3412;
+}
+.lyceon-calendar .menu hr {
+  border: 0;
+  border-top: 1px solid var(--line-2);
+  margin: 4px 2px;
+}
+.lyceon-calendar .menu .note {
+  padding: 4px 10px 6px;
+}
+
+/* A day the student blocked out. */
+.lyceon-calendar .col.off {
+  background: repeating-linear-gradient(
+    45deg,
+    #fff8f1,
+    #fff8f1 8px,
+    #fdf1e4 8px,
+    #fdf1e4 16px
+  );
+}
+.lyceon-calendar .col.off .dayhead {
+  background: #fff8f1;
+}
+.lyceon-calendar .mcell.off {
+  background: repeating-linear-gradient(
+    45deg,
+    #fff8f1,
+    #fff8f1 8px,
+    #fdf1e4 8px,
+    #fdf1e4 16px
+  );
+}
+.lyceon-calendar .moff {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a4309;
+}
+.lyceon-calendar .offcard {
+  margin: 2px 0;
+  padding: 12px;
+  border-radius: var(--r);
+  border: 1px dashed #f0cfa6;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12.5px;
+  color: #8a4309;
+}
+.lyceon-calendar .offcard b {
+  display: block;
+  font-family: serif;
+  font-size: 14px;
+  color: #6b3407;
+  margin-bottom: 2px;
+}
+.lyceon-calendar .offcard button {
+  margin-top: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #8a4309;
+  text-decoration: underline;
+}
+
+/* ── §17.1 header slots (Brief 10 Step 4) ─────────────────────────────────── */
+
+.lyceon-calendar .slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  min-width: 40px;
+  border-radius: 9px;
+}
+.lyceon-calendar .slot[data-slot^="C"] {
+  justify-content: center;
+}
+/* Centred, and wide enough that the target and the range share one axis whatever their
+   digit counts — "1400" and "680 – 1060" are different widths and must still line up. */
+.lyceon-calendar .slot[data-slot^="R"] {
+  justify-content: center;
+  min-width: 186px;
+}
+.lyceon-calendar .item {
+  display: flex;
+  align-items: center;
+}
+.lyceon-calendar .navrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyceon-calendar .streakline {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.lyceon-calendar .streakline b {
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.lyceon-calendar .top .countline {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+.lyceon-calendar .top .countline b {
+  color: var(--ink);
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 13.5px;
+}
+
+/* Number first, label trailing — both rows, so the eye reads down the figures. */
+.lyceon-calendar .item[data-item="target"] .ptarget {
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.lyceon-calendar .item[data-item="target"] .ptarget b {
+  color: var(--ink);
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .item[data-item="range"] .prange {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.lyceon-calendar .item[data-item="range"] .prange b {
+  color: var(--ink);
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+
+/* An absence is a sentence, not a gap. Smaller and muted so it reads as an invitation
+   rather than as a number that failed to load. */
+.lyceon-calendar .ptarget.absent,
+.lyceon-calendar .top .countline.absent,
+.lyceon-calendar .prange.absent {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  line-height: 1.3;
+  max-width: 186px;
+}
+
+/* Below the prototype's breakpoint the three zones stack rather than crush: the header
+   is the one part of the page a lost student reads. */
+@media (max-width: 1180px) {
+  .lyceon-calendar .top {
+    row-gap: 10px;
+  }
+  .lyceon-calendar .slot[data-slot^="R"] {
+    min-width: 0;
+  }
+}
+
+/* ── §17.5 setup popup (Brief 10 Step 2) ──────────────────────────────────── */
+
+.lyceon-calendar .modal {
+  position: fixed;
+  inset: 0;
+  z-index: 14;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 22, 42, 0.25);
+}
+.lyceon-calendar .modal.on {
+  display: grid;
+}
+.lyceon-calendar .modal .card {
+  background: #fff;
+  border-radius: 16px;
+  width: 520px;
+  max-width: 100%;
+  box-shadow: 0 24px 64px -24px rgba(16, 22, 42, 0.45);
+  overflow: hidden;
+}
+.lyceon-calendar .modal header {
+  padding: 22px 26px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lyceon-calendar .modal h2 {
+  margin: 0;
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .modal .lede {
+  color: var(--muted);
+  font-size: 13.5px;
+  margin-top: 5px;
+}
+.lyceon-calendar .modal .body {
+  padding: 20px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.lyceon-calendar .modal footer {
+  padding: 16px 26px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lyceon-calendar .dots {
+  display: flex;
+  gap: 6px;
+  margin-right: auto;
+}
+.lyceon-calendar .dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+  display: block;
+}
+.lyceon-calendar .dots i.on {
+  background: var(--ink);
+}
+.lyceon-calendar .skip {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.lyceon-calendar .scoreline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.lyceon-calendar .scoreline b {
+  font-family: inherit;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lyceon-calendar .scoreline span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.lyceon-calendar .modal input[type="range"] {
+  width: 100%;
+  accent-color: var(--math);
+}
+.lyceon-calendar .optout {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lyceon-calendar .cta {
+  padding: 14px 16px;
+  border-radius: var(--r);
+  background: var(--math-t);
+  border: 1px solid #d7e2fb;
+  color: #1b3f91;
+  font-size: 13.5px;
+}
+.lyceon-calendar .cta b {
+  display: block;
+  font-family: inherit;
+  font-size: 15px;
+  margin-bottom: 3px;
+}
+.lyceon-calendar .cta button {
+  margin-top: 10px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--math);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13.5px;
+  border: 0;
+  cursor: pointer;
+}
+
+/* The plan stays visible behind the popup — §17.5 wants a student to see what they are
+   setting up — but blurred, so it reads as context rather than as something to click. */
+.lyceon-calendar .app.blur {
+  filter: blur(3px);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── §17.7 phone layout (Brief 11 Step 5) ─────────────────────────────────── */
+
+/*
+ * The day strip. Seven chips, always all seven — the whole point is that no day is
+ * hidden behind a swipe. It only renders below the mobile breakpoint, so it needs no
+ * media query of its own; the rules below are what it looks like when it is there.
+ */
+.lyceon-calendar .daystrip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.lyceon-calendar .daychip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 5px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-2);
+  /* 44px is the smallest comfortable touch target; seven of them fit 390px with the gaps. */
+  min-height: 44px;
+}
+.lyceon-calendar .daychip .dow {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lyceon-calendar .daychip .dnum {
+  font-family: serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.lyceon-calendar .daychip .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--math);
+}
+/* Kept in the layout rather than removed, so the chips do not change height between a day
+   with work and a day without — a strip that jumps as you tap along it reads as broken. */
+.lyceon-calendar .daychip .dot.off {
+  background: transparent;
+}
+.lyceon-calendar .daychip.is-today .dnum {
+  color: var(--math);
+}
+.lyceon-calendar .daychip.on {
+  background: var(--math-t);
+  border-color: #d9e4fd;
+}
+.lyceon-calendar .daychip.on .dnum {
+  color: #1b3f91;
+}
+
+@media (max-width: 767px) {
+  /*
+   * ONE day, full width. `WeekGrid` is handed a single date at this width, so the grid has
+   * one column to lay out; this stops that column being held to the 132px minimum and
+   * makes it fill the phone instead.
+   */
+  .lyceon-calendar .week {
+    grid-template-columns: 1fr;
+  }
+  .lyceon-calendar .col {
+    border-right: 0;
+  }
+
+  /*
+   * §17.1's three zones stack. The 1180px rule above claimed to do this and only widened
+   * the row gap — the zones stayed in three columns and simply crushed. At 390px they
+   * genuinely become one column, each zone keeping its own two rows in reading order.
+   */
+  .lyceon-calendar .top {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 6px;
+    padding: 10px 14px;
+  }
+  .lyceon-calendar .slot[data-slot^="C"],
+  .lyceon-calendar .slot[data-slot^="R"] {
+    justify-content: flex-start;
+  }
+  .lyceon-calendar .slot {
+    min-height: 0;
+    flex-wrap: wrap;
+  }
+  /*
+   * The DOM order is row-major (L1 C1 R1 / L2 C2 R2), which is what puts the three zones
+   * side by side on a desktop. Stacking that order verbatim interleaves them — back, range,
+   * target, edit, streak, projection — so each zone's two rows are reordered to sit
+   * together: the left zone, then the centre, then the right. `order` and not a DOM change
+   * because the desktop grid is correct as it stands and the reading order only differs
+   * here.
+   */
+  .lyceon-calendar .slot[data-slot="L1"] {
+    order: 1;
+  }
+  .lyceon-calendar .slot[data-slot="L2"] {
+    order: 2;
+  }
+  .lyceon-calendar .slot[data-slot="C1"] {
+    order: 3;
+  }
+  .lyceon-calendar .slot[data-slot="C2"] {
+    order: 4;
+  }
+  .lyceon-calendar .slot[data-slot="R1"] {
+    order: 5;
+  }
+  .lyceon-calendar .slot[data-slot="R2"] {
+    order: 6;
+  }
+
+  /* The side sheet becomes a bottom sheet: full width, anchored to the bottom edge, and
+     capped so the plan behind it stays visible and the scrim stays tappable. */
+  .lyceon-calendar .sheet {
+    inset: auto 0 0 0;
+    width: auto;
+    /* The desktop rule caps the panel at 92vw so the scrim stays tappable down its right
+       edge. A bottom sheet is dismissed by the scrim ABOVE it, so the cap would only leave
+       a dead strip beside it. */
+    max-width: none;
+    max-height: 85vh;
+    border-radius: 16px 16px 0 0;
+    transform: translateY(100%);
+  }
+  .lyceon-calendar .sheet.on {
+    transform: translateY(0);
+  }
+}

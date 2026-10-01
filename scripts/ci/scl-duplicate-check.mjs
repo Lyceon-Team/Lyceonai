@@ -7,13 +7,20 @@
  *
  * Why this exists as a gate and not just a rule:
  *
- * Three id collisions have reached the register — SCL-021, SCL-024, SCL-042 —
- * and a fourth (SCL-043) is in flight on two open PRs. Every one was written by
- * an agent that had read the register first. Reading does not reserve: two
+ * Id collisions keep reaching the register — SCL-021, SCL-024, SCL-042,
+ * SCL-043, and on 2026-09-26 SCL-171/SCL-172 twice over. Every one was written
+ * by an agent that had read the register first. Reading does not reserve: two
  * sessions on branches that cannot see each other both read max=N and both
  * write N+1. No instruction prevents that, because neither session did anything
  * wrong at the moment it looked. Only a mechanical check at merge time closes
  * the window.
+ *
+ * The 2026-09-26 round is the sharpest evidence for that. One pair renumbered
+ * out of a collision with E9b and landed on SCL-171/SCL-172; a second session
+ * allocated the same two ids the same morning from a scan that was correct when
+ * it ran (that second pair is now SCL-176/SCL-177); and a third claimed
+ * SCL-173/SCL-174 within three minutes of a fourth session naming them as the
+ * next free pair. Four sessions, no mistakes, three collisions.
  *
  * Scope, deliberately: this checks ONE file for duplicate headings. It does not
  * try to detect cross-branch races itself — that needs the pre-write query in
@@ -35,33 +42,32 @@ const REGISTER = resolve(ROOT, "docs/SpecAudit/SPEC_CHANGES_LOG.md");
 const ENTRY_HEADING = /^(SCL-\d{3}) \|/;
 
 /**
- * Known collisions that PREDATE this gate, allowlisted so it can be switched on
- * without being switched straight off again.
+ * Allowlist for collisions that PREDATE this gate. EMPTY, and that is the
+ * intended end state: the register now has no duplicate heading at all.
  *
- * This is an exact-count allowlist, not a mute. `SCL-021` is permitted to head
- * exactly two entries; a third fails. Any id NOT listed here fails on its first
- * duplicate. Weakening the comparison instead — skipping these ids, or dropping
- * to a warning — would make the gate green by making it blind, which is worse
- * than no gate.
+ * It held two ids and both are spent, on 2026-09-26:
+ *   SCL-021 — already stale when this was emptied. Its 2026-07-09 half had been
+ *     renumbered to `SCL-069` at some earlier point and nobody removed the line,
+ *     so the gate was announcing an ALLOWLISTED collision that no longer existed.
+ *     Exactly the failure the EXPIRY note below warns about, found by counting
+ *     headings rather than trusting this map.
+ *   SCL-024 — resolved for real: the 2026-08-06 entry became `SCL-175`. Every
+ *     citation outside the register named the 08-04 entry, which kept its id.
  *
- * Both are `OPEN (owner-promoted 2026-08-14)`. An agent may not renumber an
- * owner-promoted entry, so neither can be cleared here; both are reported to
- * the owner and await a ruling.
+ * The owner lifted the "an agent may not renumber an owner-promoted entry"
+ * constraint on 2026-09-26 for exactly this clean-up, which is what let both
+ * close. The mechanism stays in place, unused, for the next pre-existing
+ * collision — it is an exact-count allowlist, not a mute: a listed id is
+ * permitted exactly two headings and a third fails. Any id not listed fails on
+ * its first duplicate. Weakening the comparison instead — skipping ids, or
+ * dropping to a warning — would make the gate green by making it blind, which
+ * is worse than no gate.
  *
- * EXPIRY: remove each line the moment its collision is resolved. If these are
+ * EXPIRY: remove each line the moment its collision is resolved. If one is
  * still here once the owner has ruled, the gate is carrying debt that is no
  * longer anyone's open question — that is the point at which it starts lying.
  */
-const KNOWN_COLLISIONS = new Map([
-  [
-    "SCL-021",
-    "2026-07-01 grid-in correctness model vs 2026-07-09 practice grid-in serve+grade; 2 citations, both on the 07-01 entry",
-  ],
-  [
-    "SCL-024",
-    "2026-08-04 config table shape vs 2026-08-06 fifth question-FK column; 4 citations, all on the 08-04 entry (one as `SCL-024a`)",
-  ],
-]);
+const KNOWN_COLLISIONS = new Map([]);
 
 function main() {
   const lines = readFileSync(REGISTER, "utf-8").split("\n");

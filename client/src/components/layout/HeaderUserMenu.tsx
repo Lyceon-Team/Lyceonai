@@ -14,7 +14,7 @@
  */
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { LogOut, Settings, UserCircle } from "lucide-react";
+import { LogOut, Settings, ShieldAlert, UserCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -65,7 +65,7 @@ export function HeaderUserMenu({
   fallbackName,
 }: HeaderSignOut & { fallbackName: string }) {
   const [, navigate] = useLocation();
-  const { user, isLoading } = useSupabaseAuth();
+  const { user, isLoading, isAdmin } = useSupabaseAuth();
   if (!user) return null;
 
   const displayName =
@@ -116,6 +116,22 @@ export function HeaderUserMenu({
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
+        {/* @spec [Doc-03_V3 §21.3, SCL-025; Coding Standards §11.3; closure plan W2-7]
+            | @implemented [2026-09-24] | plain English: the in-app way into the crisis
+            review queue. Before this, an admin needed the URL or a Slack alert. Shown by
+            role only — the route is RequireRole admin and every API call behind it is
+            requireSupabaseAdmin, so hiding it is presentation, not the control. This menu
+            renders at every width and in every authenticated shell, so one entry covers
+            desktop, mobile and the guardian shell. */}
+        {isAdmin && (
+          <DropdownMenuItem
+            onClick={() => navigate("/admin/crisis-review")}
+            data-testid="menu-crisis-review"
+          >
+            <ShieldAlert className="mr-2 h-4 w-4" />
+            Crisis review
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={() => void signOut()}
