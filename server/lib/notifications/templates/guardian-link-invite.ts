@@ -12,7 +12,7 @@
  */
 import { escapeHtml, type EmailRender } from "./shared";
 
-export type GuardianLinkInviteInput = {
+type GuardianLinkInviteInput = {
   studentDisplayName: string;
   code: string;
   redeemUrl: string;

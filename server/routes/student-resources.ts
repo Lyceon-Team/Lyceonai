@@ -77,6 +77,7 @@ import { resolveHistoricalTrendsAccess } from "../services/kpi-access";
 import { EntitlementService } from "../services/entitlement-service";
 import { logger } from "../logger";
 import { resolveSubject, sendNotFound } from "../middleware/subject-resolver";
+import type { Subject } from "../../packages/shared/src/guardian-subject";
 import {
   requireGuardianLinkForUnder13,
   requireStudentOrAdmin,
@@ -166,7 +167,7 @@ export const requiresEntitlement: Record<string, EntitlementFeatureKey | null> =
 function requireSubject(
   req: Request,
   res: Response,
-): { studentId: string; via: "self" | "guardian" } | null {
+): Subject | null {
   if (!req.subject) {
     logger.error(
       "STUDENT_RESOURCES",
@@ -236,10 +237,7 @@ async function entitlementGate(
  */
 function resource<T>(
   path: string,
-  read: (subject: {
-    studentId: string;
-    via: "self" | "guardian";
-  }) => Promise<T>,
+  read: (subject: Subject) => Promise<T>,
 ): void {
   router.get(
     `/:studentId${path}`,

@@ -438,40 +438,6 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
   },
 });
 
-// Supabase client with anon key (enforces RLS)
-// Lazy initialization with environment-based error handling
-let _supabaseAnon: SupabaseClient | null = null;
-const supabaseAnon = new Proxy({} as SupabaseClient, {
-  get(_target, prop) {
-    if (!_supabaseAnon) {
-      const url = process.env.SUPABASE_URL;
-      const key = process.env.SUPABASE_ANON_KEY;
-
-      if (!url || !key) {
-        if (isTestEnvironment()) {
-          // In test environment, return placeholder client
-          _supabaseAnon = createClient(
-            "https://placeholder.supabase.co",
-            "placeholder-key",
-          );
-        } else {
-          // In production/dev, throw on first use
-          throw new Error(
-            "SUPABASE_URL and SUPABASE_ANON_KEY must be set in production/development",
-          );
-        }
-      } else {
-        _supabaseAnon = createClient(url, key);
-      }
-    }
-    const value = (_supabaseAnon as any)[prop];
-    if (typeof value === "function") {
-      return value.bind(_supabaseAnon);
-    }
-    return value;
-  },
-});
-
 /**
  * @spec [Doc-01_V8 Identity/Access; Coding Standards §6.1 server-authoritative auth | AUTH-001]
  * @implemented 2026-06-15
@@ -1081,11 +1047,4 @@ export function requireStudentOrAdmin(
  */
 export function getSupabaseAdmin() {
   return supabaseAdmin;
-}
-
-/**
- * Get Supabase anon client (enforces RLS)
- */
-export function getSupabaseAnon() {
-  return supabaseAnon;
 }

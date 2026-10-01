@@ -13,18 +13,18 @@ Every row's evidence is a command run on this branch with its real output pasted
 
 | Row | Cat | Object | Action | Status |
 |---|---|---|---|---|
-| A1 | A | `client/src/components/layout/GuardianShell.tsx` — `export default GuardianShell` | DELETE | PLANNED |
-| A2 | A | `GuardianShell` prop `className` | DELETE | PLANNED |
-| A3 | A | `client/src/features/guardian/GuardianStudentLayout.tsx` props `center`, `actions` (and their `??` fallbacks) | DELETE | PLANNED |
-| A4.AddStudentDialog.tsx | A | `client/src/features/guardian/AddStudentDialog.tsx` — `export` keyword on `RATE_LIMIT_COPY` | DELETE `export` (symbol stays: used in its own file) | PLANNED |
-| A4.GuardianStates.tsx | A | `client/src/features/guardian/GuardianStates.tsx` — `export` keyword on `CurrentStudent`, `GuardianReadFailure`, `classifyGuardianReadError` | DELETE `export` (symbol stays: used in its own file) | PLANNED |
-| A4.GuardianStudentLayout.tsx | A | `client/src/features/guardian/GuardianStudentLayout.tsx` — `export` keyword on `GuardianTab`, `GuardianTabs` | DELETE `export` (symbol stays: used in its own file) | PLANNED |
-| A4.routes.tsx | A | `client/src/features/guardian/routes.tsx` — `export` keyword on `GuardianRoute` | DELETE `export` (symbol stays: used in its own file) | PLANNED |
-| A4.useGuardianStudents.ts | A | `client/src/hooks/useGuardianStudents.ts` — `export` keyword on `guardianStudentsQueryKey`, `queryKeyNamesStudent` | DELETE `export` (symbol stays: used in its own file) | PLANNED |
-| A4.MasteryMeter.tsx | A | `client/src/components/mastery/MasteryMeter.tsx` — `export` keyword on `MASTERY_METER_SEGMENTS`, `masteryMeterFill` | DELETE `export` (symbol stays: used in its own file) | PLANNED |
-| A4.StudentGuardiansPanel.tsx | A | `client/src/components/student/StudentGuardiansPanel.tsx` — `export` keyword on `STUDENT_GUARDIAN_LINKS_QUERY_KEY`, `studentGuardianLinksQueryKey` | DELETE `export` (symbol stays: used in its own file) | PLANNED |
-| A4.test-harness.tsx | A | `client/src/features/guardian/test-harness.tsx` — `export` keyword on types `Roster`, `Handler` | DELETE `export` (types stay) | PLANNED |
-| A5 | A | `client/src/features/guardian/guardian-surface.css` — floor entries `.text-\[11px\]`, `.text-\[14px\]` | DELETE the two entries | PLANNED |
+| A1 | A | `client/src/components/layout/GuardianShell.tsx` — `export default GuardianShell` | DELETE | DELETED (`a868b08`) |
+| A2 | A | `GuardianShell` prop `className` | DELETE | DELETED (`a868b08`) |
+| A3 | A | `client/src/features/guardian/GuardianStudentLayout.tsx` props `center`, `actions` (and their `??` fallbacks) | DELETE | DELETED (`a868b08`) |
+| A4.AddStudentDialog.tsx | A | `client/src/features/guardian/AddStudentDialog.tsx` — `export` keyword on `RATE_LIMIT_COPY` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
+| A4.GuardianStates.tsx | A | `client/src/features/guardian/GuardianStates.tsx` — `export` keyword on `CurrentStudent`, `GuardianReadFailure`, `classifyGuardianReadError` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
+| A4.GuardianStudentLayout.tsx | A | `client/src/features/guardian/GuardianStudentLayout.tsx` — `export` keyword on `GuardianTab`, `GuardianTabs` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
+| A4.routes.tsx | A | `client/src/features/guardian/routes.tsx` — `export` keyword on `GuardianRoute` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
+| A4.useGuardianStudents.ts | A | `client/src/hooks/useGuardianStudents.ts` — `export` keyword on `guardianStudentsQueryKey`, `queryKeyNamesStudent` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
+| A4.MasteryMeter.tsx | A | `client/src/components/mastery/MasteryMeter.tsx` — `export` keyword on `MASTERY_METER_SEGMENTS`, `masteryMeterFill` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
+| A4.StudentGuardiansPanel.tsx | A | `client/src/components/student/StudentGuardiansPanel.tsx` — `export` keyword on `STUDENT_GUARDIAN_LINKS_QUERY_KEY`, `studentGuardianLinksQueryKey` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
+| A4.test-harness.tsx | A | `client/src/features/guardian/test-harness.tsx` — `export` keyword on types `Roster`, `Handler` | DELETE `export` (types stay) | DELETED (`a868b08`) |
+| A5 | A | `client/src/features/guardian/guardian-surface.css` — floor entries `.text-\[11px\]`, `.text-\[14px\]` | DELETE the two entries | DELETED (`a868b08`) |
 | A6 | A | `guardian-type-floor.generated.css` selectors `.stat`, `.chip-mode button`, `.toast`, `.daymenu button` | HANDED OFF (calendar) | HANDED OFF |
 | A7 | A | `GuardianErrorState` / `GuardianReadFailureState` optional `onRetry` (no-retry branch) | KEEP | KEEP |
 | A8 | A | `HeaderFacts` prop `viewer` (only `"guardian"` is passed) | KEEP | KEEP |
@@ -86,7 +86,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 
 ```
 $ node scripts/ci/guardian-dead-code-gate.mjs | grep GuardianShell
-unused-export  client/src/components/layout/GuardianShell.tsx:200  default
+(no output; exit 1)
 ```
 ```
 $ git grep -nE "import GuardianShell|import\(.*GuardianShell" -- client tests
@@ -102,7 +102,7 @@ $ git grep -n "<GuardianShell" -- client/src
 client/src/components/layout/app-shell.nav-anchors.test.tsx:187:      <GuardianShell>
 client/src/components/layout/shells.notification-bell.test.tsx:84:  "GuardianShell.tsx": (children) => <GuardianShell>{children}</GuardianShell>,
 client/src/features/guardian/GuardianHome.tsx:74:    <GuardianShell actions={<AddStudentButton />}>
-client/src/features/guardian/GuardianStudentLayout.tsx:161:    <GuardianShell
+client/src/features/guardian/GuardianStudentLayout.tsx:157:    <GuardianShell
 client/src/features/guardian/GuardianStudentsPage.tsx:162:    <GuardianShell actions={<AddStudentButton />}>
 client/src/pages/notifications.tsx:59:    <GuardianShell>{content}</GuardianShell>
 ```
@@ -252,8 +252,7 @@ $ grep -cwE 'STUDENT_GUARDIAN_LINKS_QUERY_KEY|studentGuardianLinksQueryKey' clie
 
 ```
 $ node scripts/ci/guardian-dead-code-gate.mjs | grep test-harness
-unused-export  client/src/features/guardian/test-harness.tsx:37  Roster
-unused-export  client/src/features/guardian/test-harness.tsx:63  Handler
+(no output; exit 1)
 ```
 ```
 $ git grep -nE "import[^;]*\b(Roster|Handler)\b[^;]*from ['\"][^'\"]*test-harness" -- client tests ; echo "exit=$?"
@@ -449,18 +448,12 @@ tests/e2e/guardian-surfaces.spec.ts:119:    if (p.startsWith(`/api/students/${F.
 
 ```
 $ node scripts/ci/guardian-dead-code-gate.mjs | grep guardian-link-audit
-unused-export  server/services/guardian-link-audit.ts:46  GuardianLinkAuditAction
-test-only-module  server/services/guardian-link-audit.ts:1  tests/ci/guardian-reporting.contract.test.ts
+(no output; exit 1)
 ```
 ```
 $ git grep -nw 'auditGuardianLink' -- client server packages apps tests scripts shared
 server/services/email-reconsent-audit.ts:13: * shape twice — `auditGuardianLink` and `recordSubjectAccess` — and Coding Standards §8.1 keeps
-server/services/guardian-link-audit.ts:51:export async function auditGuardianLink(args: {
-tests/ci/guardian-reporting.contract.test.ts:543:   *   M2. In `guardian-routes.ts`, add an `auditGuardianLink({action:"guardian_link_revoked"})`
-tests/ci/guardian-reporting.contract.test.ts:561:   * `guardian-routes.ts` no longer calls `auditGuardianLink` for a transition at all.
-tests/ci/guardian-reporting.contract.test.ts:571:    const { auditGuardianLink } =
-tests/ci/guardian-reporting.contract.test.ts:573:    await auditGuardianLink({
-tests/ci/guardian-reporting.contract.test.ts:624:   *   BEFORE — `guardian-routes.ts` called `auditGuardianLink` after `revokeGuardianLink`
+tests/ci/guardian-reporting.contract.test.ts:598:   *   BEFORE — `guardian-routes.ts` called `auditGuardianLink` after `revokeGuardianLink`
 ```
 ```
 $ git grep -nE 'guardian_link_(initiated|revoked|denied)"' -- server apps ':!server/services/guardian-link-audit.ts'
@@ -474,19 +467,19 @@ $ git grep -nE 'guardian_link_(initiated|revoked|denied)"' -- server apps ':!ser
 ```
 $ sed -n '40,58p' server/lib/account.ts
  * The row contract lives in `packages/shared` per coding-standards §7.2 — Zod first, types
- * inferred, one definition. Re-exported here so existing importers of `account.ts` keep
- * resolving without a second declaration to drift from it.
+ * inferred, one definition. Re-exported here because importers of `account.ts` read it from
+ * here; the status type and the error contract are read from `packages/shared` directly.
  */
-export type {
-  GuardianLink,
-  GuardianLinkStatus,
-} from "../../packages/shared/src/guardian-link-schema";
+export type { GuardianLink } from "../../packages/shared/src/guardian-link-schema";
 
 /**
- * Error contract re-exported from `packages/shared` so importers of this module keep
- * resolving. The definitions live there, not here — see that file for why.
- */
-export {
+ * @spec [migration 20260828000000; owner ruling 2026-08-27 Q5] | @implemented [2026-08-28]
+ *
+ * plain English: turn a PostgREST error from one of the audited transition functions into the
+ * module's own error type, or rethrow.
+ *
+ * The functions raise custom SQLSTATEs which PostgREST surfaces as `error.code`, so this maps
+ * a CODE, never a message. An unmapped code is NOT swallowed into a generic failure: it throws
 … 5 more line(s)
 ```
 ```
@@ -527,8 +520,8 @@ server/services/kpi-access.ts:116:export async function resolvePaidKpiAccessForU
 ```
 ```
 $ grep -n 'progress/kpis\|progress/projection' server/index.ts
-483:  "/api/progress/projection",
-491:  "/api/progress/kpis",
+481:  "/api/progress/projection",
+489:  "/api/progress/kpis",
 ```
 
 ### B5 — `apps/api/src/services/mastery-view.ts` `parseSectionFilter`, `SectionParseResult`
@@ -537,12 +530,11 @@ $ grep -n 'progress/kpis\|progress/projection' server/index.ts
 
 ```
 $ git grep -nw 'parseSectionFilter' -- client server packages apps tests scripts shared
-apps/api/src/services/mastery-view.ts:58:export function parseSectionFilter(value: unknown): SectionParseResult {
+(no output; exit 1)
 ```
 ```
 $ git grep -nw 'SectionParseResult' -- client server packages apps tests scripts shared
-apps/api/src/services/mastery-view.ts:50:export type SectionParseResult =
-apps/api/src/services/mastery-view.ts:58:export function parseSectionFilter(value: unknown): SectionParseResult {
+(no output; exit 1)
 ```
 
 ### B6 — `getSupabaseAnon` — `server/middleware/supabase-auth.ts` and `apps/api/src/lib/supabase-admin.ts` (Wave 5, G-AUD-30)
@@ -551,8 +543,7 @@ apps/api/src/services/mastery-view.ts:58:export function parseSectionFilter(valu
 
 ```
 $ git grep -nw 'getSupabaseAnon' -- client server packages apps tests scripts shared
-apps/api/src/lib/supabase-admin.ts:20:export function getSupabaseAnon(): SupabaseClient {
-server/middleware/supabase-auth.ts:1089:export function getSupabaseAnon() {
+(no output; exit 1)
 ```
 
 ### B7 — `server/middleware/supabase-auth.ts` `requireRequestAuthContext` (Wave 5, G-AUD-30)
@@ -600,9 +591,7 @@ client/src/contexts/SupabaseAuthContext.tsx:200:      student_link_code: backend
 
 ```
 $ grep -n -A2 'Guardian Consent Routes' server/index.ts
-416:// Guardian Consent Routes (Publicly accessible for verification)
-417-
-418-// Profile endpoints - requires authentication
+(no output; exit 1)
 ```
 
 ### B10 — `server/routes/student-resources.ts` inline `{ studentId: string; via: "self" | "guardian" }`
@@ -611,8 +600,7 @@ $ grep -n -A2 'Guardian Consent Routes' server/index.ts
 
 ```
 $ grep -n 'via: "self" | "guardian"' server/routes/student-resources.ts
-169:): { studentId: string; via: "self" | "guardian" } | null {
-241:    via: "self" | "guardian";
+(no output; exit 1)
 ```
 ```
 $ grep -n 'export const subjectSchema\|export type Subject\b' packages/shared/src/guardian-subject.ts
@@ -626,12 +614,7 @@ $ grep -n 'export const subjectSchema\|export type Subject\b' packages/shared/sr
 
 ```
 $ node scripts/ci/guardian-dead-code-gate.mjs | grep -E 'guardian-link-rate-limit|guardian-link-invite'
-unused-export  server/lib/notifications/templates/guardian-link-invite.ts:15  GuardianLinkInviteInput
-unused-export  server/middleware/guardian-link-rate-limit.ts:55  GUARDIAN_LINK_CODE_ENTRY_BUCKET
-unused-export  server/middleware/guardian-link-rate-limit.ts:56  STUDENT_LINK_CODE_REGENERATION_BUCKET
-unused-export  server/middleware/guardian-link-rate-limit.ts:78  GUARDIAN_LINK_INVITE_DAILY_BUCKET
-unused-export  server/middleware/guardian-link-rate-limit.ts:79  GUARDIAN_LINK_INVITE_EMAIL_BUCKET
-unused-export  server/middleware/guardian-link-rate-limit.ts:81  guardianInviteEmailBucketKey
+(no output; exit 1)
 ```
 
 ### B12 — Zombie `case` branches for removed roles/states; error codes nothing emits; log-event registries
@@ -794,12 +777,12 @@ unused-export  packages/shared/src/exam-guardian-report-schema.ts:160  guardianE
 unused-export  packages/shared/src/exam-guardian-report-schema.ts:173  guardianExamUnavailableSchema
 unused-export  packages/shared/src/exam-guardian-report-schema.ts:293  guardianExamListSchema
 unused-export  packages/shared/src/guardian-link-schema.ts:33  guardianLinkStatusSchema
+unused-export  packages/shared/src/guardian-link-schema.ts:34  GuardianLinkStatus
 unused-export  packages/shared/src/guardian-link-schema.ts:43  guardianLinkStoredInitiatorSchema
 unused-export  packages/shared/src/guardian-subject.ts:29  GUARDIAN_VIEW_DECISIONS
 unused-export  packages/shared/src/guardian-subject.ts:43  SUBJECT_VIA
 unused-export  packages/shared/src/guardian-subject.ts:44  subjectViaSchema
-unused-export  packages/shared/src/guardian-subject.ts:45  SubjectVia
-… 1 more line(s)
+… 2 more line(s)
 ```
 
 
@@ -811,8 +794,8 @@ unused-export  packages/shared/src/guardian-subject.ts:45  SubjectVia
 
 ```
 $ grep -n 'returns linked students list and emits guardian_dashboard_viewed\|real-PG proof is' tests/ci/guardian-reporting.contract.test.ts
-431:  it("returns linked students list and emits guardian_dashboard_viewed", async () => {
-448:    // in the link events' shape. The real-PG proof is tests/ci/guardian-access-audit.pg.ci.test.ts.
+440:  it("returns linked students list and emits guardian_dashboard_viewed (INSTRUMENT)", async () => {
+457:    // in the link events' shape. The real-PG proof is tests/ci/guardian-access-audit.pg.ci.test.ts.
 ```
 ```
 $ grep -n 'one dashboard view writes exactly one audit_logs row' tests/ci/guardian-access-audit.pg.ci.test.ts
@@ -1160,8 +1143,8 @@ $ grep -c '"tests/' scripts/ci/guardian-schema-truth-gate.mjs
 
 ```
 $ git grep -nE 'guardian-consent-routes|guardian-link-student-side|guardian-link\.pg\.ci|four emails|awaiting guardian consent|auditGuardianLink|readSkillPanelView|useBillingStatus\b' -- server packages apps scripts tests client/src ':!*.md' | head -20
-apps/api/src/services/mastery-view.ts:41: *   simply never calling `readSkillPanelView` — there is no guardian skill endpoint to call
-apps/api/src/services/mastery-view.ts:104: * This replaced `readSkillPanelView(studentId, section, domain)` on 2026-08-27 (owner
+apps/api/src/services/mastery-view.ts:40: *   simply never calling `readSkillPanelView` — there is no guardian skill endpoint to call
+apps/api/src/services/mastery-view.ts:87: * This replaced `readSkillPanelView(studentId, section, domain)` on 2026-08-27 (owner
 client/src/hooks/useBillingStatusQuery.ts:19: * `useBillingStatus` with a Zod parse through the shared `billingStatusResponseSchema`. Two
 client/src/hooks/useBillingStatusQuery.ts:22: * label. `useBillingStatus.ts` is deleted.
 packages/shared/src/billing-schema.ts:237: * every client reader parses this once, in `useBillingStatus`, instead of four readers each
@@ -1169,12 +1152,12 @@ packages/shared/src/services/subject-digest.ts:21: * existed — `server/routes/
 packages/shared/src/services/subject-digest.ts:26: * the Stripe surface (out of WS-GL's edit scope, Charter §0) and `guardian-consent-routes`
 scripts/ci/guardian-schema-truth-gate.mjs:26: *   check is wrong. Keying on `vi.mock(...supabase...)` flags `guardian-link.pg.ci.test.ts` —
 server/lib/redact.ts:28: * (`server/routes/guardian-consent-routes.ts`). Enough to correlate two lines
-server/middleware/supabase-auth.ts:926: * "under-13 awaiting guardian consent" at a single server-side enforcement point.
+server/middleware/supabase-auth.ts:892: * "under-13 awaiting guardian consent" at a single server-side enforcement point.
 server/services/email-reconsent-audit.ts:13: * shape twice — `auditGuardianLink` and `recordSubjectAccess` — and Coding Standards §8.1 keeps
-server/services/guardian-link-audit.ts:51:export async function auditGuardianLink(args: {
 tests/ci/auth-surface.contract.test.ts:176:// submitted" and "under-13 awaiting guardian consent"). Both signup paths (Google OAuth and
-tests/ci/guardian-reporting.contract.test.ts:543:   *   M2. In `guardian-routes.ts`, add an `auditGuardianLink({action:"guardian_link_revoked"})`
-… 6 more line(s)
+tests/ci/guardian-reporting.contract.test.ts:598:   *   BEFORE — `guardian-routes.ts` called `auditGuardianLink` after `revokeGuardianLink`
+tests/ci/guardian-reporting.contract.test.ts:610:   * The audit row itself is proven where it is now written: `guardian-link-student-side
+… 1 more line(s)
 ```
 
 ### H7 — `contracts/ws0-stop-the-bleed.contract.md`, `contracts/auth-login-e2e.contract.md`, dated `KNOWN-GAPS` RESOLVED entries

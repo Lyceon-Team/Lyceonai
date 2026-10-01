@@ -38,22 +38,10 @@ import {
 
 /**
  * The row contract lives in `packages/shared` per coding-standards §7.2 — Zod first, types
- * inferred, one definition. Re-exported here so existing importers of `account.ts` keep
- * resolving without a second declaration to drift from it.
+ * inferred, one definition. Re-exported here because importers of `account.ts` read it from
+ * here; the status type and the error contract are read from `packages/shared` directly.
  */
-export type {
-  GuardianLink,
-  GuardianLinkStatus,
-} from "../../packages/shared/src/guardian-link-schema";
-
-/**
- * Error contract re-exported from `packages/shared` so importers of this module keep
- * resolving. The definitions live there, not here — see that file for why.
- */
-export {
-  GUARDIAN_LINK_ERROR,
-  GuardianLinkError,
-} from "../../packages/shared/src/guardian-link-schema";
+export type { GuardianLink } from "../../packages/shared/src/guardian-link-schema";
 
 /**
  * @spec [migration 20260828000000; owner ruling 2026-08-27 Q5] | @implemented [2026-08-28]
