@@ -17,6 +17,7 @@ import { cleanup, render, within } from "@testing-library/react";
 import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
 import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
 import { DomainGrid } from "./DomainGrid";
+import { levelTone } from "./LevelPill";
 
 afterEach(cleanup);
 
@@ -184,14 +185,30 @@ describe("DomainGrid — the five-segment mastery meter", () => {
       expect(segments.map((s) => s.dataset.filled)).toEqual(
         Array.from({ length: 5 }, (_v, i) => (i < filled ? "true" : "false")),
       );
-      // A filled segment wears the level's pill tone; the pill sits in the same card.
+      // A filled segment is painted in the pill's TEXT tone — the darker shade of the same
+      // hue (owner review 2026-10-01: the pale background shade was too faint) — as its
+      // background (`bg-current` over the pill's `text-*` class). An empty one is neutral.
       const pill = within(
         meter.closest("[data-domain]") as HTMLElement,
       ).getByTestId("level-pill");
-      const toneBg = Array.from(pill.classList).find((c) =>
-        c.startsWith("bg-"),
-      );
-      for (const seg of on) expect(seg.classList.contains(toneBg!)).toBe(true);
+      // The colour class, not the size class the pill also carries (`text-xs`).
+      const toneText = levelTone(levelKey)
+        .split(" ")
+        .find((c) => c.startsWith("text-"));
+      expect(toneText).toBeDefined();
+      expect(pill.classList.contains(toneText!)).toBe(true);
+      for (const seg of on) {
+        expect(seg.classList.contains(toneText!)).toBe(true);
+        expect(seg.classList.contains("bg-current")).toBe(true);
+      }
+      for (const seg of segments.filter((s) => s.dataset.filled === "false")) {
+        expect(seg.classList.contains("bg-current")).toBe(false);
+        expect(seg.classList.contains("bg-muted")).toBe(true);
+      }
+      // Full width of the card's content area: the meter stretches, each segment shares it.
+      expect(meter.classList.contains("w-full")).toBe(true);
+      for (const seg of segments)
+        expect(seg.classList.contains("flex-1")).toBe(true);
       // Accessible: one labelled image; the segments themselves are hidden.
       expect(meter.getAttribute("role")).toBe("img");
       expect(meter.getAttribute("aria-label")).toBe(

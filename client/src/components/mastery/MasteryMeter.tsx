@@ -23,9 +23,10 @@ export function masteryMeterFill(level: MasteryLevel): number {
  *   RULE 3 (unmeasured is its own state); Guardian_Closure_Plan R11 (one component for the
  *   student page and the guardian Dashboard), R12 (16px floor)] | @implemented [2026-10-01]
  *
- * plain English: the level as a row of five segments beneath its `LevelPill`. Filled
- * segments wear that level's pill tone (`levelTone`, the same classes — no second colour
- * table); empty ones a neutral token. It is ONE image to assistive technology — "Mastery:
+ * plain English: the level as a row of five segments beneath its `LevelPill`, spanning the
+ * card's content width. Filled segments are painted in that level's pill TEXT tone
+ * (`levelTone`, the same classes — no second colour table, no hex); empty ones a neutral
+ * token. It is ONE image to assistive technology — "Mastery:
  * Proficient, 4 of 5", the server's level name verbatim — and its segments are hidden, so a
  * screen reader hears the level once rather than five unlabelled shapes. It draws no text,
  * so the 16px floor has nothing to apply to.
@@ -43,11 +44,18 @@ export function MasteryMeter({
   displayName: string;
 }): JSX.Element {
   const filled = masteryMeterFill(level);
+  // The pill's TEXT tone — the darker shade of the level's hue — painted as the fill through
+  // `bg-current` (owner review 2026-10-01: the pale background shade read too faint). Taken
+  // from `levelTone` itself, so the meter and the pill cannot disagree on a level's colour.
+  const ink =
+    levelTone(levelKey)
+      .split(" ")
+      .find((c) => c.startsWith("text-")) ?? "text-foreground";
   return (
     <span
       role="img"
       aria-label={`Mastery: ${displayName}, ${filled} of ${MASTERY_METER_SEGMENTS}`}
-      className="flex gap-1"
+      className="flex w-full gap-1"
       data-testid="mastery-meter"
     >
       {Array.from({ length: MASTERY_METER_SEGMENTS }, (_unused, index) => {
@@ -58,7 +66,7 @@ export function MasteryMeter({
             aria-hidden="true"
             data-segment={index + 1}
             data-filled={on ? "true" : "false"}
-            className={`h-2 w-6 rounded-full border ${on ? levelTone(levelKey) : "bg-background border-border"}`}
+            className={`h-2 flex-1 rounded-full border ${on ? `${ink} bg-current border-current` : "bg-muted border-border"}`}
           />
         );
       })}

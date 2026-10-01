@@ -72,33 +72,35 @@ export function DomainGrid({
               {node.domain}
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            {/* The pill, and beneath it the five-segment meter (final review, item 3). */}
-            <div className="flex flex-col items-start gap-2">
+          <CardContent className="flex flex-col gap-3">
+            {/* The pill (and the student's Skills control) on one row; beneath it, the
+                five-segment meter across the card's full content width (owner review
+                2026-10-01). */}
+            <div className="flex items-center justify-between gap-3">
               <LevelPill
                 levelKey={node.levelKey}
                 displayName={node.displayName}
               />
-              <MasteryMeter
-                levelKey={node.levelKey}
-                level={node.level}
-                displayName={node.displayName}
-              />
+              {onOpen === undefined ? null : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    onOpen({ section: node.section, domain: node.domain })
+                  }
+                  data-testid="domain-open"
+                  aria-label={`View skills in ${node.domain}`}
+                >
+                  Skills
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
             </div>
-            {onOpen === undefined ? null : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  onOpen({ section: node.section, domain: node.domain })
-                }
-                data-testid="domain-open"
-                aria-label={`View skills in ${node.domain}`}
-              >
-                Skills
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
+            <MasteryMeter
+              levelKey={node.levelKey}
+              level={node.level}
+              displayName={node.displayName}
+            />
           </CardContent>
         </Card>
       ))}

@@ -20,6 +20,12 @@
  * mastery meter in `DomainGrid`, R11). Each card's pill now sits in a column with the meter
  * beneath it. Checked when updating: with that wrapper and the meter removed, both snapshots
  * are byte-identical to before; 16 meters were added (8 cards × 2 snapshots).
+ *
+ * AND AGAIN, 2026-10-01 (owner review of #1013, item 1: meter visibility). The meter moved to
+ * its own full-width row under the pill-and-Skills row, and its filled segments take the
+ * pill's text tone (`bg-current`). Checked when updating: every text node and every
+ * data-testid, aria-label, data-level-key, data-domain, data-filled and role value is the
+ * same as before; only the layout classes and the meter's position within the card changed.
  */
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

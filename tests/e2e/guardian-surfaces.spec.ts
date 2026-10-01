@@ -593,3 +593,44 @@ test.describe("phone centring at 390 (item 10)", () => {
     });
   }
 });
+
+/**
+ * Owner review 2026-10-01 (#1013, item 1): the mastery meter spans the full width of its
+ * card's content area, at both widths. Measured: every meter's box against its card's
+ * content box (padding excluded), within 1px. Presence first: the Dashboard draws 8 meters.
+ */
+test.describe("the mastery meter spans its card", () => {
+  for (const vp of VIEWPORTS) {
+    test(`@${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await serve(page);
+      await page.goto(`/guardian/${F.ADA}`);
+      await page
+        .getByTestId("dashboard-exam")
+        .first()
+        .waitFor({ timeout: 15_000 });
+      const gaps = await page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll<HTMLElement>("[data-testid=mastery-meter]"),
+        ).map((meter) => {
+          const content = meter
+            .closest("[data-domain]")
+            ?.querySelector<HTMLElement>(":scope > div:last-child");
+          if (!content) return { left: 999, right: 999 };
+          const c = content.getBoundingClientRect();
+          const s = getComputedStyle(content);
+          const m = meter.getBoundingClientRect();
+          return {
+            left: Math.abs(m.left - (c.left + parseFloat(s.paddingLeft))),
+            right: Math.abs(c.right - parseFloat(s.paddingRight) - m.right),
+          };
+        }),
+      );
+      expect(gaps).toHaveLength(8);
+      for (const g of gaps) {
+        expect(g.left).toBeLessThanOrEqual(1);
+        expect(g.right).toBeLessThanOrEqual(1);
+      }
+    });
+  }
+});
