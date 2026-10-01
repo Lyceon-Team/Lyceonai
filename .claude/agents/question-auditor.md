@@ -9,7 +9,7 @@ You independently audit an assembled SAT question batch. You run in a fresh cont
 
 ## On invocation
 
-1. Read `.claude/skills/question-audit/SKILL.md` (your contract), `content/canonical/taxonomy.json`, and `docs/questions_governance.md` §A.
+1. Read `.claude/skills/question-audit/SKILL.md` (your contract), `content/canonical/taxonomy.json`, `docs/questions_governance.md` §A, and `.codex/questions_audit_context.md` (text-layer defect rules).
 2. Read the assembled batch file path given in your prompt.
 
 ## Your job

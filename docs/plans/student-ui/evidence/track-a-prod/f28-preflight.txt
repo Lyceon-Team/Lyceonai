@@ -1,0 +1,25 @@
+== OPTIONS /api/profile  Origin: https://lyceon.ai  (2026-10-01T04:16:00Z)
+HTTP/2 204 
+access-control-allow-credentials: true
+access-control-allow-headers: content-type
+access-control-allow-methods: GET,HEAD,PUT,PATCH,POST,DELETE
+access-control-allow-origin: https://lyceon.ai
+vary: Origin, Access-Control-Request-Headers
+x-vercel-id: iad1::iad1::kzs2b-1790828160780-64b799e035d2
+== OPTIONS /api/profile  Origin: https://www.lyceon.ai  (2026-10-01T04:16:00Z)
+HTTP/2 204 
+access-control-allow-credentials: true
+access-control-allow-headers: content-type
+access-control-allow-methods: GET,HEAD,PUT,PATCH,POST,DELETE
+access-control-allow-origin: https://www.lyceon.ai
+vary: Origin, Access-Control-Request-Headers
+x-vercel-id: iad1::iad1::9lztv-1790828161339-3ed082785287
+== OPTIONS /api/profile  Origin: http://localhost:5173  (2026-10-01T04:16:01Z)
+HTTP/2 401 
+x-vercel-id: iad1::iad1::r8pc9-1790828161669-243745f0202a
+== OPTIONS /api/profile  Origin: http://localhost:5000  (2026-10-01T04:16:01Z)
+HTTP/2 401 
+x-vercel-id: iad1::iad1::69jzg-1790828161929-8e8ffd619ca5
+== OPTIONS /api/profile  Origin: http://localhost:3000  (2026-10-01T04:16:01Z)
+HTTP/2 401 
+x-vercel-id: iad1::iad1::5f4km-1790828162125-b7b495991f2f

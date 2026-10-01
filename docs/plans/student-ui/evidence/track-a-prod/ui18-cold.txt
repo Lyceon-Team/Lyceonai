@@ -1,0 +1,25 @@
+# UI-18 cold probe: signed in 2026-10-01T04:54:15.099Z; 5 concurrent sent 2026-10-01T05:22:00.100Z
+/api/profile  200  client 2916 ms  x-request-id 7e7df899-1f2a-4f36-b4fd-3885b7f5bc44  x-vercel-id cle1::iad1::pmnlm-1790832120918-2e94ba8fa7f8
+/api/profile  200  client 2926 ms  x-request-id e665ef30-2773-4040-af28-5af9c38c7f1d  x-vercel-id cle1::iad1::4vtnz-1790832120834-4c375e1181f1
+/api/profile  200  client 2952 ms  x-request-id 5fd52c51-d6be-4537-b7ba-9adae40cf430  x-vercel-id cle1::iad1::5k89l-1790832120852-00268a241f46
+/api/progress/kpis  200  client 3169 ms  x-request-id 4dcc37fd-21d0-4481-8908-2525a2e148e9  x-vercel-id cle1::iad1::zwpm7-1790832120821-a11131b9184e
+/api/practice/sessions/open  200  client 2751 ms  x-request-id d0c036d7-03ab-47a1-a120-da99d58e32fc  x-vercel-id cle1::iad1::6s2sw-1790832120886-696a29ba5abe
+
+# Server side (Vercel runtime logs). Every one of the five carries its own boot block
+# ([API] Starting Lyceon API server…, environment validation, [SUPABASE-HTTP] Client initialized),
+# so five instances started. Deployment for all five: dpl_J3hLQkZCfP64c1EibTAWKce2TaZE (main @ fc6fb851).
+request_id                              path                         env check logged    handler duration_ms
+7e7df899-1f2a-4f36-b4fd-3885b7f5bc44    /api/profile                 05:22:01.681Z       1612
+e665ef30-2773-4040-af28-5af9c38c7f1d    /api/profile                 05:22:01.822Z       1470
+5fd52c51-d6be-4537-b7ba-9adae40cf430    /api/profile                 05:22:01.832Z       1479
+4dcc37fd-21d0-4481-8908-2525a2e148e9    /api/progress/kpis           05:22:01.944Z       1582
+d0c036d7-03ab-47a1-a120-da99d58e32fc    /api/practice/sessions/open  05:22:01.919Z       1179
+
+# Idle window (project-wide runtime logs): last request 04:54:12Z (this session's sign-in page,
+# closed straight after), then nothing until 05:15:04Z (POST /api/internal/crisis-sla-sweep, a cron
+# on the new deployment), then nothing until the probe at 05:22:00Z. The next request after the
+# probe was the 05:22:07Z notification-dispatch-sweep cron.
+
+# An earlier attempt (fired 04:53:30Z, client 0.77–1.89 s) is discarded: the probe process had left
+# the post-sign-in /dashboard page open, and its 60-second KPI refetch kept the function warm
+# (the free account's own GET /api/progress/kpis once a minute until 04:53:13Z).
