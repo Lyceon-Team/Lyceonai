@@ -51,6 +51,11 @@ const POISON = Object.fromEntries(RULE_4_COLUMNS.map((k) => [k, "LEAKED"]));
 
 const rows: Record<string, unknown[]> = {};
 const decision = vi.fn();
+/**
+ * Reads that fail, as `table:columns` exactly as the code selects them. Targeted by column list,
+ * not by table, so one read can fail while its table's other reads still answer.
+ */
+const failingReads = new Set<string>();
 
 function resetRows() {
   rows.student_domain_mastery = [
@@ -101,7 +106,8 @@ function resetRows() {
       events_total: 40, events_last_7d: 12, events_last_30d: 30,
       accuracy_overall: 0.7, accuracy_last_7d: 0.75, accuracy_last_30d: 0.7,
       current_streak_days: 3, longest_streak_days: 9, sections_active: 2,
-      last_active_at: "2026-08-01", ...POISON,
+      // Active NOW, so the stored streak of 3 is current (G-NEW-16 zeroes a stale one).
+      last_active_at: new Date().toISOString(), ...POISON,
     },
   ];
   rows.student_section_projections = [
@@ -217,10 +223,21 @@ const CALENDAR_DATE = new Date().toISOString().slice(0, 10);
 function fakeClient() {
   return {
     from(table: string) {
-      const result = { data: rows[table] ?? [], error: null };
+      let columns = "";
+      const failed = (): boolean => failingReads.has(`${table}:${columns}`);
+      const readError = { message: "planted read failure" };
+      const result = (): { data: unknown[] | null; error: { message: string } | null } =>
+        failed() ? { data: null, error: readError } : { data: rows[table] ?? [], error: null };
+      const one = async () =>
+        failed()
+          ? { data: null, error: readError }
+          : { data: (rows[table] ?? [])[0] ?? null, error: null };
       const builder: Record<string, unknown> = {};
       Object.assign(builder, {
-        select: () => builder,
+        select: (cols?: string) => {
+          columns = cols ?? "";
+          return builder;
+        },
         eq: () => builder,
         neq: () => builder,
         gt: () => builder,
@@ -235,9 +252,9 @@ function fakeClient() {
         order: () => builder,
         limit: () => builder,
         insert: async () => ({ error: null }),
-        single: async () => ({ data: (rows[table] ?? [])[0] ?? null, error: null }),
-        maybeSingle: async () => ({ data: (rows[table] ?? [])[0] ?? null, error: null }),
-        then: (f?: (v: typeof result) => unknown) => Promise.resolve(result).then(f),
+        single: one,
+        maybeSingle: one,
+        then: (f?: (v: ReturnType<typeof result>) => unknown) => Promise.resolve(result()).then(f),
       });
       return builder;
     },
@@ -314,6 +331,7 @@ describe("subject-scoped resources — one route, two callers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetRows();
+    failingReads.clear();
     decision.mockReturnValue("allow");
   });
 
@@ -501,6 +519,55 @@ describe("subject-scoped resources — one route, two callers", () => {
       const planted = { ok: true, currentStreakDays: 3, events_last_7d: 12 };
       expect(guardianKpiOverallResponseSchema.safeParse(planted).success).toBe(false);
       expect(allKeys({ a: [{ accuracyPct: 1 }] }).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
+    });
+  });
+
+  // -- G-NEW-16: THE STREAK AS OF TODAY, ONE ANSWER ON EVERY SURFACE ------------
+  describe("G-NEW-16 — the streak is as of today, on the calendar and on kpi/overall alike", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const lastActive = (daysAgo: number): void => {
+      const row = rows.student_overall_kpi![0] as Record<string, unknown>;
+      row.last_active_at = new Date(Date.now() - daysAgo * DAY_MS).toISOString();
+    };
+    const streaks = async (): Promise<unknown[]> => {
+      const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+      const metric = (studentKpi.body.metrics as { id: string; value: number }[]).find(
+        (m) => m.id === "current_streak",
+      );
+      return [guardianKpi.body.currentStreakDays, metric?.value, calendar.body.streak.current];
+    };
+
+    it("last active 3 days ago: the streak reads 0 on every surface (stored value is 3)", async () => {
+      lastActive(3);
+      expect(await streaks()).toEqual([0, 0, 0]);
+    });
+
+    it("last active yesterday: the streak is kept on every surface", async () => {
+      lastActive(1);
+      expect(await streaks()).toEqual([3, 3, 3]);
+    });
+
+    it("active today: the streak is kept on every surface", async () => {
+      lastActive(0);
+      expect(await streaks()).toEqual([3, 3, 3]);
+    });
+
+    // Owner decision 2026-10-01: when the zone cannot be read the streak is UNKNOWN (`null`) on
+    // every surface, and never a 500 — it is a decoration, as the calendar already treated it.
+    it("the zone cannot be read: 200 everywhere, and the streak is null on every surface", async () => {
+      lastActive(1);
+      // Presence first: with the read healthy the streak is a real number on every surface.
+      expect(await streaks()).toEqual([3, 3, 3]);
+      failingReads.add("student_study_profile:timezone");
+      const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+      expect([guardianKpi.status, studentKpi.status, calendar.status]).toEqual([200, 200, 200]);
+      expect(guardianKpiOverallResponseSchema.safeParse(guardianKpi.body).success).toBe(true);
+      expect(studentKpiOverallResponseSchema.safeParse(studentKpi.body).success).toBe(true);
+      expect(await streaks()).toEqual([null, null, null]);
     });
   });
 

@@ -313,10 +313,13 @@ describe("C3 — no acceptance, no link", () => {
   });
 
   it("asks for it on the guardian surface, linking the document itself", () => {
-    const page = readCode("client/src/pages/guardian-dashboard.tsx");
+    // The guardian links a student in the Add-student dialog (G4-02); the retired single-page
+    // dashboard that used to carry the form was deleted 2026-10-01.
+    const page = readCode("client/src/features/guardian/AddStudentDialog.tsx");
     expect(page).toContain("/legal/parent-guardian-terms");
     expect(page).toContain("acceptParentGuardianTerms: true");
-    expect(page).toMatch(/acceptedParentTerms/);
+    // The submit is refused until the guardian ticks the box (the dialog's `acceptedTerms`).
+    expect(page).toMatch(/if \(!acceptedTerms\)/);
   });
 });
 
@@ -529,7 +532,7 @@ describe("C7 — no duplicated contract text, no hashless acceptance", () => {
   const CONSENT_SURFACES = [
     "client/src/components/legal/ReconsentModal.tsx",
     "client/src/components/auth/RequireRole.tsx",
-    "client/src/pages/guardian-dashboard.tsx",
+    "client/src/features/guardian/AddStudentDialog.tsx",
     "server/routes/billing-routes.ts",
     "server/routes/legal-routes.ts",
     "shared/legal-consent.ts",

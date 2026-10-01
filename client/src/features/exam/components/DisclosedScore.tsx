@@ -37,11 +37,20 @@ export function DisclosureNote({ disclosure }: { disclosure: unknown }) {
  * The gate. Children are drawn only when the disclosure is valid; the caller places
  * one <DisclosureNote> directly beside the score inside them.
  */
-export function DisclosedScore({ disclosure, children }: { disclosure: unknown; children: ReactNode }) {
+export function DisclosedScore({
+  disclosure,
+  children,
+  withheldCopy = "Your score can't be shown right now. Please check back soon.",
+}: {
+  disclosure: unknown;
+  children: ReactNode;
+  /** G4-06: the guardian report names the student ("Ada's score …"); the student's reads "Your". */
+  withheldCopy?: string;
+}) {
   if (!examDisclosureSchema.safeParse(disclosure).success) {
     return (
       <div role="alert" data-testid="exam-score-withheld" className="rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] p-5 text-[15px]">
-        Your score can't be shown right now. Please check back soon.
+        {withheldCopy}
       </div>
     );
   }

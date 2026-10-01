@@ -326,16 +326,26 @@ describe("§14 / sheet item 11 — the streak reads 05B and computes nothing", (
     client = makeFakeClient({
       tables: {
         student_overall_kpi: () =>
-          okReply({ current_streak_days: 6, longest_streak_days: 21 }),
+          okReply({
+            current_streak_days: 6,
+            longest_streak_days: 21,
+            last_active_at: new Date().toISOString(),
+          }),
+        student_study_profile: () => okReply({ timezone: "America/Chicago" }),
       },
     });
 
     const streak = await getStudentActivityStreak(STUDENT);
 
     expect(streak).toEqual({ current: 6, longest: 21, history_complete: false });
-    // No calendar table is touched: the streak is served without a calendar_access check
-    // (INV-08-20), which only holds if it has no calendar dependency.
-    expect(client.queries.map((query) => query.table)).toEqual(["student_overall_kpi"]);
+    // Served without a calendar_access check (INV-08-20): no entitlement table and no
+    // calendar_access feature row is read. Since G-NEW-16 the one other read is the student's
+    // ZONE (`student_study_profile.timezone`, falling back to the platform zone), because
+    // "as of today" is the student's local today; it gates nothing.
+    expect(client.queries.map((query) => query.table)).toEqual([
+      "student_overall_kpi",
+      "student_study_profile",
+    ]);
   });
 
   it("reports unknown rather than zero for a student with no KPI row", async () => {

@@ -177,7 +177,7 @@ export function GuardianPurchaseCard({
       data-testid="guardian-purchase-card"
     >
       <CardHeader>
-        <CardTitle className="text-[#0F2E48] flex items-center gap-2">
+        <CardTitle className="text-brand-navy flex items-center gap-2">
           <CreditCard className="h-5 w-5" />
           Start a student subscription
         </CardTitle>
@@ -192,14 +192,14 @@ export function GuardianPurchaseCard({
         <div className="space-y-2" data-testid="student-picker">
           <label
             htmlFor="checkout-student"
-            className="text-sm font-medium text-[#0F2E48]"
+            className="text-base font-medium text-brand-navy"
           >
             Who is this subscription for?
           </label>
           <select
             id="checkout-student"
             data-testid="student-select"
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-base"
             value={selectedStudentId ?? ""}
             onChange={(e) => {
               setCheckoutError(null);
@@ -228,7 +228,7 @@ export function GuardianPurchaseCard({
           </Alert>
         ) : pricesLoading ? (
           <div className="flex justify-center py-6">
-            <Loader2 className="h-6 w-6 animate-spin text-[#0F2E48]" />
+            <Loader2 className="h-6 w-6 animate-spin text-brand-navy" />
           </div>
         ) : prices.length === 0 ? (
           <Alert>
@@ -266,25 +266,25 @@ export function GuardianPurchaseCard({
                   className={cn(
                     "relative p-4 rounded-lg border-2 text-left transition-all",
                     selectedPlan === price.plan
-                      ? "border-[#0F2E48] bg-[#0F2E48]/5"
-                      : "border-[#0F2E48]/20 hover:border-[#0F2E48]/40",
+                      ? "border-brand-navy bg-brand-navy/5"
+                      : "border-brand-navy/20 hover:border-brand-navy/40",
                   )}
                 >
                   {savingsBadge && (
-                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-green-600 text-white text-xs font-medium rounded-full whitespace-nowrap">
+                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-green-600 text-white text-base font-medium rounded-full whitespace-nowrap">
                       {savingsBadge}
                     </span>
                   )}
-                  <div className="text-lg font-semibold text-[#0F2E48]">
+                  <div className="text-lg font-semibold text-brand-navy">
                     {price.label}
                   </div>
                   <div
-                    className="text-2xl font-bold text-[#0F2E48] mt-1"
+                    className="text-2xl font-bold text-brand-navy mt-1"
                     data-testid={`guardian-price-${price.plan}`}
                   >
                     {headlinePrice ?? "—"}
                   </div>
-                  <div className="text-sm text-[#0F2E48]/60">
+                  <div className="text-base text-brand-navy/60">
                     {price.intervalLabel}
                   </div>
                 </button>
@@ -330,7 +330,7 @@ export function GuardianPurchaseCard({
           </Button>
         ) : (
           <Button
-            className="w-full bg-[#0F2E48] hover:bg-[#0F2E48]/90 text-white"
+            className="w-full bg-brand-navy hover:bg-brand-navy/90 text-white"
             size="lg"
             data-testid="guardian-purchase-submit"
             onClick={() => {

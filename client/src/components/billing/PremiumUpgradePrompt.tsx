@@ -97,6 +97,12 @@ export type PremiumUpgradePromptProps = {
   readonly onDismiss?: () => void;
 };
 
+/** Only what this component reads from `GET /api/billing/status` (G4-09: the shared shape). */
+type BillingStatusForCta = Pick<
+  BillingStatus,
+  "lapsed" | "hasBillingAccount" | "hasActiveLink"
+>;
+
 /**
  * Derive the state from the viewer's own billing facts.
  *

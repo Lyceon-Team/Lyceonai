@@ -194,6 +194,8 @@ describe("Feedback UX hardening contract", () => {
   });
 
   it("preserves structured API errors in guardian subscription paywall", () => {
+    // G4-09: the poller reads billing status through the one shared reader, which is where
+    // the structured parse now lives.
     const guardianPaywall = read(
       "client/src/components/guardian/CheckoutReturnPoller.tsx",
     );

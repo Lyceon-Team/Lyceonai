@@ -63,7 +63,16 @@ export function HeaderUserMenu({
   signOut,
   isSigningOut,
   fallbackName,
-}: HeaderSignOut & { fallbackName: string }) {
+  items,
+}: HeaderSignOut & {
+  fallbackName: string;
+  /**
+   * Shell-specific entries, rendered after Settings (G4-10: the guardian shell's "Linked
+   * students & billing"). The shell that owns the page owns its menu entry; this menu stays
+   * one component for every shell.
+   */
+  items?: React.ReactNode;
+}) {
   const [, navigate] = useLocation();
   const { user, isLoading, isAdmin } = useSupabaseAuth();
   if (!user) return null;
@@ -116,6 +125,7 @@ export function HeaderUserMenu({
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
+        {items}
         {/* @spec [Doc-03_V3 §21.3, SCL-025; Coding Standards §11.3; closure plan W2-7]
             | @implemented [2026-09-24] | plain English: the in-app way into the crisis
             review queue. Before this, an admin needed the URL or a Slack alert. Shown by

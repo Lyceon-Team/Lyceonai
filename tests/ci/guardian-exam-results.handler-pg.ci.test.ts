@@ -276,6 +276,17 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     evidence("allowed payload", res.body);
     const report = guardianExamReportEnvelopeSchema.parse(res.body).report;
     if (report.report_state !== "scored") throw new Error(report.report_state);
+
+    // SCL-192 WIRE: every list item carries `completed_at` — read on the RAW body, so a
+    // missing key fails here even before the strict schema would — and the scored one is the
+    // same instant its report shows, from real Postgres.
+    for (const item of list.body.tests as Record<string, unknown>[]) {
+      expect(item).toHaveProperty("completed_at");
+    }
+    expect(tests[0]!.completed_at).not.toBeNull();
+    expect(new Date(tests[0]!.completed_at!).getTime()).toBe(
+      new Date(report.completed_at).getTime(),
+    );
     expect(report.score.total_scaled).toBe(
       report.score.rw_scaled + report.score.math_scaled,
     );

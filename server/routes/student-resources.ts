@@ -88,7 +88,7 @@ import {
 import { toStudentExamReport } from "../../packages/shared/src/exam-student-report-schema";
 import {
   EXAM_FEATURE_KEY,
-  listExamForms,
+  listExamFormsWithCompletion,
 } from "../services/exam-runtime-service";
 import {
   ReportIntegrityError,
@@ -594,13 +594,13 @@ router.get(
       ) {
         return;
       }
-      const forms = await listExamForms(subject.studentId);
+      const forms = await listExamFormsWithCompletion(subject.studentId);
       if (!forms.ok) {
         throw new Error(`exam_list_forms refused with ${forms.error.status}`);
       }
       return res.json({
         ok: true,
-        ...toGuardianExamList(forms.value),
+        ...toGuardianExamList(forms.value.forms, forms.value.completedAt),
         requestId: req.requestId,
       });
     } catch (err) {

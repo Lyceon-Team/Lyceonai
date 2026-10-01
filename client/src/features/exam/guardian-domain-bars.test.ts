@@ -89,3 +89,18 @@ describe("G3-02 guardian domain bars", () => {
     expect(guardianExamReportSchema.safeParse(planted).success).toBe(false);
   });
 });
+
+describe("SCL-192 guardian exam list items carry completed_at", () => {
+  it("STRICT: an item without completed_at fails the guardian list schema", async () => {
+    const { guardianExamListItemSchema, toGuardianExamList } =
+      await import("@lyceon/shared/exam-guardian-report-schema");
+    const { formsListing } = await import("./test-fixtures/report-fixtures");
+    const [item] = toGuardianExamList(formsListing, {}).tests;
+    expect(item).toBeDefined();
+    // Presence first: the real projection emits the key (null when no instant is known).
+    expect(item).toHaveProperty("completed_at", null);
+    const { completed_at: _dropped, ...withoutIt } = item!;
+    expect(guardianExamListItemSchema.safeParse(item).success).toBe(true);
+    expect(guardianExamListItemSchema.safeParse(withoutIt).success).toBe(false);
+  });
+});
