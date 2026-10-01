@@ -1,0 +1,80 @@
+{
+  "built_on": "2026-10-01",
+  "builder": "scripts/reference-data/build-reference-snapshot.py",
+  "sources": {
+    "college_scorecard": {
+      "publisher": "U.S. Department of Education, College Scorecard",
+      "dataset": "Most Recent Institution-Level Data",
+      "url": "https://ed-public-download.scorecard.network/downloads/Most-Recent-Cohorts-Institution_06102026.zip",
+      "landing_page": "https://collegescorecard.ed.gov/data/",
+      "vintage": "data page last updated 2026-06-10; CSV member dated 2026-05-26",
+      "member": "Most-Recent-Cohorts-Institution.csv",
+      "zip_sha256": "f56a181b000ca4914e924c16b6b81dcc656e25aeb2ac68ab7d271ac0f29ffd58",
+      "member_sha256": "89e8a35a6588dfb81a6ce78fa9df4cb99b36ef7aa4b28fb0157f9e3e1a7d81b5",
+      "member_rows": 6273
+    },
+    "nces_ccd": {
+      "publisher": "NCES Common Core of Data",
+      "dataset": "Public school directory (school-level, file 029), school year 2024-25, version 1a",
+      "url": "https://nces.ed.gov/ccd/Data/zip/ccd_sch_029_2425_w_1a_073025.zip",
+      "landing_page": "https://nces.ed.gov/ccd/files.asp",
+      "vintage": "SY 2024-25, version 1a (file stamp 073025)",
+      "member": "ccd_sch_029_2425_w_1a_073025.csv",
+      "zip_sha256": "39326da788aa322353d20ceaf8ad4baed26272502cd05b066cf6c594988b21ab",
+      "member_sha256": "6d5d047985542f953550804e59fea08020f9e17bdcf63bab574d8f2718e129fc",
+      "member_rows": 102178
+    },
+    "nces_pss": {
+      "publisher": "NCES Private School Universe Survey",
+      "dataset": "2023-24 PSS public-use data file (CSV)",
+      "url": "https://nces.ed.gov/surveys/pss/zip/pss2324_pu_csv.zip",
+      "landing_page": "https://nces.ed.gov/surveys/pss/pssdata.asp",
+      "vintage": "2023-24 survey; CSV member dated 2026-08-28",
+      "member": "pss2324_pu.csv",
+      "zip_sha256": "b9c85d08071b9e85bca5678e56fc9d78da0af97774703e4f332775f58283f01f",
+      "member_sha256": "14a2f9e600a492940fd57646792b4b5163ea9d03b8015a7df1135066bcec3b8b",
+      "member_rows": 22510
+    }
+  },
+  "snapshots": {
+    "colleges": {
+      "file": "content/reference/colleges.csv",
+      "table": "ref_colleges",
+      "key": "IPEDS UNITID",
+      "from": [
+        "college_scorecard"
+      ],
+      "filters": [
+        "CURROPER = 1 (currently operating)",
+        "ICLEVEL = 1 (four-year or above)",
+        "HIGHDEG IN (3, 4) (highest award is a bachelor's or a graduate degree: degree-granting)"
+      ],
+      "rows": 2663,
+      "sha256": "3ec15d41552718a81b94a85a48127d6eac413228fadda9599f959bb68e23ffb3"
+    },
+    "high_schools": {
+      "file": "content/reference/high_schools.csv",
+      "table": "ref_high_schools",
+      "key": "nces:<NCESSCH> for public schools, pss:<PPIN> for private schools",
+      "from": [
+        "nces_ccd",
+        "nces_pss"
+      ],
+      "filters": {
+        "nces": [
+          "G_12_OFFERED = 'Yes' (offers grade 12)",
+          "UPDATED_STATUS IN (1, 3, 4, 5, 8) (Open, New, Added, Changed boundary/agency, Reopened)"
+        ],
+        "pss": [
+          "HIGR2024 = 17 (highest grade in school is 12th grade)"
+        ]
+      },
+      "rows": 35714,
+      "rows_by_source": {
+        "nces": 28139,
+        "pss": 7575
+      },
+      "sha256": "3c855f18934addff8e16934416289b8033c64d2349ddda1aecdb36e3946cc2a7"
+    }
+  }
+}

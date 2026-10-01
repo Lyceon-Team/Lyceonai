@@ -80,6 +80,7 @@ export function setupSecurityMocks() {
     },
     requireStudentOnly: (_req: any, _res: any, next: any) => next(),
     requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
+    requireStudentAccount: (_req: any, _res: any, next: any) => next(),
     requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
     requireProfileComplete: (_req: any, _res: any, next: any) => next(),
     requireGuardianLinkForUnder13: (_req: any, _res: any, next: any) => next(),

@@ -223,3 +223,32 @@ export const billingPlansResponseSchema = z.object({
   plans: z.array(billingPlanMetadataSchema),
   requestId: z.string().optional(),
 });
+
+/**
+ * Who manages a student's plan, as `GET /api/billing/status` reports it.
+ *
+ * @spec [Brief 8 ruling 5 / register F-40 (owner, 2026-10-01): derived from whether the student is
+ *        the Stripe customer; no new payer column] | @implemented [2026-10-01]
+ *
+ * plain English: `guardian` when the student's plan is backed by a Stripe subscription and the
+ * student is not a Stripe customer at all — so the subscription can only be someone else's, and
+ * the portal (which opens the CALLER's own customer) has nothing to show them. The UI then says
+ * "Managed by your guardian" with no Manage button. `self` otherwise, including a student with no
+ * plan (they would buy their own) and every guardian (who manages their own customer).
+ *
+ * Known edge, stated rather than hidden: a student who once paid for themselves (so has a Stripe
+ * customer) and is now covered by a guardian reads `self`. The portal then opens their own,
+ * real customer record — their past billing — which is a reachable page, not the 409. Telling the
+ * two apart needs either a Stripe call on every status read or the payer column the ruling ruled
+ * out.
+ */
+export const billingManagedBySchema = z.enum(["self", "guardian"]);
+export type BillingManagedBy = z.infer<typeof billingManagedBySchema>;
+
+/** Pure: the F-40 derivation, kept here so the route and its test share one definition. */
+export function deriveBillingManagedBy(input: {
+  hasSubscription: boolean;
+  isStripeCustomer: boolean;
+}): BillingManagedBy {
+  return input.hasSubscription && !input.isStripeCustomer ? "guardian" : "self";
+}
