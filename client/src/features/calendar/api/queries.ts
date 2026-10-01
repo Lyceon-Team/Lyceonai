@@ -19,6 +19,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { isStudentNoLongerLinkedError } from "@/lib/api-error";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import type {
   CalendarResponse,
@@ -175,6 +176,8 @@ export function useGuardianCalendar(
     queryFn: () => fetchGuardianCalendar(studentId, from, to),
     enabled: (options?.enabled ?? true) && studentId.length > 0,
     ...QUERY_FRESHNESS.calendarRange,
-    retry: 1,
+    // G3-04: a 404 means the link is gone; retrying it only delays saying so.
+    retry: (failureCount, error) =>
+      !isStudentNoLongerLinkedError(error) && failureCount < 1,
   });
 }

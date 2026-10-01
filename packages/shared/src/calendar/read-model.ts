@@ -399,11 +399,14 @@ export type GuardianDayBlock = z.infer<typeof guardianDayBlockSchema>;
  * A day as a guardian may see it: the same facts, none of the plan machinery.
  * `version_no` and `is_user_override` are absent — which version owns a date and whether the
  * student overrode it are controls, and §16 gives a guardian none.
+ *
+ * `timezone` is absent too (G3-03, audit G-AUD-24): Doc 05F §16 gives a
+ * guardian "no timezone", and the day already carries everything the zone was used for —
+ * `local_date` and `status` (incl. "today") are computed on the server in the student's zone.
  */
 export const guardianCalendarDaySchema = z
   .object({
     local_date: localDateSchema,
-    timezone: z.string().min(1),
     is_study_day: z.boolean(),
     status: dayStatusSchema,
     blocks: z.array(guardianDayBlockSchema),
@@ -423,7 +426,6 @@ export type GuardianCalendarDay = z.infer<typeof guardianCalendarDaySchema>;
 export function toGuardianCalendarDay(day: CalendarDay): GuardianCalendarDay {
   return {
     local_date: day.local_date,
-    timezone: day.timezone,
     is_study_day: day.is_study_day,
     status: day.status,
     blocks: day.blocks.map((entry) => ({

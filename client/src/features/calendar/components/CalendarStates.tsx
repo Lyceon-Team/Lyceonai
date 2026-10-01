@@ -96,6 +96,35 @@ export function CalendarError({
   );
 }
 
+/**
+ * G3-04 (R7, audit G-AUD-06/19): a guardian's calendar read answered 404 — the student is no
+ * longer linked to them. Said in words, with the way back and no "Try again": retrying does
+ * not bring a link back.
+ */
+export function GuardianStudentNoLongerLinked(): JSX.Element {
+  return (
+    <div className="app" data-testid="guardian-student-no-longer-linked">
+      <div className="main" style={{ gridColumn: "1 / -1", padding: 32 }}>
+        <h3
+          style={{
+            fontFamily: "serif",
+            fontSize: 21,
+            margin: "0 0 8px",
+          }}
+        >
+          This student is no longer linked to your account
+        </h3>
+        <p style={{ color: "var(--muted)", marginTop: 0 }} role="alert">
+          Their study plan is no longer available to you.
+        </p>
+        <a className="btn primary" href="/guardian">
+          Back to your students
+        </a>
+      </div>
+    </div>
+  );
+}
+
 /** §16 + §17.5: the premium CTA, using the shared component the rest of the app uses. */
 export function CalendarPremiumGate(): JSX.Element {
   return (

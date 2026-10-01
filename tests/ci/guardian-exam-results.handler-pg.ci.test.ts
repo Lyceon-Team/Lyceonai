@@ -40,7 +40,6 @@ import {
   guardianExamReportEnvelopeSchema,
 } from "../../packages/shared/src/exam-guardian-report-schema";
 import { examStudentReportPayloadSchema } from "../../packages/shared/src/exam-student-report-schema";
-import { segmentsFilled } from "../../packages/shared/src/exam-domain-segments";
 
 const DB_NAME = "guardian_exam_results_handler_ci";
 const FORM = "61f00000-0000-4000-8000-0000000000a1";
@@ -283,16 +282,14 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
 
-    // Owner ruling 7 (SCL-180 amended 2026-09-29): the guardian keeps correct-of-total
-    // (unchanged, every row carries both counts); the student sees the same eight domains
-    // as seven segments, derived from exactly these counts, and never the counts.
-    for (const row of report.domain_breakdown) {
-      expect(Object.keys(row).sort()).toEqual([
-        "correct",
-        "domain",
-        "section",
-        "total",
-      ]);
+    // G3-02 (R4, SCL-189): the guardian sees the same eight domains as a BAR each, no counts.
+    // Owner ruling 7 (SCL-180 amended 2026-09-29): the student sees them as seven segments.
+    // Both are projections of one set of counts, read below from exam_domain_breakdown itself.
+    for (const row of res.body.report.domain_breakdown as Record<
+      string,
+      unknown
+    >[]) {
+      expect(Object.keys(row).sort()).toEqual(["bar_pct", "domain", "section"]);
     }
     const own = await get(STUDENT, `/api/tests/sessions/${sid}/report`);
     expect(own.status).toBe(200);
@@ -303,15 +300,46 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     });
     if (student.report_state !== "scored")
       throw new Error(student.report_state);
+    // The counts both projections come from: exam_domain_breakdown, as the service reads it.
+    const counts = (
+      (
+        await testPg!.query(
+          `SELECT public.exam_domain_breakdown($1, $2) -> 'body' -> 'domains' AS d`,
+          [STUDENT, sid],
+        )
+      ).rows[0] as {
+        d: Array<{
+          section: "RW" | "M";
+          domain: string;
+          correct: number;
+          total: number;
+        }>;
+      }
+    ).d;
+    expect(counts).toHaveLength(8);
     const byDomain = (a: { domain: string }, b: { domain: string }) =>
       a.domain.localeCompare(b.domain);
-    expect(student.domain_segments).toHaveLength(8);
-    expect([...student.domain_segments].sort(byDomain)).toEqual(
-      report.domain_breakdown
+    // Expected values are computed here from the counts, not by the projections under test,
+    // so a wrong projection cannot agree with itself: the bar is the rounded percentage
+    // (SCL-189), the segments the nearest of seven, half rounding up (SCL-180 ruling 7).
+    expect([...report.domain_breakdown].sort(byDomain)).toEqual(
+      counts
         .map((r) => ({
           section: r.section,
           domain: r.domain,
-          segments_filled: segmentsFilled(r.correct, r.total),
+          bar_pct: Math.round((100 * r.correct) / r.total),
+        }))
+        .sort(byDomain),
+    );
+    expect(student.domain_segments).toHaveLength(8);
+    expect([...student.domain_segments].sort(byDomain)).toEqual(
+      counts
+        .map((r) => ({
+          section: r.section,
+          domain: r.domain,
+          segments_filled: Math.floor(
+            (14 * r.correct + r.total) / (2 * r.total),
+          ),
         }))
         .sort(byDomain),
     );
@@ -331,10 +359,10 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
         [sid],
       )
     ).rows[0] as { rw: number; m: number };
+    // The counts both projections come from are tied to scoring: per section they sum to
+    // score_runs' module counts, so a bar or a segment is the scored fraction, not a guess.
     const sum = (s: string) =>
-      report.domain_breakdown
-        .filter((r) => r.section === s)
-        .reduce((a, r) => a + r.correct, 0);
+      counts.filter((r) => r.section === s).reduce((a, r) => a + r.correct, 0);
     expect([sum("RW"), sum("M")]).toEqual([run.rw, run.m]);
   });
 
@@ -343,7 +371,8 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
    *   | @implemented [2026-09-29]
    * plain English: a student reading their OWN id on this path (resolveSubject
    * `via: "self"`) gets the student projection — seven segments per domain, no
-   * correct/total — while a guardian on the same session still gets correct/total.
+   * correct/total — while a guardian on the same session gets a bar per domain
+   * (SCL-189), never segments.
    */
   it("ruling 7, self: the student reading their own id gets segments, never correct/total", async () => {
     const res = await get(STUDENT, reportUrl(STUDENT, sid));
@@ -386,15 +415,17 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     );
   });
 
-  it("ruling 7, guardian unchanged: the guardian on the same path still gets correct/total and no segments", async () => {
+  it("ruling 7 with SCL-189: the guardian on the same path gets a bar per domain, no counts and no segments", async () => {
     const res = await get(GUARDIAN, reportUrl(STUDENT, sid));
     expect(res.status).toBe(200);
     const report = guardianExamReportEnvelopeSchema.parse(res.body).report;
     if (report.report_state !== "scored") throw new Error(report.report_state);
     expect(report.domain_breakdown).toHaveLength(8);
     for (const row of report.domain_breakdown) {
-      expect(row.total).toBeGreaterThan(0);
-      expect(row.correct).toBeGreaterThanOrEqual(0);
+      expect(row.bar_pct).toBeGreaterThanOrEqual(0);
+      expect(row.bar_pct).toBeLessThanOrEqual(100);
+      expect(row).not.toHaveProperty("correct");
+      expect(row).not.toHaveProperty("total");
     }
     expect(res.body.report).not.toHaveProperty("domain_segments");
     expect(res.body.report).not.toHaveProperty("omitted_domains");
