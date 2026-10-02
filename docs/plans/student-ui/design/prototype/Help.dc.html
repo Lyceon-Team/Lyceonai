@@ -143,7 +143,7 @@ body{margin:0;background:#FFFAEF}
 <sc-if value="{{modalOpen}}" hint-placeholder-val="{{false}}">
 <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 10">
 <div role="dialog" aria-modal="true" aria-labelledby="up-title" style="width: 540px; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; position: relative">
-<button type="button" aria-label="Close" onClick="{{closeModal}}" class="btn-quiet" style="position: absolute; top: 14px; right: 14px; width: 44px; height: 44px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-strong); cursor: pointer; display: flex; align-items: center; justify-content: center">
+<button type="button" aria-label="Close" onClick="{{closeModal()}}" class="btn-quiet" style="position: absolute; top: 14px; right: 14px; width: 44px; height: 44px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-strong); cursor: pointer; display: flex; align-items: center; justify-content: center">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 2; stroke-linecap: round"><path d="M6 6l12 12 M18 6L6 18"></path></svg>
 </button>
 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ink-strong)" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg>
