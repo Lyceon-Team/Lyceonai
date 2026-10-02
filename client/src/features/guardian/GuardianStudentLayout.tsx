@@ -24,9 +24,9 @@ import {
   GuardianRevokedState,
 } from "./GuardianStates";
 
-export type GuardianTab = "dashboard" | "calendar";
+type GuardianTab = "dashboard" | "calendar";
 
-export function GuardianTabs({
+function GuardianTabs({
   studentId,
   active,
 }: {
@@ -148,19 +148,15 @@ function StudentGate({
 
 export function GuardianStudentLayout({
   children,
-  center,
-  actions,
 }: {
   children: React.ReactNode;
-  center?: React.ReactNode;
-  actions?: React.ReactNode;
 }): JSX.Element {
   const { studentId } = useParams<{ studentId: string }>();
   const [location] = useLocation();
   return (
     <GuardianShell
-      center={center ?? <StudentSwitcher />}
-      actions={actions ?? <AddStudentButton />}
+      center={<StudentSwitcher />}
+      actions={<AddStudentButton />}
       subnav={
         <GuardianTabs studentId={studentId} active={tabForLocation(location)} />
       }

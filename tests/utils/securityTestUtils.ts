@@ -67,17 +67,6 @@ export function setupSecurityMocks() {
       }
       return req.user;
     },
-    requireRequestAuthContext: (req: any, res: any) => {
-      if (!req.user?.id) {
-        res.status(401).json({
-          error: "Authentication required",
-          message: "You must be signed in to access this resource",
-          requestId: req.requestId,
-        });
-        return null;
-      }
-      return { user: req.user, supabase: req.supabase };
-    },
     requireStudentOnly: (_req: any, _res: any, next: any) => next(),
     requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
     requireStudentAccount: (_req: any, _res: any, next: any) => next(),

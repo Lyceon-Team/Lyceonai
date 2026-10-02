@@ -14,4 +14,3 @@ export const TEST = {
     vectors: Number(process.env.STAGE_WARN_MS_vectors || 20000)
   }
 };
-export type StageName = keyof typeof TEST.STAGE_WARN_MS;

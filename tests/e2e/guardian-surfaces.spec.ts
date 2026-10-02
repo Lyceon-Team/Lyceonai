@@ -18,8 +18,9 @@
  *   vite --port 5173`), then
  *   E2E_BASE_URL=http://localhost:5173 E2E_SHOT_DIR=<dir> \
  *     pnpm exec playwright test tests/e2e/guardian-surfaces.spec.ts
- * Not part of `pnpm test` (vitest) and not run in CI: it needs a browser and a dev server, as
- * the exam e2e specs do.
+ * Not part of `pnpm test` (vitest): it needs a browser and a dev server. CI runs it, with
+ * `student-calendar.spec.ts` and `student-mastery.spec.ts`, in the `guardian-e2e` job
+ * (guardian closeout, Part B step 3).
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { offCentre, type Check } from "./guardian-harness/centring";
@@ -286,6 +287,33 @@ for (const vp of VIEWPORTS) {
       expect(small, JSON.stringify(small, null, 2)).toEqual([]);
     });
   }
+}
+
+/**
+ * The route loader is a guardian surface too: every lazy guardian page shows it while its module
+ * loads, and on a cold dev server it was still on screen when `add-student-modal @1440` measured
+ * (CI, 2026-10-02: `{"tag":"p","text":"Loading...","px":14}`). Stalling the page's module holds
+ * the loader on screen, so the floor is checked on it every run rather than only when a load
+ * happens to be slow.
+ */
+for (const vp of VIEWPORTS) {
+  test(`route loader @${vp.name}: no text under 16px`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await serve(page);
+    // Never answered: the lazy page cannot resolve, so the Suspense fallback stays up.
+    await page.route(
+      "**/features/guardian/GuardianStudentsPage.tsx*",
+      () => {},
+    );
+    await page.goto("/guardian/students");
+    await page.getByTestId("page-loader").waitFor({ timeout: 15_000 });
+    // Presence before absence: the loader's own text is on screen, so the scan is not empty.
+    await expect(
+      page.getByTestId("page-loader").getByText("Loading...", { exact: true }),
+    ).toBeVisible();
+    const small = await smallText(page);
+    expect(small, JSON.stringify(small, null, 2)).toEqual([]);
+  });
 }
 
 /**

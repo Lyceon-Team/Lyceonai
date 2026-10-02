@@ -242,6 +242,16 @@ jobs:
       - name: Guardian token gate (no hex literals, no sub-16px text, type floor current)
         run: node scripts/ci/guardian-token-gate.mjs
 
+      # Guardian closeout, Part B step 4: no unused export and no test-only module in guardian
+      # scope (scripts/ci/guardian-dead-code-gate.mjs — the TypeScript compiler API over the
+      # repository's import graph, no new dependency). The self-test runs FIRST: it plants an
+      # unused export and a test-only module and requires the gate to name each, so a gate that
+      # has gone blind reads as a failure here rather than as a clean tree.
+      - name: Guardian dead-code gate self-test (planted findings must be named)
+        run: bash scripts/ci/guardian-dead-code-gate.selftest.sh
+      - name: Guardian dead-code gate (zero unused exports in guardian scope)
+        run: node scripts/ci/guardian-dead-code-gate.mjs
+
       # A published legal version directory is the evidence of what somebody
       # agreed to — ARL § 17602(a)(4) requires producing that exact text three
       # years later. Editing one destroys the evidence while the consent record
@@ -897,6 +907,26 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-practice-contract.json \
             --file tests/ci/calendar.launch-contract.practice.ci.test.ts
 
+      # @spec [Doc 05F §8.1, §17.5, §7.8 (INV-08-09); guardian final purge, item 8 (owner brief
+      # 2026-10-02)] | @implemented [2026-10-02]
+      # PUT /api/calendar/profile against the real migrations: the setup body's idempotency key
+      # (the 2026-09-28 first-screen 400) and BOTH halves of `full_length_pair` (the 23514 that
+      # was served as a 500). Its header says what only real SQL can prove; until now no job
+      # named the file and the plain `ci` job has no Postgres, so `describe.skipIf(!PG_AVAILABLE)`
+      # skipped all 7 cases and read as green. The summary gate makes a skip red.
+      - name: Calendar profile upsert (real route, real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.profile-upsert.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-profile-upsert.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-profile-upsert.json \
+            --file tests/ci/calendar.profile-upsert.pg.ci.test.ts
+
       # REVIEW IS NO LONGER A STUB, AND THIS STEP HAD NOT NOTICED. It ran the review
       # contract with no PG environment, so `describe.skipIf(!PG_AVAILABLE)` skipped the
       # entire real-engine half -- 9 passed, 6 SKIPPED, exit 0, green from the outside.
@@ -1157,9 +1187,10 @@ jobs:
             --file tests/ci/guardian-redeem-errors.pg.ci.test.ts
 
       # @spec [Guardian_Closure_Plan G1-07; audit G-AUD-10] | @implemented [2026-09-29]
-      # revoke_guardian_link_audited refuses a non-party (LY005) before writing, and the six
-      # guardian functions read f/f/f/t (guardian_can_view_student f/f/t/t) even after a
-      # simulated platform default grant to anon/authenticated. Skip-proof verdict.
+      # revoke_guardian_link_audited refuses a non-party (LY005) before writing, and the four
+      # guardian functions read f/f/f/t even after a simulated platform default grant to
+      # anon/authenticated (the two boolean forms were dropped: 20261017000000, SCL-196).
+      # Skip-proof verdict.
       - name: Guardian revoke party check + explicit grants → real PG proof
         env:
           PGHOST: localhost
@@ -2344,7 +2375,7 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/05c-projection-gates.sh
 
-      - name: Guardian-mirror gates (airtight link + entitlement + view-only + carve-outs)
+      - name: Guardian-mirror gates (denial by absence + one gate form + view-only + carve-outs)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -2432,6 +2463,25 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-policy-roles.json \
             --file tests/ci/tutor-policy-roles.pg.ci.test.ts
 
+      # @spec [Doc-03B_V4.1 §8.3, §8.5, §7.3 (keyset pagination); guardian final purge, item 8
+      # (owner brief 2026-10-02)] | @implemented [2026-10-02]
+      # GET /api/tutor/conversations against the real migrations: has_more / next_cursor exact
+      # at 0, 20 and 21 rows, page 2 with no overlap or gap, ties on updated_at walked once.
+      # No other suite drives this route over real SQL; until now no job named the file, so it
+      # skipped all 8 cases in the plain `ci` job. The summary gate makes a skip red.
+      - name: Tutor conversation list pagination (real route, real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-conversation-list.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-conversation-list.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-conversation-list.json \
+            --file tests/ci/tutor-conversation-list.pg.ci.test.ts
+
   # ---------------------------------------------------------------------------
   # GCP Workload Identity Federation auth gate. Authenticates via WIF and runs
   # a single gcloud command to prove the credential works. This job carries
@@ -2461,3 +2511,66 @@ jobs:
 
       - name: Verify GCP auth (one command proof)
         run: gcloud auth list
+
+  # ---------------------------------------------------------------------------
+  # Guardian browser proofs (guardian closeout, Part B step 3).
+  #
+  # The only proofs of three ruled properties need a real browser, because jsdom computes no
+  # styles and lays nothing out:
+  #   - R12, the 16px type floor on every guardian surface (computed font sizes);
+  #   - phone centring at 390px (item 10; block cards, final review item 1);
+  #   - the mastery meter spanning its card's content width at 1440 and 390.
+  # They ran only on a developer machine until now. This job runs them on every PR: the REAL
+  # client under Vite, the API answered by `page.route` from the shared guardian scenario
+  # (`tests/e2e/guardian-harness/fixtures.ts`, the RTL tests' builders, each payload through
+  # its schema), Chromium at the version `@playwright/test` pins in the lockfile. No database,
+  # no secrets. Any spec failure, or no test found at all, fails the job.
+  # ---------------------------------------------------------------------------
+  guardian-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start the client (Vite; the specs answer every /api call themselves)
+        run: |
+          set -euo pipefail
+          VITE_SUPABASE_URL=http://localhost:9 VITE_SUPABASE_ANON_KEY=ci \
+            nohup pnpm exec vite --port 5173 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -sf -o /dev/null http://localhost:5173/; then echo "Vite up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/vite.log"
+          exit 1
+
+      - name: Guardian browser specs (R12 16px floor, phone centring, meter width)
+        env:
+          E2E_BASE_URL: http://localhost:5173
+          E2E_SHOT_DIR: ${{ runner.temp }}/guardian-shots
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test \
+            tests/e2e/guardian-surfaces.spec.ts \
+            tests/e2e/student-calendar.spec.ts \
+            tests/e2e/student-mastery.spec.ts \
+            --forbid-only --reporter=list

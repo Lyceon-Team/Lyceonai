@@ -52,8 +52,8 @@ import {
  * (a student cycling their own code). Both are seeded by D-9 in
  * `docs/plans/GUARDIAN_LINK_CODE_DDL.md`.
  */
-export const GUARDIAN_LINK_CODE_ENTRY_BUCKET = "guardian_link_code_entry";
-export const STUDENT_LINK_CODE_REGENERATION_BUCKET =
+const GUARDIAN_LINK_CODE_ENTRY_BUCKET = "guardian_link_code_entry";
+const STUDENT_LINK_CODE_REGENERATION_BUCKET =
   "student_link_code_regeneration";
 
 /** A guardian submitting a code. The guessing surface. */
@@ -75,10 +75,10 @@ export const studentLinkCodeRegenerationRateLimit = singleBucketRateLimit(
  * `readBucketDefinition`'s family fallback resolves its limit and the ledger never stores
  * an email address.
  */
-export const GUARDIAN_LINK_INVITE_DAILY_BUCKET = "guardian_link_attempts_daily";
-export const GUARDIAN_LINK_INVITE_EMAIL_BUCKET = "guardian_link_email_attempts";
+const GUARDIAN_LINK_INVITE_DAILY_BUCKET = "guardian_link_attempts_daily";
+const GUARDIAN_LINK_INVITE_EMAIL_BUCKET = "guardian_link_email_attempts";
 
-export function guardianInviteEmailBucketKey(email: string): string {
+function guardianInviteEmailBucketKey(email: string): string {
   const digest = createHash("sha256")
     .update(email.trim().toLowerCase(), "utf8")
     .digest("hex")

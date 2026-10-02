@@ -112,16 +112,16 @@ export async function resolvePaidKpiAccessForStudent(
  * expected outcome: only students with active entitlements get hasPaidAccess:true.
  * trade-offs: admin users without entitlements will receive hasPaidAccess:false on any
  * surface that calls this function. Admin tooling must use a dedicated admin surface.
+ *
+ * NO ROLE PARAMETER (guardian final purge, item 5, owner brief 2026-10-02). It used to take the
+ * caller's role and fall through to `baseFree` for a guardian; that branch was unreachable,
+ * because both callers (`getScoreEstimate`, `getRecencyKpis`) are mounted behind
+ * `requireStudentOrAdmin`, and a student and an admin take the same path. With the guardian
+ * branch gone the role selected nothing, so the parameter is removed rather than narrowed to
+ * `"student" | "admin"` (narrowing would make each caller restate the mount's guardian check).
  */
 export async function resolvePaidKpiAccessForUser(
   userId: string,
-  role: "student" | "guardian" | "admin",
 ): Promise<KpiEntitlementAccess> {
-  if (role === "student" || role === "admin") {
-    return resolvePaidKpiAccessForStudent(userId);
-  }
-
-  return baseFree(
-    "Guardian access is resolved via linked student entitlement middleware.",
-  );
+  return resolvePaidKpiAccessForStudent(userId);
 }

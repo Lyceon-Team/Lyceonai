@@ -61,7 +61,7 @@ const partial = toGuardianExamReport(partialReport);
 
 function show(report: GuardianExamReport) {
   const { hook } = memoryLocation({
-    path: `/students/${STUDENT}/tests/${SID}`,
+    path: `/guardian/${STUDENT}/exams/${SID}`,
   });
   return render(
     <Router hook={hook}>

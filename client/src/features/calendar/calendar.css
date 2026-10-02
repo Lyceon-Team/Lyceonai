@@ -342,35 +342,6 @@
 .lyceon-calendar .spacer {
   flex: 1;
 }
-.lyceon-calendar .stat {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--ink-2);
-}
-.lyceon-calendar .stat b {
-  font-family: serif;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.lyceon-calendar .chip-mode {
-  display: flex;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.lyceon-calendar .chip-mode button {
-  padding: 5px 12px;
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.lyceon-calendar .chip-mode button[aria-pressed="true"] {
-  background: var(--math-t);
-  color: var(--math);
-  font-weight: 600;
-}
 .lyceon-calendar .banner {
   display: flex;
   align-items: center;
@@ -891,25 +862,6 @@
   color: var(--muted);
   padding: 0 20px 14px;
 }
-.lyceon-calendar .toast {
-  position: fixed;
-  left: 50%;
-  bottom: 26px;
-  transform: translate(-50%, 16px);
-  background: var(--ink);
-  color: #fff;
-  padding: 10px 16px;
-  border-radius: 10px;
-  font-size: 13px;
-  opacity: 0;
-  transition: 0.2s;
-  z-index: 20;
-  box-shadow: var(--shadow);
-}
-.lyceon-calendar .toast.on {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
 @media (prefers-reduced-motion: reduce) {
   .lyceon-calendar * {
     transition: none !important;
@@ -925,32 +877,6 @@
   .lyceon-calendar .week {
     grid-template-columns: repeat(7, minmax(132px, 1fr));
   }
-}
-
-/*
- * §17.2's day footer, sited in the week column's header. Hidden until the column is hovered
- * or something inside it has focus — the same affordance pattern the prototype uses for
- * "+ Add block", so the grid stays quiet until the student reaches for it. `focus-within`
- * is what keeps it reachable from the keyboard rather than hover-only.
- */
-.lyceon-calendar .daymenu {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.lyceon-calendar .col:hover .daymenu,
-.lyceon-calendar .col:focus-within .daymenu {
-  opacity: 1;
-}
-.lyceon-calendar .daymenu button {
-  font-size: 11.5px;
-  color: var(--muted);
-  text-decoration: underline;
-}
-.lyceon-calendar .daymenu button:hover {
-  color: var(--math);
 }
 
 /* The side sheet's kind chip, tinted per block type (the prototype set this inline). */
@@ -980,10 +906,6 @@
 /* The mini-month marks today even when it is not the selected week. */
 .lyceon-calendar .mgrid button.is-today {
   box-shadow: inset 0 0 0 1px var(--math);
-}
-
-.lyceon-calendar .stat .muted {
-  color: var(--muted);
 }
 
 /* ==========================================================================
