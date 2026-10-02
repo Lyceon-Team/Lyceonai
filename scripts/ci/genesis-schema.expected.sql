@@ -8474,6 +8474,29 @@ $$;
 
 
 --
+-- Name: password_reset_subject(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.password_reset_subject(p_email text) RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT p.id
+    FROM public.profiles p
+   WHERE lower(p.email) = lower(btrim(p_email))
+   ORDER BY (p.deleted_at IS NULL) DESC, p.created_at DESC
+   LIMIT 1
+$$;
+
+
+--
+-- Name: FUNCTION password_reset_subject(p_email text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.password_reset_subject(p_email text) IS 'F-46 / Doc 01 §12.1: the profile an email belongs to (live first), for keying the password_reset_requests_hourly ledger bucket. Returns an id only. service_role only: it answers "does this address have an account?".';
+
+
+--
 -- Name: pg_notify_memory_summary(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -21675,6 +21698,14 @@ GRANT ALL ON FUNCTION public.operational_log_retention_days() TO service_role;
 
 REVOKE ALL ON FUNCTION public.password_recovery_live(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.password_recovery_live(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION password_reset_subject(p_email text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.password_reset_subject(p_email text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.password_reset_subject(p_email text) TO service_role;
 
 
 --

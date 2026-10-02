@@ -97,6 +97,11 @@ vi.mock("../../server/lib/password-credentials.js", () => ({
   hasPasswordIdentity: hasPasswordIdentityMock,
   consumePasswordRecovery: consumePasswordRecoveryMock,
   changePasswordWithCurrent: vi.fn(),
+  // F-46: the ledger decision and the post-recovery revoke are proven against real Postgres and
+  // a GoTrue stand-in in tests/ci/password-reset-sessions.pg.ci.test.ts. Here they are the
+  // within-limit case and a no-op, so this harness keeps testing what it always tested.
+  decidePasswordResetSend: vi.fn(async () => "send"),
+  revokeOtherSessionsAfterRecovery: vi.fn(async () => undefined),
 }));
 
 vi.mock("@supabase/supabase-js", () => ({

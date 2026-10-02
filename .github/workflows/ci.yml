@@ -1330,6 +1330,23 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-password-recovery-grant.json \
             --file tests/ci/password-recovery-grant.pg.ci.test.ts
 
+      # @spec [Doc 01 §12.1 steps 2 and 6; Brief 12 ruling 1; register F-46] | @implemented [2026-10-02]
+      # A recovery update revokes every other session and keeps its own; a failed revoke still
+      # succeeds; reset is throttled per account on the ledger (3/hour) across requests, and an
+      # unknown, throttled or allowed address all get the same response. Real routes and real PG.
+      - name: Password reset sessions and throttle (F-46) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/password-reset-sessions.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-password-reset-sessions.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-password-reset-sessions.json \
+            --file tests/ci/password-reset-sessions.pg.ci.test.ts
+
       # @spec [Brief 8 ruling 5; register F-40] | @implemented [2026-10-01]
       # GET /api/billing/status managedBy over real entitlement and profile rows: guardian-paid,
       # self-paid, no plan; the student branch makes no Stripe call.
