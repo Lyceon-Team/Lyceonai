@@ -1,0 +1,205 @@
+/*
+ * Student UI design tokens (light and dark).
+ *
+ * @spec [student-UI register UI-40, UI-47; DESIGN.md §1 "Visual system"; dark mode ruling
+ *        2026-09-30; Brief 13 Step 1] | @implemented [2026-10-02]
+ *
+ * plain English: the colour values are copied verbatim from the signed-off design package
+ * (docs/plans/student-ui/design/tokens.css). Only the selectors differ, so the student UI can
+ * theme without touching guardian, admin or marketing pages, which keep the app-wide tokens in
+ * index.css:
+ *   - `.lyc` is the student UI's root (every student shell renders it) and carries the light set;
+ *   - `:root[data-theme="dark"] .lyc` carries the dark set. The inline script in
+ *     client/index.html sets `data-theme` on <html> before first paint, so there is no flash;
+ *   - `.lyc[data-theme-lock="light"]` keeps the light set whatever the setting. The timed exam
+ *     module renders with it (DESIGN.md §2: the timed module is light only).
+ * The type scale and font families are DESIGN.md §1. Nothing below 14px.
+ */
+.lyc,
+:root[data-theme="dark"] .lyc[data-theme-lock="light"] {
+  --paper: #fffaef;
+  --margin: #f7f0df;
+  --sheet: #ffffff;
+  --ink: #1f2a33;
+  --ink-strong: #0f2e48;
+  --muted: #5a6470;
+  --rule: #e3d9c3;
+  --rule-soft: #e8dfcb;
+  --rule-strong: #b9a67e;
+  --input-bd: #b9c4cf;
+  --chip: #eef2f6;
+  --hover: #f2ead6;
+  --rail: #0f2e48;
+  --rail-ink: #c9d3dc;
+  --rail-on-bg: #fffaef;
+  --rail-on-ink: #0f2e48;
+  --lock: #e8c98a;
+  --primary-bg: #0f2e48;
+  --primary-ink: #fffaef;
+  --scrim: rgba(15, 46, 72, 0.45);
+  --tick: #c9bfa8;
+  --seg-empty: #eae0cb;
+  --danger: #9b2c2c;
+  --danger-bg: #fdf2f2;
+  --focus: #7fa6c9;
+  --step: #b9a67e;
+  --ok: #065f46;
+  --lv0-fill: #f59e0b;
+  --lv0-bg: #fef3c7;
+  --lv0-ink: #78350f;
+  --lv0-bd: #fde68a;
+  --lv1-fill: #f97316;
+  --lv1-bg: #ffedd5;
+  --lv1-ink: #7c2d12;
+  --lv1-bd: #fed7aa;
+  --lv2-fill: #0ea5e9;
+  --lv2-bg: #e0f2fe;
+  --lv2-ink: #0c4a6e;
+  --lv2-bd: #bae6fd;
+  --lv3-fill: #2563eb;
+  --lv3-bg: #dbeafe;
+  --lv3-ink: #1e3a8a;
+  --lv3-bd: #bfdbfe;
+  --lv4-fill: #059669;
+  --lv4-bg: #d1fae5;
+  --lv4-ink: #064e3b;
+  --lv4-bd: #a7f3d0;
+  --cat-math-bg: #e8effa;
+  --cat-math-bd: #2563eb;
+  --cat-math-ink: #1e3a8a;
+  --cat-rw-bg: #f3edf8;
+  --cat-rw-bd: #7e4fa8;
+  --cat-rw-ink: #4a2668;
+  --cat-review-bg: #fbf0e2;
+  --cat-review-bd: #c2650a;
+  --cat-review-ink: #7c3a06;
+  --cat-test-bg: #edf0f3;
+  --cat-test-bd: #0f2e48;
+  --cat-test-ink: #0f2e48;
+}
+
+:root[data-theme="dark"] .lyc:not([data-theme-lock="light"]) {
+  --paper: #121b24;
+  --margin: #16212c;
+  --sheet: #1b2733;
+  --ink: #e7e1d4;
+  --ink-strong: #f4eedf;
+  --muted: #a9b2bb;
+  --rule: #2d3b49;
+  --rule-soft: #26333f;
+  --rule-strong: #6e6249;
+  --input-bd: #3b4b5b;
+  --chip: #233140;
+  --hover: #22303d;
+  --rail: #0a1219;
+  --rail-ink: #9fb0bf;
+  --rail-on-bg: #f4eedf;
+  --rail-on-ink: #0f2e48;
+  --lock: #e8c98a;
+  --primary-bg: #f4eedf;
+  --primary-ink: #0f2e48;
+  --scrim: rgba(4, 8, 12, 0.6);
+  --tick: #4a5868;
+  --seg-empty: #2a3846;
+  --danger: #f2a7a7;
+  --danger-bg: #2a1b1e;
+  --focus: #8fb4d6;
+  --step: #8c7b57;
+  --ok: #6ee7b7;
+  --lv0-fill: #fbbf24;
+  --lv0-bg: rgba(245, 158, 11, 0.16);
+  --lv0-ink: #fde68a;
+  --lv0-bd: rgba(251, 191, 36, 0.4);
+  --lv1-fill: #fb923c;
+  --lv1-bg: rgba(249, 115, 22, 0.16);
+  --lv1-ink: #fed7aa;
+  --lv1-bd: rgba(251, 146, 60, 0.4);
+  --lv2-fill: #38bdf8;
+  --lv2-bg: rgba(14, 165, 233, 0.16);
+  --lv2-ink: #bae6fd;
+  --lv2-bd: rgba(56, 189, 248, 0.4);
+  --lv3-fill: #60a5fa;
+  --lv3-bg: rgba(37, 99, 235, 0.18);
+  --lv3-ink: #bfdbfe;
+  --lv3-bd: rgba(96, 165, 250, 0.45);
+  --lv4-fill: #34d399;
+  --lv4-bg: rgba(5, 150, 105, 0.18);
+  --lv4-ink: #a7f3d0;
+  --lv4-bd: rgba(52, 211, 153, 0.4);
+  --cat-math-bg: rgba(96, 165, 250, 0.12);
+  --cat-math-bd: #60a5fa;
+  --cat-math-ink: #bfdbfe;
+  --cat-rw-bg: rgba(192, 132, 252, 0.12);
+  --cat-rw-bd: #c084fc;
+  --cat-rw-ink: #e9d5ff;
+  --cat-review-bg: rgba(251, 146, 60, 0.12);
+  --cat-review-bd: #fb923c;
+  --cat-review-ink: #fed7aa;
+  --cat-test-bg: rgba(244, 238, 223, 0.08);
+  --cat-test-bd: #f4eedf;
+  --cat-test-ink: #f4eedf;
+}
+
+.lyc {
+  --lyc-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --lyc-sans:
+    "Source Sans 3", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Arial, sans-serif;
+  --lyc-text-title: 42px;
+  --lyc-text-section: 28px;
+  --lyc-text-panel: 20px;
+  --lyc-text-body: 16px;
+  --lyc-text-body-lg: 19px;
+  --lyc-text-meta: 14px;
+  --lyc-text-meta-lg: 15px;
+  --lyc-rail-width: 96px;
+  --lyc-panel-width: 360px;
+  --lyc-content-max: 800px;
+  color-scheme: light;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--lyc-sans);
+  font-size: var(--lyc-text-body);
+}
+
+:root[data-theme="dark"] .lyc:not([data-theme-lock="light"]) {
+  color-scheme: dark;
+}
+
+.lyc :focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@keyframes lyc-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+.lyc-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: lyc-dot 1.2s infinite ease-in-out;
+}
+.lyc-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.lyc-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lyc-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}

@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- Student UI theme before first paint (register UI-47): the same rule as
+         client/src/lib/theme.ts (resolveTheme), kept in step by client/src/lib/theme.boot.test.ts.
+         Writes <html data-theme>, which client/src/styles/student-tokens.css reads. -->
+    <script id="lyceon-theme-boot">
+      (function () {
+        var p = null;
+        try { p = window.localStorage.getItem("lyceon-theme"); } catch (e) { p = null; }
+        if (p !== "light" && p !== "dark") p = "system";
+        var dark = p === "dark" || (p === "system" && typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     

@@ -13,6 +13,7 @@ import { Analytics } from "@vercel/analytics/react";
 
 import { analyticsBeforeSend } from "./lib/analytics-surface";
 import "@/styles/tokens.css";
+import "@/styles/student-tokens.css";
 import "@/styles/accessibility.css";
 
 import HomePage from "@/pages/home";
