@@ -65,7 +65,7 @@ export const guardianDomainBarRowSchema = z
   });
 export type GuardianDomainBarRow = z.infer<typeof guardianDomainBarRowSchema>;
 
-export const guardianDomainBarsSchema = z
+const guardianDomainBarsSchema = z
   .array(guardianDomainBarRowSchema)
   .refine(
     (rows) =>
@@ -92,7 +92,7 @@ const guardianBase = {
 
 const sectionScaled = z.number().int().min(200).max(800);
 
-export const guardianExamNotCompletedSchema = z
+const guardianExamNotCompletedSchema = z
   .object({
     report_state: z.literal("not_completed"),
     ...guardianBase,
@@ -105,7 +105,7 @@ export const guardianExamNotCompletedSchema = z
   })
   .strict();
 
-export const guardianExamScoringPendingSchema = z
+const guardianExamScoringPendingSchema = z
   .object({
     report_state: z.literal("scoring_pending"),
     ...guardianBase,
@@ -114,7 +114,7 @@ export const guardianExamScoringPendingSchema = z
   })
   .strict();
 
-export const guardianExamScoredSchema = z
+const guardianExamScoredSchema = z
   .object({
     report_state: z.literal("scored"),
     ...guardianBase,
@@ -135,7 +135,7 @@ export const guardianExamScoredSchema = z
   .strict();
 
 /** No total, by schema: a partial attempt never shows one (04C §9, invariant #2). */
-export const guardianExamPartialSchema = z
+const guardianExamPartialSchema = z
   .object({
     report_state: z.literal("partial_scored"),
     ...guardianBase,
@@ -157,7 +157,7 @@ export const guardianExamPartialSchema = z
   })
   .strict();
 
-export const guardianExamFailedSchema = z
+const guardianExamFailedSchema = z
   .object({
     report_state: z.literal("failed_requires_review"),
     ...guardianBase,
@@ -170,7 +170,7 @@ export const guardianExamFailedSchema = z
  * Reachable only if the entitlement lapses between the route's 402 gate and the read;
  * the gate answers every request that arrives after the lapse.
  */
-export const guardianExamUnavailableSchema = z
+const guardianExamUnavailableSchema = z
   .object({
     report_state: z.literal("unavailable"),
     ...guardianBase,
@@ -290,7 +290,7 @@ export const guardianExamListItemSchema = z
   })
   .strict();
 
-export const guardianExamListSchema = z
+const guardianExamListSchema = z
   .object({ tests: z.array(guardianExamListItemSchema) })
   .strict();
 export type GuardianExamList = z.infer<typeof guardianExamListSchema>;

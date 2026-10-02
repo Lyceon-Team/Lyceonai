@@ -263,7 +263,7 @@ export function deriveBillingManagedBy(input: {
  * plain English: the route has two branches — the self-paying student and the guardian — and
  * both write the same eleven keys (`managedBy` is F-40's); the guardian branch adds `hasActiveLink` (§31.3's fold) and
  * `source: "guardian_linked_student"` (the answer is derived, and says so). Expected outcome:
- * every client reader parses this once, in `useBillingStatus`, instead of four readers each
+ * every client reader parses this once, in `useBillingStatusQuery`, instead of four readers each
  * casting `res.json()` to a private type that declared whichever subset it happened to read.
  * That was G-AUD-26: three cache keys, four types, no parse — so a renamed key read as
  * `undefined` and every banner keyed on it vanished without an error.

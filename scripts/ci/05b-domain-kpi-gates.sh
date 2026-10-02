@@ -129,15 +129,16 @@ RLS=$(psql_db "$DB" -tAc "
    AND tablename IN ('student_domain_mastery','student_section_kpi','student_domain_kpi','student_skill_kpi','student_overall_kpi');")
 if [ "$RLS" = "true" ]; then echo "    OK RLS enabled on domain_mastery + all 4 KPI tables"
 else echo "  FAIL: RLS not enabled on all 5 tables (bool_and=$RLS)"; exit 1; fi
-# guardian read policies must exist on domain_mastery/section/domain/overall, and NOT on skill_kpi.
+# SCL-196 (G-NEW-15, migration 20261017000000): NO read policy on domain_mastery/section/domain/
+# overall — every read is the service role's and the route layer enforces guardian visibility —
+# and still no guardian policy on skill_kpi. RLS stays ON (checked above), so absence is denial.
 GUARD=$(psql_db "$DB" -tAc "
-  SELECT (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND policyname IN
-     ('student_domain_mastery_guardian_read','student_section_kpi_guardian_read',
-      'student_domain_kpi_guardian_read','student_overall_kpi_guardian_read'))::text
+  SELECT (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND cmd IN ('SELECT','ALL')
+     AND tablename IN ('student_domain_mastery','student_section_kpi','student_domain_kpi','student_overall_kpi'))::text
    ||'|'|| (SELECT count(*) FROM pg_policies WHERE schemaname='public'
             AND tablename='student_skill_kpi' AND policyname LIKE '%guardian%')::text;")
-if [ "$GUARD" = "4|0" ]; then echo "    OK 4 guardian read policies present; student_skill_kpi has NONE (denial by absence, §2.4)"
-else echo "  FAIL: guardian policy presence/absence (4-tier|skill) = $GUARD (expected 4|0)"; exit 1; fi
+if [ "$GUARD" = "0|0" ]; then echo "    OK no read policy on the 4 mirror tables; student_skill_kpi has no guardian policy (denial by absence, SCL-196)"
+else echo "  FAIL: read policies on mirror tables | guardian policy on skill_kpi = $GUARD (expected 0|0)"; exit 1; fi
 # column-grant: authenticated must NOT have mastery_score / last_event_id on student_domain_mastery.
 COLG=$(psql_db "$DB" -tAc "
   SELECT count(*) FROM information_schema.role_column_grants

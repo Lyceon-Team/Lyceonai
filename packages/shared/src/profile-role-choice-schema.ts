@@ -62,20 +62,10 @@ export const ROLE_CHOICE_ERROR_CODES = [
 export const roleChoiceErrorCodeSchema = z.enum(ROLE_CHOICE_ERROR_CODES);
 export type RoleChoiceErrorCode = z.infer<typeof roleChoiceErrorCodeSchema>;
 
-/** The body the server sends with every coded refusal above. */
-export const roleChoiceErrorBodySchema = z.object({
-  error: z.object({
-    code: roleChoiceErrorCodeSchema,
-    message: z.string().min(1),
-  }),
-});
-export type RoleChoiceErrorBody = z.infer<typeof roleChoiceErrorBodySchema>;
-
 /** Body of `POST /api/profile/date-of-birth` — the one-time fill for a guardian with none. */
 export const setDateOfBirthRequestSchema = z
   .object({ dateOfBirth: dateOfBirthSchema })
   .strict();
-export type SetDateOfBirthRequest = z.infer<typeof setDateOfBirthRequestSchema>;
 
 /**
  * Whole years between `dateOfBirth` and `today`, or `null` when the input is not a real

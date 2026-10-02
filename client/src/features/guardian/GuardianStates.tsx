@@ -33,7 +33,7 @@ import { guardianPaths } from "./paths";
 
 // ── The student the page is about ────────────────────────────────────────────────────────
 
-export type CurrentStudent = { id: string; name: string };
+type CurrentStudent = { id: string; name: string };
 
 export const CurrentStudentContext = React.createContext<CurrentStudent | null>(
   null,
@@ -52,10 +52,10 @@ export function possessive(name: string): string {
 
 // ── Classifying a failed per-student read ────────────────────────────────────────────────
 
-export type GuardianReadFailure = "lapsed" | "revoked" | "error";
+type GuardianReadFailure = "lapsed" | "revoked" | "error";
 
 /** The server's answer, classified: 402 lapsed, 404 revoked, anything else an error. */
-export function classifyGuardianReadError(error: unknown): GuardianReadFailure {
+function classifyGuardianReadError(error: unknown): GuardianReadFailure {
   if (isApiError(error) && error.status === 402) return "lapsed";
   if (isApiError(error) && error.status === 404) return "revoked";
   return "error";

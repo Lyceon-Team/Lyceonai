@@ -2,15 +2,19 @@
 # ============================================================================
 # Guardian-mirror gates (Doc 01 guardian trust §35 / Doc 05B §5.3 / Parent §11.1) — HARD GATE
 # ============================================================================
-# Proves the ONE unified guardian gate guardian_can_view_student(student_id) = (linked AND entitled):
-#   AIRTIGHT LINK (the load-bearing security boundary): a guardian can read ONLY the students they are
-#     linked to via the server-side guardian_links record — a guardian reading an UNLINKED student
-#     (worst case: an unlinked minor) returns ZERO rows, by RLS, not by convention.
-#   ENTITLEMENT HALF: a linked-but-not-entitled student is also zero rows (grace-inclusive via
-#     entitlement_active()).
-#   VIEW-ONLY by construction: no guardian write policy + no write grant on any mirror surface.
-#   CARVE-OUTS: guardian sees mastery_level only (NOT mastery_score/acc_*); student_skill_kpi has no
-#     guardian policy.
+# Since 20261017000000 (G-NEW-15, SCL-196) the six mirror tables have RLS ON and NO read policy,
+# and since 20261019000000 (SCL-198) `authenticated` holds NO SELECT on them either: every read is
+# the service role's, and guardian visibility is decided in the route layer (`resolveSubject` ->
+# `guardian_view_decision`). This gate proves the database side of that:
+#   DENIAL: a direct `authenticated` read — a guardian linked to an entitled student, or the
+#     student themselves — is REFUSED (42501, no grant), not merely filtered. A guardian JWT cannot
+#     reach a linked student's KPI counters through PostgREST, around SCL-188's projection.
+#   ONE FORM OF THE GATE: the boolean guardian_can_view_student / _as functions are gone; nothing
+#     but guardian_view_decision decides guardian visibility.
+#   ENTITLEMENT ORACLE: authenticated cannot call entitlement_active directly.
+#   VIEW-ONLY by construction: no write policy + no write grant on any mirror surface.
+#   NO COLUMN GRANT: authenticated can read no column of student_domain_mastery (mastery_level
+#     included, since SCL-198); student_skill_kpi has no policy at all.
 set -euo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -68,50 +72,49 @@ INSERT INTO public.student_domain_mastery (student_id,section,domain,mastery_lev
   ('6e000000-0000-0000-0000-000000000033','M','Algebra',3,'x');
 SQL
 
-echo "==> AIRTIGHT LINK: as guardian G, visible domain-mastery rows = S1 only (S2 unlinked, S3 unentitled)"
-VIS=$(psql_db "$DB" -tAc "
-  SET test.guardian_uid = '6e000000-0000-0000-0000-000000000001';
-  SET ROLE authenticated;
-  SELECT count(*)::text
-       || '|' || coalesce(string_agg(distinct right(student_id::text,2), ',' ORDER BY right(student_id::text,2)), '')
-  FROM public.student_domain_mastery;" | tail -1)
-if [ "$VIS" = "1|11" ]; then echo "    OK guardian sees exactly 1 row, student S1 (…11) — unlinked S2 + unentitled S3 invisible"
-else echo "  FAIL: guardian visibility = $VIS (expected 1|11 — a guardian read an unlinked/unentitled student!)"; exit 1; fi
+# Presence before absence: the rows exist, so a refusal below is a denial, not an empty table.
+ROWS=$(psql_db "$DB" -tAc "SELECT count(*) FROM public.student_domain_mastery;" | tail -1)
+[ "$ROWS" = "3" ] || { echo "  FAIL: seed has $ROWS domain-mastery rows (expected 3) — a denial below would be vacuous"; exit 1; }
+echo "    OK the seed's 3 rows exist (read as the owner)"
 
-echo "==> a guardian linked to NOBODY sees zero rows"
-ZERO=$(psql_db "$DB" -tAc "
-  SET test.guardian_uid = '6e000000-0000-0000-0000-000000000099';
-  SET ROLE authenticated;
-  SELECT count(*) FROM public.student_domain_mastery;" | tail -1)
-[ "$ZERO" = "0" ] || { echo "  FAIL: an unlinked guardian saw $ZERO rows (expected 0)"; exit 1; }
-echo "    OK unlinked guardian sees 0 rows"
+# direct_read <uid> <table> — runs one SELECT as `authenticated` with that uid and prints
+# "refused" on SQLSTATE 42501 (permission denied), otherwise the row count it got.
+direct_read() {
+  local out
+  if out=$(psql -v ON_ERROR_STOP=1 -d "$DB" -tA -c "SET test.guardian_uid = '$1';" \
+        -c "SET ROLE authenticated;" -c "SELECT count(*) FROM public.$2;" 2>&1); then
+    echo "$out" | tail -1
+  else
+    case "$out" in *"permission denied for table $2"*) echo "refused" ;; *) echo "error: $out" ;; esac
+  fi
+}
+
+echo "==> DENIAL: a direct authenticated read of a mirror table is refused (no grant)"
+# S1 is linked to G AND entitled: the case the old guardian policy ALLOWED. Now it is refused.
+VIS="$(direct_read 6e000000-0000-0000-0000-000000000001 student_domain_mastery)|$(direct_read 6e000000-0000-0000-0000-000000000001 student_overall_kpi)|$(direct_read 6e000000-0000-0000-0000-000000000001 student_section_projections)"
+if [ "$VIS" = "refused|refused|refused" ]; then echo "    OK a guardian linked to an entitled student is refused a direct read (route layer only)"
+else echo "  FAIL: guardian direct reads = $VIS (expected refused|refused|refused — a guardian could read KPI/mastery rows around the route layer!)"; exit 1; fi
+
+echo "==> the student themselves is refused too (service role only)"
+SELF="$(direct_read 6e000000-0000-0000-0000-000000000011 student_domain_mastery)"
+[ "$SELF" = "refused" ] || { echo "  FAIL: a student's direct read = $SELF (expected refused — no grant since SCL-198)"; exit 1; }
+echo "    OK a student is refused a direct read of their own rows"
 
 echo "==> PR370-GUARDIAN-001 (two-sided): the entitlement oracle is reachable ONLY via the link gate"
 # (a) authenticated must NOT be able to call entitlement_active directly (no raw entitlement probe).
 if psql_db "$DB" -tAc "SET ROLE authenticated; SELECT public.entitlement_active('6e000000-0000-0000-0000-000000000011');" >/dev/null 2>&1; then
   echo "  FAIL: authenticated executed entitlement_active directly — entitlement-state oracle leak"; exit 1
 else echo "    OK (a) authenticated is denied direct EXECUTE on entitlement_active"; fi
-# (b) guardian_can_view_student must STILL work after the revoke — proven by the AIRTIGHT LINK test
-# above (it runs as authenticated and exercises guardian_can_view_student -> entitlement_active, which
-# resolves because guardian_can_view_student is SECURITY DEFINER and calls it as the owner). A revoke
-# that broke the guardian gate would have failed VIS above. Belt-and-suspenders: confirm the linked
-# guardian still resolves via the public (authenticated) gate fn directly.
-GCV=$(psql_db "$DB" -tAc "
-  SET test.guardian_uid = '6e000000-0000-0000-0000-000000000001';
-  SET ROLE authenticated;
-  SELECT public.guardian_can_view_student('6e000000-0000-0000-0000-000000000011')::text
-   || '|' || public.guardian_can_view_student('6e000000-0000-0000-0000-000000000022')::text;" | tail -1)
-if [ "$GCV" = "true|false" ]; then echo "    OK (b) guardian_can_view_student still resolves after the revoke (linked S1=true, unlinked S2=false)"
-else echo "  FAIL: guardian_can_view_student post-revoke = $GCV (expected true|false — revoke broke the gate)"; exit 1; fi
-
-echo "==> the same gate governs every mirror surface (one predicate, no parallel logic)"
-POLS=$(psql_db "$DB" -tAc "
-  SELECT count(*) FROM pg_policies
-  WHERE schemaname='public' AND qual LIKE '%guardian_can_view_student%'
-    AND tablename IN ('student_domain_mastery','student_section_kpi','student_domain_kpi',
-                      'student_overall_kpi','student_section_projections','student_section_projection_snapshots');")
-[ "$POLS" = "6" ] || { echo "  FAIL: $POLS/6 mirror policies consume guardian_can_view_student"; exit 1; }
-echo "    OK all 6 mirror policies consume the single guardian_can_view_student predicate"
+# (b) the boolean gate forms are gone: guardian_view_decision is the only form, service-role only.
+FORMS=$(psql_db "$DB" -tAc "
+  SELECT (to_regprocedure('public.guardian_can_view_student(uuid)') IS NULL)::text
+   || '|' || (to_regprocedure('public.guardian_can_view_student_as(uuid,uuid)') IS NULL)::text
+   || '|' || (SELECT count(*) FROM pg_policies WHERE schemaname='public'
+                AND tablename IN ('student_domain_mastery','student_section_kpi','student_domain_kpi',
+                                  'student_overall_kpi','student_section_projections','student_section_projection_snapshots')
+                AND cmd IN ('SELECT','ALL'))::text;" | tail -1)
+if [ "$FORMS" = "true|true|0" ]; then echo "    OK (b) no boolean gate form remains; no read policy on any of the six mirror tables"
+else echo "  FAIL: boolean forms gone / read policies = $FORMS (expected true|true|0)"; exit 1; fi
 
 echo "==> VIEW-ONLY by construction: no guardian/authenticated WRITE policy or grant on any mirror surface"
 WRITES=$(psql_db "$DB" -tAc "
@@ -127,13 +130,13 @@ WRITES=$(psql_db "$DB" -tAc "
 [ "$WRITES" = "0" ] || { echo "  FAIL: $WRITES guardian/authenticated write policy-or-grant on a mirror surface (must be 0 — view-only)"; exit 1; }
 echo "    OK zero write policies/grants — guardian is view-only at the row-security level"
 
-echo "==> CARVE-OUTS: mastery_level readable, mastery_score/acc_* NOT; student_skill_kpi has no guardian policy"
+echo "==> NO COLUMN GRANT: no column of student_domain_mastery is readable; student_skill_kpi has no policy"
 CARVE=$(psql_db "$DB" -tAc "
   SELECT has_column_privilege('authenticated','public.student_domain_mastery','mastery_level','SELECT')::text
    || '|' || has_column_privilege('authenticated','public.student_domain_mastery','mastery_score','SELECT')::text
    || '|' || has_column_privilege('authenticated','public.student_domain_mastery','acc_test','SELECT')::text
-   || '|' || (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='student_skill_kpi' AND qual LIKE '%guardian_can_view_student%')::text;")
-[ "$CARVE" = "true|false|false|0" ] || { echo "  FAIL: carve-out posture = $CARVE (expected true|false|false|0)"; exit 1; }
-echo "    OK mastery_level only; mastery_score/acc_* withheld; student_skill_kpi not a guardian mirror"
+   || '|' || (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='student_skill_kpi')::text;")
+[ "$CARVE" = "false|false|false|0" ] || { echo "  FAIL: column-grant posture = $CARVE (expected false|false|false|0)"; exit 1; }
+echo "    OK no column grant (mastery_level included, SCL-198); student_skill_kpi has no policy"
 
 echo "GUARDIAN-MIRROR GATES: PASS"

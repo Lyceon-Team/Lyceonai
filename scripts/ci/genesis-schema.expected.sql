@@ -7924,44 +7924,6 @@ $$;
 
 
 --
--- Name: guardian_can_view_student(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.guardian_can_view_student(p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT public.guardian_can_view_student_as(auth.uid(), p_student_id);
-$$;
-
-
---
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student(p_student_id uuid) IS 'RLS entry point for guardian visibility. Delegates to guardian_can_view_student_as with auth.uid() as the principal, so a caller may only ask about themselves as guardian. Body moved to guardian_view_decision 2026-08-27 so the application gate and the six RLS policies share ONE derivation.';
-
-
---
--- Name: guardian_can_view_student_as(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT public.guardian_view_decision(p_guardian_id, p_student_id) = 'allow';
-$$;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) IS 'Boolean form of guardian_view_decision with the principal passed explicitly, for application callers on the service-role connection where auth.uid() is NULL. Service-role only, for the same reason as guardian_view_decision.';
-
-
---
 -- Name: guardian_link_audit(text, uuid, uuid, jsonb, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8002,7 +7964,7 @@ $$;
 -- Name: FUNCTION guardian_view_decision(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) IS 'THE guardian-visibility derivation (Doc 01 V8 §35 + §38.1, Doc 05B §10.1/§10.3). Returns allow | not_linked | student_unentitled. Service-role only: the guardian id is an argument, so direct callers could otherwise probe arbitrary link pairs. guardian_can_view_student_as and guardian_can_view_student both delegate here.';
+COMMENT ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) IS 'THE guardian-visibility derivation (Doc 01 V8 §35 + §38.1, Doc 05B §10.1/§10.3), and its only form: the server''s subject resolver calls it on the service role. Returns allow | not_linked | student_unentitled. Service-role only: the guardian id is an argument, so direct callers could otherwise probe arbitrary link pairs. The boolean forms guardian_can_view_student / _as were dropped with the RLS policies that called them (20261017000000, SCL-196).';
 
 
 --
@@ -13857,7 +13819,6 @@ CREATE TABLE public.profiles (
     country_code text,
     stripe_customer_id text,
     guardian_email text,
-    consent_given_at timestamp with time zone,
     guardian_profile_id uuid,
     student_link_code text,
     student_link_code_issued_at timestamp with time zone,
@@ -19578,20 +19539,6 @@ CREATE POLICY profiles_select_self ON public.profiles FOR SELECT USING ((id = au
 ALTER TABLE public.projection_refresh_outbox ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_section_projection_snapshots projection_snapshots_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY projection_snapshots_guardian_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_projection_snapshots projection_snapshots_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY projection_snapshots_student_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: psi_occurred_at_backfill_log; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19862,38 +19809,10 @@ ALTER TABLE public.student_background ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_domain_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_domain_kpi student_domain_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_domain_kpi student_domain_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_kpi_student_read ON public.student_domain_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_domain_mastery; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_domain_mastery student_domain_mastery_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_domain_mastery student_domain_mastery_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_mastery_student_read ON public.student_domain_mastery FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
 
 --
 -- Name: student_dream_schools; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19914,20 +19833,6 @@ ALTER TABLE public.student_kpi_rollups_current ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_overall_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_overall_kpi student_overall_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_overall_kpi student_overall_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_overall_kpi_student_read ON public.student_overall_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_projection_refresh_state; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19938,20 +19843,6 @@ ALTER TABLE public.student_projection_refresh_state ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.student_section_kpi ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_section_kpi student_section_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_kpi student_section_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_kpi_student_read ON public.student_section_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
 
 --
 -- Name: student_section_projection_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19966,44 +19857,16 @@ ALTER TABLE public.student_section_projection_snapshots ENABLE ROW LEVEL SECURIT
 ALTER TABLE public.student_section_projections ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_section_projections student_section_projections_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_projections_guardian_read ON public.student_section_projections FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_projections student_section_projections_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_projections_student_read ON public.student_section_projections FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_skill_kpi; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_skill_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_skill_kpi student_skill_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_skill_kpi_student_read ON public.student_skill_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_skill_mastery; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_skill_mastery ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_skill_mastery student_skill_mastery_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_skill_mastery_student_read ON public.student_skill_mastery FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
 
 --
 -- Name: student_study_profile; Type: ROW SECURITY; Schema: public; Owner: -
@@ -20595,48 +20458,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_skill_mastery TO servi
 
 
 --
--- Name: COLUMN student_skill_mastery.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_skill_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_skill_mastery.section; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(section) ON TABLE public.student_skill_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_skill_mastery.domain; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(domain) ON TABLE public.student_skill_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_skill_mastery.skill; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(skill) ON TABLE public.student_skill_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_skill_mastery.mastery_level; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(mastery_level) ON TABLE public.student_skill_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_skill_mastery.computed_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(computed_at) ON TABLE public.student_skill_mastery TO authenticated;
-
-
---
 -- Name: FUNCTION apply_mastery_event(p_student_id uuid, p_section text, p_domain text, p_skill text, p_difficulty smallint, p_source_family text, p_event_source_kind text, p_correct boolean, p_occurred_at timestamp with time zone, p_event_id uuid, p_question_id text, p_section_state text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -20994,62 +20815,6 @@ GRANT ALL ON FUNCTION public.compute_scaled_score_from_counts(p_version text, p_
 --
 
 GRANT ALL ON TABLE public.student_section_projections TO service_role;
-
-
---
--- Name: COLUMN student_section_projections.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_section_projections TO authenticated;
-
-
---
--- Name: COLUMN student_section_projections.section; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(section) ON TABLE public.student_section_projections TO authenticated;
-
-
---
--- Name: COLUMN student_section_projections.projected_score_mid; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(projected_score_mid) ON TABLE public.student_section_projections TO authenticated;
-
-
---
--- Name: COLUMN student_section_projections.projected_score_low; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(projected_score_low) ON TABLE public.student_section_projections TO authenticated;
-
-
---
--- Name: COLUMN student_section_projections.projected_score_high; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(projected_score_high) ON TABLE public.student_section_projections TO authenticated;
-
-
---
--- Name: COLUMN student_section_projections.range_width; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(range_width) ON TABLE public.student_section_projections TO authenticated;
-
-
---
--- Name: COLUMN student_section_projections.relevant_question_count; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(relevant_question_count) ON TABLE public.student_section_projections TO authenticated;
-
-
---
--- Name: COLUMN student_section_projections.computed_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(computed_at) ON TABLE public.student_section_projections TO authenticated;
 
 
 --
@@ -21525,23 +21290,6 @@ GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_se
 
 
 --
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) TO service_role;
-
-
---
 -- Name: FUNCTION guardian_link_audit(p_action text, p_actor uuid, p_target uuid, p_changes jsonb, p_link_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21861,76 +21609,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_domain_kpi TO service_
 
 
 --
--- Name: COLUMN student_domain_kpi.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.section; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(section) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.domain; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(domain) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.events_total; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_total) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.events_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_7d) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.events_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_30d) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.accuracy_overall; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_overall) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.accuracy_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_7d) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.accuracy_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_30d) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_domain_kpi.last_active_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(last_active_at) ON TABLE public.student_domain_kpi TO authenticated;
-
-
---
 -- Name: FUNCTION refresh_domain_kpi(p_student_id uuid, p_section text, p_domain text, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21943,41 +21621,6 @@ GRANT ALL ON FUNCTION public.refresh_domain_kpi(p_student_id uuid, p_section tex
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_domain_mastery TO service_role;
-
-
---
--- Name: COLUMN student_domain_mastery.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_domain_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_domain_mastery.section; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(section) ON TABLE public.student_domain_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_domain_mastery.domain; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(domain) ON TABLE public.student_domain_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_domain_mastery.mastery_level; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(mastery_level) ON TABLE public.student_domain_mastery TO authenticated;
-
-
---
--- Name: COLUMN student_domain_mastery.computed_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(computed_at) ON TABLE public.student_domain_mastery TO authenticated;
 
 
 --
@@ -21996,83 +21639,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_overall_kpi TO service
 
 
 --
--- Name: COLUMN student_overall_kpi.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.events_total; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_total) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.events_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_7d) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.events_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_30d) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.accuracy_overall; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_overall) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.accuracy_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_7d) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.accuracy_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_30d) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.sections_active; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(sections_active) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.current_streak_days; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(current_streak_days) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.longest_streak_days; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(longest_streak_days) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_overall_kpi.last_active_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(last_active_at) ON TABLE public.student_overall_kpi TO authenticated;
-
-
---
 -- Name: FUNCTION refresh_overall_kpi(p_student_id uuid, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -22085,76 +21651,6 @@ GRANT ALL ON FUNCTION public.refresh_overall_kpi(p_student_id uuid, p_t_now time
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_section_kpi TO service_role;
-
-
---
--- Name: COLUMN student_section_kpi.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.section; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(section) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.events_total; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_total) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.events_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_7d) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.events_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_30d) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.accuracy_overall; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_overall) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.accuracy_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_7d) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.accuracy_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_30d) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.current_streak_days; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(current_streak_days) ON TABLE public.student_section_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_section_kpi.last_active_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(last_active_at) ON TABLE public.student_section_kpi TO authenticated;
 
 
 --
@@ -24085,69 +23581,6 @@ GRANT ALL ON TABLE public.student_section_projection_snapshots TO service_role;
 
 
 --
--- Name: COLUMN student_section_projection_snapshots.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.section; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(section) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.projected_score_mid; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(projected_score_mid) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.projected_score_low; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(projected_score_low) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.projected_score_high; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(projected_score_high) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.range_width; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(range_width) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.relevant_question_count; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(relevant_question_count) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.snapshot_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(snapshot_at) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
--- Name: COLUMN student_section_projection_snapshots.snapshot_kind; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(snapshot_kind) ON TABLE public.student_section_projection_snapshots TO authenticated;
-
-
---
 -- Name: TABLE student_diagnostic_states; Type: ACL; Schema: public; Owner: -
 --
 
@@ -24194,83 +23627,6 @@ GRANT ALL ON SEQUENCE public.student_section_projection_snapshots_snapshot_id_se
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_skill_kpi TO service_role;
-
-
---
--- Name: COLUMN student_skill_kpi.student_id; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(student_id) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.section; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(section) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.domain; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(domain) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.skill; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(skill) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.events_total; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_total) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.events_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_7d) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.events_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(events_last_30d) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.accuracy_overall; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_overall) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.accuracy_last_7d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_7d) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.accuracy_last_30d; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(accuracy_last_30d) ON TABLE public.student_skill_kpi TO authenticated;
-
-
---
--- Name: COLUMN student_skill_kpi.last_active_at; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT(last_active_at) ON TABLE public.student_skill_kpi TO authenticated;
 
 
 --

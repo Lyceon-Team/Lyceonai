@@ -44,7 +44,7 @@ export type { LinkedStudent };
  */
 export const GUARDIAN_STUDENTS_QUERY_KEY = ['guardian-students'] as const;
 
-export function guardianStudentsQueryKey(guardianId: string | null) {
+function guardianStudentsQueryKey(guardianId: string | null) {
   return [...GUARDIAN_STUDENTS_QUERY_KEY, guardianId] as const;
 }
 
@@ -90,7 +90,7 @@ export function useGuardianStudents(options?: { enabled?: boolean }) {
  * WHICH KEYS. Any query whose key names the student: the id as a key part (the dashboard
  * summary, exam and calendar keys) or a `/students/<id>/` URL inside one (the mastery key).
  */
-export function queryKeyNamesStudent(key: QueryKey, studentId: string): boolean {
+function queryKeyNamesStudent(key: QueryKey, studentId: string): boolean {
   return key.some(
     (part) =>
       part === studentId ||

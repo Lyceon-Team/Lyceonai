@@ -65,7 +65,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       return;
     }
 
-    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+    const access = await resolvePaidKpiAccessForUser(user.id);
 
     // Read the frozen diagnostic baseline (null if no diagnostic completed yet).
     const baseline = await readDiagnosticBaseline(user.id);
@@ -388,7 +388,7 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
       return;
     }
 
-    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+    const access = await resolvePaidKpiAccessForUser(user.id);
 
     // FAIL-CLOSED (Doc-05C §7.4) — now via the SHARED resolver in services/kpi-access.
     // The guardian route calls the same function with the linked student's id; the subject

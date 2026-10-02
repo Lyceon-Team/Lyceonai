@@ -26,7 +26,7 @@ import { z } from "zod";
  * closed rather than passing an unrecognised string to a caller that will treat
  * anything non-'allow' as a denial — which is the safe direction, but silently.
  */
-export const GUARDIAN_VIEW_DECISIONS = [
+const GUARDIAN_VIEW_DECISIONS = [
   "allow",
   "not_linked",
   "student_unentitled",
@@ -36,13 +36,13 @@ export const guardianViewDecisionSchema = z.enum(GUARDIAN_VIEW_DECISIONS);
 export type GuardianViewDecision = z.infer<typeof guardianViewDecisionSchema>;
 
 /**
- * How the principal reached the subject. Present for the audit record, NOT for
- * behaviour: no handler below the resolver branches on it, and the chokepoint
- * gate enforces that no handler can even see the caller's role.
+ * How the principal reached the subject: for the audit record, and for the few handlers a
+ * ruling makes differ by caller (the KPI routes' guardian projection, SCL-188; the exam
+ * report's guardian shape, SCL-189; the student-only link routes). The chokepoint gate
+ * enforces that no handler can see the caller's role itself — only this resolver answer.
  */
-export const SUBJECT_VIA = ["self", "guardian"] as const;
-export const subjectViaSchema = z.enum(SUBJECT_VIA);
-export type SubjectVia = z.infer<typeof subjectViaSchema>;
+const SUBJECT_VIA = ["self", "guardian"] as const;
+const subjectViaSchema = z.enum(SUBJECT_VIA);
 
 /**
  * The ONLY thing a subject-scoped handler reads to know whose data it is serving.
