@@ -42,6 +42,7 @@ import {
 } from "@/features/exam/api/exam-api";
 import { examKeys } from "@/features/exam/api/keys";
 import { GuardianReportBody } from "@/features/exam/pages/GuardianExamResultsPage";
+import { GuardianScoreStrip } from "./GuardianScoreStrip";
 import { GuardianStudentLayout } from "./GuardianStudentLayout";
 import {
   GuardianLoadingState,
@@ -127,6 +128,9 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
       : Math.max(0, daysBetween(today, data.target_exam_date));
   return (
     <div className="flex flex-col gap-4" data-testid="dashboard-header">
+      {/* G5-01 (R13): the score strip, from this same week's read — one calendar request, one
+          widget, one error state. */}
+      <GuardianScoreStrip data={data} studentName={name} today={today} />
       {/* The calendar header's own readouts (`.lyceon-calendar` scopes their styles), laid out
           as one strip: the calendar places them in its top-bar slots, the Dashboard in a row. */}
       <div className="lyceon-calendar rounded-2xl border border-border px-5 py-4 [&_.header-facts]:flex [&_.header-facts]:flex-wrap [&_.header-facts]:items-baseline [&_.header-facts]:justify-center [&_.header-facts]:gap-x-10 [&_.header-facts]:gap-y-2 sm:[&_.header-facts]:justify-start">
