@@ -101,7 +101,7 @@ body{margin:0;background:#FFFAEF}
 <sc-for list="{{faqs}}" as="f" hint-placeholder-count="7">
 <div style="border-bottom: 1px solid var(--rule)">
 <h3 style="margin: 0">
-<button type="button" onClick="{{f.toggle}}" aria-expanded="{{f.expanded}}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 4px; border: 0; background: transparent; color: var(--ink-strong); font-size: 19px; font-weight: 600; text-align: left; cursor: pointer; font-family: inherit">
+<button type="button" onClick="{{f.toggle()}}" aria-expanded="{{f.expanded}}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 4px; border: 0; background: transparent; color: var(--ink-strong); font-size: 19px; font-weight: 600; text-align: left; cursor: pointer; font-family: inherit">
 <span>{{f.q}}</span>
 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="flex-shrink: 0; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; {{f.chevron}}"><path d="M6 9l6 6 6-6"></path></svg>
 </button>
