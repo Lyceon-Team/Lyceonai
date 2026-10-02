@@ -63,6 +63,20 @@ function headersFor(
   return out;
 }
 
+/**
+ * Each source beyond 'self', with the flow that needs it (observed with
+ * tests/e2e/page-csp-flows.spec.ts against the built bundle, 2026-10-02):
+ *   - script-src theme hash: every page (the theme boot in client/index.html, F-58).
+ *   - script-src https://www.desmos.com: practice, review and exam Math runners (calculator.js).
+ *   - style-src 'unsafe-inline': every page (React style attributes, Radix positioning).
+ *   - style-src / font-src Google Fonts: every page (Poppins and Inter, client/index.html).
+ *   - font-src data:: review and LISA (KaTeX inlines a small font in MathRenderer's CSS).
+ *   - img-src data:: inline SVG/data images in the bundle.
+ *   - worker-src blob:: the Desmos calculator starts its worker from a blob URL.
+ * Not needed, and so absent: Supabase (Google sign-in is a top-level navigation to its
+ * authorize URL, which CSP does not govern; no browser fetch reaches Supabase), Stripe (Checkout
+ * and the portal are navigations; no Stripe.js), Vercel Analytics (same-origin /_vercel/insights).
+ */
 const PAGE_CSP = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -70,9 +84,10 @@ const PAGE_CSP = [
   "form-action 'self'",
   `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data:",
   "connect-src 'self'",
+  "worker-src 'self' blob:",
 ].join("; ");
 
 const EXPECTED: Record<string, string> = {
