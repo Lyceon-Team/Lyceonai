@@ -55,6 +55,8 @@ const MIXED = "6b000000-0000-4000-8000-000000000003";
 const MIXED_STORED_EMAIL = "Mixed.Case@Example.Test";
 const NEW_PASSWORD = "BrandNewPassword123";
 const REQUEST_ID = "req-f46";
+/** The response floor under test (SCL-197); production's is 2 s. */
+const TEST_FLOOR_MS = 300;
 
 /** An unsigned JWT: supabase-js only decodes it (for `exp`); GoTrue is the stand-in below. */
 function jwt(sub: string, tag: string): string {
@@ -249,6 +251,9 @@ async function loadApp(): Promise<express.Express> {
   process.env.SUPABASE_URL = GOTRUE;
   process.env.SUPABASE_ANON_KEY = "anon-key";
   process.env.PUBLIC_SITE_URL = "https://app.lyceon.test";
+  // SCL-197's floor, shortened so the suite stays fast; never removed.
+  const credentials = await import("../../server/lib/password-credentials");
+  credentials.setPasswordResetResponseFloorForTests(TEST_FLOOR_MS);
   const { default: authRoutes } =
     await import("../../server/routes/supabase-auth-routes");
   const app = express();
@@ -450,6 +455,12 @@ describe.skipIf(!PG_AVAILABLE)(
         .post("/api/auth/reset-password")
         .send({ email: STUDENT_EMAIL });
 
+      // The known and unknown addresses reach the provider; the throttled one does not.
+      expect(gotrue.recoverEmails).toEqual([
+        STUDENT_EMAIL,
+        "nobody-here@example.test",
+      ]);
+
       expect(known.body.success).toBe(true);
       for (const res of [unknown, throttled]) {
         expect(res.status).toBe(known.status);
@@ -461,6 +472,31 @@ describe.skipIf(!PG_AVAILABLE)(
         `SELECT count(*)::int AS n FROM public.rate_limit_ledger`,
       );
       expect(rows.rows[0].n).toBe(1);
+    });
+
+    it("allowed, unknown and throttled requests all take at least the response floor (SCL-197)", async () => {
+      const app = await loadApp();
+      const timed = async (email: string) => {
+        const t0 = Date.now();
+        const res = await request(app)
+          .post("/api/auth/reset-password")
+          .send({ email });
+        return { res, ms: Date.now() - t0 };
+      };
+      const allowed = await timed(STUDENT_EMAIL);
+      const unknown = await timed("nobody-here@example.test");
+      await pg.query(
+        `UPDATE public.rate_limit_ledger SET used_count = limit_count WHERE profile_id = $1`,
+        [STUDENT],
+      );
+      const throttled = await timed(STUDENT_EMAIL);
+
+      // Presence first: the throttled request really was suppressed (no third provider call).
+      expect(gotrue.recoverEmails).toHaveLength(2);
+      for (const { res, ms } of [allowed, unknown, throttled]) {
+        expect(res.status).toBe(200);
+        expect(ms).toBeGreaterThanOrEqual(TEST_FLOOR_MS - 5);
+      }
     });
 
     it("an unreadable ledger sends nothing and answers the same (fail closed)", async () => {

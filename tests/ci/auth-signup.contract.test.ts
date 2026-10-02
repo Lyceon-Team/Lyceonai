@@ -102,6 +102,7 @@ vi.mock("../../server/lib/password-credentials.js", () => ({
   // within-limit case and a no-op, so this harness keeps testing what it always tested.
   decidePasswordResetSend: vi.fn(async () => "send"),
   revokeOtherSessionsAfterRecovery: vi.fn(async () => undefined),
+  holdPasswordResetResponse: vi.fn(async () => undefined),
 }));
 
 vi.mock("@supabase/supabase-js", () => ({

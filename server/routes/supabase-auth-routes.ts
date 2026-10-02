@@ -22,6 +22,7 @@ import {
   consumePasswordRecovery,
   decidePasswordResetSend,
   hasLivePasswordRecovery,
+  holdPasswordResetResponse,
   hasPasswordIdentity,
   revokeOtherSessionsAfterRecovery,
 } from "../lib/password-credentials.js";
@@ -491,7 +492,9 @@ router.post(
       // verifyOtp(type=recovery) at /auth/callback, establishes the SSR session, then routes to the
       // safe-listed /update-password page. No admin.generateLink, no app-built email/template.
       // F-46: the per-account ledger decides whether to mail. Every branch below ends in the same
-      // generic 200, so neither the limit nor an unknown address is visible to the caller.
+      // generic 200, held to the same minimum duration, so neither the limit nor an unknown address
+      // is visible to the caller in the body or in the time it takes (SCL-197).
+      const startedAt = Date.now();
       const decision = await decidePasswordResetSend(email, req.requestId);
       if (decision === "send") {
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -511,6 +514,7 @@ router.post(
         }
       }
 
+      await holdPasswordResetResponse(startedAt);
       res.json({
         success: true,
         message:
@@ -711,16 +715,27 @@ router.post(
         return res.status(500).json({ error: "Failed to update password" });
       }
 
-      logger.info("AUTH", "change_password_ok", "Password changed from Settings", {
-        requestId: req.requestId,
+      logger.info(
+        "AUTH",
+        "change_password_ok",
+        "Password changed from Settings",
+        {
+          requestId: req.requestId,
+        },
+      );
+      return res.json({
+        success: true,
+        message: "Password updated successfully",
       });
-      return res.json({ success: true, message: "Password updated successfully" });
     } catch (error: unknown) {
       logger.error(
         "AUTH",
         "change_password_exception",
         "Failed to change password",
-        { requestId: req.requestId, reason: error instanceof Error ? error.message : "unknown" },
+        {
+          requestId: req.requestId,
+          reason: error instanceof Error ? error.message : "unknown",
+        },
       );
       return res.status(500).json({ error: "Failed to update password" });
     }

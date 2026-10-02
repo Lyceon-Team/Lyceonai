@@ -215,8 +215,9 @@ export type PasswordResetDecision = "send" | "suppress";
  * plain English: may this reset request send an email? The address is matched to its account
  * (`password_reset_subject`, case- and space-folded), and the request is counted against that
  * account's `password_reset_requests_hourly` bucket, so the limit holds across requests,
- * browsers and IPs. The caller answers every outcome with the same generic response, so nothing
- * here can tell a caller whether an address has an account.
+ * browsers and IPs. The caller answers every outcome with the same generic response, and holds it
+ * to the same minimum duration (`holdPasswordResetResponse`), so neither the body nor the time it
+ * takes tells a caller whether an address has an account.
  *
  * Outcomes:
  *   - an address with no account: `send`. Supabase mails nothing to an unknown address, and the
@@ -270,6 +271,38 @@ export async function decidePasswordResetSend(
     );
     return "suppress";
   }
+}
+
+/**
+ * @spec [Doc 01 §12.1 step 2; AS3-AS5-RESET-ENUM-001; SCL-197 (PROPOSED)] | @implemented [2026-10-02]
+ *
+ * plain English: every reset response, sent or suppressed, known address or not, is held until at
+ * least this long after the request began. Only a request that sends reaches the provider, so
+ * without the floor a suppressed (over-limit) request would answer measurably faster, and that
+ * speed would say "this address has an account". The floor is set above the provider's usual
+ * round trip, so all three outcomes leave at the same time in the common case.
+ *
+ * Trade-offs, stated: a provider call slower than the floor still finishes later than a suppressed
+ * request, so this narrows the timing channel rather than closing it; and every reset request costs
+ * the requester about two seconds, which a "check your email" flow absorbs. The residual is recorded
+ * for the owner in SCL-197. Edge case: the floor is measured from the handler's start, so it never
+ * adds to a request that already took longer.
+ */
+export const PASSWORD_RESET_RESPONSE_FLOOR_MS = 2_000;
+
+let responseFloorOverrideMs: number | null = null;
+
+/** Tests shorten the floor; they never remove it. */
+export function setPasswordResetResponseFloorForTests(ms: number | null): void {
+  responseFloorOverrideMs = ms;
+}
+
+export async function holdPasswordResetResponse(
+  startedAtMs: number,
+): Promise<void> {
+  const floor = responseFloorOverrideMs ?? PASSWORD_RESET_RESPONSE_FLOOR_MS;
+  const wait = startedAtMs + floor - Date.now();
+  if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
 }
 
 /**
