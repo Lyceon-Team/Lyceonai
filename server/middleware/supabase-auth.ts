@@ -974,6 +974,14 @@ export function requireProfileComplete(
  *   Under-13 students are blocked even with guardian consent — spec is explicit, no exception.
  *   Students with unknown age state are blocked until DOB is confirmed.
  */
+/**
+ * The tutor's age test, on its own so the feature-access map (OQ-29) asks the exact question
+ * `requireStudentOnly` asks. Fail-closed: only an explicit `false` passes.
+ */
+export function passesTutorAgeGate(user: Pick<SupabaseUser, "is_under_13">): boolean {
+  return user.is_under_13 === false;
+}
+
 export function requireStudentOnly(
   req: Request,
   res: Response,
@@ -1008,7 +1016,7 @@ export function requireStudentOnly(
   // Doc 03B §3.2.1: age_below_minimum → 403, code age_restriction.
   // Fail-closed: absent/undefined/unrecognized is_under_13 is denied.
   // Only explicit `false` (age confirmed ≥ 13) passes.
-  if (req.user.is_under_13 !== false) {
+  if (!passesTutorAgeGate(req.user)) {
     logger.warn(
       "AUTH",
       "age_restriction",
