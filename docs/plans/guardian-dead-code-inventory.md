@@ -70,7 +70,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | F3 | F | `profiles.consent_given_at` | DROP (same migration) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
 | F4 | F | `guardian_view_decision`, `guardian_link_audit`, `revoke_guardian_link_audited`, `create_active_guardian_link_audited` | KEEP | KEEP |
 | F5 | F | `profiles.guardian_profile_id` (+ `idx_profiles_guardian_profile`, its FK) and `profiles.guardian_email` | HANDED OFF (cleanup, with G-NEW-08) | HANDED OFF |
-| F6 | F | `student_skill_mastery_student_read`, `student_skill_kpi_student_read` | HANDED OFF (cleanup) | HANDED OFF |
+| F6 | F | `student_skill_mastery_student_read`, `student_skill_kpi_student_read` | HANDED OFF (cleanup); taken back by the owner brief 2026-10-02 | DROPPED (final-purge item 2, migration 20261019000000, SCL-198; owner applies) |
 | F7 | F | `consent_runtime_config` (+ `_history`) | KEEP (spec-named) | KEEP |
 | H1 | H | `docs/guardian/GUARDIAN_SOURCE_OF_TRUTH.md`, `GUARDIAN_RUNTIME_CONTRACT.md` — deleted paths, functions and audit events | EDIT | EDITED (`f0c468c`) |
 | H2 | H | `docs/entitlements-map.md`, `docs/route-registry.md` — `POST /api/guardian/link`, `guardian-dashboard.tsx`, `SubscriptionPaywall.tsx`, `guardian-entitlement.ts` | EDIT | EDITED (`f0c468c`) |
