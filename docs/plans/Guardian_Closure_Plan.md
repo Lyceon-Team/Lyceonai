@@ -179,7 +179,7 @@ G-AUD-18, 25, 28, 29 (note only), 30, 31.
 
 Outcome (guardian closeout PR, 2026-10-01; inventory `docs/plans/guardian-dead-code-inventory.md`):
 - **G-AUD-28** (stale comments): DONE. Category H, part 1 (`e1f2e4d`) and part 2 (`f0c468c`), plus D5 and E7.
-- **G-AUD-30** (configured but never called): `navigation.tsx` was already gone. `getSupabaseAnon` is DELETED, both definitions and the anon proxy only it read (`ee27f61`). `requireRequestAuthContext` is HANDED OFF to cleanup (owner, 2026-10-01): its only users are the auth vertical's tests.
+- **G-AUD-30** (configured but never called): `navigation.tsx` was already gone. `getSupabaseAnon` is DELETED, both definitions and the anon proxy only it read (`ee27f61`). `requireRequestAuthContext` was HANDED OFF to cleanup (owner, 2026-10-01) and taken back by the owner brief 2026-10-02: DELETED in the final-purge PR (item 4), with the one auth-surface test case and the `securityTestUtils` mock entry that existed only for it.
 - **G-AUD-29**: note only, no work.
 - **G-AUD-31**: cosmetic, no work (§8.1 order is complied with).
 - **G-AUD-18** (roster re-read after a revoke ignores `{error}`) and **G-AUD-25** (no Zod parse of `:studentId` on revoke; NULL `request_id` on the revoke audit row): HANDED OFF to cleanup. They are small behaviour fixes, not dead code, and stay out of a purge PR. See "Handed off".
@@ -207,7 +207,7 @@ Rows this vertical routed out. They do not block COMPLETE; each is owned elsewhe
 | G-NEW-17 | One logo on both shells | cleanup | OPEN — routed to cleanup |
 | G-AUD-18 | After a revoke, the roster re-read ignores `{error}` and can answer 200 with an empty list | cleanup | OPEN (LOW) |
 | G-AUD-25 | `DELETE /api/guardian/link/:studentId` has no Zod parse of `:studentId` (500 not 400); the revoke audit row's `request_id` is NULL | cleanup | OPEN (LOW) |
-| G-AUD-30 (part) | `requireRequestAuthContext`: no production caller; only the auth vertical's tests use it | cleanup (auth) | OPEN |
+| G-AUD-30 (part) | `requireRequestAuthContext`: no production caller; only the auth vertical's tests use it | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 4: deleted with its test case and mock entry |
 | inventory B4 | `resolvePaidKpiAccessForUser`'s guardian fall-through is unreachable (its callers sit behind `requireStudentOrAdmin`); removing it narrows the live student KPI route's call sites | cleanup | OPEN |
 | inventory B8 | `/api/profile` consent remnants: PATCH accepts and writes `guardianEmail`, responses echo `guardianEmail` / `guardianConsent` / `studentLinkCode`. No client reads them | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 3: removed from GET and PATCH (and the unread `student_link_code` twin); PATCH strips `guardianEmail`, never writes it. The `guardian_email` column stays (F5) |
 | inventory F5 | `profiles.guardian_email`, `profiles.guardian_profile_id` (+ index, FK): no app reader, but the deletion functions reference them | cleanup (with G-NEW-08) | OPEN |
