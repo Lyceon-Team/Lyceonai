@@ -46,6 +46,11 @@ import {
   resolveFullEnvelope,
   sessionTablesFor,
 } from "../services/tutor-context";
+import {
+  correctAnswerForDisplay,
+  displayOrderFor,
+} from "../services/tutor-display-letters";
+import { normalizeAnswerKey } from "../../shared/question-bank-contract";
 // isPreSubmitForSurface: still needed to resolve pre-submit state before
 // calling the serializer. TUTOR_ANTI_LEAK_SUBSTITUTION no longer imported
 // here — it lives inside the serializer.
@@ -453,6 +458,8 @@ type CorrectAnswerResult = {
 
 async function getCorrectAnswerForScope(
   questionRowId: string | null,
+  surface: string | null | undefined,
+  sessionItemId: string | null | undefined,
 ): Promise<CorrectAnswerResult> {
   if (!questionRowId) return { value: null, failed: false };
 
@@ -472,10 +479,58 @@ async function getCorrectAnswerForScope(
     return { value: null, failed: true };
   }
 
-  return {
-    value: (data.correct_answer as string | null) ?? null,
-    failed: false,
-  };
+  const canonical = (data.correct_answer as string | null) ?? null;
+  if (canonical === null) {
+    return { value: null, failed: false };
+  }
+  if (!sessionItemId) {
+    // No item, so no displayed order. A grid-in value has no letter and passes through; an MCQ
+    // key would reach the scan and the worker as a canonical letter, so it fails closed.
+    if (normalizeAnswerKey(canonical) === null) {
+      return { value: canonical, failed: false };
+    }
+    logger.warn(
+      "TUTOR_RUNTIME",
+      "display_letter_unresolved",
+      "MCQ correct answer has no session item to letter it by; signaling resolution failure",
+      { questionRowId },
+    );
+    return { value: null, failed: true };
+  }
+
+  // Display letter, not the canonical key (Brief 13 Step 0b ruling 2, owner 2026-10-02). The
+  // same value feeds the worker post-submit and the BFF leak scan always, so both look for the
+  // letter the student sees. Read from the item that scoped this turn, through the same
+  // `displayOrderFor` that relabels LISA's choices. Any failure here fails closed: a
+  // pre-submit turn whose answer cannot be resolved is blocked (LISA-FULL-007).
+  const { data: item, error: itemError } = await supabaseServer
+    .from(sessionTablesFor(surface).items)
+    .select("question_options, option_order")
+    .eq("id", sessionItemId)
+    .maybeSingle();
+  if (itemError || !item) {
+    logger.warn(
+      "TUTOR_RUNTIME",
+      "display_order_lookup_failed",
+      "Could not resolve the item's displayed option order; signaling resolution failure",
+      { sessionItemId },
+    );
+    return { value: null, failed: true };
+  }
+  const value = correctAnswerForDisplay(
+    canonical,
+    displayOrderFor(item.question_options, item.option_order),
+  );
+  if (value === null) {
+    logger.warn(
+      "TUTOR_RUNTIME",
+      "display_letter_unresolved",
+      "Correct answer has no display letter for this item; signaling resolution failure",
+      { sessionItemId },
+    );
+    return { value: null, failed: true };
+  }
+  return { value, failed: false };
 }
 
 // ── Turn-level idempotency (Doc-03B_V4.1 §14.3, §14.4) ─────────────────
@@ -985,7 +1040,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           supabaseServer,
         );
         const replayCorrectAnswer = replayPreSubmit
-          ? await getCorrectAnswerForScope(conversation.source_question_row_id)
+          ? await getCorrectAnswerForScope(
+              conversation.source_question_row_id,
+              conversation.source_surface,
+              conversation.source_session_item_id,
+            )
           : ({ value: null, failed: false } as CorrectAnswerResult);
         const replayStudentMessages = await loadStudentMessagesForConversation(
           conversation.id,
@@ -1592,7 +1651,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     //   correct_answer: isPostSubmit ? correctAnswer : null
     // @spec [Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3]
     const correctAnswerResult = effectiveScope.source_question_row_id
-      ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
+      ? await getCorrectAnswerForScope(
+          effectiveScope.source_question_row_id,
+          conversation.source_surface,
+          effectiveScope.source_session_item_id,
+        )
       : ({ value: null, failed: false } as CorrectAnswerResult);
 
     // Build context envelope (Doc 03A §5.4). Anti-leak: correct_answer is
@@ -2135,6 +2198,8 @@ router.get(
         if (replayCorrectAnswerResult === null) {
           replayCorrectAnswerResult = await getCorrectAnswerForScope(
             conversation.source_question_row_id,
+            conversation.source_surface,
+            row.source_session_item_id ?? conversation.source_session_item_id,
           );
         }
         const rowScanContext: OutputScanContext = {
