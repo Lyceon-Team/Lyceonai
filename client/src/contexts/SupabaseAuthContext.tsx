@@ -197,7 +197,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       display_name: backendUser.display_name,
       role: backendUser.role,
       is_under_13: backendUser.is_under_13,
-      student_link_code: backendUser.student_link_code,
       // Map additional onboarding status flags
       profile_completed_at: backendUser.profileCompletedAt,
       requiredProfileComplete: backendUser.requiredProfileComplete,

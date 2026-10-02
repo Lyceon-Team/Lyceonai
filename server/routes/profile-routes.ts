@@ -137,7 +137,8 @@ const profileCompletionSchema = z.object({
   // F-41: a real calendar date, through the shared schema (Brief 8 ruling 6). Not-in-the-future
   // and plausibility need today's date, so `dateOfBirthRefusal` applies them below.
   dateOfBirth: dateOfBirthSchema.optional().nullable(),
-  guardianEmail: z.string().email().optional().nullable(),
+  // Guardian final purge, item 3 (owner brief 2026-10-02): `guardianEmail` is gone. It only ever
+  // addressed the removed consent email (G2-05); an unknown key is stripped here, never written.
   marketingOptIn: z.boolean().optional().default(false),
 });
 
@@ -161,7 +162,7 @@ router.get("/", async (req: Request, res: Response) => {
     const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, email, display_name, role, is_under_13, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
+        "id, email, display_name, role, is_under_13, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
       )
       .eq("id", user.id)
       .single();
@@ -253,11 +254,8 @@ router.get("/", async (req: Request, res: Response) => {
         isAdmin: user.isAdmin,
         isGuardian: user.isGuardian,
         is_under_13: profileRow.is_under_13,
-        guardianEmail: profileRow.guardian_email,
         dateOfBirth: profileRow.date_of_birth,
         marketingOptIn: profileRow.marketing_opt_in,
-        studentLinkCode: profileRow.student_link_code,
-        student_link_code: profileRow.student_link_code,
         profileCompletedAt: profileRow.profile_completed_at ?? null,
         requiredProfileComplete,
         guardianConsentRequired,
@@ -309,7 +307,7 @@ router.patch("/", async (req: Request, res: Response) => {
       await supabase
         .from("profiles")
         .select(
-          "id, role, profile_completed_at, guardian_email, date_of_birth",
+          "id, role, profile_completed_at, date_of_birth",
         )
         .eq("id", userId)
         .single();
@@ -455,9 +453,6 @@ router.patch("/", async (req: Request, res: Response) => {
       data.role === "student" && effectiveDateOfBirth
         ? calculateAge(effectiveDateOfBirth) < 13
         : false;
-    const guardianEmail =
-      data.guardianEmail ?? existingProfile.guardian_email ?? null;
-
     // G2-05 (R6): the email-consent flow is gone. It wrote `guardian_consent_requests` rows (on a
     // column the table never had, so every under-13 completion failed with 500), emailed a link
     // to a page that does not exist, and withheld `profile_completed_at` from under-13 students.
@@ -473,7 +468,6 @@ router.patch("/", async (req: Request, res: Response) => {
         // G2-03: a locked date of birth is not written at all, and `is_under_13` is never
         // written — the age trigger derives it from the date of birth.
         ...(dateOfBirthLocked ? {} : { date_of_birth: effectiveDateOfBirth }),
-        guardian_email: guardianEmail,
         marketing_opt_in: data.marketingOptIn,
         profile_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -507,12 +501,9 @@ router.patch("/", async (req: Request, res: Response) => {
         email: profile.email,
         displayName: profile.display_name,
         dateOfBirth: profile.date_of_birth,
-        guardianEmail: profile.guardian_email,
         isUnder13: profile.is_under_13,
-        guardianConsent: guardianConnected,
         marketingOptIn: profile.marketing_opt_in,
         profileCompletedAt: profile.profile_completed_at,
-        studentLinkCode: profile.student_link_code,
         role: profile.role,
       },
       guardianConsentRequired,

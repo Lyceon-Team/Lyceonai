@@ -57,11 +57,8 @@ export type ProfileHydrationUser = {
   isAdmin: boolean;
   isGuardian: boolean;
   is_under_13: boolean;
-  guardianEmail: string | null;
   dateOfBirth: string | null;
   marketingOptIn: boolean | null;
-  studentLinkCode: string | null;
-  student_link_code: string | null;
   profileCompletedAt: string | null;
   requiredProfileComplete: boolean;
   guardianConsentRequired: boolean;
