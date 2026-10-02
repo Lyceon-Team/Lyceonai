@@ -25,7 +25,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | A4.StudentGuardiansPanel.tsx | A | `client/src/components/student/StudentGuardiansPanel.tsx` — `export` keyword on `STUDENT_GUARDIAN_LINKS_QUERY_KEY`, `studentGuardianLinksQueryKey` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
 | A4.test-harness.tsx | A | `client/src/features/guardian/test-harness.tsx` — `export` keyword on types `Roster`, `Handler` | DELETE `export` (types stay) | DELETED (`a868b08`) |
 | A5 | A | `client/src/features/guardian/guardian-surface.css` — floor entries `.text-\[11px\]`, `.text-\[14px\]` | DELETE the two entries | DELETED (`a868b08`) |
-| A6 | A | `guardian-type-floor.generated.css` selectors `.stat`, `.chip-mode button`, `.toast`, `.daymenu button` | HANDED OFF (calendar) | HANDED OFF |
+| A6 | A | `guardian-type-floor.generated.css` selectors `.stat`, `.chip-mode button`, `.toast`, `.daymenu button` | HANDED OFF (calendar); taken back by the owner brief 2026-10-02 | DELETED (final-purge item 6: the `calendar.css` rules, floor regenerated; student calendar byte-identical at 1440 and 390) |
 | A7 | A | `GuardianErrorState` / `GuardianReadFailureState` optional `onRetry` (no-retry branch) | KEEP | KEEP |
 | A8 | A | `HeaderFacts` prop `viewer` (only `"guardian"` is passed) | KEEP | KEEP |
 | A9 | A | Test-only exports `latestCompletedExam`, `POLLING_TIMEOUT_MS` | KEEP | KEEP |

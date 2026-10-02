@@ -214,7 +214,8 @@ Rows this vertical routed out. They do not block COMPLETE; each is owned elsewhe
 | inventory F6 | `student_skill_mastery_student_read`, `student_skill_kpi_student_read`: the same dead-by-grant class as G-NEW-15 | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 2: dropped by migration `20261019000000` (SCL-198); owner applies |
 | — | Column grants: the migrated schema grants `authenticated` column-level SELECT on the six KPI / mastery / projection tables (found in G-NEW-15's migration) and the two skill tables | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 2: revoked on all eight by migration `20261019000000` (SCL-198; GATE 14); owner applies |
 | inventory D2 | `tests/utils/auth-helpers.ts`, `tests/utils/mock-supabase.ts`: unused shared test utilities | cleanup | OPEN |
-| inventory A6, A12 | Dead calendar CSS rules (`.stat`, `.chip-mode`, `.toast`, `.daymenu`) that feed the generated guardian floor; dead `export`s on the `Chrome.tsx` facts | calendar | OPEN |
+| inventory A6 | Dead calendar CSS rules (`.stat`, `.chip-mode`, `.toast`, `.daymenu`) that feed the generated guardian floor | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 6: rules deleted, floor regenerated (64 → 59 rules); the student calendar is byte-identical at 1440 and 390 |
+| inventory A12 | Dead `export`s on the `Chrome.tsx` facts | calendar | OPEN |
 | inventory E6 | `calendar.profile-upsert.pg.ci` and `tutor-conversation-list.pg.ci` look unregistered in CI, so they likely skip silently | calendar, lisa | OPEN |
 | inventory G2 | `tests/e2e/exam-disclosure.spec.ts` guardian step: the exam e2e harness serves no `/api/guardian/students` roster, which the Wave 4 shell reads first. It has failed since Wave 4; local only | exam | OPEN |
 | — | Counsel review: is a redeemed guardian link valid under-13 consent? | Karl / counsel | OPEN |
