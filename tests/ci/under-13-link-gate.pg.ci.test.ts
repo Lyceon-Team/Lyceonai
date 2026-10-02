@@ -82,6 +82,11 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
+// `GET /api/practice/topics` reads canonical_skill_catalog through the admin client (F-56).
+vi.mock("../../apps/api/src/lib/supabase-admin", () => ({
+  getSupabaseAdmin: () => makePgSupabase(pg),
+}));
+
 vi.mock("../../server/lib/stripe/client", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../../server/lib/stripe/client")>();
