@@ -10,8 +10,9 @@
  *   - header strip — streak (as of today), projected band, target, test-date countdown — and
  *     this week's sessions done of planned: ONE read of `GET /api/students/:id/calendar` for
  *     the current week, rendered by `HeaderFacts`, the calendar header's own readouts;
- *   - mastery by domain, grouped by section: `GET …/mastery/domains`, rendered by `DomainGrid`
- *     with no `onOpen`, so there is no Skills drill-down (skills are student-only);
+ *   - mastery by domain: `GET …/mastery/domains`, rendered by the guardian-only
+ *     `GuardianMasteryCard` (G5-03, R13) — two columns by section, all eight domains, the live
+ *     `levelTone`, no skills (SCL-194);
  *   - the latest full-length test: `GET …/tests` (the newest `completed_at`, SCL-192), then its
  *     report, rendered by the guardian exam report body — bars only (SCL-189) — with "See all
  *     results" to the list.
@@ -23,7 +24,6 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
-import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
 import type { GuardianExamList } from "@lyceon/shared/exam-guardian-report-schema";
 import { useGuardianCalendar } from "@/features/calendar/api";
 import {
@@ -33,7 +33,6 @@ import {
   startOfWeek,
 } from "@/features/calendar/lib/dates";
 import { HeaderFacts } from "@/features/calendar/components/Chrome";
-import { DomainGrid } from "@/components/mastery/DomainGrid";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import {
@@ -42,6 +41,7 @@ import {
 } from "@/features/exam/api/exam-api";
 import { examKeys } from "@/features/exam/api/keys";
 import { GuardianReportBody } from "@/features/exam/pages/GuardianExamResultsPage";
+import { GuardianMasteryCard } from "./GuardianMasteryCard";
 import { GuardianScoreStrip } from "./GuardianScoreStrip";
 import { GuardianStudentLayout } from "./GuardianStudentLayout";
 import { GuardianWeekPlan } from "./GuardianWeekPlan";
@@ -174,29 +174,8 @@ function MasteryWidget({ studentId }: { studentId: string }): JSX.Element {
       />
     );
   }
-  const domains = mastery.data.domains;
-  return (
-    <div className="flex flex-col gap-5">
-      {(["RW", "M"] as const).map((section) => {
-        // All four of the section's domains, whatever rows were served (owner decision
-        // 2026-10-01): `DomainGrid` draws the canonical list and fills a missing one as
-        // "Not enough answers yet".
-        return (
-          <div key={section} className="flex flex-col gap-3">
-            <h3 className="m-0 text-center text-base font-semibold text-muted-foreground sm:text-left">
-              {EXAM_SECTION_LABEL[section]}
-            </h3>
-            {/* `viewer="guardian"`: nothing skill-related, ever (SCL-194). */}
-            <DomainGrid
-              viewer="guardian"
-              domains={domains}
-              sections={[section]}
-            />
-          </div>
-        );
-      })}
-    </div>
-  );
+  // G5-03 (R13): the guardian-only card, all eight domains, no skills (SCL-194).
+  return <GuardianMasteryCard domains={mastery.data.domains} />;
 }
 
 function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
@@ -261,9 +240,9 @@ export default function GuardianDashboardTab(): JSX.Element {
         <div data-testid="dashboard-header-strip">
           <HeaderStrip studentId={studentId} />
         </div>
-        <Section title="Mastery by domain" testId="dashboard-mastery">
+        <div data-testid="dashboard-mastery">
           <MasteryWidget studentId={studentId} />
-        </Section>
+        </div>
         <Section title="Latest full-length test" testId="dashboard-latest-exam">
           <LatestExamWidget studentId={studentId} />
         </Section>

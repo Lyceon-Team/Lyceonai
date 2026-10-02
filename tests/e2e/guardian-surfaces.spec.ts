@@ -389,12 +389,12 @@ const PHONE_CENTRING: readonly {
       {
         what: "section heading",
         selector:
-          "[data-testid=dashboard-mastery] > h2, [data-testid=dashboard-latest-exam] > h2",
+          "[data-testid=mastery-card] h2, [data-testid=dashboard-latest-exam] > h2",
         mode: "text",
       },
       {
         what: "section name",
-        selector: "[data-testid=dashboard-mastery] h3",
+        selector: "[data-testid=mastery-section-label]",
         mode: "text",
       },
       {
@@ -596,41 +596,46 @@ test.describe("phone centring at 390 (item 10)", () => {
 });
 
 /**
- * Owner review 2026-10-01 (#1013, item 1): the mastery meter spans the full width of its
- * card's content area, at both widths. Measured: every meter's box against its card's
- * content box (padding excluded), within 1px. Presence first: the Dashboard draws 8 meters.
+ * G5-03 (R13, Karl 2026-10-02): the guardian mastery card's meter is the design board's — a
+ * 150px column between the domain name and the pill at 1440, and the row's full width beneath
+ * the name and pill at 390. Measured per meter against its row, within 1px. Presence first: the
+ * Dashboard draws 8 meters. (The student mastery page's own meter rule is
+ * `student-mastery.spec.ts`'s; R13 leaves it unchanged.)
  */
-test.describe("the mastery meter spans its card", () => {
+test.describe("the guardian mastery meter follows the design", () => {
   for (const vp of VIEWPORTS) {
     test(`@${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await serve(page);
       await page.goto(`/guardian/${F.ADA}`);
       await page
-        .getByTestId("dashboard-exam")
+        .getByTestId("mastery-card")
         .first()
         .waitFor({ timeout: 15_000 });
-      const gaps = await page.evaluate(() =>
+      const boxes = await page.evaluate(() =>
         Array.from(
-          document.querySelectorAll<HTMLElement>("[data-testid=mastery-meter]"),
+          document.querySelectorAll<HTMLElement>(
+            "[data-testid=mastery-row-meter]",
+          ),
         ).map((meter) => {
-          const content = meter
-            .closest("[data-domain]")
-            ?.querySelector<HTMLElement>(":scope > div:last-child");
-          if (!content) return { left: 999, right: 999 };
-          const c = content.getBoundingClientRect();
-          const s = getComputedStyle(content);
+          const row = meter.closest<HTMLElement>("[data-testid=mastery-row]");
           const m = meter.getBoundingClientRect();
+          const r = row?.getBoundingClientRect();
           return {
-            left: Math.abs(m.left - (c.left + parseFloat(s.paddingLeft))),
-            right: Math.abs(c.right - parseFloat(s.paddingRight) - m.right),
+            width: m.width,
+            rowLeft: r === undefined ? 999 : Math.abs(m.left - r.left),
+            rowRight: r === undefined ? 999 : Math.abs(r.right - m.right),
           };
         }),
       );
-      expect(gaps).toHaveLength(8);
-      for (const g of gaps) {
-        expect(g.left).toBeLessThanOrEqual(1);
-        expect(g.right).toBeLessThanOrEqual(1);
+      expect(boxes).toHaveLength(8);
+      for (const b of boxes) {
+        if (vp.width >= 640) {
+          expect(Math.abs(b.width - 150)).toBeLessThanOrEqual(1);
+        } else {
+          expect(b.rowLeft).toBeLessThanOrEqual(1);
+          expect(b.rowRight).toBeLessThanOrEqual(1);
+        }
       }
     });
   }

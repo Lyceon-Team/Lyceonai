@@ -54,7 +54,7 @@ afterEach(cleanup);
 async function renderedDashboard(): Promise<void> {
   mountApp(Router, `/guardian/${ADA}`);
   await screen.findByTestId("dashboard-header");
-  await screen.findAllByTestId("domain-grid");
+  await screen.findByTestId("mastery-card");
   await screen.findByTestId("dashboard-exam");
 }
 

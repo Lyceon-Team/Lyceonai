@@ -18,7 +18,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ADA,
@@ -125,15 +125,16 @@ describe("guardians see no skills (owner ruling 2026-10-01, SCL-194)", () => {
     expect(SKILL_NAMES).toContain("Words in Context");
   });
 
-  it("the Dashboard: eight domain cards, and no skill anywhere", async () => {
+  it("the Dashboard: eight domain rows, and no skill anywhere", async () => {
     mountApp(Router, `/guardian/${ADA}`);
     await screen.findByTestId("dashboard-header");
-    const grids = await screen.findAllByTestId("domain-grid");
+    // G5-03 (R13): the guardian-only mastery card, two columns by section.
+    const card = await screen.findByTestId("mastery-card");
     await screen.findByTestId("dashboard-exam");
-    // Presence: both sections' grids, all eight domains, each with its meter.
-    expect(grids).toHaveLength(2);
+    // Presence: both sections' columns, all eight domains, each with its meter.
+    expect(within(card).getAllByTestId(/^mastery-column-/)).toHaveLength(2);
     expect(document.querySelectorAll("[data-domain]")).toHaveLength(8);
-    expect(screen.getAllByTestId("mastery-meter")).toHaveLength(8);
+    expect(screen.getAllByTestId("mastery-row-meter")).toHaveLength(8);
     expectNoSkills();
   });
 
