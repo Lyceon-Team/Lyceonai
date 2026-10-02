@@ -1,12 +1,13 @@
 /**
- * @spec [contracts/notifications.contract.md §0.4 direct sends; Doc-01_V8 §37.2 (consent
- *        request email), §40.2.1 Phase 4 (deletion-scheduled email), §36.2 (guardian invite),
+ * @spec [contracts/notifications.contract.md §0.4 direct sends; Doc-01_V8
+ *        §40.2.1 Phase 4 (deletion-scheduled email), §36.2 (guardian invite),
  *        §40.5 (deletion completed — SCL-083 PROPOSED); owner rulings R7/R8/R9 2026-09-03;
  *        Doc-01A_V1.0 §14 PII redaction] | @implemented [2026-09-03, extended 2026-09-15]
  *
- * plain English: the four transactional emails that are NOT notification events and never
- * will be — two address a person with no profile row (the guardian named in a consent request;
- * the guardian invited by a student), one carries a credential (the recovery token), and one
+ * plain English: the three transactional emails that are NOT notification events and never
+ * will be — one addresses a person with no profile row (the guardian invited by a student;
+ * the consent-request email went with the consent flow, G2-05), one carries a credential (the
+ * deletion-scheduled email's recovery token), and one
  * is addressed to a person whose profile row no longer exists by the time it is sent (the
  * deletion-completed notice: its recipient is a local read taken before the scrub). All go
  * through the one Resend transport with an idempotency key derived from durable state, so a

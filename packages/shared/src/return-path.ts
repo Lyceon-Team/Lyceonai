@@ -57,7 +57,7 @@ export const RETURN_PATH_ROUTE_ROLES: Readonly<
   // @spec [Doc-04A §16, Doc-04C §16.1; register UI-03] | @implemented [2026-09-29]
   // The rebuilt full-length surface. A prefix, so the /tests/:sessionId,
   // /tests/:sessionId/report and /tests/:sessionId/:section/:module deep links all
-  // survive sign-in. It cannot match the guardian's /students/:studentId/tests.
+  // survive sign-in.
   "/tests": ["student", "admin"],
   // @spec [Doc-05F §17.1; register UI-03] | @implemented [2026-09-29]
   // The student's calendar — and the one path the full-length notification emails link

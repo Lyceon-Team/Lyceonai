@@ -506,22 +506,7 @@ export const acknowledgeResponseSchema = z
   .strict();
 export type AcknowledgeResponse = z.infer<typeof acknowledgeResponseSchema>;
 
-// ── GET /api/guardian/students/:id/calendar ─────────────────────────────────
-
-export const guardianCalendarQuerySchema = z
-  .object({
-    from: localDateSchema.optional(),
-    to: localDateSchema.optional(),
-  })
-  .strict()
-  .refine(
-    (query) =>
-      query.from === undefined ||
-      query.to === undefined ||
-      query.from <= query.to,
-    { message: "`from` must not be after `to`", path: ["from"] },
-  );
-export type GuardianCalendarQuery = z.infer<typeof guardianCalendarQuerySchema>;
+// ── The guardian calendar payload (GET /api/students/:id/calendar, via = guardian) ──
 
 /**
  * §16, as amended by the owner ruling of 2026-09-26: **no controls, no explanation copy,
@@ -622,9 +607,6 @@ export type GuardianCalendarReadyResponse = z.infer<
 export const guardianCalendarSetupRequiredResponseSchema = z
   .object({ status: z.literal("setup_required") })
   .strict();
-export type GuardianCalendarSetupRequiredResponse = z.infer<
-  typeof guardianCalendarSetupRequiredResponseSchema
->;
 
 export const guardianCalendarResponseSchema = z.discriminatedUnion("status", [
   guardianCalendarReadyResponseSchema,

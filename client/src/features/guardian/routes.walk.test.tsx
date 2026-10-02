@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 /**
- * G4-01 — every guardian route renders inside ONE `GuardianShell`, and every retired
- * guardian route redirects to its new home.
+ * G4-01 — every guardian route renders inside ONE `GuardianShell`.
  *
  * @spec [Guardian_Closure_Plan G4-01 named proof: "a route-walk test that every guardian route
  *       renders inside GuardianShell and every old route redirects"] | @implemented [2026-09-30]
  *
  * plain English: renders the app's REAL route switch (`Router` from `App.tsx`) at each path,
- * signed in as a guardian, and asserts the shell is on the page. For the three retired
- * `/students/:id/*` paths it asserts the location moved to the new route, keeping the student
- * and the exam session, and that the new page is inside the shell. Only the network is
+ * signed in as a guardian, and asserts the shell is on the page. (The three retired
+ * `/students/:id/*` redirects it also walked were deleted in the guardian closeout: nothing
+ * linked to them.) Only the network is
  * scripted; every read answers an empty or refused shape, which is all a layout walk needs.
  */
 import React from "react";
@@ -101,20 +100,5 @@ describe("G4-01 every guardian route renders inside GuardianShell", () => {
     expect(
       screen.getByTestId("guardian-tab-dashboard").getAttribute("href"),
     ).toBe(`/guardian/${STUDENT}`);
-  });
-});
-
-describe("G4-01 every retired guardian route redirects to its new home", () => {
-  it.each([
-    [`/students/${STUDENT}/calendar`, `/guardian/${STUDENT}/calendar`],
-    [`/students/${STUDENT}/tests`, `/guardian/${STUDENT}/exams`],
-    [
-      `/students/${STUDENT}/tests/${SESSION}`,
-      `/guardian/${STUDENT}/exams/${SESSION}`,
-    ],
-  ])("%s → %s", async (from, to) => {
-    const { history } = renderAt(from);
-    expect(await screen.findByTestId("guardian-shell")).toBeTruthy();
-    expect(history[history.length - 1]).toBe(to);
   });
 });

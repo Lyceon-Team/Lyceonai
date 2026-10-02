@@ -13,14 +13,11 @@ export type { RuntimeRole };
  * wrote that "student" back to the profile — so a 'tutor' or 'teacher' row became a student,
  * with student access, at its next sign-in. `null` now means "refuse": every caller fails closed.
  *
- * Edge case: 'parent' is the one legacy alias still mapped (to 'guardian'). The `profile_role`
- * enum cannot hold it, so it can only arrive from a non-database source; it is mapped in memory
- * and never written anywhere.
+ * There is no legacy alias: the old 'parent' → 'guardian' mapping is gone (guardian closeout),
+ * because every caller passes a `profiles.role` value or a role this function already parsed,
+ * and the `profile_role` enum cannot hold 'parent'.
  */
 export function parseRuntimeRole(rawRole: unknown): RuntimeRole | null {
-  if (rawRole === "parent") {
-    return "guardian";
-  }
   const parsed = runtimeRoleSchema.safeParse(rawRole);
   return parsed.success ? parsed.data : null;
 }

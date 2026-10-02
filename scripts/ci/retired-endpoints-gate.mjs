@@ -167,6 +167,11 @@ const SELF_REFERENTIAL = new Set([
   "docs/SpecAudit/consent-flow-preflight-audit.md",
   "docs/plans/WS-GL_Stage1_Audit.md",
   "contracts/ws0-stop-the-bleed.contract.md",
+  // Added 2026-10-01 (guardian closeout). Same test: the dead-code inventory exists to RECORD
+  // deletions, and its evidence is the verbatim output of commands run before them, frozen
+  // at commit 5ba57c2 — a retired path appears in it only as quoted grep output. Editing that
+  // output to satisfy this gate would falsify the evidence.
+  "docs/plans/guardian-dead-code-inventory.md",
 ]);
 
 /**

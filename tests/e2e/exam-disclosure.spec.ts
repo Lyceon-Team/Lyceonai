@@ -9,7 +9,7 @@
  * the real /api/students router behind the real subject resolver). The spec walks one
  * lenient sitting through the API to a scored report, then opens it twice: as the
  * student at /tests/:sessionId/report, and as the linked guardian at
- * /students/:studentId/tests/:sessionId (the harness makes a request as the guardian when
+ * /guardian/:studentId/exams/:sessionId (the harness makes a request as the guardian when
  * it carries `x-harness-as: guardian`). On both screens: a scaled score is on the page, the
  * disclosure note beside it is exactly the payload's summary, and there is no link — no
  * "Learn more", no anchor inside the note, and the payload's full_text_url nowhere in the
@@ -118,7 +118,7 @@ test("the score screen carries the summary and no link, for the student and the 
     viewport: { width: 1280, height: 900 },
   });
   const guardian = await guardianContext.newPage();
-  await guardian.goto(`/students/${STUDENT}/tests/${sid}`);
+  await guardian.goto(`/guardian/${STUDENT}/exams/${sid}`);
   await expect(guardian.getByTestId("guardian-exam")).toBeVisible({
     timeout: 30_000,
   });

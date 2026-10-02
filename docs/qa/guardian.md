@@ -7,31 +7,32 @@
 
 ---
 
+(updated 2026-10-01, guardian closeout: phases 1, 3–8 and the curl reference rewritten to test the code-redeem flow, the `/api/students/:studentId/*` reads and the `audit_logs` records that exist now. The `/summary` endpoint, `POST /api/guardian/link`, the `guardian_link_audit` table and `20260102_guardian_link_code.sql` do not exist.)
+
 ## Phase 1: Student Link Code Visibility
 
 ### Test 1.1: Student sees their link code
 1. Log in as a student
-2. Navigate to Profile page
-3. **Verify**: 8-character link code is displayed
+2. Navigate to Profile → Settings tab
+3. **Verify**: a 6-character link code is displayed (`StudentLinkCodePanel`; alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ`)
 4. **Verify**: Copy button works
-5. **Verify**: Helper text explains sharing with parent
+5. **Verify**: Helper text explains sharing with a parent
 
 ### Test 1.2: Guardian does NOT see link code section
 1. Log in as a guardian
-2. Navigate to Profile page (if accessible)
-3. **Verify**: No link code section is displayed
+2. Navigate to Profile → Settings tab
+3. **Verify**: No link code section is displayed (the panel renders for `currentRole === "student"` only)
 
 ---
 
 ## Phase 2: Guardian Signup and Redirect
 
-### Test 2.1: Guardian signup toggle
+### Test 2.1: Guardian signup
 1. Go to /login
-2. Click "Sign up"
-3. Toggle "I'm a parent/guardian"
-4. Complete signup with valid credentials
-5. **Verify**: Account created with role = 'guardian'
-6. **Verify**: Redirect to /guardian (not /dashboard)
+2. Click "Sign up" and complete signup with valid credentials
+3. On /profile/complete, choose the guardian role and give a date of birth
+4. **Verify**: Account has role = 'guardian'
+5. **Verify**: Redirect to /guardian (not /dashboard)
 
 ### Test 2.2: Guardian login redirect
 1. Log in as existing guardian
@@ -47,62 +48,64 @@
 
 ### Test 3.1: Link success
 1. Log in as guardian
-2. Navigate to /guardian
-3. Enter valid student link code
-4. Click "Link Student"
-5. **Verify**: Success message displayed
-6. **Verify**: Student appears in linked list
-7. **Verify**: Can view student progress
+2. Navigate to /guardian and open the Add student dialog
+3. Enter the student's current link code and submit
+4. **Verify**: `POST /api/guardian/link/redeem` answers 201
+5. **Verify**: Student appears in the roster (`GET /api/guardian/students`)
+6. **Verify**: Can open /guardian/:studentId for that student
+7. **Verify**: The student's code has changed (a code redeems once; the student gets a fresh one)
 
-### Test 3.2: Link idempotent (already linked)
-1. Enter the same code again
-2. **Verify**: Returns success (not error)
-3. **Verify**: No duplicate entries in list
+### Test 3.2: Already linked
+1. Have the student show their new code
+2. Enter it as the same guardian
+3. **Verify**: 409 "You are already linked to that student."
+4. **Verify**: No duplicate entries in the roster
 
 ### Test 3.3: Invalid code - generic error
-1. Enter invalid 8-character code (e.g., "XXXXXXXX")
-2. **Verify**: Generic error message: "Invalid or unavailable student code"
+1. Enter a 6-character code that is not live (e.g. "XXXXXX")
+2. **Verify**: 400 "That code is not valid. Ask your student for a current one." (`GUARDIAN_LINK_CODE_REFUSED`)
 3. **Verify**: No information leakage about code existence
 
-### Test 3.4: Code already linked to another guardian
-1. Create second guardian account
-2. Try to link same student
-3. **Verify**: Generic error: "Invalid or unavailable student code"
-4. **Verify**: Cannot determine if code exists or is already linked
+### Test 3.4: Spent code entered by another guardian
+1. Create a second guardian account
+2. Enter the code already redeemed in Test 3.1
+3. **Verify**: The same 400 as Test 3.3
+4. **Verify**: Cannot tell a spent code from an expired or never-real one
 
 ---
 
 ## Phase 4: Rate Limiting
 
 ### Test 4.1: Rate limit triggers
-1. Make 11 link attempts within 15 minutes
-2. **Verify**: 429 response after 10 attempts
-3. **Verify**: Error message: "Too many link attempts"
+1. Submit codes past the `guardian_link_code_entry` bucket limit (seeded at 10 per 86400 s by `supabase/migrations/20260901000000_scl_080_guardian_link_code.sql`; read the live limit from config first)
+2. **Verify**: 429 response once the limit is reached
 
 ---
 
 ## Phase 5: Unlinking
 
 ### Test 5.1: Unlink success
-1. Click unlink button on linked student
-2. Confirm in modal
-3. **Verify**: Student removed from list
-4. **Verify**: Can no longer view their progress
+1. Open /guardian/students, click Remove on a linked student
+2. Confirm in the dialog
+3. **Verify**: Student removed from the roster
+4. **Verify**: Reads of that student now answer 404
 
-### Test 5.2: Unlink idempotent
-1. Try to unlink already-unlinked student (via API)
-2. **Verify**: Returns 404 or 403 (not 500)
+### Test 5.2: Unlink an already-revoked link
+1. Call `DELETE /api/guardian/link/STUDENT_ID` again (via API)
+2. **Verify**: 409 "This link is not active" (not 500)
+3. Call it for a student this guardian was never linked to
+4. **Verify**: 404
 
 ---
 
 ## Phase 6: Security - Unauthorized Access
 
-### Test 6.1: Guardian cannot fetch unlinked student summary
+### Test 6.1: Guardian cannot read an unlinked student
 ```bash
-curl -X GET "https://YOUR_APP/api/guardian/students/UNLINKED_STUDENT_ID/summary" \
+curl -X GET "https://YOUR_APP/api/students/UNLINKED_STUDENT_ID/kpi/overall" \
   -H "Cookie: YOUR_SESSION_COOKIE"
 ```
-**Verify**: Returns 404 "Student not found"
+**Verify**: Returns 404 "No such student, or you do not have access to them"
 
 ### Test 6.2: Student cannot access guardian endpoints
 1. Log in as student
@@ -114,81 +117,78 @@ curl -X GET "https://YOUR_APP/api/guardian/students" \
 **Verify**: Returns 403 "Guardian role required"
 
 ### Test 6.3: Guardian cannot enumerate students by ID
-1. Try sequential student IDs in summary endpoint
-2. **Verify**: All return 404 (no timing differences)
+1. Try random uuids on `/api/students/:studentId/kpi/overall`
+2. **Verify**: All return 404 (a non-uuid returns 400)
+
+### Test 6.4: Linked student without an entitlement
+1. Link a guardian to a student with no active entitlement
+2. Call `/api/students/STUDENT_ID/kpi/overall`
+3. **Verify**: 402 `PAYMENT_REQUIRED`; the UI shows the lapsed state
+
+### Test 6.5: Guardian gets the streak only, and no skills
+1. As a linked guardian of an entitled student, call `/api/students/STUDENT_ID/kpi/overall`
+2. **Verify**: body carries `currentStreakDays` and no counters or accuracy (SCL-188)
+3. Call `/api/students/STUDENT_ID/mastery/skills`
+4. **Verify**: 403 (SCL-194)
 
 ---
 
 ## Phase 7: Audit Logging
 
 ### Test 7.1: Verify audit logs are created
-1. Perform link/unlink operations
-2. Check guardian_link_audit table:
+1. Link, read one student page, then unlink
+2. Check `audit_logs`:
 ```sql
-SELECT * FROM guardian_link_audit ORDER BY occurred_at DESC LIMIT 10;
+SELECT action, actor_profile_id, target_profile_id, context, created_at
+FROM audit_logs
+WHERE action IN ('guardian_link_initiated', 'guardian_link_revoked',
+                 'guardian_dashboard_viewed', 'guardian_subject_access')
+ORDER BY created_at DESC LIMIT 20;
 ```
-**Verify**: Entries exist with correct action, status, request_id
+**Verify**: one `guardian_link_initiated` and one `guardian_link_revoked` row (written by SQL `guardian_link_audit`), a `guardian_dashboard_viewed` row, and `guardian_subject_access` rows with `context.request_id` set
 
-### Test 7.2: Failed attempts are logged
-1. Try invalid codes
-2. **Verify**: Audit log shows 'link_attempt' with status 'failure'
-3. **Verify**: code_prefix shows only first 2 characters
+### Test 7.2: Denied reads are logged
+1. Repeat Test 6.1
+2. **Verify**: a `guardian_subject_access` row with `context.decision = 'not_linked'`
+3. **Verify**: `context` holds access metadata only (decision, resource, via, request_id) — no student data
 
 ---
 
 ## Phase 8: Database Verification
 
-### Test 8.1: Role constraint includes guardian
+### Test 8.1: Role type includes guardian
 ```sql
-SELECT conname, pg_get_constraintdef(c.oid)
-FROM pg_constraint c
-JOIN pg_class t ON c.conrelid = t.oid
-WHERE t.relname = 'profiles' AND c.contype = 'c';
+SELECT enum_range(NULL::public.profile_role);
 ```
-**Verify**: Constraint includes 'guardian'
+**Verify**: Includes 'guardian'
 
-### Test 8.2: guardian_profile_id column exists
+### Test 8.2: guardian_links shape
 ```sql
 SELECT column_name, data_type
 FROM information_schema.columns
-WHERE table_name = 'profiles' AND column_name = 'guardian_profile_id';
+WHERE table_name = 'guardian_links' AND column_name IN ('guardian_profile_id', 'student_profile_id', 'status');
 ```
-**Verify**: Column exists with type 'text'
+**Verify**: both profile ids are `uuid`; `status` is `text` (CHECK allows 'active', 'revoked')
 
 ### Test 8.3: Fresh DB migration test
-1. Create a fresh Supabase project (or reset existing)
-2. Apply all migrations in order:
+1. Run the guardian PG suites; they build a database from genesis + every migration:
 ```bash
-# Apply migrations
-psql $DATABASE_URL -f supabase/migrations/20260102_guardian_link_code.sql
+PGHOST=... pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts tests/ci/guardian-denial-sweep.pg.ci.test.ts
 ```
-3. **Verify**: No errors during migration
-4. **Verify**: All guardian tables/columns/indexes created:
+2. **Verify**: No errors during migration and all tests pass
+
+### Test 8.4: Closeout drops are in place
 ```sql
--- Should return: student_link_code, guardian_profile_id, role
-SELECT column_name FROM information_schema.columns 
-WHERE table_name = 'profiles' AND column_name IN ('student_link_code', 'guardian_profile_id', 'role');
+-- Should return 0 rows (dropped by 20261017000000_guardian_closeout_dead_rls_and_consent_column.sql, SCL-196)
+SELECT proname FROM pg_proc
+WHERE proname IN ('guardian_can_view_student', 'guardian_can_view_student_as');
 
--- Should return: guardian_link_audit
-SELECT table_name FROM information_schema.tables 
-WHERE table_name = 'guardian_link_audit';
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'profiles' AND column_name = 'consent_given_at';
 
--- Should return: generate_student_link_code trigger
-SELECT tgname FROM pg_trigger WHERE tgname = 'set_student_link_code';
+-- Should return 1 row: the one derivation the server calls
+SELECT proname FROM pg_proc WHERE proname = 'guardian_view_decision';
 ```
-
-### Test 8.4: Idempotent migration test
-1. Run the migration a second time
-2. **Verify**: No errors (all IF NOT EXISTS clauses work)
-
-### Test 8.5: Type consistency
-```sql
--- Verify guardian_profile_id matches profiles.id type
-SELECT 
-  (SELECT data_type FROM information_schema.columns WHERE table_name='profiles' AND column_name='id') as profiles_id_type,
-  (SELECT data_type FROM information_schema.columns WHERE table_name='profiles' AND column_name='guardian_profile_id') as guardian_profile_id_type;
-```
-**Verify**: Both return 'text'
 
 ---
 
@@ -215,10 +215,10 @@ SELECT
 
 ### Link student (success)
 ```bash
-curl -X POST "https://YOUR_APP/api/guardian/link" \
+curl -X POST "https://YOUR_APP/api/guardian/link/redeem" \
   -H "Content-Type: application/json" \
   -H "Cookie: YOUR_SESSION" \
-  -d '{"code":"STUDENT_CODE"}'
+  -d '{"code":"STUDENT_CODE","acceptParentGuardianTerms":true}'
 ```
 
 ### List linked students
@@ -227,9 +227,15 @@ curl -X GET "https://YOUR_APP/api/guardian/students" \
   -H "Cookie: YOUR_SESSION"
 ```
 
-### Get student summary
+### Read a linked student's data
 ```bash
-curl -X GET "https://YOUR_APP/api/guardian/students/STUDENT_ID/summary" \
+curl -X GET "https://YOUR_APP/api/students/STUDENT_ID/kpi/overall" \
+  -H "Cookie: YOUR_SESSION"
+curl -X GET "https://YOUR_APP/api/students/STUDENT_ID/mastery/domains" \
+  -H "Cookie: YOUR_SESSION"
+curl -X GET "https://YOUR_APP/api/students/STUDENT_ID/calendar" \
+  -H "Cookie: YOUR_SESSION"
+curl -X GET "https://YOUR_APP/api/students/STUDENT_ID/tests" \
   -H "Cookie: YOUR_SESSION"
 ```
 
@@ -238,6 +244,8 @@ curl -X GET "https://YOUR_APP/api/guardian/students/STUDENT_ID/summary" \
 curl -X DELETE "https://YOUR_APP/api/guardian/link/STUDENT_ID" \
   -H "Cookie: YOUR_SESSION"
 ```
+
+Mutating calls also need the CSRF token the app sends; both mounts sit behind `doubleCsrfProtection`.
 
 ---
 
@@ -276,33 +284,14 @@ WHERE table_schema='public' AND table_name='profiles' AND column_name='role';
 
 ---
 
-## DB Reality Check Results (Phase 0)
+## DB Reality Check (current schema)
 
-### Role column type
-```
-column_name | data_type | udt_name
-------------|-----------|----------
-role        | text      | text
-```
+(updated 2026-10-01, guardian closeout: the earlier Phase 0 capture showed `profiles.role` and `guardian_profile_id` as `text` and a `profiles_role_check`; the genesis schema now defines them as below.)
 
-### Guardian fields
-```
-column_name         | data_type
---------------------|----------
-guardian_email      | text
-guardian_profile_id | text
-student_link_code   | text
-```
-
-### Constraints
-```
-conname                              | pg_get_constraintdef
--------------------------------------|----------------------------------------------
-profiles_pkey                        | PRIMARY KEY (id)
-profiles_student_link_code_key       | UNIQUE (student_link_code)
-profiles_guardian_profile_id_fkey    | FOREIGN KEY (guardian_profile_id) REFERENCES profiles(id)
-profiles_role_check                  | CHECK ((role = ANY (ARRAY['student'::text, 'admin'::text, 'guardian'::text])))
-```
+- `profiles.role` is `public.profile_role` (enum: 'student', 'guardian', 'admin', 'tutor', 'teacher').
+- `profiles.guardian_profile_id` is `uuid`, FK to `profiles(id)`. It is legacy and is not used for authorization.
+- `profiles.student_link_code` is `text`, with a partial UNIQUE index `profiles_student_link_code_key`.
+- `guardian_links` is the link truth: `CHECK (guardian_profile_id <> student_profile_id)` (`guardian_not_self`) and one active row per pair (`unique_active_guardian_link`).
 
 ---
 
@@ -316,19 +305,23 @@ profiles_role_check                  | CHECK ((role = ANY (ARRAY['student'::text
 | 2.2 Guardian login redirect | | | |
 | 2.3 Student login redirect | | | |
 | 3.1 Link success | | | |
-| 3.2 Link idempotent | | | |
+| 3.2 Already linked | | | |
 | 3.3 Invalid code error | | | |
-| 3.4 Already linked error | | | |
+| 3.4 Spent code error | | | |
 | 4.1 Rate limit | | | |
 | 5.1 Unlink success | | | |
-| 5.2 Unlink idempotent | | | |
+| 5.2 Unlink already revoked | | | |
 | 6.1 Unlinked student blocked | | | |
 | 6.2 Student blocked from guardian API | | | |
 | 6.3 No enumeration | | | |
+| 6.4 Unentitled student 402 | | | |
+| 6.5 Streak only, no skills | | | |
 | 7.1 Audit logs created | | | |
-| 7.2 Failed attempts logged | | | |
+| 7.2 Denied reads logged | | | |
 | 8.1 Role constraint | | | |
-| 8.2 guardian_profile_id exists | | | |
+| 8.2 guardian_links shape | | | |
+| 8.3 Fresh DB migration | | | |
+| 8.4 Closeout drops | | | |
 | 9.1 Empty state | | | |
 | 9.2 Loading states | | | |
 | 9.3 Error states | | | |

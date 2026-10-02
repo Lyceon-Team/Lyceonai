@@ -89,7 +89,8 @@ const ROLE_TELLS = [
  */
 const DERIVATION_TELLS = [
   /\.rpc\(\s*["'`]guardian_view_decision["'`]/,
-  /\.rpc\(\s*["'`]guardian_can_view_student_as["'`]/,
+  // (`guardian_can_view_student_as` was the other tell; the function was dropped by
+  // 20261017000000, SCL-196, so a call to it cannot exist.)
 ];
 
 function resolveSubjectScopedModules(repoRootDir) {

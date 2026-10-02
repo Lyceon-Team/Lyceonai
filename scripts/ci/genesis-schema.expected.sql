@@ -7924,44 +7924,6 @@ $$;
 
 
 --
--- Name: guardian_can_view_student(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.guardian_can_view_student(p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT public.guardian_can_view_student_as(auth.uid(), p_student_id);
-$$;
-
-
---
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student(p_student_id uuid) IS 'RLS entry point for guardian visibility. Delegates to guardian_can_view_student_as with auth.uid() as the principal, so a caller may only ask about themselves as guardian. Body moved to guardian_view_decision 2026-08-27 so the application gate and the six RLS policies share ONE derivation.';
-
-
---
--- Name: guardian_can_view_student_as(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT public.guardian_view_decision(p_guardian_id, p_student_id) = 'allow';
-$$;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) IS 'Boolean form of guardian_view_decision with the principal passed explicitly, for application callers on the service-role connection where auth.uid() is NULL. Service-role only, for the same reason as guardian_view_decision.';
-
-
---
 -- Name: guardian_link_audit(text, uuid, uuid, jsonb, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8002,7 +7964,7 @@ $$;
 -- Name: FUNCTION guardian_view_decision(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) IS 'THE guardian-visibility derivation (Doc 01 V8 §35 + §38.1, Doc 05B §10.1/§10.3). Returns allow | not_linked | student_unentitled. Service-role only: the guardian id is an argument, so direct callers could otherwise probe arbitrary link pairs. guardian_can_view_student_as and guardian_can_view_student both delegate here.';
+COMMENT ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) IS 'THE guardian-visibility derivation (Doc 01 V8 §35 + §38.1, Doc 05B §10.1/§10.3), and its only form: the server''s subject resolver calls it on the service role. Returns allow | not_linked | student_unentitled. Service-role only: the guardian id is an argument, so direct callers could otherwise probe arbitrary link pairs. The boolean forms guardian_can_view_student / _as were dropped with the RLS policies that called them (20261017000000, SCL-196).';
 
 
 --
@@ -13834,7 +13796,6 @@ CREATE TABLE public.profiles (
     country_code text,
     stripe_customer_id text,
     guardian_email text,
-    consent_given_at timestamp with time zone,
     guardian_profile_id uuid,
     student_link_code text,
     student_link_code_issued_at timestamp with time zone,
@@ -19555,20 +19516,6 @@ CREATE POLICY profiles_select_self ON public.profiles FOR SELECT USING ((id = au
 ALTER TABLE public.projection_refresh_outbox ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_section_projection_snapshots projection_snapshots_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY projection_snapshots_guardian_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_projection_snapshots projection_snapshots_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY projection_snapshots_student_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: psi_occurred_at_backfill_log; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19839,38 +19786,10 @@ ALTER TABLE public.student_background ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_domain_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_domain_kpi student_domain_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_domain_kpi student_domain_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_kpi_student_read ON public.student_domain_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_domain_mastery; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_domain_mastery student_domain_mastery_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_domain_mastery student_domain_mastery_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_mastery_student_read ON public.student_domain_mastery FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
 
 --
 -- Name: student_dream_schools; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19891,20 +19810,6 @@ ALTER TABLE public.student_kpi_rollups_current ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_overall_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_overall_kpi student_overall_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_overall_kpi student_overall_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_overall_kpi_student_read ON public.student_overall_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_projection_refresh_state; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19917,20 +19822,6 @@ ALTER TABLE public.student_projection_refresh_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_section_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_section_kpi student_section_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_kpi student_section_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_kpi_student_read ON public.student_section_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_section_projection_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19941,20 +19832,6 @@ ALTER TABLE public.student_section_projection_snapshots ENABLE ROW LEVEL SECURIT
 --
 
 ALTER TABLE public.student_section_projections ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_section_projections student_section_projections_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_projections_guardian_read ON public.student_section_projections FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_projections student_section_projections_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_projections_student_read ON public.student_section_projections FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
 
 --
 -- Name: student_skill_kpi; Type: ROW SECURITY; Schema: public; Owner: -
@@ -21499,23 +21376,6 @@ GRANT ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_
 
 REVOKE ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer) TO service_role;
-
-
---
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) TO service_role;
 
 
 --

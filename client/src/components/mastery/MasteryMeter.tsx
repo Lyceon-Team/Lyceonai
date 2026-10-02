@@ -5,7 +5,7 @@ import type {
 import { levelTone } from "@/components/mastery/LevelPill";
 
 /** Five segments: one per level from Foundations (`mastery_level` 0) to Strong (4). */
-export const MASTERY_METER_SEGMENTS = 5;
+const MASTERY_METER_SEGMENTS = 5;
 
 /**
  * How many segments a level fills: `mastery_level` 0–4 fills 1–5, and null — "Not enough
@@ -13,7 +13,7 @@ export const MASTERY_METER_SEGMENTS = 5;
  * 2026-08-20 RULE 3): Foundations is a measured level and shows one segment; an unmeasured
  * domain shows an empty meter.
  */
-export function masteryMeterFill(level: MasteryLevel): number {
+function masteryMeterFill(level: MasteryLevel): number {
   return level === null ? 0 : level + 1;
 }
 
