@@ -25,6 +25,10 @@ import {
   toGuardianExamReport,
 } from "@lyceon/shared/exam-guardian-report-schema";
 import {
+  examFormsResponseSchema,
+  type ExamReportState,
+} from "@lyceon/shared/exam-report-schema";
+import {
   FIXTURE_SESSION_ID,
   formsListing,
   scoredReport,
@@ -220,13 +224,23 @@ export function masteryDomains(): Record<string, unknown> {
   });
 }
 
-/** The guardian exam list, through the real projection (SCL-192 `completed_at`). */
+/**
+ * The guardian exam list, through the real projection (SCL-192 `completed_at`; SCL-199
+ * `total_scaled`, the scored report's own total so the list and the report agree).
+ */
 export function examList(): Record<string, unknown> {
   return {
     ok: true,
-    ...toGuardianExamList(formsListing, {
-      [FIXTURE_SESSION_ID]: "2026-09-20T15:00:00.000Z",
-    }),
+    ...toGuardianExamList(
+      formsListing,
+      { [FIXTURE_SESSION_ID]: "2026-09-20T15:00:00.000Z" },
+      {
+        [FIXTURE_SESSION_ID]:
+          scoredReport.report_state === "scored"
+            ? scoredReport.score.total_scaled
+            : null,
+      },
+    ),
     requestId: "r",
   };
 }
@@ -240,9 +254,71 @@ export function calendarSetupRequired(): Record<string, unknown> {
   };
 }
 
+/** A test the student sat on another form, for `examListWith`. */
+export type OtherExam = {
+  session_id: string;
+  name: string;
+  report_state: ExamReportState;
+  completed_at: string | null;
+  total_scaled: number | null;
+};
+
+/**
+ * The guardian exam list holding the fixture's scored test (its report's own completion and
+ * total) plus `others`, each as the latest attempt on a form of its own — built as a forms
+ * listing and put through the real projection (SCL-192 `completed_at`, SCL-199
+ * `total_scaled`), never as hand-written list items.
+ */
+export function examListWith(
+  others: readonly OtherExam[],
+): Record<string, unknown> {
+  if (scoredReport.report_state !== "scored") throw new Error("fixture drift");
+  const [sat] = formsListing.forms;
+  if (sat === undefined) throw new Error("fixture drift");
+  const forms = examFormsResponseSchema.parse({
+    forms: [
+      sat,
+      ...others.map((o, index) => ({
+        ...sat,
+        test_form_id: `f0f00000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+        name: o.name,
+        latest_session: {
+          session_id: o.session_id,
+          state:
+            o.report_state === "partial_scored"
+              ? "partial_scored_abandoned"
+              : "completed",
+          mode: "strict",
+          attempt_number_for_form: 1,
+          report_state: o.report_state,
+        },
+      })),
+    ],
+  });
+  const completedAt: Record<string, string | null> = {
+    [FIXTURE_SESSION_ID]: scoredReport.completed_at,
+  };
+  const totalScaled: Record<string, number | null> = {
+    [FIXTURE_SESSION_ID]: scoredReport.score.total_scaled,
+  };
+  for (const o of others) {
+    completedAt[o.session_id] = o.completed_at;
+    totalScaled[o.session_id] = o.total_scaled;
+  }
+  return {
+    ok: true,
+    ...toGuardianExamList(forms, completedAt, totalScaled),
+    requestId: "r",
+  };
+}
+
 /** The guardian exam list with no attempts, through the real projection. */
 export function noExams(): Record<string, unknown> {
-  return { ok: true, ...toGuardianExamList({ forms: [] }, {}), requestId: "r" };
+  return {
+    ok: true,
+    ...toGuardianExamList({ forms: [] }, {}, {}),
+    requestId: "r",
+  };
 }
 
 /** The guardian exam report, through the real projection (bars only, SCL-189). */

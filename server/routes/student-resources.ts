@@ -597,7 +597,11 @@ router.get(
       }
       return res.json({
         ok: true,
-        ...toGuardianExamList(forms.value.forms, forms.value.completedAt),
+        ...toGuardianExamList(
+          forms.value.forms,
+          forms.value.completedAt,
+          forms.value.totalScaled,
+        ),
         requestId: req.requestId,
       });
     } catch (err) {

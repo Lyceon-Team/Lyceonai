@@ -684,6 +684,11 @@ const formRowSchema = z.object({
       failed_outbox_id: z.string().uuid().nullable(),
       // `exam_list_forms` has always emitted it; the guardian list carries it (SCL-192).
       completed_at: z.string().nullable(),
+      // SCL-199: the score run's total, beside `score_total_present`; the guardian list carries
+      // it. Optional HERE ONLY so the student's listing survives a deploy that lands before
+      // migration 20261020000000; the guardian item stays strict (a scored item with no total
+      // fails its schema, closed), and the PG wire test pins the key on the migrated pipeline.
+      total_scaled: z.number().int().nullable().optional(),
     })
     .nullable(),
 });
@@ -708,11 +713,16 @@ export async function listExamForms(
  * unchanged PLUS each latest session's `completed_at`, keyed by session id. The student's
  * listing does not gain the field; only the guardian list, which needs it to pick the latest
  * test, reads the map. Null for a session that never completed (in progress, abandoned).
+ *
+ * SCL-199 (G5-04, 2026-10-02): `totalScaled` is the same shape for the score run's total, so
+ * the guardian Dashboard can show the change since the previous test from the list it already
+ * reads. Null where no score run has a total. The student's listing does not gain it either.
  */
 export async function listExamFormsWithCompletion(studentId: string): Promise<
   ExamResult<{
     forms: ExamFormsResponse;
     completedAt: Readonly<Record<string, string | null>>;
+    totalScaled: Readonly<Record<string, number | null>>;
   }>
 > {
   const env = await callExamRpc("exam_list_forms", {
@@ -723,9 +733,12 @@ export async function listExamFormsWithCompletion(studentId: string): Promise<
     .object({ forms: z.array(formRowSchema) })
     .parse(env.body).forms;
   const completedAt: Record<string, string | null> = {};
+  const totalScaled: Record<string, number | null> = {};
   for (const f of rows) {
     if (f.latest_session !== null) {
       completedAt[f.latest_session.session_id] = f.latest_session.completed_at;
+      totalScaled[f.latest_session.session_id] =
+        f.latest_session.total_scaled ?? null;
     }
   }
   return {
@@ -733,6 +746,7 @@ export async function listExamFormsWithCompletion(studentId: string): Promise<
     status: 200,
     value: {
       completedAt,
+      totalScaled,
       forms: examFormsResponseSchema.parse({
         forms: rows.map((f) => ({
           test_form_id: f.test_form_id,

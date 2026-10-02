@@ -14,8 +14,9 @@
  *     `GuardianMasteryCard` (G5-03, R13) — two columns by section, all eight domains, the live
  *     `levelTone`, no skills (SCL-194);
  *   - the latest full-length test: `GET …/tests` (the newest `completed_at`, SCL-192), then its
- *     report, rendered by the guardian exam report body — bars only (SCL-189) — with "See all
- *     results" to the list.
+ *     report, rendered by the guardian-only `GuardianLatestTestCard` (G5-04, R13): total, the
+ *     change since the previous test from the list's `total_scaled` (SCL-199), section scores,
+ *     the disclosure and "See full report →". (The embedded report body below it goes in G5-05.)
  * Removed by ruling, and absent by construction: the 7-day question and accuracy tiles (R3,
  * the server no longer sends them), skills, x/y counts (R4), answers, LISA, any act control.
  *
@@ -41,6 +42,11 @@ import {
 } from "@/features/exam/api/exam-api";
 import { examKeys } from "@/features/exam/api/keys";
 import { GuardianReportBody } from "@/features/exam/pages/GuardianExamResultsPage";
+import {
+  changeSinceLast,
+  GuardianLatestTestCard,
+  LatestTestShell,
+} from "./GuardianLatestTestCard";
 import { GuardianMasteryCard } from "./GuardianMasteryCard";
 import { GuardianScoreStrip } from "./GuardianScoreStrip";
 import { GuardianStudentLayout } from "./GuardianStudentLayout";
@@ -75,29 +81,6 @@ export function latestCompletedExam(
     }
   }
   return latest;
-}
-
-function Section({
-  title,
-  testId,
-  children,
-}: {
-  title: string;
-  testId: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <section
-      className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5"
-      data-testid={testId}
-    >
-      {/* Headings centre on a phone (owner decision 2026-10-01, item 10). */}
-      <h2 className="m-0 text-center text-xl font-semibold sm:text-left">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
 }
 
 function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
@@ -194,24 +177,47 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
   const failure = useGuardianReadFailure(studentId, list.error ?? report.error);
 
   if (list.isLoading || (latest !== null && report.isLoading)) {
-    return <GuardianLoadingState what={`${possessive(name)} test results`} />;
+    return (
+      <LatestTestShell>
+        <GuardianLoadingState what={`${possessive(name)} test results`} />
+      </LatestTestShell>
+    );
   }
   if (failure !== null) {
     return (
-      <GuardianReadFailureState
-        failure={failure}
-        name={name}
-        studentId={studentId}
-        what={`${possessive(name)} test results`}
-        onRetry={() => void list.refetch()}
-      />
+      <LatestTestShell>
+        <GuardianReadFailureState
+          failure={failure}
+          name={name}
+          studentId={studentId}
+          what={`${possessive(name)} test results`}
+          onRetry={() => void list.refetch()}
+        />
+      </LatestTestShell>
     );
   }
-  if (latest === null || report.data === undefined) {
-    return <GuardianNoExamsState name={name} />;
+  if (
+    list.data === undefined ||
+    latest === null ||
+    latest.completed_at === null ||
+    report.data === undefined
+  ) {
+    return (
+      <LatestTestShell>
+        <GuardianNoExamsState name={name} />
+      </LatestTestShell>
+    );
   }
   return (
     <div className="flex flex-col gap-4">
+      {/* G5-04 (R13): the compact card; the change comes from the list (SCL-199). */}
+      <GuardianLatestTestCard
+        report={report.data}
+        completedAt={latest.completed_at}
+        change={changeSinceLast(list.data, latest)}
+        studentName={name}
+        href={guardianPaths.exam(studentId, latest.session_id)}
+      />
       <div
         className="exam-root flex flex-col gap-5"
         data-testid="dashboard-exam"
@@ -243,9 +249,9 @@ export default function GuardianDashboardTab(): JSX.Element {
         <div data-testid="dashboard-mastery">
           <MasteryWidget studentId={studentId} />
         </div>
-        <Section title="Latest full-length test" testId="dashboard-latest-exam">
+        <div data-testid="dashboard-latest-exam">
           <LatestExamWidget studentId={studentId} />
-        </Section>
+        </div>
       </div>
     </GuardianStudentLayout>
   );

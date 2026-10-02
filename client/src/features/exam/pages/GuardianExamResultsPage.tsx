@@ -281,9 +281,22 @@ function AttemptFacts({
   );
 }
 
+/** The being-scored sentence; the Dashboard's latest-test card shows the same one (G5-04). */
+export const GUARDIAN_SCORING_COPY =
+  "This test has been submitted and is being scored. Scores usually appear within a few minutes.";
+
+/** The delayed-score sentence; the Dashboard's latest-test card shows the same one (G5-04). */
+export const GUARDIAN_DELAYED_COPY =
+  "A technical issue on our end delayed this score. Our team is looking into it, and the score will appear here once it's ready.";
+
+/** G4-06: the withheld-score line names the student; the Dashboard card shows it too (G5-04). */
+export function guardianWithheldCopy(studentName: string): string {
+  return `${possessive(studentName)} score can't be shown right now. Please check back soon.`;
+}
+
 export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
   // G4-06: the withheld-score line names the student; the student's own report says "Your".
-  const withheld = `${possessive(useCurrentStudentName())} score can't be shown right now. Please check back soon.`;
+  const withheld = guardianWithheldCopy(useCurrentStudentName());
   switch (report.report_state) {
     case "scored":
       return (
@@ -374,8 +387,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
           <Title name={report.test_form_name} line="Test submitted" />
           <Panel title="Being scored">
             <p className="m-0 text-base leading-relaxed" role="status">
-              This test has been submitted and is being scored. Scores usually
-              appear within a few minutes.
+              {GUARDIAN_SCORING_COPY}
             </p>
           </Panel>
         </>
@@ -389,8 +401,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
               className="m-0 text-base leading-relaxed"
               data-testid="guardian-exam-delayed"
             >
-              A technical issue on our end delayed this score. Our team is
-              looking into it, and the score will appear here once it's ready.
+              {GUARDIAN_DELAYED_COPY}
             </p>
           </Panel>
         </>

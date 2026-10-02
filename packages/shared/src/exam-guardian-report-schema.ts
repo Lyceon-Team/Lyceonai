@@ -287,8 +287,16 @@ export const guardianExamListItemSchema = z
     // SCL-192: required-present, null when the attempt never completed. The Dashboard's latest
     // test is the newest non-null value (owner ruling 2026-09-30).
     completed_at: z.string().nullable(),
+    // SCL-199: required-present; the scaled total when the item is `scored`, otherwise null.
+    // The Dashboard's latest-test card takes the change since the previous test from it
+    // (Guardian_Closure_Plan G5-04).
+    total_scaled: z.number().int().min(400).max(1600).nullable(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (item) => (item.total_scaled !== null) === (item.report_state === "scored"),
+    { message: "total_scaled is present exactly when the item is scored" },
+  );
 
 const guardianExamListSchema = z
   .object({ tests: z.array(guardianExamListItemSchema) })
@@ -300,11 +308,14 @@ export type GuardianExamList = z.infer<typeof guardianExamListSchema>;
  * plain English: the forms listing in, the guardian's list out — one row per form the
  * student has sat, its latest attempt. Timings, question counts and selectability are
  * the student's controls and are not carried. Pure; parsed on the way out. SCL-192: each item
- * carries its session's `completed_at` from `completedAt` (keyed by session id).
+ * carries its session's `completed_at` from `completedAt` (keyed by session id). SCL-199: and
+ * its scaled total from `totalScaled`, carried only for a `scored` item — any other state has
+ * no total to show, whatever the score run holds.
  */
 export function toGuardianExamList(
   forms: ExamFormsResponse,
   completedAt: Readonly<Record<string, string | null>>,
+  totalScaled: Readonly<Record<string, number | null>>,
 ): GuardianExamList {
   const tests = forms.forms.flatMap((f) =>
     f.latest_session === null
@@ -318,6 +329,10 @@ export function toGuardianExamList(
             attempt_number_for_form: f.latest_session.attempt_number_for_form,
             report_state: f.latest_session.report_state,
             completed_at: completedAt[f.latest_session.session_id] ?? null,
+            total_scaled:
+              f.latest_session.report_state === "scored"
+                ? (totalScaled[f.latest_session.session_id] ?? null)
+                : null,
           },
         ],
   );

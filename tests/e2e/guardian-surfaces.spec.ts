@@ -389,7 +389,7 @@ const PHONE_CENTRING: readonly {
       {
         what: "section heading",
         selector:
-          "[data-testid=mastery-card] h2, [data-testid=dashboard-latest-exam] > h2",
+          "[data-testid=mastery-card] h2, [data-testid=latest-test-card] h2",
         mode: "text",
       },
       {

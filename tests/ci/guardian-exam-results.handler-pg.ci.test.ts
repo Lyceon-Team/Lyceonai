@@ -290,6 +290,13 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(report.score.total_scaled).toBe(
       report.score.rw_scaled + report.score.math_scaled,
     );
+    // SCL-199 WIRE (G5-04): every list item carries `total_scaled` — read on the RAW body, so a
+    // missing key fails here before the strict schema would — and the scored one is exactly
+    // its report's total, from real Postgres (`exam_list_forms` reads the same score run).
+    for (const item of list.body.tests as Record<string, unknown>[]) {
+      expect(item).toHaveProperty("total_scaled");
+    }
+    expect(tests[0]!.total_scaled).toBe(report.score.total_scaled);
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
 
@@ -473,6 +480,13 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
       throw new Error(report.report_state);
     expect(report.score).not.toHaveProperty("total_scaled");
     expect(report.score.math_scaled).toBeNull();
+    // SCL-199: the list never shows a total the report does not have — partial is null.
+    const list = await get(GUARDIAN, `/api/students/${PART_STUDENT}/tests`);
+    const item = (list.body.tests as Record<string, unknown>[]).find(
+      (t) => t.session_id === partSid,
+    );
+    expect(item).toBeDefined();
+    expect(item).toHaveProperty("total_scaled", null);
     expect(new Set(report.domain_breakdown.map((r) => r.section))).toEqual(
       new Set(["RW"]),
     );
@@ -488,6 +502,16 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(pending.body.report).not.toHaveProperty("score");
     expect(pending.body.report).not.toHaveProperty("domain_breakdown");
     expect(pending.body.report).not.toHaveProperty("disclosure");
+    // SCL-199: scoring_pending lists with a null total, never a number.
+    const pendingList = await get(
+      GUARDIAN,
+      `/api/students/${PART_STUDENT}/tests`,
+    );
+    const pendingItem = (
+      pendingList.body.tests as Record<string, unknown>[]
+    ).find((t) => t.session_id === pendingSid);
+    expect(pendingItem).toHaveProperty("report_state", "scoring_pending");
+    expect(pendingItem).toHaveProperty("total_scaled", null);
     await drain();
 
     const r = await testPg!.query(
