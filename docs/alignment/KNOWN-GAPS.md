@@ -624,7 +624,7 @@ cited in a doc:
 | `scripts/ci/retention-archive-drift-check.mjs` | retention/archive drift | passes locally |
 | `scripts/ci/actor-id-coverage-guard.sh` | actor_id coverage | passes locally |
 | `scripts/ci/check_raw_sql.sh` | ad-hoc SQL outside centralized utilities (Coding Standards §17) | passes locally |
-| `scripts/ci/deletion-cascade-rehearsal.sh` | deletion cascade rehearsal | passes locally |
+| `scripts/ci/deletion-cascade-rehearsal.sh` | deletion cascade rehearsal | passes locally. **Superseded 2026-10-01 (student-ui F-47):** it was red from 2026-09-22 (seed and cascade in one transaction) with nothing to report it; its seed now commits first and its positive run is a blocking step in `ci.yml` job `deletion-deidentify-rehearsal`. |
 
 Reproduce:
 ```bash

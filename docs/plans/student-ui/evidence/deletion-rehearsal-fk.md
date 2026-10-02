@@ -1,6 +1,6 @@
 # Deletion cascade rehearsal: `review_session_items` FK failure (read-only investigation, 2026-10-01)
 
-Register row: §8 **F-47**. No code changed. Production was read with `SELECT`s only (catalog,
+Register row: §8 **F-47** (fixed 2026-10-01, §5). The investigation itself changed no code. Production was read with `SELECT`s only (catalog,
 function bodies, counts and dates; no names or addresses), at the owner's request in the
 investigation brief.
 
@@ -120,10 +120,17 @@ Not imminent, and it has no review rows, so it cannot reach this constraint at a
    mode CLAUDE.md names: "A plant that fails to fail is a finding; a plant that never applied is
    nothing at all".
 
-## 5. Not done (awaiting the owner)
+## 5. Ruling and fix (2026-10-01)
 
-No fix. The candidates, for the ruling:
-- make the rehearsal seed in a committed transaction before the cascade runs (production's
-  shape);
-- add the rehearsal's positive run as a CI step;
-- make G15 assert on the RESTRICT error by name rather than on "any failure".
+Owner ruling: fix all three. Done on branch `claude/rehearsal-integrity`:
+- **Committed seed.** `scripts/ci/deletion-cascade-rehearsal.seed.sql` writes every fixture
+  row and commits in its own `psql` call; `deletion-cascade-rehearsal.sql` then runs the
+  cascade and the assertions. The positive run passes on `cleanup` (sections A–J). Running
+  both files in one transaction (`psql -1`) still reproduces the §1 error, which is the
+  failing observation for the new CI step.
+- **Blocking CI step.** `ci.yml` job `deletion-deidentify-rehearsal` runs
+  `deletion-cascade-rehearsal.sh`.
+- **G15 by name.** It requires SQLSTATE `23503` on `review_session_items_queue_entry_id_fkey`
+  from a delete on `review_schedule`, with three controls in the harness (unplanted; a
+  `P0001`; `23503` on `review_sessions_student_id_fkey`). Removing the plant, or planting a
+  different error, each turns G15 red.
