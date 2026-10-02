@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lyceon question runner</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+body{margin:0;background:#FFFAEF}
+.lyc{
+--paper:#FFFAEF;--margin:#F7F0DF;--sheet:#FFFFFF;--ink:#1F2A33;--ink-strong:#0F2E48;--muted:#5A6470;
+--rule:#E3D9C3;--rule-soft:#E8DFCB;--rule-strong:#B9A67E;--input-bd:#B9C4CF;--chip:#EEF2F6;--hover:#F2EAD6;
+--rail:#0F2E48;--rail-ink:#C9D3DC;--rail-on-bg:#FFFAEF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#0F2E48;--primary-ink:#FFFAEF;--scrim:rgba(15,46,72,0.45);--tick:#C9BFA8;--seg-empty:#EAE0CB;
+--danger:#9B2C2C;--danger-bg:#FDF2F2;--focus:#7FA6C9;--step:#B9A67E;--ok:#065F46;
+--lv0-fill:#F59E0B;--lv0-bg:#FEF3C7;--lv0-ink:#78350F;--lv0-bd:#FDE68A;
+--lv1-fill:#F97316;--lv1-bg:#FFEDD5;--lv1-ink:#7C2D12;--lv1-bd:#FED7AA;
+--lv2-fill:#0EA5E9;--lv2-bg:#E0F2FE;--lv2-ink:#0C4A6E;--lv2-bd:#BAE6FD;
+--lv3-fill:#2563EB;--lv3-bg:#DBEAFE;--lv3-ink:#1E3A8A;--lv3-bd:#BFDBFE;
+--lv4-fill:#059669;--lv4-bg:#D1FAE5;--lv4-ink:#064E3B;--lv4-bd:#A7F3D0;
+--cat-math-bg:#E8EFFA;--cat-math-bd:#2563EB;--cat-math-ink:#1E3A8A;
+--cat-rw-bg:#F3EDF8;--cat-rw-bd:#7E4FA8;--cat-rw-ink:#4A2668;
+--cat-review-bg:#FBF0E2;--cat-review-bd:#C2650A;--cat-review-ink:#7C3A06;
+--cat-test-bg:#EDF0F3;--cat-test-bd:#0F2E48;--cat-test-ink:#0F2E48}
+.lyc.dark{
+--paper:#121B24;--margin:#16212C;--sheet:#1B2733;--ink:#E7E1D4;--ink-strong:#F4EEDF;--muted:#A9B2BB;
+--rule:#2D3B49;--rule-soft:#26333F;--rule-strong:#6E6249;--input-bd:#3B4B5B;--chip:#233140;--hover:#22303D;
+--rail:#0A1219;--rail-ink:#9FB0BF;--rail-on-bg:#F4EEDF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#F4EEDF;--primary-ink:#0F2E48;--scrim:rgba(4,8,12,0.6);--tick:#4A5868;--seg-empty:#2A3846;
+--danger:#F2A7A7;--danger-bg:#2A1B1E;--focus:#8FB4D6;--step:#8C7B57;--ok:#6EE7B7;
+--lv0-fill:#FBBF24;--lv0-bg:rgba(245,158,11,0.16);--lv0-ink:#FDE68A;--lv0-bd:rgba(251,191,36,0.4);
+--lv1-fill:#FB923C;--lv1-bg:rgba(249,115,22,0.16);--lv1-ink:#FED7AA;--lv1-bd:rgba(251,146,60,0.4);
+--lv2-fill:#38BDF8;--lv2-bg:rgba(14,165,233,0.16);--lv2-ink:#BAE6FD;--lv2-bd:rgba(56,189,248,0.4);
+--lv3-fill:#60A5FA;--lv3-bg:rgba(37,99,235,0.18);--lv3-ink:#BFDBFE;--lv3-bd:rgba(96,165,250,0.45);
+--lv4-fill:#34D399;--lv4-bg:rgba(5,150,105,0.18);--lv4-ink:#A7F3D0;--lv4-bd:rgba(52,211,153,0.4);
+--cat-math-bg:rgba(96,165,250,0.12);--cat-math-bd:#60A5FA;--cat-math-ink:#BFDBFE;
+--cat-rw-bg:rgba(192,132,252,0.12);--cat-rw-bd:#C084FC;--cat-rw-ink:#E9D5FF;
+--cat-review-bg:rgba(251,146,60,0.12);--cat-review-bd:#FB923C;--cat-review-ink:#FED7AA;
+--cat-test-bg:rgba(244,238,223,0.08);--cat-test-bd:#F4EEDF;--cat-test-ink:#F4EEDF}
+.lyc a{color:var(--ink-strong)}
+.lyc button,.lyc select,.lyc input{font-family:inherit}
+.lyc a:focus-visible,.lyc button:focus-visible,.lyc select:focus-visible,.lyc input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.rail-item:hover{filter:brightness(1.12)}
+.btn-primary:hover{filter:brightness(1.12)}
+.btn-quiet:hover{background:var(--hover)}
+.opt:hover{background:var(--margin)}
+.lyc a.foot-link{color:var(--muted);text-decoration:none}.lyc a.foot-link:hover{color:var(--ink-strong);text-decoration:underline}
+@keyframes lyc-dot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+.lyc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);animation:lyc-dot 1.2s infinite ease-in-out}
+.lyc-dot:nth-child(2){animation-delay:.15s}.lyc-dot:nth-child(3){animation-delay:.3s}
+@media (prefers-reduced-motion: reduce){.lyc-dot{animation:none;opacity:.6}}
+</style>
+</helmet>
+<div class="lyc {{themeClass}}" style="width: 1440px; height: 900px; display: flex; position: relative; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; overflow: hidden">
+<div style="flex-grow: 1; height: 100%; display: flex; flex-direction: column; min-width: 0">
+<header style="flex-shrink: 0; display: flex; align-items: center; gap: 20px; padding: 14px 32px; border-bottom: 1px solid var(--rule)">
+<a href="Practice.dc.html" aria-label="Back to practice" class="btn-quiet" style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px 0 8px; border-radius: 6px; text-decoration: none; color: var(--ink-strong); font-size: 17px; font-weight: 600">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M15 18l-6-6 6-6"></path></svg>
+Practice
+</a>
+<span style="width: 1px; height: 28px; background: var(--rule)"></span>
+<span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 600; color: var(--ink-strong)">Math: Algebra</span>
+<span style="flex-grow: 1"></span>
+<span style="font-size: 16px; color: var(--ink)">Question {{qNum}} of 10</span>
+<span aria-hidden="true" style="display: flex; gap: 4px">
+<sc-for list="{{dots}}" as="d" hint-placeholder-count="10"><span style="width: 14px; height: 6px; border-radius: 3px; {{d.tone}}"></span></sc-for>
+</span>
+<button type="button" class="btn-quiet" style="height: 40px; padding: 0 14px; border: 1px solid var(--input-bd); border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 15px; font-weight: 600; cursor: pointer">Calculator</button>
+<button type="button" class="btn-quiet" style="height: 40px; padding: 0 14px; border: 1px solid var(--input-bd); border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 15px; font-weight: 600; cursor: pointer">Reference</button>
+</header>
+<main style="flex-grow: 1; overflow-y: auto; padding: 48px 32px 32px">
+<div onKeyDown="{{onKey}}" tabIndex="0" aria-label="Question area" style="max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; outline: none">
+<p style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 23px; line-height: 1.55; color: var(--ink-strong)">If 3x + 2y = 12 and y = 3, what is the value of x?</p>
+<div role="radiogroup" aria-label="Answer choices" style="display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{choices}}" as="c" hint-placeholder-count="4">
+<button type="button" role="radio" aria-checked="{{c.checked}}" onClick="{{c.pick}}" style="display: flex; align-items: center; gap: 16px; text-align: left; padding: 16px 20px; border-radius: 8px; font-size: 19px; cursor: pointer; font-family: inherit; {{c.tone}}">
+<span aria-hidden="true" style="width: 22px; height: 22px; border-radius: 999px; flex-shrink: 0; {{c.dot}}"></span>
+<span style="flex-grow: 1">{{c.label}}</span>
+<span style="font-size: 15px; font-weight: 600">{{c.tag}}</span>
+</button>
+</sc-for>
+</div>
+<sc-if value="{{answered}}" hint-placeholder-val="{{false}}">
+<section aria-live="polite" style="border-left: 4px solid; padding: 16px 20px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; {{fbTone}}">
+<h2 style="margin: 0; font-size: 19px; font-weight: 600">{{fbTitle}}</h2>
+<p style="margin: 0; font-size: 18px; line-height: 1.6; color: var(--ink)">Substitute y = 3 to get 3x + 6 = 12. Then 3x = 6, so x = 2.</p>
+<sc-if value="{{wrong}}" hint-placeholder-val="{{false}}"><p style="margin: 0; font-size: 15px; color: var(--muted)">This question has gone to your review queue.</p></sc-if>
+</section>
+</sc-if>
+</div>
+</main>
+<footer style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; border-top: 1px solid var(--rule); background: var(--paper)">
+<span></span>
+<div style="display: flex; gap: 12px">
+<sc-if value="{{notAnswered}}" hint-placeholder-val="{{true}}">
+<button type="button" onClick="{{skip}}" style="height: 48px; padding: 0 18px; border: 0; background: transparent; color: var(--ink-strong); font-size: 16px; font-weight: 600; text-decoration: underline; cursor: pointer">Skip</button>
+<button type="button" onClick="{{submit}}" disabled="{{cantSubmit}}" class="btn-primary" style="height: 48px; padding: 0 26px; border: 0; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 17px; font-weight: 600; cursor: pointer; {{submitTone}}">Submit</button>
+</sc-if>
+<sc-if value="{{answered}}" hint-placeholder-val="{{false}}">
+<button type="button" onClick="{{next}}" class="btn-primary" style="height: 48px; padding: 0 26px; border: 0; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 17px; font-weight: 600; cursor: pointer">Next question</button>
+</sc-if>
+</div>
+</footer>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":900}}'>
+
+function lycTheme(t) { return t === 'dark' ? 'dark' : ''; }
+const LYC_CHOICES = ['1', '2', '3', '4'];
+const LYC_CORRECT = 1;
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { sel: null, answered: false, q: 4 }; }
+  renderVals() {
+    const self = this;
+    const st = this.state;
+    const submit = function () { if (st.sel !== null && !st.answered) { self.setState({ answered: true }); } };
+    const next = function () { self.setState({ sel: null, answered: false, q: Math.min(10, st.q + 1) }); };
+    const move = function (d) { if (st.answered) { return; } const cur = st.sel === null ? (d > 0 ? -1 : 0) : st.sel; self.setState({ sel: (cur + d + 4) % 4 }); };
+    const choices = LYC_CHOICES.map(function (label, i) {
+      const picked = st.sel === i;
+      let tone = picked ? 'border: 2px solid var(--ink-strong); background: var(--chip); color: var(--ink);' : 'border: 1px solid var(--rule); background: var(--sheet); color: var(--ink);';
+      let tag = '';
+      if (st.answered && i === LYC_CORRECT) { tone = 'border: 2px solid var(--lv4-fill); background: var(--lv4-bg); color: var(--ink);'; tag = 'Correct answer'; }
+      else if (st.answered && picked) { tone = 'border: 2px solid var(--danger); background: var(--danger-bg); color: var(--ink);'; tag = 'Your answer'; }
+      return { label: label, checked: picked ? 'true' : 'false', tag: tag, tone: tone,
+        dot: picked ? 'border: 7px solid var(--ink-strong); box-sizing: border-box;' : 'border: 2px solid var(--input-bd); box-sizing: border-box;',
+        pick: function () { if (!st.answered) { self.setState({ sel: i }); } } };
+    });
+    const right = st.answered && st.sel === LYC_CORRECT;
+    const dots = [];
+    for (let i = 1; i <= 10; i++) { dots.push({ tone: i < st.q ? 'background: var(--ink-strong);' : (i === st.q ? 'background: var(--rule-strong);' : 'background: var(--seg-empty);') }); }
+    return {
+      themeClass: lycTheme(this.props.theme),
+      qNum: String(st.q), dots: dots, choices: choices,
+      answered: st.answered, notAnswered: !st.answered, wrong: st.answered && !right,
+      fbTitle: right ? 'Correct' : 'Not quite',
+      fbTone: right ? 'border-left-color: var(--lv4-fill); background: var(--lv4-bg); color: var(--lv4-ink);' : 'border-left-color: var(--danger); background: var(--danger-bg); color: var(--danger);',
+      cantSubmit: st.sel === null,
+      submitTone: st.sel === null ? 'opacity: 0.45; cursor: not-allowed;' : '',
+      submit: submit, next: next, skip: next,
+      onKey: function (e) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+        else if (e.key === 'Enter') { e.preventDefault(); if (st.answered) { next(); } else { submit(); } }
+        else if (e.key === 'ArrowRight' && st.answered) { e.preventDefault(); next(); }
+      }
+    };
+  }
+}
+
+</script>
+</body>
+</html>
