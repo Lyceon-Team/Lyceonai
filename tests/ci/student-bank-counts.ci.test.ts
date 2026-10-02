@@ -14,7 +14,8 @@
  *   2. the student responses of `GET /api/practice/topics` and
  *      `GET /api/practice/reference/questions` parse against the strict shared schemas, so a
  *      `count` / `total` field (or any unnamed field) fails, and neither body carries one.
- * trade-offs: the DB fake is shared by all three routes; only `servable_questions` is served.
+ * trade-offs: the DB fake is shared by all three routes; `servable_questions` is served, and
+ *   `canonical_skill_catalog` (the topics route's source since F-56) is derived from the same rows.
  * edge cases: presence is asserted before absence — the topics body must contain both
  * sections with a non-empty skill list, and the reference body its `questions` array and
  * `filters` echo, before the no-count assertions run. With a column-faithful fake the
@@ -182,6 +183,37 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
       return new BankQuery();
     },
   },
+}));
+
+/**
+ * `canonical_skill_catalog` as the view computes it: DISTINCT (section, domain, skill) over the
+ * same bank rows. The topics route reads it since F-56 (2026-10-02).
+ */
+vi.mock("../../apps/api/src/lib/supabase-admin", () => ({
+  getSupabaseAdmin: () => ({
+    from: (table: string) => {
+      if (table !== "canonical_skill_catalog") {
+        throw new Error(`Unexpected admin table access in UI-07 test: ${table}`);
+      }
+      const rows = new Map<string, BankRow>();
+      for (const row of bank.rows) {
+        const codes = Array.isArray(row.skill_codes) ? row.skill_codes : [];
+        for (const skill of codes) {
+          rows.set(`${String(row.section)}|${String(row.domain)}|${String(skill)}`, {
+            section: row.section,
+            domain: row.domain,
+            skill,
+          });
+        }
+      }
+      const q = {
+        select: () => q,
+        then: <T>(resolve: (v: { data: BankRow[]; error: null }) => T) =>
+          Promise.resolve({ data: [...rows.values()], error: null }).then(resolve),
+      };
+      return q;
+    },
+  }),
 }));
 
 /** A servable_questions row as the view stores it, answer columns included. */
