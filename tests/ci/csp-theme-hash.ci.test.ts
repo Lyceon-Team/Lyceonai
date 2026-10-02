@@ -30,8 +30,22 @@ const INDEX_HTML = readFileSync(
   "utf8",
 );
 
+/**
+ * Every inline script, with its exact body. The closing tag may carry whitespace or attributes
+ * (`</script >`, `</SCRIPT foo>`), which browsers accept, and every opening tag must be paired:
+ * an opening tag the pattern cannot close throws rather than being silently skipped.
+ */
 function inlineScripts(html: string): Array<{ tag: string; body: string }> {
-  return [...html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script>/gi)]
+  const opening = [...html.matchAll(/<script\b[^>]*>/gi)].length;
+  const scripts = [
+    ...html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script\b[^>]*>/gi),
+  ];
+  if (scripts.length !== opening) {
+    throw new Error(
+      `found ${opening} <script> openings but only ${scripts.length} closed scripts`,
+    );
+  }
+  return scripts
     .filter((m) => !/\bsrc\s*=/i.test(m[1]!))
     .map((m) => ({ tag: m[1]!, body: m[2]! }));
 }
@@ -68,5 +82,11 @@ describe("F-58: inline scripts are allowed by hash only", () => {
     expect(header).toBe(serializeCsp(buildCspDirectives(true)));
     expect(header).toContain(`script-src 'self' '${THEME_BOOT_SCRIPT_HASH}'`);
     expect(header).not.toMatch(/script-src[^;]*unsafe-inline/);
+  });
+  it("the scanner counts inline scripts however their closing tag is written", () => {
+    const html =
+      '<script id="a">1</script ><SCRIPT>2</SCRIPT foo="x"><script src="/x.js"></script>';
+    expect(inlineScripts(html).map((s) => s.body)).toEqual(["1", "2"]);
+    expect(() => inlineScripts("<script>never closed")).toThrow(/openings/);
   });
 });
