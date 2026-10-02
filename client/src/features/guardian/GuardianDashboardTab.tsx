@@ -1,22 +1,25 @@
 /**
  * `/guardian/:studentId` — the Dashboard tab.
  *
- * @spec [Guardian_Closure_Plan G4-03 (R2, R3, R11), Q-L1 contents; endpoint map as updated by
- *       the owner 2026-09-30 (the header reads the calendar route; no kpi/overall call);
- *       SCL-188/189/192; G-NEW-16] | @implemented [2026-09-30]
+ * @spec [Guardian_Closure_Plan G4-03 (R2, R3), Q-L1 contents; G5-01..G5-05 and ruling R13
+ *       (Karl, 2026-10-02: this tab is guardian-only and follows the design, superseding R11 for
+ *       the Dashboard only; the Calendar tab keeps R11); the canvas boards "Wave 5 — BUILD
+ *       TARGET"; endpoint map as updated by the owner 2026-09-30 (the header reads the calendar
+ *       route; no kpi/overall call); SCL-188/189/192/199; G-NEW-16]
+ *       | @implemented [2026-09-30; redesigned 2026-10-02]
  *
- * plain English: the student's week at a glance, built from the STUDENT's own components shown
- * read-only (R11), one endpoint per widget:
- *   - header strip — streak (as of today), projected band, target, test-date countdown — and
- *     this week's sessions done of planned: ONE read of `GET /api/students/:id/calendar` for
- *     the current week, rendered by `HeaderFacts`, the calendar header's own readouts;
+ * plain English: the student's week at a glance, as the design draws it — four blocks in a
+ * 1200px column (phone: one column, 16px gutters), one endpoint per widget:
+ *   - the score strip (G5-01) — projected band, target, test date, streak — and this week's
+ *     plan (G5-02): ONE read of `GET /api/students/:id/calendar` for the current week;
  *   - mastery by domain: `GET …/mastery/domains`, rendered by the guardian-only
  *     `GuardianMasteryCard` (G5-03, R13) — two columns by section, all eight domains, the live
  *     `levelTone`, no skills (SCL-194);
  *   - the latest full-length test: `GET …/tests` (the newest `completed_at`, SCL-192), then its
  *     report, rendered by the guardian-only `GuardianLatestTestCard` (G5-04, R13): total, the
  *     change since the previous test from the list's `total_scaled` (SCL-199), section scores,
- *     the disclosure and "See full report →". (The embedded report body below it goes in G5-05.)
+ *     the disclosure and "See full report →" to the detail page, which holds the full report
+ *     (G5-05 removed the embedded copy and the calendar's flat `HeaderFacts` strip).
  * Removed by ruling, and absent by construction: the 7-day question and accuracy tiles (R3,
  * the server no longer sends them), skills, x/y counts (R4), answers, LISA, any act control.
  *
@@ -24,16 +27,14 @@
  * not set up, no exams yet) is G4-06; the Dashboard never renders a zero it did not read.
  */
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "wouter";
+import { useParams } from "wouter";
 import type { GuardianExamList } from "@lyceon/shared/exam-guardian-report-schema";
 import { useGuardianCalendar } from "@/features/calendar/api";
 import {
   browserLocalToday,
-  daysBetween,
   rangeForView,
   startOfWeek,
 } from "@/features/calendar/lib/dates";
-import { HeaderFacts } from "@/features/calendar/components/Chrome";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import {
@@ -41,7 +42,6 @@ import {
   fetchGuardianExamReport,
 } from "@/features/exam/api/exam-api";
 import { examKeys } from "@/features/exam/api/keys";
-import { GuardianReportBody } from "@/features/exam/pages/GuardianExamResultsPage";
 import {
   changeSinceLast,
   GuardianLatestTestCard,
@@ -61,8 +61,6 @@ import {
   useGuardianReadFailure,
 } from "./GuardianStates";
 import { guardianPaths } from "./paths";
-import "@/features/calendar/calendar.css";
-import "@/features/exam/exam.css";
 
 type ExamListItem = GuardianExamList["tests"][number];
 
@@ -106,26 +104,14 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
   }
   const data = calendar.data;
   if (data.status !== "ready") return <GuardianNotSetUpState name={name} />;
-  const daysToTest =
-    data.target_exam_date === null
-      ? null
-      : Math.max(0, daysBetween(today, data.target_exam_date));
   return (
-    <div className="flex flex-col gap-4" data-testid="dashboard-header">
+    <div
+      className="flex flex-col gap-4 sm:gap-6"
+      data-testid="dashboard-header"
+    >
       {/* G5-01 (R13): the score strip, from this same week's read — one calendar request, one
           widget, one error state. */}
       <GuardianScoreStrip data={data} studentName={name} today={today} />
-      {/* The calendar header's own readouts (`.lyceon-calendar` scopes their styles), laid out
-          as one strip: the calendar places them in its top-bar slots, the Dashboard in a row. */}
-      <div className="lyceon-calendar rounded-2xl border border-border px-5 py-4 [&_.header-facts]:flex [&_.header-facts]:flex-wrap [&_.header-facts]:items-baseline [&_.header-facts]:justify-center [&_.header-facts]:gap-x-10 [&_.header-facts]:gap-y-2 sm:[&_.header-facts]:justify-start">
-        <HeaderFacts
-          viewer="guardian"
-          targetScore={data.target_score}
-          daysToTest={daysToTest}
-          streak={data.streak}
-          projection={data.projection}
-        />
-      </div>
       {/* G5-02 (R13): this week's plan, from the same read's facts — the numbers the
           Calendar footer counts. */}
       <GuardianWeekPlan
@@ -208,30 +194,16 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
       </LatestTestShell>
     );
   }
+  // G5-04 (R13): the compact card; the change comes from the list (SCL-199). The full report
+  // is on the detail page, one link away (G5-05).
   return (
-    <div className="flex flex-col gap-4">
-      {/* G5-04 (R13): the compact card; the change comes from the list (SCL-199). */}
-      <GuardianLatestTestCard
-        report={report.data}
-        completedAt={latest.completed_at}
-        change={changeSinceLast(list.data, latest)}
-        studentName={name}
-        href={guardianPaths.exam(studentId, latest.session_id)}
-      />
-      <div
-        className="exam-root flex flex-col gap-5"
-        data-testid="dashboard-exam"
-      >
-        <GuardianReportBody report={report.data} />
-      </div>
-      <Link
-        href={guardianPaths.exams(studentId)}
-        className="w-fit text-base font-semibold underline"
-        data-testid="dashboard-exam-all"
-      >
-        See all results →
-      </Link>
-    </div>
+    <GuardianLatestTestCard
+      report={report.data}
+      completedAt={latest.completed_at}
+      change={changeSinceLast(list.data, latest)}
+      studentName={name}
+      href={guardianPaths.exam(studentId, latest.session_id)}
+    />
   );
 }
 
@@ -240,7 +212,7 @@ export default function GuardianDashboardTab(): JSX.Element {
   return (
     <GuardianStudentLayout>
       <div
-        className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6"
+        className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 px-4 pb-10 pt-5 sm:gap-6 sm:px-8 sm:pb-14 sm:pt-8 xl:px-0"
         data-testid="guardian-dashboard-tab"
       >
         <div data-testid="dashboard-header-strip">

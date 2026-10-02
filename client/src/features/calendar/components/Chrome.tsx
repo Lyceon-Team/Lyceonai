@@ -242,10 +242,11 @@ export const ABSENT_COPY = {
  *
  * plain English: the four readouts of the calendar header — target, streak, test-date
  * countdown, projected band — as display-only components. `TopBar` renders each in its own
- * slot, exactly as it always did (pinned by `Chrome.identity.test.tsx`); the guardian
- * Dashboard renders the same four through `HeaderFacts`, so a parent reads the same numbers,
- * the same absence copy and the same markup as the student's calendar — one component, not
- * a guardian copy (R11). None of them holds a control.
+ * slot, exactly as it always did (pinned by `Chrome.identity.test.tsx`); the guardian's
+ * Calendar tab renders the same `TopBar`, so a parent reads the same numbers, the same absence
+ * copy and the same markup as the student's calendar — one component, not a guardian copy
+ * (R11). None of them holds a control. (The guardian Dashboard drew these four as a flat strip
+ * through `HeaderFacts` until G5-05; R13 gave that tab the design's own score strip.)
  */
 export function TargetFact({
   viewer,
@@ -340,33 +341,6 @@ export function ProjectionFact({
           <span>Projected</span>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * The four facts together, for a surface without the calendar's slot grid — the guardian
- * Dashboard's header strip. Same components, same absence copy for the viewer.
- */
-export function HeaderFacts({
-  viewer,
-  targetScore,
-  daysToTest,
-  streak,
-  projection,
-}: {
-  viewer: "student" | "guardian";
-  targetScore: number | null;
-  daysToTest: number | null;
-  streak: StreakSummary | undefined;
-  projection: readonly SectionProjectionDto[] | undefined;
-}): JSX.Element {
-  return (
-    <div className="header-facts" data-testid="header-facts">
-      <StreakFact streak={streak} />
-      <ProjectionFact viewer={viewer} projection={projection} />
-      <TargetFact viewer={viewer} targetScore={targetScore} />
-      <CountdownFact viewer={viewer} daysToTest={daysToTest} />
     </div>
   );
 }

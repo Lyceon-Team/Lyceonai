@@ -130,7 +130,7 @@ describe("guardians see no skills (owner ruling 2026-10-01, SCL-194)", () => {
     await screen.findByTestId("dashboard-header");
     // G5-03 (R13): the guardian-only mastery card, two columns by section.
     const card = await screen.findByTestId("mastery-card");
-    await screen.findByTestId("dashboard-exam");
+    await screen.findByTestId("latest-test-meta");
     // Presence: both sections' columns, all eight domains, each with its meter.
     expect(within(card).getAllByTestId(/^mastery-column-/)).toHaveLength(2);
     expect(document.querySelectorAll("[data-domain]")).toHaveLength(8);

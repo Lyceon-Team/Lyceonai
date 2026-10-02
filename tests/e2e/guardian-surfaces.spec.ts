@@ -191,7 +191,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: "dashboard-active",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
   },
   {
     name: "calendar-tab",
@@ -201,7 +201,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: "switcher-open",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByTestId("student-switcher").click();
       await page.getByTestId(`student-switcher-item-${F.BO}`).waitFor();
@@ -210,7 +210,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: "add-student-modal",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByTestId("add-student-open").click();
       await page.getByTestId("add-student-dialog").waitFor();
@@ -220,7 +220,7 @@ const SURFACES: readonly Surface[] = [
     // Portaled content (Radix renders it under <body>, outside the shell) is floored too.
     name: "profile-menu-open",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByTestId("button-user-menu").click();
       await page.getByTestId("menu-linked-students").waitFor();
@@ -229,7 +229,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: "notifications-open",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByRole("button", { name: "Notifications" }).click();
       await page.waitForTimeout(500);
@@ -304,7 +304,7 @@ test.describe("the guardian shell header", () => {
       await serve(page);
       await page.goto(`/guardian/${F.ADA}`);
       await page
-        .getByTestId("dashboard-exam")
+        .getByTestId("latest-test-meta")
         .first()
         .waitFor({ timeout: 15_000 });
       await page.waitForTimeout(300);
@@ -384,7 +384,7 @@ const PHONE_CENTRING: readonly {
   {
     name: "Dashboard",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     checks: [
       {
         what: "section heading",
@@ -398,8 +398,10 @@ const PHONE_CENTRING: readonly {
         mode: "text",
       },
       {
-        what: "summary strip",
-        selector: "[data-testid=header-facts]",
+        // Each tile in its own box: the three compact tiles share a visual line, so the
+        // strip as a whole is not the unit that is centred.
+        what: "score strip tile",
+        selector: "[data-testid=score-strip-phone] [data-testid^=score-tile-]",
         mode: "text",
       },
       {

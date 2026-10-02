@@ -177,7 +177,7 @@ const STATES: readonly State[] = [
         ).toBeGreaterThanOrEqual(2),
       );
       expect(screen.queryByTestId("domain-grid")).toBeNull();
-      expect(screen.queryByTestId("dashboard-exam")).toBeNull();
+      expect(screen.queryByTestId("latest-test-card")).toBeNull();
       expect(document.querySelector(".lyceon-calendar .week")).toBeNull();
     },
   },

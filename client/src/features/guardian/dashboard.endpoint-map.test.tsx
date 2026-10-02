@@ -55,7 +55,7 @@ async function renderedDashboard(): Promise<void> {
   mountApp(Router, `/guardian/${ADA}`);
   await screen.findByTestId("dashboard-header");
   await screen.findByTestId("mastery-card");
-  await screen.findByTestId("dashboard-exam");
+  await screen.findByTestId("latest-test-meta");
 }
 
 const studentReads = (): string[] =>
@@ -140,9 +140,12 @@ describe("G4-03 what the Dashboard does not show", () => {
     expect(screen.getByTestId("week-plan").textContent).toContain(
       `${facts.blocks_completed} of ${facts.blocks_total}`,
     );
-    expect(screen.getByTestId("calendar-target").textContent).toContain("1350");
+    expect(
+      within(screen.getByTestId("score-strip")).getByTestId("score-tile-target")
+        .textContent,
+    ).toContain("1350");
     expect(document.body.textContent).toContain("Proficient");
-    expect(screen.getByTestId("exam-total-score")).toBeTruthy();
+    expect(screen.getByTestId("latest-test-total")).toBeTruthy();
     // Absence.
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/7d|7-day|Questions Attempted|Accuracy/i);
@@ -163,6 +166,7 @@ describe("G4-03 the latest test is the newest completed_at (SCL-192)", () => {
       attempt_number_for_form: 1,
       report_state: "scored" as const,
       completed_at,
+      total_scaled: 1300,
     });
     expect(
       latestCompletedExam([
