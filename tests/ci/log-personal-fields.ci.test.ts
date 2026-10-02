@@ -31,8 +31,28 @@ const ROOT = join(__dirname, "..", "..");
 const SCAN_DIRS = ["server", "apps/api/src"];
 const LOG_CALL =
   /\b(?:logger|console|this\.logger|req\.log)\s*\.\s*(?:log|info|warn|error|debug|trace|fatal)\s*\(/g;
-const PERSONAL_KEY =
-  /[{,]\s*(email|guardianEmail|parentEmail|studentEmail|display_name|displayName|full_name|fullName|first_name|firstName|last_name|lastName|dateOfBirth|date_of_birth|dob|phone|phoneNumber)\s*[:,}]/;
+/**
+ * Brief 8 (2026-10-01): the student-background fields are personal too — a graduation year, a GPA
+ * band, a named high school and named dream colleges identify a teenager as well as a name does.
+ * Listed here so no log call can carry them, in snake_case or camelCase.
+ */
+const BACKGROUND_KEYS = [
+  "graduation_year",
+  "graduationYear",
+  "gpa_range",
+  "gpaRange",
+  "high_school_id",
+  "highSchoolId",
+  "high_school",
+  "highSchool",
+  "dream_school_ids",
+  "dreamSchoolIds",
+  "dream_schools",
+  "dreamSchools",
+] as const;
+const PERSONAL_KEY = new RegExp(
+  `[{,]\\s*(email|guardianEmail|parentEmail|studentEmail|display_name|displayName|full_name|fullName|first_name|firstName|last_name|lastName|dateOfBirth|date_of_birth|dob|phone|phoneNumber|${BACKGROUND_KEYS.join("|")})\\s*[:,}]`,
+);
 /** A value expression: an identifier chain that is not itself an object key. */
 const VALUE_CHAIN =
   /(?<![\w$.])([A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)*)(?!\s*:)/g;
@@ -165,6 +185,21 @@ describe("log calls carry no personal fields (F-10, F-29)", () => {
     expect(bad.violations.length).toBeGreaterThan(0);
     expect(shorthand.violations.length).toBeGreaterThan(0);
     expect(good.violations).toEqual([]);
+  });
+
+  it("the scanner flags every student-background field as a key (Brief 8)", () => {
+    for (const key of BACKGROUND_KEYS) {
+      const asProperty = findPersonalFieldLogs(
+        "fixture.ts",
+        `logger.info("STUDENT_BACKGROUND", "x", "y", { ${key}: body.${key}, requestId });`,
+      );
+      const asShorthand = findPersonalFieldLogs(
+        "fixture.ts",
+        `logger.info("STUDENT_BACKGROUND", "x", "y", { requestId, ${key} });`,
+      );
+      expect(asProperty.violations.map((v) => v.key)).toEqual([key]);
+      expect(asShorthand.violations.map((v) => v.key)).toEqual([key]);
+    }
   });
 
   it("the scanner flags an email VALUE under any key, masked or not", () => {

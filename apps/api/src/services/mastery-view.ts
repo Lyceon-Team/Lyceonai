@@ -7,7 +7,6 @@ import {
 import { loadMasteryLevels } from "./mastery-levels-read";
 import { fetchSkillCatalog } from "./skill-catalog-read";
 import {
-  masterySectionSchema,
   type MasteryDomainNode,
   type MasterySection,
   type MasterySkillNode,
@@ -37,31 +36,15 @@ import {
  *   emission — which is what the rule says it should be.
  *
  * WHY THE SCOPE NARROWING IS A PARAMETER, NOT A SECOND IMPLEMENTATION.
- *   Guardians see domain grain and no drill-down. That is expressed by the guardian route
- *   simply never calling `readSkillPanelView` — there is no guardian skill endpoint to call
- *   it from. The narrowing is the absence of a call, not a different derivation.
+ *   Guardians see domain grain and no drill-down. The skills route refuses a guardian outright
+ *   (403 before the resolver, SCL-194), so the skill view below is only ever built for the
+ *   student. The narrowing is a refusal at the route, not a different derivation.
  *
  * expected outcome: identical `domains` payloads for the same student, whoever asked.
  * trade-offs: the guardian route can no longer shape its own response. That is the point.
  * edge cases: every failure mode belongs to the primitives — a failed read throws, an
  * unlabelled level throws. Nothing here converts either into an empty list.
  */
-
-export type SectionParseResult =
-  | { ok: true; section: MasterySection | undefined }
-  | { ok: false; details: unknown };
-
-/**
- * The `?section=` filter, parsed once for both routes. Returning a Result rather than
- * throwing keeps the 400 in the route layer, where the response shape lives.
- */
-export function parseSectionFilter(value: unknown): SectionParseResult {
-  const parsed = masterySectionSchema.optional().safeParse(value);
-  if (!parsed.success) {
-    return { ok: false, details: parsed.error.flatten() };
-  }
-  return { ok: true, section: parsed.data };
-}
 
 export type DomainMasteryView = {
   domains: MasteryDomainNode[];

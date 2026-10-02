@@ -30,6 +30,7 @@ import {
   requireSupabaseAdmin,
   requireStudentOrAdmin,
   requireStudentOnly,
+  requireStudentAccount,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
@@ -64,6 +65,10 @@ import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
+import {
+  referenceSearchRouter,
+  studentBackgroundRouter,
+} from "./routes/student-background-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
 import internalMemoryRoutes from "./routes/internal-memory-routes";
 import internalRetentionRoutes from "./routes/internal-retention-routes";
@@ -414,6 +419,33 @@ app.use("/api/internal", awaitTutorConfig, internalMemoryRoutes);
 app.use("/api/internal", internalRetentionRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
+
+// SCL-195 / Brief 8 ruling 1. Settings → Profile background. Mounted BEFORE /api/profile so the
+// more specific path is matched here. Student-only (`requireStudentAccount`: guardians and admins
+// refused, then the live under-13 link gate) and deliberately NO entitlement check — this is the
+// student's own optional profile, not a paid feature. Settings and the calendar's dream-school
+// picker share this one write path.
+app.use(
+  "/api/profile/background",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  studentBackgroundRouter,
+);
+
+// Brief 8 ruling 3. College and high-school search for the background pickers, rate-limited per
+// profile through the ledger's `reference_search` bucket. The ruling says "authenticated"; it is
+// mounted for STUDENT accounts (`requireStudentAccount`, which ends in the live under-13 link
+// gate) because the pickers exist only on student surfaces and the G1-11 guardian sweep admits a
+// guardian-reachable prefix only as a deliberate statement that guardians belong on it — none do
+// here. Recorded in register row UI-S3.
+app.use(
+  "/api/reference",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  referenceSearchRouter,
+);
 
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route

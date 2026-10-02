@@ -24,8 +24,8 @@ import { createHash } from "node:crypto";
 /**
  * Non-reversible short digest of an identifier: first 8 hex of SHA-256.
  *
- * Same construction the consent routes have used since 2026-08-20
- * (`server/routes/guardian-consent-routes.ts`). Enough to correlate two lines
+ * Same construction the guardian-consent routes used (removed with the consent flow,
+ * G2-05). Enough to correlate two lines
  * in one incident, not enough to reverse.
  */
 export function digestId(value: string | null | undefined): string | null {

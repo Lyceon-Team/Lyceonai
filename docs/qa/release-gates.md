@@ -158,17 +158,21 @@ grep -r "guardian_student_links" --include="*.ts" --include="*.sql" .
 
 ## 4. Smoke Test
 
+(updated 2026-10-01, guardian closeout: `scripts/guardian-smoke-test.ts` no longer exists; the guardian flow is covered by the real-Postgres CI suites below.)
+
 ### Unauthenticated Mode
 ```bash
-npx tsx scripts/guardian-smoke-test.ts
+curl -s http://localhost:5000/healthz
+curl -s http://localhost:5000/api/guardian/students | jq .
 ```
-**Expected:** Verifies /healthz and 401 responses with requestId
+**Expected:** `/healthz` ok; the guardian route answers 401 with a requestId (see §6)
 
 ### Authenticated Mode
 ```bash
-SUPABASE_URL=<url> SUPABASE_SERVICE_ROLE_KEY=<key> npx tsx scripts/guardian-smoke-test.ts
+PGHOST=<host> pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts \
+  tests/ci/guardian-denial-sweep.pg.ci.test.ts tests/ci/guardian-revoke-party.pg.ci.test.ts
 ```
-**Expected:** Full flow test (link, list, summary, unlink)
+**Expected:** All pass on real Postgres: code redeem (`guardian-link-code`), guardian refused on every student-only endpoint (`guardian-denial-sweep`), revoke by either party and refused for a non-party (`guardian-revoke-party`)
 
 ---
 
@@ -210,7 +214,7 @@ curl -s http://localhost:5000/api/guardian/students | jq .
 - [ ] FK constraint exists on guardian_profile_id
 - [ ] Self-reference constraint prevents guardian = self
 - [ ] Generic error for invalid codes (no info leak)
-- [ ] Durable rate limiting: 10 attempts / 15 min per guardian
+- [ ] Durable rate limiting: `guardian_link_code_entry` bucket in `rate_limit_ledger` (seeded 10 per day per guardian)
 - [ ] CSRF/CORS: Replit domains + lyceon.ai allowed
 
 ---
@@ -220,7 +224,7 @@ curl -s http://localhost:5000/api/guardian/students | jq .
 **Authoritative:** `guardian_links` (active link rows only)
 
 **Constraints:**
-- `guardian_links_no_self_link` - CHECK (guardian_profile_id <> student_user_id)
+- `guardian_not_self` - CHECK (guardian_profile_id <> student_profile_id)
 - Unique guardian↔student link rows enforced in `guardian_links`
 
 **Deprecated:** `profiles.guardian_profile_id` (legacy only; must not be used for authorization)
@@ -232,16 +236,16 @@ curl -s http://localhost:5000/api/guardian/students | jq .
 ```bash
 # 1. Apply migration
 supabase db push
-# OR: psql $DATABASE_URL -f supabase/migrations/20260102_guardian_link_code.sql
+# (the guardian link-code migration is supabase/migrations/20260901000000_scl_080_guardian_link_code.sql)
 
 # 2. Start server
 npm run dev
 
-# 3. Run smoke test (unauth)
-npx tsx scripts/guardian-smoke-test.ts
+# 3. Smoke check (unauth)
+curl -s http://localhost:5000/api/guardian/students | jq .
 
-# 4. Run smoke test (auth)
-SUPABASE_URL=<url> SUPABASE_SERVICE_ROLE_KEY=<key> npx tsx scripts/guardian-smoke-test.ts
+# 4. Guardian flow on real Postgres (see §4)
+PGHOST=<host> pnpm exec vitest run tests/ci/guardian-link-code.pg.ci.test.ts tests/ci/guardian-denial-sweep.pg.ci.test.ts
 ```
 
 ---

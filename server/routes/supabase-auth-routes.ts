@@ -10,7 +10,19 @@ import { doubleCsrfProtection } from "../middleware/csrf-double-submit.js";
 import { clearAuthCookies } from "../lib/auth-cookies.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { z } from "zod";
-import { passwordSchema } from "../../packages/shared/src/password-policy";
+import {
+  changePasswordRequestSchema,
+  passwordSchema,
+  resetPasswordRequestSchema,
+  updatePasswordRequestSchema,
+  type PasswordChangeErrorCode,
+} from "../../packages/shared/src/password-policy";
+import {
+  changePasswordWithCurrent,
+  consumePasswordRecovery,
+  hasLivePasswordRecovery,
+  hasPasswordIdentity,
+} from "../lib/password-credentials.js";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
@@ -51,6 +63,19 @@ const signupSchema = z.object({
   }),
   role: z.unknown().optional(),
 });
+
+/**
+ * Every coded password refusal has one shape, `{ error: { code, message } }` (Coding Standards
+ * §8.2), so the Settings form can show the server's message for a known code (Brief 8 ruling 4).
+ */
+function sendPasswordRefusal(
+  res: Response,
+  status: number,
+  code: PasswordChangeErrorCode,
+  message: string,
+): Response {
+  return res.status(status).json({ error: { code, message } });
+}
 
 // Helper to detect when we're running in a CI/test environment with the
 // placeholder Supabase host. In this situation we must avoid making any
@@ -427,8 +452,16 @@ router.post(
   doubleCsrfProtection,
   async (req: Request, res: Response) => {
     try {
-      const { email } = req.body;
-      if (!email) return res.status(400).json({ error: "Email is required" });
+      // F-37 (Brief 8 ruling 4): the body is parsed, not read. An unparseable body is a 400 that
+      // names the rule and never echoes the address.
+      const parsed = resetPasswordRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error:
+            parsed.error.errors[0]?.message ?? "Enter a valid email address",
+        });
+      }
+      const { email } = parsed.data;
 
       if (runningAgainstPlaceholder()) return res.json({ success: true });
 
@@ -496,7 +529,7 @@ router.post(
       // the same rules the set-new-password page renders. A password the page would refuse is
       // refused here too (the server is the enforcement; the page is the courtesy). The 400 body
       // names the unmet rule, never the password.
-      const parsed = z.object({ password: passwordSchema }).safeParse(req.body);
+      const parsed = updatePasswordRequestSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({
           error:
@@ -506,7 +539,43 @@ router.post(
       }
       const { password } = parsed.data;
 
-      if (runningAgainstPlaceholder()) return res.json({ success: true });
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      // Brief 8 ruling 4 (owner choice 2026-10-01): this path sets a password WITHOUT the current
+      // one, so it is open only to a session that has just completed a recovery link. The grant is
+      // written by /auth/callback after verifyOtp(type = recovery); an ordinary session has none and
+      // is sent to Settings, where the current password is required.
+      if (!(await hasLivePasswordRecovery(userId))) {
+        logger.warn(
+          "AUTH",
+          "update_password_no_recovery",
+          "update-password refused: no live recovery grant",
+          { requestId: req.requestId },
+        );
+        return sendPasswordRefusal(
+          res,
+          403,
+          "RECOVERY_REQUIRED",
+          "To change your password, use Settings. If you've forgotten it, request a reset email.",
+        );
+      }
+      // F-38: a Google-only account has no password; a recovery link must not quietly add one.
+      if (!(await hasPasswordIdentity(userId))) {
+        return sendPasswordRefusal(
+          res,
+          409,
+          "NO_PASSWORD_IDENTITY",
+          "This account signs in with Google, so it has no password to change.",
+        );
+      }
+
+      if (runningAgainstPlaceholder()) {
+        await consumePasswordRecovery(userId, req.requestId);
+        return res.json({ success: true });
+      }
 
       // AS-5/AS-6 (G6/G9): the recovery (or normal) session lives in the httpOnly @supabase/ssr
       // cookie. Update the password natively on the per-request server client — Supabase's updateUser
@@ -526,6 +595,9 @@ router.post(
         return res.status(400).json({ error: "Failed to update password" });
       }
 
+      // Single use: spent only once the password is set, so a provider refusal above does not
+      // send the student back to their inbox.
+      await consumePasswordRecovery(userId, req.requestId);
       res.json({ success: true, message: "Password updated successfully" });
     } catch (error: unknown) {
       logger.error(
@@ -552,5 +624,91 @@ router.post(
  * CI hardening: Tests must verify this endpoint returns 404 (not 400/401/403/500).
  */
 // REMOVED: exchange-session endpoint - see comment above for rationale
+
+/**
+ * POST /api/auth/change-password — Settings: change a password you know.
+ *
+ * @spec [Brief 8 ruling 4 (owner, 2026-10-01); F-38; Coding Standards §8.1, §12.1]
+ * | @implemented [2026-10-01]
+ *
+ * plain English: requires the current password, checked on the server by signing in with it
+ * (`changePasswordWithCurrent`), and refuses a Google-only account with `NO_PASSWORD_IDENTITY`.
+ * Supabase's "Secure password change" only reauthenticates sessions older than 24 hours, so this
+ * check is what stops a borrowed, recently-opened session from changing the password.
+ * Rate-limited like reset and sign-in, so the current password cannot be guessed here faster than
+ * at the sign-in form. The student's own session is untouched.
+ */
+router.post(
+  "/change-password",
+  authRateLimiter,
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = changePasswordRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error:
+            parsed.error.errors[0]?.message ??
+            "Password does not meet the requirements",
+        });
+      }
+      const { current_password, new_password } = parsed.data;
+
+      const user = req.user;
+      if (!user?.id || !user.email) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      if (!(await hasPasswordIdentity(user.id))) {
+        return sendPasswordRefusal(
+          res,
+          409,
+          "NO_PASSWORD_IDENTITY",
+          "This account signs in with Google, so it has no password to change.",
+        );
+      }
+      if (current_password === new_password) {
+        return sendPasswordRefusal(
+          res,
+          400,
+          "PASSWORD_UNCHANGED",
+          "Choose a new password that is different from your current one.",
+        );
+      }
+
+      const result = await changePasswordWithCurrent({
+        email: user.email,
+        currentPassword: current_password,
+        newPassword: new_password,
+        requestId: req.requestId,
+      });
+      if (!result.ok) {
+        if (result.error.kind === "current_incorrect") {
+          return sendPasswordRefusal(
+            res,
+            400,
+            "CURRENT_PASSWORD_INCORRECT",
+            "Your current password is incorrect.",
+          );
+        }
+        return res.status(500).json({ error: "Failed to update password" });
+      }
+
+      logger.info("AUTH", "change_password_ok", "Password changed from Settings", {
+        requestId: req.requestId,
+      });
+      return res.json({ success: true, message: "Password updated successfully" });
+    } catch (error: unknown) {
+      logger.error(
+        "AUTH",
+        "change_password_exception",
+        "Failed to change password",
+        { requestId: req.requestId, reason: error instanceof Error ? error.message : "unknown" },
+      );
+      return res.status(500).json({ error: "Failed to update password" });
+    }
+  },
+);
 
 export default router;

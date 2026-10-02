@@ -30,8 +30,7 @@ import { z } from "zod";
  * database refuses them. A schema wider than its column is a parse that can never fail
  * where the write already would have.
  */
-export const guardianLinkStatusSchema = z.enum(["active", "revoked"]);
-export type GuardianLinkStatus = z.infer<typeof guardianLinkStatusSchema>;
+const guardianLinkStatusSchema = z.enum(["active", "revoked"]);
 
 /**
  * genesis.sql: CHECK (initiated_by IN ('guardian','student','admin'))
@@ -40,7 +39,7 @@ export type GuardianLinkStatus = z.infer<typeof guardianLinkStatusSchema>;
  * no §36 flow produces it, so `guardianLinkInitiatorSchema` — what the application is allowed
  * to WRITE — is narrower than what the column will accept on READ.
  */
-export const guardianLinkStoredInitiatorSchema = z.enum([
+const guardianLinkStoredInitiatorSchema = z.enum([
   "guardian",
   "student",
   "admin",

@@ -37,6 +37,19 @@ const ssrUpdateUserMock = vi.hoisted(() =>
   vi.fn(async () => ({ data: { user: { id: "u" } }, error: null })),
 );
 const ssrSignOutMock = vi.hoisted(() => vi.fn());
+// Brief 8 ruling 4: the recovery grant and the password-identity check. Defaults model the
+// ordinary forgot-password case (a live grant, an email/password account); each refusal test
+// overrides one.
+const hasLivePasswordRecoveryMock = vi.hoisted(() =>
+  vi.fn(async (_id: string): Promise<boolean> => true),
+);
+const hasPasswordIdentityMock = vi.hoisted(() =>
+  vi.fn(async (_id: string): Promise<boolean> => true),
+);
+const consumePasswordRecoveryMock = vi.hoisted(() =>
+  vi.fn(async (_id: string, _requestId?: string): Promise<void> => undefined),
+);
+const PW_USER = vi.hoisted(() => ({ id: "user-pw", email: "pw@example.com" }));
 const ssrSetSessionMock = vi.hoisted(() => vi.fn());
 const profileFromMock = vi.hoisted(() =>
   vi.fn((table: string) => {
@@ -64,8 +77,11 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
   getSupabaseAdmin: () => ({
     from: profileFromMock,
   }),
-  requireSupabaseAuth: (_req: Request, _res: Response, next: NextFunction) =>
-    next(),
+  // A signed-in user on the request, as the real gate leaves it (update-password needs its id).
+  requireSupabaseAuth: (req: Request, _res: Response, next: NextFunction) => {
+    (req as Request & { user?: unknown }).user = { ...PW_USER };
+    next();
+  },
   resolveTokenFromRequest: vi.fn(() => ({
     token: null,
     tokenSource: null,
@@ -74,6 +90,13 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
     authHeaderPresent: false,
     cookieKeys: [],
   })),
+}));
+
+vi.mock("../../server/lib/password-credentials.js", () => ({
+  hasLivePasswordRecovery: hasLivePasswordRecoveryMock,
+  hasPasswordIdentity: hasPasswordIdentityMock,
+  consumePasswordRecovery: consumePasswordRecoveryMock,
+  changePasswordWithCurrent: vi.fn(),
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -626,6 +649,79 @@ describe("Auth routes — Stage 2 deltas (signin / reset / update-password)", ()
     });
     expect(tooLong.status).toBe(400);
     expect(ssrUpdateUserMock).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Brief 8 ruling 4: /update-password is the recovery path only ─────────────────────────
+  it("update-password without a live recovery grant is 403 RECOVERY_REQUIRED and sets nothing", async () => {
+    hasLivePasswordRecoveryMock.mockResolvedValueOnce(false);
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/update-password", {
+      password: "BrandNewPassword123!",
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("RECOVERY_REQUIRED");
+    expect(hasLivePasswordRecoveryMock).toHaveBeenCalledWith(PW_USER.id);
+    expect(ssrUpdateUserMock).not.toHaveBeenCalled();
+    expect(consumePasswordRecoveryMock).not.toHaveBeenCalled();
+  });
+
+  it("F-38: update-password for a Google-only account is 409 NO_PASSWORD_IDENTITY", async () => {
+    hasPasswordIdentityMock.mockResolvedValueOnce(false);
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/update-password", {
+      password: "BrandNewPassword123!",
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("NO_PASSWORD_IDENTITY");
+    expect(ssrUpdateUserMock).not.toHaveBeenCalled();
+  });
+
+  it("update-password spends the grant only after the password was set", async () => {
+    const app = await loadAuthApp();
+    ssrUpdateUserMock.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: "provider refused" },
+    } as never);
+
+    const refused = await postWithCsrf(app, "/api/auth/update-password", {
+      password: "BrandNewPassword123!",
+    });
+    expect(refused.status).toBe(400);
+    expect(consumePasswordRecoveryMock).not.toHaveBeenCalled();
+
+    const done = await postWithCsrf(app, "/api/auth/update-password", {
+      password: "BrandNewPassword123!",
+    });
+    expect(done.status).toBe(200);
+    expect(consumePasswordRecoveryMock).toHaveBeenCalledTimes(1);
+    expect(consumePasswordRecoveryMock.mock.calls[0]?.[0]).toBe(PW_USER.id);
+  });
+
+  // ── F-37: the reset body is Zod-parsed ────────────────────────────────────────────────────
+  it("F-37: reset-password refuses a malformed, missing or over-wide body before any Supabase call", async () => {
+    const app = await loadAuthApp();
+
+    const malformed = await postWithCsrf(app, "/api/auth/reset-password", {
+      email: "not-an-email",
+    });
+    const missing = await postWithCsrf(app, "/api/auth/reset-password", {});
+    const extraKey = await postWithCsrf(app, "/api/auth/reset-password", {
+      email: "reset@example.com",
+      redirectTo: "https://evil.example",
+    });
+    const notAString = await postWithCsrf(app, "/api/auth/reset-password", {
+      email: ["reset@example.com"],
+    });
+
+    for (const res of [malformed, missing, extraKey, notAString]) {
+      expect(res.status).toBe(400);
+    }
+    expect(JSON.stringify(malformed.body)).not.toContain("not-an-email");
+    expect(resetPasswordForEmailMock).not.toHaveBeenCalled();
   });
 
   it("signup refuses a password below the shared policy before any Supabase call", async () => {

@@ -24,6 +24,10 @@ const signOutMock = vi.hoisted(() => vi.fn(async () => ({ error: null })));
 const ensureProfileMock = vi.hoisted(() => vi.fn());
 const captureLegalMock = vi.hoisted(() => vi.fn());
 const hasActiveGuardianLinkMock = vi.hoisted(() => vi.fn(async () => false));
+// Brief 8 ruling 4: the callback records a completed recovery link as a server-held grant.
+const grantPasswordRecoveryMock = vi.hoisted(() =>
+  vi.fn(async (_profileId: string): Promise<void> => undefined),
+);
 
 vi.mock("../../server/lib/supabase-ssr.js", () => ({
   createSupabaseServerClient: () => ({
@@ -57,6 +61,9 @@ vi.mock("../../server/lib/profile-bootstrap.js", async (importOriginal) => {
 // G2-04: the callback reads the link live for a completed under-13 student.
 vi.mock("../../server/lib/guardian-link-state.js", () => ({
   hasActiveGuardianLink: hasActiveGuardianLinkMock,
+}));
+vi.mock("../../server/lib/password-credentials.js", () => ({
+  grantPasswordRecovery: grantPasswordRecoveryMock,
 }));
 vi.mock("../../server/lib/legal-acceptance.js", () => ({
   captureLegalAcceptances: captureLegalMock,
@@ -241,6 +248,29 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
       token_hash: "rec123",
       type: "recovery",
     });
+    // Brief 8 ruling 4: the completed recovery link is recorded for THIS user, exactly once.
+    expect(grantPasswordRecoveryMock).toHaveBeenCalledTimes(1);
+    expect(grantPasswordRecoveryMock).toHaveBeenCalledWith(USER.id);
+  });
+
+  // Brief 8 ruling 4: no grant, no recovery handoff. The student is told the link failed (and can
+  // request another) rather than being sent to a form that would refuse them.
+  it("recovery fails closed when the grant cannot be recorded", async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: SESSION, user: USER },
+      error: null,
+    });
+    grantPasswordRecoveryMock.mockRejectedValueOnce(new Error("db down"));
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=rec124&type=recovery&next=%2Fupdate-password",
+    );
+
+    expect(grantPasswordRecoveryMock).toHaveBeenCalledWith(USER.id);
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=recovery_link_invalid",
+    );
+    expect(ensureProfileMock).not.toHaveBeenCalled();
   });
 
   // AS-5 — open-redirect guard: a `next` not on the allowlist is ignored; default landing is used.
@@ -457,6 +487,8 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
       type: "signup",
     });
     expect(exchangeCodeForSessionMock).not.toHaveBeenCalled();
+    // Only a RECOVERY link grants a password change without the current password.
+    expect(grantPasswordRecoveryMock).not.toHaveBeenCalled();
   });
 
   // AL-7 — profile-per-human conflict from the callback path is a deliberate redirect, never a 500.

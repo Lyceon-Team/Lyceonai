@@ -91,7 +91,6 @@ export const redeemLinkCodeResponseSchema = z.object({
   }),
   requestId: z.string().optional(),
 });
-export type RedeemLinkCodeResponse = z.infer<typeof redeemLinkCodeResponseSchema>;
 
 /**
  * @spec [Doc-01_V8 §36.2 (per-email rate limit), §38.1; 2026-09-15 guardian invite by email]
@@ -104,7 +103,6 @@ export const inviteGuardianRequestSchema = z
     email: z.string().trim().toLowerCase().email().max(254),
   })
   .strict();
-export type InviteGuardianRequest = z.infer<typeof inviteGuardianRequestSchema>;
 
 /**
  * What the student's own code panel is told.

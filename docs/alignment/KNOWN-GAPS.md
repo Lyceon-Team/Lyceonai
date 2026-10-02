@@ -624,7 +624,7 @@ cited in a doc:
 | `scripts/ci/retention-archive-drift-check.mjs` | retention/archive drift | passes locally |
 | `scripts/ci/actor-id-coverage-guard.sh` | actor_id coverage | passes locally |
 | `scripts/ci/check_raw_sql.sh` | ad-hoc SQL outside centralized utilities (Coding Standards §17) | passes locally |
-| `scripts/ci/deletion-cascade-rehearsal.sh` | deletion cascade rehearsal | passes locally |
+| `scripts/ci/deletion-cascade-rehearsal.sh` | deletion cascade rehearsal | passes locally. **Superseded 2026-10-01 (student-ui F-47):** it was red from 2026-09-22 (seed and cascade in one transaction) with nothing to report it; its seed now commits first and its positive run is a blocking step in `ci.yml` job `deletion-deidentify-rehearsal`. |
 
 Reproduce:
 ```bash
@@ -762,6 +762,9 @@ looked like.
 Only 5 suites repo-wide already use the required pattern (`makePgSupabase` over a live
 `pg.Client` against genesis + migrations): the two guardian-link PG suites,
 `diagnostic.handler-pg`, `entitlement-write-path`, and `mastery-emission.transport`.
+(updated 2026-10-01, guardian closeout: both guardian-link PG suites, `tests/ci/guardian-link.pg.ci.test.ts`
+and `tests/ci/guardian-link-student-side.pg.ci.test.ts`, have since been deleted; this list is the
+2026-08-28 measurement, not the current set.)
 
 By workstream, Rule A: practice 6, full-length 6, tutor 3, review 3, calendar 3, diagnostic 2,
 plus 16 singletons. Rule B's heaviest files: `fullLengthExam.test.ts` (24 literals),
@@ -775,10 +778,12 @@ comm -23 <(grep -rln 'vi\.mock(.*supabase' tests/ server/__tests__/ client/src |
          <(grep -rln "makePgSupabase\|new Client(" tests/ server/__tests__/ | sort)
 ```
 
-**Guardian files still accepted, inside the gate's own scope.** Four, each with owner `guardian`
-and expiry `2026-11-01`, listed in the gate's `ACCEPTED` map with a per-file reason. Three predate
-the PG harness and converting them is real work (`guardian-reporting.contract.test.ts` is ~900
-lines). The fourth, `subject-resolver.contract.test.ts`, is a different case and is the more
+**Guardian files still accepted, inside the gate's own scope.** Three (updated 2026-10-01: was four;
+`server/__tests__/guardian-payment-access.test.ts` was converted to
+`tests/ci/guardian-payment-access.pg.ci.test.ts` in G1-10 and left the map), each with owner `guardian`
+and expiry `2026-11-01`, listed in the gate's `ACCEPTED` map with a per-file reason. Two,
+`guardian-reporting.contract.test.ts` (~900 lines) and `guardian.anti-leak.ci.test.ts`, predate
+the PG harness and converting them is real work. The third, `subject-resolver.contract.test.ts`, is a different case and is the more
 interesting one: it deliberately INJECTS decisions a real database cannot produce — an RPC error,
 a CASE arm no build recognises, a failed audit write — to prove the resolver fails closed on each.
 Its four *real* decisions could run against Postgres and its one row literal asserts a row the
@@ -786,7 +791,7 @@ resolver writes. The right end state is a split file, not a converted one.
 
 **What the gate buys today:** the class cannot grow. A new guardian test that mocks the query layer
 or spells a row by hand reds on arrival, and adding an accept-list entry is a reviewable edit
-rather than an accident. It does not retroactively fix the four accepted files.
+rather than an accident. It does not retroactively fix the three accepted files.
 
 **Spec citations:** Coding Standards §14 (tests required for anti-leak / idempotency / auth /
 redaction changes — a test that agrees with the code instead of the schema satisfies none of it);

@@ -34,7 +34,7 @@ export const ADA = "33333333-3333-4333-8333-333333333333";
 export const BO = "44444444-4444-4444-8444-444444444444";
 export const CY = "55555555-5555-4555-8555-555555555555";
 
-export type Roster = ReturnType<typeof guardianStudentsResponseSchema.parse>;
+type Roster = ReturnType<typeof guardianStudentsResponseSchema.parse>;
 
 /**
  * Roster entries through the shared contract. `lapsed` students have ended subscriptions;
@@ -60,7 +60,7 @@ export function roster(
   });
 }
 
-export type Handler = (
+type Handler = (
   url: string,
   init: RequestInit | undefined,
 ) => Response | Promise<Response> | undefined;
@@ -286,6 +286,7 @@ export function billingStatus(
     hasBillingAccount: true,
     isPaid: true,
     source: "guardian_linked_student",
+    managedBy: "self",
     requestId: "r",
     ...over,
   });

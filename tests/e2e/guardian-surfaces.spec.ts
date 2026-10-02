@@ -18,8 +18,9 @@
  *   vite --port 5173`), then
  *   E2E_BASE_URL=http://localhost:5173 E2E_SHOT_DIR=<dir> \
  *     pnpm exec playwright test tests/e2e/guardian-surfaces.spec.ts
- * Not part of `pnpm test` (vitest) and not run in CI: it needs a browser and a dev server, as
- * the exam e2e specs do.
+ * Not part of `pnpm test` (vitest): it needs a browser and a dev server. CI runs it, with
+ * `student-calendar.spec.ts` and `student-mastery.spec.ts`, in the `guardian-e2e` job
+ * (guardian closeout, Part B step 3).
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { offCentre, type Check } from "./guardian-harness/centring";

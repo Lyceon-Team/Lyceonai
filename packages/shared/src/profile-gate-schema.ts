@@ -26,5 +26,3 @@ export const profileGateSchema = z.object({
     .nullable()
     .optional(),
 });
-
-export type ProfileGate = z.infer<typeof profileGateSchema>;

@@ -16,14 +16,24 @@
  * pass an age threshold by accident.
  */
 import { z } from "zod";
+import { isValidLocalDate } from "./calendar/time.js";
 
 /** R10: a guardian account belongs to an adult. */
 export const GUARDIAN_MIN_AGE = 18;
 
-/** `YYYY-MM-DD`, the value an `<input type="date">` produces. */
+/**
+ * `YYYY-MM-DD`, the value an `<input type="date">` produces, AND a real calendar date.
+ *
+ * F-41 (Brief 8 ruling 6, 2026-10-01): the pattern alone let `2010-02-31` through, and the
+ * onboarding PATCH did not use even the pattern. The calendar check is the canonical
+ * `isValidLocalDate` (packages/shared/src/calendar/time.ts), consumed rather than re-derived.
+ * Whether the date is in the past and plausible is the server's question (`dateOfBirthRefusal`),
+ * because it needs today's date.
+ */
 export const dateOfBirthSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be YYYY-MM-DD");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be YYYY-MM-DD")
+  .refine(isValidLocalDate, { message: "Date of birth must be a real date" });
 
 /**
  * Every coded refusal on the profile-completion and link-redeem surfaces. The server owns
@@ -52,20 +62,10 @@ export const ROLE_CHOICE_ERROR_CODES = [
 export const roleChoiceErrorCodeSchema = z.enum(ROLE_CHOICE_ERROR_CODES);
 export type RoleChoiceErrorCode = z.infer<typeof roleChoiceErrorCodeSchema>;
 
-/** The body the server sends with every coded refusal above. */
-export const roleChoiceErrorBodySchema = z.object({
-  error: z.object({
-    code: roleChoiceErrorCodeSchema,
-    message: z.string().min(1),
-  }),
-});
-export type RoleChoiceErrorBody = z.infer<typeof roleChoiceErrorBodySchema>;
-
 /** Body of `POST /api/profile/date-of-birth` — the one-time fill for a guardian with none. */
 export const setDateOfBirthRequestSchema = z
   .object({ dateOfBirth: dateOfBirthSchema })
   .strict();
-export type SetDateOfBirthRequest = z.infer<typeof setDateOfBirthRequestSchema>;
 
 /**
  * Whole years between `dateOfBirth` and `today`, or `null` when the input is not a real

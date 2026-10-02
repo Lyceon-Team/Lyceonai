@@ -155,3 +155,58 @@ export function passwordSchemaFor(policy: PasswordPolicy): z.ZodString {
 
 /** The canonical schema — what signup and update-password parse against. */
 export const passwordSchema = passwordSchemaFor(PASSWORD_POLICY);
+
+/**
+ * The request bodies of the three password endpoints, and the codes their refusals carry.
+ *
+ * @spec [Brief 8 ruling 4 (owner, 2026-10-01): current password checked on the server before a
+ *        change; F-38 a Google-only account is refused with a defined error; F-37 the reset
+ *        request is Zod-validated; Coding Standards §7.1] | @implemented [2026-10-01]
+ *
+ * plain English: `POST /api/auth/change-password` (Settings) needs the current password and a new
+ * one; `POST /api/auth/update-password` (the last step of forgot-password) needs only the new one,
+ * because it is reachable only with a recovery grant; `POST /api/auth/reset-password` needs an
+ * email. Every body is `.strict()`. The current password is checked for presence and the 72-byte
+ * ceiling only — its CONTENT is never re-validated against today's policy, or a student whose
+ * password predates a policy change could never change it.
+ */
+export const changePasswordRequestSchema = z
+  .object({
+    current_password: z
+      .string()
+      .min(1, "Enter your current password")
+      .max(PASSWORD_POLICY.maxLength, "Your current password is too long"),
+    new_password: passwordSchema,
+  })
+  .strict();
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+
+export const updatePasswordRequestSchema = z
+  .object({ password: passwordSchema })
+  .strict();
+export type UpdatePasswordRequest = z.infer<typeof updatePasswordRequestSchema>;
+
+export const resetPasswordRequestSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .min(1, "Email is required")
+      .max(254)
+      .email("Enter a valid email address"),
+  })
+  .strict();
+export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
+
+export const PASSWORD_CHANGE_ERROR_CODES = [
+  /** The current password did not match. */
+  "CURRENT_PASSWORD_INCORRECT",
+  /** F-38: the account signs in with Google only and has no password to change. */
+  "NO_PASSWORD_IDENTITY",
+  /** `/update-password` without a live recovery grant: use Settings, or request a reset email. */
+  "RECOVERY_REQUIRED",
+  /** The new password is the same as the current one. */
+  "PASSWORD_UNCHANGED",
+] as const;
+export type PasswordChangeErrorCode =
+  (typeof PASSWORD_CHANGE_ERROR_CODES)[number];

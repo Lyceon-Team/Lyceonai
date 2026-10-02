@@ -225,6 +225,35 @@ export const billingPlansResponseSchema = z.object({
 });
 
 /**
+ * Who manages a student's plan, as `GET /api/billing/status` reports it.
+ *
+ * @spec [Brief 8 ruling 5 / register F-40 (owner, 2026-10-01): derived from whether the student is
+ *        the Stripe customer; no new payer column] | @implemented [2026-10-01]
+ *
+ * plain English: `guardian` when the student's plan is backed by a Stripe subscription and the
+ * student is not a Stripe customer at all — so the subscription can only be someone else's, and
+ * the portal (which opens the CALLER's own customer) has nothing to show them. The UI then says
+ * "Managed by your guardian" with no Manage button. `self` otherwise, including a student with no
+ * plan (they would buy their own) and every guardian (who manages their own customer).
+ *
+ * Known edge, stated rather than hidden: a student who once paid for themselves (so has a Stripe
+ * customer) and is now covered by a guardian reads `self`. The portal then opens their own,
+ * real customer record — their past billing — which is a reachable page, not the 409. Telling the
+ * two apart needs either a Stripe call on every status read or the payer column the ruling ruled
+ * out.
+ */
+export const billingManagedBySchema = z.enum(["self", "guardian"]);
+export type BillingManagedBy = z.infer<typeof billingManagedBySchema>;
+
+/** Pure: the F-40 derivation, kept here so the route and its test share one definition. */
+export function deriveBillingManagedBy(input: {
+  hasSubscription: boolean;
+  isStripeCustomer: boolean;
+}): BillingManagedBy {
+  return input.hasSubscription && !input.isStripeCustomer ? "guardian" : "self";
+}
+
+/**
  * What GET /api/billing/status returns — ONE shape for every banner that reads it.
  *
  * @spec [Guardian_Closure_Plan G4-09 (G-AUD-26); Doc 01 V8 §31.1–§31.3 (a guardian's access
@@ -232,9 +261,9 @@ export const billingPlansResponseSchema = z.object({
  * @implemented [2026-09-30]
  *
  * plain English: the route has two branches — the self-paying student and the guardian — and
- * both write the same ten keys; the guardian branch adds `hasActiveLink` (§31.3's fold) and
+ * both write the same eleven keys (`managedBy` is F-40's); the guardian branch adds `hasActiveLink` (§31.3's fold) and
  * `source: "guardian_linked_student"` (the answer is derived, and says so). Expected outcome:
- * every client reader parses this once, in `useBillingStatus`, instead of four readers each
+ * every client reader parses this once, in `useBillingStatusQuery`, instead of four readers each
  * casting `res.json()` to a private type that declared whichever subset it happened to read.
  * That was G-AUD-26: three cache keys, four types, no parse — so a renamed key read as
  * `undefined` and every banner keyed on it vanished without an error.
@@ -259,6 +288,8 @@ export const billingStatusResponseSchema = z.object({
   lapsed: z.boolean(),
   hasBillingAccount: z.boolean(),
   isPaid: z.boolean(),
+  /** F-40: who manages the plan; both branches write it (`self` for every guardian). */
+  managedBy: billingManagedBySchema,
   /** Guardian branch only: is this guardian linked to any student at all (§31.3). */
   hasActiveLink: z.boolean().optional(),
   /** Guardian branch only: the answer is derived from a linked student, never owned. */

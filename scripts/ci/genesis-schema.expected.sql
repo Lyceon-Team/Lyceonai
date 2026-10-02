@@ -5028,6 +5028,23 @@ $$;
 
 
 --
+-- Name: consume_password_recovery(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.consume_password_recovery(p_profile_id uuid) RETURNS boolean
+    LANGUAGE sql
+    SET search_path TO 'public'
+    AS $$
+  WITH spent AS (
+    DELETE FROM public.password_recovery_grants
+    WHERE profile_id = p_profile_id
+    RETURNING expires_at
+  )
+  SELECT COALESCE(bool_or(expires_at > now()), false) FROM spent;
+$$;
+
+
+--
 -- Name: guardian_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7887,41 +7904,23 @@ COMMENT ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id
 
 
 --
--- Name: guardian_can_view_student(uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: grant_password_recovery(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.guardian_can_view_student(p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
+CREATE FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
-  SELECT public.guardian_can_view_student_as(auth.uid(), p_student_id);
+BEGIN
+  IF p_ttl_seconds IS NULL OR p_ttl_seconds < 60 OR p_ttl_seconds > 3600 THEN
+    RAISE EXCEPTION 'grant_password_recovery: ttl % is outside 60..3600 seconds', p_ttl_seconds;
+  END IF;
+  INSERT INTO public.password_recovery_grants (profile_id, granted_at, expires_at)
+  VALUES (p_profile_id, now(), now() + make_interval(secs => p_ttl_seconds))
+  ON CONFLICT (profile_id) DO UPDATE
+    SET granted_at = EXCLUDED.granted_at, expires_at = EXCLUDED.expires_at;
+END;
 $$;
-
-
---
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student(p_student_id uuid) IS 'RLS entry point for guardian visibility. Delegates to guardian_can_view_student_as with auth.uid() as the principal, so a caller may only ask about themselves as guardian. Body moved to guardian_view_decision 2026-08-27 so the application gate and the six RLS policies share ONE derivation.';
-
-
---
--- Name: guardian_can_view_student_as(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT public.guardian_view_decision(p_guardian_id, p_student_id) = 'allow';
-$$;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) IS 'Boolean form of guardian_view_decision with the principal passed explicitly, for application callers on the service-role connection where auth.uid() is NULL. Service-role only, for the same reason as guardian_view_decision.';
 
 
 --
@@ -7965,7 +7964,7 @@ $$;
 -- Name: FUNCTION guardian_view_decision(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) IS 'THE guardian-visibility derivation (Doc 01 V8 §35 + §38.1, Doc 05B §10.1/§10.3). Returns allow | not_linked | student_unentitled. Service-role only: the guardian id is an argument, so direct callers could otherwise probe arbitrary link pairs. guardian_can_view_student_as and guardian_can_view_student both delegate here.';
+COMMENT ON FUNCTION public.guardian_view_decision(p_guardian_id uuid, p_student_id uuid) IS 'THE guardian-visibility derivation (Doc 01 V8 §35 + §38.1, Doc 05B §10.1/§10.3), and its only form: the server''s subject resolver calls it on the service role. Returns allow | not_linked | student_unentitled. Service-role only: the guardian id is an argument, so direct callers could otherwise probe arbitrary link pairs. The boolean forms guardian_can_view_student / _as were dropped with the RLS policies that called them (20261017000000, SCL-196).';
 
 
 --
@@ -8419,6 +8418,21 @@ $$;
 --
 
 COMMENT ON FUNCTION public.operational_log_retention_days() IS 'Privacy Policy v3 §6.7: the ceiling on operational records not covered by an enumerated category, in days. THE single definition; the sweep reads it.';
+
+
+--
+-- Name: password_recovery_live(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.password_recovery_live(p_profile_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.password_recovery_grants
+    WHERE profile_id = p_profile_id AND expires_at > now()
+  );
+$$;
 
 
 --
@@ -10443,6 +10457,87 @@ $$;
 
 
 --
+-- Name: save_student_background(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_student_background(p_student_id uuid, p_patch jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_ids        text[];
+  v_unknown    text[];
+  v_hs         text;
+BEGIN
+  IF p_patch IS NULL OR jsonb_typeof(p_patch) <> 'object' THEN
+    RAISE EXCEPTION 'save_student_background: patch must be a JSON object';
+  END IF;
+
+  IF p_patch ? 'high_school_id' AND jsonb_typeof(p_patch -> 'high_school_id') = 'string' THEN
+    v_hs := p_patch ->> 'high_school_id';
+    IF NOT EXISTS (
+      SELECT 1 FROM public.ref_high_schools WHERE id = v_hs AND retired_at IS NULL
+    ) AND NOT EXISTS (
+      SELECT 1 FROM public.student_background
+       WHERE student_id = p_student_id AND high_school_id = v_hs
+    ) THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'unknown_high_school');
+    END IF;
+  END IF;
+
+  IF p_patch ? 'dream_school_ids' THEN
+    SELECT COALESCE(array_agg(value ORDER BY ord), ARRAY[]::text[])
+      INTO v_ids
+      FROM jsonb_array_elements_text(p_patch -> 'dream_school_ids') WITH ORDINALITY AS t(value, ord);
+    IF cardinality(v_ids) > 3 THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'too_many_dream_schools');
+    END IF;
+    IF cardinality(v_ids) <> (SELECT count(DISTINCT x) FROM unnest(v_ids) AS x) THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'duplicate_dream_school');
+    END IF;
+    SELECT array_agg(x) INTO v_unknown
+      FROM unnest(v_ids) AS x
+     WHERE NOT EXISTS (
+       SELECT 1 FROM public.ref_colleges c WHERE c.id = x AND c.retired_at IS NULL
+     ) AND NOT EXISTS (
+       SELECT 1 FROM public.student_dream_schools d
+        WHERE d.student_id = p_student_id AND d.college_id = x
+     );
+    IF v_unknown IS NOT NULL THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'unknown_college');
+    END IF;
+  END IF;
+
+  INSERT INTO public.student_background AS b (student_id, graduation_year, gpa_range, high_school_id, updated_at)
+  VALUES (
+    p_student_id,
+    CASE WHEN p_patch ? 'graduation_year' THEN (p_patch ->> 'graduation_year')::smallint END,
+    CASE WHEN p_patch ? 'gpa_range' THEN p_patch ->> 'gpa_range' END,
+    CASE WHEN p_patch ? 'high_school_id' THEN p_patch ->> 'high_school_id' END,
+    now()
+  )
+  ON CONFLICT (student_id) DO UPDATE SET
+    graduation_year = CASE WHEN p_patch ? 'graduation_year'
+                           THEN (p_patch ->> 'graduation_year')::smallint ELSE b.graduation_year END,
+    gpa_range       = CASE WHEN p_patch ? 'gpa_range'
+                           THEN p_patch ->> 'gpa_range' ELSE b.gpa_range END,
+    high_school_id  = CASE WHEN p_patch ? 'high_school_id'
+                           THEN p_patch ->> 'high_school_id' ELSE b.high_school_id END,
+    updated_at      = now();
+
+  IF p_patch ? 'dream_school_ids' THEN
+    DELETE FROM public.student_dream_schools WHERE student_id = p_student_id;
+    INSERT INTO public.student_dream_schools (student_id, position, college_id)
+    SELECT p_student_id, ord::smallint, value
+      FROM unnest(v_ids) WITH ORDINALITY AS t(value, ord);
+  END IF;
+
+  RETURN jsonb_build_object('ok', true);
+END;
+$$;
+
+
+--
 -- Name: score_test_session_from_outbox(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -10763,6 +10858,44 @@ CREATE FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) RETURNS 
   )
   FROM scoring_constants
   WHERE scoring_model_version = p_version;
+$$;
+
+
+--
+-- Name: search_ref_colleges(text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_ref_colleges(p_query text, p_limit integer) RETURNS TABLE(id text, name text, city text, state text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+  WITH q AS (SELECT lower(btrim(p_query)) AS term)
+  SELECT c.id, c.name, c.city, c.state
+  FROM public.ref_colleges c, q
+  WHERE char_length(q.term) >= 2
+    AND c.retired_at IS NULL
+    AND strpos(lower(c.name), q.term) > 0
+  ORDER BY (strpos(lower(c.name), q.term) = 1) DESC, c.name, c.id
+  LIMIT LEAST(GREATEST(COALESCE(p_limit, 20), 1), 20);
+$$;
+
+
+--
+-- Name: search_ref_high_schools(text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_ref_high_schools(p_query text, p_limit integer) RETURNS TABLE(id text, name text, city text, state text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+  WITH q AS (SELECT lower(btrim(p_query)) AS term)
+  SELECT s.id, s.name, s.city, s.state
+  FROM public.ref_high_schools s, q
+  WHERE char_length(q.term) >= 2
+    AND s.retired_at IS NULL
+    AND strpos(lower(s.name), q.term) > 0
+  ORDER BY (strpos(lower(s.name), q.term) = 1) DESC, s.name, s.id
+  LIMIT LEAST(GREATEST(COALESCE(p_limit, 20), 1), 20);
 $$;
 
 
@@ -13592,6 +13725,25 @@ CREATE TABLE public.observability_runtime_config_history (
 
 
 --
+-- Name: password_recovery_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.password_recovery_grants (
+    profile_id uuid NOT NULL,
+    granted_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT password_recovery_grants_check CHECK ((expires_at > granted_at))
+);
+
+
+--
+-- Name: TABLE password_recovery_grants; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.password_recovery_grants IS 'Brief 8 ruling 4. A single-use, short-lived proof that the profile completed a password-recovery link. Only its holder may set a password without the current one. Written by grant_password_recovery, consumed by consume_password_recovery.';
+
+
+--
 -- Name: practice_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13644,7 +13796,6 @@ CREATE TABLE public.profiles (
     country_code text,
     stripe_customer_id text,
     guardian_email text,
-    consent_given_at timestamp with time zone,
     guardian_profile_id uuid,
     student_link_code text,
     student_link_code_issued_at timestamp with time zone,
@@ -13770,6 +13921,56 @@ CREATE TABLE public.rate_limit_runtime_config_history (
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: ref_colleges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ref_colleges (
+    id text NOT NULL,
+    name text NOT NULL,
+    city text NOT NULL,
+    state text NOT NULL,
+    retired_at timestamp with time zone,
+    imported_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ref_colleges_city_check CHECK ((char_length(city) <= 100)),
+    CONSTRAINT ref_colleges_id_check CHECK ((id ~ '^[0-9]{6}$'::text)),
+    CONSTRAINT ref_colleges_name_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 200))),
+    CONSTRAINT ref_colleges_state_check CHECK ((state ~ '^[A-Z]{2}$'::text))
+);
+
+
+--
+-- Name: TABLE ref_colleges; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ref_colleges IS 'SCL-195. College Scorecard institutions, keyed by IPEDS UNITID: currently operating, four-year, degree-granting. Loaded only by scripts/reference-data/import-reference-data.ts from content/reference/colleges.csv (manifest.json carries source, vintage, filters, SHA-256). retired_at marks a row absent from the latest snapshot; it is never deleted.';
+
+
+--
+-- Name: ref_high_schools; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ref_high_schools (
+    id text NOT NULL,
+    name text NOT NULL,
+    city text NOT NULL,
+    state text NOT NULL,
+    retired_at timestamp with time zone,
+    imported_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ref_high_schools_city_check CHECK ((char_length(city) <= 100)),
+    CONSTRAINT ref_high_schools_id_check CHECK ((id ~ '^(nces:[0-9]{12}|pss:[A-Z0-9]{8})$'::text)),
+    CONSTRAINT ref_high_schools_name_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 200))),
+    CONSTRAINT ref_high_schools_state_check CHECK ((state ~ '^[A-Z]{2}$'::text))
+);
+
+
+--
+-- Name: TABLE ref_high_schools; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ref_high_schools IS 'SCL-195. Schools offering grade 12: NCES CCD public (id nces:<NCESSCH>) and NCES PSS private (id pss:<PPIN>). Loaded only by scripts/reference-data/import-reference-data.ts from content/reference/high_schools.csv. retired_at as on ref_colleges.';
 
 
 --
@@ -14101,6 +14302,28 @@ COMMENT ON TABLE public.stripe_webhook_events IS 'Idempotency gate for Stripe we
 
 
 --
+-- Name: student_background; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_background (
+    student_id uuid NOT NULL,
+    graduation_year smallint,
+    gpa_range text,
+    high_school_id text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT student_background_gpa_range_check CHECK ((gpa_range = ANY (ARRAY['lt_2_0'::text, '2_0_2_49'::text, '2_5_2_99'::text, '3_0_3_49'::text, '3_5_3_79'::text, '3_8_4_0'::text, 'gt_4_0'::text]))),
+    CONSTRAINT student_background_graduation_year_check CHECK (((graduation_year >= 2000) AND (graduation_year <= 2100)))
+);
+
+
+--
+-- Name: TABLE student_background; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.student_background IS 'SCL-195. Optional, student-supplied background. Never shown to a guardian, never used in any calculation (dream schools are motivation only). Written only by save_student_background. ON DELETE CASCADE from profiles: account deletion removes it.';
+
+
+--
 -- Name: student_section_projection_snapshots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14195,6 +14418,25 @@ CREATE VIEW public.student_baseline_pending AS
 --
 
 COMMENT ON VIEW public.student_baseline_pending IS 'Students who completed the diagnostic but have no usable diagnostic_baseline snapshot, with the age of that state. Age, not count, is the alert condition — a brief pending state is normal after every completion.';
+
+
+--
+-- Name: student_dream_schools; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_dream_schools (
+    student_id uuid NOT NULL,
+    "position" smallint NOT NULL,
+    college_id text NOT NULL,
+    CONSTRAINT student_dream_schools_position_check CHECK ((("position" >= 1) AND ("position" <= 3)))
+);
+
+
+--
+-- Name: TABLE student_dream_schools; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.student_dream_schools IS 'SCL-195. Up to three ordered dream colleges per student (position 1..3, each college at most once). Shown on the student''s calendar as motivation only; no effect on target score or any calculation. Written only by save_student_background.';
 
 
 --
@@ -15444,6 +15686,14 @@ ALTER TABLE ONLY public.observability_runtime_config
 
 
 --
+-- Name: password_recovery_grants password_recovery_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.password_recovery_grants
+    ADD CONSTRAINT password_recovery_grants_pkey PRIMARY KEY (profile_id);
+
+
+--
 -- Name: practice_runtime_config_history practice_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15537,6 +15787,22 @@ ALTER TABLE ONLY public.rate_limit_runtime_config_history
 
 ALTER TABLE ONLY public.rate_limit_runtime_config
     ADD CONSTRAINT rate_limit_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: ref_colleges ref_colleges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ref_colleges
+    ADD CONSTRAINT ref_colleges_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ref_high_schools ref_high_schools_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ref_high_schools
+    ADD CONSTRAINT ref_high_schools_pkey PRIMARY KEY (id);
 
 
 --
@@ -15668,6 +15934,14 @@ ALTER TABLE ONLY public.stripe_webhook_events
 
 
 --
+-- Name: student_background student_background_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_background
+    ADD CONSTRAINT student_background_pkey PRIMARY KEY (student_id);
+
+
+--
 -- Name: student_domain_kpi student_domain_kpi_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15681,6 +15955,22 @@ ALTER TABLE ONLY public.student_domain_kpi
 
 ALTER TABLE ONLY public.student_domain_mastery
     ADD CONSTRAINT student_domain_mastery_pkey PRIMARY KEY (student_id, section, domain);
+
+
+--
+-- Name: student_dream_schools student_dream_schools_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_dream_schools
+    ADD CONSTRAINT student_dream_schools_pkey PRIMARY KEY (student_id, "position");
+
+
+--
+-- Name: student_dream_schools student_dream_schools_student_id_college_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_dream_schools
+    ADD CONSTRAINT student_dream_schools_student_id_college_id_key UNIQUE (student_id, college_id);
 
 
 --
@@ -16967,6 +17257,20 @@ CREATE UNIQUE INDEX scoring_constants_unique_idx ON public.scoring_constants USI
 
 
 --
+-- Name: student_background_high_school; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX student_background_high_school ON public.student_background USING btree (high_school_id) WHERE (high_school_id IS NOT NULL);
+
+
+--
+-- Name: student_dream_schools_college; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX student_dream_schools_college ON public.student_dream_schools USING btree (college_id);
+
+
+--
 -- Name: unique_active_guardian_link; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -18001,6 +18305,14 @@ ALTER TABLE ONLY public.observability_runtime_config
 
 
 --
+-- Name: password_recovery_grants password_recovery_grants_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.password_recovery_grants
+    ADD CONSTRAINT password_recovery_grants_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: practice_runtime_config_history practice_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18254,6 +18566,38 @@ ALTER TABLE ONLY public.score_runs
 
 ALTER TABLE ONLY public.scoring_constants
     ADD CONSTRAINT scoring_constants_scoring_model_version_fkey FOREIGN KEY (scoring_model_version) REFERENCES public.scoring_model_versions(version);
+
+
+--
+-- Name: student_background student_background_high_school_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_background
+    ADD CONSTRAINT student_background_high_school_id_fkey FOREIGN KEY (high_school_id) REFERENCES public.ref_high_schools(id) ON DELETE SET NULL;
+
+
+--
+-- Name: student_background student_background_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_background
+    ADD CONSTRAINT student_background_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: student_dream_schools student_dream_schools_college_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_dream_schools
+    ADD CONSTRAINT student_dream_schools_college_id_fkey FOREIGN KEY (college_id) REFERENCES public.ref_colleges(id) ON DELETE CASCADE;
+
+
+--
+-- Name: student_dream_schools student_dream_schools_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_dream_schools
+    ADD CONSTRAINT student_dream_schools_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -19109,6 +19453,12 @@ ALTER TABLE public.observability_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.observability_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: password_recovery_grants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.password_recovery_grants ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: practice_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19166,20 +19516,6 @@ CREATE POLICY profiles_select_self ON public.profiles FOR SELECT USING ((id = au
 ALTER TABLE public.projection_refresh_outbox ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_section_projection_snapshots projection_snapshots_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY projection_snapshots_guardian_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_projection_snapshots projection_snapshots_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY projection_snapshots_student_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: psi_occurred_at_backfill_log; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19215,6 +19551,18 @@ ALTER TABLE public.rate_limit_runtime_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.rate_limit_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: ref_colleges; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ref_colleges ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: ref_high_schools; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ref_high_schools ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: review_error_attempts; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19426,24 +19774,16 @@ ALTER TABLE public.source_types ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stripe_webhook_events ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: student_background; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_background ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: student_domain_kpi; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.student_domain_kpi ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_domain_kpi student_domain_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_domain_kpi student_domain_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_kpi_student_read ON public.student_domain_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
 
 --
 -- Name: student_domain_mastery; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19452,18 +19792,10 @@ CREATE POLICY student_domain_kpi_student_read ON public.student_domain_kpi FOR S
 ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_domain_mastery student_domain_mastery_guardian_read; Type: POLICY; Schema: public; Owner: -
+-- Name: student_dream_schools; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
-CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_domain_mastery student_domain_mastery_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_mastery_student_read ON public.student_domain_mastery FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
+ALTER TABLE public.student_dream_schools ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: student_kpi_rollups_current; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19478,20 +19810,6 @@ ALTER TABLE public.student_kpi_rollups_current ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_overall_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_overall_kpi student_overall_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_overall_kpi student_overall_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_overall_kpi_student_read ON public.student_overall_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_projection_refresh_state; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19504,20 +19822,6 @@ ALTER TABLE public.student_projection_refresh_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_section_kpi ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_section_kpi student_section_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_kpi student_section_kpi_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_kpi_student_read ON public.student_section_kpi FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_section_projection_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19528,20 +19832,6 @@ ALTER TABLE public.student_section_projection_snapshots ENABLE ROW LEVEL SECURIT
 --
 
 ALTER TABLE public.student_section_projections ENABLE ROW LEVEL SECURITY;
-
---
--- Name: student_section_projections student_section_projections_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_projections_guardian_read ON public.student_section_projections FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_section_projections student_section_projections_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_section_projections_student_read ON public.student_section_projections FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
 
 --
 -- Name: student_skill_kpi; Type: ROW SECURITY; Schema: public; Owner: -
@@ -20649,6 +20939,14 @@ GRANT ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) TO servic
 
 
 --
+-- Name: FUNCTION consume_password_recovery(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.consume_password_recovery(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.consume_password_recovery(p_profile_id uuid) TO service_role;
+
+
+--
 -- Name: TABLE guardian_links; Type: ACL; Schema: public; Owner: -
 --
 
@@ -21073,20 +21371,11 @@ GRANT ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_
 
 
 --
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer) TO service_role;
 
 
 --
@@ -21238,6 +21527,14 @@ GRANT ALL ON FUNCTION public.notify_config_change() TO service_role;
 
 REVOKE ALL ON FUNCTION public.operational_log_retention_days() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.operational_log_retention_days() TO service_role;
+
+
+--
+-- Name: FUNCTION password_recovery_live(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.password_recovery_live(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.password_recovery_live(p_profile_id uuid) TO service_role;
 
 
 --
@@ -21782,6 +22079,14 @@ GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO s
 
 
 --
+-- Name: FUNCTION save_student_background(p_student_id uuid, p_patch jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.save_student_background(p_student_id uuid, p_patch jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_student_background(p_student_id uuid, p_patch jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION score_test_session_from_outbox(p_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21812,6 +22117,22 @@ GRANT ALL ON FUNCTION public.scoring_constants_sha256(p_version text) TO service
 
 REVOKE ALL ON FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.scoring_constants_snapshot_jsonb(p_version text) TO service_role;
+
+
+--
+-- Name: FUNCTION search_ref_colleges(p_query text, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.search_ref_colleges(p_query text, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.search_ref_colleges(p_query text, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION search_ref_high_schools(p_query text, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.search_ref_high_schools(p_query text, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.search_ref_high_schools(p_query text, p_limit integer) TO service_role;
 
 
 --
@@ -23153,6 +23474,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config_h
 
 
 --
+-- Name: TABLE password_recovery_grants; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.password_recovery_grants TO service_role;
+
+
+--
 -- Name: TABLE practice_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -23214,6 +23542,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config TO s
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE ref_colleges; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.ref_colleges TO service_role;
+
+
+--
+-- Name: TABLE ref_high_schools; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.ref_high_schools TO service_role;
 
 
 --
@@ -23558,6 +23900,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.stripe_webhook_events TO servi
 
 
 --
+-- Name: TABLE student_background; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.student_background TO service_role;
+
+
+--
 -- Name: TABLE student_section_projection_snapshots; Type: ACL; Schema: public; Owner: -
 --
 
@@ -23639,6 +23988,13 @@ GRANT SELECT ON TABLE public.student_diagnostic_states TO service_role;
 --
 
 GRANT SELECT ON TABLE public.student_baseline_pending TO service_role;
+
+
+--
+-- Name: TABLE student_dream_schools; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.student_dream_schools TO service_role;
 
 
 --

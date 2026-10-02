@@ -90,6 +90,7 @@ describe("guardian dashboard survives a payment-health signal (test 1)", () => {
           hasBillingAccount: true,
           isPaid: true,
           source: "guardian_linked_student",
+          managedBy: "self",
         }),
       ),
     );
