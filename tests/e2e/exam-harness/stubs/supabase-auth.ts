@@ -20,3 +20,19 @@ export function requireRequestUser(
   }
   return req.user;
 }
+
+/**
+ * Guardian final purge, item 9: the real /api/guardian router's role guard
+ * (`server/middleware/guardian-role.ts`) refuses through this. Same body shape as the real
+ * `sendForbidden` (`sendDenial`: error, message, requestId).
+ */
+export function sendForbidden(
+  res: Response,
+  options: { error: string; message: string; requestId?: string },
+): Response {
+  return res.status(403).json({
+    error: options.error,
+    message: options.message,
+    requestId: options.requestId,
+  });
+}

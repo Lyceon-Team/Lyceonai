@@ -25,7 +25,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | A4.StudentGuardiansPanel.tsx | A | `client/src/components/student/StudentGuardiansPanel.tsx` — `export` keyword on `STUDENT_GUARDIAN_LINKS_QUERY_KEY`, `studentGuardianLinksQueryKey` | DELETE `export` (symbol stays: used in its own file) | DELETED (`a868b08`) |
 | A4.test-harness.tsx | A | `client/src/features/guardian/test-harness.tsx` — `export` keyword on types `Roster`, `Handler` | DELETE `export` (types stay) | DELETED (`a868b08`) |
 | A5 | A | `client/src/features/guardian/guardian-surface.css` — floor entries `.text-\[11px\]`, `.text-\[14px\]` | DELETE the two entries | DELETED (`a868b08`) |
-| A6 | A | `guardian-type-floor.generated.css` selectors `.stat`, `.chip-mode button`, `.toast`, `.daymenu button` | HANDED OFF (calendar) | HANDED OFF |
+| A6 | A | `guardian-type-floor.generated.css` selectors `.stat`, `.chip-mode button`, `.toast`, `.daymenu button` | HANDED OFF (calendar); taken back by the owner brief 2026-10-02 | DELETED (final-purge item 6: the `calendar.css` rules, floor regenerated; student calendar byte-identical at 1440 and 390) |
 | A7 | A | `GuardianErrorState` / `GuardianReadFailureState` optional `onRetry` (no-retry branch) | KEEP | KEEP |
 | A8 | A | `HeaderFacts` prop `viewer` (only `"guardian"` is passed) | KEEP | KEEP |
 | A9 | A | Test-only exports `latestCompletedExam`, `POLLING_TIMEOUT_MS` | KEEP | KEEP |
@@ -33,15 +33,15 @@ Every row's evidence is a command run on this branch with its real output pasted
 | A11 | A | Unrouted pages; modules with no importer; modules only tests import (guardian scope) | none found | none found |
 | A12 | A | `features/calendar/components/Chrome.tsx` `export` on `TargetFact`, `StreakFact`, `CountdownFact`, `ProjectionFact` | HANDED OFF (calendar) | HANDED OFF |
 | G1 | G | `client/src/features/guardian/routes.tsx` — the three `/students/:studentId/{calendar,tests,tests/:sessionId}` redirects, `RedirectStudent`, `RedirectExam`, and the never-read `redirect` field | DELETE (owner, 2026-10-01: delete, and repoint the exam spec) | DELETED (`442b980`) |
-| G2 | G | `tests/e2e/exam-disclosure.spec.ts` guardian step (exam vertical's local-only spec): fails at the guardian exam page because the exam e2e harness serves no `/api/guardian/students` roster, which the Wave 4 shell (G4-06) reads first | HANDED OFF (exam) | HANDED OFF |
+| G2 | G | `tests/e2e/exam-disclosure.spec.ts` guardian step (exam vertical's local-only spec): fails at the guardian exam page because the exam e2e harness serves no `/api/guardian/students` roster, which the Wave 4 shell (G4-06) reads first | HANDED OFF (exam); taken back by the owner brief 2026-10-02 | FIXED (final-purge item 9: the harness mounts the real `/api/guardian` router; the spec passes) |
 | B1 | B | `server/services/guardian-link-audit.ts` (whole module: `auditGuardianLink`, `GuardianLinkAuditAction`) | DELETE (with the old INSTRUMENT case, its only caller; see D1) | DELETED (`ee27f61`) |
 | B2 | B | `server/lib/account.ts` re-exports `GuardianLinkStatus`, `GUARDIAN_LINK_ERROR`, `GuardianLinkError` | DELETE the three re-exports (keep `GuardianLink`) | DELETED (`ee27f61`) |
 | B3 | B | `server/lib/auth-role.ts` `parseRuntimeRole` — the `'parent' → 'guardian'` role-normalising branch | DELETE the branch | DELETED (`ee27f61`) |
-| B4 | B | `server/services/kpi-access.ts` `resolvePaidKpiAccessForUser` guardian fall-through | HANDED OFF (cleanup; owner, 2026-10-01) | HANDED OFF |
+| B4 | B | `server/services/kpi-access.ts` `resolvePaidKpiAccessForUser` guardian fall-through | HANDED OFF (cleanup; owner, 2026-10-01); taken back by the owner brief 2026-10-02 | DELETED (final-purge item 5: the guardian branch and the role parameter; existing tests untouched) |
 | B5 | B | `apps/api/src/services/mastery-view.ts` `parseSectionFilter`, `SectionParseResult` | DELETE | DELETED (`ee27f61`) |
 | B6 | B | `getSupabaseAnon` — `server/middleware/supabase-auth.ts` and `apps/api/src/lib/supabase-admin.ts` (Wave 5, G-AUD-30) | DELETE both | DELETED (`ee27f61`) |
-| B7 | B | `server/middleware/supabase-auth.ts` `requireRequestAuthContext` (Wave 5, G-AUD-30) | HANDED OFF (cleanup / auth; owner, 2026-10-01) | HANDED OFF |
-| B8 | B | `/api/profile` consent remnants: PATCH `guardianEmail`; responses `guardianEmail`, `guardianConsent`, `studentLinkCode`; `profile-bootstrap` selects `guardian_email`; `SupabaseUser.student_link_code` | HANDED OFF (cleanup, with G-NEW-08; owner, 2026-10-01) | HANDED OFF |
+| B7 | B | `server/middleware/supabase-auth.ts` `requireRequestAuthContext` (Wave 5, G-AUD-30) | HANDED OFF (cleanup / auth; owner, 2026-10-01); taken back by the owner brief 2026-10-02 | DELETED (final-purge item 4, with its auth-surface test case and `securityTestUtils` mock entry) |
+| B8 | B | `/api/profile` consent remnants: PATCH `guardianEmail`; responses `guardianEmail`, `guardianConsent`, `studentLinkCode`; `profile-bootstrap` selects `guardian_email`; `SupabaseUser.student_link_code` | HANDED OFF (cleanup, with G-NEW-08; owner, 2026-10-01); taken back by the owner brief 2026-10-02 for the API fields only | DELETED (final-purge item 3: the response fields and PATCH input; `profile-bootstrap`'s `guardian_email` select and `SupabaseUser.student_link_code` are internal, not API, and stay — see the final-purge hand-off) |
 | B9 | B | `server/index.ts` orphan comment `// Guardian Consent Routes (Publicly accessible for verification)` | DELETE | DELETED (`ee27f61`) |
 | B10 | B | `server/routes/student-resources.ts` inline `{ studentId: string; via: "self" | "guardian" }` | REPLACE with the canonical `Subject` | REPLACED (`ee27f61`) |
 | B11 | B | `server/middleware/guardian-link-rate-limit.ts` `export` on the four `*_BUCKET` constants and `guardianInviteEmailBucketKey`; `templates/guardian-link-invite.ts` `export` on `GuardianLinkInviteInput` | DELETE `export` (symbols stay) | DELETED (`ee27f61`) |
@@ -54,7 +54,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | C6 | C | `packages/shared/src/calendar/api.ts, calendar/read-model.ts` — `guardianCalendarQuerySchema`, `GuardianCalendarQuery`, `GuardianCalendarSetupRequiredResponse`, `GuardianDayBlock` | DELETE | DELETED (`7a67798`) |
 | C7 | C | `export` on in-file building blocks: `exam-guardian-report-schema.ts` per-state schemas, `guardianDomainBarsSchema`, `guardianExamListSchema`; `guardian-link-schema.ts` `guardianLinkStatusSchema`, `guardianLinkStoredInitiatorSchema`; `guardian-subject.ts` `GUARDIAN_VIEW_DECISIONS`, `SUBJECT_VIA`, `subjectViaSchema` (`subjectSchema` stays exported: Zod-first, its inferred `Subject` is the export, and `no-unused-vars` rejects a value used only as a type; the gate now counts a used inferred type as a use of its schema) | DELETE `export` (symbols stay) | DELETED `export` (`7a67798`) |
 | D1 | D | `tests/ci/guardian-reporting.contract.test.ts` — "returns linked students list and emits guardian_dashboard_viewed" | DELETE the case | KEPT — it is the file's instrument control: the only case driving the real route through the `audit_logs` capture the negative assertions rely on (M1 reddens it). Relabelled in `ee27f61`. |
-| D2 | D | `tests/utils/auth-helpers.ts`, `tests/utils/mock-supabase.ts` (hand-written guardian fixtures) | HANDED OFF (cleanup) | HANDED OFF |
+| D2 | D | `tests/utils/auth-helpers.ts`, `tests/utils/mock-supabase.ts` (hand-written guardian fixtures) | HANDED OFF (cleanup); taken back by the owner brief 2026-10-02 | DELETED (final-purge item 7) |
 | D3 | D | `.skip` / `.todo` / `xit` / `.only` in guardian tests | none found | none found |
 | D4 | D | Tests importing deleted modules; tests of unmounted routes; snapshot files with no test | none found | none found |
 | D5 | D | Test comments naming deleted guardian suites: `tests/ci/guardian-reporting.contract.test.ts` (the revoke audit row's proof), `tests/helpers/pg-supabase.ts` | EDIT | EDITED (`1654d14`) |
@@ -63,14 +63,14 @@ Every row's evidence is a command run on this branch with its real output pasted
 | E3 | E | Guardian gate accept / exclude lists naming deleted files | none found | none found |
 | E4 | E | `ci/known-gaps.yaml` entries closed by this vertical | none found | none found |
 | E5 | E | `tests/e2e/guardian-surfaces.spec.ts` (and the shared-component specs `student-calendar`, `student-mastery`) — the only proof of R12, phone centring and the meter's width — run by no CI job | FIX (Step 3: one CI job) | FIXED (step 3: the `guardian-e2e` CI job) |
-| E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa) | HANDED OFF |
+| E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa); taken back by the owner brief 2026-10-02 | WIRED (final-purge item 8: `calendar-parity` / `tutor-schema-proof`, summary-gated) |
 | E7 | E | `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI | EDIT | EDITED (`6cabf88`) |
 | F1 | F | 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read` | DROP (one migration) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
 | F2 | F | `public.guardian_can_view_student(uuid)`, `public.guardian_can_view_student_as(uuid, uuid)` | DROP (same migration, after F1) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
 | F3 | F | `profiles.consent_given_at` | DROP (same migration) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
 | F4 | F | `guardian_view_decision`, `guardian_link_audit`, `revoke_guardian_link_audited`, `create_active_guardian_link_audited` | KEEP | KEEP |
 | F5 | F | `profiles.guardian_profile_id` (+ `idx_profiles_guardian_profile`, its FK) and `profiles.guardian_email` | HANDED OFF (cleanup, with G-NEW-08) | HANDED OFF |
-| F6 | F | `student_skill_mastery_student_read`, `student_skill_kpi_student_read` | HANDED OFF (cleanup) | HANDED OFF |
+| F6 | F | `student_skill_mastery_student_read`, `student_skill_kpi_student_read` | HANDED OFF (cleanup); taken back by the owner brief 2026-10-02 | DROPPED (final-purge item 2, migration 20261019000000, SCL-198; owner applies) |
 | F7 | F | `consent_runtime_config` (+ `_history`) | KEEP (spec-named) | KEEP |
 | H1 | H | `docs/guardian/GUARDIAN_SOURCE_OF_TRUTH.md`, `GUARDIAN_RUNTIME_CONTRACT.md` — deleted paths, functions and audit events | EDIT | EDITED (`f0c468c`) |
 | H2 | H | `docs/entitlements-map.md`, `docs/route-registry.md` — `POST /api/guardian/link`, `guardian-dashboard.tsx`, `SubscriptionPaywall.tsx`, `guardian-entitlement.ts` | EDIT | EDITED (`f0c468c`) |

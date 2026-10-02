@@ -203,5 +203,63 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       expect(await needsGuardian()).toBe(true);
     });
+
+    // Guardian final purge, item 3 (owner brief 2026-10-02): the consent flow's leftovers are
+    // gone from the wire. No client sends or reads them; `profiles.guardian_email` stays (the
+    // account-deletion functions use it) but this route neither echoes nor writes it.
+    const LEFTOVERS = [
+      "guardianEmail",
+      "guardianConsent",
+      "studentLinkCode",
+      "student_link_code",
+    ] as const;
+
+    it("GET /api/profile carries none of the consent leftovers", async () => {
+      await pg.query(
+        `UPDATE public.profiles SET display_name = 'Kid', date_of_birth = (current_date - interval '10 years')::date,
+                profile_completed_at = now(), guardian_email = 'stored-parent@example.test' WHERE id = $1`,
+        [KID],
+      );
+      const res = await request(await buildApp()).get("/api/profile");
+      expect(res.status).toBe(200);
+      // Presence first: this is the real profile payload, not an empty or error body.
+      expect(res.body.user.id).toBe(KID);
+      expect(res.body.user.role).toBe("student");
+      expect(res.body.user.guardianConsentRequired).toBe(true);
+      for (const key of LEFTOVERS) expect(res.body.user).not.toHaveProperty(key);
+      // The stored value reaches the response under no name at all.
+      expect(JSON.stringify(res.body)).not.toContain("stored-parent@example.test");
+    });
+
+    it("PATCH /api/profile strips guardianEmail (never written) and returns none of the leftovers", async () => {
+      await pg.query(
+        `UPDATE public.profiles SET guardian_email = 'stored-parent@example.test' WHERE id = $1`,
+        [KID],
+      );
+      const res = await request(await buildApp())
+        .patch("/api/profile")
+        .send({
+          displayName: "Kid",
+          role: "student",
+          dateOfBirth: yearsAgo(10),
+          guardianEmail: "sent-parent@example.test",
+        });
+      expect(res.status).toBe(200);
+      // Presence first: the completed profile came back.
+      expect(res.body.success).toBe(true);
+      expect(res.body.profile.id).toBe(KID);
+      expect(res.body.guardianConsentRequired).toBe(true);
+      for (const key of LEFTOVERS) {
+        expect(res.body.profile).not.toHaveProperty(key);
+        expect(res.body).not.toHaveProperty(key);
+      }
+      expect(JSON.stringify(res.body)).not.toContain("parent@example.test");
+      // Stripped, not written: the stored column is exactly what it was.
+      const row = await pg.query(
+        `SELECT guardian_email FROM public.profiles WHERE id = $1`,
+        [KID],
+      );
+      expect(row.rows[0].guardian_email).toBe("stored-parent@example.test");
+    });
   },
 );
