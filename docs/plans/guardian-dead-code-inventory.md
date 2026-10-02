@@ -63,7 +63,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | E3 | E | Guardian gate accept / exclude lists naming deleted files | none found | none found |
 | E4 | E | `ci/known-gaps.yaml` entries closed by this vertical | none found | none found |
 | E5 | E | `tests/e2e/guardian-surfaces.spec.ts` (and the shared-component specs `student-calendar`, `student-mastery`) — the only proof of R12, phone centring and the meter's width — run by no CI job | FIX (Step 3: one CI job) | FIXED (step 3: the `guardian-e2e` CI job) |
-| E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa) | HANDED OFF |
+| E6 | E | Non-guardian PG tests that look unregistered: `calendar.profile-upsert.pg.ci`, `tutor-conversation-list.pg.ci` | HANDED OFF (calendar, lisa); taken back by the owner brief 2026-10-02 | WIRED (final-purge item 8: `calendar-parity` / `tutor-schema-proof`, summary-gated) |
 | E7 | E | `scripts/ci/guardian-schema-truth-gate.mjs` header names the deleted exemplar `guardian-link.pg.ci.test.ts`; `scripts/ci/guardian-token-gate.mjs` header reads as if the computed 16px half of R12 ran in CI | EDIT | EDITED (`6cabf88`) |
 | F1 | F | 12 RLS policies on the six KPI / mastery / projection tables (G-NEW-15): `*_student_read` and `*_guardian_read`, incl. `projection_snapshots_{student,guardian}_read` | DROP (one migration) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |
 | F2 | F | `public.guardian_can_view_student(uuid)`, `public.guardian_can_view_student_as(uuid, uuid)` | DROP (same migration, after F1) | DROPPED (`a5d97b4`, migration 20261017000000; owner applies) |

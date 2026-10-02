@@ -216,7 +216,7 @@ Rows this vertical routed out. They do not block COMPLETE; each is owned elsewhe
 | inventory D2 | `tests/utils/auth-helpers.ts`, `tests/utils/mock-supabase.ts`: unused shared test utilities | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 7: both deleted (no importer outside each other) |
 | inventory A6 | Dead calendar CSS rules (`.stat`, `.chip-mode`, `.toast`, `.daymenu`) that feed the generated guardian floor | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 6: rules deleted, floor regenerated (64 → 59 rules); the student calendar is byte-identical at 1440 and 390 |
 | inventory A12 | Dead `export`s on the `Chrome.tsx` facts | calendar | OPEN |
-| inventory E6 | `calendar.profile-upsert.pg.ci` and `tutor-conversation-list.pg.ci` look unregistered in CI, so they likely skip silently | calendar, lisa | OPEN |
+| inventory E6 | `calendar.profile-upsert.pg.ci` and `tutor-conversation-list.pg.ci` were unregistered in CI and skipped silently | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 8: both WIRED (no other suite proves them over real SQL): `calendar-parity` and `tutor-schema-proof` jobs, behind the summary gate (a skip is red); 7/7 and 8/8 |
 | inventory G2 | `tests/e2e/exam-disclosure.spec.ts` guardian step: the exam e2e harness serves no `/api/guardian/students` roster, which the Wave 4 shell reads first. It has failed since Wave 4; local only | exam | OPEN |
 | — | Counsel review: is a redeemed guardian link valid under-13 consent? | Karl / counsel | OPEN |
 | — | Privacy Policy §6.2 still promises skill-level mastery (SCL-194) | Karl / counsel | OPEN |
