@@ -17,7 +17,7 @@ import { memoryLocation } from "wouter/memory-location";
 import { guardianStudentsResponseSchema } from "@lyceon/shared/guardian-student-schema";
 import { guardianCalendarResponseSchema } from "@lyceon/shared";
 import { guardianCalendarWeek } from "@/features/calendar/calendar-week.fixture";
-import { browserLocalToday } from "@/features/calendar/lib/dates";
+import { addDays, browserLocalToday } from "@/features/calendar/lib/dates";
 import { billingStatusResponseSchema } from "@lyceon/shared/billing-schema";
 import { masteryDomainsResponseSchema } from "@lyceon/shared/mastery-levels";
 import {
@@ -26,6 +26,8 @@ import {
 } from "@lyceon/shared/exam-guardian-report-schema";
 import {
   examFormsResponseSchema,
+  examReportPayloadSchema,
+  type ExamReportPayload,
   type ExamReportState,
 } from "@lyceon/shared/exam-report-schema";
 import {
@@ -264,20 +266,31 @@ export type OtherExam = {
 };
 
 /**
- * The guardian exam list holding the fixture's scored test (its report's own completion and
- * total) plus `others`, each as the latest attempt on a form of its own — built as a forms
- * listing and put through the real projection (SCL-192 `completed_at`, SCL-199
- * `total_scaled`), never as hand-written list items.
+ * The guardian exam list holding `latest` (a scored report; the fixture's by default — its own
+ * name, completion and total) plus `others`, each the latest attempt on a form of its own —
+ * built as a forms listing and put through the real projection (SCL-192 `completed_at`,
+ * SCL-199 `total_scaled`), never as hand-written list items.
  */
 export function examListWith(
   others: readonly OtherExam[],
+  latest: ExamReportPayload = scoredReport,
 ): Record<string, unknown> {
-  if (scoredReport.report_state !== "scored") throw new Error("fixture drift");
+  if (latest.report_state !== "scored")
+    throw new Error("latest must be scored");
   const [sat] = formsListing.forms;
-  if (sat === undefined) throw new Error("fixture drift");
+  if (sat === undefined || sat.latest_session === null) {
+    throw new Error("fixture drift");
+  }
   const forms = examFormsResponseSchema.parse({
     forms: [
-      sat,
+      {
+        ...sat,
+        name: latest.test_form_name,
+        latest_session: {
+          ...sat.latest_session,
+          session_id: latest.session_id,
+        },
+      },
       ...others.map((o, index) => ({
         ...sat,
         test_form_id: `f0f00000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
@@ -296,10 +309,10 @@ export function examListWith(
     ],
   });
   const completedAt: Record<string, string | null> = {
-    [FIXTURE_SESSION_ID]: scoredReport.completed_at,
+    [latest.session_id]: latest.completed_at,
   };
   const totalScaled: Record<string, number | null> = {
-    [FIXTURE_SESSION_ID]: scoredReport.score.total_scaled,
+    [latest.session_id]: latest.score.total_scaled,
   };
   for (const o of others) {
     completedAt[o.session_id] = o.completed_at;
@@ -309,6 +322,120 @@ export function examListWith(
     ok: true,
     ...toGuardianExamList(forms, completedAt, totalScaled),
     requestId: "r",
+  };
+}
+
+/**
+ * THE BOARD SCENARIO — the values on the canvas boards "Wave 5 — BUILD TARGET" (a real
+ * student's numbers on 2026-10-02, per the owner brief; the student's name is not carried),
+ * built through the same schemas and projections as the shared scenario, so the review
+ * screenshots can sit beside the boards number for number. Used only by the Playwright
+ * screenshot run (`tests/e2e/guardian-harness/fixtures.ts` → `board`).
+ */
+export function boardScenario(today: string = browserLocalToday()): {
+  calendarWeek: Record<string, unknown>;
+  masteryDomains: Record<string, unknown>;
+  examList: Record<string, unknown>;
+  examReport: Record<string, unknown>;
+} {
+  const { ok, requestId, ...week } = calendarWeek({
+    completed: 2,
+    total: 15,
+    targetScore: 1400,
+    testDate: addDays(today, 64),
+  });
+  const projection = (
+    [
+      ["RW", 280, 380, 480],
+      ["M", 340, 430, 520],
+    ] as const
+  ).map(([section, low, mid, high]) => ({
+    section,
+    projectedScoreLow: low,
+    projectedScoreMid: mid,
+    projectedScoreHigh: high,
+    relevantQuestionCount: 40,
+    computedAt: `${today}T00:00:00Z`,
+  }));
+  const calendar = {
+    ok,
+    ...guardianCalendarResponseSchema.parse({
+      ...week,
+      projection,
+      streak: { current: 3, longest: 3, history_complete: true },
+    }),
+    requestId,
+  };
+  const level = (
+    section: "RW" | "M",
+    domain: string,
+    key: "L1" | "L2" | "L3",
+  ): Record<string, unknown> => ({
+    section,
+    domain,
+    levelKey: key,
+    level: Number(key.slice(1)),
+    displayName: { L1: "Building", L2: "Developing", L3: "Proficient" }[key],
+  });
+  const mastery = masteryDomainsResponseSchema.parse({
+    ok: true,
+    domains: [
+      level("RW", "Craft and Structure", "L1"),
+      level("RW", "Information and Ideas", "L1"),
+      level("RW", "Standard English Conventions", "L1"),
+      level("RW", "Expression of Ideas", "L2"),
+      level("M", "Algebra", "L2"),
+      level("M", "Advanced Math", "L2"),
+      level("M", "Problem Solving and Data Analysis", "L3"),
+      level("M", "Geometry and Trigonometry", "L1"),
+    ],
+  });
+  if (scoredReport.report_state !== "scored") throw new Error("fixture drift");
+  const latest = examReportPayloadSchema.parse({
+    ...scoredReport,
+    test_form_name: "Full-Length Practice Test 2",
+    completed_at: `${addDays(today, -2)}T16:00:00Z`,
+    score: {
+      ...scoredReport.score,
+      total_scaled: 460,
+      rw_scaled: 220,
+      math_scaled: 240,
+    },
+    sections: [
+      {
+        section: "RW",
+        section_state: "submitted",
+        scaled: 220,
+        scoreable: true,
+      },
+      {
+        section: "M",
+        section_state: "submitted",
+        scaled: 240,
+        scoreable: true,
+      },
+    ],
+  });
+  return {
+    calendarWeek: calendar,
+    masteryDomains: mastery,
+    examList: examListWith(
+      [
+        {
+          session_id: "5e551011-0000-4000-8000-0000000001b1",
+          name: "Full-Length Practice Test 1",
+          report_state: "scored",
+          completed_at: `${addDays(today, -16)}T16:00:00Z`,
+          total_scaled: 500,
+        },
+      ],
+      latest,
+    ),
+    examReport: {
+      ok: true,
+      report: toGuardianExamReport(latest),
+      requestId: "r",
+    },
   };
 }
 

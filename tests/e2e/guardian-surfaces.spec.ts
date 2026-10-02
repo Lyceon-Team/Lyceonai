@@ -43,6 +43,12 @@ type Fixtures = {
   masteryDomains: unknown;
   examList: unknown;
   examReport: unknown;
+  board: {
+    calendarWeek: unknown;
+    masteryDomains: unknown;
+    examList: unknown;
+    examReport: unknown;
+  };
   billingStatus: unknown;
   billingPlans: unknown;
 };
@@ -68,8 +74,10 @@ const VIEWPORTS = [
 
 async function serve(
   page: Page,
-  opts: { students?: "two" | "none" | "with-revoked" } = {},
+  opts: { students?: "two" | "none" | "with-revoked"; board?: boolean } = {},
 ): Promise<void> {
+  // G5-06: the board scenario answers Ada's four Dashboard reads with the boards' values.
+  const ada4 = opts.board === true ? F.board : F;
   const roster =
     opts.students === "none"
       ? { students: [] }
@@ -112,11 +120,11 @@ async function serve(
       return json({ data: { items: [], nextCursor: null }, requestId: "r" });
     }
     const ada = `/api/students/${F.ADA}`;
-    if (p === `${ada}/calendar`) return json(F.calendarWeek);
-    if (p === `${ada}/mastery/domains`) return json(F.masteryDomains);
-    if (p === `${ada}/tests`) return json(F.examList);
+    if (p === `${ada}/calendar`) return json(ada4.calendarWeek);
+    if (p === `${ada}/mastery/domains`) return json(ada4.masteryDomains);
+    if (p === `${ada}/tests`) return json(ada4.examList);
     if (p === `${ada}/tests/${F.EXAM_SESSION}/report`)
-      return json(F.examReport);
+      return json(ada4.examReport);
     if (p.startsWith(`/api/students/${F.CY}/`)) {
       return json({ error: "Not found", requestId: "r" }, 404);
     }
@@ -183,15 +191,42 @@ type Surface = {
   name: string;
   path: (f: Fixtures) => string;
   students?: "two" | "none";
+  board?: boolean;
   ready: string;
+  /** Presence first: each of these must be visible before the floor scan can pass. */
+  present?: readonly string[];
   act?: (page: Page) => Promise<void>;
 };
+
+/** G5-06: the Dashboard's design blocks (R13); the floor scan must see every one of them. */
+const DASHBOARD_BLOCKS = [
+  "score-tile-projected",
+  "score-tile-target",
+  "score-tile-test-date",
+  "score-tile-streak",
+  "week-plan",
+  "mastery-card",
+  "mastery-pill",
+  "latest-test-card",
+  "latest-test-total",
+  "latest-test-section-RW",
+  "latest-test-disclosure",
+] as const;
 
 const SURFACES: readonly Surface[] = [
   {
     name: "dashboard-active",
     path: (f) => `/guardian/${f.ADA}`,
     ready: "latest-test-meta",
+    present: [...DASHBOARD_BLOCKS, "latest-test-first"],
+  },
+  {
+    // G5-06: the boards' own values — these screenshots sit beside the boards for review.
+    name: "dashboard-board",
+    path: (f) => `/guardian/${f.ADA}`,
+    board: true,
+    ready: "latest-test-meta",
+    present: [...DASHBOARD_BLOCKS, "latest-test-change", "mastery-legend"],
   },
   {
     name: "calendar-tab",
@@ -273,10 +308,21 @@ for (const vp of VIEWPORTS) {
   for (const s of SURFACES) {
     test(`${s.name} @${vp.name}: no text under 16px`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await serve(page, s.students ? { students: s.students } : {});
+      await serve(page, {
+        ...(s.students ? { students: s.students } : {}),
+        ...(s.board ? { board: true } : {}),
+      });
       await page.goto(s.path(F));
       await page.getByTestId(s.ready).first().waitFor({ timeout: 15_000 });
       await s.act?.(page);
+      for (const id of s.present ?? []) {
+        // The legend is the desktop board's only; the phone board draws none.
+        if (id === "mastery-legend" && vp.name === "390") continue;
+        await expect(
+          page.locator(`[data-testid="${id}"]:visible`).first(),
+          `${id} is drawn`,
+        ).toBeVisible();
+      }
       // Fonts and layout settle before measuring.
       await page.waitForTimeout(300);
       await page.screenshot({
@@ -408,6 +454,39 @@ const PHONE_CENTRING: readonly {
         what: "this week's plan",
         selector: "[data-testid=week-plan]",
         mode: "text",
+      },
+      // G5-06: the latest-test card, centred line by line on a phone (the boards).
+      {
+        what: "latest test name and date",
+        selector: "[data-testid=latest-test-meta]",
+        mode: "text",
+        within: "parent",
+      },
+      {
+        what: "latest test total",
+        selector: "[data-testid=latest-test-total]",
+        mode: "box",
+      },
+      {
+        what: "latest test change",
+        selector:
+          "[data-testid=latest-test-change], [data-testid=latest-test-first]",
+        mode: "box",
+      },
+      {
+        what: "latest test section tile",
+        selector: "[data-testid^=latest-test-section-]",
+        mode: "text",
+      },
+      {
+        what: "latest test disclosure",
+        selector: "[data-testid=latest-test-disclosure]",
+        mode: "text",
+      },
+      {
+        what: "latest test report link",
+        selector: "[data-testid=latest-test-card] a",
+        mode: "box",
       },
     ],
   },
