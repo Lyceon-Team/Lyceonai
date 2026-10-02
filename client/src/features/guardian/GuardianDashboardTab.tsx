@@ -15,7 +15,8 @@
  *   - mastery by domain: `GET …/mastery/domains`, rendered by the guardian-only
  *     `GuardianMasteryCard` (G5-03, R13) — two columns by section, all eight domains, the live
  *     `levelTone`, no skills (SCL-194);
- *   - the latest full-length test: `GET …/tests` (the newest `completed_at`, SCL-192), then its
+ *   - the latest full-length test: `GET …/tests` (the newest to end, else one in progress —
+ *     `pickCardExam`, G5-08), then its
  *     report, rendered by the guardian-only `GuardianLatestTestCard` (G5-04, R13): total, the
  *     change since the previous test from the list's `total_scaled` (SCL-199), section scores,
  *     the disclosure and "See full report →" to the detail page, which holds the full report
@@ -28,7 +29,6 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import type { GuardianExamList } from "@lyceon/shared/exam-guardian-report-schema";
 import { useGuardianCalendar } from "@/features/calendar/api";
 import {
   browserLocalToday,
@@ -46,6 +46,7 @@ import {
   changeSinceLast,
   GuardianLatestTestCard,
   LatestTestShell,
+  pickCardExam,
 } from "./GuardianLatestTestCard";
 import { GuardianMasteryCard } from "./GuardianMasteryCard";
 import { GuardianScoreStrip } from "./GuardianScoreStrip";
@@ -61,25 +62,6 @@ import {
   useGuardianReadFailure,
 } from "./GuardianStates";
 import { guardianPaths } from "./paths";
-
-type ExamListItem = GuardianExamList["tests"][number];
-
-/** The newest completed attempt, by `completed_at` (owner ruling 2026-09-30). */
-export function latestCompletedExam(
-  tests: readonly ExamListItem[],
-): ExamListItem | null {
-  let latest: ExamListItem | null = null;
-  for (const t of tests) {
-    if (t.completed_at === null) continue;
-    if (
-      latest === null ||
-      Date.parse(t.completed_at) > Date.parse(latest.completed_at ?? "")
-    ) {
-      latest = t;
-    }
-  }
-  return latest;
-}
 
 function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
   const name = useCurrentStudentName();
@@ -153,8 +135,7 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
     queryKey: examKeys.guardianTests(studentId),
     queryFn: () => fetchGuardianExamList(studentId),
   });
-  const latest =
-    list.data === undefined ? null : latestCompletedExam(list.data);
+  const latest = list.data === undefined ? null : pickCardExam(list.data);
   const report = useQuery({
     queryKey: examKeys.guardianReport(studentId, latest?.session_id ?? ""),
     queryFn: () => fetchGuardianExamReport(studentId, latest?.session_id ?? ""),
@@ -182,12 +163,7 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
       </LatestTestShell>
     );
   }
-  if (
-    list.data === undefined ||
-    latest === null ||
-    latest.completed_at === null ||
-    report.data === undefined
-  ) {
+  if (list.data === undefined || latest === null || report.data === undefined) {
     return (
       <LatestTestShell>
         <GuardianNoExamsState name={name} />
@@ -199,7 +175,7 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
   return (
     <GuardianLatestTestCard
       report={report.data}
-      completedAt={latest.completed_at}
+      endedAt={latest.completed_at ?? latest.abandoned_at}
       change={changeSinceLast(list.data, latest)}
       studentName={name}
       href={guardianPaths.exam(studentId, latest.session_id)}

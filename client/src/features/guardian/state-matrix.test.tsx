@@ -203,7 +203,7 @@ const STATES: readonly State[] = [
           : undefined,
       ),
     testId: "guardian-state-no-exams",
-    names: /Ada hasn't finished a full-length practice test yet/,
+    names: /Ada hasn't started a full-length test yet/,
   },
 ];
 

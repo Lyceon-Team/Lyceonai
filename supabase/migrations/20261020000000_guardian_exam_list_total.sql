@@ -1,22 +1,27 @@
 -- ---------------------------------------------------------------------------
 -- LYCEON-MIGRATION-REVIEWED
 --
--- Guardian Wave 5, G5-04: the exam list carries each latest session's scaled total.
+-- Guardian Wave 5, G5-04 and G5-08: the exam list carries each latest session's scaled
+-- total and its two section scores.
 --
 -- @spec [SCL-199 (amends SCL-181 and SCL-192, the guardian exam list item: each item carries
---        `total_scaled`, the score run's total, non-null exactly when the item is `scored`);
---        Guardian_Closure_Plan G5-04; ruling R13 (Karl, 2026-10-02)]
+--        the score run's `total_scaled`, `rw_scaled` and `math_scaled`, present exactly as the
+--        student's report shows them for the item's state); Guardian_Closure_Plan G5-04, G5-08;
+--        ruling R13 (Karl, 2026-10-02); owner decision 2026-10-02 (a partial score is compared
+--        section to section)]
 -- | @implemented [2026-10-02]
 --
 -- plain English: the guardian Dashboard's latest-test card shows the change since the
 -- previous completed test, which needs that test's total. The list already joined the score
 -- run (`score_total_present` is `r.total_scaled IS NOT NULL`); this adds the value itself to
 -- `latest_session`, beside the flag, so the Dashboard reads the list it already reads (no new
--- endpoint, one call) instead of one report per past test. The student list's schema
+-- endpoint, one call) instead of one report per past test. G5-08: a partial score has no
+-- total, and the owner ruled it is compared with the previous outcome section to section, so
+-- the two section scores ride beside the total, from the same row. The student list's schema
 -- (`formRowSchema`) parses the new key; the student wire is unchanged because the student
 -- route serialises its own fields, not this jsonb.
 --
--- Body otherwise byte-for-byte the 20260930090000 body (one added line). Grants survive
+-- Body otherwise byte-for-byte the 20260930090000 body (three added lines). Grants survive
 -- CREATE OR REPLACE (service_role EXECUTE only; gate G1 of exam-shell-server-gates.sql).
 -- Mutations: no scripts/ci/*.mutations.sh entry targets exam_list_forms (grep, 2026-10-02),
 -- so nothing is orphaned. This file is now the function's last definition.
@@ -102,6 +107,8 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path = public, pg_temp AS $$
                         'abandoned_at', s.abandoned_at,
                         'score_total_present', r.total_scaled IS NOT NULL,
                         'total_scaled', r.total_scaled,
+                        'rw_scaled', r.rw_scaled,
+                        'math_scaled', r.math_scaled,
                         'score_partial_present', r.partial_display_scaled IS NOT NULL,
                         'failed_outbox_id', CASE WHEN r.id IS NULL THEN (
                             SELECT o.id FROM exam_runtime_outbox o

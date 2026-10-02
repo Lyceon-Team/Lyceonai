@@ -294,9 +294,21 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     // missing key fails here before the strict schema would — and the scored one is exactly
     // its report's total, from real Postgres (`exam_list_forms` reads the same score run).
     for (const item of list.body.tests as Record<string, unknown>[]) {
-      expect(item).toHaveProperty("total_scaled");
+      for (const key of [
+        "total_scaled",
+        "rw_scaled",
+        "math_scaled",
+        "session_state",
+        "abandoned_at",
+      ]) {
+        expect(item, key).toHaveProperty(key);
+      }
     }
     expect(tests[0]!.total_scaled).toBe(report.score.total_scaled);
+    // G5-08: the section scores and session state too, from the same row.
+    expect(tests[0]!.rw_scaled).toBe(report.score.rw_scaled);
+    expect(tests[0]!.math_scaled).toBe(report.score.math_scaled);
+    expect(tests[0]!.session_state).toBe("completed");
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
 
@@ -487,6 +499,12 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     );
     expect(item).toBeDefined();
     expect(item).toHaveProperty("total_scaled", null);
+    // G5-08: the scored section as the report shows it, the other null; abandoned, not completed.
+    expect(item).toHaveProperty("rw_scaled", report.score.rw_scaled);
+    expect(item).toHaveProperty("math_scaled", null);
+    expect(item).toHaveProperty("session_state", "partial_scored_abandoned");
+    expect(item).toHaveProperty("completed_at", null);
+    expect(item?.abandoned_at).not.toBeNull();
     expect(new Set(report.domain_breakdown.map((r) => r.section))).toEqual(
       new Set(["RW"]),
     );
@@ -512,6 +530,8 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     ).find((t) => t.session_id === pendingSid);
     expect(pendingItem).toHaveProperty("report_state", "scoring_pending");
     expect(pendingItem).toHaveProperty("total_scaled", null);
+    expect(pendingItem).toHaveProperty("rw_scaled", null);
+    expect(pendingItem).toHaveProperty("math_scaled", null);
     await drain();
 
     const r = await testPg!.query(

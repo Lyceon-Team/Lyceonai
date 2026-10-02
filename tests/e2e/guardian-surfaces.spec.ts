@@ -576,6 +576,34 @@ const PHONE_CENTRING: readonly {
     ],
   },
   {
+    // G5-08: the full-length tests list, row by row as the student's card is laid out.
+    name: "Full-length tests",
+    path: (f) => `/guardian/${f.ADA}/exams`,
+    ready: "guardian-exam-list",
+    checks: [
+      {
+        what: "page title",
+        selector: "[data-testid=guardian-exam] h1",
+        mode: "text",
+      },
+      {
+        what: "row title",
+        selector: "[data-testid=guardian-exam-list] article h2",
+        mode: "text",
+      },
+      {
+        what: "row state word",
+        selector: "[data-testid=guardian-exam-state]",
+        mode: "box",
+      },
+      {
+        what: "row link",
+        selector: "[data-testid=guardian-exam-list] article a",
+        mode: "box",
+      },
+    ],
+  },
+  {
     name: "Linked students & billing",
     path: () => "/guardian/students",
     ready: "billing-manage",

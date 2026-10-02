@@ -16,7 +16,13 @@
  * gate, Rule B).
  */
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Route, Router } from "wouter";
@@ -120,7 +126,10 @@ describe("guardian exam result", () => {
       screen.getAllByTestId("exam-section-score").map((e) => e.textContent),
     ).toEqual([expect.stringContaining("690"), expect.stringContaining("650")]);
     expect(screen.getByText("Test-day")).toBeTruthy();
-    expect(screen.getByText("Seen before")).toBeTruthy();
+    // G5-08: the student's report shows Timing and Attempt only; "This form" was guardian-only.
+    expect(document.body.textContent).not.toMatch(
+      /This form|Seen before|New to the student/,
+    );
     // G2 (SCL-182): the summary alone, no "Learn more" and no link target.
     const note = screen.getByTestId("exam-disclosure");
     expect(note.textContent).toBe(FIXTURE_DISCLOSURE.summary);
@@ -168,9 +177,15 @@ describe("guardian exam result", () => {
     expectNoControls();
   });
 
-  it("pending: 'being scored', no number, no disclosure, no tabs", () => {
+  it("pending: the student's 'Scoring your test', naming the student; no number, no disclosure, no tabs", () => {
     show(toGuardianExamReport(pendingReport));
-    expect(screen.getByRole("status").textContent).toContain("being scored");
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+      "Scoring your student's test",
+    );
+    // The student's "This page updates on its own." is dropped: this page does not poll.
+    expect(screen.getByRole("status").textContent).toBe(
+      "Scoring usually takes a few minutes.",
+    );
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByTestId("exam-disclosure")).toBeNull();
     expect(document.body.textContent).not.toMatch(
@@ -179,18 +194,23 @@ describe("guardian exam result", () => {
     expectNoControls();
   });
 
-  it("failed: a parent's 'score delayed', without the student's message or an incident reference", () => {
+  it("failed: the student's title, naming the student; no message, no incident reference", () => {
     show(toGuardianExamReport(failedReport));
-    expect(screen.getByTestId("guardian-exam-delayed").textContent).toContain(
-      "technical issue on our end",
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+      "your student's score isn't ready",
     );
-    expect(document.body.textContent).not.toMatch(/INC-|we'll email you/i);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(document.body.textContent).not.toMatch(
+      /INC-|we'll email you|technical issue/i,
+    );
     expectNoControls();
   });
 
-  it("not_completed: no resume control", () => {
+  it("not_completed: the student's 'This test isn't finished'; no resume control", () => {
     show(toGuardianExamReport(inProgressReport));
-    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+      "This test isn't finished",
+    );
     expectNoControls();
   });
 });
@@ -198,16 +218,25 @@ describe("guardian exam result", () => {
 describe("guardian exam pages against the API", () => {
   it("lists the student's tests, each linking to its result", async () => {
     // SCL-192: completion instants come from the same `exam_list_forms` read, by session id.
-    const tests = toGuardianExamList(
-      formsListing,
-      { [SID]: "2026-09-20T15:00:00.000Z" },
-      { [SID]: 1340 },
-    ).tests;
+    const tests = toGuardianExamList(formsListing, {
+      [SID]: {
+        completed_at: "2026-09-20T15:00:00.000Z",
+        abandoned_at: null,
+        total_scaled: 1340,
+        rw_scaled: 690,
+        math_scaled: 650,
+      },
+    }).tests;
     // The never-sat form is not listed: a guardian has nothing to read there.
     expect(tests.map((t) => t.test_form_name)).toEqual(["Practice Test 2"]);
     fetchList.mockResolvedValue(tests);
     mountPage(`/guardian/${STUDENT}/exams`);
-    const link = await screen.findByRole("link", { name: /Practice Test 2/ });
+    const row = await screen.findByRole("article", { name: "Practice Test 2" });
+    // G5-08: the student's card word and the student's "View scores".
+    expect(within(row).getByTestId("guardian-exam-state").textContent).toBe(
+      "Scored",
+    );
+    const link = within(row).getByRole("link", { name: "View scores" });
     // G4-05: the guardian routes (G4-01); the retired /students/:id/tests paths redirect here.
     expect(link.getAttribute("href")).toBe(`/guardian/${STUDENT}/exams/${SID}`);
     expect(fetchList).toHaveBeenCalledWith(STUDENT);

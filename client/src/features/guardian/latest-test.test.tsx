@@ -17,14 +17,19 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { levelTone } from "@/components/mastery/LevelPill";
-import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
 import { toGuardianExamReport } from "@lyceon/shared/exam-guardian-report-schema";
 import {
   FIXTURE_BREAKDOWN,
   FIXTURE_DISCLOSURE,
   FIXTURE_SESSION_ID,
+  inProgressReport,
   pendingReport,
 } from "@/features/exam/test-fixtures/report-fixtures";
+import {
+  EXAM_SECTION_LABEL,
+  examReportPayloadSchema,
+  type ExamReportPayload,
+} from "@lyceon/shared/exam-report-schema";
 import {
   ADA,
   examListWith,
@@ -84,6 +89,9 @@ const scored = (
   report_state: "scored",
   completed_at,
   total_scaled,
+  // A scored item carries both section scores (SCL-199): any valid split will do here.
+  rw_scaled: Math.round(total_scaled / 2),
+  math_scaled: total_scaled - Math.round(total_scaled / 2),
 });
 
 async function card(): Promise<HTMLElement> {
@@ -167,7 +175,7 @@ describe("G5-04 the latest-test card", () => {
     expect(within(root).queryByTestId("latest-test-change")).toBeNull();
   });
 
-  it("a previous test with no total yet: neither a chip nor 'First test'", async () => {
+  it("a previous test with no score yet: neither a chip nor 'First test'", async () => {
     serve([
       {
         session_id: PENDING_SID,
@@ -231,10 +239,81 @@ describe("G5-04 the latest-test card", () => {
     expect(within(root).getByTestId("latest-test-meta")).toHaveTextContent(
       "Practice Test 9",
     );
+    // G5-08: the student's report words for this state, naming the student.
+    expect(
+      within(root).getByTestId("latest-test-state-title"),
+    ).toHaveTextContent(/^Scoring Ada's test$/);
     expect(within(root).getByTestId("latest-test-status")).toHaveTextContent(
-      /being scored/,
+      /^Scoring usually takes a few minutes\.$/,
     );
     expect(within(root).queryByTestId("latest-test-total")).toBeNull();
     expect(within(root).queryByTestId("latest-test-change")).toBeNull();
   });
+
+  it("G5-08: a scored test after a partial one compares the section they share", async () => {
+    serve([
+      {
+        session_id: PENDING_SID,
+        name: "Practice Test 9",
+        report_state: "partial_scored",
+        completed_at: null,
+        abandoned_at: "2026-09-10T15:00:00Z",
+        total_scaled: null,
+        rw_scaled: 650,
+        math_scaled: null,
+      },
+    ]);
+    // The fixture's latest scored test: Reading and Writing 690 (scoredReport).
+    expect(
+      within(await card()).getByTestId("latest-test-change"),
+    ).toHaveTextContent(/^▲ 40 in Reading and Writing since last test$/);
+  });
+
+  it("G5-08: an attempt still in progress is the student's 'This test isn't finished'", async () => {
+    net.handlers.push((url) =>
+      url === `/api/students/${ADA}/tests`
+        ? json(
+            examListWith(
+              [],
+              toStudentReportFor({
+                report_state: "not_completed",
+                session_state: "active",
+              }),
+            ),
+          )
+        : url === `/api/students/${ADA}/tests/${FIXTURE_SESSION_ID}/report`
+          ? json({
+              ok: true,
+              report: toGuardianExamReport(
+                toStudentReportFor({
+                  report_state: "not_completed",
+                  session_state: "active",
+                }),
+              ),
+              requestId: "r",
+            })
+          : undefined,
+    );
+    net.handlers.push(serveDashboard(ADA));
+    const root = await card();
+    expect(
+      within(root).getByTestId("latest-test-state-title"),
+    ).toHaveTextContent(/^This test isn't finished$/);
+    expect(within(root).getByTestId("latest-test-status")).toHaveTextContent(
+      /^Ada's score appears here once both sections are submitted\.$/,
+    );
+    expect(within(root).queryByTestId("latest-test-first")).toBeNull();
+  });
 });
+
+/** The fixture's in-progress report, through the real student schema. */
+function toStudentReportFor(over: {
+  report_state: "not_completed";
+  session_state: "active";
+}): ExamReportPayload {
+  return examReportPayloadSchema.parse({
+    ...inProgressReport,
+    ...over,
+    session_id: FIXTURE_SESSION_ID,
+  });
+}

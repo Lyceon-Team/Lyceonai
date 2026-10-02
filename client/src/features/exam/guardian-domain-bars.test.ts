@@ -90,105 +90,123 @@ describe("G3-02 guardian domain bars", () => {
   });
 });
 
+/** One session's list facts as `exam_list_forms` reads them (SCL-192, SCL-199). */
+const SCORED_FACTS = {
+  completed_at: null,
+  abandoned_at: null,
+  total_scaled: 1340,
+  rw_scaled: 690,
+  math_scaled: 650,
+} as const;
+
+async function listItem(
+  reportState?: "partial_scored" | "scoring_pending",
+): Promise<Record<string, unknown>> {
+  const { toGuardianExamList } =
+    await import("@lyceon/shared/exam-guardian-report-schema");
+  const { formsListing, FIXTURE_SESSION_ID } =
+    await import("./test-fixtures/report-fixtures");
+  const forms =
+    reportState === undefined
+      ? formsListing
+      : {
+          forms: formsListing.forms.map((f) =>
+            f.latest_session === null
+              ? f
+              : {
+                  ...f,
+                  latest_session: {
+                    ...f.latest_session,
+                    report_state: reportState,
+                  },
+                },
+          ),
+        };
+  const [item] = toGuardianExamList(forms, {
+    [FIXTURE_SESSION_ID]: SCORED_FACTS,
+  }).tests;
+  if (item === undefined) throw new Error("no listed item");
+  return item;
+}
+
 describe("SCL-192 guardian exam list items carry completed_at", () => {
   it("STRICT: an item without completed_at fails the guardian list schema", async () => {
-    const { guardianExamListItemSchema, toGuardianExamList } =
+    const { guardianExamListItemSchema } =
       await import("@lyceon/shared/exam-guardian-report-schema");
-    const { formsListing, FIXTURE_SESSION_ID } =
-      await import("./test-fixtures/report-fixtures");
-    const [item] = toGuardianExamList(
-      formsListing,
-      {},
-      { [FIXTURE_SESSION_ID]: 1340 },
-    ).tests;
-    expect(item).toBeDefined();
+    const item = await listItem();
     // Presence first: the real projection emits the key (null when no instant is known).
     expect(item).toHaveProperty("completed_at", null);
-    const { completed_at: _dropped, ...withoutIt } = item!;
+    const { completed_at: _dropped, ...withoutIt } = item;
     expect(guardianExamListItemSchema.safeParse(item).success).toBe(true);
     expect(guardianExamListItemSchema.safeParse(withoutIt).success).toBe(false);
   });
 });
 
-describe("SCL-199 guardian exam list items carry total_scaled", () => {
-  async function scoredItem(): Promise<Record<string, unknown>> {
-    const { toGuardianExamList } =
-      await import("@lyceon/shared/exam-guardian-report-schema");
-    const { formsListing, FIXTURE_SESSION_ID } =
-      await import("./test-fixtures/report-fixtures");
-    const [item] = toGuardianExamList(
-      formsListing,
-      {},
-      { [FIXTURE_SESSION_ID]: 1340 },
-    ).tests;
-    if (item === undefined) throw new Error("no listed item");
-    return item;
-  }
-
-  it("a scored item carries its total; without the key it fails the schema", async () => {
+describe("SCL-199 / G5-08 guardian exam list items carry the student's scores and state", () => {
+  it("a scored item carries its total, both sections and its session state; each key is required", async () => {
     const { guardianExamListItemSchema } =
       await import("@lyceon/shared/exam-guardian-report-schema");
-    const item = await scoredItem();
-    // Presence first: the real projection emits the scored total.
-    expect(item).toMatchObject({ report_state: "scored", total_scaled: 1340 });
-    const { total_scaled: _dropped, ...withoutIt } = item;
-    expect(guardianExamListItemSchema.safeParse(withoutIt).success).toBe(false);
+    const item = await listItem();
+    // Presence first: the real projection emits all of them.
+    expect(item).toMatchObject({
+      report_state: "scored",
+      session_state: "completed",
+      abandoned_at: null,
+      total_scaled: 1340,
+      rw_scaled: 690,
+      math_scaled: 650,
+    });
+    for (const key of [
+      "session_state",
+      "abandoned_at",
+      "total_scaled",
+      "rw_scaled",
+      "math_scaled",
+    ]) {
+      const { [key]: _dropped, ...withoutIt } = item;
+      expect(guardianExamListItemSchema.safeParse(withoutIt).success, key).toBe(
+        false,
+      );
+    }
   });
 
-  it("present exactly when scored: a null total on a scored item, or a total on any other state, fails", async () => {
+  it("scores match the state: all three when scored, sections only when partial, none otherwise", async () => {
     const { guardianExamListItemSchema } =
       await import("@lyceon/shared/exam-guardian-report-schema");
-    const item = await scoredItem();
-    expect(
-      guardianExamListItemSchema.safeParse({ ...item, total_scaled: null })
-        .success,
-    ).toBe(false);
+    const item = await listItem();
+    const ok = (over: Record<string, unknown>): boolean =>
+      guardianExamListItemSchema.safeParse({ ...item, ...over }).success;
+    expect(ok({})).toBe(true);
+    expect(ok({ total_scaled: null })).toBe(false);
+    expect(ok({ rw_scaled: null })).toBe(false);
+    const partial = { report_state: "partial_scored", total_scaled: null };
+    expect(ok({ ...partial, math_scaled: null })).toBe(true);
+    expect(ok({ ...partial, rw_scaled: null })).toBe(true);
+    expect(ok({ ...partial, rw_scaled: null, math_scaled: null })).toBe(false);
+    expect(ok({ report_state: "partial_scored" })).toBe(false);
+    const none = { total_scaled: null, rw_scaled: null, math_scaled: null };
     for (const state of [
-      "partial_scored",
       "scoring_pending",
       "failed_requires_review",
       "not_completed",
     ]) {
-      expect(
-        guardianExamListItemSchema.safeParse({ ...item, report_state: state })
-          .success,
-      ).toBe(false);
-      expect(
-        guardianExamListItemSchema.safeParse({
-          ...item,
-          report_state: state,
-          total_scaled: null,
-        }).success,
-      ).toBe(true);
+      expect(ok({ report_state: state }), state).toBe(false);
+      expect(ok({ report_state: state, ...none }), state).toBe(true);
     }
   });
 
-  it("the projection drops a total the score run holds for a state that is not scored", async () => {
-    const { toGuardianExamList } =
-      await import("@lyceon/shared/exam-guardian-report-schema");
-    const { formsListing, FIXTURE_SESSION_ID } =
-      await import("./test-fixtures/report-fixtures");
-    const partial = {
-      forms: formsListing.forms.map((f) =>
-        f.latest_session === null
-          ? f
-          : {
-              ...f,
-              latest_session: {
-                ...f.latest_session,
-                report_state: "partial_scored" as const,
-              },
-            },
-      ),
-    };
-    const [item] = toGuardianExamList(
-      partial,
-      {},
-      { [FIXTURE_SESSION_ID]: 1340 },
-    ).tests;
-    expect(item).toMatchObject({
+  it("the projection keeps only what the student's report shows for the state", async () => {
+    expect(await listItem("partial_scored")).toMatchObject({
       report_state: "partial_scored",
       total_scaled: null,
+      rw_scaled: 690,
+      math_scaled: 650,
+    });
+    expect(await listItem("scoring_pending")).toMatchObject({
+      report_state: "scoring_pending",
+      total_scaled: null,
+      rw_scaled: null,
+      math_scaled: null,
     });
   });
 });

@@ -72,6 +72,7 @@ import {
   examFormsResponseSchema,
   type ExamFormsResponse,
 } from "../../packages/shared/src/exam-report-schema";
+import type { GuardianListSessionFacts } from "../../packages/shared/src/exam-guardian-report-schema";
 
 const COMPONENT = "EXAM_RUNTIME";
 
@@ -682,13 +683,18 @@ const formRowSchema = z.object({
       score_total_present: z.boolean(),
       score_partial_present: z.boolean(),
       failed_outbox_id: z.string().uuid().nullable(),
-      // `exam_list_forms` has always emitted it; the guardian list carries it (SCL-192).
+      // `exam_list_forms` has always emitted both; the guardian list carries them (SCL-192;
+      // `abandoned_at` since G5-08: a partial score's outcome instant).
       completed_at: z.string().nullable(),
-      // SCL-199: the score run's total, beside `score_total_present`; the guardian list carries
-      // it. Optional HERE ONLY so the student's listing survives a deploy that lands before
-      // migration 20261020000000; the guardian item stays strict (a scored item with no total
-      // fails its schema, closed), and the PG wire test pins the key on the migrated pipeline.
+      abandoned_at: z.string().nullable(),
+      // SCL-199: the score run's total and section scores, beside `score_total_present`; the
+      // guardian list carries them. Optional HERE ONLY so the student's listing survives a
+      // deploy that lands before migration 20261020000000; the guardian item stays strict (a
+      // scored item with no total fails its schema, closed), and the PG wire test pins the
+      // keys on the migrated pipeline.
       total_scaled: z.number().int().nullable().optional(),
+      rw_scaled: z.number().int().nullable().optional(),
+      math_scaled: z.number().int().nullable().optional(),
     })
     .nullable(),
 });
@@ -714,15 +720,15 @@ export async function listExamForms(
  * listing does not gain the field; only the guardian list, which needs it to pick the latest
  * test, reads the map. Null for a session that never completed (in progress, abandoned).
  *
- * SCL-199 (G5-04, 2026-10-02): `totalScaled` is the same shape for the score run's total, so
- * the guardian Dashboard can show the change since the previous test from the list it already
- * reads. Null where no score run has a total. The student's listing does not gain it either.
+ * SCL-199 (G5-04/G5-08, 2026-10-02): each session's map entry also carries its abandonment
+ * instant and the score run's total and section scores, so the guardian Dashboard can show the
+ * change since the previous outcome from the list it already reads. Null where the score run
+ * has no such value. The student's listing does not gain them either.
  */
 export async function listExamFormsWithCompletion(studentId: string): Promise<
   ExamResult<{
     forms: ExamFormsResponse;
-    completedAt: Readonly<Record<string, string | null>>;
-    totalScaled: Readonly<Record<string, number | null>>;
+    sessions: Readonly<Record<string, GuardianListSessionFacts>>;
   }>
 > {
   const env = await callExamRpc("exam_list_forms", {
@@ -732,21 +738,24 @@ export async function listExamFormsWithCompletion(studentId: string): Promise<
   const rows = z
     .object({ forms: z.array(formRowSchema) })
     .parse(env.body).forms;
-  const completedAt: Record<string, string | null> = {};
-  const totalScaled: Record<string, number | null> = {};
+  const sessions: Record<string, GuardianListSessionFacts> = {};
   for (const f of rows) {
-    if (f.latest_session !== null) {
-      completedAt[f.latest_session.session_id] = f.latest_session.completed_at;
-      totalScaled[f.latest_session.session_id] =
-        f.latest_session.total_scaled ?? null;
+    const l = f.latest_session;
+    if (l !== null) {
+      sessions[l.session_id] = {
+        completed_at: l.completed_at,
+        abandoned_at: l.abandoned_at,
+        total_scaled: l.total_scaled ?? null,
+        rw_scaled: l.rw_scaled ?? null,
+        math_scaled: l.math_scaled ?? null,
+      };
     }
   }
   return {
     ok: true,
     status: 200,
     value: {
-      completedAt,
-      totalScaled,
+      sessions,
       forms: examFormsResponseSchema.parse({
         forms: rows.map((f) => ({
           test_form_id: f.test_form_id,

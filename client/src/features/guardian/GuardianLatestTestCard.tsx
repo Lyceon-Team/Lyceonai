@@ -1,26 +1,36 @@
 /**
- * The guardian Dashboard's compact latest-test card (G5-04).
+ * The guardian Dashboard's compact latest-test card (G5-04, G5-08).
  *
- * @spec [Guardian_Closure_Plan G5-04; ruling R13 (Karl, 2026-10-02); the canvas boards "Wave 5 —
- *       BUILD TARGET"; SCL-199 (`total_scaled` on the guardian list item); SCL-192 (the latest
- *       test is the newest `completed_at`); SCL-182 (the disclosure summary beside every score);
- *       SCL-189 (no counts on the guardian surface); R12 (16px floor)] | @implemented [2026-10-02]
+ * @spec [Guardian_Closure_Plan G5-04, G5-08; ruling R13 (Karl, 2026-10-02); the canvas boards
+ *       "Wave 5 — BUILD TARGET"; SCL-199 (scores on the guardian list item); SCL-192 (the
+ *       latest test by its instant); SCL-182 (the disclosure summary beside every score);
+ *       SCL-189 (no counts on the guardian surface); R12 (16px floor); owner decisions
+ *       2026-10-02 (a partial score is compared section to section; "you/your" names the
+ *       student; the failed state shows its title only)] | @implemented [2026-10-02]
  *
- * plain English: the latest completed full-length test at a glance — its name and date, its
- * total, the change since the previous completed test, the Reading and Writing and Math scores,
- * the disclosure summary and "See full report →" to the existing detail page. Phone: every
- * line centred and stacked. Presentational: it is handed the latest item's report and the change.
+ * plain English: the student's latest full-length test at a glance, in the student's own words
+ * — its name and date; for a scored test the total, the change since the previous scored
+ * outcome, the Reading and Writing and Math scores; for a partial score the student's "Partial
+ * score", the section scores as the student's report shows them ("Not completed" for the other)
+ * and the student's sentence on why there is no total; for any other state the student's report
+ * title and sentence (`guardianOutcomeCopy`, shared with the detail page). Then the disclosure
+ * summary where there is a score, and "See full report →" to the detail page. Phone: every line
+ * centred and stacked. Presentational: it is handed the item's report and the change.
  *
- * THE CHANGE (`changeSinceLast`) is the latest item's total minus the previous completed item's
- * total, both from the list (SCL-199) — so it costs no second report read. "Previous" is the
- * newest `completed_at` before the latest's, not the list's form order. No previous test: "First
- * test", no chip. A previous test whose total is not known (still being scored, delayed): no
- * chip and no "First test" — there was a test, and its score is not one to subtract. A drop wears
- * the rust tone, a rise the blue: `levelTone("L1")` and `levelTone("L3")`, the live pill tones,
- * borders dropped as the mastery pill drops them. A change of zero is the neutral tone.
+ * WHICH TEST (`pickCardExam`): the attempt that ended most recently — completed, or abandoned
+ * (a partial score is abandoned, never completed) — by `completed_at ?? abandoned_at`; if none
+ * has ended, an attempt in progress, which the student's own card calls "In progress".
  *
- * NOT HERE: question counts and the per-domain bars — they stay on the detail page. A latest
- * test with no score yet shows its name, date and the report's own sentence for its state.
+ * THE CHANGE (`changeSinceLast`) compares the card's scored outcome with the previous scored
+ * outcome (the newest one that ended before it), like with like: total with total when both have
+ * one; otherwise the section they share ("▲ 20 in Reading and Writing since last test"), because
+ * a partial score has no total (the student's own sentence says so) and a section score and a
+ * total are different scales. No earlier attempt at all: "First test". Earlier attempts but none
+ * scored, or no shared section: no chip. A drop wears the rust tone, a rise the blue —
+ * `levelTone("L1")` and `levelTone("L3")`, borders dropped as the mastery pill drops them; zero is
+ * the neutral tone. Every number comes from the list (SCL-199), so it costs no second report.
+ *
+ * NOT HERE: question counts and the per-domain bars (detail page), and no control but the link.
  * The score lines sit behind `DisclosedScore`, the report's gate: no disclosure, no score.
  */
 import { Link } from "wouter";
@@ -29,11 +39,11 @@ import type {
   GuardianExamReport,
 } from "@lyceon/shared/exam-guardian-report-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
+import type { ExamSection } from "@lyceon/shared/exam-runtime-schema";
 import { levelTone } from "@/components/mastery/LevelPill";
 import { DisclosedScore } from "@/features/exam/components/DisclosedScore";
 import {
-  GUARDIAN_DELAYED_COPY,
-  GUARDIAN_SCORING_COPY,
+  guardianOutcomeCopy,
   guardianWithheldCopy,
 } from "@/features/exam/pages/GuardianExamResultsPage";
 
@@ -41,30 +51,93 @@ type ExamListItem = GuardianExamList["tests"][number];
 
 type ScoreChange =
   | { kind: "first" }
-  | { kind: "unknown" }
-  | { kind: "delta"; delta: number };
+  | { kind: "none" }
+  | { kind: "delta"; delta: number; section: ExamSection | null };
 
-/** The latest item's total minus the previous completed item's, both from the list. */
+const IN_PROGRESS: ReadonlySet<ExamListItem["session_state"]> = new Set([
+  "created",
+  "active",
+  "section_break",
+]);
+
+/** When the attempt ended: completed, or abandoned (a partial score is never completed). */
+function endedAt(t: ExamListItem): number | null {
+  const at = t.completed_at ?? t.abandoned_at;
+  return at === null ? null : Date.parse(at);
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G5-08; SCL-192; SCL-199] | @implemented [2026-10-02]
+ * plain English: the attempt the card shows — the newest that ended (completed or abandoned);
+ * else one still in progress; null when the student has none. Pure.
+ */
+export function pickCardExam(
+  tests: readonly ExamListItem[],
+): ExamListItem | null {
+  let latest: ExamListItem | null = null;
+  for (const t of tests) {
+    const at = endedAt(t);
+    if (at === null) continue;
+    if (latest === null || at > (endedAt(latest) ?? -Infinity)) latest = t;
+  }
+  return latest ?? tests.find((t) => IN_PROGRESS.has(t.session_state)) ?? null;
+}
+
+type Outcome = {
+  total: number | null;
+  RW: number | null;
+  M: number | null;
+};
+
+/** The scored outcome as the student's report shows it, or null when there is no score. */
+function outcomeOf(t: ExamListItem): Outcome | null {
+  if (t.report_state !== "scored" && t.report_state !== "partial_scored") {
+    return null;
+  }
+  return { total: t.total_scaled, RW: t.rw_scaled, M: t.math_scaled };
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G5-04, G5-08; SCL-199; owner decision 2026-10-02 (a partial
+ *       score is compared section to section)] | @implemented [2026-10-02]
+ * plain English: the card's scored outcome minus the previous scored outcome, like with like —
+ * total with total, else the one section both have; "first" with no earlier attempt; "none"
+ * when there is nothing comparable. Pure; every number from the list.
+ */
 export function changeSinceLast(
   tests: readonly ExamListItem[],
   latest: ExamListItem,
 ): ScoreChange {
-  if (latest.completed_at === null) return { kind: "unknown" };
-  const latestAt = Date.parse(latest.completed_at);
+  const now = outcomeOf(latest);
+  const at = endedAt(latest);
+  if (now === null || at === null) return { kind: "none" };
+  const earlier = tests.filter((t) => {
+    const e = endedAt(t);
+    return t.session_id !== latest.session_id && e !== null && e < at;
+  });
+  if (earlier.length === 0) return { kind: "first" };
   let previous: ExamListItem | null = null;
-  for (const t of tests) {
-    if (t.session_id === latest.session_id || t.completed_at === null) continue;
-    const at = Date.parse(t.completed_at);
-    if (at >= latestAt) continue;
-    if (previous === null || at > Date.parse(previous.completed_at ?? "")) {
+  for (const t of earlier) {
+    if (outcomeOf(t) === null) continue;
+    if (previous === null || (endedAt(t) ?? 0) > (endedAt(previous) ?? 0)) {
       previous = t;
     }
   }
-  if (previous === null) return { kind: "first" };
-  if (previous.total_scaled === null || latest.total_scaled === null) {
-    return { kind: "unknown" };
+  const before = previous === null ? null : outcomeOf(previous);
+  if (before === null) return { kind: "none" };
+  if (now.total !== null && before.total !== null) {
+    return { kind: "delta", delta: now.total - before.total, section: null };
   }
-  return { kind: "delta", delta: latest.total_scaled - previous.total_scaled };
+  const shared = (["RW", "M"] as const).filter(
+    (s) => now[s] !== null && before[s] !== null,
+  );
+  if (shared.length !== 1) return { kind: "none" };
+  const section = shared[0]!;
+  return {
+    kind: "delta",
+    delta: (now[section] ?? 0) - (before[section] ?? 0),
+    section,
+  };
 }
 
 /** "Sep 30" in the viewer's own time zone. */
@@ -85,7 +158,7 @@ const CHIP =
   "whitespace-nowrap rounded-full px-3 py-[5px] text-base font-semibold";
 
 function Change({ change }: { change: ScoreChange }): JSX.Element | null {
-  if (change.kind === "unknown") return null;
+  if (change.kind === "none") return null;
   if (change.kind === "first") {
     return (
       <span
@@ -96,7 +169,7 @@ function Change({ change }: { change: ScoreChange }): JSX.Element | null {
       </span>
     );
   }
-  const { delta } = change;
+  const { delta, section } = change;
   const direction = delta < 0 ? "down" : delta > 0 ? "up" : "none";
   const tone =
     direction === "down"
@@ -104,10 +177,11 @@ function Change({ change }: { change: ScoreChange }): JSX.Element | null {
       : direction === "up"
         ? pillTone(levelTone("L3"))
         : pillTone(levelTone("unmeasured"));
+  const where = section === null ? "" : ` in ${EXAM_SECTION_LABEL[section]}`;
   const text =
     direction === "none"
-      ? "No change since last test"
-      : `${direction === "down" ? "▼" : "▲"} ${Math.abs(delta)} since last test`;
+      ? `No change${where} since last test`
+      : `${direction === "down" ? "▼" : "▲"} ${Math.abs(delta)}${where} since last test`;
   return (
     <span
       className={`${CHIP} ${tone}`}
@@ -119,12 +193,13 @@ function Change({ change }: { change: ScoreChange }): JSX.Element | null {
   );
 }
 
+/** A section score as the student's report shows it: the number, or "Not completed". */
 function SectionTile({
   section,
   scaled,
 }: {
-  section: "RW" | "M";
-  scaled: number;
+  section: ExamSection;
+  scaled: number | null;
 }): JSX.Element {
   return (
     <div
@@ -134,7 +209,11 @@ function SectionTile({
       <div className="text-base text-muted-foreground">
         {EXAM_SECTION_LABEL[section]}
       </div>
-      <div className="text-[26px] font-bold">{scaled}</div>
+      {scaled === null ? (
+        <div className="text-base font-medium">Not completed</div>
+      ) : (
+        <div className="text-[26px] font-bold">{scaled}</div>
+      )}
     </div>
   );
 }
@@ -168,20 +247,25 @@ export function LatestTestShell({
   );
 }
 
+const STATE_TITLE = "text-[28px] font-bold leading-tight";
+
 export function GuardianLatestTestCard({
   report,
-  completedAt,
+  endedAt: ended,
   change,
   studentName,
   href,
 }: {
   report: GuardianExamReport;
-  completedAt: string;
+  endedAt: string | null;
   change: ScoreChange;
   studentName: string;
   href: string;
 }): JSX.Element {
-  const meta = `${report.test_form_name} · ${monthDay(completedAt)}`;
+  const meta =
+    ended === null
+      ? report.test_form_name
+      : `${report.test_form_name} · ${monthDay(ended)}`;
   const link = (
     <Link
       href={href}
@@ -190,55 +274,93 @@ export function GuardianLatestTestCard({
       See full report →
     </Link>
   );
-  if (report.report_state !== "scored") {
-    const line =
-      report.report_state === "scoring_pending"
-        ? GUARDIAN_SCORING_COPY
-        : report.report_state === "failed_requires_review"
-          ? GUARDIAN_DELAYED_COPY
-          : guardianWithheldCopy(studentName);
+  const withheld = guardianWithheldCopy(studentName);
+  if (report.report_state === "scored") {
     return (
       <LatestTestShell meta={meta}>
-        <p
-          className="m-0 text-base leading-relaxed"
-          role="status"
-          data-testid="latest-test-status"
-        >
-          {line}
-        </p>
-        <div className="flex w-full justify-center sm:justify-end">{link}</div>
+        <DisclosedScore disclosure={report.disclosure} withheldCopy={withheld}>
+          <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-4">
+            <span
+              className="text-[56px] font-bold leading-none"
+              data-testid="latest-test-total"
+            >
+              {report.score.total_scaled}
+            </span>
+            <Change change={change} />
+          </div>
+          <div className="grid w-full grid-cols-2 gap-3">
+            <SectionTile section="RW" scaled={report.score.rw_scaled} />
+            <SectionTile section="M" scaled={report.score.math_scaled} />
+          </div>
+        </DisclosedScore>
+        <Footer summary={report.disclosure.summary} link={link} />
       </LatestTestShell>
     );
   }
+  if (report.report_state === "partial_scored") {
+    return (
+      <LatestTestShell meta={meta}>
+        <DisclosedScore disclosure={report.disclosure} withheldCopy={withheld}>
+          <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-4">
+            {/* The student's own panel title for this state (ReportBody). */}
+            <span className={STATE_TITLE} data-testid="latest-test-state-title">
+              Partial score
+            </span>
+            <Change change={change} />
+          </div>
+          <div className="grid w-full grid-cols-2 gap-3">
+            <SectionTile section="RW" scaled={report.score.rw_scaled} />
+            <SectionTile section="M" scaled={report.score.math_scaled} />
+          </div>
+          <p
+            className="m-0 text-base leading-relaxed"
+            data-testid="latest-test-status"
+          >
+            {report.partial_disclosure.summary}
+          </p>
+        </DisclosedScore>
+        <Footer summary={report.disclosure.summary} link={link} />
+      </LatestTestShell>
+    );
+  }
+  const copy = guardianOutcomeCopy(report, studentName);
   return (
     <LatestTestShell meta={meta}>
-      <DisclosedScore
-        disclosure={report.disclosure}
-        withheldCopy={guardianWithheldCopy(studentName)}
-      >
-        <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-4">
-          <span
-            className="text-[56px] font-bold leading-none"
-            data-testid="latest-test-total"
-          >
-            {report.score.total_scaled}
-          </span>
-          <Change change={change} />
-        </div>
-        <div className="grid w-full grid-cols-2 gap-3">
-          <SectionTile section="RW" scaled={report.score.rw_scaled} />
-          <SectionTile section="M" scaled={report.score.math_scaled} />
-        </div>
-      </DisclosedScore>
-      <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <span
-          className="text-base text-muted-foreground"
-          data-testid="latest-test-disclosure"
-        >
-          {report.disclosure.summary}
+      <div className="flex flex-col gap-1.5">
+        <span className={STATE_TITLE} data-testid="latest-test-state-title">
+          {copy.title}
         </span>
-        {link}
+        {copy.body === null ? null : (
+          <p
+            className="m-0 text-base leading-relaxed"
+            role="status"
+            data-testid="latest-test-status"
+          >
+            {copy.body}
+          </p>
+        )}
       </div>
+      <div className="flex w-full justify-center sm:justify-end">{link}</div>
     </LatestTestShell>
+  );
+}
+
+function Footer({
+  summary,
+  link,
+}: {
+  summary: string;
+  link: JSX.Element;
+}): JSX.Element {
+  return (
+    <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <span
+        className="text-base text-muted-foreground"
+        data-testid="latest-test-disclosure"
+      >
+        {summary}
+      </span>
+      {link}
+    </div>
   );
 }

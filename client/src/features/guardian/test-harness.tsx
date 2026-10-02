@@ -23,7 +23,9 @@ import { masteryDomainsResponseSchema } from "@lyceon/shared/mastery-levels";
 import {
   toGuardianExamList,
   toGuardianExamReport,
+  type GuardianListSessionFacts,
 } from "@lyceon/shared/exam-guardian-report-schema";
+import type { ExamSessionState } from "@lyceon/shared/exam-runtime-schema";
 import {
   examFormsResponseSchema,
   examReportPayloadSchema,
@@ -227,22 +229,42 @@ export function masteryDomains(): Record<string, unknown> {
 }
 
 /**
+ * A report's own instants and scores, as `exam_list_forms` reads them from the same session
+ * and score run (SCL-192, SCL-199) — so a list built from them agrees with the report.
+ */
+export function listFactsOf(
+  report: ExamReportPayload,
+): GuardianListSessionFacts {
+  const at = (key: "completed_at" | "abandoned_at"): string | null =>
+    key in report
+      ? ((report as Record<string, unknown>)[key] as string | null)
+      : null;
+  const score =
+    report.report_state === "scored" || report.report_state === "partial_scored"
+      ? report.score
+      : null;
+  return {
+    completed_at: at("completed_at"),
+    abandoned_at: at("abandoned_at"),
+    total_scaled: score?.total_scaled ?? null,
+    rw_scaled: score?.rw_scaled ?? null,
+    math_scaled: score?.math_scaled ?? null,
+  };
+}
+
+/**
  * The guardian exam list, through the real projection (SCL-192 `completed_at`; SCL-199
- * `total_scaled`, the scored report's own total so the list and the report agree).
+ * scores, the scored report's own so the list and the report agree).
  */
 export function examList(): Record<string, unknown> {
   return {
     ok: true,
-    ...toGuardianExamList(
-      formsListing,
-      { [FIXTURE_SESSION_ID]: "2026-09-20T15:00:00.000Z" },
-      {
-        [FIXTURE_SESSION_ID]:
-          scoredReport.report_state === "scored"
-            ? scoredReport.score.total_scaled
-            : null,
+    ...toGuardianExamList(formsListing, {
+      [FIXTURE_SESSION_ID]: {
+        ...listFactsOf(scoredReport),
+        completed_at: "2026-09-20T15:00:00.000Z",
       },
-    ),
+    }),
     requestId: "r",
   };
 }
@@ -261,8 +283,13 @@ export type OtherExam = {
   session_id: string;
   name: string;
   report_state: ExamReportState;
+  /** Defaults from the report state: partial → abandoned with a score, else completed. */
+  session_state?: ExamSessionState;
   completed_at: string | null;
+  abandoned_at?: string | null;
   total_scaled: number | null;
+  rw_scaled?: number | null;
+  math_scaled?: number | null;
 };
 
 /**
@@ -275,8 +302,6 @@ export function examListWith(
   others: readonly OtherExam[],
   latest: ExamReportPayload = scoredReport,
 ): Record<string, unknown> {
-  if (latest.report_state !== "scored")
-    throw new Error("latest must be scored");
   const [sat] = formsListing.forms;
   if (sat === undefined || sat.latest_session === null) {
     throw new Error("fixture drift");
@@ -289,6 +314,13 @@ export function examListWith(
         latest_session: {
           ...sat.latest_session,
           session_id: latest.session_id,
+          state:
+            latest.report_state === "partial_scored"
+              ? "partial_scored_abandoned"
+              : latest.report_state === "not_completed"
+                ? latest.session_state
+                : "completed",
+          report_state: latest.report_state,
         },
       },
       ...others.map((o, index) => ({
@@ -298,9 +330,10 @@ export function examListWith(
         latest_session: {
           session_id: o.session_id,
           state:
-            o.report_state === "partial_scored"
+            o.session_state ??
+            (o.report_state === "partial_scored"
               ? "partial_scored_abandoned"
-              : "completed",
+              : "completed"),
           mode: "strict",
           attempt_number_for_form: 1,
           report_state: o.report_state,
@@ -308,19 +341,21 @@ export function examListWith(
       })),
     ],
   });
-  const completedAt: Record<string, string | null> = {
-    [latest.session_id]: latest.completed_at,
-  };
-  const totalScaled: Record<string, number | null> = {
-    [latest.session_id]: latest.score.total_scaled,
+  const sessions: Record<string, GuardianListSessionFacts> = {
+    [latest.session_id]: listFactsOf(latest),
   };
   for (const o of others) {
-    completedAt[o.session_id] = o.completed_at;
-    totalScaled[o.session_id] = o.total_scaled;
+    sessions[o.session_id] = {
+      completed_at: o.completed_at,
+      abandoned_at: o.abandoned_at ?? null,
+      total_scaled: o.total_scaled,
+      rw_scaled: o.rw_scaled ?? null,
+      math_scaled: o.math_scaled ?? null,
+    };
   }
   return {
     ok: true,
-    ...toGuardianExamList(forms, completedAt, totalScaled),
+    ...toGuardianExamList(forms, sessions),
     requestId: "r",
   };
 }
@@ -427,6 +462,8 @@ export function boardScenario(today: string = browserLocalToday()): {
           report_state: "scored",
           completed_at: `${addDays(today, -16)}T16:00:00Z`,
           total_scaled: 500,
+          rw_scaled: 240,
+          math_scaled: 260,
         },
       ],
       latest,
@@ -443,7 +480,7 @@ export function boardScenario(today: string = browserLocalToday()): {
 export function noExams(): Record<string, unknown> {
   return {
     ok: true,
-    ...toGuardianExamList({ forms: [] }, {}, {}),
+    ...toGuardianExamList({ forms: [] }, {}),
     requestId: "r",
   };
 }
