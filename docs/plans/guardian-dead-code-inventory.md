@@ -37,7 +37,7 @@ Every row's evidence is a command run on this branch with its real output pasted
 | B1 | B | `server/services/guardian-link-audit.ts` (whole module: `auditGuardianLink`, `GuardianLinkAuditAction`) | DELETE (with the old INSTRUMENT case, its only caller; see D1) | DELETED (`ee27f61`) |
 | B2 | B | `server/lib/account.ts` re-exports `GuardianLinkStatus`, `GUARDIAN_LINK_ERROR`, `GuardianLinkError` | DELETE the three re-exports (keep `GuardianLink`) | DELETED (`ee27f61`) |
 | B3 | B | `server/lib/auth-role.ts` `parseRuntimeRole` — the `'parent' → 'guardian'` role-normalising branch | DELETE the branch | DELETED (`ee27f61`) |
-| B4 | B | `server/services/kpi-access.ts` `resolvePaidKpiAccessForUser` guardian fall-through | HANDED OFF (cleanup; owner, 2026-10-01) | HANDED OFF |
+| B4 | B | `server/services/kpi-access.ts` `resolvePaidKpiAccessForUser` guardian fall-through | HANDED OFF (cleanup; owner, 2026-10-01); taken back by the owner brief 2026-10-02 | DELETED (final-purge item 5: the guardian branch and the role parameter; existing tests untouched) |
 | B5 | B | `apps/api/src/services/mastery-view.ts` `parseSectionFilter`, `SectionParseResult` | DELETE | DELETED (`ee27f61`) |
 | B6 | B | `getSupabaseAnon` — `server/middleware/supabase-auth.ts` and `apps/api/src/lib/supabase-admin.ts` (Wave 5, G-AUD-30) | DELETE both | DELETED (`ee27f61`) |
 | B7 | B | `server/middleware/supabase-auth.ts` `requireRequestAuthContext` (Wave 5, G-AUD-30) | HANDED OFF (cleanup / auth; owner, 2026-10-01); taken back by the owner brief 2026-10-02 | DELETED (final-purge item 4, with its auth-surface test case and `securityTestUtils` mock entry) |
