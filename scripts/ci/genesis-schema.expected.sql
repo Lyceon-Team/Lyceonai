@@ -7924,44 +7924,6 @@ $$;
 
 
 --
--- Name: guardian_can_view_student(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.guardian_can_view_student(p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT public.guardian_can_view_student_as(auth.uid(), p_student_id);
-$$;
-
-
---
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student(p_student_id uuid) IS 'RLS entry point for guardian visibility. Delegates to guardian_can_view_student_as with auth.uid() as the principal, so a caller may only ask about themselves as guardian. Body moved to guardian_view_decision 2026-08-27 so the application gate and the six RLS policies share ONE derivation.';
-
-
---
--- Name: guardian_can_view_student_as(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) RETURNS boolean
-    LANGUAGE sql STABLE SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  SELECT public.guardian_view_decision(p_guardian_id, p_student_id) = 'allow';
-$$;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) IS 'Boolean form of guardian_view_decision with the principal passed explicitly, for application callers on the service-role connection where auth.uid() is NULL. Service-role only, for the same reason as guardian_view_decision.';
-
-
---
 -- Name: guardian_link_audit(text, uuid, uuid, jsonb, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -19830,20 +19792,6 @@ ALTER TABLE public.student_domain_kpi ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: student_domain_mastery student_domain_mastery_guardian_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
-
-
---
--- Name: student_domain_mastery student_domain_mastery_student_read; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY student_domain_mastery_student_read ON public.student_domain_mastery FOR SELECT TO authenticated USING ((student_id = auth.uid()));
-
-
---
 -- Name: student_dream_schools; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -21428,23 +21376,6 @@ GRANT ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_
 
 REVOKE ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_seconds integer) TO service_role;
-
-
---
--- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.guardian_can_view_student_as(p_guardian_id uuid, p_student_id uuid) TO service_role;
 
 
 --
