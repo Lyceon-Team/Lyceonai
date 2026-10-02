@@ -33,6 +33,15 @@ export default defineConfig(({ mode }) => {
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
+  // Dev server only: scan every client module for dependencies at startup. By default Vite
+  // crawls from index.html, so a dependency behind a lazy route is found only when a page
+  // first loads it — and Vite then reloads EVERY open page ("optimized dependencies
+  // changed. reloading"). In the guardian Playwright job (two workers, cold cache) one of
+  // those reloads landed mid-test and destroyed the page under measurement (PR #1040).
+  // Tests are excluded: they import test-only packages the app never serves.
+  optimizeDeps: {
+    entries: ["index.html", "src/**/*.{ts,tsx}", "!src/**/*.test.{ts,tsx}"],
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
