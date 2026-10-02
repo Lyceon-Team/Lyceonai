@@ -290,6 +290,33 @@ for (const vp of VIEWPORTS) {
 }
 
 /**
+ * The route loader is a guardian surface too: every lazy guardian page shows it while its module
+ * loads, and on a cold dev server it was still on screen when `add-student-modal @1440` measured
+ * (CI, 2026-10-02: `{"tag":"p","text":"Loading...","px":14}`). Stalling the page's module holds
+ * the loader on screen, so the floor is checked on it every run rather than only when a load
+ * happens to be slow.
+ */
+for (const vp of VIEWPORTS) {
+  test(`route loader @${vp.name}: no text under 16px`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await serve(page);
+    // Never answered: the lazy page cannot resolve, so the Suspense fallback stays up.
+    await page.route(
+      "**/features/guardian/GuardianStudentsPage.tsx*",
+      () => {},
+    );
+    await page.goto("/guardian/students");
+    await page.getByTestId("page-loader").waitFor({ timeout: 15_000 });
+    // Presence before absence: the loader's own text is on screen, so the scan is not empty.
+    await expect(
+      page.getByTestId("page-loader").getByText("Loading...", { exact: true }),
+    ).toBeVisible();
+    const small = await smallText(page);
+    expect(small, JSON.stringify(small, null, 2)).toEqual([]);
+  });
+}
+
+/**
  * Owner decisions 2026-10-01 on PR 1003, items 7 and 9 — the shell header, in a real browser.
  *   7. At 390 the header shows "Lyceon" and drops "Guardian" (not the other way round).
  *   9. No background square behind the logo mark: the pixels at the mark's corners are the

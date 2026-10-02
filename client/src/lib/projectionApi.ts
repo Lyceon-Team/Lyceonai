@@ -122,21 +122,3 @@ export async function fetchScoreEstimate(): Promise<EstimateResponse> {
   const response = await apiRequest("/api/progress/projection");
   return response.json();
 }
-
-/**
- * The band is now supplied by the server, so there is no label function left to call —
- * render `estimate.confidenceBand` directly. This maps the band to a colour class, which
- * is presentation and belongs on the client.
- */
-export function getConfidenceColor(band: ConfidenceBand): string {
-  switch (band) {
-    case "High":
-      return "text-green-600";
-    case "Medium":
-      return "text-yellow-600";
-    case "Low":
-      return "text-orange-600";
-    case "Very Low":
-      return "text-amber-700";
-  }
-}

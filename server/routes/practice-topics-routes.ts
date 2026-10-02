@@ -10,6 +10,8 @@ import {
   type CanonicalSectionCode,
 } from "../../shared/question-bank-contract";
 import { sectionDisplayLabel } from "../../shared/section-display";
+import { fetchSkillCatalog } from "../../apps/api/src/services/skill-catalog-read";
+import { logger } from "../logger";
 
 // @spec [Doc-05B §4.2] | @implemented [2026-09-02]
 // plain English: keyed by the canonical section code, so the key, the response's
@@ -37,44 +39,42 @@ const SAT_TOPICS: Record<CanonicalSectionCode, { domains: string[] }> = {
 };
 
 /**
- * @spec [Doc-02B_V4 §14; Coding Standards §9] | @implemented [2026-06-30]
+ * @spec [Doc-02B_V4 §14; Coding Standards §9; student-UI register §8 F-56, owner ruling (Karl)
+ *   2026-10-02: build the topic list from canonical_skill_catalog] | @implemented [2026-06-30;
+ *   rebuilt 2026-10-02]
  * Returns sections with domains and skills for practice topic selection.
- * Real schema: questions has section (text), domain (text), skill_codes (text[]).
+ *
+ * plain English: the skill list comes from `canonical_skill_catalog` (distinct section, domain,
+ * skill over published questions) through `fetchSkillCatalog`, the one reader of that view.
+ * It used to be built from an unbounded `select section, domain, skill_codes` over every
+ * `servable_questions` row. PostgREST caps a response at the project's `max_rows` (1,000 in
+ * production, where the bank holds 6,821 servable questions: every call returned rows 0-999),
+ * so any skill that appeared only after the first 1,000 rows silently left the picker. The
+ * catalog is one row per (section, domain, skill), 29 today, so the cap never bites.
+ * trade-offs: the catalog is "published" and the old read was "servable". In production the two
+ * give the same 29 triples (checked 2026-10-02). A skill published but not yet servable would
+ * appear in the picker and start an empty session (422 PRACTICE_POOL_EMPTY), which is honest.
+ * edge cases: a catalog read failure throws inside `fetchSkillCatalog` and becomes a 500 here,
+ * never an empty skill list.
  */
 export async function getPracticeTopics(_req: Request, res: Response) {
   try {
-    const { data: skillRows, error } = await supabaseServer
-      .from("servable_questions")
-      .select("section, domain, skill_codes");
+    const catalog = await fetchSkillCatalog();
 
-    if (error) {
-      return res.status(500).json({ error: "Failed to fetch topics" });
-    }
-
-    const skillsBySection: Record<string, Record<string, Set<string>>> = {};
-    for (const row of skillRows ?? []) {
-      const sec = String(row.section);
-      const dom = String(row.domain);
-      const codes: string[] = Array.isArray(row.skill_codes)
-        ? row.skill_codes
-        : [];
-      if (!skillsBySection[sec]) skillsBySection[sec] = {};
-      if (!skillsBySection[sec][dom]) skillsBySection[sec][dom] = new Set();
-      for (const code of codes) {
-        if (typeof code === "string" && code.length > 0) {
-          skillsBySection[sec][dom].add(code);
-        }
-      }
+    const skillsBySection: Record<string, Record<string, string[]>> = {};
+    for (const entry of catalog) {
+      const bySection = (skillsBySection[entry.section] ??= {});
+      (bySection[entry.domain] ??= []).push(entry.skill);
     }
 
     function buildDomains(
-      sectionCode: string,
-      staticDomains: string[],
+      sectionCode: CanonicalSectionCode,
     ): Array<{ domain: string; skills: string[] }> {
       const domainMap = skillsBySection[sectionCode] ?? {};
-      return staticDomains.map((d) => ({
+      // fetchSkillCatalog already sorts by section, domain, skill.
+      return SAT_TOPICS[sectionCode].domains.map((d) => ({
         domain: d,
-        skills: Array.from(domainMap[d] ?? []).sort(),
+        skills: domainMap[d] ?? [],
       }));
     }
 
@@ -83,10 +83,16 @@ export async function getPracticeTopics(_req: Request, res: Response) {
         section: sectionCode,
         // The only label produced by this route, from the one display mapping.
         label: sectionDisplayLabel(sectionCode),
-        domains: buildDomains(sectionCode, SAT_TOPICS[sectionCode].domains),
+        domains: buildDomains(sectionCode),
       })),
     });
-  } catch {
+  } catch (err) {
+    logger.error(
+      "practice_topics",
+      "catalog_read_failed",
+      "Practice topic list failed",
+      err,
+    );
     return res.status(500).json({ error: "Internal server error" });
   }
 }

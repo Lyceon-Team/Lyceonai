@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lyceon LISA</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+body{margin:0;background:#FFFAEF}
+.lyc{
+--paper:#FFFAEF;--margin:#F7F0DF;--sheet:#FFFFFF;--ink:#1F2A33;--ink-strong:#0F2E48;--muted:#5A6470;
+--rule:#E3D9C3;--rule-soft:#E8DFCB;--rule-strong:#B9A67E;--input-bd:#B9C4CF;--chip:#EEF2F6;--hover:#F2EAD6;
+--rail:#0F2E48;--rail-ink:#C9D3DC;--rail-on-bg:#FFFAEF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#0F2E48;--primary-ink:#FFFAEF;--scrim:rgba(15,46,72,0.45);--tick:#C9BFA8;--seg-empty:#EAE0CB;
+--danger:#9B2C2C;--danger-bg:#FDF2F2;--focus:#7FA6C9;--step:#B9A67E;--ok:#065F46;
+--lv0-fill:#F59E0B;--lv0-bg:#FEF3C7;--lv0-ink:#78350F;--lv0-bd:#FDE68A;
+--lv1-fill:#F97316;--lv1-bg:#FFEDD5;--lv1-ink:#7C2D12;--lv1-bd:#FED7AA;
+--lv2-fill:#0EA5E9;--lv2-bg:#E0F2FE;--lv2-ink:#0C4A6E;--lv2-bd:#BAE6FD;
+--lv3-fill:#2563EB;--lv3-bg:#DBEAFE;--lv3-ink:#1E3A8A;--lv3-bd:#BFDBFE;
+--lv4-fill:#059669;--lv4-bg:#D1FAE5;--lv4-ink:#064E3B;--lv4-bd:#A7F3D0;
+--cat-math-bg:#E8EFFA;--cat-math-bd:#2563EB;--cat-math-ink:#1E3A8A;
+--cat-rw-bg:#F3EDF8;--cat-rw-bd:#7E4FA8;--cat-rw-ink:#4A2668;
+--cat-review-bg:#FBF0E2;--cat-review-bd:#C2650A;--cat-review-ink:#7C3A06;
+--cat-test-bg:#EDF0F3;--cat-test-bd:#0F2E48;--cat-test-ink:#0F2E48}
+.lyc.dark{
+--paper:#121B24;--margin:#16212C;--sheet:#1B2733;--ink:#E7E1D4;--ink-strong:#F4EEDF;--muted:#A9B2BB;
+--rule:#2D3B49;--rule-soft:#26333F;--rule-strong:#6E6249;--input-bd:#3B4B5B;--chip:#233140;--hover:#22303D;
+--rail:#0A1219;--rail-ink:#9FB0BF;--rail-on-bg:#F4EEDF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#F4EEDF;--primary-ink:#0F2E48;--scrim:rgba(4,8,12,0.6);--tick:#4A5868;--seg-empty:#2A3846;
+--danger:#F2A7A7;--danger-bg:#2A1B1E;--focus:#8FB4D6;--step:#8C7B57;--ok:#6EE7B7;
+--lv0-fill:#FBBF24;--lv0-bg:rgba(245,158,11,0.16);--lv0-ink:#FDE68A;--lv0-bd:rgba(251,191,36,0.4);
+--lv1-fill:#FB923C;--lv1-bg:rgba(249,115,22,0.16);--lv1-ink:#FED7AA;--lv1-bd:rgba(251,146,60,0.4);
+--lv2-fill:#38BDF8;--lv2-bg:rgba(14,165,233,0.16);--lv2-ink:#BAE6FD;--lv2-bd:rgba(56,189,248,0.4);
+--lv3-fill:#60A5FA;--lv3-bg:rgba(37,99,235,0.18);--lv3-ink:#BFDBFE;--lv3-bd:rgba(96,165,250,0.45);
+--lv4-fill:#34D399;--lv4-bg:rgba(5,150,105,0.18);--lv4-ink:#A7F3D0;--lv4-bd:rgba(52,211,153,0.4);
+--cat-math-bg:rgba(96,165,250,0.12);--cat-math-bd:#60A5FA;--cat-math-ink:#BFDBFE;
+--cat-rw-bg:rgba(192,132,252,0.12);--cat-rw-bd:#C084FC;--cat-rw-ink:#E9D5FF;
+--cat-review-bg:rgba(251,146,60,0.12);--cat-review-bd:#FB923C;--cat-review-ink:#FED7AA;
+--cat-test-bg:rgba(244,238,223,0.08);--cat-test-bd:#F4EEDF;--cat-test-ink:#F4EEDF}
+.lyc a{color:var(--ink-strong)}
+.lyc button,.lyc select,.lyc input{font-family:inherit}
+.lyc a:focus-visible,.lyc button:focus-visible,.lyc select:focus-visible,.lyc input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.rail-item:hover{filter:brightness(1.12)}
+.btn-primary:hover{filter:brightness(1.12)}
+.btn-quiet:hover{background:var(--hover)}
+.opt:hover{background:var(--margin)}
+.lyc a.foot-link{color:var(--muted);text-decoration:none}.lyc a.foot-link:hover{color:var(--ink-strong);text-decoration:underline}
+@keyframes lyc-dot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+.lyc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);animation:lyc-dot 1.2s infinite ease-in-out}
+.lyc-dot:nth-child(2){animation-delay:.15s}.lyc-dot:nth-child(3){animation-delay:.3s}
+@media (prefers-reduced-motion: reduce){.lyc-dot{animation:none;opacity:.6}}
+</style>
+</helmet>
+<div class="lyc {{themeClass}}" style="width: 1440px; height: 900px; display: flex; position: relative; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; overflow: hidden">
+<nav aria-label="Main" style="width: 96px; flex-shrink: 0; height: 100%; background: var(--rail); display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 20px 8px; box-sizing: border-box">
+<a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 22px; text-decoration: none; color: #FFFAEF">
+<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M2 9l10-5 10 5-10 5z M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5 M22 9v6"></path></svg>
+<span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 18px; font-weight: 600; letter-spacing: 0.01em">Lyceon</span>
+</a>
+<sc-for list="{{nav}}" as="item" hint-placeholder-count="6">
+<sc-if value="{{item.isModal}}" hint-placeholder-val="{{false}}">
+<button type="button" class="rail-item" onClick="{{item.open}}" aria-label="{{item.aria}}" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border: 0; border-radius: 8px; width: 100%; cursor: pointer; position: relative; {{item.tone}}">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="{{item.d}}"></path></svg>
+<span style="font-size: 14px; font-weight: 500">{{item.label}}</span>
+<sc-if value="{{item.lockBadge}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lock)" aria-hidden="true" style="position: absolute; top: 6px; right: 14px; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg></sc-if>
+</button>
+</sc-if>
+<sc-if value="{{item.isLink}}" hint-placeholder-val="{{true}}">
+<a href="{{item.href}}" class="rail-item" aria-current="{{item.current}}" aria-label="{{item.aria}}" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border-radius: 8px; text-decoration: none; position: relative; {{item.tone}}">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="{{item.d}}"></path></svg>
+<span style="font-size: 14px; font-weight: 500">{{item.label}}</span>
+<sc-if value="{{item.lockBadge}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lock)" aria-hidden="true" style="position: absolute; top: 6px; right: 14px; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg></sc-if>
+</a>
+</sc-if>
+</sc-for>
+<div style="flex-grow: 1"></div>
+<a href="Help.dc.html" class="rail-item" aria-current="{{helpCurrent}}" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border-radius: 8px; text-decoration: none; {{helpTone}}">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9.5 9a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2.2-2.4 3.8 M12 17h.01"></path></svg>
+<span style="font-size: 14px; font-weight: 500">Help</span>
+</a>
+<a href="Settings.dc.html" aria-label="Account and settings" aria-current="{{acctCurrent}}" style="display: flex; justify-content: center; padding: 10px 0 4px; text-decoration: none">
+<span style="width: 40px; height: 40px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-family: 'Source Serif 4', Georgia, serif; font-size: 18px; font-weight: 600; {{acctTone}}">A</span>
+</a>
+</nav>
+
+<main style="flex-grow: 1; min-width: 0; height: 100%; display: flex; flex-direction: column">
+<sc-if value="{{paid}}" hint-placeholder-val="{{true}}">
+<header style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 20px 40px; border-bottom: 1px solid var(--rule)">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 24px; font-weight: 600; color: var(--ink-strong)">Slope from standard form</h1>
+<span style="font-size: 15px; color: var(--muted)">Math, today</span>
+</div>
+<button type="button" class="btn-quiet" style="height: 40px; padding: 0 16px; border: 1px solid var(--input-bd); border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 15px; font-weight: 600; cursor: pointer">End session</button>
+</header>
+<div style="flex-grow: 1; overflow-y: auto; padding: 32px 40px">
+<ol aria-label="Conversation" style="list-style: none; margin: 0 auto; padding: 0; max-width: 760px; display: flex; flex-direction: column; gap: 22px">
+<sc-for list="{{messages}}" as="msg" hint-placeholder-count="4">
+<li style="display: flex; flex-direction: column; gap: 6px; {{msg.align}}">
+<span style="font-size: 14px; font-weight: 600; color: var(--muted)">{{msg.who}}</span>
+<p style="margin: 0; max-width: 620px; font-size: 18px; line-height: 1.6; padding: 14px 18px; border-radius: 10px; {{msg.tone}}">{{msg.text}}</p>
+</li>
+</sc-for>
+<sc-if value="{{thinking}}" hint-placeholder-val="{{false}}">
+<li role="status" aria-label="LISA is thinking" style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start">
+<span style="font-size: 14px; font-weight: 600; color: var(--muted)">LISA</span>
+<span aria-hidden="true" style="display: flex; gap: 6px; align-items: center; padding: 16px 18px; border-radius: 10px; background: var(--sheet); border: 1px solid var(--rule)"><span class="lyc-dot"></span><span class="lyc-dot"></span><span class="lyc-dot"></span></span>
+</li>
+</sc-if>
+</ol>
+</div>
+<div style="flex-shrink: 0; border-top: 1px solid var(--rule); padding: 18px 40px 22px; background: var(--paper)">
+<div style="max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 12px; align-items: flex-end">
+<textarea value="{{draft}}" onChange="{{setDraft}}" onKeyDown="{{onKey}}" rows="2" aria-label="Message LISA" placeholder="Ask LISA about a question or a skill" style="flex-grow: 1; resize: none; padding: 12px 14px; border: 1px solid var(--input-bd); border-radius: 8px; background: var(--sheet); color: var(--ink); font-size: 17px; line-height: 1.5; font-family: inherit"></textarea>
+<button type="button" onClick="{{send}}" disabled="{{thinking}}" class="btn-primary" style="height: 50px; padding: 0 22px; border: 0; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 17px; font-weight: 600; cursor: pointer; {{sendTone}}">Send</button>
+</div>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">LISA can make mistakes; your practice results are the source of truth.</p>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{free}}" hint-placeholder-val="{{false}}">
+<div style="flex-grow: 1; overflow-y: auto; padding: 56px 72px">
+<section style="max-width: 680px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 36px 40px; display: flex; flex-direction: column; gap: 16px">
+<h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 32px; font-weight: 600; color: var(--ink-strong)">A Tutor That Knows The SAT And Knows You</h1>
+<p style="margin: 0; font-size: 18px; line-height: 1.6; color: var(--ink)">Stuck on a question? LISA works through it with you, asking the next question instead of handing you the answer.</p>
+<a href="Settings.dc.html" class="btn-primary" style="align-self: flex-start; height: 52px; padding: 0 28px; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 18px; font-weight: 600; text-decoration: none; display: flex; align-items: center">Unlock LISA</a>
+</section>
+</div>
+</sc-if>
+</main>
+
+<aside aria-label="Conversations" style="width: 320px; flex-shrink: 0; height: 100%; overflow-y: auto; background: var(--margin); border-left: 1px solid var(--rule); padding: 28px 22px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+<sc-if value="{{paid}}" hint-placeholder-val="{{true}}">
+<button type="button" class="btn-quiet" style="height: 44px; border: 1px solid var(--ink-strong); border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 16px; font-weight: 600; cursor: pointer">New session</button>
+<h2 style="margin: 8px 0 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 600; color: var(--ink-strong)">Your sessions</h2>
+<ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px">
+<sc-for list="{{convos}}" as="c" hint-placeholder-count="4">
+<li><a href="#" aria-current="{{c.current}}" style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 6px; text-decoration: none; {{c.tone}}">
+<span style="font-size: 16px; font-weight: 600">{{c.title}}</span>
+<span style="font-size: 14px; color: var(--muted)">{{c.when}}</span>
+</a></li>
+</sc-for>
+</ul>
+<button type="button" style="align-self: flex-start; border: 0; background: transparent; color: var(--ink-strong); font-size: 15px; font-weight: 600; text-decoration: underline; cursor: pointer; padding: 6px 12px">Show older</button>
+</sc-if>
+</aside>
+
+<sc-if value="{{modalOpen}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 10">
+<div role="dialog" aria-modal="true" aria-labelledby="up-title" style="width: 540px; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; position: relative">
+<button type="button" aria-label="Close" onClick="{{closeModal}}" class="btn-quiet" style="position: absolute; top: 14px; right: 14px; width: 44px; height: 44px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-strong); cursor: pointer; display: flex; align-items: center; justify-content: center">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 2; stroke-linecap: round"><path d="M6 6l12 12 M18 6L6 18"></path></svg>
+</button>
+<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ink-strong)" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg>
+<h2 id="up-title" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 30px; line-height: 1.2; font-weight: 600; color: var(--ink-strong)">{{mTitle}}</h2>
+<p style="margin: 0; font-size: 18px; line-height: 1.6; color: var(--ink)">{{mBody}}</p>
+<p style="margin: 0; font-size: 16px; line-height: 1.5; color: var(--muted)">Included with every paid plan.</p>
+<div style="display: flex; align-items: center; gap: 16px; padding-top: 8px">
+<a href="Settings.dc.html" class="btn-primary" style="height: 52px; padding: 0 28px; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 18px; font-weight: 600; text-decoration: none; display: flex; align-items: center">See plans</a>
+<button type="button" onClick="{{closeModal}}" class="btn-quiet" style="height: 52px; padding: 0 20px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 18px; font-weight: 600; cursor: pointer">Not now</button>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"plan":{"editor":"enum","options":["paid","free","guardian-paid"],"default":"paid"},"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":900}}'>
+
+const LYC_ICONS = {
+  home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+  practice: 'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',
+  review: 'M3 12a9 9 0 1 0 3-6.7 M3 4v5h5',
+  full: 'M8 3h8v3H8z M6 5H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-1 M8 12h8 M8 16h5',
+  calendar: 'M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4',
+  lisa: 'M4 5h16v11H9l-5 4z'
+};
+// Locked items: Full-Length and LISA open the upgrade modal in place; Calendar navigates to its own page, which does the upsell (Doc 05F), and keeps the lock as a hint.
+function lycNav(free, activeKey, open) {
+  const defs = [
+    { key: 'home', label: 'Home', href: 'Main.dc.html', gate: 'none' },
+    { key: 'practice', label: 'Practice', href: 'Practice.dc.html', gate: 'none' },
+    { key: 'review', label: 'Review', href: 'Review.dc.html', gate: 'none' },
+    { key: 'full', label: 'Full-Length', href: 'FullLength.dc.html', gate: 'modal' },
+    { key: 'calendar', label: 'Calendar', href: 'Calendar.dc.html', gate: 'page' },
+    { key: 'lisa', label: 'LISA', href: 'Lisa.dc.html', gate: 'modal' }
+  ];
+  return defs.map(function (n) {
+    const isModal = free && n.gate === 'modal';
+    const locked = free && n.gate !== 'none';
+    const active = n.key === activeKey;
+    return {
+      label: n.label, href: n.href, d: LYC_ICONS[n.key],
+      isModal: isModal, isLink: !isModal, lockBadge: locked,
+      current: active ? 'page' : 'false',
+      aria: locked ? n.label + ', included with a paid plan' : n.label,
+      open: open(n.key),
+      tone: active ? 'background: var(--rail-on-bg); color: var(--rail-on-ink);' : 'background: transparent; color: var(--rail-ink);'
+    };
+  });
+}
+const LYC_COPY = {
+  full: { title: 'Full-length practice tests', body: 'Timed tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.' },
+  lisa: { title: 'A Tutor That Knows The SAT And Knows You', body: 'Stuck on a question? LISA works through it with you, asking the next question instead of handing you the answer.' },
+  mastery: { title: 'Mastery by domain and skill', body: 'See your level in all eight SAT domains and every skill inside them, and how each one moves as you practice.' }
+};
+// Production ladder (mastery_levels): 0 Foundations ... 4 Strong. Colours follow LevelPill.tsx:16-34 (amber, orange, sky, blue, emerald).
+const LYC_LEVELS = ['Foundations', 'Building', 'Developing', 'Proficient', 'Strong'];
+function lycRow(name, lvl) {
+  const segs = [];
+  for (let i = 0; i < 5; i++) {
+    segs.push({ tone: 'background: ' + ((lvl !== null && i <= lvl) ? 'var(--lv' + lvl + '-fill)' : 'var(--seg-empty)') + ';' });
+  }
+  return {
+    name: name, lvl: lvl, segs: segs,
+    level: lvl === null ? 'Not enough answers yet' : LYC_LEVELS[lvl],
+    pill: lvl === null ? 'background: transparent; color: var(--muted); border: 1px dashed var(--rule-strong);'
+      : 'background: var(--lv' + lvl + '-bg); color: var(--lv' + lvl + '-ink); border: 1px solid var(--lv' + lvl + '-bd);'
+  };
+}
+function lycMastery() {
+  return [
+    { key: 'M', section: 'Math', domains: [
+      lycRow('Algebra', 1), lycRow('Advanced Math', 1),
+      lycRow('Problem Solving and Data Analysis', 2), lycRow('Geometry and Trigonometry', 2)
+    ] },
+    { key: 'RW', section: 'Reading and Writing', domains: [
+      lycRow('Information and Ideas', 3), lycRow('Craft and Structure', 0),
+      lycRow('Expression of Ideas', 0), lycRow('Standard English Conventions', 2)
+    ] }
+  ];
+}
+function lycHelp(active) { return { helpCurrent: active ? 'page' : 'false', helpTone: active ? 'background: var(--rail-on-bg); color: var(--rail-on-ink);' : 'color: var(--rail-ink);' }; }
+function lycTheme(t) { return t === 'dark' ? 'dark' : ''; }
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      modal: null, draft: '', thinking: false,
+      messages: [
+        { who: 'You', text: 'I keep getting slope questions wrong when the line is written like 3x + 2y = 12.' },
+        { who: 'LISA', text: "Let's start with what slope tells you. If you rewrite that equation so y is by itself on one side, what do you get?" },
+        { who: 'You', text: 'y = -3/2x + 6?' },
+        { who: 'LISA', text: 'Exactly. Now compare it with y = mx + b. Which number is the slope?' }
+      ]
+    };
+  }
+  renderVals() {
+    const self = this;
+    const st = this.state;
+    const plan = this.props.plan ?? 'paid';
+    const free = plan === 'free';
+    const open = function (k) { return function () { self.setState({ modal: k }); }; };
+    const send = function () {
+      const text = st.draft.trim();
+      if (!text || st.thinking) { return; }
+      self.setState({ messages: st.messages.concat([{ who: 'You', text: text }]), draft: '', thinking: true });
+    };
+    const messages = st.messages.map(function (m) {
+      const me = m.who === 'You';
+      return { who: m.who, text: m.text,
+        align: me ? 'align-items: flex-end;' : 'align-items: flex-start;',
+        tone: me ? 'background: var(--primary-bg); color: var(--primary-ink);' : 'background: var(--sheet); color: var(--ink); border: 1px solid var(--rule);' };
+    });
+    const convos = [
+      { title: 'Slope from standard form', when: 'Today' },
+      { title: 'Math', when: 'Today' },
+      { title: 'What is my mastery score in algebra?', when: '24 September' },
+      { title: 'Feeling stuck on transitions', when: '24 September' }
+    ].map(function (c, i) {
+      return { title: c.title, when: c.when, current: i === 0 ? 'page' : 'false',
+        tone: i === 0 ? 'background: var(--chip); color: var(--ink-strong);' : 'background: transparent; color: var(--ink);' };
+    });
+    const m = st.modal ? LYC_COPY[st.modal] : { title: '', body: '' };
+    return {
+      themeClass: lycTheme(this.props.theme), free: free, paid: !free,
+      nav: lycNav(free, 'lisa', open),
+      ...lycHelp(false), acctCurrent: 'false', acctTone: 'background: var(--rail-on-bg); color: var(--rail-on-ink);',
+      messages: messages, thinking: st.thinking, convos: convos,
+      sendTone: st.thinking ? 'opacity: 0.45; cursor: not-allowed;' : '',
+      draft: st.draft,
+      setDraft: function (e) { self.setState({ draft: e.target.value }); },
+      onKey: function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } },
+      send: send,
+      modalOpen: !!st.modal, mTitle: m.title, mBody: m.body,
+      closeModal: function () { self.setState({ modal: null }); }
+    };
+  }
+}
+
+</script>
+</body>
+</html>
