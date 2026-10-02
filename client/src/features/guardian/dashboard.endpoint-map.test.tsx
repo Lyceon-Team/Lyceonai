@@ -137,7 +137,7 @@ describe("G4-03 what the Dashboard does not show", () => {
       }
     ).facts;
     expect(facts.blocks_total).toBeGreaterThan(0);
-    expect(screen.getByTestId("dashboard-week").textContent).toContain(
+    expect(screen.getByTestId("week-plan").textContent).toContain(
       `${facts.blocks_completed} of ${facts.blocks_total}`,
     );
     expect(screen.getByTestId("calendar-target").textContent).toContain("1350");

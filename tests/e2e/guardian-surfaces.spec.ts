@@ -404,7 +404,7 @@ const PHONE_CENTRING: readonly {
       },
       {
         what: "this week's plan",
-        selector: "[data-testid=dashboard-week]",
+        selector: "[data-testid=week-plan]",
         mode: "text",
       },
     ],

@@ -44,6 +44,7 @@ import { examKeys } from "@/features/exam/api/keys";
 import { GuardianReportBody } from "@/features/exam/pages/GuardianExamResultsPage";
 import { GuardianScoreStrip } from "./GuardianScoreStrip";
 import { GuardianStudentLayout } from "./GuardianStudentLayout";
+import { GuardianWeekPlan } from "./GuardianWeekPlan";
 import {
   GuardianLoadingState,
   GuardianNoExamsState,
@@ -142,16 +143,12 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
           projection={data.projection}
         />
       </div>
-      <p
-        className="m-0 text-center text-base sm:text-left"
-        data-testid="dashboard-week"
-      >
-        This week&rsquo;s plan:{" "}
-        <b>
-          {data.facts.blocks_completed} of {data.facts.blocks_total}
-        </b>{" "}
-        sessions done
-      </p>
+      {/* G5-02 (R13): this week's plan, from the same read's facts — the numbers the
+          Calendar footer counts. */}
+      <GuardianWeekPlan
+        completed={data.facts.blocks_completed}
+        total={data.facts.blocks_total}
+      />
     </div>
   );
 }
