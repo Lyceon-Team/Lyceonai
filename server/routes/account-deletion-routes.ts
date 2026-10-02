@@ -14,6 +14,7 @@ import {
 } from "../lib/account-deletion-runtime-config";
 import { sendAccountDeletionScheduledEmail } from "../lib/notifications/direct-sends";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
+import { revokeOtherSessions } from "../lib/session-revoke";
 // buildDeletedEmail is domain logic in the lib (so the cron router can use the executor without
 // loading this route module); re-exported here for existing importers (deletion-lifecycle.test.ts).
 export { buildDeletedEmail } from "../lib/account-deletion-execute";
@@ -125,27 +126,14 @@ export async function revokeSessionsAtDeletionRequest(
   sessionClient: SupabaseClient | undefined,
   requestId: string | undefined,
 ): Promise<void> {
-  try {
-    const session = sessionClient
-      ? (await sessionClient.auth.getSession()).data.session
-      : null;
-    if (!session) {
-      throw new Error("no session on the authenticated request");
-    }
-    const { error } = await admin.auth.admin.signOut(
-      session.access_token,
-      "others",
-    );
-    if (error) throw error;
-  } catch {
-    logger.error(
-      "DELETION",
-      "signout_best_effort_failed",
+  // One implementation, shared with the recovery password update (F-46): server/lib/session-revoke.ts.
+  await revokeOtherSessions(admin, sessionClient, {
+    component: "DELETION",
+    event: "signout_best_effort_failed",
+    message:
       "Session revoke failed after deletion request; continuing (the pending-deletion gate remains the backstop)",
-      undefined,
-      { requestId },
-    );
-  }
+    requestId,
+  });
 }
 
 type RecoveryResult =
