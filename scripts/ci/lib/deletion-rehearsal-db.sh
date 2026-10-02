@@ -18,9 +18,10 @@ _deletion_rehearsal_root() { (cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pw
 #
 # Every rehearsal runner reaches Postgres through this file, and both functions
 # below issue DROP DATABASE. The runners take PGHOST from the ambient
-# environment with no target check, and deletion-cascade-rehearsal.sql inserts
+# environment with no target check, and deletion-cascade-rehearsal.seed.sql inserts
 # fabricated rows into mastery_event_audit_log, student_skill_mastery and
-# student_domain_mastery. That combination is the probable origin of the six
+# student_domain_mastery — and, since F-47 (2026-10-01), COMMITS them before the
+# cascade runs, so this guard is the only thing between a mis-set PGHOST and residue. That combination is the probable origin of the six
 # unattributable 'seedhash' audit rows found in prod (2026-06-26/27).
 #
 # Guard placement is deliberate: here, not in each runner. This is the single

@@ -339,15 +339,72 @@ fi
 rm -f "$ROOT/.plant_calendar.sql"
 echo "    RED  [G14]: reverting ONE of the two lines breaks plan generation at run time"
 
-# --- G15: queue_entry_id as ON DELETE RESTRICT breaks the anonymize path.
+# --- G15: queue_entry_id as ON DELETE RESTRICT breaks the deletion cascade.
+#
+# F-47 (owner ruling 2026-10-01): G15 used to accept ANY non-zero exit from the
+# rehearsal, and from 2026-09-22 the rehearsal failed with no plant at all (its seed
+# ran in the cascade's own transaction), so G15 read RED for the wrong reason and
+# proved nothing about RESTRICT. It now asserts the plant's OWN error — SQLSTATE
+# 23503 naming review_session_items_queue_entry_id_fkey, raised by a delete on
+# review_schedule — and two negative controls below prove the check itself can fail.
+G15_SEED="$ROOT/scripts/ci/deletion-cascade-rehearsal.seed.sql"
+G15_REHEARSAL="$ROOT/scripts/ci/deletion-cascade-rehearsal.sql"
+G15_EXPECTED='ERROR:  23503: update or delete on table "review_schedule" violates foreign key constraint "review_session_items_queue_entry_id_fkey" on table "review_session_items"'
+
+# 0 = the rehearsal failed with exactly the RESTRICT error; 1 = it passed;
+# 2 = the committed seed failed; 3 = it failed with some other error.
+g15_check() {
+  psql -X -v ON_ERROR_STOP=1 -q -d "$DB" -f "$G15_SEED" >/dev/null 2>&1 || return 2
+  local out
+  if out=$(psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -d "$DB" -f "$G15_REHEARSAL" 2>&1); then
+    return 1
+  fi
+  if printf '%s\n' "$out" | grep -qF -- "$G15_EXPECTED"; then return 0; fi
+  printf '%s\n' "$out" | grep -m1 'ERROR:' | sed 's/^/      saw: /'
+  return 3
+}
+
+plant_restrict() {
+  q -c "ALTER TABLE public.review_session_items DROP CONSTRAINT review_session_items_queue_entry_id_fkey;
+        ALTER TABLE public.review_session_items ADD CONSTRAINT review_session_items_queue_entry_id_fkey FOREIGN KEY (queue_entry_id) REFERENCES public.review_schedule(id) ON DELETE RESTRICT;" >/dev/null
+}
+
 echo "==> G15 plant: queue_entry_id ON DELETE RESTRICT"
 build_db
-q -c "ALTER TABLE public.review_session_items DROP CONSTRAINT review_session_items_queue_entry_id_fkey;
-      ALTER TABLE public.review_session_items ADD CONSTRAINT review_session_items_queue_entry_id_fkey FOREIGN KEY (queue_entry_id) REFERENCES public.review_schedule(id) ON DELETE RESTRICT;" >/dev/null
-if psql -v ON_ERROR_STOP=1 -d "$DB" -f "$ROOT/scripts/ci/deletion-cascade-rehearsal.sql" >/dev/null 2>&1; then
-  fail "G15 plant: RESTRICT did not break the rehearsal — the fixtures do not link an item to an entry"
-fi
-echo "    RED  [G15]: RESTRICT makes the deletion rehearsal fail, as designed"
+plant_restrict
+rc=0; g15_check || rc=$?
+case $rc in
+  0) echo "    RED  [G15]: RESTRICT fails the deletion rehearsal with 23503 on review_session_items_queue_entry_id_fkey" ;;
+  1) fail "G15 plant: RESTRICT did not break the rehearsal — the fixtures do not link an item to an entry" ;;
+  2) fail "G15 plant: the committed seed failed before the cascade ran" ;;
+  *) fail "G15 plant: the rehearsal failed, but not with the RESTRICT error" ;;
+esac
+
+echo "==> G15 control: an UNPLANTED tree must not satisfy the G15 check"
+build_db
+rc=0; g15_check || rc=$?
+[ "$rc" = "1" ] || fail "G15 control: unplanted tree returned $rc (want 1: the rehearsal passes) — G15 cannot tell a plant from a broken rehearsal"
+echo "    ok   [G15 control]: unplanted, the rehearsal passes and the G15 check refuses it"
+
+echo "==> G15 control: a plant that fails with a DIFFERENT error must not satisfy the G15 check"
+build_db
+q -c "CREATE FUNCTION public._g15_other_error() RETURNS trigger LANGUAGE plpgsql AS \$f\$
+        BEGIN RAISE EXCEPTION 'G15 control: some other failure'; END \$f\$;
+      CREATE TRIGGER _g15_other_error BEFORE DELETE ON public.review_schedule
+        FOR EACH ROW EXECUTE FUNCTION public._g15_other_error();" >/dev/null
+rc=0; g15_check || rc=$?
+[ "$rc" = "3" ] || fail "G15 control: a different error returned $rc (want 3) — G15 accepts any failure"
+echo "    ok   [G15 control]: a non-RESTRICT failure is rejected by the G15 check"
+
+echo "==> G15 control: RESTRICT on a DIFFERENT review FK must not satisfy the G15 check"
+build_db
+# review_sessions.student_id is SET NULL; as RESTRICT it fails the anonymize path with
+# the SAME SQLSTATE (23503) on a different constraint, so only the name tells them apart.
+q -c "ALTER TABLE public.review_sessions DROP CONSTRAINT review_sessions_student_id_fkey;
+      ALTER TABLE public.review_sessions ADD CONSTRAINT review_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;" >/dev/null
+rc=0; g15_check || rc=$?
+[ "$rc" = "3" ] || fail "G15 control: RESTRICT on review_sessions.student_id returned $rc (want 3) — the constraint name is not being checked"
+echo "    ok   [G15 control]: 23503 on another constraint is rejected by the G15 check"
 
 echo
 echo "REVIEW QUEUE GATES SELF-TEST: PASS"

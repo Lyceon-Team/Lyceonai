@@ -907,6 +907,26 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-practice-contract.json \
             --file tests/ci/calendar.launch-contract.practice.ci.test.ts
 
+      # @spec [Doc 05F §8.1, §17.5, §7.8 (INV-08-09); guardian final purge, item 8 (owner brief
+      # 2026-10-02)] | @implemented [2026-10-02]
+      # PUT /api/calendar/profile against the real migrations: the setup body's idempotency key
+      # (the 2026-09-28 first-screen 400) and BOTH halves of `full_length_pair` (the 23514 that
+      # was served as a 500). Its header says what only real SQL can prove; until now no job
+      # named the file and the plain `ci` job has no Postgres, so `describe.skipIf(!PG_AVAILABLE)`
+      # skipped all 7 cases and read as green. The summary gate makes a skip red.
+      - name: Calendar profile upsert (real route, real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.profile-upsert.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-profile-upsert.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-profile-upsert.json \
+            --file tests/ci/calendar.profile-upsert.pg.ci.test.ts
+
       # REVIEW IS NO LONGER A STUB, AND THIS STEP HAD NOT NOTICED. It ran the review
       # contract with no PG environment, so `describe.skipIf(!PG_AVAILABLE)` skipped the
       # entire real-engine half -- 9 passed, 6 SKIPPED, exit 0, green from the outside.
@@ -2101,6 +2121,20 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/deletion-deidentify-rehearsal.sh
 
+      # F-47 (owner ruling 2026-10-01): the cascade rehearsal's POSITIVE run, blocking.
+      # It was red from 2026-09-22 with nothing to report it, because only G15's plant
+      # ever ran it — and that plant only asked for "any failure". Seed commits first,
+      # in its own transaction, as production's rows always are.
+      - name: execute_account_deletion_cascade rehearsal (hard_delete + anonymize, committed seed)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/deletion-cascade-rehearsal.sh
+
       - name: Negative control — rehearsal must FAIL on a broken WHERE
         env:
           PGHOST: localhost
@@ -2411,6 +2445,25 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-policy-roles.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-policy-roles.json \
             --file tests/ci/tutor-policy-roles.pg.ci.test.ts
+
+      # @spec [Doc-03B_V4.1 §8.3, §8.5, §7.3 (keyset pagination); guardian final purge, item 8
+      # (owner brief 2026-10-02)] | @implemented [2026-10-02]
+      # GET /api/tutor/conversations against the real migrations: has_more / next_cursor exact
+      # at 0, 20 and 21 rows, page 2 with no overlap or gap, ties on updated_at walked once.
+      # No other suite drives this route over real SQL; until now no job named the file, so it
+      # skipped all 8 cases in the plain `ci` job. The summary gate makes a skip red.
+      - name: Tutor conversation list pagination (real route, real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/tutor-conversation-list.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-tutor-conversation-list.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-conversation-list.json \
+            --file tests/ci/tutor-conversation-list.pg.ci.test.ts
 
   # ---------------------------------------------------------------------------
   # GCP Workload Identity Federation auth gate. Authenticates via WIF and runs

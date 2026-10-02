@@ -2,18 +2,19 @@
 # ============================================================================
 # Guardian-mirror gates (Doc 01 guardian trust §35 / Doc 05B §5.3 / Parent §11.1) — HARD GATE
 # ============================================================================
-# Since 20261017000000 (G-NEW-15, SCL-196) the six mirror tables have RLS ON and NO read policy:
-# every read is the service role's, and guardian visibility is decided in the route layer
-# (`resolveSubject` -> `guardian_view_decision`). This gate proves the database side of that:
-#   DENIAL BY ABSENCE: a direct `authenticated` read — a guardian linked to an entitled student, an
-#     unlinked guardian, or the student themselves — returns ZERO rows. A guardian JWT cannot reach a
-#     linked student's KPI counters through PostgREST, around SCL-188's projection.
+# Since 20261017000000 (G-NEW-15, SCL-196) the six mirror tables have RLS ON and NO read policy,
+# and since 20261019000000 (SCL-198) `authenticated` holds NO SELECT on them either: every read is
+# the service role's, and guardian visibility is decided in the route layer (`resolveSubject` ->
+# `guardian_view_decision`). This gate proves the database side of that:
+#   DENIAL: a direct `authenticated` read — a guardian linked to an entitled student, or the
+#     student themselves — is REFUSED (42501, no grant), not merely filtered. A guardian JWT cannot
+#     reach a linked student's KPI counters through PostgREST, around SCL-188's projection.
 #   ONE FORM OF THE GATE: the boolean guardian_can_view_student / _as functions are gone; nothing
 #     but guardian_view_decision decides guardian visibility.
 #   ENTITLEMENT ORACLE: authenticated cannot call entitlement_active directly.
 #   VIEW-ONLY by construction: no write policy + no write grant on any mirror surface.
-#   CARVE-OUTS: authenticated holds no grant on mastery_score / acc_*; student_skill_kpi has no
-#     guardian policy.
+#   NO COLUMN GRANT: authenticated can read no column of student_domain_mastery (mastery_level
+#     included, since SCL-198); student_skill_kpi has no policy at all.
 set -euo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -71,28 +72,33 @@ INSERT INTO public.student_domain_mastery (student_id,section,domain,mastery_lev
   ('6e000000-0000-0000-0000-000000000033','M','Algebra',3,'x');
 SQL
 
-echo "==> DENIAL BY ABSENCE: direct authenticated reads of the mirror tables return zero rows"
-# S1 is linked to G AND entitled: the case the old guardian policy ALLOWED. Now it is zero.
-VIS=$(psql_db "$DB" -tAc "
-  SET test.guardian_uid = '6e000000-0000-0000-0000-000000000001';
-  SET ROLE authenticated;
-  SELECT (SELECT count(*) FROM public.student_domain_mastery)::text
-   || '|' || (SELECT count(*) FROM public.student_overall_kpi)::text
-   || '|' || (SELECT count(*) FROM public.student_section_projections)::text;" | tail -1)
-if [ "$VIS" = "0|0|0" ]; then echo "    OK a guardian linked to an entitled student reads 0 rows directly (route layer only)"
-else echo "  FAIL: guardian direct-read counts = $VIS (expected 0|0|0 — a guardian read KPI/mastery rows around the route layer!)"; exit 1; fi
-# Presence before absence: the rows exist, so the zero above is denial, not an empty table.
+# Presence before absence: the rows exist, so a refusal below is a denial, not an empty table.
 ROWS=$(psql_db "$DB" -tAc "SELECT count(*) FROM public.student_domain_mastery;" | tail -1)
-[ "$ROWS" = "3" ] || { echo "  FAIL: seed has $ROWS domain-mastery rows (expected 3) — the zero above would be vacuous"; exit 1; }
-echo "    OK the seed's 3 rows exist (read as the owner), so the zero is a denial"
+[ "$ROWS" = "3" ] || { echo "  FAIL: seed has $ROWS domain-mastery rows (expected 3) — a denial below would be vacuous"; exit 1; }
+echo "    OK the seed's 3 rows exist (read as the owner)"
 
-echo "==> the student themselves also reads zero rows directly (service role only)"
-SELF=$(psql_db "$DB" -tAc "
-  SET test.guardian_uid = '6e000000-0000-0000-0000-000000000011';
-  SET ROLE authenticated;
-  SELECT count(*) FROM public.student_domain_mastery;" | tail -1)
-[ "$SELF" = "0" ] || { echo "  FAIL: a student read $SELF own rows directly (expected 0 — no student read policy since SCL-196)"; exit 1; }
-echo "    OK a student reads 0 own rows directly"
+# direct_read <uid> <table> — runs one SELECT as `authenticated` with that uid and prints
+# "refused" on SQLSTATE 42501 (permission denied), otherwise the row count it got.
+direct_read() {
+  local out
+  if out=$(psql -v ON_ERROR_STOP=1 -d "$DB" -tA -c "SET test.guardian_uid = '$1';" \
+        -c "SET ROLE authenticated;" -c "SELECT count(*) FROM public.$2;" 2>&1); then
+    echo "$out" | tail -1
+  else
+    case "$out" in *"permission denied for table $2"*) echo "refused" ;; *) echo "error: $out" ;; esac
+  fi
+}
+
+echo "==> DENIAL: a direct authenticated read of a mirror table is refused (no grant)"
+# S1 is linked to G AND entitled: the case the old guardian policy ALLOWED. Now it is refused.
+VIS="$(direct_read 6e000000-0000-0000-0000-000000000001 student_domain_mastery)|$(direct_read 6e000000-0000-0000-0000-000000000001 student_overall_kpi)|$(direct_read 6e000000-0000-0000-0000-000000000001 student_section_projections)"
+if [ "$VIS" = "refused|refused|refused" ]; then echo "    OK a guardian linked to an entitled student is refused a direct read (route layer only)"
+else echo "  FAIL: guardian direct reads = $VIS (expected refused|refused|refused — a guardian could read KPI/mastery rows around the route layer!)"; exit 1; fi
+
+echo "==> the student themselves is refused too (service role only)"
+SELF="$(direct_read 6e000000-0000-0000-0000-000000000011 student_domain_mastery)"
+[ "$SELF" = "refused" ] || { echo "  FAIL: a student's direct read = $SELF (expected refused — no grant since SCL-198)"; exit 1; }
+echo "    OK a student is refused a direct read of their own rows"
 
 echo "==> PR370-GUARDIAN-001 (two-sided): the entitlement oracle is reachable ONLY via the link gate"
 # (a) authenticated must NOT be able to call entitlement_active directly (no raw entitlement probe).
@@ -124,13 +130,13 @@ WRITES=$(psql_db "$DB" -tAc "
 [ "$WRITES" = "0" ] || { echo "  FAIL: $WRITES guardian/authenticated write policy-or-grant on a mirror surface (must be 0 — view-only)"; exit 1; }
 echo "    OK zero write policies/grants — guardian is view-only at the row-security level"
 
-echo "==> CARVE-OUTS: mastery_level readable, mastery_score/acc_* NOT; student_skill_kpi has no guardian policy"
+echo "==> NO COLUMN GRANT: no column of student_domain_mastery is readable; student_skill_kpi has no policy"
 CARVE=$(psql_db "$DB" -tAc "
   SELECT has_column_privilege('authenticated','public.student_domain_mastery','mastery_level','SELECT')::text
    || '|' || has_column_privilege('authenticated','public.student_domain_mastery','mastery_score','SELECT')::text
    || '|' || has_column_privilege('authenticated','public.student_domain_mastery','acc_test','SELECT')::text
-   || '|' || (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='student_skill_kpi' AND policyname LIKE '%guardian%')::text;")
-[ "$CARVE" = "true|false|false|0" ] || { echo "  FAIL: carve-out posture = $CARVE (expected true|false|false|0)"; exit 1; }
-echo "    OK mastery_level only; mastery_score/acc_* withheld; student_skill_kpi not a guardian mirror"
+   || '|' || (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND tablename='student_skill_kpi')::text;")
+[ "$CARVE" = "false|false|false|0" ] || { echo "  FAIL: column-grant posture = $CARVE (expected false|false|false|0)"; exit 1; }
+echo "    OK no column grant (mastery_level included, SCL-198); student_skill_kpi has no policy"
 
 echo "GUARDIAN-MIRROR GATES: PASS"

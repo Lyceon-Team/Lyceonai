@@ -202,6 +202,37 @@ BEGIN
   END LOOP;
   RAISE NOTICE 'GATE 13 PASS: guardian_view_decision is service-role only';
 
+  -- 14. NO DIRECT READ PATH (SCL-198, 20261019000000). Every read of the eight KPI / mastery /
+  --     projection tables is the service role's. The column-level SELECT `authenticated` held
+  --     on them is what made G-NEW-15's guardian policies live; it is revoked, and neither
+  --     `authenticated` nor `anon` may regain SELECT on any column. The two skill tables keep
+  --     no policy at all, and RLS stays on everywhere (no grant AND no policy, both layers).
+  FOR v_got IN SELECT unnest(ARRAY['student_overall_kpi','student_section_kpi',
+      'student_domain_kpi','student_domain_mastery','student_section_projections',
+      'student_section_projection_snapshots','student_skill_kpi','student_skill_mastery']) LOOP
+    IF has_any_column_privilege('authenticated', 'public.' || v_got, 'SELECT')
+       OR has_any_column_privilege('anon', 'public.' || v_got, 'SELECT') THEN
+      RAISE EXCEPTION 'GATE 14 FAIL: authenticated or anon can SELECT public.% (every read is the service role''s)', v_got;
+    END IF;
+    IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = ('public.' || v_got)::regclass) THEN
+      RAISE EXCEPTION 'GATE 14 FAIL: RLS is not enabled on public.%', v_got;
+    END IF;
+  END LOOP;
+  SELECT count(*) INTO v_count FROM pg_policies
+   WHERE schemaname = 'public' AND tablename IN ('student_skill_kpi','student_skill_mastery');
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'GATE 14 FAIL: % policies on student_skill_kpi / student_skill_mastery, expected 0', v_count;
+  END IF;
+  -- Presence before absence: the service role, the one reader, still reads all eight.
+  IF NOT (SELECT bool_and(has_table_privilege('service_role', 'public.' || t, 'SELECT'))
+            FROM unnest(ARRAY['student_overall_kpi','student_section_kpi','student_domain_kpi',
+              'student_domain_mastery','student_section_projections',
+              'student_section_projection_snapshots','student_skill_kpi',
+              'student_skill_mastery']) AS t) THEN
+    RAISE EXCEPTION 'GATE 14 FAIL: service_role lost SELECT on one of the eight tables (the app reads through it)';
+  END IF;
+  RAISE NOTICE 'GATE 14 PASS: no authenticated/anon SELECT on the eight tables; no skill-table policy; service_role reads';
+
   RAISE NOTICE 'GUARDIAN-VIEW-DECISION GATE: PASS';
 END
 $gate$;

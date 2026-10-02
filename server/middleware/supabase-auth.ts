@@ -270,26 +270,6 @@ export function requireRequestUser(
   return req.user;
 }
 
-export function requireRequestAuthContext(
-  req: AuthenticatedRequest,
-  res: Response,
-): { user: SupabaseUser; supabase: SupabaseClient } | null {
-  const user = requireRequestUser(req, res);
-  if (!user) {
-    return null;
-  }
-
-  if (!req.supabase) {
-    sendNoUser(req, res);
-    return null;
-  }
-
-  return {
-    user,
-    supabase: req.supabase,
-  };
-}
-
 function isTestEnvironment(): boolean {
   return process.env.VITEST === "true" || process.env.NODE_ENV === "test";
 }

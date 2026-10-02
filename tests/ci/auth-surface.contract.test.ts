@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AuthenticatedRequest,
   requireProfileComplete,
-  requireRequestAuthContext,
   requireRequestUser,
   requireStudentOrAdmin,
   requireSupabaseAuth,
@@ -119,29 +118,6 @@ describe("Auth Surface Contract", () => {
       error: "Authentication required",
       message: "You must be signed in to access this resource",
       requestId: "req-auth-2",
-    });
-  });
-
-  it("fails closed when a route requires auth context but supabase client is missing", () => {
-    const req = {
-      user: {
-        id: "student-1",
-        role: "student",
-        isGuardian: false,
-        isAdmin: false,
-      },
-      requestId: "req-auth-3",
-    } as unknown as AuthenticatedRequest;
-    const res = createResponseRecorder();
-
-    const auth = requireRequestAuthContext(req, res as never);
-
-    expect(auth).toBeNull();
-    expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual({
-      error: "Authentication required",
-      message: "You must be signed in to access this resource",
-      requestId: "req-auth-3",
     });
   });
 

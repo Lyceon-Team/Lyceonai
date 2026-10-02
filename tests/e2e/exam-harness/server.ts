@@ -11,7 +11,10 @@
  * repo's migrations. Since G2 it also mounts the REAL /api/students router (the subject
  * resolver and the guardian exam results routes), and a request carrying
  * `x-harness-as: guardian` is made as the one linked guardian instead of the student —
- * the browser spec sets that header for its guardian page. The only substitutions are
+ * the browser spec sets that header for its guardian page. Since the guardian final purge
+ * (item 9, owner brief 2026-10-02) it also mounts the REAL /api/guardian router: the Wave 4
+ * guardian shell (G4-06) reads the roster (`GET /api/guardian/students`) before it renders any
+ * student page, so without it the guardian half could not load. The only substitutions are
  * the four imports in hooks.mjs (Supabase clients -> this Postgres; auth guards and
  * entitlement -> one fixed student). The real client runs unmodified under Vite and
  * reaches this server through Vite's /api proxy; it learns who is signed in from
@@ -41,6 +44,7 @@ async function main(): Promise<void> {
   const { default: reportRouter } = await import("../../../server/routes/exam-report-routes");
   const { calendarRouter, streakRouter } = await import("../../../server/routes/calendar-routes");
   const { default: studentResourcesRouter } = await import("../../../server/routes/student-resources");
+  const { default: guardianRouter } = await import("../../../server/routes/guardian-routes");
 
   const app = express();
   app.use(express.json());
@@ -77,6 +81,10 @@ async function main(): Promise<void> {
   app.use("/api/me", streakRouter);
   // G2: guardian exam results, behind the real subject resolver (as server/index.ts mounts it).
   app.use("/api/students", studentResourcesRouter);
+  // Item 9: the guardian shell's roster (and the rest of the guardian router), the real routes
+  // over the harness's real guardian_links row, as server/index.ts mounts them (CSRF aside, as
+  // for every router here).
+  app.use("/api/guardian", guardianRouter);
   // Anything else the app shell asks for is outside this harness.
   app.use("/api", (_req, res) => res.status(404).json({ error: { code: "not_in_harness", message: "Not served by the exam harness." } }));
 
