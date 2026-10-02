@@ -16,8 +16,7 @@ tests/
 │   └── protected-routes.integration.test.ts
 │
 └── utils/                        # Test utilities
-    ├── mock-supabase.ts         # Mock Supabase client factory
-    └── auth-helpers.ts          # Auth test helpers
+    └── securityTestUtils.ts     # Security-route mocks (with testEnv, timer, report, fixtures)
 
 # Legacy test files (preserved for reference)
 ├── auth.integration.test.ts     # Original integration test (excluded from runs)

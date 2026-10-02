@@ -1,14 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export function writeMarkdownReport(name: string, body: string) {
-  const outDir = path.resolve(process.cwd(), 'tests', 'reports');
-  fs.mkdirSync(outDir, { recursive: true });
-  const file = path.join(outDir, `${name}.md`);
-  fs.writeFileSync(file, body, 'utf8');
-  console.log('[REPORT] Wrote', file);
-}
-
 export interface TestResult {
   testName: string;
   status: 'PASS' | 'FAIL';
