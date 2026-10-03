@@ -6052,6 +6052,9 @@ CREATE FUNCTION public.exam_list_forms(p_student_id uuid) RETURNS jsonb
                         'completed_at', s.completed_at,
                         'abandoned_at', s.abandoned_at,
                         'score_total_present', r.total_scaled IS NOT NULL,
+                        'total_scaled', r.total_scaled,
+                        'rw_scaled', r.rw_scaled,
+                        'math_scaled', r.math_scaled,
                         'score_partial_present', r.partial_display_scaled IS NOT NULL,
                         'failed_outbox_id', CASE WHEN r.id IS NULL THEN (
                             SELECT o.id FROM exam_runtime_outbox o

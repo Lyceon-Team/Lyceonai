@@ -69,7 +69,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const PAGES: readonly [string, string, string][] = [
-  ["a student's Dashboard", `/guardian/${ADA}`, "dashboard-exam"],
+  ["a student's Dashboard", `/guardian/${ADA}`, "latest-test-meta"],
   [
     "a student's Calendar",
     `/guardian/${ADA}/calendar`,
@@ -138,7 +138,7 @@ describe("the payment-health banner, in GuardianShell", () => {
 
   it("no banner when nothing needs updating", async () => {
     mountApp(Router, `/guardian/${ADA}`);
-    await screen.findByTestId("dashboard-exam");
+    await screen.findByTestId("latest-test-meta");
     // Presence first: the status WAS read, and said nothing needs updating.
     await waitFor(() => expect(net.log).toContain("GET /api/billing/status"));
     expect(screen.queryByTestId("guardian-payment-health-banner")).toBeNull();

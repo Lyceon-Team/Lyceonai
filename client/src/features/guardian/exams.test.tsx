@@ -58,11 +58,17 @@ function expectOneShellHeader(): void {
 }
 
 describe("G4-05 exam results inside the shell", () => {
-  it("the list: one header, the test and its date, no counts", async () => {
+  it("the list: one header, the test and the student's card word, no counts", async () => {
     mountApp(Router, `/guardian/${ADA}/exams`);
     const list = await screen.findByTestId("guardian-exam-list");
     expect(list.textContent).toContain("Practice Test 2");
-    expect(list.textContent).toMatch(/Sep\w* 20|20 Sep/);
+    // G5-08: the student's own card (TestsHomePage) shows the state word, not a date.
+    expect(screen.getByTestId("guardian-exam-state").textContent).toBe(
+      "Scored",
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Full-length tests" }),
+    ).toBeTruthy();
     expectOneShellHeader();
     expectNoCounts();
   });
