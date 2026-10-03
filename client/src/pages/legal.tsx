@@ -20,8 +20,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  loadLegalIndex,
-  loadLegalSlugs,
+  legalIndexQueryOptions,
   type LegalIndexEntry,
 } from "@/lib/legal-content";
 import Footer from "@/components/layout/Footer";
@@ -47,11 +46,7 @@ export default function LegalHub() {
   // only "which documents exist"; title, description and order come from each
   // manifest. Publishing a tenth document puts it on this page with no code
   // change, which is the point of the structure.
-  const { data: index } = useQuery({
-    queryKey: ["legal-index"],
-    queryFn: async () => loadLegalIndex(await loadLegalSlugs()),
-    staleTime: 5 * 60 * 1000,
-  });
+  const { data: index } = useQuery(legalIndexQueryOptions());
 
   // Only published documents are listed. A slug at `current: null` exists and
   // resolves citations, but there is nothing yet for a reader to open.

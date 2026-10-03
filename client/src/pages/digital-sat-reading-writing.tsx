@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { BookOpen, ArrowRight, CheckCircle2, Calculator } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import { DIGITAL_SAT_READING_WRITING_FAQS } from "@shared/seo/public-meta";
 import {
   Container,
   Breadcrumb,
@@ -8,33 +9,8 @@ import {
   Section,
 } from "@/components/layout/primitives";
 
-const faqs = [
-  {
-    question: "What is tested on SAT Reading and Writing?",
-    answer:
-      "The section covers Craft and Structure, Information and Ideas, Standard English Conventions, and Expression of Ideas.",
-  },
-  {
-    question: "How is Digital SAT Reading different from the paper test?",
-    answer:
-      "The Digital SAT uses shorter passages with one question per passage, creating faster transitions between topics.",
-  },
-  {
-    question: "How many Reading and Writing questions are on the Digital SAT?",
-    answer:
-      "There are 54 total questions split into two 27-question modules with 64 minutes total.",
-  },
-  {
-    question: "What vocabulary should I study for the SAT?",
-    answer:
-      "Focus on academic vocabulary in context and how meaning changes with passage usage.",
-  },
-  {
-    question: "How can I improve SAT Reading speed?",
-    answer:
-      "Practice evidence-based elimination, transition-word awareness, and short-passage pacing drills.",
-  },
-];
+// One copy of this FAQ: the page renders it and its FAQPage JSON-LD is built from it (F1).
+const faqs = DIGITAL_SAT_READING_WRITING_FAQS;
 
 const questionTypes = [
   {
