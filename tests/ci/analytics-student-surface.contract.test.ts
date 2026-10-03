@@ -41,7 +41,7 @@ import {
   isAnalyticsAllowedPath,
   analyticsBeforeSend,
 } from "../../client/src/lib/analytics-surface";
-import { PUBLIC_SSR_ROUTES } from "../../server/seo-content";
+import { loadRouteRegistry } from "../lib/prerendered-site";
 import { stripComments } from "./lib/strip-comments";
 
 const REPO = resolve(__dirname, "../..");
@@ -80,13 +80,18 @@ describe("E1 — Vercel Analytics is off on every role-gated surface", () => {
   });
 
   it("E1.1 — every public route that is not ALSO role-gated is allowed", () => {
-    // PUBLIC_SSR_ROUTES is the list the SSR layer already treats as public.
-    // Reusing it is what stops two classifications of the same routes.
+    // The registry's prerendered rows are the public pages (SEO F12, 2026-10-03; this read the
+    // deleted Express SSR table before). Reusing it is what stops two classifications of the same
+    // routes. A content slug is substituted for each path param.
     //
     // The subtraction is not a fudge: it is the rule. A path in both sets
     // serves two different pages at one URL, and the analytics event cannot
     // tell them apart, so deny wins. E1.11 pins the one path in that state.
-    const denied = Object.keys(PUBLIC_SSR_ROUTES)
+    const publicPages = loadRouteRegistry()
+      .filter((r) => r.prerender)
+      .map((r) => r.path_pattern.replace(/:[A-Za-z]+/g, "some-slug"));
+    expect(publicPages.length).toBeGreaterThan(5);
+    const denied = publicPages
       .filter((p) => !ROLE_GATED_PATHS.includes(p))
       .filter((p) => !isAnalyticsAllowedPath(p));
     expect(denied).toEqual([]);
@@ -98,7 +103,7 @@ describe("E1 — Vercel Analytics is off on every role-gated surface", () => {
     // Retired: the public page is gone and the SPA route only redirects to
     // /chat. It must not come back as a public (analytics-allowed) page, and
     // with no entry anywhere it falls to the default deny.
-    expect(Object.keys(PUBLIC_SSR_ROUTES)).not.toContain("/tutor");
+    expect(loadRouteRegistry().find((r) => r.path_pattern === "/tutor")?.prerender).toBe(false);
     expect(ROLE_GATED_PATHS).not.toContain("/tutor");
     expect(isAnalyticsAllowedPath("/tutor")).toBe(false);
   });

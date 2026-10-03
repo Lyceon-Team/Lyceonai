@@ -7,6 +7,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import { DIGITAL_SAT_MATH_FAQS } from "@shared/seo/public-meta";
 import {
   Container,
   Card,
@@ -14,33 +15,8 @@ import {
   Section,
 } from "@/components/layout/primitives";
 
-const faqs = [
-  {
-    question: "What math topics are on the Digital SAT?",
-    answer:
-      "The Digital SAT Math section covers Algebra, Advanced Math, Problem-Solving and Data Analysis, and Geometry/Trigonometry.",
-  },
-  {
-    question: "Can I use a calculator on SAT Math?",
-    answer:
-      "Yes. The Digital SAT allows calculator use for the entire Math section, including Bluebook Desmos support.",
-  },
-  {
-    question: "How many math questions are on the Digital SAT?",
-    answer:
-      "There are 44 total Math questions split into two 22-question modules, with 70 minutes total.",
-  },
-  {
-    question: "What are common SAT Math mistakes?",
-    answer:
-      "Common misses include solving for the wrong expression, sign errors, rushing word-problem setup, and skipping answer checks.",
-  },
-  {
-    question: "How does Lyceon support math review?",
-    answer:
-      "Lyceon provides adaptive practice plus step-by-step tutor guidance so students can identify patterns and correct repeat mistakes.",
-  },
-];
+// One copy of this FAQ: the page renders it and its FAQPage JSON-LD is built from it (F1).
+const faqs = DIGITAL_SAT_MATH_FAQS;
 
 const topics = [
   {

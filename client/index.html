@@ -20,38 +20,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     
-    <!-- SEO Meta Tags -->
+    <!-- Page head (F1). Every public page is prerendered at build by
+         scripts/build/prerender.mjs, which replaces everything between these markers with
+         that page's own title, description, self-canonical, Open Graph/Twitter tags and
+         JSON-LD from shared/seo/. What is left here is the head of the SPA shell (app.html),
+         which serves only signed-in and non-content routes: none of them is meant for an
+         index, so the shell says noindex and names no canonical. -->
+    <!-- seo:head:start -->
     <title>Lyceon – Digital SAT prep with tutor guidance</title>
-    <meta name="description" content="Lyceon offers SAT-style practice, full-length exams, progress tracking, and tutor guidance to help you study smarter and improve score readiness." />
-    <meta name="keywords" content="Lyceon, SAT, SAT prep, digital SAT practice, SAT-style questions, SAT math help, SAT reading help, SAT study app, tutor guidance" />
-    
-    <!-- Canonical URL -->
-    <link rel="canonical" href="https://lyceon.ai/" />
-    
+    <meta name="robots" content="noindex" />
+    <!-- seo:head:end -->
+
     <!-- Favicons -->
     <link rel="icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png" />
-    
-    <!-- Open Graph Tags -->
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Lyceon" />
-    <meta property="og:title" content="Lyceon – Digital SAT prep with tutor guidance" />
-    <meta property="og:description" content="Practice SAT-style questions with tutor guidance, full-length exams, and progress tracking." />
-    <meta property="og:url" content="https://lyceon.ai/" />
-    <meta property="og:image" content="https://lyceon.ai/og-image.jpg" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Lyceon – Digital SAT prep with tutor guidance" />
-    
-    <!-- Twitter Card Tags -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Lyceon – Digital SAT prep with tutor guidance" />
-    <meta name="twitter:description" content="SAT-style practice, full-length exams, and tutor guidance for Digital SAT readiness." />
-    <meta name="twitter:image" content="https://lyceon.ai/og-image.jpg" />
-    
-    <!-- JSON-LD is injected server-side for SSR public routes -->
-    
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Only the two families the app renders with: Poppins and Inter (index.css and tokens.css

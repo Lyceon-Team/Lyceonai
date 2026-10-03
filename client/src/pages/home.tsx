@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { HOME_FAQS, faqParagraphs } from "@shared/seo/public-meta";
 import { useToast } from "@/hooks/use-toast";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import PublicLayout from "@/components/layout/PublicLayout";
@@ -28,7 +29,6 @@ import {
 import { ctaClickHandlers } from "@/lib/cta-click";
 
 type DemoState = "idle" | "thinking" | "answered";
-type HeroVariant = "A" | "B";
 
 /**
  * The free-tier daily practice allowance, as advertised.
@@ -55,7 +55,6 @@ const FREE_DAILY_PRACTICE_QUESTIONS = 40;
 
 export default function HomePage() {
   const [demoState, setDemoState] = useState<DemoState>("idle");
-  const [variant, setVariant] = useState<HeroVariant | null>(null);
 
   /**
    * The paid card's price, from Stripe via `GET /api/public/pricing`.
@@ -101,20 +100,11 @@ export default function HomePage() {
     }
   };
 
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("landing_hero_variant");
-      if (saved === "A" || saved === "B") {
-        setVariant(saved);
-        return;
-      }
-      const chosen: HeroVariant = Math.random() < 0.5 ? "A" : "B";
-      window.localStorage.setItem("landing_hero_variant", chosen);
-      setVariant(chosen);
-    } catch {
-      setVariant("A");
-    }
-  }, []);
+  // @spec [docs/plans/seo/seo-marketing-vertical.md R13, F7] | @implemented [2026-10-03] |
+  // plain English: the hero A/B test is gone. It picked a variant with Math.random() inside an
+  // effect and stored it in localStorage, so the first render (and so the prerendered HTML)
+  // showed "Loading..." instead of the headline, and every first visit wrote to storage.
+  // Variant A's copy is the only hero now; A/B testing returns later via PostHog experiments.
 
   const triggerDemo = () => {
     setDemoState("thinking");
@@ -125,7 +115,7 @@ export default function HomePage() {
   };
 
   const trackCtaClick = (ctaText: string) => {
-    console.debug("hero_cta_click", { variant, ctaText });
+    console.debug("hero_cta_click", { ctaText });
   };
 
   return (
@@ -138,47 +128,21 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              {!variant ? (
-                <div className="h-64 flex items-center justify-center">
-                  <div className="text-muted-foreground">Loading...</div>
-                </div>
-              ) : variant === "A" ? (
-                <>
-                  <span className="text-xs uppercase tracking-widest text-muted-foreground mb-4 block">
-                    Study Smarter, Score Higher
-                  </span>
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                    Digital SAT prep built for{" "}
-                    <span className="text-foreground">real progress</span>
-                  </h1>
-                  <p className="text-lg mb-4">
-                    Practice SAT-style questions, review step-by-step
-                    explanations, and track progress over time.
-                  </p>
-                  <p className="text-muted-foreground mb-8">
-                    Use quick daily sessions, full-length exams, and tutor
-                    guidance in one place.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <span className="text-xs uppercase tracking-widest text-muted-foreground mb-4 block">
-                    Study Smarter, Score Higher
-                  </span>
-                  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                    Study Smarter, Score Higher on the{" "}
-                    <span className="text-foreground">Digital SAT</span>
-                  </h1>
-                  <p className="text-lg mb-4">
-                    Build consistency with adaptive practice, full-length tests,
-                    and focused review.
-                  </p>
-                  <p className="text-muted-foreground mb-8">
-                    Students track growth. Guardians can monitor linked progress
-                    and planning.
-                  </p>
-                </>
-              )}
+              <span className="text-xs uppercase tracking-widest text-muted-foreground mb-4 block">
+                Study Smarter, Score Higher
+              </span>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+                Digital SAT prep built for{" "}
+                <span className="text-foreground">real progress</span>
+              </h1>
+              <p className="text-lg mb-4">
+                Practice SAT-style questions, review step-by-step
+                explanations, and track progress over time.
+              </p>
+              <p className="text-muted-foreground mb-8">
+                Use quick daily sessions, full-length exams, and tutor
+                guidance in one place.
+              </p>
 
               <div className="flex flex-col sm:flex-row gap-4 mb-8">
                 {/* The hero CTA counts a middle-click and a ⌘-click as well as a plain
@@ -192,16 +156,10 @@ export default function HomePage() {
                   className="px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
                   data-testid="button-start-demo"
                   {...ctaClickHandlers(() =>
-                    trackCtaClick(
-                      variant === "A"
-                        ? "Start free practice"
-                        : "See how Lyceon works",
-                    ),
+                    trackCtaClick("Start free practice"),
                   )}
                 >
-                  {variant === "A"
-                    ? "Start free practice"
-                    : "See how Lyceon works"}
+                  Start free practice
                 </Link>
                 {isAuthenticated ? (
                   <>
@@ -727,66 +685,25 @@ export default function HomePage() {
             </h2>
           </div>
 
+          {/* One copy of this FAQ: rendered here, and the homepage FAQPage JSON-LD is built
+              from the same array (shared/seo/public-meta.ts, F1). */}
           <div className="space-y-4">
-            <details className="bg-secondary border border-border rounded-2xl p-6 group">
-              <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                How is tutor chat different from a generic chatbot?
-                <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
-              </summary>
-              <div className="mt-4 text-muted-foreground space-y-2">
-                <p>
-                  Tutor chat is built around SAT-style practice context, not
-                  open-ended generic chat.
-                </p>
-                <p>
-                  Explanations focus on reasoning steps, common errors, and what
-                  to do next.
-                </p>
-              </div>
-            </details>
-
-            <details className="bg-secondary border border-border rounded-2xl p-6 group">
-              <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                Do I need to add a credit card to start?
-                <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
-              </summary>
-              <div className="mt-4 text-muted-foreground">
-                <p>
-                  No. The free tier is available without entering card details.
-                </p>
-              </div>
-            </details>
-
-            <details className="bg-secondary border border-border rounded-2xl p-6 group">
-              <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                What can guardians see?
-                <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
-              </summary>
-              <div className="mt-4 text-muted-foreground">
-                <p>
-                  Guardians can link student accounts and view progress
-                  summaries. Student summary and calendar views are
-                  entitlement-gated for paid guardian access.
-                </p>
-              </div>
-            </details>
-
-            <details className="bg-secondary border border-border rounded-2xl p-6 group">
-              <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                Do you include full-length exams and daily practice?
-                <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
-              </summary>
-              <div className="mt-4 text-muted-foreground">
-                <p>
-                  Yes. Lyceon supports both: daily adaptive practice and
-                  full-length timed SAT exams.
-                </p>
-                <p className="mt-2">
-                  Use daily sessions to improve weak areas, then validate
-                  progress with full-length exam runs.
-                </p>
-              </div>
-            </details>
+            {HOME_FAQS.map((faq) => (
+              <details
+                key={faq.question}
+                className="bg-secondary border border-border rounded-2xl p-6 group"
+              >
+                <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
+                  {faq.question}
+                  <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
+                </summary>
+                <div className="mt-4 text-muted-foreground space-y-2">
+                  {faqParagraphs(faq.answer).map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </div>
+              </details>
+            ))}
           </div>
         </Section>
       </Container>

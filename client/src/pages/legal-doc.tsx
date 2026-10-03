@@ -53,7 +53,7 @@ import {
   FileClock,
   AlertTriangle,
 } from "lucide-react";
-import { loadLegalDocument } from "@/lib/legal-content";
+import { legalDocumentQueryOptions } from "@/lib/legal-content";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import Footer from "@/components/layout/Footer";
 import NotFound from "./not-found";
@@ -76,10 +76,8 @@ export default function LegalDocPage() {
   const [tocOpen, setTocOpen] = useState(false);
 
   const { data: content, isLoading } = useQuery({
-    queryKey: ["legal-document", slug],
-    queryFn: () => loadLegalDocument(slug || ""),
+    ...legalDocumentQueryOptions(slug || ""),
     enabled: Boolean(slug),
-    staleTime: 5 * 60 * 1000,
   });
 
   const sections = useMemo(

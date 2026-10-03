@@ -9,6 +9,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import { DIGITAL_SAT_FAQS } from "@shared/seo/public-meta";
 import {
   Container,
   Hero,
@@ -17,38 +18,8 @@ import {
   Section,
 } from "@/components/layout/primitives";
 
-const faqs = [
-  {
-    question: "What is the Digital SAT?",
-    answer:
-      "The Digital SAT is the computer-adaptive SAT format. It is about 2 hours long with two sections: Reading and Writing, and Math.",
-  },
-  {
-    question: "How is the Digital SAT different from the paper SAT?",
-    answer:
-      "It is shorter, adaptive by module, calculator-allowed across all Math questions, and built for digital delivery.",
-  },
-  {
-    question: "Does Lyceon include full-length exams?",
-    answer:
-      "Yes. Lyceon includes full-length timed SAT exam sessions alongside daily adaptive practice and review.",
-  },
-  {
-    question: "How does progress tracking work in Lyceon?",
-    answer:
-      "Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and progress over time.",
-  },
-  {
-    question: "How does Lisa work?",
-    answer:
-      "Lisa provides step-by-step guidance tied to SAT-style question context. Lisa is designed to support reasoning and review, not to bypass learning.",
-  },
-  {
-    question: "What is free vs paid?",
-    answer:
-      "Free includes daily limits (10 practice questions and 5 tutor messages). Paid plans remove those limits and expand guardian visibility features.",
-  },
-];
+// One copy of this FAQ: the page renders it and its FAQPage JSON-LD is built from it (F1).
+const faqs = DIGITAL_SAT_FAQS;
 
 export default function DigitalSATPage() {
   return (
