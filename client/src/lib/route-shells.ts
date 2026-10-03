@@ -44,7 +44,7 @@ export type RightPanelWidth = 360 | 340 | 320;
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
  * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53; /tests, /tests/:sessionId
  * and /tests/:sessionId/report, UI-54; /calendar, UI-55; /chat, UI-56; /mastery, UI-57; /upgrade,
- * /profile, /help and /notifications, UI-58). The timed exam module
+ * /profile, /help and /notifications, UI-58; every bare-card page, UI-59). The timed exam module
  * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
@@ -110,7 +110,10 @@ function focus(
   };
 }
 
-const BARE: BareShellSpec = { shell: "bare", themeLock: "light" };
+// UI-59 (2026-10-03): every bare page (login and signup, profile completion, update password,
+// account recovery, the guardian-required page, the 404, and the pending-deletion and error
+// screens App.tsx renders directly) is rebuilt on the student tokens only; off the light lock.
+const BARE: BareShellSpec = { shell: "bare", themeLock: null };
 
 export const STUDENT_ROUTE_SHELLS = {
   // App shell (DESIGN.md §2).

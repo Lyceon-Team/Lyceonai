@@ -368,6 +368,13 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/practice/session/:sessionId",
       "/tests/:sessionId",
       "/tests/:sessionId/report",
+      // UI-59: every bare-card page.
+      "/login",
+      "/profile/complete",
+      "/update-password",
+      "/account/recover",
+      "/guardian-required",
+      NOT_FOUND_ROUTE,
     ]);
     // The topic explorer is not rebuilt (OQ-3 open): it stays pinned light.
     expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
@@ -477,6 +484,22 @@ describe("the table says what DESIGN.md §2 says", () => {
       NOT_FOUND_ROUTE,
     ] as const) {
       expect(shellOf(route), route).toBe("bare");
+    }
+  });
+
+  it("UI-59: every bare-card route follows the device theme (off the OQ-49 light lock)", () => {
+    for (const route of [
+      "/login",
+      "/profile/complete",
+      "/update-password",
+      "/account/recover",
+      "/guardian-required",
+      NOT_FOUND_ROUTE,
+    ] as const) {
+      expect(STUDENT_ROUTE_SHELLS[route], route).toEqual({
+        shell: "bare",
+        themeLock: null,
+      });
     }
   });
 

@@ -11,13 +11,14 @@
  * device theme with the rest of the App shell.
  */
 import type { ReactNode } from "react";
-import { LYC_FOCUS } from "@/components/ui/button";
+import { LYC_INPUT } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export const FIELD_LABEL =
   "flex flex-col gap-2 text-[17px] font-semibold text-lyc-ink";
 
-export const FIELD_INPUT = `${LYC_FOCUS} h-[46px] w-full rounded-md border border-lyc-input-bd bg-lyc-sheet px-3.5 text-[17px] font-normal text-lyc-ink`;
+/** The student field (`ui/input` LYC_INPUT), for the native inputs and selects drawn here. */
+export const FIELD_INPUT = LYC_INPUT;
 
 export const FIELD_HELP = "m-0 text-lyc-meta-lg font-normal text-lyc-muted";
 

@@ -45,11 +45,49 @@ export const PERSONAS = {
   },
 } as const;
 
+/**
+ * UI-59 (`seed: "bare-pages"` only; db.ts `addBarePagePersonas`): the three states the bare-card
+ * pages show to a signed-in student, each written the way production reaches it.
+ *   - `onboarding`: an account with no completed profile (no date of birth, no
+ *     `profile_completed_at`), what a new sign-up is before /profile/complete.
+ *   - `under13`: a completed profile whose date of birth makes the student 11, with no guardian
+ *     link, so `/api/profile` says `guardianConsentRequired` (/guardian-required).
+ *   - `deleting`: a completed 13+ profile on which the REAL `request_account_deletion` SQL
+ *     function has run (soft-delete plus a pending request row), with the deletion lifecycle
+ *     flag on in the harness server, so `/api/profile` carries `pendingDeletion` (the
+ *     pending-deletion screen).
+ * None has practice history or an entitlement row.
+ */
+export const BARE_PAGE_PERSONAS = {
+  onboarding: {
+    id: "00000000-0000-4000-8000-0000000059a1",
+    email: "new.student@example.test",
+    displayName: "Riley Chen",
+  },
+  under13: {
+    id: "00000000-0000-4000-8000-0000000059a2",
+    email: "young.student@example.test",
+    displayName: "Max Ortiz",
+  },
+  deleting: {
+    id: "00000000-0000-4000-8000-0000000059a3",
+    email: "leaving.student@example.test",
+    displayName: "Casey Park",
+  },
+} as const;
+
 export type StudentPersona = keyof typeof PERSONAS;
-export type Persona = StudentPersona | "signed-out";
+export type BarePagePersona = keyof typeof BARE_PAGE_PERSONAS;
+export type Persona = StudentPersona | BarePagePersona | "signed-out";
 
 export function isStudentPersona(
   value: string | undefined,
 ): value is StudentPersona {
   return value === "free" || value === "paid" || value === "managed";
+}
+
+export function isBarePagePersona(
+  value: string | undefined,
+): value is BarePagePersona {
+  return value === "onboarding" || value === "under13" || value === "deleting";
 }

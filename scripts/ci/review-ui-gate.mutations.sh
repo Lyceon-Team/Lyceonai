@@ -69,6 +69,19 @@ FILES=(
   "client/src/pages/help.tsx"
   "client/src/pages/upgrade.tsx"
   "client/src/pages/notifications.tsx"
+  "client/src/App.tsx"
+  "client/src/pages/not-found.tsx"
+  "client/src/components/auth/SupabaseAuthForm.tsx"
+  "client/src/pages/login.tsx"
+  "client/src/components/auth/PasswordField.tsx"
+  "client/src/components/ui/input.tsx"
+  "client/src/components/ui/checkbox.tsx"
+  "client/src/components/ui/select.tsx"
+  "client/src/pages/profile-complete.tsx"
+  "client/src/pages/update-password.tsx"
+  "client/src/pages/account-recover.tsx"
+  "client/src/pages/guardian-required.tsx"
+  "client/src/components/account-deletion/PendingDeletionScreen.tsx"
 )
 
 snapshot_all() {
@@ -1398,6 +1411,203 @@ plant "UI58-N1" "a notification's time drops to 12px" \
   'a = "            className=\"whitespace-nowrap text-lyc-body text-lyc-muted\""
 assert s.count(a) == 1
 s = s.replace(a, "            className=\"whitespace-nowrap text-xs text-lyc-muted\"", 1)'
+
+# ── UI-59 — the bare-card pages on the student tokens ─────────────────────────────────
+# @spec [student-UI register UI-59, UI-3A; DESIGN.md §1, §2 "Bare card"] | @implemented [2026-10-03]
+# Each plant takes one bare page (or a primitive only the bare pages use in its lyc variant) off
+# what bare-pages.ui59.test.tsx asserts: one Bare card following the device theme, one filled
+# primary, labels / autocomplete / alert announcements kept, nothing below 14px, student tokens
+# only, the 404's way home.
+B59="client/src/pages/bare-pages.ui59.test.tsx"
+
+plant "UI59-L1" "the bare routes go back on the light lock (OQ-49)" \
+  "$B59 client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "const BARE: BareShellSpec = { shell: \"bare\", themeLock: null };"
+assert s.count(a) == 1
+s = s.replace(a, "const BARE: BareShellSpec = { shell: \"bare\", themeLock: \"light\" };", 1)'
+
+plant "UI59-L2" "the error screen is pinned light again" \
+  "$B59" \
+  "client/src/App.tsx" \
+  'a = "      return (\n        <BareCard>\n          <div\n            className=\"flex flex-col items-center\"\n            data-testid=\"error-screen\""
+assert s.count(a) == 1
+s = s.replace(a, a.replace("<BareCard>", "<BareCard themeLock=\"light\">"), 1)'
+
+plant "UI59-L3" "the pending-deletion screen is pinned light again" \
+  "$B59" \
+  "client/src/App.tsx" \
+  'a = "      <BareCard>\n        <PendingDeletionScreen />"
+assert s.count(a) == 1
+s = s.replace(a, a.replace("<BareCard>", "<BareCard themeLock=\"light\">"), 1)'
+
+plant "UI59-E1" "the error screen's Reload Page is not the student filled action" \
+  "$B59" \
+  "client/src/App.tsx" \
+  'a = "              variant=\"lyc-primary\"\n              onClick={() => window.location.reload()}"
+assert s.count(a) == 1
+s = s.replace(a, a.replace("lyc-primary", "default"), 1)'
+
+plant "UI59-N1" "the 404's way home goes to the marketing page" \
+  "$B59" \
+  "client/src/pages/not-found.tsx" \
+  'a = "        href=\"/dashboard\""
+assert s.count(a) == 1
+s = s.replace(a, "        href=\"/\"", 1)'
+
+plant "UI59-N2" "the 404's way home is not filled" \
+  "$B59" \
+  "client/src/pages/not-found.tsx" \
+  'a = "          variant: \"lyc-primary\",\n          className: \"no-underline\","
+assert s.count(a) == 1
+s = s.replace(a, a.replace("lyc-primary", "lyc-outline"), 1)'
+
+plant "UI59-N3" "the developer line returns to the 404" \
+  "$B59" \
+  "client/src/pages/not-found.tsx" \
+  'a = "<BareCardHeader title=\"404 Page Not Found\" align=\"center\" />"
+assert s.count(a) == 1
+s = s.replace(a, "<BareCardHeader title=\"404 Page Not Found\" description=\"Did you forget to add the page to the router?\" align=\"center\" />", 1)'
+
+plant "UI59-A1" "Continue with Google is filled (two primaries on sign in)" \
+  "$B59" \
+  "client/src/components/auth/SupabaseAuthForm.tsx" \
+  'a = "              variant=\"lyc-outline\"\n              className=\"w-full\"\n              onClick={handleGoogleSignIn}"
+assert s.count(a) == 1
+s = s.replace(a, a.replace("lyc-outline", "lyc-primary"), 1)'
+
+plant "UI59-A2" "the sign-in email loses autocomplete=email" \
+  "$B59" \
+  "client/src/components/auth/SupabaseAuthForm.tsx" \
+  'a = "                      data-testid=\"input-signin-email\"\n                      type=\"email\"\n                      autoComplete=\"email\""
+assert s.count(a) == 1
+s = s.replace(a, a.replace("autoComplete=\"email\"", "autoComplete=\"off\""), 1)'
+
+plant "UI59-A3" "the sign-up name loses autocomplete=name" \
+  "$B59" \
+  "client/src/components/auth/SupabaseAuthForm.tsx" \
+  'a = "                      autoComplete=\"name\""
+assert s.count(a) == 1
+s = s.replace(a, "                      autoComplete=\"off\"", 1)'
+
+plant "UI59-A4" "the AS-3 redirect error is no longer an alert" \
+  "$B59" \
+  "client/src/pages/login.tsx" \
+  'a = "          tone=\"danger\""
+assert s.count(a) == 1
+s = s.replace(a, "          tone=\"warning\"", 1)'
+
+plant "UI59-A5" "the password rules drop to 12px" \
+  "$B59" \
+  "client/src/components/auth/PasswordField.tsx" \
+  'a = "className=\"m-0 flex list-none flex-col gap-1 p-0 text-lyc-meta-lg\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"m-0 flex list-none flex-col gap-1 p-0 text-xs\"", 1)'
+
+plant "UI59-A6" "the show/hide toggle leaves the student tokens" \
+  "$B59" \
+  "client/src/components/auth/PasswordField.tsx" \
+  'a = "rounded-md text-lyc-muted hover:bg-lyc-hover"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-md text-muted-foreground hover:bg-lyc-hover", 1)'
+
+plant "UI59-P1" "the lyc input's placeholder leaves the student tokens" \
+  "$B59" \
+  "client/src/components/ui/input.tsx" \
+  'a = "flex placeholder:text-lyc-muted"
+assert s.count(a) == 1
+s = s.replace(a, "flex placeholder:text-muted-foreground", 1)'
+
+plant "UI59-P2" "the lyc checkbox leaves the student tokens" \
+  "$B59" \
+  "client/src/components/ui/checkbox.tsx" \
+  'a = "h-5 w-5 rounded-sm border border-lyc-ink-strong"
+assert s.count(a) == 1
+s = s.replace(a, "h-5 w-5 rounded-sm border border-primary", 1)'
+
+plant "UI59-P3" "the lyc select list portals without its .lyc root" \
+  "$B59" \
+  "client/src/components/ui/select.tsx" \
+  'a = "  lyc: \"lyc rounded-md border border-lyc-rule bg-lyc-sheet text-lyc-ink\","
+assert s.count(a) == 1
+s = s.replace(a, "  lyc: \"rounded-md border border-lyc-rule bg-lyc-sheet text-lyc-ink\",", 1)'
+
+plant "UI59-C1" "the role list falls back to the default select" \
+  "$B59" \
+  "client/src/pages/profile-complete.tsx" \
+  'a = "<SelectContent variant=\"lyc\">"
+assert s.count(a) == 1
+s = s.replace(a, "<SelectContent>", 1)'
+
+plant "UI59-C2" "a profile validation error is no longer an alert" \
+  "$B59" \
+  "client/src/pages/profile-complete.tsx" \
+  'a = "            tone=\"danger\""
+assert s.count(a) == 1
+s = s.replace(a, "            tone=\"neutral\"", 1)'
+
+plant "UI59-C3" "the date of birth loses autocomplete=bday" \
+  "$B59" \
+  "client/src/pages/profile-complete.tsx" \
+  'a = "autoComplete=\"bday\""
+assert s.count(a) == 1
+s = s.replace(a, "autoComplete=\"off\"", 1)'
+
+plant "UI59-U1" "the update-password refusal is no longer an alert" \
+  "$B59" \
+  "client/src/pages/update-password.tsx" \
+  'a = "{error && <Notice tone=\"danger\" title={error} />}"
+assert s.count(a) == 1
+s = s.replace(a, "{error && <Notice tone=\"info\" title={error} />}", 1)'
+
+plant "UI59-R1" "the recovered Sign in is not filled" \
+  "$B59" \
+  "client/src/pages/account-recover.tsx" \
+  'a = "              variant: \"lyc-primary\","
+assert s.count(a) == 1
+s = s.replace(a, "              variant: \"lyc-outline\",", 1)'
+
+plant "UI59-R2" "a raw hex colour on the recovery page" \
+  "$B59" \
+  "client/src/pages/account-recover.tsx" \
+  'a = "const BODY = \"m-0 text-lyc-body text-lyc-ink\";"
+assert s.count(a) == 1
+s = s.replace(a, "const BODY = \"m-0 text-lyc-body text-[#1f2a33]\";", 1)'
+
+plant "UI59-G1" "guardian-required's Sign out is filled" \
+  "$B59" \
+  "client/src/pages/guardian-required.tsx" \
+  'a = "        variant=\"lyc-outline\""
+assert s.count(a) == 1
+s = s.replace(a, "        variant=\"lyc-primary\"", 1)'
+
+plant "UI59-G2" "guardian-required's footnote leaves the student tokens" \
+  "$B59" \
+  "client/src/pages/guardian-required.tsx" \
+  'a = "<p className=\"m-0 text-lyc-body text-lyc-muted\">"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"m-0 text-sm text-muted-foreground\">", 1)'
+
+plant "UI59-D1" "the pending-deletion Sign out is filled" \
+  "$B59" \
+  "client/src/components/account-deletion/PendingDeletionScreen.tsx" \
+  'a = "          variant=\"lyc-quiet\""
+assert s.count(a) == 1
+s = s.replace(a, "          variant=\"lyc-primary\"", 1)'
+
+plant "UI59-D2" "the pending-deletion screen draws its own full-screen frame" \
+  "$B59" \
+  "client/src/components/account-deletion/PendingDeletionScreen.tsx" \
+  'a = "<div className=\"flex flex-col gap-6\" data-testid=\"pending-deletion\">"
+assert s.count(a) == 1
+s = s.replace(a, "<div className=\"flex min-h-screen flex-col gap-6\" data-testid=\"pending-deletion\">", 1)'
+
+plant "UI59-D3" "the pending-deletion heading is not an H1" \
+  "$B59" \
+  "client/src/components/account-deletion/PendingDeletionScreen.tsx" \
+  'a = "<BareCardHeader title=\"Your account is scheduled for deletion\" />"
+assert s.count(a) == 1
+s = s.replace(a, "<h2>Your account is scheduled for deletion</h2>", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

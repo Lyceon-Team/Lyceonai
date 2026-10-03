@@ -11,9 +11,16 @@
  *
  * No notification bell: these are signed-out or blocking screens (sign-in, recovery, the
  * pending-deletion lock, errors); listed in shells.notification-bell.test.tsx.
+ *
+ * UI-59 (2026-10-03): every bare page is on the student tokens, so the card follows the device
+ * theme (no light lock). `BareCardHeader` is the card's one heading block, shared by every bare
+ * page: the H1 in Source Serif 4 600 at the section size (28px; the 42px page title would crowd
+ * a 480px card) and an optional lead line at the 16px body size in --muted. It is a plain block,
+ * not a <header>: the Bare card has no header bar (route-shells.test.tsx checks the shell for one).
  */
 import type { ReactNode } from "react";
 import type { ThemeLock } from "@/lib/route-shells";
+import { cn } from "@/lib/utils";
 import { usePublishThemeLock } from "./theme-lock";
 
 export function BareCard({
@@ -38,6 +45,33 @@ export function BareCard({
       >
         {children}
       </main>
+    </div>
+  );
+}
+
+export function BareCardHeader({
+  title,
+  description,
+  align = "start",
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  align?: "start" | "center";
+}): JSX.Element {
+  return (
+    <div
+      className={cn(
+        "mb-6 flex flex-col gap-2",
+        align === "center" ? "text-center" : undefined,
+      )}
+      data-testid="bare-card-header"
+    >
+      <h1 className="m-0 font-lyc-serif text-lyc-section font-semibold tracking-normal text-lyc-ink-strong">
+        {title}
+      </h1>
+      {description ? (
+        <p className="m-0 text-lyc-body text-lyc-muted">{description}</p>
+      ) : null}
     </div>
   );
 }
