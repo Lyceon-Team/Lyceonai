@@ -44,6 +44,12 @@ type Fixtures = {
   masteryDomains: unknown;
   examList: unknown;
   examReport: unknown;
+  board: {
+    calendarWeek: unknown;
+    masteryDomains: unknown;
+    examList: unknown;
+    examReport: unknown;
+  };
   billingStatus: unknown;
   billingPlans: unknown;
 };
@@ -69,10 +75,12 @@ const VIEWPORTS = [
 
 async function serve(
   page: Page,
-  opts: { students?: "two" | "none" | "with-revoked" } = {},
+  opts: { students?: "two" | "none" | "with-revoked"; board?: boolean } = {},
 ): Promise<void> {
   // The fixtures' week is cut on E2E_TODAY; the app's "today" must be the same day.
   await pinBrowserToday(page);
+  // G5-06: the board scenario answers Ada's four Dashboard reads with the boards' values.
+  const ada4 = opts.board === true ? F.board : F;
   const roster =
     opts.students === "none"
       ? { students: [] }
@@ -115,11 +123,11 @@ async function serve(
       return json({ data: { items: [], nextCursor: null }, requestId: "r" });
     }
     const ada = `/api/students/${F.ADA}`;
-    if (p === `${ada}/calendar`) return json(F.calendarWeek);
-    if (p === `${ada}/mastery/domains`) return json(F.masteryDomains);
-    if (p === `${ada}/tests`) return json(F.examList);
+    if (p === `${ada}/calendar`) return json(ada4.calendarWeek);
+    if (p === `${ada}/mastery/domains`) return json(ada4.masteryDomains);
+    if (p === `${ada}/tests`) return json(ada4.examList);
     if (p === `${ada}/tests/${F.EXAM_SESSION}/report`)
-      return json(F.examReport);
+      return json(ada4.examReport);
     if (p.startsWith(`/api/students/${F.CY}/`)) {
       return json({ error: "Not found", requestId: "r" }, 404);
     }
@@ -186,15 +194,42 @@ type Surface = {
   name: string;
   path: (f: Fixtures) => string;
   students?: "two" | "none";
+  board?: boolean;
   ready: string;
+  /** Presence first: each of these must be visible before the floor scan can pass. */
+  present?: readonly string[];
   act?: (page: Page) => Promise<void>;
 };
+
+/** G5-06: the Dashboard's design blocks (R13); the floor scan must see every one of them. */
+const DASHBOARD_BLOCKS = [
+  "score-tile-projected",
+  "score-tile-target",
+  "score-tile-test-date",
+  "score-tile-streak",
+  "week-plan",
+  "mastery-card",
+  "mastery-pill",
+  "latest-test-card",
+  "latest-test-total",
+  "latest-test-section-RW",
+  "latest-test-disclosure",
+] as const;
 
 const SURFACES: readonly Surface[] = [
   {
     name: "dashboard-active",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
+    present: [...DASHBOARD_BLOCKS, "latest-test-first"],
+  },
+  {
+    // G5-06: the boards' own values — these screenshots sit beside the boards for review.
+    name: "dashboard-board",
+    path: (f) => `/guardian/${f.ADA}`,
+    board: true,
+    ready: "latest-test-meta",
+    present: [...DASHBOARD_BLOCKS, "latest-test-change", "mastery-legend"],
   },
   {
     name: "calendar-tab",
@@ -204,7 +239,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: "switcher-open",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByTestId("student-switcher").click();
       await page.getByTestId(`student-switcher-item-${F.BO}`).waitFor();
@@ -213,7 +248,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: "add-student-modal",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByTestId("add-student-open").click();
       await page.getByTestId("add-student-dialog").waitFor();
@@ -223,7 +258,7 @@ const SURFACES: readonly Surface[] = [
     // Portaled content (Radix renders it under <body>, outside the shell) is floored too.
     name: "profile-menu-open",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByTestId("button-user-menu").click();
       await page.getByTestId("menu-linked-students").waitFor();
@@ -232,7 +267,7 @@ const SURFACES: readonly Surface[] = [
   {
     name: "notifications-open",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     act: async (page) => {
       await page.getByRole("button", { name: "Notifications" }).click();
       await page.waitForTimeout(500);
@@ -276,10 +311,21 @@ for (const vp of VIEWPORTS) {
   for (const s of SURFACES) {
     test(`${s.name} @${vp.name}: no text under 16px`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await serve(page, s.students ? { students: s.students } : {});
+      await serve(page, {
+        ...(s.students ? { students: s.students } : {}),
+        ...(s.board ? { board: true } : {}),
+      });
       await page.goto(s.path(F));
       await page.getByTestId(s.ready).first().waitFor({ timeout: 15_000 });
       await s.act?.(page);
+      for (const id of s.present ?? []) {
+        // The legend is the desktop board's only; the phone board draws none.
+        if (id === "mastery-legend" && vp.name === "390") continue;
+        await expect(
+          page.locator(`[data-testid="${id}"]:visible`).first(),
+          `${id} is drawn`,
+        ).toBeVisible();
+      }
       // Fonts and layout settle before measuring.
       await page.waitForTimeout(300);
       await page.screenshot({
@@ -334,7 +380,7 @@ test.describe("the guardian shell header", () => {
       await serve(page);
       await page.goto(`/guardian/${F.ADA}`);
       await page
-        .getByTestId("dashboard-exam")
+        .getByTestId("latest-test-meta")
         .first()
         .waitFor({ timeout: 15_000 });
       await page.waitForTimeout(300);
@@ -414,28 +460,63 @@ const PHONE_CENTRING: readonly {
   {
     name: "Dashboard",
     path: (f) => `/guardian/${f.ADA}`,
-    ready: "dashboard-exam",
+    ready: "latest-test-meta",
     checks: [
       {
         what: "section heading",
         selector:
-          "[data-testid=dashboard-mastery] > h2, [data-testid=dashboard-latest-exam] > h2",
+          "[data-testid=mastery-card] h2, [data-testid=latest-test-card] h2",
         mode: "text",
       },
       {
         what: "section name",
-        selector: "[data-testid=dashboard-mastery] h3",
+        selector: "[data-testid=mastery-section-label]",
         mode: "text",
       },
       {
-        what: "summary strip",
-        selector: "[data-testid=header-facts]",
+        // Each tile in its own box: the three compact tiles share a visual line, so the
+        // strip as a whole is not the unit that is centred.
+        what: "score strip tile",
+        selector: "[data-testid=score-strip-phone] [data-testid^=score-tile-]",
         mode: "text",
       },
       {
         what: "this week's plan",
-        selector: "[data-testid=dashboard-week]",
+        selector: "[data-testid=week-plan]",
         mode: "text",
+      },
+      // G5-06: the latest-test card, centred line by line on a phone (the boards).
+      {
+        what: "latest test name and date",
+        selector: "[data-testid=latest-test-meta]",
+        mode: "text",
+        within: "parent",
+      },
+      {
+        what: "latest test total",
+        selector: "[data-testid=latest-test-total]",
+        mode: "box",
+      },
+      {
+        what: "latest test change",
+        selector:
+          "[data-testid=latest-test-change], [data-testid=latest-test-first]",
+        mode: "box",
+      },
+      {
+        what: "latest test section tile",
+        selector: "[data-testid^=latest-test-section-]",
+        mode: "text",
+      },
+      {
+        what: "latest test disclosure",
+        selector: "[data-testid=latest-test-disclosure]",
+        mode: "text",
+      },
+      {
+        what: "latest test report link",
+        selector: "[data-testid=latest-test-card] a",
+        mode: "box",
       },
     ],
   },
@@ -521,6 +602,34 @@ const PHONE_CENTRING: readonly {
         what: "empty-day message",
         selector: ".lyceon-calendar .col .empty",
         mode: "text",
+      },
+    ],
+  },
+  {
+    // G5-08: the full-length tests list, row by row as the student's card is laid out.
+    name: "Full-length tests",
+    path: (f) => `/guardian/${f.ADA}/exams`,
+    ready: "guardian-exam-list",
+    checks: [
+      {
+        what: "page title",
+        selector: "[data-testid=guardian-exam] h1",
+        mode: "text",
+      },
+      {
+        what: "row title",
+        selector: "[data-testid=guardian-exam-list] article h2",
+        mode: "text",
+      },
+      {
+        what: "row state word",
+        selector: "[data-testid=guardian-exam-state]",
+        mode: "box",
+      },
+      {
+        what: "row link",
+        selector: "[data-testid=guardian-exam-list] article a",
+        mode: "box",
       },
     ],
   },
@@ -626,41 +735,46 @@ test.describe("phone centring at 390 (item 10)", () => {
 });
 
 /**
- * Owner review 2026-10-01 (#1013, item 1): the mastery meter spans the full width of its
- * card's content area, at both widths. Measured: every meter's box against its card's
- * content box (padding excluded), within 1px. Presence first: the Dashboard draws 8 meters.
+ * G5-03 (R13, Karl 2026-10-02): the guardian mastery card's meter is the design board's — a
+ * 150px column between the domain name and the pill at 1440, and the row's full width beneath
+ * the name and pill at 390. Measured per meter against its row, within 1px. Presence first: the
+ * Dashboard draws 8 meters. (The student mastery page's own meter rule is
+ * `student-mastery.spec.ts`'s; R13 leaves it unchanged.)
  */
-test.describe("the mastery meter spans its card", () => {
+test.describe("the guardian mastery meter follows the design", () => {
   for (const vp of VIEWPORTS) {
     test(`@${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await serve(page);
       await page.goto(`/guardian/${F.ADA}`);
       await page
-        .getByTestId("dashboard-exam")
+        .getByTestId("mastery-card")
         .first()
         .waitFor({ timeout: 15_000 });
-      const gaps = await page.evaluate(() =>
+      const boxes = await page.evaluate(() =>
         Array.from(
-          document.querySelectorAll<HTMLElement>("[data-testid=mastery-meter]"),
+          document.querySelectorAll<HTMLElement>(
+            "[data-testid=mastery-row-meter]",
+          ),
         ).map((meter) => {
-          const content = meter
-            .closest("[data-domain]")
-            ?.querySelector<HTMLElement>(":scope > div:last-child");
-          if (!content) return { left: 999, right: 999 };
-          const c = content.getBoundingClientRect();
-          const s = getComputedStyle(content);
+          const row = meter.closest<HTMLElement>("[data-testid=mastery-row]");
           const m = meter.getBoundingClientRect();
+          const r = row?.getBoundingClientRect();
           return {
-            left: Math.abs(m.left - (c.left + parseFloat(s.paddingLeft))),
-            right: Math.abs(c.right - parseFloat(s.paddingRight) - m.right),
+            width: m.width,
+            rowLeft: r === undefined ? 999 : Math.abs(m.left - r.left),
+            rowRight: r === undefined ? 999 : Math.abs(r.right - m.right),
           };
         }),
       );
-      expect(gaps).toHaveLength(8);
-      for (const g of gaps) {
-        expect(g.left).toBeLessThanOrEqual(1);
-        expect(g.right).toBeLessThanOrEqual(1);
+      expect(boxes).toHaveLength(8);
+      for (const b of boxes) {
+        if (vp.width >= 640) {
+          expect(Math.abs(b.width - 150)).toBeLessThanOrEqual(1);
+        } else {
+          expect(b.rowLeft).toBeLessThanOrEqual(1);
+          expect(b.rowRight).toBeLessThanOrEqual(1);
+        }
       }
     });
   }

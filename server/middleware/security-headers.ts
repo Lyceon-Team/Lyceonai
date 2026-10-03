@@ -18,10 +18,11 @@ const SECURITY_HEADERS = {
  * inline script appears.
  * trade-offs: outside production the Vite dev server injects its own inline preamble and needs
  * eval, so development keeps `'unsafe-inline'` and `'unsafe-eval'`.
- * edge cases: in production Vercel serves index.html from its CDN, not through Express, so today
- * this policy reaches only the /api responses and the HTML pages carry no CSP at all (register
- * §8 F-59, an owner question: setting it on the pages via vercel.json also needs the Desmos
- * calculator's origin). `serializeCsp` gives the value such a header would carry.
+ * edge cases: in production Vercel serves index.html from its CDN, not through Express, so this
+ * policy reaches only the /api and /auth/callback responses. The pages get their own policy
+ * from vercel.json (register §8 F-59, owner ruling (Karl) 2026-10-02), which carries this same
+ * hash plus the Desmos calculator's origin; tests/ci/page-security-headers.ci.test.ts pins it to
+ * this constant and scripts/ci/page-csp-built-hash-gate.mjs to the built page.
  */
 export const THEME_BOOT_SCRIPT_HASH =
   "sha256-VwLEl5LYkYRmisEJhPIWmpxw7wjpR9ShDYgf9CXNsx8=";

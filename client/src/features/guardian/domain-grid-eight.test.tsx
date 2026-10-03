@@ -8,7 +8,7 @@
  * section) through the shared schema. The Dashboard still draws two grids of four cards each,
  * and each of the four missing domains reads "Not enough answers yet".
  */
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ADA,
@@ -51,10 +51,18 @@ describe("guardian Dashboard — all eight domains", () => {
     expect(served).toHaveLength(4);
 
     mountApp(Router, `/guardian/${ADA}`);
-    const grids = await screen.findAllByTestId("domain-grid");
-    expect(grids.map((g) => g.children.length)).toEqual([4, 4]);
+    // G5-03 (R13): the guardian-only mastery card, one column per section.
+    const card = await screen.findByTestId("mastery-card");
+    const grids = ["RW", "M"].map((s) =>
+      within(card).getByTestId(`mastery-column-${s}`),
+    );
+    expect(
+      grids.map(
+        (g) => g.querySelectorAll("[data-testid='mastery-row']").length,
+      ),
+    ).toEqual([4, 4]);
     const pills = grids.flatMap((g) =>
-      Array.from(g.querySelectorAll("[data-testid='level-pill']")),
+      Array.from(g.querySelectorAll("[data-testid='mastery-pill']")),
     );
     expect(
       pills.filter((p) => p.textContent === "Not enough answers yet").length,
