@@ -101,10 +101,13 @@ export function DomainGrid({
                 </Button>
               )}
             </div>
+            {/* The one segment renderer `MasteryRow` also draws (UI-42), stretched across
+                the card. The card keeps its title / pill / meter layout until Wave 5 rebuilds
+                the Mastery page with mastery rows (UI-37). */}
             <MasteryMeter
               levelKey={node.levelKey}
-              level={node.level}
               displayName={node.displayName}
+              size="fill"
             />
           </CardContent>
         </Card>

@@ -54,7 +54,6 @@
   --muted: #5a6470;
   --rule: #e3d9c3;
   --rule-soft: #e8dfcb;
-  --rule-strong: #b9a67e;
   --input-bd: #b9c4cf;
   --chip: #eef2f6;
   --hover: #f2ead6;
@@ -67,12 +66,46 @@
   --primary-ink: #fffaef;
   --scrim: rgba(15, 46, 72, 0.45);
   --tick: #c9bfa8;
-  --seg-empty: #eae0cb;
   --danger: #9b2c2c;
   --danger-bg: #fdf2f2;
   --focus: #7fa6c9;
   --step: #b9a67e;
   --ok: #065f46;
+  --cat-math-bg: #e8effa;
+  --cat-math-bd: #2563eb;
+  --cat-math-ink: #1e3a8a;
+  --cat-rw-bg: #f3edf8;
+  --cat-rw-bd: #7e4fa8;
+  --cat-rw-ink: #4a2668;
+  --cat-review-bg: #fbf0e2;
+  --cat-review-bd: #c2650a;
+  --cat-review-ink: #7c3a06;
+  --cat-test-bg: #edf0f3;
+  --cat-test-bd: #0f2e48;
+  --cat-test-ink: #0f2e48;
+}
+
+/*
+ * The level ramp, plus the two neutrals a mastery meter and an unmeasured pill draw with
+ * (`--seg-empty`, `--rule-strong`), in the LIGHT set. The values are the ones the `.lyc` block
+ * above held, verbatim; only the selector differs: it also matches `:root`.
+ *
+ * @spec [student-UI register UI-00e (the LevelPill colours become the level-ramp tokens), UI-42;
+ *        Guardian_Closure_Plan R11 (the guardian Dashboard renders the student's LevelPill)]
+ * | @implemented [2026-10-03]
+ *
+ * plain English: `LevelPill` and the mastery meter are shared with surfaces that do not render
+ * the `.lyc` root (the guardian Dashboard; today's /mastery page until its Wave 5 rebuild). There
+ * an undefined variable would draw no colour at all. None of these names exists in index.css, so
+ * declaring them on `:root` changes nothing else, and the light values equal the Tailwind classes
+ * the pill used before (UI-00e lists them), so those pages keep their colours. The dark set
+ * below still overrides them inside `.lyc`.
+ */
+:root,
+.lyc,
+:root[data-theme="dark"] .lyc[data-theme-lock="light"] {
+  --rule-strong: #b9a67e;
+  --seg-empty: #eae0cb;
   --lv0-fill: #f59e0b;
   --lv0-bg: #fef3c7;
   --lv0-ink: #78350f;
@@ -93,18 +126,6 @@
   --lv4-bg: #d1fae5;
   --lv4-ink: #064e3b;
   --lv4-bd: #a7f3d0;
-  --cat-math-bg: #e8effa;
-  --cat-math-bd: #2563eb;
-  --cat-math-ink: #1e3a8a;
-  --cat-rw-bg: #f3edf8;
-  --cat-rw-bd: #7e4fa8;
-  --cat-rw-ink: #4a2668;
-  --cat-review-bg: #fbf0e2;
-  --cat-review-bd: #c2650a;
-  --cat-review-ink: #7c3a06;
-  --cat-test-bg: #edf0f3;
-  --cat-test-bd: #0f2e48;
-  --cat-test-ink: #0f2e48;
 }
 
 :root[data-theme="dark"] .lyc:not([data-theme-lock="light"]) {
