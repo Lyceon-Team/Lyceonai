@@ -44,7 +44,7 @@
 | # | Ruling |
 |---|---|
 | R10 | Rendering fix = build-time prerender of public routes. |
-| R11 | **PostHog** (free tier) on public pages, cookieless until consent, no `identify`, no session replay on student surfaces; Doc 07A server-side `emitEvent` for signed-in events incl. `user_signed_up.signup_source` from first-touch UTM; **Vercel Analytics retired**. SCL required (departs from Doc 07A §9.2/§9.3.1). |
+| R11 | **PostHog** (free tier) on public pages, cookieless until consent, no `identify`, session replay per R32; Doc 07A server-side `emitEvent` for signed-in events incl. `user_signed_up.signup_source` from first-touch UTM; **Vercel Analytics retired**. SCL required (departs from Doc 07A §9.2/§9.3.1). |
 | R12 | Marketing data hub = PostHog (see §3). Supermetrics not kept beyond its trial. PostHog and BigQuery connectors added. |
 | R12a | PostHog project settings: IP anonymization on, console-log capture off, cookieless mode on (stateful), timezone America/Chicago, session recording off. Applied 2026-10-02. |
 | R12b | Search Console bulk export lands in BigQuery `replit-cop`, location us-central1 (same as existing dataset). |
@@ -84,7 +84,7 @@
 ### Analytics, session replay & FERPA (2026-10-02)
 | # | Ruling |
 |---|---|
-| R32 | PostHog product analytics + session replay on PostHog's standard defaults (amends R12a; SCL against Coding Standards §12.2). Purpose: entry points, clicks, dead ends, drop-off. Starts only after cookie consent; under-13 excluded; disclosed in the Privacy and Cookie Policies; PostHog DPA accepted. Nothing beyond industry standard. |
+| R32 | PostHog product analytics + session replay on PostHog's standard defaults (amends R11 and R12a; SCL G9 against Coding Standards §12.2, Doc 07E §10.2 and Doc 06A §5). Purpose: entry points, clicks, dead ends, drop-off. Scope: public and signed-in pages. The one standard exception: `ph-no-capture` on the question/answer area (practice, review, full-length exam) and on the LISA conversation, per Coding Standards §12 (student answers and tutor content are never captured); nothing else masked beyond defaults. Starts only after cookie consent; under-13 excluded; disclosed in the Privacy and Cookie Policies; PostHog DPA accepted. Nothing beyond industry standard. |
 | R33 | School and after-school sales are in scope, so FERPA applies. Industry standard: sign the school's student data privacy agreement (SDPC National DPA is the common template) and operate within it. |
 
 ---
@@ -162,7 +162,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | G6 | Doc 10A pre-draft Q&A → draft → review → lock | Locked doc in Spec folder |
 | G7 | Legal drafts for counsel: Cookie Policy, Cookie Banner text, Children's Online Privacy Notice, AI Content Disclosure, CA Notice at Collection, CA Do-Not-Sell/GPC, Marketing Communications Consent, privacy policy update (PostHog replaces Vercel Analytics) | Published under `/legal/*`; counsel sign-off recorded internally (HTTP + register) |
 | G8 | Internal compliance register `docs/compliance/` created | File on `main` |
-| G9 | SCL: PostHog session replay per R32 (against Coding Standards §12.2) | SCL entry in register |
+| G9 | SCL: PostHog session replay per R32 — against Coding Standards §12.2, Doc 07E §10.2 and Doc 06A §5 | SCL entry in register |
 
 ### Wave 1 — Foundation
 
@@ -182,7 +182,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | F12 | `infra/route-surface-classification.yaml` (Doc 06A §5.3.1) | CI fails on unregistered route |
 | F13 | Homepage rebuild (R5): prototype → Karl review → CC build; QOTD slot; diagnostic CTA | WALK + SHOT; HTTP prerender check |
 | F14 | `/trust/evidence` removed / folded into generic trust page | HTTP: 404 or redirect; not in sitemap |
-| F15 | PostHog replay per R32, behind F11 | CI shows no capture before consent or for under-13; SHOT of PostHog receiving pageviews and a replay |
+| F15 | PostHog replay per R32, behind F11 | CI shows no capture before consent or for under-13; SHOT of PostHog receiving pageviews and a replay; SHOT of a real practice replay with the question/answer area blank |
 
 ### Wave 2 — Funnel, Question of the Day, reviews
 
