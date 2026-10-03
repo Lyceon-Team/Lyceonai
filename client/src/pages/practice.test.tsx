@@ -256,8 +256,9 @@ function openSessions(withOpen: boolean, max = 5) {
 }
 
 /**
- * Two past sessions with open misses: one practice, one review. The practice row's raw filters
- * carry `source_pool_count: 327`, a bank-sized figure the page must never print (F-52).
+ * Two past sessions with open misses: one practice, one review. Since F-52 the pool sends each
+ * row's criteria only (`toSessionCriteria`), never the stored `filters` with `source_pool_count`;
+ * the strict schema refuses a row that carries it (asserted below).
  */
 const POOL = reviewPoolSummaryResponseSchema.parse({
   total: 6,
@@ -274,13 +275,12 @@ const POOL = reviewPoolSummaryResponseSchema.parse({
       local_date: "2026-09-25",
       local_time: "12:49 PM",
       mode: "custom",
-      // As practice-canonical.ts stores it: the choice under `session_spec`, bookkeeping beside.
+      // As review-pool.ts sends it (F-52): the four criteria arrays only.
       filters: {
-        prebuilt: true,
-        session_spec: { sections: ["M"], domains: ["Algebra"] },
-        selection_mode: "exact_reuse",
-        requested_count: 10,
-        source_pool_count: 327,
+        sections: ["M"],
+        domains: ["Algebra"],
+        skills: [],
+        difficulties: [],
       },
       open_count: 4,
     },
@@ -756,7 +756,7 @@ describe("Recent practice (OQ-23: /api/review/pool)", () => {
     expect(gets()).toContain("/api/review/pool");
     expect(rows).toHaveLength(1);
     expect(rows[0]?.textContent).toContain("Fri, Sep 25, 12:49 PM");
-    // The raw filters are not read (F-52): the line is the row's own kind.
+    // The row's criteria are not read here (UI-51 choice): the line is the row's own kind.
     expect(rows[0]?.textContent).toContain("Practice");
     expect(rows[0]?.textContent).not.toContain("Algebra");
     expect(rows[0]?.textContent).toContain("4 to review");
@@ -776,8 +776,23 @@ describe("Recent practice (OQ-23: /api/review/pool)", () => {
 
 describe("no bank counts, no percentages, no Domain Library", () => {
   it("paid: the full page carries no bank figure, no '%' and no Domain Library", async () => {
-    // Presence before absence: the payloads carry a bank-sized figure (327).
-    expect(JSON.stringify(POOL)).toContain("327");
+    // F-52: a pool row carrying the stored bank-sized figure is refused by the schema the
+    // hook parses with, so the figure cannot reach the page through the pool at all.
+    const leaking = structuredClone(POOL) as {
+      sessions: Array<{ filters: unknown }>;
+    };
+    if (leaking.sessions[0]) {
+      leaking.sessions[0].filters = {
+        sections: ["M"],
+        domains: ["Algebra"],
+        skills: [],
+        difficulties: [],
+        source_pool_count: 327,
+      };
+    }
+    expect(reviewPoolSummaryResponseSchema.safeParse(leaking).success).toBe(
+      false,
+    );
     const { container } = await mount("paid", {
       quota: "unlimited",
       open: true,

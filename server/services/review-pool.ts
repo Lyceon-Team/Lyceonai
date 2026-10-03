@@ -36,6 +36,7 @@ import {
   type ReviewPoolSummaryResponse,
   type ReviewSourceEngine,
   type SessionCriteriaDifficulty,
+  toSessionCriteria,
 } from "@lyceon/shared";
 import {
   mapGenesisQuestionRow,
@@ -682,19 +683,33 @@ async function describeSourceSessions(
 
   const meta = new Map<
     string,
-    { created_at: string | null; mode: string | null; filters: unknown }
+    {
+      created_at: string | null;
+      mode: string | null;
+      filters: SourceSessionRow["filters"];
+    }
   >();
 
+  // F-52 (register §8) | @implemented [2026-10-03]: the stored `filters` object is never
+  // copied out. It holds the pool size, the requested count, the selection mode, the
+  // client instance id and the idempotency key next to the student's choice. Each row
+  // carries only the four criteria arrays, built fresh by the shared `toSessionCriteria`
+  // (OQ-22), from practice's `filters.session_spec` and from review's flat `filters` —
+  // the same projections practice and review `/state` and `/sessions/open` use.
   if (practiceIds.length > 0) {
     const { data } = await supabaseServer
       .from("practice_sessions")
       .select("id, created_at, mode, filters")
       .in("id", practiceIds);
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const stored =
+        row.filters && typeof row.filters === "object"
+          ? (row.filters as Record<string, unknown>)
+          : {};
       meta.set(`practice:${String(row.id)}`, {
         created_at: typeof row.created_at === "string" ? row.created_at : null,
         mode: typeof row.mode === "string" ? row.mode : null,
-        filters: row.filters ?? null,
+        filters: toSessionCriteria(stored.session_spec),
       });
     }
   }
@@ -708,7 +723,7 @@ async function describeSourceSessions(
       meta.set(`review:${String(row.id)}`, {
         created_at: typeof row.created_at === "string" ? row.created_at : null,
         mode: typeof row.mode === "string" ? row.mode : null,
-        filters: row.filters ?? null,
+        filters: toSessionCriteria(row.filters, reviewDifficultyLabel),
       });
     }
   }

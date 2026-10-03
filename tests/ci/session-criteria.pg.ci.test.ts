@@ -380,4 +380,94 @@ describe.skipIf(!PG_AVAILABLE)("OQ-22 session criteria → real PG", () => {
     expectNoForbiddenKeys(state.body);
     expectNoForbiddenKeys(open.body);
   });
+
+  // F-52 (student-UI register §8): `GET /api/review/pool` used to copy each source
+  // session's raw `filters` into `sessions[].filters`, so a practice row carried
+  // `session_spec` (the choice nested inside it), `source_pool_count`, `requested_count`,
+  // `client_instance_id` and the idempotency key. The fix sends the four criteria arrays
+  // only, built with `toSessionCriteria`. The source sessions are created through the REAL
+  // create routes (so their stored `filters` are what production writes), a miss is queued
+  // against each, and the pool is read through the REAL route.
+  it("F-52: /api/review/pool sessions[].filters is exactly the four criteria, for practice and review sources", async () => {
+    const practice = await request(app)
+      .post("/api/practice/sessions")
+      .send({
+        ...CHOSEN,
+        client_instance_id: "crit-f52-p",
+        idempotency_key: "crit-f52-p",
+      });
+    expect(practice.status).toBe(200);
+    const practiceId = practice.body.sessionId as string;
+
+    const reviewChosen = {
+      sections: ["M"],
+      domains: ["Advanced Math"],
+      skills: [],
+      difficulties: [],
+    };
+    const review = await request(app)
+      .post("/api/review/sessions")
+      .send({
+        mode: "filter",
+        filters: { sections: ["M"], domains: ["Advanced Math"] },
+        client_instance_id: "crit-f52-r",
+        idempotency_key: "crit-f52-r",
+      });
+    expect(review.status).toBe(200);
+    const reviewId = review.body.sessionId as string;
+
+    // Presence before absence: the stored rows really carry what must not leak.
+    const pFilters = await storedFilters("practice_sessions", practiceId);
+    expect(pFilters).toHaveProperty("session_spec");
+    expect(pFilters).toHaveProperty("source_pool_count");
+    expect(pFilters).toHaveProperty("client_instance_id");
+    expect(pFilters).toHaveProperty("session_start_idempotency_key");
+    const rFilters = await storedFilters("review_sessions", reviewId);
+    expect(rFilters).toHaveProperty("client_instance_id");
+    expect(rFilters).toHaveProperty("session_start_idempotency_key");
+
+    // One open miss queued against each source session.
+    const queued: Array<[string, string, string]> = [
+      ["practice", practiceId, "SATM1KKKKKK"],
+      ["review", reviewId, "SATM1NNNNNN"],
+    ];
+    for (const [engine, sid, qid] of queued) {
+      await testPg!.query(
+        `UPDATE public.review_schedule
+            SET source_engine = $1, source_session_id = $2
+          WHERE student_id = $3 AND question_id = $4`,
+        [engine, sid, STUDENT, qid],
+      );
+    }
+
+    const pool = await request(app).get("/api/review/pool?tz=UTC");
+    expect(pool.status).toBe(200);
+    const rows = pool.body.sessions as Array<{
+      source_session_id: string;
+      filters: unknown;
+    }>;
+    const pRow = rows.find((r) => r.source_session_id === practiceId);
+    const rRow = rows.find((r) => r.source_session_id === reviewId);
+    expect(pRow, "practice source missing from the pool").toBeDefined();
+    expect(rRow, "review source missing from the pool").toBeDefined();
+
+    // Presence: each row names what the student chose (for practice this is also what
+    // stops the past-session picker labelling every practice row "Mixed").
+    expectCriteria({ criteria: pRow!.filters }, CHOSEN);
+    expectCriteria({ criteria: rRow!.filters }, reviewChosen);
+
+    // Absence: no stored key rides along anywhere in the response.
+    const keys = collectKeys(pool.body, new Set());
+    for (const k of [
+      "session_spec",
+      "source_pool_count",
+      "requested_count",
+      "selection_mode",
+      "client_instance_id",
+      "session_start_idempotency_key",
+      "target_question_count",
+    ]) {
+      expect(keys.has(k), k).toBe(false);
+    }
+  });
 });

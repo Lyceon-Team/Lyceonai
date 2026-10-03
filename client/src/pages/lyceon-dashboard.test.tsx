@@ -318,7 +318,7 @@ const REVIEW_OPEN = reviewOpenSessionsResponseSchema.parse({
   requestId: "r",
 });
 
-/** One past session with open misses; its raw filters name a domain the page must not print. */
+/** One past session with open misses; its criteria (F-52 shape) name a domain Home does not print. */
 const POOL = reviewPoolSummaryResponseSchema.parse({
   total: 5,
   timezone: "UTC",
@@ -334,7 +334,12 @@ const POOL = reviewPoolSummaryResponseSchema.parse({
       local_date: "2026-09-30",
       local_time: "2:40 PM",
       mode: "custom",
-      filters: { session_spec: { domains: ["Raw Filter Domain"] } },
+      filters: {
+        sections: [],
+        domains: ["Raw Filter Domain"],
+        skills: [],
+        difficulties: [],
+      },
       open_count: 4,
     },
     {
