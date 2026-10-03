@@ -17,6 +17,7 @@
  */
 import { expect, test, type Route } from "@playwright/test";
 import { offCentre } from "./guardian-harness/centring";
+import { pinBrowserToday } from "./guardian-harness/today";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -79,6 +80,8 @@ for (const vp of [
         return json({ error: "Not found", requestId: "r" }, 404);
       },
     );
+    // The fixture week is cut on E2E_TODAY; the app's "today" must be the same day.
+    await pinBrowserToday(page);
     await page.goto("/calendar");
     // The rail is hidden on a phone; the day strip/week grid is in both layouts.
     await page
