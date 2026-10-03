@@ -24,6 +24,19 @@ These are hard stops. Generating any of them is a defect, not a tradeoff:
 
 Full hard-stop list: see `docs/Spec` Coding Standards §17. Domain detail loads on demand via skills — do not inline it here.
 
+## Public Disclosure Doctrine (SEO & Marketing vertical)
+
+This doctrine governs every public surface and every PR that touches one. Source: `docs/plans/seo/seo-marketing-vertical.md` §0 (Karl, 2026-10-02 — wording approved), copied verbatim.
+
+1. **Industry standard only.** Every public surface (pages, metadata, structured data, legal text, social, email, ads, reviews) uses the patterns, wording conventions and claim types the category already uses. Nothing bespoke. Set and forget.
+2. **Nothing proprietary goes out.** Never describe, or publish anything that lets someone work out: mastery computation; the scoring formula, constants or score conversion; LISA's prompts, logic, personality or guardrails; question selection/adaptation logic; internal architecture; question-bank size or structure. Public copy describes outcomes generically ("tracks progress by skill"), never mechanisms.
+3. **General facts cite real sources.** Any statement about the SAT, scores, tutoring or studying cites a credible external source (College Board, published research, established publishers). Nothing invented.
+4. **Proof stays internal.** Claim support, compliance reasoning and test evidence live in an internal register (`docs/compliance/`). Nothing is published as "evidence".
+5. **Karl's approval gate.** Anything beyond generic — Lyceon-specific claims, outcome/performance claims, comparisons, statistics from our own data, anything pointing at a proof — needs Karl's written approval before publishing.
+6. **Legal text** = standard industry clauses proposed for counsel to accept or tighten. No bespoke legal mechanisms.
+7. **Under-13 users are excluded** from all marketing, analytics, email, reviews and public data.
+8. **Compliant by default.** No spam patterns: no keyword stuffing, doorway/city pages, thin templated pages, review gating, fake or incentivised reviews, or synthetic people presented as real.
+
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
 
 Never take an SCL number from a prompt, plan, brief, or any instruction —
@@ -220,9 +233,9 @@ Before implementing scheduling, queueing, retries, alerting, tracing, or any oth
 
 This applies to spec implementation too: where a spec section names a managed service (e.g. Doc 03C §8 names Cloud Tasks queues), implement it with that service rather than an application-layer equivalent.
 
-## Branch targeting — seven integration branches, never `main`
+## Branch targeting — eight integration branches, never `main`
 
-Seven long-lived integration branches exist. Route every PR to the correct one by scope:
+Eight long-lived integration branches exist. Route every PR to the correct one by scope:
 
 | Branch | Scope | Examples |
 |---|---|---|
@@ -233,6 +246,9 @@ Seven long-lived integration branches exist. Route every PR to the correct one b
 | `guardian` | Guardian-facing surfaces | Guardian dashboard, guardian projections, guardian exam results |
 | `review` | Review vertical | Review pool and session runtime, `review-canonical`, review surfaces |
 | `cleanup` | Everything else — **including billing / entitlement and WS-GL** | Spec alignment, auth, mastery, practice engine, Stripe surface, entitlement writes, the guardian-link and guardian-consent data layer, frontend, CI, docs |
+| `seo` | SEO & marketing vertical | SEO, marketing, public pages, content engine, analytics wiring |
+
+For `seo`: Codex audits `seo`; Karl merges `seo → main`. Vertical plan: `docs/plans/seo/seo-marketing-vertical.md`.
 
 **`stripe` no longer exists; billing routes to `cleanup`.** The 2026-08-24 ruling sent the
 billing / entitlement vertical and WS-GL to a `stripe` branch on the grounds that the governing charter
