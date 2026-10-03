@@ -255,6 +255,49 @@ describe("review landing", () => {
     expect(text).toContain("Yesterday");
   });
 
+  it("exam → review: a scored practice test is a picker row like a practice session, and opens that test's misses", () => {
+    const pool = populatedPool();
+    hooksMock.pool = {
+      ...hooksMock.pool,
+      pool: {
+        ...pool,
+        sessions: [
+          {
+            source_engine: "full_length",
+            source_session_id: "t-1",
+            created_at: EVENING_UTC,
+            local_date: "2026-09-17",
+            local_time: "9:05 AM",
+            mode: null,
+            filters: { test_form_name: "Practice Test 3" },
+            open_count: 12,
+          },
+          ...(pool.sessions as Array<Record<string, unknown>>),
+        ],
+      },
+    };
+    hooksMock.create.startSession.mockResolvedValue({
+      ok: false,
+      failure: { kind: "unknown" },
+    });
+    render(<ReviewPage />);
+    const picker = screen.getByTestId("review-session-picker");
+    const text = picker.textContent ?? "";
+    // Never "Practice" with a "Mixed" subtitle under "Earlier": its own label, the
+    // form's name, the test's own day, and its open count.
+    expect(text).toContain("Practice test · 9:05 AM");
+    expect(text).toContain("Practice Test 3");
+    expect(text).toContain("12 to review");
+    const row = screen.getByText("Practice test · 9:05 AM").closest("button");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+    // `start` hands the spec to startSession before its first await.
+    expect(hooksMock.create.startSession).toHaveBeenCalledWith({
+      mode: "session",
+      filters: { source_engine: "full_length", source_session_id: "t-1" },
+    });
+  });
+
   it("U5: says so when the browser reported no timezone and the server fell back", () => {
     hooksMock.pool = {
       pool: { ...populatedPool(), timezoneFallback: true },
