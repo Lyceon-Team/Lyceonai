@@ -41,8 +41,8 @@ export const reviewSessionModeSchema = z.enum(REVIEW_SESSION_MODES);
 export type ReviewSessionMode = z.infer<typeof reviewSessionModeSchema>;
 
 /**
- * Which engine put a question in the queue. `full_length` is accepted now and returns
- * an empty pool until the exam vertical writes misses — ruling 6, no stub code.
+ * Which engine put a question in the queue. `full_length` = a full-length practice
+ * test: its wrong and blank items are queued once the test is scored (SCL-158).
  */
 export const REVIEW_SOURCE_ENGINES = [
   "practice",

@@ -26,6 +26,7 @@
 
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { listExamForms } from "./exam-runtime-service";
 import {
   REVIEW_POOL_SESSIONS_PAGE_SIZE,
   reviewPoolSessionsCursorSchema,
@@ -119,8 +120,11 @@ async function loadOpenQueueEntries(
  * question that was missed there, graduated, and missed again later, because the later
  * miss is the open entry while the earlier one carries the session provenance.
  * trade-offs: two reads instead of a join, because PostgREST cannot embed a view.
- * edge cases: `full_length` is a valid engine with no rows yet (ruling 6); it returns
- * an empty set and the caller lands on the ordinary empty-pool response, no special case.
+ * edge cases: `full_length` sessions select exactly like practice ones: the exam's
+ * scoring seam (`exam_apply_scored_seams`, SCL-158) writes its wrong and blank items with
+ * `source_engine = 'full_length'` and `source_session_id` = the test session, so "review
+ * this test" is this same filter. An exam that was never scored has no entries, and the
+ * caller lands on the ordinary empty-pool response.
  */
 async function loadQuestionIdsFromSourceSession(
   studentId: string,
@@ -252,8 +256,9 @@ function readSkillCodes(row: CanonicalQuestionRowLike): string[] {
  *     excludes in-flight questions and review deliberately does not;
  *   - a row that is servable but cannot fill review's NOT NULL snapshot columns is
  *     dropped and logged, see `isSnapshottable`;
- *   - `full_length` source sessions are accepted and yield nothing until the exam
- *     vertical writes to the queue (ruling 6).
+ *   - `full_length` entries (an exam's scored misses and blanks, SCL-158) are part of
+ *     the queue like any other: no engine filter in queue mode, and session mode
+ *     selects them by the test session id.
  */
 export async function buildReviewPool(args: {
   studentId: string;
@@ -509,6 +514,7 @@ export async function buildReviewPoolSummary(args: {
   const sessions = await describeSourceSessions(
     [...openBySource.values()],
     timeZone,
+    args.studentId,
   );
   const page = pageSourceSessions(
     sessions,
@@ -626,18 +632,36 @@ export function pageSourceSessions(
 
 /**
  * Reads the parent session rows so the picker can show when a batch of mistakes was
- * made and what it was. Practice and review sessions live in different tables and
- * full-length has none yet, hence the per-engine branch. Newest first (brief §2.4).
+ * made and what it was. Practice, review and full-length sessions live in different
+ * tables, hence the per-engine branch. Newest first (brief §2.4).
+ *
+ * FULL-LENGTH (exam → review, Doc-02B_V4 §16 "filter by original practice session or
+ * exam"; SCL-158 enqueues an exam's misses and blanks after scoring). The row's date is
+ * when the attempt ENDED (`completed_at`, else `abandoned_at`), the same instant
+ * `exam_apply_scored_seams` stamps on its queue entries — the student remembers the day
+ * they sat the test, not the day the session row was created. `mode` is null (the exam's
+ * strict/lenient is not a review filter) and `filters` carries exactly one fact, the
+ * form's name, so the picker can say "Practice Test 1". Nothing else from the exam
+ * leaves this function (F-52: no raw session metadata to the student).
+ *
+ * The name comes from the exam surface's own forms read (`listExamForms` →
+ * `exam_list_forms`, the same names the student sees on /tests), one call per summary,
+ * not from a direct table read. A form no longer published is not in that list, so its
+ * row carries `filters: null` and the client says "Full-length test".
  */
 async function describeSourceSessions(
   sources: Array<{ engine: string; sessionId: string; count: number }>,
   timeZone: string,
+  studentId: string,
 ): Promise<ReviewPoolSummaryResponse["sessions"]> {
   const practiceIds = sources
     .filter((s) => s.engine === "practice")
     .map((s) => s.sessionId);
   const reviewIds = sources
     .filter((s) => s.engine === "review")
+    .map((s) => s.sessionId);
+  const examIds = sources
+    .filter((s) => s.engine === "full_length")
     .map((s) => s.sessionId);
 
   const meta = new Map<
@@ -669,6 +693,43 @@ async function describeSourceSessions(
         created_at: typeof row.created_at === "string" ? row.created_at : null,
         mode: typeof row.mode === "string" ? row.mode : null,
         filters: row.filters ?? null,
+      });
+    }
+  }
+
+  if (examIds.length > 0) {
+    const { data } = await supabaseServer
+      .from("test_sessions")
+      .select("id, test_form_id, completed_at, abandoned_at")
+      .in("id", examIds);
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const formNames = new Map<string, string>();
+    const forms = await listExamForms(studentId);
+    if (forms.ok) {
+      for (const form of forms.value.forms) {
+        if (form.name.length > 0) formNames.set(form.test_form_id, form.name);
+      }
+    } else {
+      // The picker still lists the test (dated, counted); only its name is missing.
+      logger.warn(
+        COMPONENT,
+        "exam_form_names_unavailable",
+        "Exam forms read failed; full-length picker rows carry no form name",
+        { status: forms.error.status, code: forms.error.code },
+      );
+    }
+    for (const row of rows) {
+      const endedAt =
+        typeof row.completed_at === "string"
+          ? row.completed_at
+          : typeof row.abandoned_at === "string"
+            ? row.abandoned_at
+            : null;
+      const formName = formNames.get(String(row.test_form_id)) ?? null;
+      meta.set(`full_length:${String(row.id)}`, {
+        created_at: endedAt,
+        mode: null,
+        filters: formName === null ? null : { test_form_name: formName },
       });
     }
   }

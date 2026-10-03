@@ -81,9 +81,16 @@ export function dayHeaderLabel(
   }).format(new Date(parsed));
 }
 
-/** "Practice" / "Review" — the engine a queued question originally came from. */
+/**
+ * "Practice" / "Review" / "Practice test" — the engine a queued question originally
+ * came from. `full_length` is a full-length practice test: its wrong and blank items
+ * are queued once it is scored (SCL-158), and the student picks it here exactly as they
+ * pick a practice session.
+ */
 export function sourceEngineLabel(engine: string): string {
-  return engine === "review" ? "Review" : "Practice";
+  if (engine === "review") return "Review";
+  if (engine === "full_length") return "Practice test";
+  return "Practice";
 }
 
 /** The first line of a picker row: "Practice · 2:40 PM". */
@@ -109,13 +116,16 @@ const SECTION_LABELS: Readonly<Record<string, string>> = {
 
 /**
  * The second line of a picker row: the source session's mode and filters, e.g.
- * "Math · Algebra", "Reading & Writing · Mixed", or "Diagnostic".
+ * "Math · Algebra", "Reading & Writing · Mixed", "Diagnostic", or — for a full-length
+ * test — the form's name, "Practice Test 1" ("Full-length test" when the server sent
+ * none, e.g. a form no longer published).
  *
  * `filters` is the session's raw metadata (jsonb), so every read narrows.
  */
 export function sourceFiltersLine(
   mode: string | null,
   filters: unknown,
+  engine?: string,
 ): string {
   if (mode === "diagnostic") return "Diagnostic";
 
@@ -123,6 +133,12 @@ export function sourceFiltersLine(
     filters !== null && typeof filters === "object" && !Array.isArray(filters)
       ? (filters as Record<string, unknown>)
       : {};
+
+  // A full-length test row carries exactly one fact, its form's name (review-pool.ts).
+  if (typeof bag.test_form_name === "string" && bag.test_form_name.length > 0) {
+    return bag.test_form_name;
+  }
+  if (engine === "full_length") return "Full-length test";
 
   const sections = stringList(bag.sections);
   const domains = stringList(bag.domains);
