@@ -60,7 +60,7 @@ Requirements are from Doc 10 (`docs/Spec/Lyceon — Document 10_ … Legal Docum
 | Children's notice: under-13 posture | §9.14 (:617), as amended by SCL-187 and SCL-208 | Children's Notice §2; Privacy v5 §4 |
 | What is collected from minors; parent rights; LISA handling for minors; contact | §9.14 | Children's Notice §3–§8 |
 | Parental consent clickwrap and logging | §9.15 (:627) | Parental Consent §2, §3 |
-| AI content disclosed as AI-generated; limitations; how to report | §9.16 (:637), narrowed by SCL-208 | AI Disclosure §1, §2, §5 |
+| AI content disclosed as AI-generated; limitations; how to report | §9.16 (:637), narrowed by SCL-208 | AI Disclosure §1, §2, §5 (email is live; the in-conversation report control is marked not yet live) |
 | AI Act Art. 50 | §9.16 | AI Disclosure §1 (counsel item 1) |
 | Sub-processors: name, category, data, location | §9.18 (:657) | Sub-Processor List table |
 | Privacy Policy content (collected, use, processors, children, retention, rights, cookies, international, changes, contact) | §9.2 (:495) | Privacy v5 §1–§12 |

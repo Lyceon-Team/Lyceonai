@@ -78,7 +78,7 @@ We may analyze data in aggregated, de-identified, or pseudonymized form to impro
 
 ### **3.3 Third-Party AI Services**
 
-Conversations with LISA, our AI tutor, are processed by Google Cloud AI services, which also provide content-safety checks on those conversations. Data shared with these services is limited to what is needed for the conversation, and Google is contractually prohibited from using it to train public or general-purpose models.
+Conversations with LISA, our AI tutor, are processed by Google Cloud for AI services and content safety. Data shared with these services is limited to what is needed for the conversation, and Google is contractually prohibited from using it to train public or general-purpose models.
 
 **No data from a user under 13 is sent to any third-party AI service**, because LISA is not available below that age. See Section 4.
 
@@ -92,7 +92,7 @@ LYCEON is designed for students aged 13 and over. A student under 13 may use LYC
 
 A student under 13 **cannot use any learning feature until a parent or guardian has connected to their account.**
 
-Before a parent or guardian connects, the account holds only what was needed to create it (name, email address, date of birth, and sign-in details). It can be used only to connect a parent or guardian and to manage the account. No learning activity is collected, because the learning features are not available.
+Before a parent or guardian connects, the account holds only what was needed to create it (name, email address, date of birth, and sign-in details), plus the record of the sign-up agreements and the technical data described in Section 1.3. It can be used only to connect a parent or guardian and to manage the account. No learning activity is collected, because the learning features are not available.
 
 If the student asks us to, we email their link code to the parent or guardian address they enter. We use that address only to send that email and to limit how often such emails can be sent.
 
@@ -149,7 +149,7 @@ We share information with the following providers, which process it only on LYCE
 | **Google** | Sign in with Google, if you choose it | Your Google sign-in |
 | **Resend** | Email delivery | Your email address and the message we send |
 | **Desmos** | The graphing calculator on math questions | Technical data from your browser (such as IP address and browser type) when the calculator loads |
-| **Slack** | Internal alerts to LYCEON staff about safety reviews | Internal reference numbers only — no conversation content and no names |
+| **Slack** | Internal alerts to LYCEON staff | Internal reference numbers only — no conversation content and no names |
 | **[ERROR-MONITORING VENDOR — TO BE CONFIRMED]** | Error monitoring | Error reports, which may include IP address and an internal account reference |
 | **PostHog** **[Effective when F10/F11 ship]** | Product analytics and session recording | Usage events and page interactions, as described in Section 9 |
 | **Cloudflare** **[Effective when Q2 ships]** | Abuse protection (Turnstile) on public question pages | Technical data from your browser |
@@ -193,7 +193,7 @@ After 7 days we permanently erase the information that identifies you — your n
 Three things survive, and here is exactly why:
 
 * **A record that you asked us to delete your account**, including your email address, kept for 24 months. We are required to keep records of these requests. After 24 months we remove the email address and keep only the date and outcome.
-* **A record of consents given on the account** — which document, which version, when, and how it was given. The network details attached to it (IP address and browser) are removed after 24 months. The dated record, with nothing in it that identifies you, is kept so that we can show consent was properly obtained.
+* **A record of consents given on the account** — which document, which version, when, and how it was given. The network details attached to it (IP address and browser) are removed 24 months after your deletion request is answered. The dated record, with nothing in it that identifies you, is kept without a fixed end date so that we can show consent was properly obtained.
 * **Payment records**, kept for 7 years, because tax and financial rules require it.
 
 If you asked us not to contact you again, we keep your email address on a do-not-contact list until you tell us otherwise. That is the only way we can honour the request.
@@ -332,4 +332,6 @@ Decisions counsel must make before publication:
 9. **Google Cloud AI location.** Tutor models are called through the "global" endpoint. Confirm the international-transfer statement in §10.
 10. **Schools (§5.5).** Confirm the FERPA "school official" wording and that it should publish only once a school agreement exists.
 11. **"Continued use constitutes acceptance."** v4 §11 had this. It is removed here in favour of notice-before-effect and consent where required. Confirm.
-12. **Google Fonts.** Not listed: fonts are being self-hosted before v5 (SEO-1). v5 must not publish until that change is live in production.
+12. **Analytics retention (§6.6).** v4 §6.6 also said de-identified analytics data is kept "for up to 24 months, then only in aggregate". v5 drops that sentence: Vercel Analytics has no de-identified tier that LYCEON controls, and the BigQuery archive the sentence related to was never used (SCL-106). v5 also narrows the Vercel Analytics statement to public pages, which matches `client/src/lib/analytics-surface.ts`. Confirm.
+13. **Naming safety tooling.** Google Cloud is described only by purpose, "AI services and content safety" (Karl, 2026-10-03). Do not describe how those checks work (doctrine rule 2).
+14. **Google Fonts.** Not listed: fonts are being self-hosted before v5 (SEO-1). v5 must not publish until that change is live in production.

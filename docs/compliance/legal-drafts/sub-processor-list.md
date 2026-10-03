@@ -17,7 +17,7 @@ These are the service providers that process personal information on LYCEON's be
 | **Google** | "Sign in with Google" | Google sign-in details, if the user chooses it | United States **[TO CONFIRM]** |
 | **Resend** | Email delivery | Email address, message content | **[REGION — TO CONFIRM]** |
 | **Desmos** | Graphing calculator on math questions | Browser technical data (e.g. IP address) when the calculator loads | United States **[TO CONFIRM]** |
-| **Slack** | Internal staff alerts about safety reviews | Internal reference numbers only; no conversation content, no names | United States **[TO CONFIRM]** |
+| **Slack** | Internal staff alerts | Internal reference numbers only; no conversation content, no names | United States **[TO CONFIRM]** |
 | **[ERROR-MONITORING VENDOR — TO BE CONFIRMED]** | Error monitoring | Error reports, which may include IP address and an internal account reference | **[TO CONFIRM]** |
 | **PostHog** **[Effective when F10/F11 ship]** | Product analytics and session recording | Usage events and page interactions; no names or emails; IP discarded; under-13 excluded | **[EU or US — TO CONFIRM]** |
 | **Cloudflare** **[Effective when Q2 ships]** | Abuse protection (Turnstile) | Browser technical data | **[TO CONFIRM]** |

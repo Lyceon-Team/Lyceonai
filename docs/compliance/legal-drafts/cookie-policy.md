@@ -42,7 +42,8 @@ These help us understand how the service is used, so we can fix what is confusin
 | `__Host-csrf` | Strictly necessary | LYCEON (first party) | Protects your account against forged requests | **[TO CONFIRM]** |
 | Sign-in verifier (Supabase PKCE) | Strictly necessary | LYCEON (first party) | Completes "Sign in with Google" securely | Until sign-in completes **[TO CONFIRM]** |
 | `lyceon-theme` (local storage) | Strictly necessary (preference) | LYCEON (first party) | Remembers light or dark mode | Until you clear it |
-| Small app settings (local storage) | Strictly necessary (preference) | LYCEON (first party) | Remembers whether you dismissed a prompt, and keeps one device from opening duplicate sessions | Until you clear it |
+| Device identifier (local storage) | Strictly necessary | LYCEON (first party) | Remembers a device identifier the service needs to work correctly | Until you clear it |
+| Dismissed-notice flag (session storage) | Strictly necessary (preference) | LYCEON (first party) | Remembers that you dismissed a notice | Until you close the tab |
 | Cookie choice record | Strictly necessary | LYCEON (first party) | Remembers your cookie choice so we don't ask again **[Effective when F11 ships]** | 6 months |
 | `ph_<project>_posthog` | Analytics | PostHog (first party) | Recognises your browser across visits for analytics **[Effective when F10/F11 ship — confirm name]** | **[TO CONFIRM]** |
 
@@ -90,7 +91,7 @@ We will update this policy when the cookies we use change, and note the date.
 ## Counsel checklist
 
 1. **Lifetimes.** Confirm each **[TO CONFIRM]** lifetime from the Supabase auth settings, the CSRF middleware (`server/middleware/csrf-double-submit.ts`) and the PostHog configuration.
-2. **Preference storage.** The theme, prompt-dismissal and client-instance keys are classed as strictly necessary. Confirm that classification under ePrivacy Article 5(3) and the ICO guidance.
+2. **Preference storage.** The theme key, the device-identifier key (`client/src/lib/client-instance.ts`) and the dismissed-notice flag (`client/src/components/legal/reconsent-dismissal.ts`, session storage) are classed as strictly necessary. Confirm that classification under ePrivacy Article 5(3) and the ICO guidance.
 3. **Pre-consent analytics.** Plan R11 says "cookieless until consent". Confirm whether any PostHog measurement may run before a choice, or whether it must wait for acceptance. This draft assumes it waits.
 4. **Desmos.** Confirm whether the Desmos script sets cookies or uses storage. If it does, decide whether it needs consent or a strictly necessary justification, since it powers the calculator the user opened.
 5. **Six-month re-ask.** Doc 10 §9.11 directs a 6-month do-not-re-ask period. Confirm it against current EU/UK guidance and the EU Digital Omnibus status.

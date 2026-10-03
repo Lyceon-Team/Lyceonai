@@ -25,7 +25,7 @@ LYCEON AI operates the LYCEON SAT-preparation service.
 
 LYCEON is designed for students aged 13 and over. A student under 13 can use LYCEON's learning features **only while a parent or guardian is connected to their account.**
 
-* **Before you connect,** your child's account can only be used to connect you and to manage the account. We hold only what was needed to create it: name, email address, date of birth and sign-in details. No learning activity is collected.
+* **Before you connect,** your child's account can only be used to connect you and to manage the account. We hold only what was needed to create it: name, email address, date of birth and sign-in details, plus the record of the sign-up agreements and basic technical data such as IP address. No learning activity is collected.
 * **If your child asks us to,** we email you their link code at the address they type in. We use your address only to send that email and to limit how often it can be sent.
 * **You connect** by entering your child's link code in your own LYCEON account and agreeing to the **LYCEON Parent / Guardian Terms**. You must be at least 18.
 * **If you disconnect,** and no other parent or guardian is connected, the learning features close again.

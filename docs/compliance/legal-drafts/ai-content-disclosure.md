@@ -42,7 +42,9 @@ How tutor conversations are handled, who processes them, and how long they are k
 
 ## **5. Tell Us If Something Is Wrong**
 
-If LISA says something incorrect, inappropriate or worrying, use the report option in the conversation or email **support@lyceon.ai**. We review reports and use them to improve the service.
+If LISA says something incorrect, inappropriate or worrying, email **support@lyceon.ai**, saying roughly when it happened. We review reports and use them to improve the service.
+
+**[Effective when an in-conversation report control ships — TO CONFIRM]** You can also use the report option in the conversation.
 
 ---
 
@@ -64,5 +66,5 @@ AI rules are changing in several countries. We will update this notice as they d
 2. **High-risk classification.** Doc 10 §9.16 flags that education-related AI may be high-risk under Annex III. Counsel to assess. This notice makes no high-risk statement.
 3. **GDPR Art. 22.** Section 2 states that no automated decision with legal or similarly significant effect is made. Confirm.
 4. **Australia.** Doc 10 §9.16 names the automated decision-making disclosures scheduled for December 2026. Decide whether an Australian paragraph is needed.
-5. **Report option.** Section 5 refers to an in-conversation report option. Engineering to confirm it exists, or reword before publication.
+5. **Report option.** No in-conversation report control exists today; Section 5 offers email as the live route and marks the in-conversation option as not yet live. Decide whether a report control is required before launch (AI Act Art. 50 does not require one; it is common practice).
 6. **Doctrine.** Any addition requested by counsel that would describe how LISA's safety checks, scoring or progress calculations work must go back to Karl under doctrine rule 2 before it is drafted.

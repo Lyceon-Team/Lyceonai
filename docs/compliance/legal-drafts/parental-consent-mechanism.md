@@ -36,8 +36,7 @@ Each acceptance is written to `legal_acceptances` (`supabase/migrations/20260618
 
 * the document and its version;
 * the date and time;
-* whether the student is a minor;
-* where the acceptance was given (the consent source);
+* who accepted (the record is marked as a parent's acceptance, `actor_type: "parent"`), and through which step (`consent_source: "guardian_link_redeem"`; `server/routes/guardian-routes.ts:503-520`);
 * the IP address and browser, for fraud prevention.
 
 On account deletion, the IP address and browser are removed after 24 months, and the dated record remains (Privacy Policy v5 §6.2).
