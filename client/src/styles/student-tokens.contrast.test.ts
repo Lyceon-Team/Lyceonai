@@ -158,3 +158,53 @@ describe.each(Object.entries(SETS))(
     });
   },
 );
+
+/**
+ * F-63 (owner ruling, Karl, 2026-10-03): the focus ring meets 3:1 (WCAG 2.2 SC 1.4.11) against
+ * every surface it is drawn over, in both themes. `--focus` is read from the CSS file above, never
+ * copied here.
+ *
+ * WHICH BACKGROUNDS. The ring is `outline: 3px solid var(--focus); outline-offset: 2px`, so it is
+ * drawn OUTSIDE the focused control, over the surface the control sits on. Those surfaces are the
+ * page and panel colours (--paper, --margin), cards and dialogs (--sheet), chips and info notices
+ * (--chip), hovered rows and buttons (--hover), the rail and the tab bar (--rail), and the tinted
+ * notice and category cards (--danger-bg, --cat-*-bg; translucent ones composited over --paper,
+ * as they render). Not in the set: --primary-bg and --rail-on-bg are the fills OF a focused
+ * control (the primary button, the active rail item), which the offset ring surrounds rather than
+ * sits on; text and line tokens (--ink*, --muted, --rule*, --tick, --step, --lock, --lv*-ink) are
+ * not surfaces; --scrim only ever sits behind a dialog, whose controls are on --sheet.
+ */
+const FOCUS_SURFACES = [
+  "paper",
+  "margin",
+  "sheet",
+  "chip",
+  "hover",
+  "rail",
+  "danger-bg",
+  "cat-math-bg",
+  "cat-rw-bg",
+  "cat-review-bg",
+  "cat-test-bg",
+] as const;
+
+describe.each(Object.entries(SETS))(
+  "%s theme: the focus ring (F-63)",
+  (_name, set) => {
+    it("the focus rule draws --focus, and --focus is in the set (presence)", () => {
+      expect(css).toMatch(/outline:\s*3px solid var\(--focus\)/);
+      expect(set["focus"]).toMatch(/^#[0-9a-f]{6}$/i);
+    });
+
+    it.each(FOCUS_SURFACES)("--focus on %s is at least 3:1", (bgName) => {
+      const paper = parse(set["paper"]!);
+      const bg = over(parse(set[bgName]!), paper);
+      const fg = parse(set["focus"]!);
+      const r = ratio(fg, bg);
+      expect(
+        r,
+        `focus ${set["focus"]} on ${bgName} = ${r.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(3);
+    });
+  },
+);

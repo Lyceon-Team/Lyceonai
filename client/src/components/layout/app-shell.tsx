@@ -6,7 +6,9 @@
  *        Free versus paid (rail locks; ruling 3 calendar exception; no call to the gated
  *        endpoint); OQ-4 (five-tab bar, avatar menu Calendar / Settings / Help / Sign out); OQ-29
  *        (locks from the feature-access map, reason plan | age); issue #829 (one anchor per nav
- *        item); contracts/notifications.contract.md §3 (the bell)] | @implemented [2026-10-03]
+ *        item); contracts/notifications.contract.md §3 (the bell); OQ-47 (bell in the rail
+ *        above Help, ruled 2026-10-03); OQ-48 (avatar menu order, ruled 2026-10-03)]
+ *        | @implemented [2026-10-03]
  *
  * plain English: replaces the old top-nav student header. Desktop (lg, 1024px and up): a 96px
  * --rail column (logo and wordmark; Home, Practice, Review, Full-Length, Calendar, LISA, icon
@@ -28,9 +30,15 @@
  * (loading, a non-student, a parse failure) nothing is locked and the link navigates; the server
  * refuses a gated request regardless and the modal opens from that refusal (UI-44).
  *
- * The bell stays in the shell's <header> (shells.notification-bell.test.tsx): the notification
- * contract gives every recipient an in-app surface. DESIGN.md's rail does not draw one; listed as
- * an owner question in the UI-41 report rather than removed.
+ * THE BELL. OQ-47 (Karl, 2026-10-03, ruled): the bell sits in the left rail, directly above
+ * Help, in the App shell only. On desktop the <header> IS the rail, so the bell is a rail entry
+ * between the spacer and Help; below lg the same element sits in the top bar, so it stays
+ * reachable on mobile. The Focus shell and the Bare card carry no bell; their exemptions and
+ * reasons are recorded in shells.notification-bell.test.tsx, which holds the "every shell" rule
+ * (the notification contract §3 names the in-app surface, not every layout).
+ *
+ * THE AVATAR MENU. OQ-48 (Karl, 2026-10-03, ruled): Calendar, Settings, Help, Sign out (OQ-4).
+ * The admin exception stands: an admin keeps the menu at every width, with Crisis review.
  */
 import {
   createContext,
@@ -289,12 +297,12 @@ export function AppShell({
       signOut={signOut}
       isSigningOut={isSigningOut}
       fallbackName="Student"
-      items={
-        <>
-          <MenuLink href="/calendar" label="Calendar" testId="menu-calendar" />
-          <MenuLink href={HELP_PATH} label="Help" testId="menu-help" />
-        </>
+      // OQ-48 (Karl, 2026-10-03): Calendar, Settings, Help, Sign out (OQ-4). Settings and Sign
+      // out are the shared menu's own; an admin's Crisis review sits between Help and Sign out.
+      leadingItems={
+        <MenuLink href="/calendar" label="Calendar" testId="menu-calendar" />
       }
+      items={<MenuLink href={HELP_PATH} label="Help" testId="menu-help" />}
     />
   );
   const helpActive = isActive(location, HELP_PATH);
@@ -346,7 +354,10 @@ export function AppShell({
         <div aria-hidden="true" className="flex-1" />
 
         {user ? (
-          <div className="flex justify-center [&_button]:text-lyc-rail-ink [&_button:hover]:bg-transparent">
+          <div
+            data-testid="rail-bell"
+            className="flex justify-center [&_button]:text-lyc-rail-ink [&_button:hover]:bg-transparent"
+          >
             <NotificationBell />
           </div>
         ) : null}
