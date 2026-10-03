@@ -96,7 +96,7 @@ const SCORED_STATES: ReadonlySet<ExamListItem["report_state"]> = new Set([
 ]);
 
 /** Which earlier attempt the chip compares with, chosen from list fields alone. */
-export type PreviousExam =
+type PreviousExam =
   | { kind: "first" }
   | { kind: "none" }
   | { kind: "previous"; item: ExamListItem };
