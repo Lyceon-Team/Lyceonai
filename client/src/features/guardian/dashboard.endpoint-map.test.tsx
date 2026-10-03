@@ -54,8 +54,8 @@ afterEach(cleanup);
 async function renderedDashboard(): Promise<void> {
   mountApp(Router, `/guardian/${ADA}`);
   await screen.findByTestId("dashboard-header");
-  await screen.findAllByTestId("domain-grid");
-  await screen.findByTestId("dashboard-exam");
+  await screen.findByTestId("mastery-card");
+  await screen.findByTestId("latest-test-meta");
 }
 
 const studentReads = (): string[] =>
@@ -137,12 +137,15 @@ describe("G4-03 what the Dashboard does not show", () => {
       }
     ).facts;
     expect(facts.blocks_total).toBeGreaterThan(0);
-    expect(screen.getByTestId("dashboard-week").textContent).toContain(
+    expect(screen.getByTestId("week-plan").textContent).toContain(
       `${facts.blocks_completed} of ${facts.blocks_total}`,
     );
-    expect(screen.getByTestId("calendar-target").textContent).toContain("1350");
+    expect(
+      within(screen.getByTestId("score-strip")).getByTestId("score-tile-target")
+        .textContent,
+    ).toContain("1350");
     expect(document.body.textContent).toContain("Proficient");
-    expect(screen.getByTestId("exam-total-score")).toBeTruthy();
+    expect(screen.getByTestId("latest-test-total")).toBeTruthy();
     // Absence.
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/7d|7-day|Questions Attempted|Accuracy/i);
@@ -152,26 +155,48 @@ describe("G4-03 what the Dashboard does not show", () => {
   });
 });
 
-describe("G4-03 the latest test is the newest completed_at (SCL-192)", () => {
-  it("picks the newest instant and ignores attempts that never completed", async () => {
-    const { latestCompletedExam } = await import("./GuardianDashboardTab");
-    const item = (id: string, completed_at: string | null) => ({
-      session_id: id,
-      test_form_id: "f0f00000-0000-4000-8000-000000000001",
-      test_form_name: id,
-      mode: "strict" as const,
-      attempt_number_for_form: 1,
-      report_state: "scored" as const,
-      completed_at,
+describe("G5-08 the card's test: the newest to end, else one in progress", () => {
+  it("ends by completed_at or abandoned_at; an attempt in progress only when none has ended", async () => {
+    const { pickCardExam } = await import("./GuardianLatestTestCard");
+    const { guardianExamListItemSchema } =
+      await import("@lyceon/shared/exam-guardian-report-schema");
+    const item = (
+      id: string,
+      over: Record<string, unknown>,
+    ): ReturnType<typeof guardianExamListItemSchema.parse> =>
+      guardianExamListItemSchema.parse({
+        session_id: `5e551011-0000-4000-8000-0000000002${id}`,
+        test_form_id: "f0f00000-0000-4000-8000-000000000001",
+        test_form_name: id,
+        mode: "strict",
+        attempt_number_for_form: 1,
+        report_state: "scored",
+        session_state: "completed",
+        completed_at: null,
+        abandoned_at: null,
+        total_scaled: 1300,
+        rw_scaled: 650,
+        math_scaled: 650,
+        ...over,
+      });
+    const none = { total_scaled: null, rw_scaled: null, math_scaled: null };
+    const live = item("01", {
+      report_state: "not_completed",
+      session_state: "active",
+      ...none,
     });
-    expect(
-      latestCompletedExam([
-        item("a", "2026-09-10T10:00:00.000Z"),
-        item("b", null),
-        item("c", "2026-09-20T10:00:00.000Z"),
-        item("d", "2026-09-15T10:00:00.000Z"),
-      ])?.session_id,
-    ).toBe("c");
-    expect(latestCompletedExam([item("b", null)])).toBeNull();
+    const a = item("02", { completed_at: "2026-09-10T10:00:00.000Z" });
+    const partial = item("03", {
+      report_state: "partial_scored",
+      session_state: "partial_scored_abandoned",
+      abandoned_at: "2026-09-20T10:00:00.000Z",
+      total_scaled: null,
+      math_scaled: null,
+    });
+    const d = item("04", { completed_at: "2026-09-15T10:00:00.000Z" });
+    // A partial score is abandoned, never completed: it is still the newest outcome.
+    expect(pickCardExam([a, live, partial, d])?.test_form_name).toBe("03");
+    expect(pickCardExam([live])?.test_form_name).toBe("01");
+    expect(pickCardExam([])).toBeNull();
   });
 });

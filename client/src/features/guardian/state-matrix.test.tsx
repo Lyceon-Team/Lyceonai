@@ -177,7 +177,7 @@ const STATES: readonly State[] = [
         ).toBeGreaterThanOrEqual(2),
       );
       expect(screen.queryByTestId("domain-grid")).toBeNull();
-      expect(screen.queryByTestId("dashboard-exam")).toBeNull();
+      expect(screen.queryByTestId("latest-test-card")).toBeNull();
       expect(document.querySelector(".lyceon-calendar .week")).toBeNull();
     },
   },
@@ -203,7 +203,7 @@ const STATES: readonly State[] = [
           : undefined,
       ),
     testId: "guardian-state-no-exams",
-    names: /Ada hasn't finished a full-length practice test yet/,
+    names: /Ada hasn't started a full-length test yet/,
   },
 ];
 
