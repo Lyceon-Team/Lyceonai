@@ -1,29 +1,34 @@
 /**
- * OQ-21: GET /api/practice/quota reads the free daily practice quota without consuming it.
+ * The free daily practice quota: Doc 02B §13 clock and basis, the read and the 402 agreeing.
  *
  * @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02: a read-only
  *        `GET /api/practice/quota`, computed by the same function as the 402
  *        (`checkAndReservePracticeQuota`, dry run), built with tests observed failing once;
- *        Doc 02B §12 Entitlement Matrix, §13 "Zero Quota Remaining"; Doc 01A §40 `getUsage`]
- *        | @implemented [2026-10-03]
+ *        owner ruling (Karl) 2026-10-03 OQ-43 / F-61: "follow Doc 02B. The quota counts
+ *        submitted answers and resets at Chicago midnight. One shared function for the 402 and
+ *        the quota read; tests at the day boundary and for served-but-unanswered questions";
+ *        Doc 02B §13 "Quota Contract", "Reset Algorithm", "Quota Check Mechanism", "Pre-Cap at
+ *        Session Creation", "Zero Quota Remaining", "What Counts Against Quota"; §12 Entitlement
+ *        Matrix; Doc 01A §40 `getUsage`] | @implemented [2026-10-03]
  *
  * plain English: the REAL practice router behind the REAL mount gates (`requireSupabaseAuth`,
  * `requireStudentOrAdmin`, as `server/index.ts` mounts it) and the REAL
  * `check_and_reserve_practice_quota` over real Postgres (genesis + every migration). Only the
- * session is injected, and CSRF is left out (it ignores GET; the one POST here is the 402 site).
- * Questions are consumed through the real ledger call the serve route makes
- * (`checkAndReservePracticeQuota`, `dryRun: false`, one item per question served), so the read is
- * compared with the very decision that refuses the student:
- *   - a fresh free student: remaining = limit, resetAt = the next UTC midnight;
- *   - after N served: remaining = limit - N, equal to what the Nth reservation itself reported;
- *   - at the limit: remaining 0, the serve reservation is refused, and POST /sessions answers 402
- *     with the same limit, remaining and resetAt;
- *   - a paid student: unlimited, even after questions served;
- *   - reading twice writes no ledger row and moves nothing;
- *   - no session 401; a guardian 403 at the student gate;
- *   - an admin (admitted by the practice mount, like every practice route) gets unlimited: the
- *     ledger wrapper's admin bypass, under which the enforcement never caps an admin either.
- * The limit is read from `practice_runtime_config.daily_quota_free`, never written here.
+ * session is injected, and CSRF is left out. Sessions are started, served and answered through
+ * the real routes (`POST /sessions`, `GET /sessions/:id/next`, `POST /answer`, `POST /skip`), so
+ * the rows the quota counts are the rows production writes:
+ *   - a fresh free student: remaining = limit, resetAt = the next America/Chicago midnight
+ *     (an oracle computed here with Intl, independent of the SQL);
+ *   - served and skipped questions consume nothing; an answer consumes one, and its idempotent
+ *     replay nothing more;
+ *   - limit−1 and limit: the read, the `GET /next` 402 and the `POST /sessions` 402 carry the
+ *     same limit, remaining and resetAt; the session-start pre-cap equals the read's remaining;
+ *   - the day boundary and DST, through the SQL function's `p_now` over real answered rows
+ *     whose `answered_at` is moved to the instant under test;
+ *   - a paid student: unlimited; reading twice writes nothing; 401, guardian 403, admin unlimited.
+ * The limit is read from `practice_runtime_config.daily_quota_free`, never written here. The
+ * answer route's own per-minute limiter (`answer_rate_limit_max`, a different control) is raised
+ * in this throwaway database so that reaching the daily limit through real answers is possible.
  */
 import express, {
   type NextFunction,
@@ -43,12 +48,16 @@ import { practiceQuotaSchema } from "../../packages/shared/src/practice-quota";
 
 const DB_NAME = "practice_quota_ci";
 const FREE_FRESH = "f2100000-0000-4000-8000-000000000001";
-const FREE_SOME = "f2100000-0000-4000-8000-000000000002";
+const FREE_SERVED = "f2100000-0000-4000-8000-000000000002";
 const FREE_LIMIT = "f2100000-0000-4000-8000-000000000003";
 const FREE_TWICE = "f2100000-0000-4000-8000-000000000004";
 const PAID = "f2100000-0000-4000-8000-000000000005";
 const GUARDIAN = "f2100000-0000-4000-8000-000000000006";
 const ADMIN = "f2100000-0000-4000-8000-000000000007";
+const FREE_REPLAY = "f2100000-0000-4000-8000-000000000008";
+const FREE_CLOCK = "f2100000-0000-4000-8000-000000000009";
+const CLIENT = "quota-ci";
+const QUESTION_COUNT = 60;
 
 let pg: Client;
 const session: { id: string | null; role: "student" | "guardian" | "admin" } = {
@@ -87,7 +96,9 @@ function injectSession(req: Request, _res: Response, next: NextFunction) {
   next();
 }
 
+let cachedApp: express.Express | null = null;
 async function app(): Promise<express.Express> {
+  if (cachedApp) return cachedApp;
   const { default: practiceRouter } =
     await import("../../server/routes/practice-canonical");
   const { requireSupabaseAuth, requireStudentOrAdmin } =
@@ -101,16 +112,27 @@ async function app(): Promise<express.Express> {
     requireStudentOrAdmin,
     practiceRouter,
   );
+  cachedApp = a;
   return a;
+}
+
+function as(id: string | null, role: typeof session.role = "student"): void {
+  session.id = id;
+  session.role = role;
 }
 
 async function quotaAs(
   id: string | null,
   role: typeof session.role = "student",
 ) {
-  session.id = id;
-  session.role = role;
+  as(id, role);
   return request(await app()).get("/api/practice/quota");
+}
+
+async function readQuota(studentId: string) {
+  const res = await quotaAs(studentId);
+  expect(res.status).toBe(200);
+  return practiceQuotaSchema.parse(res.body);
 }
 
 /** One question served: the reservation `GET /sessions/:id/next` makes for the item it serves. */
@@ -127,6 +149,82 @@ async function serveOne(studentId: string) {
   });
 }
 
+async function startSession(studentId: string, target: number) {
+  as(studentId);
+  return request(await app())
+    .post("/api/practice/sessions")
+    .send({
+      target_question_count: target,
+      client_instance_id: CLIENT,
+      idempotency_key: randomUUID(),
+    });
+}
+
+async function nextItem(studentId: string, sessionId: string) {
+  as(studentId);
+  return request(await app()).get(
+    `/api/practice/sessions/${sessionId}/next?client_instance_id=${CLIENT}`,
+  );
+}
+
+/** The session's currently served item and the option token of its correct answer. */
+async function servedItem(
+  sessionId: string,
+): Promise<{ id: string; token: string }> {
+  const r = await pg.query(
+    `SELECT id, option_token_map, question_correct_answer
+       FROM public.practice_session_items
+      WHERE session_id = $1 AND status = 'served'`,
+    [sessionId],
+  );
+  expect(r.rows).toHaveLength(1);
+  const row = r.rows[0] as {
+    id: string;
+    option_token_map: Record<string, string>;
+    question_correct_answer: string;
+  };
+  const hit = Object.entries(row.option_token_map).find(
+    ([, key]) => key === row.question_correct_answer,
+  );
+  if (!hit) throw new Error(`no token for the correct answer of ${row.id}`);
+  return { id: row.id, token: hit[0] };
+}
+
+async function answer(
+  studentId: string,
+  sessionId: string,
+  item: { id: string; token: string },
+  clientAttemptId: string = randomUUID(),
+) {
+  as(studentId);
+  return request(await app())
+    .post("/api/practice/answer")
+    .send({
+      sessionId,
+      sessionItemId: item.id,
+      selectedAnswer: item.token,
+      clientAttemptId,
+      client_instance_id: CLIENT,
+    });
+}
+
+/** Answer the served item of a session through the real route, expecting success. */
+async function answerServed(studentId: string, sessionId: string) {
+  const item = await servedItem(sessionId);
+  const res = await answer(studentId, sessionId, item);
+  expect(res.status).toBe(200);
+  return item;
+}
+
+async function answeredCount(studentId: string): Promise<number> {
+  const r = await pg.query(
+    `SELECT count(*)::int AS n FROM public.practice_session_items
+      WHERE user_id = $1 AND status = 'answered'`,
+    [studentId],
+  );
+  return Number(r.rows[0]?.n);
+}
+
 async function ledgerRows(studentId: string): Promise<number> {
   const r = await pg.query(
     `SELECT count(*)::int AS n FROM public.usage_rate_limit_ledger WHERE student_user_id = $1`,
@@ -135,26 +233,75 @@ async function ledgerRows(studentId: string): Promise<number> {
   return Number(r.rows[0]?.n);
 }
 
-function nextUtcMidnight(): number {
-  const d = new Date();
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+type SqlDecision = {
+  allowed: boolean;
+  code: string;
+  current: number;
+  limit: number;
+  remaining: number;
+  reset_at: string;
+};
+
+/** The SQL function's dry run at a chosen instant (`p_now`), the one way to test the clock. */
+async function dryRunAt(
+  studentId: string,
+  nowIso: string,
+): Promise<SqlDecision> {
+  const r = await pg.query(
+    `SELECT public.check_and_reserve_practice_quota(
+       $1::uuid, NULL::uuid, NULL::uuid, NULL::uuid, true, NULL::text, $2::timestamptz) AS d`,
+    [studentId, nowIso],
+  );
+  return r.rows[0].d as SqlDecision;
+}
+
+/**
+ * The next America/Chicago midnight after `at`, as an epoch ms — computed with Intl, not with
+ * the SQL under test. Chicago's offset is −5 or −6 hours, so the instant is 05:00Z or 06:00Z of
+ * the next local date; the one that reads 00:00 in Chicago is it.
+ */
+function nextChicagoMidnight(at: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at);
+  const get = (t: string) =>
+    Number(parts.find((p) => p.type === t)?.value ?? NaN);
+  const y = get("year");
+  const m = get("month");
+  const d = get("day");
+  for (const offsetHours of [5, 6]) {
+    const candidate = new Date(Date.UTC(y, m - 1, d + 1, offsetHours));
+    const local = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Chicago",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(candidate);
+    if (local === "00:00") return candidate.getTime();
+  }
+  throw new Error("no Chicago midnight found");
 }
 
 let dailyLimit = 0;
 
 describe.skipIf(!PG_AVAILABLE)(
-  "OQ-21 GET /api/practice/quota (real Postgres)",
+  "Practice free quota (OQ-21 read, OQ-43 Doc 02B §13 rule) — real Postgres",
   () => {
     beforeAll(async () => {
       pg = await bootstrapPgDatabase(DB_NAME);
       for (const [id, role] of [
         [FREE_FRESH, "student"],
-        [FREE_SOME, "student"],
+        [FREE_SERVED, "student"],
         [FREE_LIMIT, "student"],
         [FREE_TWICE, "student"],
         [PAID, "student"],
         [GUARDIAN, "guardian"],
         [ADMIN, "admin"],
+        [FREE_REPLAY, "student"],
+        [FREE_CLOCK, "student"],
       ] as const) {
         await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [
           id,
@@ -172,6 +319,25 @@ describe.skipIf(!PG_AVAILABLE)(
        VALUES ($1, 'premium', 'active', 'sub_oq21', 'si_oq21', now() + interval '20 days')`,
         [PAID],
       );
+      // A published pool large enough for one student to hold two sessions (limit + 5 items).
+      for (let i = 1; i <= QUESTION_COUNT; i += 1) {
+        const id = `SATM1Q${String(i).padStart(5, "0")}`;
+        await pg.query(
+          `INSERT INTO public.questions
+             (id, section, source_type, domain, skill_codes, difficulty, stem, options,
+              correct_answer, explanation, option_metadata, status, item_type, published_at)
+           VALUES ($1,'M',1,'Algebra',ARRAY['ALG.D01'],2,$2,
+             '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
+             'B',$3,
+             '{"A":{"role":"distractor"},"B":{"role":"correct"},"C":{"role":"distractor"},"D":{"role":"distractor"}}'::jsonb,
+             'published','mcq', now())`,
+          [id, `Stem ${id}`, `Expl ${id}`],
+        );
+      }
+      await pg.query(
+        `UPDATE public.practice_runtime_config SET value = '1000'::jsonb
+          WHERE key = 'answer_rate_limit_max'`,
+      );
       const cfg = await pg.query(
         `SELECT value FROM public.practice_runtime_config WHERE key = 'daily_quota_free'`,
       );
@@ -182,60 +348,127 @@ describe.skipIf(!PG_AVAILABLE)(
       await pg?.end();
     });
 
-    it("a fresh free student: remaining = limit, reset at the next UTC midnight", async () => {
+    it("a fresh free student: remaining = limit, reset at the next America/Chicago midnight", async () => {
       // Presence before absence: the configured limit is a real number, or nothing below means much.
       expect(Number.isInteger(dailyLimit)).toBe(true);
       expect(dailyLimit).toBeGreaterThan(1);
-      const res = await quotaAs(FREE_FRESH);
-      expect(res.status).toBe(200);
-      const quota = practiceQuotaSchema.parse(res.body);
+      const before = new Date();
+      const quota = await readQuota(FREE_FRESH);
       expect(quota.unlimited).toBe(false);
       expect(quota.limit).toBe(dailyLimit);
       expect(quota.remaining).toBe(dailyLimit);
-      expect(Date.parse(String(quota.resetAt))).toBe(nextUtcMidnight());
+      expect(Date.parse(String(quota.resetAt))).toBe(
+        nextChicagoMidnight(before),
+      );
     });
 
-    it("after N questions served: remaining = limit - N, equal to the reservation's own count", async () => {
-      const n = 3;
-      let last = await serveOne(FREE_SOME);
-      for (let i = 1; i < n; i += 1) last = await serveOne(FREE_SOME);
-      expect(last.allowed).toBe(true);
-      const res = await quotaAs(FREE_SOME);
-      expect(res.status).toBe(200);
-      const quota = practiceQuotaSchema.parse(res.body);
-      expect(quota).toEqual({
-        unlimited: false,
-        limit: dailyLimit,
-        remaining: dailyLimit - n,
-        resetAt: last.resetAt,
-      });
-      expect(quota.remaining).toBe(last.remaining);
+    it("served and skipped questions consume nothing; a submitted answer consumes one", async () => {
+      const started = await startSession(FREE_SERVED, 3);
+      expect(started.status).toBe(200);
+      const sessionId = String(started.body.sessionId);
+      // Presence: the session start really served an item and wrote its serve-log row.
+      const first = await servedItem(sessionId);
+      expect(await ledgerRows(FREE_SERVED)).toBe(1);
+      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit);
+
+      // Re-requesting the served item, then skipping it ("served but not submitted").
+      expect((await nextItem(FREE_SERVED, sessionId)).status).toBe(200);
+      as(FREE_SERVED);
+      const skipped = await request(await app())
+        .post(`/api/practice/sessions/${sessionId}/skip`)
+        .send({
+          sessionItemId: first.id,
+          clientAttemptId: randomUUID(),
+          client_instance_id: CLIENT,
+        });
+      expect(skipped.status).toBe(200);
+      const skippedRow = await pg.query(
+        `SELECT status, answered_at FROM public.practice_session_items WHERE id = $1`,
+        [first.id],
+      );
+      expect(skippedRow.rows[0].status).toBe("skipped");
+      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit);
+
+      // The next question served: still nothing consumed.
+      expect((await nextItem(FREE_SERVED, sessionId)).status).toBe(200);
+      expect(await ledgerRows(FREE_SERVED)).toBe(2);
+      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit);
+
+      // Submitted: one consumed.
+      await answerServed(FREE_SERVED, sessionId);
+      expect(await answeredCount(FREE_SERVED)).toBe(1);
+      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit - 1);
     });
 
-    it("at the limit: remaining 0, the serve reservation is refused, and POST /sessions 402s with the same numbers", async () => {
-      for (let i = 0; i < dailyLimit; i += 1) {
-        const d = await serveOne(FREE_LIMIT);
-        expect(d.allowed).toBe(true);
+    it("an idempotent replay of the same answer counts once", async () => {
+      const started = await startSession(FREE_REPLAY, 2);
+      expect(started.status).toBe(200);
+      const sessionId = String(started.body.sessionId);
+      const item = await servedItem(sessionId);
+      const attempt = randomUUID();
+      const first = await answer(FREE_REPLAY, sessionId, item, attempt);
+      expect(first.status).toBe(200);
+      expect((await readQuota(FREE_REPLAY)).remaining).toBe(dailyLimit - 1);
+      const replay = await answer(FREE_REPLAY, sessionId, item, attempt);
+      expect(replay.status).toBe(200);
+      expect(replay.body.idempotentRetried).toBe(true);
+      const again = await answer(FREE_REPLAY, sessionId, item, attempt);
+      expect(again.status).toBe(200);
+      expect(await answeredCount(FREE_REPLAY)).toBe(1);
+      expect((await readQuota(FREE_REPLAY)).remaining).toBe(dailyLimit - 1);
+    });
+
+    it("limit−1 and limit: the read, the GET /next 402 and the POST /sessions 402 agree", async () => {
+      // Session A holds `limit` items, B five; both started at full quota (serving consumes none).
+      const a = await startSession(FREE_LIMIT, dailyLimit);
+      expect(a.status).toBe(200);
+      expect(a.body.targetQuestionCount).toBe(dailyLimit);
+      const b = await startSession(FREE_LIMIT, 5);
+      expect(b.status).toBe(200);
+      const sessionA = String(a.body.sessionId);
+      const sessionB = String(b.body.sessionId);
+
+      await answerServed(FREE_LIMIT, sessionB); // 1 submitted
+      for (let i = 1; i <= dailyLimit - 2; i += 1) {
+        await answerServed(FREE_LIMIT, sessionA);
+        const served = await nextItem(FREE_LIMIT, sessionA);
+        expect(served.status).toBe(200);
       }
-      const res = await quotaAs(FREE_LIMIT);
-      expect(res.status).toBe(200);
-      const quota = practiceQuotaSchema.parse(res.body);
+      // limit − 1 submitted, one more question of A on screen.
+      expect(await answeredCount(FREE_LIMIT)).toBe(dailyLimit - 1);
+      const almost = await readQuota(FREE_LIMIT);
+      expect(almost).toMatchObject({ unlimited: false, remaining: 1 });
+      // The session-start pre-cap uses the same number: a request for 5 is capped to 1.
+      const capped = await startSession(FREE_LIMIT, 5);
+      expect(capped.status).toBe(200);
+      expect(capped.body.targetQuestionCount).toBe(almost.remaining);
+      const sessionC = String(capped.body.sessionId);
+
+      await answerServed(FREE_LIMIT, sessionA); // limit submitted
+      expect(await answeredCount(FREE_LIMIT)).toBe(dailyLimit);
+      const quota = await readQuota(FREE_LIMIT);
       expect(quota.unlimited).toBe(false);
       expect(quota.remaining).toBe(0);
       expect(quota.limit).toBe(dailyLimit);
 
-      const refused = await serveOne(FREE_LIMIT);
-      expect(refused.allowed).toBe(false);
-      expect(refused.code).toBe("PRACTICE_FREE_DAILY_QUOTA_EXCEEDED");
-      expect(refused.remaining).toBe(quota.remaining);
-      expect(refused.limit).toBe(quota.limit);
-      expect(refused.resetAt).toBe(quota.resetAt);
+      // GET /next on A: 402 with the read's numbers; the refused item goes back to pending.
+      const refusedNext = await nextItem(FREE_LIMIT, sessionA);
+      expect(refusedNext.status).toBe(402);
+      expect(refusedNext.body).toMatchObject({
+        code: "PRACTICE_FREE_DAILY_QUOTA_EXCEEDED",
+        limit: quota.limit,
+        remaining: quota.remaining,
+        resetAt: quota.resetAt,
+      });
+      const pendingA = await pg.query(
+        `SELECT count(*)::int AS n FROM public.practice_session_items
+          WHERE session_id = $1 AND status = 'pending'`,
+        [sessionA],
+      );
+      expect(Number(pendingA.rows[0].n)).toBe(1);
+      expect((await nextItem(FREE_LIMIT, sessionB)).status).toBe(402);
 
-      session.id = FREE_LIMIT;
-      session.role = "student";
-      const start = await request(await app())
-        .post("/api/practice/sessions")
-        .send({ target_question_count: 5 });
+      const start = await startSession(FREE_LIMIT, 5);
       expect(start.status).toBe(402);
       expect(start.body).toMatchObject({
         code: "PRACTICE_FREE_DAILY_QUOTA_EXCEEDED",
@@ -243,6 +476,86 @@ describe.skipIf(!PG_AVAILABLE)(
         remaining: quota.remaining,
         resetAt: quota.resetAt,
       });
+
+      // Doc 02B §13 refuses at session start and next question, not at submit: the question C
+      // put on screen at limit−1 can still be answered. The read then floors at 0.
+      await answerServed(FREE_LIMIT, sessionC);
+      expect(await answeredCount(FREE_LIMIT)).toBe(dailyLimit + 1);
+      expect((await readQuota(FREE_LIMIT)).remaining).toBe(0);
+    });
+
+    it("the day boundary: 23:59 Chicago counts toward that day, 00:00 Chicago resets, UTC days do not", async () => {
+      const started = await startSession(FREE_CLOCK, 4);
+      expect(started.status).toBe(200);
+      const sessionId = String(started.body.sessionId);
+      const ids: string[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        if (i > 0)
+          expect((await nextItem(FREE_CLOCK, sessionId)).status).toBe(200);
+        ids.push((await answerServed(FREE_CLOCK, sessionId)).id);
+      }
+      expect(await answeredCount(FREE_CLOCK)).toBe(4);
+      // Real answered rows, moved to the instants under test (CDT = UTC−5 on 2026-10-02/03).
+      const moves: Array<[string, string]> = [
+        [ids[0]!, "2026-10-02T23:00:00Z"], // 18:00 Chicago Oct 2, UTC Oct 2
+        [ids[1]!, "2026-10-03T03:00:00Z"], // 22:00 Chicago Oct 2, UTC Oct 3
+        [ids[2]!, "2026-10-03T04:59:00Z"], // 23:59 Chicago Oct 2, UTC Oct 3
+        [ids[3]!, "2026-11-02T05:30:00Z"], // 23:30 Chicago Nov 1 (CST), UTC Nov 2
+      ];
+      for (const [id, at] of moves) {
+        await pg.query(
+          `UPDATE public.practice_session_items SET answered_at = $2::timestamptz WHERE id = $1`,
+          [id, at],
+        );
+      }
+
+      // Morning of Chicago Oct 2 (still UTC Oct 2): all three Oct-2 answers count.
+      const morning = await dryRunAt(FREE_CLOCK, "2026-10-02T12:00:00Z");
+      expect(morning.current).toBe(3);
+      expect(morning.remaining).toBe(dailyLimit - 3);
+      // 23:59:30 Chicago Oct 2: the 23:59 answer counts toward Oct 2; reset is 00:00 Chicago.
+      const lastMinute = await dryRunAt(FREE_CLOCK, "2026-10-03T04:59:30Z");
+      expect(lastMinute.current).toBe(3);
+      expect(Date.parse(lastMinute.reset_at)).toBe(
+        Date.parse("2026-10-03T05:00:00Z"),
+      );
+      // 00:00 Chicago Oct 3: reset.
+      const midnight = await dryRunAt(FREE_CLOCK, "2026-10-03T05:00:00Z");
+      expect(midnight.current).toBe(0);
+      expect(midnight.remaining).toBe(dailyLimit);
+      expect(Date.parse(midnight.reset_at)).toBe(
+        Date.parse("2026-10-04T05:00:00Z"),
+      );
+      // 03:30 UTC Oct 3 is 22:30 Chicago Oct 2: the UTC day has turned, the Chicago day has not.
+      const utcTurned = await dryRunAt(FREE_CLOCK, "2026-10-03T03:30:00Z");
+      expect(utcTurned.current).toBe(3);
+      // UTC Oct 3 noon: two of these answers are on UTC Oct 3, none on Chicago Oct 3.
+      const utcSameDay = await dryRunAt(FREE_CLOCK, "2026-10-03T12:00:00Z");
+      expect(utcSameDay.current).toBe(0);
+    });
+
+    it("DST: resetAt is the next local midnight on transition days, and the 25-hour day counts whole", async () => {
+      // Fall back (2026-11-01, CDT→CST): the day began 05:00Z and resets 06:00Z next day.
+      const fallBack = await dryRunAt(FREE_CLOCK, "2026-11-01T12:00:00Z");
+      expect(Date.parse(fallBack.reset_at)).toBe(
+        Date.parse("2026-11-02T06:00:00Z"),
+      );
+      expect(Date.parse(fallBack.reset_at)).toBe(
+        nextChicagoMidnight(new Date("2026-11-01T12:00:00Z")),
+      );
+      // The 23:30 CST answer (05:30Z Nov 2) is still Nov 1 in Chicago; a fixed −5h offset would
+      // put it on Nov 2.
+      expect(fallBack.current).toBe(1);
+      const afterReset = await dryRunAt(FREE_CLOCK, "2026-11-02T06:00:00Z");
+      expect(afterReset.current).toBe(0);
+      // Spring forward (2026-03-08, CST→CDT): the day began 06:00Z and resets 05:00Z next day.
+      const springForward = await dryRunAt(FREE_CLOCK, "2026-03-08T12:00:00Z");
+      expect(Date.parse(springForward.reset_at)).toBe(
+        Date.parse("2026-03-09T05:00:00Z"),
+      );
+      expect(Date.parse(springForward.reset_at)).toBe(
+        nextChicagoMidnight(new Date("2026-03-08T12:00:00Z")),
+      );
     });
 
     it("a paid student: unlimited, also after questions served", async () => {
@@ -267,7 +580,7 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(first.status).toBe(200);
       expect(second.status).toBe(200);
       expect(await ledgerRows(FREE_TWICE)).toBe(before);
-      expect(first.body.remaining).toBe(dailyLimit - 1);
+      expect(first.body.remaining).toBe(dailyLimit);
       expect(second.body).toEqual(first.body);
     });
 
