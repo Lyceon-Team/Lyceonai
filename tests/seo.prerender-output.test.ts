@@ -105,8 +105,8 @@ describe("every prerendered page carries its own head and body (F1)", () => {
       const meta = getPublicMeta(p.path);
       expect(meta, p.path).not.toBeNull();
       const title = attr(p.html, /<title>([^<]+)<\/title>/)
-        ?.replace(/&amp;/g, "&")
-        .replace(/&#39;/g, "'");
+        ?.replace(/&#39;/g, "'")
+        .replace(/&amp;/g, "&");
       expect(title, p.path).toBe(meta?.title);
     }
   });
