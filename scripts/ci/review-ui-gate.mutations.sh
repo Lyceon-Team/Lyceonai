@@ -43,6 +43,10 @@ FILES=(
   "client/src/features/exam/components/DomainSegments.tsx"
   "client/src/features/exam/lib/domain-weights.ts"
   "client/src/features/exam/components/ExamHeader.tsx"
+  "client/src/pages/calendar.tsx"
+  "client/src/features/calendar/components/StudentChrome.tsx"
+  "client/src/features/calendar/components/WeekGrid.tsx"
+  "client/src/features/calendar/api/queries.ts"
 )
 
 snapshot_all() {
@@ -788,6 +792,45 @@ plant "UI54-TY1" "the timed module header drops below 14px" \
   'a = "          className=\"m-0 text-lyc-meta text-[var(--exam-muted)]\""
 assert s.count(a) == 1
 s = s.replace(a, "          className=\"m-0 text-[13px] text-[var(--exam-muted)]\"", 1)'
+
+# ── UI-55: the student calendar (client/src/pages/calendar.ui55.test.tsx) ──
+
+T55="client/src/pages/calendar.ui55.test.tsx"
+
+plant "UI55-TL1" "/calendar put back on the light lock" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/calendar\": app(340, false, \"full\", null),"
+assert s.count(a) == 1
+s = s.replace(a, "  \"/calendar\": app(340, false, \"full\"),", 1)'
+
+plant "UI55-R1" "Regenerate plan calls nothing" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "              onClick={regenerate.onClick}"
+assert s.count(a) == 1
+s = s.replace(a, "              onClick={() => undefined}", 1)'
+
+plant "UI55-M1" "the calendar read drops the inline-denial meta (the modal auto-opens)" \
+  "$T55" \
+  "client/src/features/calendar/api/queries.ts" \
+  'a = "    meta: ENTITLEMENT_DENIAL_INLINE_META,\n    queryKey: calendarKeys.range(from, to, timezone),"
+assert s.count(a) == 1
+s = s.replace(a, "    queryKey: calendarKeys.range(from, to, timezone),", 1)'
+
+plant "UI55-S1" "the week stops starring the test day" \
+  "$T55" \
+  "client/src/features/calendar/components/WeekGrid.tsx" \
+  'a = "          isTestDay={testDate !== null && date === testDate}"
+assert s.count(a) == 1
+s = s.replace(a, "          isTestDay={false}", 1)'
+
+plant "UI55-F1" "a free first save drops the schedule the route requires on create" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "              ? { ...openingSchedule(setupDefaults), ...goal }"
+assert s.count(a) == 1
+s = s.replace(a, "              ? goal", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
