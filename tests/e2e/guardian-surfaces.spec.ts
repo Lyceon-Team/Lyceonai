@@ -24,6 +24,7 @@
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { offCentre, type Check } from "./guardian-harness/centring";
+import { pinBrowserToday } from "./guardian-harness/today";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -76,6 +77,8 @@ async function serve(
   page: Page,
   opts: { students?: "two" | "none" | "with-revoked"; board?: boolean } = {},
 ): Promise<void> {
+  // The fixtures' week is cut on E2E_TODAY; the app's "today" must be the same day.
+  await pinBrowserToday(page);
   // G5-06: the board scenario answers Ada's four Dashboard reads with the boards' values.
   const ada4 = opts.board === true ? F.board : F;
   const roster =
