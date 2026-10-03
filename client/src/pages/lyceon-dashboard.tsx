@@ -367,9 +367,8 @@ export default function LyceonDashboard() {
                     {estimateData.estimate.range.low}-
                     {estimateData.estimate.range.high}
                   </p>
-                  <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-primary-foreground/15 text-primary-foreground">
-                    {estimateData.estimate.confidenceBand} estimate confidence
-                  </div>
+                  {/* No confidence wording (F-51; coding standards §10, §17). The
+                      payload still carries `confidenceBand`; it is not rendered. */}
                   {/* Omitted when the server could not establish the count. A
                       figure on a student-facing surface is a claim; an
                       unverified one does not get made. */}

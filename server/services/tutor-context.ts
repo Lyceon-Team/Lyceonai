@@ -55,6 +55,10 @@ import type {
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { getMemorySummaries, getStructuredFields } from "./tutor-memory";
 import { TutorConfig } from "./tutor-config";
+import {
+  displayOrderFor,
+  studentAnswerForDisplay,
+} from "./tutor-display-letters";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -366,9 +370,9 @@ export async function resolveScope(
  * or missing session item (general mode).
  */
 const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
-  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal";
+  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map";
 const QUESTION_CONTENT_COLUMNS_POST_SUBMIT =
-  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, question_explanation";
+  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map, question_explanation";
 
 export async function resolveQuestionContent(
   studentId: string,
@@ -419,21 +423,22 @@ export async function resolveQuestionContent(
       return null;
     }
 
-    // Parse options from JSONB — expected format: [{key: "A", text: "..."}, ...]
-    const rawOptions = data.question_options as unknown;
-    const options: Array<{ key: string; text: string }> = Array.isArray(
-      rawOptions,
-    )
-      ? (rawOptions as Array<Record<string, unknown>>)
-          .filter(
-            (o): o is Record<string, unknown> & { key: string; text: string } =>
-              typeof o === "object" &&
-              o !== null &&
-              typeof o["key"] === "string" &&
-              typeof o["text"] === "string",
-          )
-          .map((o) => ({ key: o.key, text: o.text }))
-      : [];
+    // Choices in on-screen order with display letters (Brief 13 Step 0b ruling 2, owner
+    // 2026-10-02): `option_order` is the order the student was shown, so LISA's "B" is the
+    // student's second option. The canonical keys never reach the envelope.
+    const display = displayOrderFor(data.question_options, data.option_order);
+    if (!display.resolved) {
+      // A malformed stored order: the order the student saw is unknown, so no question content
+      // rather than choices lettered in an order they may never have seen (fail closed).
+      logger.warn(
+        "TUTOR_CONTEXT",
+        "display_order_malformed",
+        "Stored option_order is not a permutation of the item's options; degrading to null",
+        { sessionItemId },
+      );
+      return null;
+    }
+    const options = display.options;
 
     const itemType =
       (data.question_item_type as string) === "grid_in"
@@ -456,7 +461,13 @@ export async function resolveQuestionContent(
       options,
       item_type: itemType,
       explanation,
-      student_answer: (data.selected_answer as string) ?? null,
+      // The student's answer as a display letter (MCQ) or the typed value (grid-in).
+      student_answer: studentAnswerForDisplay(
+        (data.selected_answer as string | null) ?? null,
+        itemType,
+        data.option_token_map,
+        display,
+      ),
       attempt_number: (data.ordinal as number) ?? 0,
     };
   } catch (err) {

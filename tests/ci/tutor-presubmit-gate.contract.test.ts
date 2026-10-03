@@ -45,9 +45,16 @@ vi.mock("../../server/lib/tutor-orchestrator-client", () => ({
   orchestrateTurn: (...args: unknown[]) => orchestrateTurn(...args),
 }));
 const resolveFullEnvelope = vi.fn();
-vi.mock("../../server/services/tutor-context", () => ({
-  resolveFullEnvelope: (...args: unknown[]) => resolveFullEnvelope(...args),
-}));
+vi.mock("../../server/services/tutor-context", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../../server/services/tutor-context")>();
+  return {
+    // The real table map: the route reads the scoped item's displayed option order through it
+    // to letter the correct answer (Brief 13 Step 0b).
+    sessionTablesFor: actual.sessionTablesFor,
+    resolveFullEnvelope: (...args: unknown[]) => resolveFullEnvelope(...args),
+  };
+});
 vi.mock("../../server/services/tutor-memory", () => ({
   getRecentMessages: vi.fn(async () => []),
 }));

@@ -1034,7 +1034,10 @@ export async function submitReviewAnswer(
     .from("review_session_items")
     .update({
       status: "answered",
-      selected_answer: selectedAnswer,
+      // The canonical key (MCQ) or the typed value (grid-in), like practice, never the served
+      // token (register §8 F-49; Brief 13 Step 0b ruling 4, owner 2026-10-02). The trigger copies
+      // this into review_error_attempts.selected_answer.
+      selected_answer: graded.selectedCanonicalKey,
       is_correct: graded.isCorrect,
       outcome: graded.outcome,
       time_spent_ms: null,

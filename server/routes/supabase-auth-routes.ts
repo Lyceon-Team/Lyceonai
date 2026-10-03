@@ -20,8 +20,11 @@ import {
 import {
   changePasswordWithCurrent,
   consumePasswordRecovery,
+  decidePasswordResetSend,
   hasLivePasswordRecovery,
+  holdPasswordResetResponse,
   hasPasswordIdentity,
+  revokeOtherSessionsAfterRecovery,
 } from "../lib/password-credentials.js";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
@@ -445,10 +448,16 @@ router.post(
 /**
  * POST /api/auth/reset-password
  * Send password reset email
+ *
+ * @spec [Doc 01 §12.1 step 2; Brief 12 ruling 1 (owner, 2026-10-02); register F-46]
+ * | @implemented [2026-10-02]
+ * plain English: throttled per account on the RateLimitLedger (`password_reset_requests_hourly`,
+ * 3 per hour), not by the old in-memory per-IP limiter, which counted per server instance and so
+ * held nothing on serverless. Over the limit, no email is sent and the answer is unchanged, so the
+ * limit cannot be used to learn whether an address has an account (AS3-AS5-RESET-ENUM-001).
  */
 router.post(
   "/reset-password",
-  authRateLimiter,
   doubleCsrfProtection,
   async (req: Request, res: Response) => {
     try {
@@ -482,22 +491,30 @@ router.post(
       // and we hand it our trusted callback as the redirect — the SERVER completes
       // verifyOtp(type=recovery) at /auth/callback, establishes the SSR session, then routes to the
       // safe-listed /update-password page. No admin.generateLink, no app-built email/template.
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`,
-      });
+      // F-46: the per-account ledger decides whether to mail. Every branch below ends in the same
+      // generic 200, held to the same minimum duration, so neither the limit nor an unknown address
+      // is visible to the caller in the body or in the time it takes (SCL-197).
+      const startedAt = Date.now();
+      const decision = await decidePasswordResetSend(email, req.requestId);
+      if (decision === "send") {
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`,
+        });
 
-      // Non-enumeration (AS3-AS5-RESET-ENUM-001): identical generic response whether or not the email
-      // maps to an account; any provider error is logged server-side ONLY, never returned.
-      if (error) {
-        logger.warn(
-          "AUTH",
-          "reset_password_provider_error",
-          "resetPasswordForEmail failed; returning generic response (anti-enumeration)",
-          { requestId: req.requestId, error: error.message },
-        );
+        // Non-enumeration (AS3-AS5-RESET-ENUM-001): identical generic response whether or not the
+        // email maps to an account; any provider error is logged server-side ONLY, never returned.
+        if (error) {
+          logger.warn(
+            "AUTH",
+            "reset_password_provider_error",
+            "resetPasswordForEmail failed; returning generic response (anti-enumeration)",
+            { requestId: req.requestId, error: error.message },
+          );
+        }
       }
 
+      await holdPasswordResetResponse(startedAt);
       res.json({
         success: true,
         message:
@@ -598,6 +615,9 @@ router.post(
       // Single use: spent only once the password is set, so a provider refusal above does not
       // send the student back to their inbox.
       await consumePasswordRecovery(userId, req.requestId);
+      // F-46 / Doc 01 §12.1 step 6: every OTHER session is signed out; this recovery session is
+      // kept. Best-effort, like F-32: a failed revoke is logged and the update still stands.
+      await revokeOtherSessionsAfterRecovery(supabase, req.requestId);
       res.json({ success: true, message: "Password updated successfully" });
     } catch (error: unknown) {
       logger.error(
@@ -695,16 +715,27 @@ router.post(
         return res.status(500).json({ error: "Failed to update password" });
       }
 
-      logger.info("AUTH", "change_password_ok", "Password changed from Settings", {
-        requestId: req.requestId,
+      logger.info(
+        "AUTH",
+        "change_password_ok",
+        "Password changed from Settings",
+        {
+          requestId: req.requestId,
+        },
+      );
+      return res.json({
+        success: true,
+        message: "Password updated successfully",
       });
-      return res.json({ success: true, message: "Password updated successfully" });
     } catch (error: unknown) {
       logger.error(
         "AUTH",
         "change_password_exception",
         "Failed to change password",
-        { requestId: req.requestId, reason: error instanceof Error ? error.message : "unknown" },
+        {
+          requestId: req.requestId,
+          reason: error instanceof Error ? error.message : "unknown",
+        },
       );
       return res.status(500).json({ error: "Failed to update password" });
     }
