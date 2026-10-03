@@ -198,10 +198,12 @@ assert s.count(a) == 1
 s = s.replace(a, "  if (false) {", 1)'
 
 # ── U8 — review is reachable from the global nav ─────────────────────────────────────
+# Re-pointed 2026-10-03 (student UI UI-41): the top-nav `navItems` array became the rail's
+# `RAIL_ITEMS`, so the plant removes the whole Review rail entry.
 plant "U8" "remove the Review entry from the live global nav" \
   "client/src/review-entry-points.test.ts" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "  { href: \"/review\", label: \"Review\", icon: RotateCcw },\n"
+  'a = "  {\n    key: \"review\",\n    label: \"Review\",\n    href: \"/review\",\n    icon: RotateCcw,\n    lock: null,\n    inTabBar: true,\n  },\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
