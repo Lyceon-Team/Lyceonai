@@ -153,8 +153,9 @@ describe("UI-14 — consumers take freshness from the config", () => {
       .filter((s) => s.code.includes("/api/progress/kpis"))
       .map((s) => s.file);
     expect(naming).toEqual([hook!.file]);
-    // Both pages that show KPIs read them through the hook.
-    for (const page of ["pages/lyceon-dashboard.tsx", "pages/practice.tsx"]) {
+    // The page that shows KPIs reads them through the hook. (UI-50, 2026-10-03: Home no
+    // longer shows the KPI tiles; DESIGN.md §4 has none.)
+    for (const page of ["pages/practice.tsx"]) {
       const src = sources.find((s) => s.file.endsWith(`client/src/${page}`));
       expect(src?.code, page).toContain("useProgressKpis");
     }

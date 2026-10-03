@@ -21,6 +21,8 @@ const OPEN_LISA_LOCK = {
 /**
  * The free student has not taken the diagnostic, so Home opens DiagnosticPromptModal on load;
  * "Maybe later" writes this sessionStorage key. Preset so the shell is not under the modal.
+ * Since UI-50 (2026-10-03) Home has no such modal, so the preset is a no-op; it is kept so a
+ * re-run of UI-41 renders the same conditions its committed screenshots were taken under.
  */
 const DIAGNOSTIC_PROMPT_DISMISSED = {
   "lyceon:diagnostic_modal_dismissed": "1",

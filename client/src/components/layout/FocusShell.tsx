@@ -33,6 +33,7 @@ import { SkipLink } from "@/components/common/skip-link";
 import { LYC_FOCUS } from "@/components/ui/button";
 import { hasInAppHistory } from "@/lib/in-app-history";
 import type { ThemeLock } from "@/lib/route-shells";
+import { usePublishThemeLock } from "./theme-lock";
 
 const ContextSlot = createContext<HTMLElement | null>(null);
 
@@ -65,6 +66,8 @@ export function FocusShell({
   themeLock = null,
 }: FocusShellProps): JSX.Element {
   const [slotEl, setSlotEl] = useState<HTMLElement | null>(null);
+  // F-65: portalled overlays take this shell's lock.
+  usePublishThemeLock(themeLock);
 
   const onBack = (event: MouseEvent<HTMLAnchorElement>): void => {
     // wouter calls this only for a plain left click; modified clicks open the href as usual.

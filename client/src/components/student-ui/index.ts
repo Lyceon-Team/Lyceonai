@@ -22,3 +22,5 @@ export { Notice, type NoticeProps, type NoticeTone } from "./Notice";
 // UI-43: the shared Practice/Review filter bar. Consumed by the Wave 5 page rows (UI-51, UI-52).
 export { FilterBar, type FilterBarProps } from "./filter-bar/FilterBar";
 export { EMPTY_FILTER, type FilterBarValue } from "./filter-bar/filter-cascade";
+// UI-50: the 40-tick ruler (DESIGN.md §3 "Ruler progress"): Home's diagnostic card and free quota.
+export { RulerProgress, rulerFill } from "./RulerProgress";

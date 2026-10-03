@@ -61,6 +61,11 @@ interface SheetContentProps
     React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {
   portalClassName?: string;
+  /**
+   * F-65: the shell's theme lock, carried onto the portal wrapper as `data-theme-lock` so a
+   * portalled overlay takes the token set of the page under it. Only with `portalClassName`.
+   */
+  portalThemeLock?: "light" | null;
   overlayClassName?: string;
   closeClassName?: string;
 }
@@ -75,6 +80,7 @@ const SheetContent = React.forwardRef<
       className,
       children,
       portalClassName,
+      portalThemeLock = null,
       overlayClassName,
       closeClassName,
       ...props
@@ -107,7 +113,12 @@ const SheetContent = React.forwardRef<
         {portalClassName === undefined ? (
           body
         ) : (
-          <div className={portalClassName}>{body}</div>
+          <div
+            className={portalClassName}
+            data-theme-lock={portalThemeLock ?? undefined}
+          >
+            {body}
+          </div>
         )}
       </SheetPortal>
     );

@@ -99,9 +99,8 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
     case "/api/billing/status":
       return json(billingBody(role));
     case "/api/progress/projection":
-      // `baseline_only` is the state in which the dashboard mounts PremiumUpgradePrompt,
-      // which is the dashboard's billing-status reader.
-      // Shape per `EstimateResponse` (client/src/lib/projectionApi.ts), baseline_only arm.
+      // Shape per `EstimateResponse` (client/src/lib/projectionApi.ts), baseline_only arm. Home
+      // (UI-50) reads only `estimateStatus` from it.
       return json({
         estimateStatus: "baseline_only",
         cta: true,
@@ -128,6 +127,18 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
       return json({ week: { accuracy: 0, questionsSolved: 0 }, metrics: [] });
     case "/api/guardian/students":
       return json({ students: [] });
+    // Home's other reads (UI-50), in the shapes their routes write (the shared schemas).
+    case "/api/students/00000000-0000-4000-8000-000000000001/projections/sections":
+      return json({ ok: true, sections: [], requestId: "req-test" });
+    case "/api/practice/sessions/open":
+      return json({ sessions: [], maxConcurrentSessions: 3 });
+    case "/api/practice/quota":
+      return json({
+        unlimited: false,
+        limit: 40,
+        remaining: 40,
+        resetAt: "2026-09-02T05:00:00.000Z",
+      });
     default:
       return json({});
   }
@@ -170,32 +181,35 @@ afterEach(() => {
 
 describe("UI-14: one request per endpoint on page load", () => {
   it(
-    "a signed-in /dashboard load requests /api/profile ONCE and /api/billing/status ONCE",
+    "a signed-in /dashboard load requests /api/profile ONCE and every other endpoint at most once",
     async () => {
       role = "student";
       renderAt("/dashboard");
 
-      // Presence first: the dashboard itself mounted, so the counts below are the dashboard's.
-      await waitFor(
-        () =>
-          expect(screen.getByTestId("page-title").textContent).toContain(
-            "Welcome back",
-          ),
-        WAIT,
-      );
+      // Presence first: Home itself mounted (UI-50: the free Home, as this profile carries no
+      // feature-access map) and made its reads, so the counts below are Home's.
       await waitFor(
         () =>
           expect(
-            screen.getByTestId("premium-upgrade-prompt"),
-          ).toBeInTheDocument(),
+            screen.getByRole("heading", { level: 1 }).textContent,
+          ).toContain("Welcome to Lyceon"),
+        WAIT,
+      );
+      await waitFor(
+        () => expect(count("/api/practice/quota")).toBeGreaterThan(0),
         WAIT,
       );
       await settle();
 
-      expect({
-        profile: count("/api/profile"),
-        billingStatus: count("/api/billing/status"),
-      }).toEqual({ profile: 1, billingStatus: 1 });
+      // The profile once. Home no longer reads billing status at all (the pre-redesign
+      // dashboard's PremiumUpgradePrompt did); whichever reader exists asks at most once.
+      expect(count("/api/profile")).toBe(1);
+      expect(count("/api/billing/status")).toBeLessThanOrEqual(1);
+      // And every endpoint the load touched, once.
+      const repeated = [...new Set(requests)].filter(
+        (p) => p.startsWith("/api/") && count(p) > 1,
+      );
+      expect(repeated).toEqual([]);
     },
     TEST_TIMEOUT_MS,
   );

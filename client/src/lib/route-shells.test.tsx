@@ -338,6 +338,20 @@ describe("the table says what DESIGN.md §2 says", () => {
     expect(home("/tests/:sessionId/report")).toBe("/tests");
   });
 
+  it("UI-50: Home follows the device theme; the routes not yet rebuilt stay pinned light (OQ-49)", () => {
+    expect(STUDENT_ROUTE_SHELLS["/dashboard"]).toEqual({
+      shell: "app",
+      panel: 360,
+      footer: true,
+      content: "column",
+      themeLock: null,
+    });
+    const unlocked = (
+      Object.keys(STUDENT_ROUTE_SHELLS) as StudentShellRoute[]
+    ).filter((route) => STUDENT_ROUTE_SHELLS[route].themeLock === null);
+    expect(unlocked).toEqual(["/dashboard"]);
+  });
+
   it("the timed module: no back arrow, light only", () => {
     expect(STUDENT_ROUTE_SHELLS["/tests/:sessionId/:section/:module"]).toEqual({
       shell: "focus",

@@ -10,19 +10,33 @@ function read(relativePath: string): string {
 
 describe("Diagnostic prompting contract", () => {
   /**
-   * Intent: the DiagnosticPromptModal's shouldShow prop is wired to the
-   * exact equality check estimateStatus === "no_baseline" — not a broad
-   * boolean, not a negation, not a comment.
+   * Intent: Home's diagnostic card (UI-50, which replaced the dashboard's DiagnosticPromptModal
+   * and DiagnosticCTAGate on 2026-10-03) shows for exactly `estimateStatus === "no_baseline"`,
+   * and a finished diagnostic (`baseline_pending`, `baseline_only`, `computed`) never shows it.
+   * The stage function is the card's only gate (`FreeHome.tsx` renders the card under
+   * `stage === "diagnostic"`, pinned below).
    *
-   * Would fail if: shouldShow received a different condition, or the modal
-   * were rendered without the no_baseline gate.
+   * Would fail if: the card were offered on any other status, or on an unknown one.
    */
-  it("dashboard wires DiagnosticPromptModal shouldShow to estimateStatus === 'no_baseline'", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    // Structural: shouldShow prop must be wired to the exact equality check
-    const modalGatePattern =
-      /shouldShow=\{estimateData\?\.estimateStatus === "no_baseline"\}/;
-    expect(dashboard).toMatch(modalGatePattern);
+  it("Home shows the diagnostic card for estimateStatus === 'no_baseline' only", async () => {
+    const { freeHomeStage } =
+      await import("../../client/src/components/home/home-model");
+    expect(freeHomeStage("no_baseline")).toBe("diagnostic");
+    for (const status of [
+      "baseline_pending",
+      "baseline_only",
+      "computed",
+      undefined,
+    ] as const) {
+      expect(freeHomeStage(status)).not.toBe("diagnostic");
+    }
+    // Code only: the module comment names the route and the button it describes.
+    const home = read("client/src/components/home/FreeHome.tsx").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(home).toMatch(/stage === "diagnostic" \? \(\s*<section/);
+    expect(home.match(/data-testid="home-diagnostic"/g)?.length).toBe(1);
   });
 
   /**
@@ -114,10 +128,18 @@ describe("Diagnostic prompting contract", () => {
 
   // ── Contract assertions ───────────────────────────────────────────────
 
-  it("dashboard routes CTA exclusively through DiagnosticCTAGate", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    const result = validateExclusiveGateRouting(dashboard);
-    expect(result).toEqual({ pass: true });
+  it("Home never imports or renders the ungated DiagnosticCTACard", () => {
+    // UI-50: Home draws its own diagnostic card (DESIGN.md §4), gated by `freeHomeStage`
+    // above, so it carries no DiagnosticCTAGate; the card module must still not appear.
+    for (const file of [
+      "client/src/pages/lyceon-dashboard.tsx",
+      "client/src/components/home/FreeHome.tsx",
+      "client/src/components/home/PaidHome.tsx",
+    ]) {
+      const source = read(file);
+      expect(source, file).not.toContain(CARD_MODULE_PATH);
+      expect(cardJsxPattern.test(source), file).toBe(false);
+    }
   });
 
   it("practice page routes CTA exclusively through DiagnosticCTAGate", () => {
@@ -133,7 +155,9 @@ describe("Diagnostic prompting contract", () => {
    * bypass variant — un-aliased, aliased (multiline), and substitution.
    */
   it("rejects a page that adds a direct DiagnosticCTACard bypass", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
+    // The practice page is the surface that still routes through the gate (UI-50 moved Home
+    // off it), so the mutations are applied to it.
+    const dashboard = read("client/src/pages/practice.tsx");
 
     // ── Un-aliased bypass: single-line import + direct render ──
     const unaliasedBypass =
@@ -164,7 +188,7 @@ describe("Diagnostic prompting contract", () => {
    * catches it because you can alias the symbol but not the path.
    */
   it("rejects a multiline aliased DiagnosticCTACard import", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
+    const dashboard = read("client/src/pages/practice.tsx");
 
     // Multiline aliased import — the symbol name "DiagnosticCTACard" does
     // NOT appear at the JSX call site; only the alias "UngatedCTA" does.
@@ -186,34 +210,33 @@ describe("Diagnostic prompting contract", () => {
     expect(practice).toContain("/api/progress/projection");
   });
 
-  it("both components reuse useDiagnosticStart (no forked start flow)", () => {
-    const modal = read(
-      "client/src/components/diagnostic/DiagnosticPromptModal.tsx",
+  it("both start surfaces reuse useDiagnosticStart (no forked start flow)", () => {
+    // UI-50: Home's diagnostic card replaced DiagnosticPromptModal (deleted).
+    // Code only: the module comment names the route and the button it describes.
+    const home = read("client/src/components/home/FreeHome.tsx").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
     );
     const card = read("client/src/components/diagnostic/DiagnosticCTACard.tsx");
-    expect(modal).toContain("useDiagnosticStart");
+    expect(home).toContain("useDiagnosticStart");
+    expect(home).not.toContain("/api/practice/diagnostic/sessions");
     expect(card).toContain("useDiagnosticStart");
-  });
-
-  it("modal uses sessionStorage for per-session dismiss (not permanent)", () => {
-    const modal = read(
-      "client/src/components/diagnostic/DiagnosticPromptModal.tsx",
-    );
-    expect(modal).toContain("sessionStorage");
-    expect(modal).not.toContain("localStorage");
   });
 
   it("CTA copy is action-neutral (no 'Start' or 'Resume' in button text)", () => {
     const card = read("client/src/components/diagnostic/DiagnosticCTACard.tsx");
-    const modal = read(
-      "client/src/components/diagnostic/DiagnosticPromptModal.tsx",
-    );
     // Button text should be "Work on Diagnostic" — action-neutral for both
     // fresh (201) and resume (409) cases.
     expect(card).toContain("Work on Diagnostic");
-    expect(modal).toContain("Work on Diagnostic");
     // Must reference projected-score payoff
     expect(card).toContain("projected SAT score");
-    expect(modal).toContain("projected SAT score");
+    // Home's card (UI-50) uses the signed-off prototype's words instead ("Start diagnostic",
+    // Main.dc.html; owner ruling 2026-10-03: copy from the prototype), with the same payoff.
+    // Code only: the module comment names the route and the button it describes.
+    const home = read("client/src/components/home/FreeHome.tsx").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(home).toContain("projected SAT score");
   });
 });

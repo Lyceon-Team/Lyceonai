@@ -25,6 +25,7 @@ import { FullPageLoader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { BareCard } from "@/components/layout/BareCardShell";
 import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
+import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
 
@@ -526,11 +527,15 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <SupabaseAuthProvider>
             <UIProvider>
-              <StudentUpgradeModal>
-                <DeletionGate>
-                  <Router />
-                </DeletionGate>
-              </StudentUpgradeModal>
+              {/* F-65: the shell on screen publishes its theme lock here, above the upgrade
+                  modal, so the modal's portal matches the page under it. */}
+              <ActiveThemeLockProvider>
+                <StudentUpgradeModal>
+                  <DeletionGate>
+                    <Router />
+                  </DeletionGate>
+                </StudentUpgradeModal>
+              </ActiveThemeLockProvider>
             </UIProvider>
           </SupabaseAuthProvider>
         </QueryClientProvider>

@@ -14,6 +14,7 @@
  */
 import type { ReactNode } from "react";
 import type { ThemeLock } from "@/lib/route-shells";
+import { usePublishThemeLock } from "./theme-lock";
 
 export function BareCard({
   children,
@@ -22,6 +23,9 @@ export function BareCard({
   children: ReactNode;
   themeLock?: ThemeLock;
 }): JSX.Element {
+  // F-65: portalled overlays take this shell's lock. Without the app-root provider (the error
+  // screen renders above every provider) this is a no-op.
+  usePublishThemeLock(themeLock);
   return (
     <div
       className="lyc flex min-h-[100dvh] items-center justify-center bg-lyc-paper px-4 py-10"

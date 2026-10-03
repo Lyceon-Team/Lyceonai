@@ -58,13 +58,17 @@ describe("Feedback UX hardening contract", () => {
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
       // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
       // this list; every remaining surface keeps the same assertion.
-      "client/src/pages/lyceon-dashboard.tsx",
+      // UI-50 (2026-10-03): Home leaves this list. Its one paid boundary is the locked mastery
+      // card, which opens the app's one upgrade modal (UI-44; DESIGN.md §3) in place.
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
     ];
     for (const surface of surfaces) {
       expect(read(surface), surface).toContain("PremiumUpgradePrompt");
     }
+    const home = read("client/src/components/home/FreeHome.tsx");
+    expect(home).toContain("<LockedMasteryCard");
+    expect(home).toMatch(/upgrade\.open\("mastery_detail", masteryLock\)/);
   });
 
   /**

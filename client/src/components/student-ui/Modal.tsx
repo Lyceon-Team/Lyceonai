@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useActiveThemeLock } from "@/components/layout/theme-lock";
 import { cn } from "@/lib/utils";
 
 /**
@@ -57,12 +58,15 @@ export function Modal({
   className,
   "data-testid": testId = "student-modal",
 }: ModalProps) {
+  // F-65: the portal takes the lock of the shell on screen (layout/theme-lock.tsx).
+  const themeLock = useActiveThemeLock();
   return (
     <Dialog open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DialogContent
         data-testid={testId}
         portalClassName="lyc contents"
+        portalThemeLock={themeLock}
         overlayClassName={MODAL_OVERLAY_CLASS}
         closeClassName={MODAL_CLOSE_CLASS}
         /* With no description, say so explicitly: Radix otherwise points aria-describedby at

@@ -38,11 +38,11 @@ export type ShellKind = "app" | "focus" | "bare";
 export type RightPanelWidth = 360 | 340 | 320;
 
 /**
- * "light" pins the light token set whatever the device theme. Every route carries it today: the
- * page bodies inside the shells still draw with the app-wide (light) tokens until their Wave 5
- * row rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
- * A Wave 5 row sets its route to null when its page is themed. The timed exam module stays
- * "light" for good (DESIGN.md §2).
+ * "light" pins the light token set whatever the device theme. Every route not yet rebuilt carries
+ * it: those page bodies still draw with the app-wide (light) tokens until their Wave 5 row
+ * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
+ * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50). The
+ * timed exam module stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
 
@@ -87,8 +87,9 @@ function app(
   panel: RightPanelWidth | null,
   footer: boolean,
   content: AppContentLayout = "column",
+  themeLock: ThemeLock = "light",
 ): AppShellSpec {
-  return { shell: "app", panel, footer, content, themeLock: "light" };
+  return { shell: "app", panel, footer, content, themeLock };
 }
 
 function focus(
@@ -109,7 +110,9 @@ const BARE: BareShellSpec = { shell: "bare", themeLock: "light" };
 
 export const STUDENT_ROUTE_SHELLS = {
   // App shell (DESIGN.md §2).
-  "/dashboard": app(360, true),
+  // UI-50 (2026-10-03): Home is rebuilt on the student tokens only, so it follows the device
+  // theme (light and dark); the first route off the OQ-49 light lock.
+  "/dashboard": app(360, true, "column", null),
   "/practice": app(360, true),
   "/practice/topics": app(null, false),
   "/review": app(360, true),

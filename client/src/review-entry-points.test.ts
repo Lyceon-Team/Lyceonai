@@ -7,7 +7,7 @@
  *
  * Plants, per brief R4 §3:
  *   U8 — remove the nav entry (`{ href: "/review", … }` from `layout/app-shell.tsx`'s
- *        `RAIL_ITEMS`, or the dashboard tile) and the matching assertion goes red.
+ *        `RAIL_ITEMS`, or Home's review links) and the matching assertion goes red.
  *   U9 — remove `"/review"` from `RETURN_PATH_ALLOWLIST` and both halves go red: the
  *        allowlist membership, and `sanitizeReturnPath("/review")`.
  *
@@ -52,13 +52,18 @@ describe("U8 — review is reachable from normal navigation", () => {
     expect(railBlock).toContain("/practice");
   });
 
-  it("the dashboard carries a Review tile pointing at /review", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    // The claim is "a tile links to /review", not "the tag is spelled this way on one
-    // line". #829 moved the className onto the same tag, which broke the literal without
-    // touching reachability.
-    expect(dashboard).toMatch(/<Link\b[^>]*?href="\/review"/);
-    expect(dashboard).toContain("Review Queue");
+  it("Home links to /review on both plans", () => {
+    // UI-50 (2026-10-03): the pre-redesign "Review Queue" tile is gone. The new Home reaches
+    // review from the free Home's "Go to review" and the paid panel's "See all sessions"
+    // (Main.dc.html). The claim is "a link goes to /review", not the tag's line layout (#829).
+    const free = read("client/src/components/home/FreeHome.tsx");
+    expect(free).toMatch(
+      /<Link\b[^>]*?href="\/review"[^>]*>\s*Go to review\s*</,
+    );
+    const panel = read("client/src/components/home/HomePanel.tsx");
+    expect(panel).toMatch(
+      /<Link\b[^>]*?href="\/review"[^>]*>\s*See all sessions\s*</,
+    );
   });
 
   it("practice's landing carries the secondary action back to /review", () => {

@@ -46,6 +46,17 @@ export type Shot = {
   /** A selector the built page must show before the screenshot (beyond network idle). */
   waitFor?: Record<Viewport, string>;
   steps?: readonly Step[];
+  /**
+   * A click path's proof: the pathname the page must land on after `steps` (a RegExp source).
+   * The capture fails if it lands anywhere else, and the index records the expectation next to
+   * the path it saw.
+   */
+  expectPath?: string;
+  /**
+   * Shoot the whole document instead of the viewport. On a phone the right panel stacks under
+   * the main column (DESIGN.md §2 Mobile), so only a full-page shot shows it.
+   */
+  fullPage?: boolean;
   prototype: PrototypePairing;
 };
 

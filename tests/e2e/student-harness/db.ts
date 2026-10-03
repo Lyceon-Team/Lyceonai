@@ -17,7 +17,13 @@ import type { Client } from "pg";
 import { buildHarnessDb } from "../exam-harness/db";
 import { PERSONAS } from "./personas";
 
-export const STUDENT_HARNESS_DB = "student_e2e_harness";
+/**
+ * The throwaway database's name. `STUDENT_HARNESS_DB` overrides it so two page groups can be
+ * captured at once (with their own `HARNESS_PORT` and `STUDENT_HARNESS_VITE_PORT`) without one
+ * run dropping the other's database.
+ */
+export const STUDENT_HARNESS_DB =
+  process.env.STUDENT_HARNESS_DB ?? "student_e2e_harness";
 
 export async function buildStudentHarnessDb(): Promise<Client> {
   const pg = await buildHarnessDb(STUDENT_HARNESS_DB);

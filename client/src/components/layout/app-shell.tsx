@@ -80,6 +80,7 @@ import type {
 } from "@/lib/route-shells";
 import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
 import { HELP_PATH, LegalFooter } from "./LegalFooter";
+import { usePublishThemeLock } from "./theme-lock";
 
 /** What a locked rail item does: open the upgrade modal in place, or navigate (ruling 3). */
 type LockBehaviour = "modal" | "navigate";
@@ -291,6 +292,8 @@ export function AppShell({
   const access = useFeatureAccess();
   const { signOut, isSigningOut } = useHeaderSignOut();
   const [panelEl, setPanelEl] = useState<HTMLElement | null>(null);
+  // F-65: portalled overlays (the upgrade modal) take this shell's lock.
+  usePublishThemeLock(themeLock);
 
   const accountMenu = (
     <HeaderUserMenu

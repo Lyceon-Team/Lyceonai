@@ -15,6 +15,13 @@ Needs the local Postgres (`localhost:5432`, `postgres`/`postgres`; override with
 not installed, the script falls back to `/opt/pw-browsers/chromium`; `E2E_CHROMIUM=<path>` names
 one explicitly. It never runs `playwright install`.
 
+Two groups at once (parallel page PRs): give each run its own database and ports, e.g.
+`STUDENT_HARNESS_DB=student_e2e_ui50 HARNESS_PORT=5066 STUDENT_HARNESS_VITE_PORT=5184`.
+
+A shot may name `expectPath` (a pathname pattern): its `steps` are then a click path, and the
+capture fails unless the page lands on a matching path (UI-50's "Start today's plan" and
+"Start diagnostic").
+
 Output: `docs/plans/student-ui/evidence/wave5/<group>/` — one PNG per built shot
 (`<shot>--<desktop|mobile>--<light|dark>--built.png`), one per prototype state
 (`proto--<Screen>--<plan>--<theme>[--clicked].png`), and `index.md` with a built | prototype

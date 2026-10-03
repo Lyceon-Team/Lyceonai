@@ -54,13 +54,24 @@ describe("Premium CTA wiring contract", () => {
    * that could not work for a guardian. The assertion now pins the resolver.
    */
   it("resolves the billing destination from the role, never from a literal", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
     const mastery = read("client/src/pages/mastery.tsx");
-
-    expect(dashboard).toContain("resolveCtaDestination");
     expect(mastery).toContain("PremiumUpgradePrompt");
-    expect(dashboard).not.toContain("startSubscriptionCheckout('monthly')");
     expect(mastery).not.toContain("startSubscriptionCheckout('monthly')");
+
+    // UI-50 (2026-10-03): Home names no billing destination at all. Its locked card opens the
+    // one upgrade modal, whose "See plans" goes to UPGRADE_PLANS_DESTINATION (OQ-39(e)).
+    for (const file of [
+      "client/src/pages/lyceon-dashboard.tsx",
+      "client/src/components/home/FreeHome.tsx",
+      "client/src/components/home/PaidHome.tsx",
+    ]) {
+      const source = read(file);
+      expect(source, file).not.toContain("/upgrade");
+      expect(source, file).not.toContain("startSubscriptionCheckout");
+    }
+    expect(read("client/src/components/home/FreeHome.tsx")).toContain(
+      "useUpgradeModal",
+    );
   });
 
   it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {

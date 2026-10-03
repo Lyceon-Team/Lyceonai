@@ -74,6 +74,8 @@ type BuiltResult = {
   finalPath: string;
   htmlTheme: string | null;
   themeLock: string | null;
+  /** CSS px the page is wider than the viewport (0 when nothing overflows horizontally). */
+  overflowX: number;
   skipped?: string;
 };
 
@@ -424,9 +426,24 @@ async function shootBuilt(
       await page.locator(selector).first().click();
       await settle(page);
     }
-    await page.screenshot({ path: path.join(outDir, file), fullPage: false });
+    if (shot.expectPath !== undefined) {
+      const expected = new RegExp(shot.expectPath);
+      await page.waitForURL((url) => expected.test(url.pathname), {
+        timeout: 20_000,
+      });
+      await settle(page);
+    }
+    await page.screenshot({
+      path: path.join(outDir, file),
+      fullPage: shot.fullPage === true,
+    });
     const dom = await page.evaluate(() => ({
       htmlTheme: document.documentElement.getAttribute("data-theme"),
+      overflowX: Math.max(
+        0,
+        document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
       themeLock:
         document
           .querySelector("[data-theme-lock]")
@@ -540,7 +557,7 @@ function writeIndex(
       "routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.",
     "",
     "Conditions, read before comparing:",
-    "- Viewport screenshots (not full page): desktop 1440x900, phone 390x844.",
+    "- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844.",
     "- The prototypes are a fixed 1440x900 canvas with no phone layout; phone rows show the desktop prototype.",
     "- Dark is requested through the app's own per-device setting; the theme column records what the page rendered.",
     "- No external requests: the built app's Google Fonts (Inter, Poppins) are blocked, so legacy page bodies fall back to system faces; " +
@@ -561,6 +578,12 @@ function writeIndex(
       );
     for (const step of shot.steps ?? [])
       lines.push(`Step: click \`${JSON.stringify(step.click)}\`.`);
+    if (shot.fullPage === true)
+      lines.push("Full page: the whole document, not just the viewport.");
+    if (shot.expectPath !== undefined)
+      lines.push(
+        `Click path: must land on a path matching \`${shot.expectPath}\` (the capture fails otherwise); the path it landed on is under each built shot.`,
+      );
     if (shot.prototype.kind === "none")
       lines.push(`Prototype: none. ${shot.prototype.reason}`);
     else
@@ -575,7 +598,7 @@ function writeIndex(
     for (const row of rows.filter((r) => r.shot.id === shot.id)) {
       const built = row.built.skipped
         ? `skipped: ${row.built.skipped}`
-        : `![${shot.id} ${row.viewport} ${row.theme}](${row.built.file})<br>\`${row.built.finalPath}\`, ${sizeOf(outDir, row.built.file)}`;
+        : `![${shot.id} ${row.viewport} ${row.theme}](${row.built.file})<br>\`${row.built.finalPath}\`, ${sizeOf(outDir, row.built.file)}, horizontal overflow ${row.built.overflowX}px`;
       let proto: string;
       if ("none" in row.proto) proto = row.proto.none;
       else {
@@ -667,7 +690,7 @@ async function main(): Promise<void> {
                 };
           rows.push({ shot, viewport, theme, built, proto });
           log(
-            `capture: ${shot.id} ${viewport} ${theme} -> ${built.file} (${built.finalPath}, html data-theme=${String(built.htmlTheme)}, lock=${String(built.themeLock)})` +
+            `capture: ${shot.id} ${viewport} ${theme} -> ${built.file} (${built.finalPath}, html data-theme=${String(built.htmlTheme)}, lock=${String(built.themeLock)}, overflow-x=${built.overflowX}px)` +
               ("file" in proto ? ` | ${proto.file}` : " | no prototype"),
           );
         }
