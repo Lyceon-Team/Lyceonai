@@ -137,34 +137,26 @@ describe("no support/privacy literal outside the shared constant (Part B)", () =
   });
 });
 
-describe("per-surface mapping (Part B): privacy copy → PRIVACY_EMAIL, everything else → SUPPORT_EMAIL", () => {
-  it("the rendered SEO pages carry the address their surface owns, and never the other one", async () => {
+describe("public pages carry only mailboxes that exist", () => {
+  /*
+    This used to read the hand-written page copy in server/seo-content.ts, which said
+    "privacy copy → PRIVACY_EMAIL". That copy never reached production (the Express SSR path it fed
+    was unreachable on Vercel) and was deleted in SEO F4 (2026-10-03). The prerendered pages render
+    the published documents themselves, and Privacy Policy v4 (legal/privacy-policy/v4/en.md) names
+    support@ for privacy requests, never privacy@ — so the per-surface mapping is not asserted here;
+    it is reported to the owner as a finding. What remains true of every public page is asserted.
+  */
+  it("every prerendered page names the support mailbox where it names one, and never a mailbox that does not exist", async () => {
     vi.resetModules();
-    const { getPublicPageSeo } = await import("../../server/seo-content");
-    const { SUPPORT_EMAIL, PRIVACY_EMAIL } =
-      await import("../../packages/shared/src/support-contact");
-    const html = (route: string): string => {
-      const page = getPublicPageSeo(route);
-      expect(page, `no SEO page for ${route}`).not.toBeNull();
-      return JSON.stringify(page);
-    };
-    // Privacy Policy: data-rights and contact both go to privacy@, never support@.
-    const privacy = html("/legal/privacy-policy");
-    expect(privacy).toContain(PRIVACY_EMAIL);
-    expect(privacy).not.toContain(SUPPORT_EMAIL);
-    // Terms of Use and the Legal & Trust hub: support@, never privacy@.
-    for (const route of ["/legal/student-terms", "/legal"]) {
-      const page = html(route);
-      expect(page, route).toContain(SUPPORT_EMAIL);
-      expect(page, route).not.toContain(PRIVACY_EMAIL);
+    const { getPrerenderedSite } = await import("../lib/prerendered-site");
+    const { SUPPORT_EMAIL } = await import("../../packages/shared/src/support-contact");
+    const site = await getPrerenderedSite();
+    const legal = site.pages.filter((p) => p.path.startsWith("/legal"));
+    // Presence before absence: the pages are real and do carry an address.
+    expect(legal.length).toBeGreaterThan(5);
+    for (const page of legal) expect(page.html, page.path).toContain(SUPPORT_EMAIL);
+    for (const page of site.pages) {
+      expect(page.html, page.path).not.toMatch(/(legal|hello|contact)@lyceon\.ai/);
     }
-    // No page anywhere still points at the mailboxes that do not exist.
-    for (const route of [
-      "/legal/privacy-policy",
-      "/legal/student-terms",
-      "/legal",
-    ]) {
-      expect(html(route)).not.toMatch(/(legal|hello|contact)@lyceon\\.ai/);
-    }
-  });
+  }, 60_000);
 });

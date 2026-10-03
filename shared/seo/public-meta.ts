@@ -17,6 +17,15 @@ export interface PublicMeta {
   jsonLd?: Record<string, unknown>[];
 }
 
+/**
+ * Head for the static 404 page (F2). No canonical: a not-found response names no URL as
+ * its own, and `noindex` keeps it out of every index whatever the status code says.
+ */
+export const NOT_FOUND_META = {
+  title: "Page not found | Lyceon",
+  description: "The page you were looking for does not exist.",
+} as const;
+
 export interface LegalMeta {
   title: string;
   description: string;
@@ -24,29 +33,49 @@ export interface LegalMeta {
   ogImage?: string;
 }
 
-const homeFaqs = [
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §5 F1 — "FAQ schema = visible FAQ"] |
+ * @implemented [2026-10-03] | plain English: each FAQ list below is the ONE copy of that FAQ.
+ * The page renders it and the FAQPage JSON-LD is built from it, so what search engines quote
+ * is exactly what a visitor reads. Before this, the homepage JSON-LD carried four questions
+ * the page never showed, and the Digital SAT page rendered a free-tier answer that the
+ * metadata had already corrected (owner ruling 2026-09-03, see "What is free vs paid?").
+ *
+ * An answer may hold several paragraphs, separated by a blank line ("\n\n"): the page renders
+ * one <p> per paragraph (`faqParagraphs`), and the JSON-LD joins them with a space.
+ *
+ * Copy is carried over unchanged from what the pages rendered on 2026-10-03; claim
+ * corrections are F6, not this change.
+ */
+export type FaqItem = { question: string; answer: string };
+
+export function faqParagraphs(answer: string): string[] {
+  return answer.split("\n\n");
+}
+
+export const HOME_FAQS: readonly FaqItem[] = [
   {
-    question: "Is this just ChatGPT with a different logo?",
+    question: "How is tutor chat different from a generic chatbot?",
     answer:
-      "No. The tutor is grounded in SAT-style questions and explanations. It retrieves specific problems and walks you through them step by step instead of giving generic answers.",
+      "Tutor chat is built around SAT-style practice context, not open-ended generic chat.\n\nExplanations focus on reasoning steps, common errors, and what to do next.",
   },
   {
-    question: "Do I need a credit card to start?",
-    answer: "No. You can start a free SAT practice session without entering any payment details.",
+    question: "Do I need to add a credit card to start?",
+    answer: "No. The free tier is available without entering card details.",
   },
   {
-    question: "Can parents and tutors see progress?",
+    question: "What can guardians see?",
     answer:
-      "Yes. You can share a read-only dashboard view with parents, tutors, or counselors to show progress and remaining weak spots.",
+      "Guardians can link student accounts and view progress summaries. Student summary and calendar views are entitlement-gated for paid guardian access.",
   },
   {
-    question: "Does this replace full-length practice tests?",
+    question: "Do you include full-length exams and daily practice?",
     answer:
-      "No. Full-length tests are still essential. Tutor guidance makes your practice between those tests more targeted and efficient.",
+      "Yes. Lyceon supports both: daily adaptive practice and full-length timed SAT exams.\n\nUse daily sessions to improve weak areas, then validate progress with full-length exam runs.",
   },
 ];
 
-const digitalSatFaqs = [
+export const DIGITAL_SAT_FAQS: readonly FaqItem[] = [
   {
     question: "What is the Digital SAT?",
     answer:
@@ -98,7 +127,7 @@ const digitalSatFaqs = [
   },
 ];
 
-const digitalSatMathFaqs = [
+export const DIGITAL_SAT_MATH_FAQS: readonly FaqItem[] = [
   {
     question: "What math topics are on the Digital SAT?",
     answer:
@@ -125,7 +154,7 @@ const digitalSatMathFaqs = [
   },
 ];
 
-const digitalSatReadingFaqs = [
+export const DIGITAL_SAT_READING_WRITING_FAQS: readonly FaqItem[] = [
   {
     question: "What is tested on SAT Reading and Writing?",
     answer:
@@ -188,6 +217,30 @@ export const LEGAL_META: Record<string, LegalMeta> = {
     canonical: `${BASE_URL}/legal/trust-and-safety`,
     ogImage: DEFAULT_OG_IMAGE,
   },
+  // F1 (2026-10-03): the three documents published in `legal/` that had no metadata.
+  // Descriptions are each document's own manifest description, unchanged.
+  // `tests/seo.prerender-output.test.ts` fails if a `legal/` manifest has no entry here.
+  "billing-terms": {
+    title: "Billing Terms",
+    description:
+      "What you agree to at checkout: what you are buying, the price and Billing Period, who may subscribe, and how to cancel.",
+    canonical: `${BASE_URL}/legal/billing-terms`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
+  "refund-policy": {
+    title: "Refund Policy",
+    description:
+      "Refund windows for first charges and for renewals, how to request one, and what happens after.",
+    canonical: `${BASE_URL}/legal/refund-policy`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
+  "subscription-auto-renewal-notice": {
+    title: "Subscription and Auto-Renewal Notice",
+    description:
+      "How automatic renewal works, the reminders we send before each charge, price changes, and how to cancel.",
+    canonical: `${BASE_URL}/legal/subscription-auto-renewal-notice`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
 };
 
 const blogPosts = BLOG_POSTS.map((post) => ({
@@ -200,12 +253,13 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     title: "Lyceon | Study Smarter, Score Higher",
     description:
       "Digital SAT prep with adaptive practice, full-length exams, progress tracking, tutor guidance, and guardian visibility.",
-    canonical: BASE_URL,
+    // The root URL with its slash: the exact URL the sitemap lists and the browser requests.
+    canonical: `${BASE_URL}/`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
       organizationJsonLd,
       websiteJsonLd,
-      createFaqJsonLd(homeFaqs),
+      createFaqJsonLd(HOME_FAQS),
     ],
   },
   "/digital-sat": {
@@ -221,7 +275,7 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
         { name: "Home", url: BASE_URL },
         { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
       ]),
-      createFaqJsonLd(digitalSatFaqs),
+      createFaqJsonLd(DIGITAL_SAT_FAQS),
     ],
   },
   "/digital-sat/math": {
@@ -236,7 +290,7 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
         { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
         { name: "Math", url: `${BASE_URL}/digital-sat/math` },
       ]),
-      createFaqJsonLd(digitalSatMathFaqs),
+      createFaqJsonLd(DIGITAL_SAT_MATH_FAQS),
     ],
   },
   "/digital-sat/reading-writing": {
@@ -251,7 +305,7 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
         { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
         { name: "Reading & Writing", url: `${BASE_URL}/digital-sat/reading-writing` },
       ]),
-      createFaqJsonLd(digitalSatReadingFaqs),
+      createFaqJsonLd(DIGITAL_SAT_READING_WRITING_FAQS),
     ],
   },
   "/blog": {
@@ -304,6 +358,20 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
   },
 };
 
+// Every other published legal document gets the head the removed Express fallback gave it
+// (`${title} | Lyceon`, its own description, self-canonical). The two above keep their
+// existing titles.
+for (const [slug, meta] of Object.entries(LEGAL_META)) {
+  const path = `/legal/${slug}`;
+  if (PUBLIC_META[path]) continue;
+  PUBLIC_META[path] = {
+    title: `${meta.title} | Lyceon`,
+    description: meta.description,
+    canonical: meta.canonical,
+    ogImage: DEFAULT_OG_IMAGE,
+  };
+}
+
 for (const post of blogPosts) {
   PUBLIC_META[`/blog/${post.slug}`] = {
     title: `${post.title} | Lyceon`,
@@ -329,5 +397,6 @@ for (const post of blogPosts) {
 }
 
 export function getPublicMeta(path: string): PublicMeta | null {
-  return PUBLIC_META[path] || null;
+  // Own keys only: a bare index would resolve `constructor` & co. from Object.prototype.
+  return Object.prototype.hasOwnProperty.call(PUBLIC_META, path) ? (PUBLIC_META[path] ?? null) : null;
 }
