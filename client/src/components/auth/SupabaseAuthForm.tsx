@@ -8,7 +8,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -533,9 +532,6 @@ export function SupabaseAuthForm() {
           </>
         )}
       </CardContent>
-      <CardFooter className="flex justify-center text-sm text-muted-foreground">
-        Authentication and legal consent are handled in one standard flow.
-      </CardFooter>
     </Card>
   );
 }

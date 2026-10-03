@@ -17,8 +17,8 @@
  * usage: node scripts/ci/page-csp-built-hash-gate.mjs [built-page.html] [vercel.json]
  * (defaults: EVERY .html page under dist/public, vercel.json). The selftest passes mutated copies.
  *
- * SEO Wave 1A (2026-10-03, #1054): the public pages are now prerendered, so dist/public holds 22
- * pages plus 404.html and app.html (the SPA shell) — each a copy of the built template carrying the
+ * SEO Wave 1A (2026-10-03, #1054): the public pages are now prerendered, so dist/public holds 21 (22
+ * until Wave 1B F14 removed /trust/evidence) pages plus 404.html and app.html (the SPA shell) — each a copy of the built template carrying the
  * same theme script. By default every one of them is checked, not only index.html. And a
  * prerendered page carries JSON-LD in <script type="application/ld+json">: a data block, which the
  * HTML spec never executes, so CSP script-src never evaluates it and it needs no hash. Only

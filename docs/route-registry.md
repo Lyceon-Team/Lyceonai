@@ -33,7 +33,6 @@ This document records, for those routes:
 | `/blog` | public | free | Blog | N/A (static) | ACTIVE |
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
 | `/trust` | public | free | TrustHub | N/A (static SEO) | ACTIVE |
-| `/trust/evidence` | public | free | TrustEvidence | N/A (static SEO) | ACTIVE |
 | `/tutor` | public | free | TutorPage | N/A (static SEO) | ACTIVE |
 | `/legal` | public | free | LegalHub | N/A (static content) | ACTIVE |
 | `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
@@ -89,7 +88,6 @@ This document records, for those routes:
 - `/blog`
 - `/blog/:slug` (currently: `is-digital-sat-harder`, `digital-sat-scoring-explained`, `quick-sat-study-routine`, `sat-question-bank-practice`, `common-sat-math-algebra-mistakes`)
 - `/trust`
-- `/trust/evidence`
 - `/legal`
 - `/legal/:slug` (currently: `privacy-policy`, `student-terms`, `honor-code`, `community-guidelines`, `parent-guardian-terms`, `trust-and-safety`)
 

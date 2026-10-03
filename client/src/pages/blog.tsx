@@ -24,7 +24,7 @@ export default function BlogPage() {
 
         <Hero
           title="SAT Prep Blog"
-          subtitle="Tips, strategies, and insights to help you master the Digital SAT."
+          subtitle="SAT study tips and guides for the Digital SAT."
         />
 
         <div className="flex flex-wrap gap-2 mb-12">
@@ -85,8 +85,8 @@ export default function BlogPage() {
               Ready to Start Practicing?
             </h2>
             <p className="text-muted-foreground mb-6">
-              Put these tips into action with adaptive SAT practice and guided
-              review.
+              Put these tips into practice with SAT-style questions and worked
+              explanations.
             </p>
             <Link
               href="/digital-sat"
