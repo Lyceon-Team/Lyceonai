@@ -1,4 +1,3 @@
-import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -187,7 +186,7 @@ export default function MasteryPage() {
   const allUnmeasured = domains.every((d) => d.levelKey === "unmeasured");
 
   return (
-    <AppShell showFooter>
+    <>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
         <header className="mb-8">
           <div className="flex items-center gap-3 mb-3">
@@ -268,6 +267,6 @@ export default function MasteryPage() {
           </>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

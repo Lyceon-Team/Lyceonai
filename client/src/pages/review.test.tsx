@@ -23,12 +23,6 @@ import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/layout/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="app-shell">{children}</div>
-  ),
-}));
-
 const navMock = vi.hoisted(() => ({
   location: "/review",
   setLocation: vi.fn(),
@@ -62,8 +56,9 @@ const topicsMock = vi.hoisted(() => ({
     },
   },
 }));
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => topicsMock.value,
+// UI-51: the page reads the taxonomy through the one hook (`usePracticeTopics`).
+vi.mock("@/hooks/usePracticeTopics", () => ({
+  usePracticeTopics: () => topicsMock.value,
 }));
 
 const hooksMock = vi.hoisted(() => ({

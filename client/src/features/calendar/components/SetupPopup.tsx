@@ -35,8 +35,12 @@
  * the upgrade CTA. Either way the answers are already saved — `PUT /api/calendar/profile`
  * runs before the entitlement gate — which is why the panel can say so truthfully.
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
+import {
+  buildEscapeKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 import { addDays, daysBetween } from "../lib/dates";
 import {
   EXAM_FREQUENCIES,
@@ -333,13 +337,10 @@ export function SetupPopup({
 
   // Escape dismisses. A popup that traps a student who does not want it is a blocker
   // wearing a different shape.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onDismiss();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismiss]);
+  // @spec [student-UI register §2 Keyboard ("Esc closes the open modal or sheet"), UI-45]
+  // | @implemented [2026-10-03] | plain English: through the one shared hook; the popup is
+  // not a Radix Dialog, so nothing else closes it on Esc.
+  useKeyboardShortcuts(buildEscapeKeymap(onDismiss));
 
   function answers(): SetupAnswers {
     return {

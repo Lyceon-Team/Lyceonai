@@ -38,8 +38,12 @@ const RW_OPTIONS = [
   "It compares two explanations and then rejects both of them.",
 ];
 
-export async function buildHarnessDb(): Promise<Client> {
-  const pg = await bootstrapPgDatabase(HARNESS_DB);
+/**
+ * @implemented [2026-10-03] (student screenshot harness): `dbName` lets the student harness
+ * build the same database under its own name, so running one harness never drops the other's.
+ */
+export async function buildHarnessDb(dbName: string = HARNESS_DB): Promise<Client> {
+  const pg = await bootstrapPgDatabase(dbName);
   await pg.query(fs.readFileSync(path.resolve(here, "../../../scripts/ci/lib/exam-form-fixture.sql"), "utf-8"));
   for (const form of FORMS) {
     await pg.query(`SELECT pg_temp.exam_fixture_make_form($1, $2, 20, 15)`, [form.id, form.tag]);

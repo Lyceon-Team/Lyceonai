@@ -2,8 +2,14 @@ import { useMemo } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
-import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -124,7 +130,7 @@ export default function UpgradePage() {
   });
 
   return (
-    <AppShell showFooter>
+    <>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-6xl">
         <div className="mb-8">
           <Button asChild variant="ghost" className="mb-4">
@@ -133,12 +139,15 @@ export default function UpgradePage() {
               Back to Dashboard
             </Link>
           </Button>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Membership</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">
+            Membership
+          </p>
           <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-2">
             Choose Your Lyceon Plan
           </h1>
           <p className="text-muted-foreground">
-            One secure checkout flow for monthly, quarterly, and yearly subscriptions.
+            One secure checkout flow for monthly, quarterly, and yearly
+            subscriptions.
           </p>
         </div>
 
@@ -178,7 +187,9 @@ export default function UpgradePage() {
             return (
               <Card
                 key={plan.plan}
-                className={isBestValue ? "border-primary shadow-sm" : "border-border/60"}
+                className={
+                  isBestValue ? "border-primary shadow-sm" : "border-border/60"
+                }
                 data-testid={planCardTestIds[plan.plan]}
               >
                 <CardHeader>
@@ -269,6 +280,6 @@ export default function UpgradePage() {
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

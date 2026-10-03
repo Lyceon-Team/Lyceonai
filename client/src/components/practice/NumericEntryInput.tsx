@@ -12,7 +12,14 @@ export type NumericEntryInputProps = {
   explanation?: string | null;
 };
 
-const ALLOWED_CHARS = /^[0-9./\-]*$/;
+/**
+ * The grid-in answer box's id. The shared keyboard hook (hooks/useKeyboardShortcuts) lets
+ * Enter through from this one text field — student-UI register §2 Keyboard: "for grid-in,
+ * Enter submits the typed answer". | @implemented [2026-10-03]
+ */
+export const GRID_IN_INPUT_ID = "grid-in-answer";
+
+const ALLOWED_CHARS = /^[0-9./-]*$/;
 const GRID_IN_PATTERN = /^-?(\d+(\.\d*)?|\d*\.\d+|\d+\/\d+)$/;
 
 export function isValidGridInFormat(value: string): boolean {
@@ -51,13 +58,13 @@ export function NumericEntryInput({
   return (
     <div className="space-y-3">
       <label
-        htmlFor="grid-in-answer"
+        htmlFor={GRID_IN_INPUT_ID}
         className="text-sm font-medium text-slate-700"
       >
         Enter your answer:
       </label>
       <Input
-        id="grid-in-answer"
+        id={GRID_IN_INPUT_ID}
         aria-label="Enter your answer"
         type="text"
         inputMode="decimal"

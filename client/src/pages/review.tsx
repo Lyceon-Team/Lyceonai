@@ -15,7 +15,7 @@
  * (`review-pool.ts:481-492`), with no section→domain→skill nesting. The hierarchy comes
  * from `GET /api/practice/topics`, which is a reference route mounted outside the
  * practice router (`server/index.ts:600-605`) and is engine-neutral — it is the same
- * taxonomy practice's own landing uses (`practice.tsx:153-162`). Structure from the
+ * taxonomy practice's own landing uses (`hooks/usePracticeTopics.ts`). Structure from the
  * taxonomy, counts joined by name from the facets. No server change was needed for this,
  * which is why R4 stayed client-only.
  *
@@ -36,8 +36,7 @@
 
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { QUERY_FRESHNESS } from "@/lib/query-freshness";
+import { usePracticeTopics } from "@/hooks/usePracticeTopics";
 import {
   AlertCircle,
   BookOpen,
@@ -49,7 +48,6 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -86,20 +84,13 @@ import {
   sourceFiltersLine,
   sourceHeadline,
 } from "@/lib/review-session-picker";
-import {
-  normalizePracticeTopicDomains,
-  type RawPracticeTopicDomain,
-} from "@/lib/practice-topic-taxonomy";
+import { normalizePracticeTopicDomains } from "@/lib/practice-topic-taxonomy";
 import {
   isMathSection,
   SECTION_LABEL_MATH,
   SECTION_LABEL_RW,
 } from "@shared/section-display";
 import type { CanonicalSectionCode } from "@shared/question-bank-contract";
-
-type TopicsResponse = {
-  sections?: Array<{ section?: string; domains?: RawPracticeTopicDomain[] }>;
-};
 
 /** Turn the flat facet list into a lookup so a domain row can show its own count. */
 function facetMap(
@@ -135,11 +126,8 @@ export default function ReviewPage() {
   );
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
 
-  const { data: topicsData } = useQuery<TopicsResponse>({
-    queryKey: ["/api/practice/topics"],
-    // UI-14: reference data — long, explicit, finite.
-    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
-  });
+  // UI-51: the one taxonomy read, shared with Practice (`usePracticeTopics`).
+  const { data: topicsData } = usePracticeTopics();
 
   // "Today" in the SAME zone R3 used to compute each row's local_date.
   const todayKey = useMemo(
@@ -158,7 +146,7 @@ export default function ReviewPage() {
   );
 
   const visibleDomains = useMemo(() => {
-    const raw = topicsData?.sections?.find(
+    const raw = topicsData?.sections.find(
       (s) => s.section === (focusSection === "" ? "M" : focusSection),
     )?.domains;
     return normalizePracticeTopicDomains(raw);
@@ -198,7 +186,7 @@ export default function ReviewPage() {
   );
 
   return (
-    <AppShell showFooter>
+    <>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         <header className="mb-8">
           <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
@@ -649,6 +637,6 @@ export default function ReviewPage() {
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

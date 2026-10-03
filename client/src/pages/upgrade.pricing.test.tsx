@@ -37,11 +37,6 @@ import {
 const getBillingPlansMock = vi.fn();
 const startSubscriptionCheckoutMock = vi.fn();
 
-vi.mock("@/components/layout/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-}));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/billing-client", () => ({
   getBillingPlans: (...args: unknown[]) => getBillingPlansMock(...args),
@@ -233,7 +228,9 @@ describe("P3 — no hardcoded currency amount in any billing surface", () => {
     // A cents literal is four or more digits; the formatter's own `100` and the
     // months-in-a-year `12` are arithmetic, not prices, so the floor is 1000.
     const literals = code.match(/\b\d{4,}\b/g) ?? [];
-    expect(literals, `${relative} hardcodes ${literals.join(", ")}`).toEqual([]);
+    expect(literals, `${relative} hardcodes ${literals.join(", ")}`).toEqual(
+      [],
+    );
     // And no currency-shaped string.
     expect(code, `${relative} carries a "$n.nn" literal`).not.toMatch(
       /["'`]\s*\$\d/,
@@ -325,7 +322,7 @@ describe("P4 — the discount is exactly 1 − (quarterly ÷ 3) ÷ monthly", () 
 
 // ── P5 ──────────────────────────────────────────────────────────────────
 
-describe("P5 — \"Best value\" is read from the prices, not asserted", () => {
+describe('P5 — "Best value" is read from the prices, not asserted', () => {
   it("names the genuinely cheapest per month", () => {
     // Quarterly at $74.99 is $25.00/mo; yearly at $599.88 is $49.99/mo. The
     // badge must follow the arithmetic, not the plan name.

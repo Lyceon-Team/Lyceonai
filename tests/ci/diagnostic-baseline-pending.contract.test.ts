@@ -17,7 +17,7 @@
  * status they do not have.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const resolvePaidKpiAccessForUser = vi.fn();
@@ -169,44 +169,62 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
   const read = (rel: string): string =>
     readFileSync(resolve(process.cwd(), rel), "utf8");
 
-  it("DiagnosticCTAGate renders on an exact no_baseline match", () => {
-    const src = read("client/src/components/diagnostic/DiagnosticCTAGate.tsx");
-    expect(src).toMatch(
-      /if\s*\(estimateStatus\s*!==\s*"no_baseline"\)\s*return null;/,
-    );
-  });
-
-  it("the dashboard modal is gated on an exact no_baseline match", () => {
-    const src = read("client/src/pages/lyceon-dashboard.tsx");
-    expect(src).toMatch(
-      /shouldShow=\{estimateData\?\.estimateStatus === "no_baseline"\}/,
-    );
+  /*
+   * UI-51 (2026-10-03): `DiagnosticCTAGate` was deleted with the old Practice page, its only
+   * surface (DESIGN.md §4 Practice has no diagnostic prompt). Its "exact no_baseline match"
+   * assertion has no code left to hold; Home's card, the one diagnostic prompt, is held to the
+   * same rule below, and `diagnostic-prompting.contract.test.ts` proves Practice offers none.
+   */
+  it("the deleted DiagnosticCTAGate stays deleted (no second prompt to gate)", () => {
+    expect(
+      existsSync(
+        resolve(
+          process.cwd(),
+          "client/src/components/diagnostic/DiagnosticCTAGate.tsx",
+        ),
+      ),
+    ).toBe(false);
   });
 
   /**
-   * Ordering is the assertion. Both arms live in one ternary chain; if the
-   * no_baseline arm came first it would match nothing extra today — but the arm
-   * that renders "Start Diagnostic" must never be reachable for a status that
-   * means the diagnostic is already done, and reading order is what guarantees
-   * that as the chain grows.
+   * UI-50 (2026-10-03): Home replaced the dashboard hero, its prompt modal and its CTA card.
+   * The free Home's stage is decided by ONE function, `freeHomeStage`, and the pending arm is
+   * decided before the no_baseline arm, so a student whose diagnostic is done never reaches the
+   * arm that offers "Start diagnostic". Behaviour, then reading order.
    */
-  it("the dashboard hero renders the pending arm before the no_baseline arm", () => {
-    const src = read("client/src/pages/lyceon-dashboard.tsx");
+  it("Home decides baseline_pending before no_baseline, and pending offers no diagnostic", async () => {
+    const { freeHomeStage } =
+      await import("../../client/src/components/home/home-model");
+    expect(freeHomeStage("baseline_pending")).toBe("pending");
+    expect(freeHomeStage("no_baseline")).toBe("diagnostic");
+
+    const src = read("client/src/components/home/home-model.ts");
     const pendingAt = src.indexOf('estimateStatus === "baseline_pending"');
-    const noBaselineAt = src.indexOf('estimateStatus === "no_baseline" ?');
+    const noBaselineAt = src.indexOf('estimateStatus === "no_baseline")');
     expect(pendingAt).toBeGreaterThan(-1);
     expect(noBaselineAt).toBeGreaterThan(-1);
     expect(pendingAt).toBeLessThan(noBaselineAt);
+
+    // The only "Start diagnostic" on Home sits under the diagnostic stage.
+    // Code only: the module comment names the route and the button it describes.
+    const home = read("client/src/components/home/FreeHome.tsx").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    const cardAt = home.indexOf('stage === "diagnostic" ? (');
+    const startAt = home.indexOf("Start diagnostic");
+    expect(cardAt).toBeGreaterThan(-1);
+    expect(startAt).toBeGreaterThan(cardAt);
+    expect(home.split("Start diagnostic").length - 1).toBe(1);
+    expect(home.split("void startDiagnostic()").length - 1).toBe(1);
   });
 
-  it("the pending arm offers no way to start another diagnostic", () => {
-    const src = read("client/src/pages/lyceon-dashboard.tsx");
-    const start = src.indexOf('estimateStatus === "baseline_pending"');
-    const end = src.indexOf('estimateStatus === "no_baseline" ?');
-    const arm = src.slice(start, end);
-    expect(arm).toContain("Your baseline is being calculated.");
-    expect(arm).not.toContain("handleStartDiagnostic");
-    expect(arm).not.toContain("Start Diagnostic");
+  it("Home's panel says the ruled pending sentence (the shared constant)", () => {
+    const panel = read("client/src/components/home/HomePanel.tsx");
+    expect(panel).toContain("BASELINE_PENDING_HEADLINE");
+    expect(panel).toMatch(
+      /stage === "pending"\)\s*empty = BASELINE_PENDING_HEADLINE/,
+    );
   });
 
   /**
@@ -218,8 +236,8 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
    * (a ternary `?` or an `if (...)`) must carry a `baseline_pending` arm BEFORE
    * it, so a student whose diagnostic is done never falls through to the prompt.
    * A new or revived estimate surface is caught without editing this test.
-   * Edge case: the dashboard's `shouldShow={... === "no_baseline"}` is an
-   * exact-match gate, not a render arm, and is pinned by its own test above.
+   * (The dashboard's `shouldShow={... === "no_baseline"}` modal gate went with the modal in
+   * UI-50; Home's stage function is pinned above.)
    */
   it("every client surface with a no_baseline render arm has a baseline_pending arm before it", () => {
     const noBaselineArm = /estimateStatus\s*===\s*"no_baseline"\s*[?)]/;
@@ -239,9 +257,11 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
       }))
       .filter(({ code }) => noBaselineArm.test(code));
 
-    // Presence before absence: the dashboard hero is such a surface, so an
-    // empty sweep means the pattern broke, not that the rule holds.
-    expect(surfaces.map((s) => s.rel)).toContain("pages/lyceon-dashboard.tsx");
+    // Presence before absence: Home's stage function is such a surface (UI-50; it replaced
+    // the dashboard hero), so an empty sweep means the pattern broke, not that the rule holds.
+    expect(surfaces.map((s) => s.rel)).toContain(
+      "components/home/home-model.ts",
+    );
 
     for (const { rel, code } of surfaces) {
       const pendingAt = code.search(pendingArm);
