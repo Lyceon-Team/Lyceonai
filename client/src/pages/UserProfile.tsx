@@ -7,6 +7,7 @@ import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel"
 import { StudentGuardiansPanel } from "@/components/student/StudentGuardiansPanel";
 import { PageCard } from "@/components/common/page-card";
 import { EmptyState } from "@/components/common/empty-state";
+import { FullPageLoader } from "@/components/student-ui";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -223,14 +224,14 @@ export default function UserProfile() {
   if (profileLoading) {
     return (
       <Shell>
-        <div className="min-h-[60vh] flex items-center justify-center">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">
-              Loading your profile...
-            </p>
-          </div>
-        </div>
+        {/* @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] |
+            @implemented [2026-10-03] — the shared loader, in its region form inside the
+            page's own shell; light-locked until Wave 5 (UI-58) themes this page. */}
+        <FullPageLoader
+          fill="region"
+          themeLock="light"
+          label="Loading your profile..."
+        />
       </Shell>
     );
   }

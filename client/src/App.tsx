@@ -20,6 +20,7 @@ import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
+import { FullPageLoader } from "@/components/student-ui";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
@@ -38,9 +39,15 @@ const Practice = lazy(() => import("@/pages/practice"));
 // Full-length exam shell (E7b). Wrappers are module-scope components, not inline
 // arrows, so a re-render of the Switch never remounts a running module.
 const TestsHomePage = lazy(() => import("@/features/exam/pages/TestsHomePage"));
-const ExamSessionPage = lazy(() => import("@/features/exam/pages/ExamSessionPage"));
-const ExamModulePage = lazy(() => import("@/features/exam/pages/ExamModulePage"));
-const ExamReportPage = lazy(() => import("@/features/exam/pages/ExamReportPage"));
+const ExamSessionPage = lazy(
+  () => import("@/features/exam/pages/ExamSessionPage"),
+);
+const ExamModulePage = lazy(
+  () => import("@/features/exam/pages/ExamModulePage"),
+);
+const ExamReportPage = lazy(
+  () => import("@/features/exam/pages/ExamReportPage"),
+);
 function TestsHomeRoute() {
   return (
     <RequireRole allow={["student", "admin"]}>
@@ -101,24 +108,21 @@ const CrisisReviewDetail = lazy(
   () => import("@/pages/admin/CrisisReviewDetail"),
 );
 
-function PageLoader() {
-  return (
-    <div
-      className="min-h-screen flex items-center justify-center bg-background"
-      data-testid="page-loader"
-    >
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-8 h-8 border-2 border-foreground border-t-transparent rounded-full animate-spin" />
-        <p className="text-muted-foreground text-base">Loading...</p>
-      </div>
-    </div>
-  );
-}
+/**
+ * @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
+ * plain English: the route Suspense fallback is the shared FullPageLoader. It serves every
+ * audience (student, guardian, admin, marketing), none of which is themed yet, so it pins the
+ * light token set. The `page-loader` test id and the "Loading..." text are kept: the guardian
+ * e2e (tests/e2e/guardian-surfaces.spec.ts) waits on both.
+ */
+const ROUTE_FALLBACK = (
+  <FullPageLoader themeLock="light" data-testid="page-loader" />
+);
 
 /** The route switch — exported so the guardian route walk (G4-01) renders the real table. */
 export function Router() {
   return (
-    <Suspense fallback={<PageLoader />}>
+    <Suspense fallback={ROUTE_FALLBACK}>
       <Switch>
         {/* Public routes */}
         <Route path="/" component={HomePage} />
@@ -208,7 +212,10 @@ export function Router() {
         {/* Full-length exams (Doc 04A §16, Doc 04C §16.1) — E7b. */}
         <Route path="/tests" component={TestsHomeRoute} />
         <Route path="/tests/:sessionId/report" component={ExamReportRoute} />
-        <Route path="/tests/:sessionId/:section/:module" component={ExamModuleRoute} />
+        <Route
+          path="/tests/:sessionId/:section/:module"
+          component={ExamModuleRoute}
+        />
         <Route path="/tests/:sessionId" component={ExamSessionRoute} />
         {/*
           SCL-191 — the post-exam score report and retake answer. Student-only, and the path has

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Loader2, UserRound } from "lucide-react";
+import { FullPageLoader } from "@/components/student-ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -235,15 +236,11 @@ export default function ProfileComplete() {
   }
 
   if (isLoading) {
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
+    // The shared FullPageLoader (role="status", named by its label). Light-locked until this
+    // page moves onto a themed student shell in Wave 5.
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-sm text-muted-foreground">
-            Loading profile completion...
-          </p>
-        </div>
-      </div>
+      <FullPageLoader themeLock="light" label="Loading profile completion..." />
     );
   }
 
