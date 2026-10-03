@@ -18,7 +18,11 @@ jobs:
   # ---------------------------------------------------------------------------
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 45, not 20 (owner decision 2026-10-03): the review UI mutation gate runs one test
+    # file per plant, and with the student UI Wave 5 plants (197 in all) it alone takes
+    # over 15 minutes, which pushed this job past 20 and cancelled it. The gate stays in
+    # this required job so it keeps blocking merges; only the clock changed.
+    timeout-minutes: 45
 
     permissions:
       contents: read
