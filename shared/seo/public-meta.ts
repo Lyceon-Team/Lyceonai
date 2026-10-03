@@ -44,8 +44,11 @@ export interface LegalMeta {
  * An answer may hold several paragraphs, separated by a blank line ("\n\n"): the page renders
  * one <p> per paragraph (`faqParagraphs`), and the JSON-LD joins them with a space.
  *
- * Copy is carried over unchanged from what the pages rendered on 2026-10-03; claim
- * corrections are F6, not this change.
+ * Copy is carried over from what the pages rendered on 2026-10-03, with ONE exception: the
+ * Digital SAT page rendered the free-tier answer the 2026-09-03 owner ruling had already
+ * corrected in this file ("10 practice questions and 5 tutor messages"); it now renders the
+ * corrected copy below, since a page and its structured data cannot say different things.
+ * Every other claim correction is F6, not this change.
  */
 export type FaqItem = { question: string; answer: string };
 
@@ -119,7 +122,7 @@ export const DIGITAL_SAT_FAQS: readonly FaqItem[] = [
       The numbers must match the free card in `home.tsx`
       (`FREE_DAILY_PRACTICE_QUESTIONS`, currently 40, from
       `practice_runtime_config.daily_quota_free` per Doc 02B "Quota Contract").
-      `client/src/pages/home.seo-parity.test.ts` fails if they drift apart.
+      `tests/ci/homepage-pricing.contract.test.ts` fails if they drift apart.
     */
     question: "What is free vs paid?",
     answer:

@@ -8,7 +8,7 @@ Allow: /trust
 Allow: /legal
 
 # Signed-in app surfaces and non-content routes. Kept in step with
-# infra/route-surface-classification.yaml by tests/seo.robots.test.ts: every
+# infra/route-surface-classification.yaml by tests/seo.route-registry.test.ts: every
 # authenticated route is covered here, and no indexable page is.
 Disallow: /admin
 Disallow: /api/
