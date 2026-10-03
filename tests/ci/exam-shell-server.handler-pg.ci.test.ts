@@ -443,6 +443,32 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
       session_id: sid,
       report_state: "scored",
     });
+
+    // SCL-206 (Doc 05C §8.3 step 3): the request that finished the exam also refreshed the
+    // projection from the outbox row its seams wrote — nothing else consumed it here (no
+    // drain runs in this test), so a stamped row is the API's read-through.
+    const outbox = await pg.query(
+      `SELECT processed_at IS NOT NULL AS processed FROM public.projection_refresh_outbox
+        WHERE test_session_id = $1`,
+      [sid],
+    );
+    expect(outbox.rows).toEqual([{ processed: true }]);
+    const projection = await pg.query(
+      `SELECT section, fl1_score, fl2_score, fl_count_used, blend_denominator, projected_score_mid
+         FROM public.student_section_projections WHERE student_id = $1 ORDER BY section`,
+      [STUDENT],
+    );
+    evidence("projection after the exam", projection.rows);
+    expect(projection.rows.map((r) => r.section)).toEqual(["M", "RW"]);
+    for (const row of projection.rows) {
+      // every answer right: 800 per section, the one completed full-length in the blend
+      expect(row).toMatchObject({
+        fl1_score: 800,
+        fl2_score: null,
+        fl_count_used: 1,
+        blend_denominator: 2,
+      });
+    }
   }, 120_000);
 
   it("report: unavailable (200) when the owner's entitlement has lapsed", async () => {
