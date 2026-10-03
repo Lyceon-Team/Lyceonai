@@ -463,7 +463,7 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  A full diagnostic test with your score estimate
+                  A full diagnostic test and your diagnostic score estimate
                 </li>
               </ul>
 
