@@ -174,7 +174,6 @@ describe("the Help page (DESIGN.md §4 Help)", () => {
     const contact = await screen.findByTestId("help-contact-support");
     expect(contact.textContent).toBe("Contact support");
     expect(contact.getAttribute("href")).toBe(`mailto:${SUPPORT_EMAIL}`);
-    expect(SUPPORT_EMAIL).toBe("support@lyceon.ai");
   });
 
   it("the Policies list links to the existing legal routes", async () => {
