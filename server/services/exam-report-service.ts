@@ -319,13 +319,42 @@ function serializeFailed(source: ExamReportSource): ExamReportPayload {
   });
 }
 
+type UnavailablePayload = z.infer<typeof examReportUnavailableSchema>;
+
+/**
+ * @spec [Doc-04C_V1.0, §11.5b (`resume_action: {type, url: string | null} | null`),
+ *        §12.1b step 3 (lapsed owner → 200 `unavailable`, reason `entitlement_lapsed`)]
+ *       | owner ruling OQ-34 (Karl, 2026-10-02; register student-ui-vertical §9 OQ-34,
+ *       §2 / OQ-5) | @implemented [2026-10-03]
+ *
+ * plain English: the next step a revoked requester can take, by reason. A lapsed
+ * entitlement carries `renew_entitlement` — the client opens the upgrade modal from it
+ * (OQ-5). Every other reason stays `null`, which §11.5b prescribes when no canonical
+ * action is wired; V1.0 populates only `entitlement_lapsed` anyway (§11.5b note).
+ *
+ * edge cases: `url` is `null` — there is no canonical renewal URL, and §11.5b makes the
+ * URL an optional hint that may be null. No token or identifier is ever put in it.
+ */
+export function resumeActionFor(
+  reason: UnavailablePayload["unavailable_reason"],
+): UnavailablePayload["resume_action"] {
+  switch (reason) {
+    case "entitlement_lapsed":
+      return { type: "renew_entitlement", url: null };
+    case "guardian_link_inactive":
+    case "content_takedown":
+      return null;
+  }
+}
+
 function serializeUnavailable(source: ExamReportSource): ExamReportPayload {
+  const reason = "entitlement_lapsed";
   return examReportUnavailableSchema.parse({
     report_state: "unavailable",
     ...base(source),
-    unavailable_reason: "entitlement_lapsed",
+    unavailable_reason: reason,
     unavailable_at: null, // Doc 01 does not record the lapse time here
-    resume_action: null, // no canonical renewal URL is wired (§11.5b allows null)
+    resume_action: resumeActionFor(reason),
     review_unlocked: false,
   });
 }
