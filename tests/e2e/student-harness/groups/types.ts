@@ -64,4 +64,11 @@ export type PageGroup = {
   id: string;
   title: string;
   shots: readonly Shot[];
+  /**
+   * Extra history the group's pages need, seeded through the real routes after the base seed
+   * (seed.ts). "review-history": more practice sessions with misses and an open review session,
+   * so Review's queue, domain chips and past-session list (past five rows) are non-empty.
+   * Off by default, so the other groups' payloads do not change.
+   */
+  seed?: "review-history";
 };

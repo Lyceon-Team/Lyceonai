@@ -291,6 +291,26 @@ mutate "$ROUTES" \
         return res.status(400).json({' || exit 2
 run_plant A16d "A16d:" "serve the first page for a malformed sessions cursor"
 
+# --- A17a-b: the pool rows carry the four criteria only (register §8 F-52, 2026-10-03) ---
+# The proof lives in the OQ-22 criteria suite (real create routes, real pool route), so these
+# two plants run that file instead of TEST_FILE.
+F52_TEST_FILE="tests/ci/session-criteria.pg.ci.test.ts"
+ROUTE_TEST_FILE="$TEST_FILE"
+
+mutate "$POOL" \
+  '        filters: toSessionCriteria(stored.session_spec),' \
+  '        filters: (row.filters ?? null) as SourceSessionRow["filters"],' || exit 2
+TEST_FILE="$F52_TEST_FILE"
+run_plant A17a "F-52:" "copy a practice session's stored filters into its pool row"
+TEST_FILE="$ROUTE_TEST_FILE"
+
+mutate "$POOL" \
+  '        filters: toSessionCriteria(row.filters, reviewDifficultyLabel),' \
+  '        filters: (row.filters ?? null) as SourceSessionRow["filters"],' || exit 2
+TEST_FILE="$F52_TEST_FILE"
+run_plant A17b "F-52:" "copy a review session's stored filters into its pool row"
+TEST_FILE="$ROUTE_TEST_FILE"
+
 echo ""
 echo "plants fired: $PASSES   plants that did not fire: $FAILURES"
 if [ "$FAILURES" -ne 0 ]; then

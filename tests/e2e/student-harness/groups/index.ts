@@ -6,9 +6,11 @@ import type { PageGroup } from "./types";
 import { UI_41 } from "./ui-41";
 import { UI_50 } from "./ui-50";
 import { UI_51 } from "./ui-51";
+import { UI_52 } from "./ui-52";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
   [UI_50.id]: UI_50,
   [UI_51.id]: UI_51,
+  [UI_52.id]: UI_52,
 };

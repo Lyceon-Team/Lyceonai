@@ -42,7 +42,7 @@ export type RightPanelWidth = 360 | 340 | 320;
  * it: those page bodies still draw with the app-wide (light) tokens until their Wave 5 row
  * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
- * /practice, UI-51). The timed exam module stays "light" for good (DESIGN.md §2).
+ * /practice, UI-51; /review, UI-52). The timed exam module stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
 
@@ -116,7 +116,8 @@ export const STUDENT_ROUTE_SHELLS = {
   // UI-51 (2026-10-03): Practice is rebuilt on the student tokens only; off the light lock too.
   "/practice": app(360, true, "column", null),
   "/practice/topics": app(null, false),
-  "/review": app(360, true),
+  // UI-52 (2026-10-03): Review is rebuilt on the student tokens only; off the light lock too.
+  "/review": app(360, true, "column", null),
   "/tests": app(360, true),
   "/calendar": app(340, false, "full"),
   "/chat": app(320, false, "full"),

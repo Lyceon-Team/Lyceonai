@@ -238,7 +238,10 @@ async function main(): Promise<void> {
   });
 
   const server = app.listen(PORT, () => {
-    void seedPracticeHistory(`http://localhost:${PORT}`).then(
+    void seedPracticeHistory(`http://localhost:${PORT}`, {
+      // capture.ts passes the group's `seed` (groups/types.ts); only UI-52 asks for this.
+      reviewHistory: process.env.STUDENT_HARNESS_SEED === "review-history",
+    }).then(
       (seeded) => {
         // eslint-disable-next-line no-console -- the readiness line capture.ts waits for
         console.log(`student harness ready ${JSON.stringify(seeded)}`);

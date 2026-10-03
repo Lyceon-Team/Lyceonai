@@ -420,7 +420,7 @@ export function resolveTimeZone(tz: string | null | undefined): {
   }
 }
 
-function localParts(
+export function localParts(
   iso: string | null,
   timeZone: string,
 ): { date: string | null; time: string | null } {

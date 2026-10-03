@@ -180,7 +180,10 @@ type Stack = {
   serverLog: string | null;
 };
 
-async function startStack(runDir: string): Promise<Stack> {
+async function startStack(
+  runDir: string,
+  seed: PageGroup["seed"],
+): Promise<Stack> {
   const reuse = process.env.STUDENT_HARNESS_BASE_URL;
   const manifestEnv = process.env.STUDENT_HARNESS_MANIFEST;
   if (reuse) {
@@ -200,6 +203,8 @@ async function startStack(runDir: string): Promise<Stack> {
     ...process.env,
     HARNESS_PORT: harnessPort,
     NODE_ENV: "development",
+    // The group's extra seed (groups/types.ts `seed`); server.ts reads it.
+    STUDENT_HARNESS_SEED: seed ?? "",
   };
   const serverLog = path.join(runDir, "server.log");
   const server = startChild(
@@ -653,7 +658,7 @@ async function main(): Promise<void> {
   const runDir = path.join(ROOT, "test-results", "student-harness");
   fs.mkdirSync(runDir, { recursive: true });
 
-  const stack = await startStack(runDir);
+  const stack = await startStack(runDir, group.seed);
   const browser = await launch();
   const fontCss = fontFaceCss();
   const rows: Array<{
