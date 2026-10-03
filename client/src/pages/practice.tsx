@@ -1,874 +1,647 @@
-import { PageCard } from "@/components/common/page-card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  BookOpen,
-  Calculator,
-  Clock,
-  TrendingUp,
-  Flame,
-  ArrowRight,
-  AlertCircle,
-  PlayCircle,
-  RotateCcw,
-  Trash2,
-  X,
-  Hash,
-} from "lucide-react";
-import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { QUERY_FRESHNESS } from "@/lib/query-freshness";
-import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { useMemo, useState } from "react";
-import { normalizePracticeTopicDomains } from "@/lib/practice-topic-taxonomy";
-import { type PracticeDifficulty } from "@/lib/practice-filters";
-import { DateTime } from "luxon";
-import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
-import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
-import { useActiveSessions } from "@/hooks/useActiveSessions";
-import { useProgressKpis } from "@/hooks/useProgressKpis";
-import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
-import {
-  isMathSection,
-  sectionDisplayLabel,
-  SECTION_LABEL_MATH,
-  SECTION_LABEL_RW,
-} from "@shared/section-display";
-import type { CanonicalSectionCode } from "@shared/question-bank-contract";
-import type { PracticeTopicsResponse } from "@lyceon/shared/practice-reference-schema";
-import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
-import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
-// Doc 05F §15 / INV-08-20. The day streak is served without a `calendar_access` check, so it
-// renders here for every student regardless of tier — this is the platform-wide streak, not
-// the in-session correct-answer streak `PracticeShell` shows during a run.
-import { useStreak } from "@/features/calendar/api";
-
 /**
- * @spec [SCL-186 (strikes Doc 05 Parent §12.2 "your recency-weighted accuracy is Y%");
- *   owner ruling 6, 2026-09-29; Doc 05 AC#20] | @implemented [2026-09-29] |
- * plain English: the Weekly Activity card no longer has an Accuracy tile. No raw accuracy
- * figure is shown to a student; the "Questions (7d)" count (own activity) stays. The payload
- * still carries `accuracy` on `week` and `recency`; this page never renders it, so the type
- * does not declare it.
+ * Practice (`/practice`): choose what to practice, then start a session.
+ *
+ * @spec [student-UI register UI-51; DESIGN.md §1 (tokens only, 14px floor, one primary action),
+ *        §2 (App shell: right panel, slim legal footer), §3 (Filter bar; Mastery row compact;
+ *        Locked mastery card), §4 Practice; prototype Practice.dc.html (paid and free);
+ *        evidence/wiring-table.md §4 Practice (the endpoint behind each element); register §2
+ *        (free = 40 practice questions a day + unlimited review; mastery_level only; no raw
+ *        accuracy; no bank counts; "Suggested for you" is paid-only), §6 UI-43 (the bar's value
+ *        is `SessionCriteria`), OQ-21 (quota read), OQ-22 (criteria), OQ-23 (recent practice
+ *        reuses /api/review/pool), OQ-29 (the feature-access map decides what is locked), OQ-49
+ *        (this route comes off the light lock: route-shells.ts)] | @implemented [2026-10-03]
+ *
+ * plain English: the main column is the shared filter bar (Section switch, criteria chips with
+ * "Clear all", cascading Domain / Skill / Difficulty), then "Your session" (a plain-language
+ * summary of the choice, "Questions per session" 5 to 30, and Start, the ONE primary action; a
+ * free plan adds its quota line), "Suggested for you" (paid: the section's two lowest-level
+ * domains; the button sets the filter), "Pick up where you left off" when a practice session is
+ * open (wiring table §4 "Open sessions"; not in the prototype, so placed after its sections), and
+ * "Recent practice". The right panel is Mastery (compact rows, or the locked card)
+ * and "How practice counts".
+ *
+ * WHAT START SENDS. Exactly the bar's value (`SessionCriteria`, OQ-22) and the chosen size to
+ * `POST /api/practice/sessions`; the server owns the pool, the quota clamp and every refusal
+ * (402 quota, 422 PRACTICE_POOL_EMPTY, 403 SESSION_LIMIT_EXCEEDED), each shown here in shipped
+ * words with no count.
+ *
+ * NO GATED READS ON THE FREE PLAN. Mastery is read only when the feature-access map grants
+ * `mastery_detail`; otherwise the panel shows the locked card, which opens the upgrade modal in
+ * place with no request.
+ *
+ * Replaces the pre-redesign page: "Session Setup" (difficulty pills, domain and skill chips, the
+ * Reading/Math start buttons), the Domain Library card and its "Open Topic Explorer" link, the
+ * "Weekly Activity" card (day streak, questions in 7 days), "Quick Actions", and the diagnostic
+ * CTA (DESIGN.md §4 Practice has none; Home's diagnostic card is the one diagnostic entry).
+ * `/practice/topics` itself stays routed (OQ-3 is open).
  */
-interface KpiResponse {
-  timezone: string;
-  week: {
-    questionsSolved: number;
-  };
-  recency: {
-    window: number;
-    totalAttempts: number;
-  } | null;
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
+import type { PracticeTopicsResponse } from "@lyceon/shared/practice-reference-schema";
+import type { PracticeOpenSession } from "@lyceon/shared/practice-response-schema";
+import { studentResourceUrl } from "@lyceon/shared/student-resources";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
+import { useUpgradeModal } from "@/components/billing/UpgradeModal";
+import {
+  answeredLine,
+  sessionTitle,
+  toReviewLine,
+} from "@/components/home/home-model";
+import { AppShellPanel } from "@/components/layout/app-shell";
+import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
+import { MasteryMeter } from "@/components/mastery/MasteryMeter";
+import { MasteryRow } from "@/components/mastery/MasteryRow";
+import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import {
+  DEFAULT_QUESTIONS_PER_SESSION,
+  QUESTIONS_PER_SESSION_OPTIONS,
+  endSessionBody,
+  freeQuotaLine,
+  parseQuestionsPerSession,
+  recentPracticeRows,
+  recentPracticeScope,
+  sessionLimitLine,
+  sessionSummary,
+  startLabel,
+  suggestedDomains,
+  suggestionNote,
+  type QuestionsPerSession,
+} from "@/components/practice/practice-landing-model";
+import {
+  EMPTY_FILTER,
+  FilterBar,
+  Modal,
+  Notice,
+  PageHeader,
+  type FilterBarValue,
+} from "@/components/student-ui";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { browserLocalToday } from "@/features/calendar/lib/dates";
+import { useActiveSessions } from "@/hooks/useActiveSessions";
+import { useFeatureAccess } from "@/hooks/useFeatureAccess";
+import { usePractice } from "@/hooks/usePractice";
+import { usePracticeQuota } from "@/hooks/usePracticeQuota";
+import { usePracticeTopics } from "@/hooks/usePracticeTopics";
+import { useReviewPool } from "@/hooks/useReview";
+import { fetchMasteryDomains, type MasterySection } from "@/lib/masteryApi";
+import { dayHeaderLabel } from "@/lib/review-session-picker";
+import { sectionDisplayLabel } from "@shared/section-display";
+
+const SECTION_H2 =
+  "m-0 font-lyc-serif text-lyc-section font-semibold text-lyc-ink-strong";
+const PANEL_H2 =
+  "m-0 font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong";
+const TEXT_LINK =
+  "text-[17px] font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline";
+
+/** The prototype opens on Math (`section: 'M'`). */
+const INITIAL_CRITERIA: FilterBarValue = { ...EMPTY_FILTER, sections: ["M"] };
+
+const MASTERY_SECTIONS: readonly MasterySection[] = ["M", "RW"];
+
+function masterySectionOf(criteria: FilterBarValue): MasterySection {
+  return criteria.sections[0] === "RW" ? "RW" : "M";
 }
 
-const DIFFICULTY_OPTIONS: {
-  value: PracticeDifficulty;
-  label: string;
-  color: string;
-}[] = [
-  {
-    value: "easy",
-    label: "Easy",
-    color:
-      "border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100",
-  },
-  {
-    value: "medium",
-    label: "Medium",
-    color: "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100",
-  },
-  {
-    value: "hard",
-    label: "Hard",
-    color: "border-red-300 text-red-700 bg-red-50 hover:bg-red-100",
-  },
-];
+export default function Practice(): JSX.Element {
+  const { user } = useSupabaseAuth();
+  const studentId = user?.id ?? "";
+  const [, navigate] = useLocation();
+  const access = useFeatureAccess();
+  const upgrade = useUpgradeModal();
+  const masteryAccess = access?.mastery_detail ?? null;
+  const masteryGranted = masteryAccess?.access === "granted";
 
-function Practice() {
-  const { user, authLoading } = useSupabaseAuth();
-  const [questionCount, setQuestionCount] = useState("10");
-  const [selectedDifficulties, setSelectedDifficulties] = useState<
-    PracticeDifficulty[]
-  >([]);
-  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  // "" means "all sections". Section values are the canonical codes the API returns.
-  const [focusSection, setFocusSection] = useState<CanonicalSectionCode | "">(
-    "M",
+  const topics = usePracticeTopics();
+  const quota = usePracticeQuota();
+  const open = useActiveSessions();
+  const pool = useReviewPool();
+  const mastery = useQuery({
+    queryKey: [studentResourceUrl(studentId, "masteryDomains")],
+    queryFn: () => fetchMasteryDomains(studentId),
+    enabled: masteryGranted && studentId.length > 0,
+  });
+  const practice = usePractice();
+
+  const [criteria, setCriteria] = useState<FilterBarValue>(INITIAL_CRITERIA);
+  const [size, setSize] = useState<QuestionsPerSession>(
+    DEFAULT_QUESTIONS_PER_SESSION,
   );
-  const [, setLocation] = useLocation();
   const [isStarting, setIsStarting] = useState(false);
 
-  const {
-    sessions: activeSessions,
-    maxConcurrentSessions,
-    terminateSession: terminateActiveSession,
-    isTerminating,
-  } = useActiveSessions();
+  const section = masterySectionOf(criteria);
+  const openRows = open.sessions.filter((s) => s.mode !== "diagnostic");
+  const atLimit =
+    open.maxConcurrentSessions !== null &&
+    open.sessions.length >= open.maxConcurrentSessions;
+  const quotaOut =
+    quota.data !== undefined &&
+    !quota.data.unlimited &&
+    quota.data.remaining === 0;
+  const sectionNodes =
+    mastery.data !== undefined
+      ? canonicalDomainNodes(mastery.data.domains, [section])
+      : [];
 
-  const practiceHook = usePractice();
-
-  const {
-    data: topicsData,
-    isLoading: topicsLoading,
-    isError: topicsError,
-    error: topicsErrorObj,
-    refetch: refetchTopics,
-  } = useQuery<PracticeTopicsResponse>({
-    queryKey: ["/api/practice/topics"],
-    enabled: !!user && !authLoading,
-    // UI-14: reference data — long, explicit, finite.
-    staleTime: QUERY_FRESHNESS.taxonomy.staleTime,
-  });
-
-  const {
-    data: kpiData,
-    isLoading: kpiLoading,
-    isError: kpiError,
-    error: kpiErrorObj,
-    refetch: refetchKpis,
-  } = useProgressKpis<KpiResponse>(!!user && !authLoading);
-
-  // Doc 05F §15, INV-08-20: the day streak has no `calendar_access` check, so it is safe to
-  // ask for on the practice page for every student, entitled or not.
-  const streak = useStreak({ enabled: !!user && !authLoading });
-
-  // Diagnostic prompting gate: fetch estimateStatus to show/hide the CTA.
-  // React Query deduplication ensures this shares the cache with the dashboard.
-  const { data: estimateData } = useQuery<EstimateResponse>({
-    queryKey: ["/api/progress/projection"],
-    queryFn: fetchScoreEstimate,
-    enabled: !!user && !authLoading,
-    staleTime: 60000,
-  });
-
-  const weekQuestions = kpiData?.week?.questionsSolved ?? 0;
-  const mathDomains = normalizePracticeTopicDomains(
-    topicsData?.sections.find((s) => s.section === "M")?.domains,
-  );
-  const readingDomains = normalizePracticeTopicDomains(
-    topicsData?.sections.find((s) => s.section === "RW")?.domains,
-  );
-
-  const visibleDomains = useMemo(() => {
-    if (focusSection === "M") return mathDomains;
-    if (focusSection === "RW") return readingDomains;
-    return [...mathDomains, ...readingDomains];
-  }, [focusSection, mathDomains, readingDomains]);
-
-  const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
-
-  const visibleSkills = useMemo(() => {
-    const sourceDomains =
-      selectedDomains.length > 0
-        ? visibleDomains.filter((d) => selectedDomains.includes(d.domain))
-        : visibleDomains;
-    const all = new Set<string>();
-    for (const d of sourceDomains) {
-      for (const s of d.skills) all.add(s);
-    }
-    return Array.from(all).sort();
-  }, [visibleDomains, selectedDomains]);
-
-  const toggleSkill = (skill: string) => {
-    setSelectedSkills((prev) =>
-      prev.includes(skill) ? prev.filter((x) => x !== skill) : [...prev, skill],
-    );
-  };
-
-  const buildFilters = (
-    section: CanonicalSectionCode,
-  ): PracticeSessionFilters => ({
-    sections: [section],
-    domains: selectedDomains.length > 0 ? selectedDomains : undefined,
-    skills: selectedSkills.length > 0 ? selectedSkills : undefined,
-    difficulties:
-      selectedDifficulties.length > 0 ? selectedDifficulties : undefined,
-    targetQuestionCount: Number(questionCount) || 10,
-  });
-
-  const handleStartSession = async (section: CanonicalSectionCode) => {
+  const start = async (): Promise<void> => {
     setIsStarting(true);
-    const sessionFilters = buildFilters(section);
-    const newId = await practiceHook.startSession(sessionFilters);
+    const sessionId = await practice.startSession({
+      criteria,
+      targetQuestionCount: size,
+    });
     setIsStarting(false);
-    if (newId) {
-      setLocation(`/practice/session/${newId}`);
-    }
+    if (sessionId) navigate(`/practice/session/${sessionId}`);
   };
 
-  const toggleDifficulty = (d: PracticeDifficulty) => {
-    setSelectedDifficulties((prev) =>
-      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d],
-    );
-  };
-
-  const toggleDomain = (domain: string) => {
-    setSelectedDomains((prev) =>
-      prev.includes(domain)
-        ? prev.filter((x) => x !== domain)
-        : [...prev, domain],
-    );
-  };
-
-  const clearFilters = () => {
-    setSelectedDifficulties([]);
-    setSelectedDomains([]);
-    setSelectedSkills([]);
-  };
-
-  const hasActiveFilters =
-    selectedDifficulties.length > 0 ||
-    selectedDomains.length > 0 ||
-    selectedSkills.length > 0;
-
-  // @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
-  // plain English: the section cards no longer carry a bank-size subtitle —
-  // students never see question-bank counts. The only subtitle left is the session-limit
-  // notice rendered below.
-  const quickFocus = [
-    {
-      section: "RW" as const,
-      title: SECTION_LABEL_RW,
-      icon: BookOpen,
-      testId: "button-practice-reading",
-      variant: "outline" as const,
-    },
-    {
-      section: "M" as const,
-      title: SECTION_LABEL_MATH,
-      icon: Calculator,
-      testId: "button-practice-math",
-      variant: "default" as const,
-    },
-  ];
-
-  const secondaryActions = [
-    {
-      href: "/review",
-      title: "Review Queue",
-      icon: RotateCcw,
-      caption: "Redo what you missed",
-    },
-    {
-      href: "/mastery",
-      title: "Mastery",
-      icon: TrendingUp,
-      caption: "Domain-level performance",
-    },
-  ];
+  const failed =
+    quota.isError || open.isError || pool.isError || mastery.isError;
 
   return (
-    <>
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
-        <header className="mb-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">
-            Practice Center
-          </p>
-          <h1
-            className="text-4xl font-bold tracking-tight text-foreground mb-2"
-            data-testid="page-title"
+    <div className="flex flex-col gap-9" data-testid="practice">
+      <PageHeader
+        title="Practice"
+        description="Choose a section, then narrow it down by domain, skill and difficulty."
+      />
+
+      {failed ? (
+        <Notice
+          title="We couldn’t load this right now."
+          message="Try again. If this keeps happening, refresh the page."
+          actionLabel="Try again"
+          onAction={() => {
+            void quota.refetch();
+            void open.refetch();
+            pool.refetch();
+            void mastery.refetch();
+          }}
+          data-testid="practice-load-error"
+        />
+      ) : null}
+
+      {topics.data !== undefined ? (
+        <FilterBar
+          taxonomy={topics.data}
+          value={criteria}
+          onChange={setCriteria}
+        />
+      ) : topics.isError ? (
+        <Notice
+          title="We couldn’t load this right now."
+          message="Try again. If this keeps happening, refresh the page."
+          actionLabel="Try again"
+          onAction={() => void topics.refetch()}
+          data-testid="practice-topics-error"
+        />
+      ) : (
+        <Skeleton
+          variant="lyc"
+          className="h-[236px] w-full"
+          data-testid="practice-topics-loading"
+        />
+      )}
+
+      <YourSession
+        taxonomy={topics.data ?? null}
+        criteria={criteria}
+        size={size}
+        onSize={setSize}
+        canStart={
+          topics.data !== undefined && !isStarting && !atLimit && !quotaOut
+        }
+        onStart={() => void start()}
+        quota={
+          quota.data !== undefined && !quota.data.unlimited
+            ? { remaining: quota.data.remaining, limit: quota.data.limit }
+            : null
+        }
+        limitLine={
+          atLimit && open.maxConcurrentSessions !== null
+            ? sessionLimitLine(open.maxConcurrentSessions)
+            : null
+        }
+        quotaOut={quotaOut || practice.quotaExhausted}
+        poolEmpty={practice.poolEmpty}
+        error={
+          practice.error !== null &&
+          !practice.quotaExhausted &&
+          !practice.poolEmpty
+            ? practice.error
+            : null
+        }
+      />
+
+      {masteryGranted && sectionNodes.length > 0 ? (
+        <Suggested
+          sectionName={sectionDisplayLabel(section) ?? section}
+          nodes={suggestedDomains(sectionNodes)}
+          onPick={(domain) =>
+            setCriteria((prev) => ({
+              ...prev,
+              sections: [section],
+              domains: [domain],
+              skills: [],
+            }))
+          }
+        />
+      ) : null}
+
+      {openRows.length > 0 ? (
+        <OpenSessions
+          rows={openRows}
+          ending={open.isTerminating}
+          onEnd={(id) => open.terminateSession(id)}
+        />
+      ) : null}
+
+      <RecentPractice
+        sessions={recentPracticeRows(pool.pool?.sessions ?? [])}
+        todayKey={browserLocalToday()}
+      />
+
+      <AppShellPanel>
+        <div className="flex flex-col gap-9" data-testid="practice-panel">
+          <section
+            aria-labelledby="practice-mastery-h"
+            className="flex flex-col gap-4"
+            data-testid="practice-mastery"
           >
-            Deliberate SAT Practice
-          </h1>
-          <p className="text-muted-foreground max-w-3xl">
-            Start focused sessions, continue your current section flow
-            naturally, and keep all activity synced to live Lyceon runtime
-            progress.
-          </p>
-        </header>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-8 space-y-6">
-            {activeSessions.length > 0 && (
-              <PageCard
-                title="Active Sessions"
-                description={`You have ${activeSessions.length} session${activeSessions.length === 1 ? "" : "s"} in progress. Choose one to resume.`}
-                className="bg-primary/5 border-primary/20"
-              >
-                <div className="grid gap-3">
-                  {activeSessions.map((s) => (
-                    <div
-                      key={s.id}
-                      className="flex items-center justify-between p-4 rounded-xl bg-card border border-border/50 hover:border-primary/30 transition-colors"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                          {isMathSection(s.section) ? (
-                            <Calculator className="h-5 w-5" />
-                          ) : (
-                            <BookOpen className="h-5 w-5" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">
-                              {sectionDisplayLabel(s.section) ?? "Practice"}
-                            </span>
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] py-0"
-                            >
-                              {s.mode}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Progress: {s.answered_items} / {s.total_items}{" "}
-                            questions · Started{" "}
-                            {DateTime.fromISO(s.created_at).toRelative()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-muted-foreground hover:text-destructive"
-                              disabled={isTerminating}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                End this session?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will terminate the session. Your progress
-                                so far ({s.answered_items} of {s.total_items}{" "}
-                                questions) is saved, but you will not be able to
-                                resume it.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => terminateActiveSession(s.id)}
-                              >
-                                End session
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            setLocation(`/practice/session/${s.id}`)
-                          }
-                        >
-                          <PlayCircle className="h-4 w-4 mr-2" />
-                          Continue
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </PageCard>
-            )}
-
-            {/* Diagnostic CTA — prominent, above session setup so undiagnosed
-                users see it before configuring a practice run. Gated on
-                no_baseline; vanishes entirely once the diagnostic is done. */}
-            <DiagnosticCTAGate estimateStatus={estimateData?.estimateStatus} />
-
-            <PageCard
-              title="Session Setup"
-              description={`Configure your next focused run. You can have up to ${maxConcurrentSessions ?? 5} active sessions at a time.`}
-              className="bg-card/80 border-border/50"
-            >
-              <div className="space-y-6">
-                {/* Question count */}
-                <div className="flex flex-wrap items-center gap-3 rounded-xl bg-secondary/50 p-4">
-                  <Hash className="h-4 w-4 text-foreground" />
-                  <p className="text-sm text-foreground/90">
-                    Questions per session
-                  </p>
-                  <Select
-                    value={questionCount}
-                    onValueChange={setQuestionCount}
-                  >
-                    <SelectTrigger
-                      className="w-44 bg-background"
-                      data-testid="select-question-count"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="5">5 questions</SelectItem>
-                      <SelectItem value="10">10 questions</SelectItem>
-                      <SelectItem value="20">20 questions</SelectItem>
-                      <SelectItem value="30">30 questions</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Difficulty Filter */}
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                    Difficulty
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {DIFFICULTY_OPTIONS.map((opt) => {
-                      const active = selectedDifficulties.includes(opt.value);
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => toggleDifficulty(opt.value)}
-                          className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                            active
-                              ? opt.color + " ring-2 ring-offset-1 ring-current"
-                              : "border-border text-muted-foreground hover:border-foreground/30 bg-background"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Select none to include all difficulties
-                  </p>
-                </div>
-
-                {/* Topic/Domain Filter */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      Topic (Domain)
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={focusSection}
-                        onValueChange={(v) => {
-                          setFocusSection(v as CanonicalSectionCode | "");
-                          setSelectedDomains([]);
-                          setSelectedSkills([]);
-                        }}
-                      >
-                        <SelectTrigger className="h-7 w-36 text-xs bg-background">
-                          <SelectValue placeholder="All sections" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="M">
-                            {SECTION_LABEL_MATH}
-                          </SelectItem>
-                          <SelectItem value="RW">{SECTION_LABEL_RW}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  {topicsLoading ? (
-                    <div className="flex gap-2">
-                      <Skeleton className="h-7 w-20 rounded-full" />
-                      <Skeleton className="h-7 w-28 rounded-full" />
-                      <Skeleton className="h-7 w-24 rounded-full" />
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {visibleDomains.map((d) => {
-                        const active = selectedDomains.includes(d.domain);
-                        return (
-                          <button
-                            key={d.domain}
-                            type="button"
-                            onClick={() => toggleDomain(d.domain)}
-                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                              active
-                                ? "border-primary bg-primary/10 text-primary ring-2 ring-offset-1 ring-primary/50"
-                                : "border-border text-muted-foreground hover:border-foreground/30 bg-background"
-                            }`}
-                          >
-                            {d.domain}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <p className="text-[11px] text-muted-foreground">
-                    Select none to include all domains
-                  </p>
-                </div>
-
-                {/* Skill Filter */}
-                {visibleSkills.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      Skill
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {visibleSkills.map((skill) => {
-                        const active = selectedSkills.includes(skill);
-                        return (
-                          <button
-                            key={skill}
-                            type="button"
-                            onClick={() => toggleSkill(skill)}
-                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                              active
-                                ? "border-primary bg-primary/10 text-primary ring-2 ring-offset-1 ring-primary/50"
-                                : "border-border text-muted-foreground hover:border-foreground/30 bg-background"
-                            }`}
-                          >
-                            {skill}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Select none to include all skills
-                    </p>
-                  </div>
-                )}
-
-                {/* Active filter summary + clear */}
-                {hasActiveFilters && (
-                  <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
-                    <span className="text-xs text-muted-foreground">
-                      Active filters:
-                    </span>
-                    {selectedDifficulties.map((d) => (
-                      <Badge
-                        key={d}
-                        variant="secondary"
-                        className="text-[10px] gap-1"
-                      >
-                        {d}
-                        <button
-                          onClick={() => toggleDifficulty(d)}
-                          className="ml-0.5 hover:text-destructive"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </Badge>
-                    ))}
-                    {selectedDomains.map((domain) => (
-                      <Badge
-                        key={domain}
-                        variant="secondary"
-                        className="text-[10px] gap-1 max-w-[140px] truncate"
-                      >
-                        {domain}
-                        <button
-                          onClick={() => toggleDomain(domain)}
-                          className="ml-0.5 hover:text-destructive flex-shrink-0"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </Badge>
-                    ))}
-                    {selectedSkills.map((skill) => (
-                      <Badge
-                        key={skill}
-                        variant="secondary"
-                        className="text-[10px] gap-1 max-w-[140px] truncate"
-                      >
-                        {skill}
-                        <button
-                          onClick={() => toggleSkill(skill)}
-                          className="ml-0.5 hover:text-destructive flex-shrink-0"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </Badge>
-                    ))}
-                    <button
-                      onClick={clearFilters}
-                      className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
-                    >
-                      Clear all
-                    </button>
-                  </div>
-                )}
-
-                {/* Section buttons */}
-                <div className="grid sm:grid-cols-2 gap-4">
-                  {quickFocus.map((focus) => {
-                    const isLimitReached = activeSessions.length >= 5;
-                    return (
-                      <Button
-                        key={focus.title}
-                        size="lg"
-                        variant={focus.variant}
-                        className="h-auto justify-start py-5 px-5"
-                        data-testid={focus.testId}
-                        disabled={isLimitReached || isStarting}
-                        onClick={() => handleStartSession(focus.section)}
-                      >
-                        <div className="w-full flex items-start justify-between gap-4 text-left">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <focus.icon className="h-4 w-4" />
-                              <span className="font-semibold">
-                                {focus.title}
-                              </span>
-                            </div>
-                            {isLimitReached && (
-                              <p className="text-xs opacity-85">
-                                Limit reached (5 sessions)
-                              </p>
-                            )}
-                          </div>
-                          <ArrowRight className="h-4 w-4 shrink-0" />
-                        </div>
-                      </Button>
-                    );
-                  })}
-                </div>
-
-                {activeSessions.length >= 5 && (
-                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-3 text-amber-800 text-sm">
-                    <AlertCircle className="h-4 w-4" />
-                    You've reached the limit of 5 active sessions. Complete or
-                    delete an existing session to start a new one.
-                  </div>
-                )}
-
-                {/*
-                  ONE CTA CARD. This was an inline block with its own copy and a
-                  hardcoded `/upgrade` link — a fourth shape for one message, and
-                  a destination a guardian's role is bounced from. The card
-                  resolves the destination from the role and reaches the
-                  reactivate state for a lapsed subscriber, neither of which an
-                  inline `<Link href="/upgrade">` could do.
-                */}
-                {practiceHook.quotaExhausted && (
-                  <PremiumUpgradePrompt featureBenefit="unlimited daily practice" />
-                )}
-
-                {/*
-                  @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
-                  plain English: session start answers 422 PRACTICE_POOL_EMPTY when the
-                  chosen filters select no questions. That is not a failure to recover
-                  from — it says "change the filters" — and it names no count.
-                */}
-                {practiceHook.poolEmpty && (
-                  <RecoveryNotice
-                    title="No questions match these filters"
-                    message="Try a different combination of domains, skills or difficulty."
-                    className="rounded-lg"
-                  />
-                )}
-
-                {practiceHook.error &&
-                  !practiceHook.quotaExhausted &&
-                  !practiceHook.poolEmpty && (
-                    <RecoveryNotice
-                      title="Something went wrong."
-                      message={practiceHook.error}
-                    />
-                  )}
-              </div>
-            </PageCard>
-
-            <PageCard
-              title="Domain Library"
-              description="Browse available domains from live taxonomy before launching a filtered topic run."
-              className="bg-card/80 border-border/50"
-            >
-              {topicsLoading ? (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              ) : topicsError ? (
-                <RecoveryNotice
-                  title="We couldn't load domain taxonomy."
-                  message={
-                    (topicsErrorObj as Error)?.message ??
-                    "Try again. If this keeps happening, refresh the page."
-                  }
-                  onRetry={() => void refetchTopics()}
-                  retryLabel="Retry"
-                />
-              ) : (
-                <div className="space-y-6">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-                      Math Domains
-                    </p>
-                    {mathDomains.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No math domains published yet.
-                      </p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {mathDomains.map((domain) => (
-                          <Badge
-                            key={`math-${domain.domain}`}
-                            variant="outline"
-                            className="px-3 py-1"
-                          >
-                            {domain.domain}
-                          </Badge>
-                        ))}
-                      </div>
+            <h2 id="practice-mastery-h" className={PANEL_H2}>
+              Mastery
+            </h2>
+            {masteryGranted && mastery.data !== undefined ? (
+              <>
+                {/* The chosen section first (prototype: `mastery.reverse()` for RW). */}
+                {[
+                  section,
+                  ...MASTERY_SECTIONS.filter((s) => s !== section),
+                ].map((s) => (
+                  <div key={s} className="flex flex-col">
+                    <h3 className="m-0 mb-1 text-[15px] font-semibold text-lyc-muted">
+                      {sectionDisplayLabel(s)}
+                    </h3>
+                    {canonicalDomainNodes(mastery.data.domains, [s]).map(
+                      (node) => (
+                        <MasteryRow
+                          key={`${node.section}:${node.domain}`}
+                          label={node.domain}
+                          levelKey={node.levelKey}
+                          displayName={node.displayName}
+                          variant="compact"
+                          href="/mastery"
+                        />
+                      ),
                     )}
                   </div>
-
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
-                      {SECTION_LABEL_RW} Domains
-                    </p>
-                    {readingDomains.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No reading & writing domains published yet.
-                      </p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {readingDomains.map((domain) => (
-                          <Badge
-                            key={`rw-${domain.domain}`}
-                            variant="outline"
-                            className="px-3 py-1"
-                          >
-                            {domain.domain}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href="/practice/topics">
-                        <BookOpen className="h-4 w-4 mr-2" />
-                        Open Topic Explorer
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </PageCard>
-          </div>
-
-          <aside className="lg:col-span-4 space-y-6">
-            <PageCard
-              title="Weekly Activity"
-              className="bg-card/80 border-border/50"
-            >
-              <div className="space-y-4">
-                {kpiError && (
-                  <RecoveryNotice
-                    title="We couldn't load your activity summary."
-                    message={
-                      (kpiErrorObj as Error)?.message ||
-                      "Try again. If this keeps happening, refresh the page."
-                    }
-                    onRetry={() => {
-                      void refetchKpis();
-                    }}
-                    retryLabel="Retry summary"
-                  />
-                )}
-
-                {/*
-                  Doc 05F §15. `history_complete: false` renders the CURRENT streak with no
-                  "longest" figure — G-08-11 has not cleared, so a longest we printed would
-                  be a claim the data does not support. A null `current` renders nothing at
-                  all rather than a zero, which would read as "you broke your streak".
-                */}
-                {streak.data === undefined ||
-                streak.data.current === null ? null : (
-                  <div
-                    className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between"
-                    data-testid="practice-day-streak"
-                  >
-                    <div className="flex items-center gap-2 text-sm text-foreground/80">
-                      <Flame className="h-4 w-4" />
-                      Day streak
-                    </div>
-                    <span className="text-xl font-semibold">
-                      {streak.data.current}
-                      {streak.data.history_complete &&
-                      streak.data.longest !== null ? (
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">
-                          best {streak.data.longest}
-                        </span>
-                      ) : null}
-                    </span>
-                  </div>
-                )}
-
-                <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-foreground/80">
-                    <Clock className="h-4 w-4" />
-                    Questions (7d)
-                  </div>
-                  <span className="text-xl font-semibold">
-                    {kpiLoading
-                      ? "—"
-                      : kpiError
-                        ? "—"
-                        : kpiEmpty
-                          ? "0"
-                          : weekQuestions}
-                  </span>
-                </div>
-
-                {kpiEmpty && (
-                  <p className="text-xs text-muted-foreground">
-                    No weekly KPI activity recorded yet.
-                  </p>
-                )}
-              </div>
-            </PageCard>
-
-            <PageCard
-              title="Quick Actions"
-              className="bg-card/80 border-border/50"
-            >
-              <div className="space-y-3">
-                {secondaryActions.map((item) => (
-                  <Button
-                    key={item.href}
-                    asChild
-                    variant="ghost"
-                    className="h-auto w-full justify-between px-3 py-3"
-                  >
-                    <Link href={item.href}>
-                      <span className="flex items-center gap-2 text-sm">
-                        <item.icon className="h-4 w-4" />
-                        {item.title}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {item.caption}
-                      </span>
-                    </Link>
-                  </Button>
                 ))}
-              </div>
-            </PageCard>
-          </aside>
+                <Link href="/mastery" className={TEXT_LINK}>
+                  See every skill
+                </Link>
+              </>
+            ) : masteryAccess?.access === "locked" ? (
+              <LockedMasteryCard
+                headingLevel={3}
+                onSeeWhatsIncluded={() =>
+                  upgrade.open("mastery_detail", masteryAccess.reason)
+                }
+              />
+            ) : null}
+          </section>
+          <section
+            aria-labelledby="practice-how-h"
+            className="flex flex-col gap-2.5"
+            data-testid="practice-how"
+          >
+            <h2 id="practice-how-h" className={PANEL_H2}>
+              How practice counts
+            </h2>
+            <p className="m-0 text-base leading-relaxed text-lyc-ink">
+              Every answer updates your mastery. Anything you miss or skip goes
+              to your review queue.
+            </p>
+          </section>
         </div>
-      </div>
-    </>
+      </AppShellPanel>
+    </div>
   );
 }
 
-export default Practice;
+function YourSession({
+  taxonomy,
+  criteria,
+  size,
+  onSize,
+  canStart,
+  onStart,
+  quota,
+  limitLine,
+  quotaOut,
+  poolEmpty,
+  error,
+}: {
+  taxonomy: PracticeTopicsResponse | null;
+  criteria: FilterBarValue;
+  size: QuestionsPerSession;
+  onSize: (size: QuestionsPerSession) => void;
+  canStart: boolean;
+  onStart: () => void;
+  /** Today's free quota; null for an unlimited plan (or before it is read). */
+  quota: { remaining: number; limit: number } | null;
+  limitLine: string | null;
+  quotaOut: boolean;
+  poolEmpty: boolean;
+  error: string | null;
+}): JSX.Element {
+  return (
+    <section
+      aria-labelledby="practice-start-h"
+      className="flex flex-col gap-4 border-t border-lyc-rule pt-7"
+      data-testid="practice-session"
+    >
+      <h2 id="practice-start-h" className={SECTION_H2}>
+        Your session
+      </h2>
+      {taxonomy !== null ? (
+        <p
+          className="m-0 text-[18px] leading-relaxed text-lyc-ink"
+          data-testid="practice-summary"
+        >
+          {sessionSummary(taxonomy, criteria)}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-5">
+        <label className="flex items-center gap-3 text-[17px] text-lyc-ink">
+          <span>Questions per session</span>
+          <select
+            value={String(size)}
+            onChange={(event) => {
+              const next = parseQuestionsPerSession(event.target.value);
+              if (next !== null) onSize(next);
+            }}
+            className="h-11 rounded-md border border-lyc-input-bd bg-lyc-sheet px-3 text-[17px] text-lyc-ink focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-lyc-focus"
+            data-testid="practice-size"
+          >
+            {QUESTIONS_PER_SESSION_OPTIONS.map((n) => (
+              <option key={n} value={String(n)}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          type="button"
+          variant="lyc-primary"
+          size="lyc-lg"
+          disabled={!canStart}
+          onClick={onStart}
+          data-testid="practice-start"
+        >
+          {startLabel(size)}
+        </Button>
+      </div>
+      {quota !== null ? (
+        <p
+          className="m-0 text-[17px] leading-normal text-lyc-muted"
+          data-testid="practice-quota"
+        >
+          {freeQuotaLine(quota.remaining, quota.limit)}
+        </p>
+      ) : null}
+      {limitLine !== null ? (
+        <Notice tone="warning" title={limitLine} data-testid="practice-limit" />
+      ) : null}
+      {/*
+        ONE CTA CARD for the daily limit (the shipped `PremiumUpgradePrompt`, which resolves the
+        destination from the role and reaches the reactivate state for a lapsed subscriber).
+        Shown when the quota read says none are left, or when Start answered 402.
+      */}
+      {quotaOut ? (
+        <PremiumUpgradePrompt featureBenefit="unlimited daily practice" />
+      ) : null}
+      {/*
+        @spec [Doc-02B_V4 §14; owner ruling UI-07 2026-09-29] | @implemented [2026-09-29]
+        plain English: session start answers 422 PRACTICE_POOL_EMPTY when the chosen filters
+        select no questions. That says "change the filters", and it names no count.
+      */}
+      {poolEmpty ? (
+        <Notice
+          title="No questions match these filters"
+          message="Try a different combination of domains, skills or difficulty."
+          data-testid="practice-pool-empty"
+        />
+      ) : null}
+      {error !== null ? (
+        <Notice
+          tone="danger"
+          title="Something went wrong."
+          message={error}
+          data-testid="practice-start-error"
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function OpenSessions({
+  rows,
+  ending,
+  onEnd,
+}: {
+  rows: readonly PracticeOpenSession[];
+  ending: boolean;
+  onEnd: (sessionId: string) => void;
+}): JSX.Element {
+  const [confirming, setConfirming] = useState<PracticeOpenSession | null>(
+    null,
+  );
+  return (
+    <section
+      aria-labelledby="practice-open-h"
+      className="flex flex-col gap-3.5"
+      data-testid="practice-open"
+    >
+      <h2 id="practice-open-h" className={SECTION_H2}>
+        Pick up where you left off
+      </h2>
+      <ul className="m-0 list-none border-t border-lyc-rule p-0">
+        {rows.map((s) => (
+          <li
+            key={s.id}
+            className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-lyc-rule py-4"
+            data-testid="practice-open-row"
+          >
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="text-lg font-semibold text-lyc-ink">
+                {sessionTitle("practice", s.criteria, s.section)}
+              </span>
+              <span className="text-base text-lyc-muted">
+                {answeredLine(s.answered_items, s.total_items)}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Button
+                type="button"
+                variant="lyc-quiet"
+                disabled={ending}
+                onClick={() => setConfirming(s)}
+              >
+                End
+              </Button>
+              <Link href={`/practice/session/${s.id}`} className={TEXT_LINK}>
+                Continue
+              </Link>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <Modal
+        open={confirming !== null}
+        onOpenChange={(next) => {
+          if (!next) setConfirming(null);
+        }}
+        title="End this session?"
+        description={
+          confirming !== null
+            ? endSessionBody(confirming.answered_items, confirming.total_items)
+            : undefined
+        }
+        data-testid="practice-end-modal"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="lyc-primary"
+              size="lyc-lg"
+              onClick={() => {
+                if (confirming !== null) onEnd(confirming.id);
+                setConfirming(null);
+              }}
+            >
+              End session
+            </Button>
+            <Button
+              type="button"
+              variant="lyc-quiet"
+              size="lyc-lg"
+              onClick={() => setConfirming(null)}
+            >
+              Cancel
+            </Button>
+          </>
+        }
+      />
+    </section>
+  );
+}
+
+function Suggested({
+  sectionName,
+  nodes,
+  onPick,
+}: {
+  sectionName: string;
+  nodes: ReturnType<typeof suggestedDomains>;
+  onPick: (domain: string) => void;
+}): JSX.Element {
+  return (
+    <section
+      aria-labelledby="practice-sug-h"
+      className="flex flex-col gap-3.5"
+      data-testid="practice-suggested"
+    >
+      <div className="flex flex-col gap-1">
+        <h2 id="practice-sug-h" className={SECTION_H2}>
+          Suggested for you
+        </h2>
+        <p className="m-0 text-[17px] text-lyc-muted">
+          {suggestionNote(sectionName)}
+        </p>
+      </div>
+      <ul className="m-0 list-none border-t border-lyc-rule p-0">
+        {nodes.map((node) => (
+          <li
+            key={node.domain}
+            className="flex flex-col gap-3 border-b border-lyc-rule py-4 sm:grid sm:grid-cols-[minmax(0,1fr)_176px_190px] sm:items-center sm:gap-6"
+            data-testid="practice-suggestion"
+            data-level-key={node.levelKey}
+          >
+            <span className="flex flex-col gap-1">
+              <span className="font-lyc-serif text-[21px] font-semibold text-lyc-ink-strong">
+                {node.domain}
+              </span>
+              <span className="text-base text-lyc-muted">
+                {node.displayName}
+              </span>
+            </span>
+            <MasteryMeter
+              levelKey={node.levelKey}
+              displayName={node.displayName}
+              size="wide"
+            />
+            <Button
+              type="button"
+              variant="lyc-outline"
+              className="sm:justify-self-end"
+              aria-label={`Practice this domain: ${node.domain}`}
+              onClick={() => onPick(node.domain)}
+            >
+              Practice this domain
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function RecentPractice({
+  sessions,
+  todayKey,
+}: {
+  sessions: ReturnType<typeof recentPracticeRows>;
+  todayKey: string;
+}): JSX.Element {
+  return (
+    <section
+      aria-labelledby="practice-past-h"
+      className="flex flex-col gap-3.5"
+      data-testid="practice-recent"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h2 id="practice-past-h" className={SECTION_H2}>
+          Recent practice
+        </h2>
+        <Link href="/review" className={TEXT_LINK}>
+          Review what you missed
+        </Link>
+      </div>
+      {sessions.length > 0 ? (
+        <ul className="m-0 list-none border-t border-lyc-rule p-0">
+          {sessions.map((s) => (
+            <li
+              key={s.source_session_id}
+              className="flex items-center justify-between gap-6 border-b border-lyc-rule py-3.5"
+              data-testid="practice-recent-row"
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-lg font-semibold text-lyc-ink">
+                  {s.local_time === null
+                    ? dayHeaderLabel(s.local_date, todayKey)
+                    : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`}
+                </span>
+                <span className="text-base text-lyc-muted">
+                  {recentPracticeScope(s.mode)}
+                </span>
+              </span>
+              <span className="whitespace-nowrap text-base text-lyc-ink">
+                {toReviewLine(s.open_count)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}

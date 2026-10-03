@@ -17,7 +17,7 @@
  * status they do not have.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const resolvePaidKpiAccessForUser = vi.fn();
@@ -169,11 +169,21 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
   const read = (rel: string): string =>
     readFileSync(resolve(process.cwd(), rel), "utf8");
 
-  it("DiagnosticCTAGate renders on an exact no_baseline match", () => {
-    const src = read("client/src/components/diagnostic/DiagnosticCTAGate.tsx");
-    expect(src).toMatch(
-      /if\s*\(estimateStatus\s*!==\s*"no_baseline"\)\s*return null;/,
-    );
+  /*
+   * UI-51 (2026-10-03): `DiagnosticCTAGate` was deleted with the old Practice page, its only
+   * surface (DESIGN.md §4 Practice has no diagnostic prompt). Its "exact no_baseline match"
+   * assertion has no code left to hold; Home's card, the one diagnostic prompt, is held to the
+   * same rule below, and `diagnostic-prompting.contract.test.ts` proves Practice offers none.
+   */
+  it("the deleted DiagnosticCTAGate stays deleted (no second prompt to gate)", () => {
+    expect(
+      existsSync(
+        resolve(
+          process.cwd(),
+          "client/src/components/diagnostic/DiagnosticCTAGate.tsx",
+        ),
+      ),
+    ).toBe(false);
   });
 
   /**

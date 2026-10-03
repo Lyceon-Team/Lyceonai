@@ -1,4 +1,5 @@
 import type { PracticeTopicsResponse } from "@lyceon/shared/practice-reference-schema";
+import type { SessionCriteria } from "@lyceon/shared/session-criteria";
 import {
   normalizePracticeDifficulties,
   type PracticeDifficulty,
@@ -37,10 +38,12 @@ import {
  * expected outcome: deterministic option and value order (taxonomy order for sections, domains
  * and skills; easy, medium, hard for difficulty), so the same choices always serialise the same
  * way; every op is idempotent where its name says it is (select, remove, clear, normalise).
- * trade-offs: the value type is the four OQ-22 keys with plain string arrays. It must converge
- * on `sessionCriteriaSchema` (packages/shared/src/session-criteria.ts, PR #1064) when that
- * lands; it is not copied here. Labels are the taxonomy's own names (the catalog stores display
- * names, e.g. "Linear Equations in One Variable", not codes), so no label map is needed.
+ * trade-offs: the value type IS `SessionCriteria` (packages/shared/src/session-criteria.ts, the
+ * OQ-22 shape on `/state` and `/sessions/open`), not a copy of it: converged in UI-51
+ * (2026-10-03) as register §6 UI-43 required, so what the bar holds is what Practice sends to
+ * `POST /api/practice/sessions` and what the server later names the session by. Labels are the
+ * taxonomy's own names (the catalog stores display names, e.g. "Linear Equations in One
+ * Variable", not codes), so no label map is needed.
  * edge cases: values the taxonomy does not know (a stale URL, a renamed skill) are dropped by
  * normalisation; a skill name listed under two domains is offered once, at its first position.
  * Nothing here produces or reads a count.
@@ -48,12 +51,8 @@ import {
 
 type FilterSectionCode = PracticeTopicsResponse["sections"][number]["section"];
 
-export type FilterBarValue = {
-  sections: FilterSectionCode[];
-  domains: string[];
-  skills: string[];
-  difficulties: PracticeDifficulty[];
-};
+/** The bar's value: the session criteria themselves (OQ-22), one shape end to end. */
+export type FilterBarValue = SessionCriteria;
 
 export type FilterOption<T extends string = string> = {
   value: T;
@@ -92,7 +91,7 @@ function unique(values: string[]): string[] {
 /** The taxonomy's sections that `sections` selects; empty selection selects all of them. */
 function selectedSections(
   taxonomy: PracticeTopicsResponse,
-  sections: readonly FilterSectionCode[],
+  sections: readonly string[],
 ): TopicSection[] {
   if (sections.length === 0) return taxonomy.sections;
   return taxonomy.sections.filter((s) => sections.includes(s.section));
@@ -108,7 +107,7 @@ export function sectionOptions(
 /** Rule 1: domains of the chosen section(s), in taxonomy order. */
 export function domainOptions(
   taxonomy: PracticeTopicsResponse,
-  sections: readonly FilterSectionCode[],
+  sections: readonly string[],
 ): FilterOption[] {
   const names = unique(
     selectedSections(taxonomy, sections).flatMap((s) =>

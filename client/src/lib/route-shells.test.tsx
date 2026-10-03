@@ -338,18 +338,22 @@ describe("the table says what DESIGN.md §2 says", () => {
     expect(home("/tests/:sessionId/report")).toBe("/tests");
   });
 
-  it("UI-50: Home follows the device theme; the routes not yet rebuilt stay pinned light (OQ-49)", () => {
-    expect(STUDENT_ROUTE_SHELLS["/dashboard"]).toEqual({
-      shell: "app",
-      panel: 360,
-      footer: true,
-      content: "column",
-      themeLock: null,
-    });
+  it("UI-50, UI-51: Home and Practice follow the device theme; the routes not yet rebuilt stay pinned light (OQ-49)", () => {
+    for (const route of ["/dashboard", "/practice"] as const) {
+      expect(STUDENT_ROUTE_SHELLS[route], route).toEqual({
+        shell: "app",
+        panel: 360,
+        footer: true,
+        content: "column",
+        themeLock: null,
+      });
+    }
     const unlocked = (
       Object.keys(STUDENT_ROUTE_SHELLS) as StudentShellRoute[]
     ).filter((route) => STUDENT_ROUTE_SHELLS[route].themeLock === null);
-    expect(unlocked).toEqual(["/dashboard"]);
+    expect(unlocked).toEqual(["/dashboard", "/practice"]);
+    // The topic explorer is not rebuilt (OQ-3 open): it stays pinned light.
+    expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
   });
 
   it("the timed module: no back arrow, light only", () => {

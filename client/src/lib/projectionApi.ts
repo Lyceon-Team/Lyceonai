@@ -124,11 +124,6 @@ export type EstimateResponse =
       baseline: null;
     });
 
-export async function fetchScoreEstimate(): Promise<EstimateResponse> {
-  const response = await apiRequest("/api/progress/projection");
-  return response.json();
-}
-
 /**
  * @spec [student-UI register OQ-36 (owner ruling 2026-10-02), §8 F-51; Doc 05C (a student reads
  *        their own projection with no entitlement check)] | @implemented [2026-10-03]

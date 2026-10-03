@@ -24,7 +24,7 @@
  * sessions to `abandoned` (`stale-session-sweep.ts:70-71`). The page therefore used to
  * render the full loop for an abandoned session: it declared `state` and `readOnly` on
  * its DTO and read neither. A bookmark, a back button, or a diagnostic CTA
- * (`DiagnosticCTACard.tsx:37-39`) landed a student on a "Continue" that the server
+ * (the former `DiagnosticCTACard`, removed in UI-51) landed a student on a "Continue" that the server
  * refuses later at `/next` (`practice-canonical.ts:1897-1907`). The server already
  * ships the answer at `practice-canonical.ts:2703`; this page now reads it.
  *

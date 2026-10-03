@@ -56,8 +56,9 @@ const topicsMock = vi.hoisted(() => ({
     },
   },
 }));
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => topicsMock.value,
+// UI-51: the page reads the taxonomy through the one hook (`usePracticeTopics`).
+vi.mock("@/hooks/usePracticeTopics", () => ({
+  usePracticeTopics: () => topicsMock.value,
 }));
 
 const hooksMock = vi.hoisted(() => ({

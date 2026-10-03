@@ -67,12 +67,12 @@ describe("U8 — review is reachable from normal navigation", () => {
   });
 
   it("practice's landing carries the secondary action back to /review", () => {
+    // UI-51 (2026-10-03): the "Quick Actions" card is gone; Practice.dc.html's "Recent practice"
+    // heading carries "Review what you missed", which links to /review.
     const practice = read("client/src/pages/practice.tsx");
-    const actionsBlock = practice.slice(
-      practice.indexOf("const secondaryActions"),
-      practice.indexOf("];", practice.indexOf("const secondaryActions")),
+    expect(practice).toMatch(
+      /<Link\b[^>]*?href="\/review"[^>]*>\s*Review what you missed\s*</,
     );
-    expect(actionsBlock).toContain('href: "/review"');
   });
 
   /**
