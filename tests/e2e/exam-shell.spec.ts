@@ -215,10 +215,11 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   const leaks = watchForLeaks(page);
   const desmosFailures: string[] = [];
   page.on("requestfailed", (req) => {
-    if (req.url().includes("desmos.com"))
-      desmosFailures.push(
-        `${new URL(req.url()).host} ${req.failure()?.errorText ?? ""}`,
-      );
+    // Match the parsed hostname, not a substring of the URL: "desmos.com" anywhere in a path or
+    // query (or in "evil-desmos.com") is not a Desmos request.
+    const host = new URL(req.url()).hostname;
+    if (host === "desmos.com" || host.endsWith(".desmos.com"))
+      desmosFailures.push(`${host} ${req.failure()?.errorText ?? ""}`);
   });
   await page.setViewportSize({ width: 1280, height: 832 });
 
