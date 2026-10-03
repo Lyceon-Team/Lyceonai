@@ -11,6 +11,7 @@ import { UI_53 } from "./ui-53";
 import { UI_54 } from "./ui-54";
 import { UI_55 } from "./ui-55";
 import { UI_56 } from "./ui-56";
+import { UI_57 } from "./ui-57";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -21,4 +22,5 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_54.id]: UI_54,
   [UI_55.id]: UI_55,
   [UI_56.id]: UI_56,
+  [UI_57.id]: UI_57,
 };

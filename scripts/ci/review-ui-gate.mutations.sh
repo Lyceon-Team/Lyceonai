@@ -51,6 +51,8 @@ FILES=(
   "client/src/components/tutor/TutorThreadParts.tsx"
   "client/src/hooks/tutor-client.ts"
   "client/src/styles/student-tokens.css"
+  "client/src/pages/mastery.tsx"
+  "client/src/components/mastery/MasteryRow.tsx"
 )
 
 snapshot_all() {
@@ -1008,6 +1010,129 @@ plant "UI56-W1" "a server refusal no longer draws the locked state (W4-11)" \
   'a = "  if (denied) return <LisaLocked reason=\"plan\" />;"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
+
+# ── UI-57: Mastery (client/src/pages/mastery.test.tsx) ─────────────────────────────────
+
+T57="client/src/pages/mastery.test.tsx"
+
+plant "UI57-TL1" "/mastery put back on the light lock" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/mastery\": app(null, false, \"column\", null),"
+assert s.count(a) == 1
+s = s.replace(a, "  \"/mastery\": app(null, false),", 1)'
+
+plant "UI57-O1" "sections drawn Reading & Writing first" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "const SECTIONS: readonly MasterySection[] = [\"M\", \"RW\"];"
+assert s.count(a) == 1
+s = s.replace(a, "const SECTIONS: readonly MasterySection[] = [\"RW\", \"M\"];", 1)'
+
+plant "UI57-O2" "only served domains drawn (a domain with no row disappears)" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "{canonicalDomainNodes(served, [section]).map((node) => {"
+assert s.count(a) == 1
+s = s.replace(a, "{served.filter((d) => d.section === section).map((node) => {", 1)'
+
+plant "UI57-L1" "a domain row shows a level the server did not send" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "        label={node.domain}\n        levelKey={node.levelKey}"
+assert s.count(a) == 1
+s = s.replace(a, "        label={node.domain}\n        levelKey={node.levelKey === \"unmeasured\" ? \"L0\" : node.levelKey}", 1)'
+
+plant "UI57-L2" "a skill row shows a level the server did not send" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "          levelKey={skill.levelKey}"
+assert s.count(a) == 1
+s = s.replace(a, "          levelKey={skill.levelKey === \"unmeasured\" ? \"L0\" : skill.levelKey}", 1)'
+
+plant "UI57-S1" "a domain lists every skill, not its own" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "  const rows = skillsForDomain(skills, section, domain);"
+assert s.count(a) == 1
+s = s.replace(a, "  const rows = [...skills];", 1)'
+
+plant "UI57-P1" "a percentage beside each domain name" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "        label={node.domain}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        label={`${node.domain} ${(node.level ?? 0) * 25}%`}\n", 1)'
+
+plant "UI57-F1" "free asks for mastery anyway" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "  const enabled = access === \"granted\" && studentId.length > 0;"
+assert s.count(a) == 1
+s = s.replace(a, "  const enabled = studentId.length > 0;", 1)'
+
+plant "UI57-F2" "the locked card opens the wrong feature's modal" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "upgrade.open(\"mastery_detail\", lockReason)"
+assert s.count(a) == 1
+s = s.replace(a, "upgrade.open(\"calendar_access\", lockReason)", 1)'
+
+plant "UI57-W1" "a server 402 no longer draws the locked state" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "  const denied =\n    isMasteryDenial(domains.error) || isMasteryDenial(skills.error);"
+assert s.count(a) == 1
+s = s.replace(a, "  const denied = false;", 1)'
+
+plant "UI57-C1" "the grid call to action shows whatever is measured" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "        {allUnmeasured ? ("
+assert s.count(a) == 1
+s = s.replace(a, "        {true ? (", 1)'
+
+plant "UI57-E1" "an empty catalogue renders as an empty list" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "  if (rows.length === 0) {"
+assert s.count(a) == 1
+s = s.replace(a, "  if (false) {", 1)'
+
+plant "UI57-E2" "a failed domains read shows the skeleton, not the notice" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "  } else if (domains.isError) {"
+assert s.count(a) == 1
+s = s.replace(a, "  } else if (false) {", 1)'
+
+plant "UI57-B1" "the in-body Back button comes back" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "        title=\"Your mastery\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "        title=\"Your mastery\"\n        actions={<Button variant=\"lyc-quiet\" onClick={() => window.history.back()}>Back</Button>}\n", 1)'
+
+plant "UI57-D1" "the domain row never reports itself open" \
+  "$T57 client/src/components/mastery/MasteryRow.test.tsx" \
+  "client/src/components/mastery/MasteryRow.tsx" \
+  'a = "        aria-expanded={disclosure.expanded}"
+assert s.count(a) == 1
+s = s.replace(a, "        aria-expanded={false}", 1)'
+
+plant "UI57-D2" "the chevron does not turn when the list opens" \
+  "client/src/components/mastery/MasteryRow.test.tsx" \
+  "client/src/components/mastery/MasteryRow.tsx" \
+  'a = "${disclosure.expanded ? \"rotate-180\" : \"\"}"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "UI57-D3" "the wide pill track back to 132px (the unmeasured pill overlaps the meter)" \
+  "client/src/components/mastery/MasteryRow.test.tsx" \
+  "client/src/components/mastery/MasteryRow.tsx" \
+  'a = "      ? \"sm:grid-cols-[minmax(0,1fr)_176px_184px]\""
+assert s.count(a) == 1
+s = s.replace(a, "      ? \"sm:grid-cols-[minmax(0,1fr)_176px_132px]\"", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

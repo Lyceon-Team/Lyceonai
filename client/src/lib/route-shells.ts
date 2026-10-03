@@ -43,7 +43,7 @@ export type RightPanelWidth = 360 | 340 | 320;
  * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
  * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53; /tests, /tests/:sessionId
- * and /tests/:sessionId/report, UI-54; /calendar, UI-55; /chat, UI-56). The timed exam module
+ * and /tests/:sessionId/report, UI-54; /calendar, UI-55; /chat, UI-56; /mastery, UI-57). The timed exam module
  * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
@@ -130,7 +130,9 @@ export const STUDENT_ROUTE_SHELLS = {
   // UI-56 (2026-10-03): LISA is rebuilt on the student tokens only (the page and the thread
   // parts it shares with the review panel); off the light lock.
   "/chat": app(320, false, "full", null),
-  "/mastery": app(null, false),
+  // UI-57 (2026-10-03): the Mastery page is rebuilt on the student tokens only; off the light
+  // lock. No right panel and no footer (UI-41 route table; DESIGN.md §2 lists neither for it).
+  "/mastery": app(null, false, "column", null),
   "/upgrade": app(null, false),
   // Settings: no right panel (DESIGN.md §4), footer yes (§2).
   "/profile": app(null, true),

@@ -127,7 +127,7 @@ describe("MasteryRow — wide and compact are different layouts", () => {
       />,
     );
     const row = screen.getByTestId("mastery-row");
-    expect(row.className).toContain("sm:grid-cols-[minmax(0,1fr)_176px_132px]");
+    expect(row.className).toContain("sm:grid-cols-[minmax(0,1fr)_176px_184px]");
     expect(
       within(row).getByTestId("level-pill").classList.contains("text-[15px]"),
     ).toBe(true);
@@ -187,6 +187,63 @@ describe("MasteryRow — href", () => {
       />,
     );
     expect(screen.getByTestId("mastery-row")).toBeTruthy();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+});
+
+describe("MasteryRow — disclosure (UI-57, the Mastery page's domain rows)", () => {
+  it("is one button that names its list, reports open or closed, and calls onToggle", () => {
+    let toggles = 0;
+    const { rerender } = render(
+      <MasteryRow
+        label="Algebra"
+        levelKey="L2"
+        displayName="Developing"
+        variant="wide"
+        disclosure={{
+          expanded: false,
+          controls: "algebra-skills",
+          onToggle: () => {
+            toggles += 1;
+          },
+        }}
+      />,
+    );
+    const button = screen.getByRole("button");
+    expect(button.dataset.testid).toBe("mastery-row");
+    expect(button.getAttribute("type")).toBe("button");
+    expect(button.getAttribute("aria-controls")).toBe("algebra-skills");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    // Its words are the row's own (label and level name); the chevron adds none.
+    expect(button.textContent).toBe("AlgebraDeveloping");
+    const chevron = within(button).getByTestId("mastery-row-chevron");
+    expect(chevron.getAttribute("aria-hidden")).toBe("true");
+    expect(chevron.getAttribute("class")).not.toContain("rotate-180");
+    expect(button.className).toContain(
+      "sm:grid-cols-[minmax(0,1fr)_176px_184px_20px]",
+    );
+    button.click();
+    expect(toggles).toBe(1);
+
+    rerender(
+      <MasteryRow
+        label="Algebra"
+        levelKey="L2"
+        displayName="Developing"
+        variant="wide"
+        disclosure={{
+          expanded: true,
+          controls: "algebra-skills",
+          onToggle: () => undefined,
+        }}
+      />,
+    );
+    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByTestId("mastery-row-chevron").getAttribute("class"),
+    ).toContain("rotate-180");
     expect(screen.queryByRole("link")).toBeNull();
   });
 });

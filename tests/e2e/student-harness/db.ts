@@ -13,7 +13,10 @@
  * through the real practice routes (see seed.ts), so the pages render payloads the real
  * producers made.
  */
+import fs from "node:fs";
+import path from "node:path";
 import type { Client } from "pg";
+import { z } from "zod";
 import { buildHarnessDb, makeHarnessForm } from "../exam-harness/db";
 import { PERSONAS } from "./personas";
 
@@ -32,6 +35,50 @@ const EXAM_HISTORY_THIRD_FORM = {
   name: "Practice Test 3",
 } as const;
 
+const TAXONOMY_PATH = path.join(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..",
+  "..",
+  "..",
+  "content",
+  "canonical",
+  "taxonomy.json",
+);
+
+const taxonomySchema = z.object({
+  skills: z.record(z.string(), z.array(z.string().min(1)).min(1)),
+});
+
+/**
+ * UI-57 (`seed: "mastery-skills"`): the harness bank tags every question with the CI fixture's
+ * one placeholder skill (`exg-fixture`), so the Mastery page's skills list would show a single
+ * made-up row. This retags the bank, before any learning history exists, with the canonical
+ * skills of each question's own domain (`content/canonical/taxonomy.json`, the tree the real bank
+ * is authored against), by question id: two in three questions carry the domain's first skill and the rest
+ * cycle through its others, so a short history can measure one skill and leave the rest
+ * unmeasured. It is bank CONTENT, like the readable stems
+ * `makeHarnessForm` writes; no mastery row is written. The base seed's answers then produce the
+ * mastery through the real answer path, so some skills are measured and others are not.
+ */
+async function useCanonicalSkills(pg: Client): Promise<void> {
+  const taxonomy = taxonomySchema.parse(
+    JSON.parse(fs.readFileSync(TAXONOMY_PATH, "utf8")),
+  );
+  for (const [domain, skills] of Object.entries(taxonomy.skills)) {
+    await pg.query(
+      `UPDATE public.questions q
+          SET skill_codes = ARRAY[
+                CASE WHEN r.n % 3 <> 0 OR cardinality($2::text[]) = 1 THEN ($2::text[])[1]
+                     ELSE ($2::text[])[2 + ((r.n / 3 - 1) % (cardinality($2::text[]) - 1))]
+                END]
+         FROM (SELECT id, row_number() OVER (ORDER BY id) AS n
+                 FROM public.questions WHERE domain = $1) r
+        WHERE q.id = r.id`,
+      [domain, skills],
+    );
+  }
+}
+
 export async function buildStudentHarnessDb(): Promise<Client> {
   const pg = await buildHarnessDb(STUDENT_HARNESS_DB);
   if (process.env.STUDENT_HARNESS_SEED === "exam-history") {
@@ -39,6 +86,9 @@ export async function buildStudentHarnessDb(): Promise<Client> {
     // beside the scored and the in-progress test (FullLength.dc.html has all three). Built by
     // the same CI form fixture and readable content as the exam harness's two.
     await makeHarnessForm(pg, EXAM_HISTORY_THIRD_FORM);
+  }
+  if (process.env.STUDENT_HARNESS_SEED === "mastery-skills") {
+    await useCanonicalSkills(pg);
   }
   const free = PERSONAS.free;
   await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, $2)`, [

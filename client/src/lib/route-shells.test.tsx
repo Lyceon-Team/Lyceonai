@@ -358,6 +358,7 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/tests",
       "/calendar",
       "/chat",
+      "/mastery",
       "/practice/session/:sessionId",
       "/tests/:sessionId",
       "/tests/:sessionId/report",
@@ -423,6 +424,16 @@ describe("the table says what DESIGN.md §2 says", () => {
       panel: 320,
       footer: false,
       content: "full",
+      themeLock: null,
+    });
+  });
+
+  it("UI-57: Mastery follows the device theme, in the reading column, with no right panel and no footer", () => {
+    expect(STUDENT_ROUTE_SHELLS["/mastery"]).toEqual({
+      shell: "app",
+      panel: null,
+      footer: false,
+      content: "column",
       themeLock: null,
     });
   });

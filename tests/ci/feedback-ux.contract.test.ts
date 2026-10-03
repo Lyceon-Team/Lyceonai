@@ -68,7 +68,7 @@ describe("Feedback UX hardening contract", () => {
       // this list; every remaining surface keeps the same assertion.
       // UI-50 (2026-10-03): Home leaves this list. Its one paid boundary is the locked mastery
       // card, which opens the app's one upgrade modal (UI-44; DESIGN.md §3) in place.
-      "client/src/pages/mastery.tsx",
+      // UI-57 (2026-10-03): Mastery leaves it too, for the same reason (asserted below).
       "client/src/pages/practice.tsx",
     ];
     for (const surface of surfaces) {
@@ -77,6 +77,13 @@ describe("Feedback UX hardening contract", () => {
     const home = read("client/src/components/home/FreeHome.tsx");
     expect(home).toContain("<LockedMasteryCard");
     expect(home).toMatch(/upgrade\.open\("mastery_detail", masteryLock\)/);
+    // Comments stripped: the page's header names the component it replaced.
+    const mastery = read("client/src/pages/mastery.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    expect(mastery).toContain("<LockedMasteryCard");
+    expect(mastery).toMatch(/upgrade\.open\("mastery_detail", lockReason\)/);
+    expect(mastery).not.toContain("PremiumUpgradePrompt");
   });
 
   /**

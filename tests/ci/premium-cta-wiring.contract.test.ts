@@ -54,9 +54,13 @@ describe("Premium CTA wiring contract", () => {
    * that could not work for a guardian. The assertion now pins the resolver.
    */
   it("resolves the billing destination from the role, never from a literal", () => {
-    const mastery = read("client/src/pages/mastery.tsx");
-    expect(mastery).toContain("PremiumUpgradePrompt");
-    expect(mastery).not.toContain("startSubscriptionCheckout('monthly')");
+    // UI-57 (2026-10-03): Mastery names no billing destination either. Its locked card opens
+    // the one upgrade modal (`upgrade.open("mastery_detail", …)`), as Home's does.
+    const mastery = readCode("client/src/pages/mastery.tsx");
+    expect(mastery).not.toContain("PremiumUpgradePrompt");
+    expect(mastery).toContain('upgrade.open("mastery_detail"');
+    expect(mastery).not.toContain("/upgrade");
+    expect(mastery).not.toContain("startSubscriptionCheckout");
 
     // UI-50 (2026-10-03): Home names no billing destination at all. Its locked card opens the
     // one upgrade modal, whose "See plans" goes to UPGRADE_PLANS_DESTINATION (OQ-39(e)).

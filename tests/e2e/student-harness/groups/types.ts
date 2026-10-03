@@ -129,7 +129,15 @@ export type PageGroup = {
    * month can show the starred test day.
    * "lisa-history" (UI-56): four LISA conversations for the paid student (seed.ts
    * `seedLisaHistory`), one with the prototype's four turns, one ended.
+   * "mastery-skills" (UI-57): the harness bank retagged with each domain's canonical skills
+   * (db.ts `useCanonicalSkills`) before any answer, so the Mastery page's skills lists are real
+   * skill names, some measured by the base seed's answers and some not.
    * Off by default, so the other groups' payloads do not change.
    */
-  seed?: "review-history" | "exam-history" | "calendar-goal" | "lisa-history";
+  seed?:
+    | "review-history"
+    | "exam-history"
+    | "calendar-goal"
+    | "lisa-history"
+    | "mastery-skills";
 };
