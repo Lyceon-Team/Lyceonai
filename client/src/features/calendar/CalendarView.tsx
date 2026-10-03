@@ -69,9 +69,8 @@ import {
   startOfWeek,
   weekDates,
 } from "./lib/dates";
-import { domainsForSection, isDraggable } from "./lib/blocks";
+import { isDraggable } from "./lib/blocks";
 import {
-  MIX_GRANULARITY,
   isValidMix,
   membersWithEdit,
   membersWithNewBlock,
