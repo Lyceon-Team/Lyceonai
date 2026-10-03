@@ -32,7 +32,7 @@ export default function Footer() {
               <span className="font-bold">Lyceon</span>
             </Link>
             <p className="text-sm text-muted-foreground">
-              Study Smarter, Score Higher.
+              Study smarter for the SAT.
             </p>
           </div>
 
@@ -86,7 +86,13 @@ export default function Footer() {
         </div>
 
         <div className="pt-8 border-t border-border text-center text-sm text-muted-foreground">
-          {currentYear} Lyceon. All rights reserved.
+          <p>© {currentYear} Lyceon. All rights reserved.</p>
+          {/* The standard trademark notice used across SAT-prep sites (owner answer 6,
+              2026-10-03): on every public page, since every public page renders this footer. */}
+          <p className="mt-2">
+            SAT® is a trademark registered by the College Board, which is not
+            affiliated with, and does not endorse, this product.
+          </p>
         </div>
       </div>
     </footer>

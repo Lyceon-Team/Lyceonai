@@ -330,7 +330,10 @@ describe("404 page and SPA shell (F2)", () => {
     expect(site.notFoundHtml).toContain(
       "<title>Page not found | Lyceon</title>",
     );
-    expect(bodyText(site.notFoundHtml)).toContain("404 Page Not Found");
+    expect(bodyText(site.notFoundHtml)).toContain("Page not found");
+    expect(site.notFoundHtml).toMatch(
+      /<a[^>]*href="\/"[^>]*>Go to the homepage<\/a>/,
+    );
   });
 
   it("the SPA shell (app.html) is noindex with no canonical, and keeps the head markers the build replaces", () => {
@@ -347,7 +350,7 @@ describe("404 page and SPA shell (F2)", () => {
 describe("homepage hero is static (F7, taken into this change)", () => {
   it("the prerendered homepage shows the headline, not a loading placeholder", () => {
     const text = bodyText(page("/").html);
-    expect(text).toContain("Digital SAT prep built for real progress");
+    expect(text).toContain("Digital SAT prep, one step at a time");
     expect(text).not.toContain("Loading...");
   });
 
@@ -356,7 +359,7 @@ describe("homepage hero is static (F7, taken into this change)", () => {
     const source = stripComments(
       readFileSync(resolve(REPO_ROOT, "client/src/pages/home.tsx"), "utf8"),
     );
-    expect(source).toContain("Digital SAT prep built for");
+    expect(source).toContain("Digital SAT prep, one step at a time");
     expect(source).not.toMatch(/Math\.random/);
     expect(source).not.toMatch(/localStorage|sessionStorage/);
     expect(source).not.toContain("landing_hero_variant");

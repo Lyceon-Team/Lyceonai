@@ -69,7 +69,6 @@ const PUBLIC_EXACT: readonly string[] = [
   "/digital-sat/reading-writing",
   "/blog",
   "/trust",
-  "/trust/evidence",
   "/legal",
   "/privacy",
   "/terms",
