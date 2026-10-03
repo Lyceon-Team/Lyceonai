@@ -2,19 +2,22 @@
 /**
  * G5-04 — the Dashboard's compact latest-test card (ruling R13).
  *
- * @spec [Guardian_Closure_Plan G5-04, R13 (Karl, 2026-10-02); SCL-199 (the list item's
- *       `total_scaled`); SCL-192 (latest = newest `completed_at`); SCL-182 (the disclosure
- *       summary beside every score)] | @implemented [2026-10-02]
+ * @spec [Guardian_Closure_Plan G5-04, G5-09, R13 (Karl, 2026-10-02); G5-09 owner brief
+ *       2026-10-03 (scores only through the report route; the card reads at most two report
+ *       calls; no chip when the second fails or is withheld); SCL-192 (latest = newest
+ *       instant); SCL-182 (the disclosure summary beside every score)]
+ *       | @implemented [2026-10-02; two reports 2026-10-03]
  *
  * plain English: the real app at `/guardian/:id`, served lists built through the real
- * projection (`examListWith`). The card shows the latest completed test's name and date, its
- * total, the change since the previous completed test (latest total minus that test's total,
- * from the list), the Reading and Writing and Math scores, the disclosure summary and "See full
+ * projection (`examListWith`, which carries no score) and each session's report through the
+ * real guardian projection (`serveReports`). The card shows the latest completed test's name
+ * and date, its total, the change since the previous scored test (computed from the two
+ * reports), the Reading and Writing and Math scores, the disclosure summary and "See full
  * report →" to the existing detail page. A drop wears the rust tone, a rise the blue; with no
- * previous test, "First test" and no chip. No counts and no per-domain detail. The previous
- * test's total comes from the list: no second report is requested.
+ * previous test, "First test" and no chip. No counts and no per-domain detail. If the previous
+ * report fails or is withheld, no chip.
  */
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { levelTone } from "@/components/mastery/LevelPill";
 import { toGuardianExamReport } from "@lyceon/shared/exam-guardian-report-schema";
@@ -23,6 +26,7 @@ import {
   FIXTURE_DISCLOSURE,
   FIXTURE_SESSION_ID,
   inProgressReport,
+  partialReport,
   pendingReport,
 } from "@/features/exam/test-fixtures/report-fixtures";
 import {
@@ -37,7 +41,9 @@ import {
   mountApp,
   net,
   roster,
+  scoredReportFor,
   serveDashboard,
+  serveReports,
   type OtherExam,
 } from "./test-harness";
 import { guardianPaths } from "./paths";
@@ -76,29 +82,43 @@ function serve(others: readonly OtherExam[]): void {
       ? json(examListWith(others))
       : undefined,
   );
+  net.handlers.push(
+    serveReports(
+      ADA,
+      others.map((o) => o.report),
+    ),
+  );
   net.handlers.push(serveDashboard(ADA));
 }
 
+/** Another scored test; any valid split of the total will do here. */
 const scored = (
   n: number,
   completed_at: string,
   total_scaled: number,
 ): OtherExam => ({
-  session_id: `5e551011-0000-4000-8000-00000000010${n}`,
-  name: `Practice Test ${n + 3}`,
-  report_state: "scored",
-  completed_at,
-  total_scaled,
-  // A scored item carries both section scores (SCL-199): any valid split will do here.
-  rw_scaled: Math.round(total_scaled / 2),
-  math_scaled: total_scaled - Math.round(total_scaled / 2),
+  report: scoredReportFor({
+    session_id: `5e551011-0000-4000-8000-00000000010${n}`,
+    name: `Practice Test ${n + 3}`,
+    completed_at,
+    rw: Math.round(total_scaled / 2),
+    math: total_scaled - Math.round(total_scaled / 2),
+  }),
 });
+
+const reportCalls = (): string[] =>
+  net.log.filter((l) => /\/tests\/[^/]+\/report/.test(l));
 
 async function card(): Promise<HTMLElement> {
   mountApp(Router, `/guardian/${ADA}`);
-  // The card's frame also holds the loading state: wait for the loaded card's meta line.
+  // The card's frame also holds the loading state: wait for the loaded card's meta line, then
+  // for the previous test's report to settle (the chip is drawn from it).
   await screen.findByTestId("latest-test-meta");
-  return screen.getByTestId("latest-test-card");
+  const root = screen.getByTestId("latest-test-card");
+  await waitFor(() =>
+    expect(root.getAttribute("data-change-settled")).toBe("true"),
+  );
+  return root;
 }
 
 const toneOf = (key: "L1" | "L3"): string[] =>
@@ -178,11 +198,12 @@ describe("G5-04 the latest-test card", () => {
   it("a previous test with no score yet: neither a chip nor 'First test'", async () => {
     serve([
       {
-        session_id: PENDING_SID,
-        name: "Practice Test 9",
-        report_state: "scoring_pending",
-        completed_at: "2026-09-10T15:00:00Z",
-        total_scaled: null,
+        report: examReportPayloadSchema.parse({
+          ...pendingReport,
+          session_id: PENDING_SID,
+          test_form_name: "Practice Test 9",
+          completed_at: "2026-09-10T15:00:00Z",
+        }),
       },
     ]);
     const root = await card();
@@ -194,8 +215,10 @@ describe("G5-04 the latest-test card", () => {
     expect(within(root).queryByTestId("latest-test-first")).toBeNull();
   });
 
-  it("no counts and no per-domain detail; one report read, the latest's", async () => {
-    serve([scored(1, "2026-09-10T15:00:00Z", 1380)]);
+  it("no counts and no per-domain detail; two report reads, the latest's and the previous's", async () => {
+    const older = scored(1, "2026-09-10T15:00:00Z", 1380);
+    const oldest = scored(2, "2026-09-01T15:00:00Z", 1200);
+    serve([older, oldest]);
     const root = await card();
     expect(within(root).getByTestId("latest-test-total")).toBeTruthy();
     expect(root).not.toHaveTextContent(/\d+ of \d+/);
@@ -203,38 +226,84 @@ describe("G5-04 the latest-test card", () => {
     for (const row of FIXTURE_BREAKDOWN) {
       expect(root).not.toHaveTextContent(row.domain);
     }
-    const reports = net.log.filter((l) => /\/tests\/[^/]+\/report/.test(l));
-    expect(reports.length).toBeGreaterThan(0);
-    expect(
-      reports.every((l) => l.includes(`/tests/${FIXTURE_SESSION_ID}/report`)),
-    ).toBe(true);
+    // At most two report calls: the latest's and the previous scored test's — never the third.
+    expect([...new Set(reportCalls())].sort()).toEqual(
+      [
+        `GET /api/students/${ADA}/tests/${FIXTURE_SESSION_ID}/report`,
+        `GET /api/students/${ADA}/tests/${older.report.session_id}/report`,
+      ].sort(),
+    );
   });
+
+  it("G5-09: the chip's numbers are the previous REPORT's, not anything on the list", async () => {
+    serve([scored(1, "2026-09-10T15:00:00Z", 1380)]);
+    // The list item for that test carries no score at all.
+    const items = (
+      examListWith([scored(1, "2026-09-10T15:00:00Z", 1380)]) as {
+        tests: Record<string, unknown>[];
+      }
+    ).tests;
+    for (const t of items) {
+      expect(Object.keys(t).some((k) => /scaled|score/.test(k))).toBe(false);
+    }
+    expect(
+      within(await card()).getByTestId("latest-test-change"),
+    ).toHaveTextContent(/^▼ 40 since last test$/);
+  });
+
+  it.each([
+    ["fails", () => json({ ok: false, error: "boom", requestId: "r" }, 500)],
+    [
+      "is refused",
+      () => json({ ok: false, error: "nope", requestId: "r" }, 404),
+    ],
+    [
+      "is withheld (no valid disclosure)",
+      () => {
+        const prev = scored(1, "2026-09-10T15:00:00Z", 1380).report;
+        const report = toGuardianExamReport(prev) as Record<string, unknown>;
+        return json({
+          ok: true,
+          report: { ...report, disclosure: { summary: "" } },
+          requestId: "r",
+        });
+      },
+    ],
+  ])(
+    "G5-09: the previous report %s → no chip, the card still renders",
+    async (_n, answer) => {
+      const prevSid = scored(1, "2026-09-10T15:00:00Z", 1380).report.session_id;
+      net.handlers.push((url) =>
+        url === `/api/students/${ADA}/tests/${prevSid}/report`
+          ? answer()
+          : undefined,
+      );
+      serve([scored(1, "2026-09-10T15:00:00Z", 1380)]);
+      const root = await card();
+      expect(within(root).getByTestId("latest-test-total")).toHaveTextContent(
+        /^1340$/,
+      );
+      expect(reportCalls()).toContain(
+        `GET /api/students/${ADA}/tests/${prevSid}/report`,
+      );
+      expect(within(root).queryByTestId("latest-test-change")).toBeNull();
+      expect(within(root).queryByTestId("latest-test-first")).toBeNull();
+      expect(screen.queryByTestId("guardian-state-error")).toBeNull();
+    },
+  );
 
   it("a latest test still being scored: its name and the being-scored line, no score", async () => {
     serve([
       scored(1, "2026-09-10T15:00:00Z", 1380),
       {
-        session_id: PENDING_SID,
-        name: "Practice Test 9",
-        report_state: "scoring_pending",
-        completed_at: "2026-09-28T15:00:00Z",
-        total_scaled: null,
+        report: examReportPayloadSchema.parse({
+          ...pendingReport,
+          session_id: PENDING_SID,
+          test_form_name: "Practice Test 9",
+          completed_at: "2026-09-28T15:00:00Z",
+        }),
       },
     ]);
-    net.handlers.unshift((url) =>
-      url === `/api/students/${ADA}/tests/${PENDING_SID}/report`
-        ? json({
-            ok: true,
-            report: toGuardianExamReport({
-              ...pendingReport,
-              session_id: PENDING_SID,
-              test_form_name: "Practice Test 9",
-              completed_at: "2026-09-28T15:00:00Z",
-            }),
-            requestId: "r",
-          })
-        : undefined,
-    );
     const root = await card();
     expect(within(root).getByTestId("latest-test-meta")).toHaveTextContent(
       "Practice Test 9",
@@ -251,16 +320,29 @@ describe("G5-04 the latest-test card", () => {
   });
 
   it("G5-08: a scored test after a partial one compares the section they share", async () => {
+    if (partialReport.report_state !== "partial_scored") {
+      throw new Error("fixture drift");
+    }
     serve([
       {
-        session_id: PENDING_SID,
-        name: "Practice Test 9",
-        report_state: "partial_scored",
-        completed_at: null,
-        abandoned_at: "2026-09-10T15:00:00Z",
-        total_scaled: null,
-        rw_scaled: 650,
-        math_scaled: null,
+        report: examReportPayloadSchema.parse({
+          ...partialReport,
+          session_id: PENDING_SID,
+          test_form_name: "Practice Test 9",
+          abandoned_at: "2026-09-10T15:00:00Z",
+          score: {
+            ...partialReport.score,
+            rw_scaled: 650,
+            partial_display_scaled: 650,
+          },
+          sections: partialReport.sections.map((x) =>
+            x.section === "RW" ? { ...x, scaled: 650 } : x,
+          ),
+          partial_disclosure: {
+            summary:
+              "Reading and Writing section score: 650. Math was not completed, so no total score is available.",
+          },
+        }),
       },
     ]);
     // The fixture's latest scored test: Reading and Writing 690 (scoredReport).

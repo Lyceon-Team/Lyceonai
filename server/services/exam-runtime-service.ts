@@ -687,14 +687,6 @@ const formRowSchema = z.object({
       // `abandoned_at` since G5-08: a partial score's outcome instant).
       completed_at: z.string().nullable(),
       abandoned_at: z.string().nullable(),
-      // SCL-199: the score run's total and section scores, beside `score_total_present`; the
-      // guardian list carries them. Optional HERE ONLY so the student's listing survives a
-      // deploy that lands before migration 20261020000000; the guardian item stays strict (a
-      // scored item with no total fails its schema, closed), and the PG wire test pins the
-      // keys on the migrated pipeline.
-      total_scaled: z.number().int().nullable().optional(),
-      rw_scaled: z.number().int().nullable().optional(),
-      math_scaled: z.number().int().nullable().optional(),
     })
     .nullable(),
 });
@@ -720,10 +712,9 @@ export async function listExamForms(
  * listing does not gain the field; only the guardian list, which needs it to pick the latest
  * test, reads the map. Null for a session that never completed (in progress, abandoned).
  *
- * SCL-199 (G5-04/G5-08, 2026-10-02): each session's map entry also carries its abandonment
- * instant and the score run's total and section scores, so the guardian Dashboard can show the
- * change since the previous outcome from the list it already reads. Null where the score run
- * has no such value. The student's listing does not gain them either.
+ * SCL-199 (G5-08, 2026-10-02; narrowed by G5-09, 2026-10-03): each session's map entry also
+ * carries its abandonment instant, so the guardian can tell when a partial score ended. No
+ * score rides here: a guardian reads scores through the report route only (G5-09).
  */
 export async function listExamFormsWithCompletion(studentId: string): Promise<
   ExamResult<{
@@ -745,9 +736,6 @@ export async function listExamFormsWithCompletion(studentId: string): Promise<
       sessions[l.session_id] = {
         completed_at: l.completed_at,
         abandoned_at: l.abandoned_at,
-        total_scaled: l.total_scaled ?? null,
-        rw_scaled: l.rw_scaled ?? null,
-        math_scaled: l.math_scaled ?? null,
       };
     }
   }

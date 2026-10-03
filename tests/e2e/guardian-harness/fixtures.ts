@@ -55,7 +55,8 @@ const fixtures = {
   studentCalendar: studentCalendarWeek(E2E_TODAY),
   masteryDomains: masteryDomains(),
   examList: examList(),
-  examReport: examReport(),
+  // G5-09: every report the Dashboard may read, by session id (scores only come from here).
+  examReports: { [EXAM_SESSION]: examReport() },
   // G5-06: the canvas boards' own values (owner brief 2026-10-02), for the review screenshots
   // that sit beside the boards. Same schemas and projections as the scenario above.
   board: boardScenario(E2E_TODAY),

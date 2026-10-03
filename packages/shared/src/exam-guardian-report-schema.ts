@@ -280,11 +280,12 @@ export function toGuardianExamReport(
  * (`exam_list_forms`) — no second listing query. Forms never sat are left out: a guardian
  * has nothing to read there and no way to start one.
  *
- * Every field here is one the student also sees (Doc-04C §2.6 rule 7): the session state
- * drives the student's own card words (`formCardStateLabel`), and the instants and scores
- * are the student report's. G5-08 (owner brief 2026-10-02) added `session_state`,
- * `abandoned_at`, `rw_scaled` and `math_scaled` so the guardian list and Dashboard card say
- * what the student's card and report say, from the same producer fields.
+ * Every field here is one the student also sees (Doc-04C §2.6 rule 7), and NONE IS A SCORE
+ * (G5-09, owner brief 2026-10-03: scores reach a guardian only through the report route,
+ * `GET /api/students/:id/tests/:sessionId/report`). The list carries what is needed to choose
+ * sessions and to say the student's own card word: the report and session states and the
+ * instants. G5-08 added `session_state` and `abandoned_at` (SCL-199, narrowed by G5-09 to these
+ * two lifecycle fields).
  */
 export const guardianExamListItemSchema = z
   .object({
@@ -297,53 +298,23 @@ export const guardianExamListItemSchema = z
     // G5-08: `latest_session.state`, which tells "In progress" from "Not finished" on the
     // student's card for the same `not_completed` report state.
     session_state: examSessionStateSchema,
-    // SCL-192: required-present, null when the attempt never completed. G5-08: with
-    // `abandoned_at`, the outcome's instant (a partial score is abandoned, never completed).
+    // SCL-192: required-present, null when the attempt never completed. G5-08 (SCL-199): with
+    // `abandoned_at`, when the attempt ended (a partial score is abandoned, never completed).
     completed_at: z.string().nullable(),
     abandoned_at: z.string().nullable(),
-    // SCL-199: required-present. A `scored` item carries all three; a `partial_scored` item
-    // has no total and its scored section(s) only, exactly as the student's report shows; any
-    // other state carries none. The Dashboard card compares like with like (G5-04, G5-08).
-    total_scaled: z.number().int().min(400).max(1600).nullable(),
-    rw_scaled: sectionScaled.nullable(),
-    math_scaled: sectionScaled.nullable(),
   })
-  .strict()
-  .superRefine((item, ctx) => {
-    const none =
-      item.total_scaled === null &&
-      item.rw_scaled === null &&
-      item.math_scaled === null;
-    const ok =
-      item.report_state === "scored"
-        ? item.total_scaled !== null &&
-          item.rw_scaled !== null &&
-          item.math_scaled !== null
-        : item.report_state === "partial_scored"
-          ? item.total_scaled === null &&
-            (item.rw_scaled !== null || item.math_scaled !== null)
-          : none;
-    if (!ok) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `scores do not match report_state ${item.report_state}`,
-      });
-    }
-  });
+  .strict();
 
 const guardianExamListSchema = z
   .object({ tests: z.array(guardianExamListItemSchema) })
   .strict();
 export type GuardianExamList = z.infer<typeof guardianExamListSchema>;
 
-/** One latest session's facts from `exam_list_forms`, keyed by session id (SCL-192/199). */
+/** One latest session's instants from `exam_list_forms`, keyed by session id (SCL-192/199). */
 export const guardianListSessionFactsSchema = z
   .object({
     completed_at: z.string().nullable(),
     abandoned_at: z.string().nullable(),
-    total_scaled: z.number().int().nullable(),
-    rw_scaled: z.number().int().nullable(),
-    math_scaled: z.number().int().nullable(),
   })
   .strict();
 export type GuardianListSessionFacts = z.infer<
@@ -351,13 +322,13 @@ export type GuardianListSessionFacts = z.infer<
 >;
 
 /**
- * @spec [SCL-181; SCL-192; SCL-199; Guardian_Closure_Plan G5-08] | @implemented [2026-09-27]
+ * @spec [SCL-181; SCL-192; SCL-199 (narrowed, G5-09); Guardian_Closure_Plan G5-08, G5-09]
+ *       | @implemented [2026-09-27; scores removed 2026-10-03]
  * plain English: the forms listing in, the guardian's list out — one row per form the
  * student has sat, its latest attempt. Timings, question counts and selectability are
- * the student's controls and are not carried. Pure; parsed on the way out. Each item takes
- * its session's instants and scores from `sessions` (keyed by session id), and carries scores
- * only where the student's report shows them: all three when scored, the section scores when
- * partial, none otherwise — whatever the score run holds.
+ * the student's controls and are not carried, and no score is (G5-09: the report route is the
+ * one score path). Pure; parsed on the way out. Each item takes its session's instants from
+ * `sessions` (keyed by session id).
  */
 export function toGuardianExamList(
   forms: ExamFormsResponse,
@@ -367,8 +338,6 @@ export function toGuardianExamList(
     const l = f.latest_session;
     if (l === null) return [];
     const facts = sessions[l.session_id];
-    const scored = l.report_state === "scored";
-    const partial = l.report_state === "partial_scored";
     return [
       {
         session_id: l.session_id,
@@ -380,9 +349,6 @@ export function toGuardianExamList(
         session_state: l.state,
         completed_at: facts?.completed_at ?? null,
         abandoned_at: facts?.abandoned_at ?? null,
-        total_scaled: scored ? (facts?.total_scaled ?? null) : null,
-        rw_scaled: scored || partial ? (facts?.rw_scaled ?? null) : null,
-        math_scaled: scored || partial ? (facts?.math_scaled ?? null) : null,
       },
     ];
   });
