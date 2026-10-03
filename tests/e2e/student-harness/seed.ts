@@ -28,7 +28,13 @@
  * is the server's choice, not ours; the NUMBER of answers is fixed.
  */
 import type { Client } from "pg";
-import { PERSONA_HEADER, PERSONAS, type StudentPersona } from "./personas";
+import {
+  BARE_PAGE_PERSONAS,
+  PERSONA_HEADER,
+  PERSONAS,
+  type BarePagePersona,
+  type StudentPersona,
+} from "./personas";
 
 export type SeededPersona = {
   completedPracticeSessionId: string;
@@ -72,7 +78,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 async function call(
   base: string,
-  persona: StudentPersona,
+  persona: StudentPersona | BarePagePersona,
   method: "GET" | "POST" | "PUT",
   path: string,
   body?: Record<string, unknown>,
@@ -572,4 +578,15 @@ export async function seedLisaHistory(
     if (conv.turns.length > 1) withTurns = id;
   }
   return withTurns;
+}
+
+/**
+ * UI-59 (`seed: "bare-pages"`): the bare-page personas accept the current Terms and Privacy
+ * Policy through the real re-accept route, as the base seed does for the others, so the
+ * re-consent prompt is not drawn over the page being shot.
+ */
+export async function seedBarePagePersonas(base: string): Promise<void> {
+  for (const persona of Object.keys(BARE_PAGE_PERSONAS) as BarePagePersona[]) {
+    await call(base, persona, "POST", "/api/legal/reaccept", {});
+  }
 }

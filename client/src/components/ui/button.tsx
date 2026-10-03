@@ -15,6 +15,14 @@ import { cn } from "@/lib/utils";
 export const LYC_FOCUS =
   "transition-none focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-lyc-focus focus-visible:ring-0 focus-visible:ring-offset-0";
 
+/**
+ * UI-59: a real inline link inside running text (DESIGN.md §1: only real inline links are
+ * underlined), for an <a> in a sentence. The `lyc-link` variant below is a BUTTON drawn as a
+ * link (inline-flex, nowrap), which breaks a sentence's line when it wraps; this is plain inline
+ * text that takes the surrounding size.
+ */
+export const LYC_INLINE_LINK = `${LYC_FOCUS} font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline`;
+
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {

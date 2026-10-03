@@ -18,13 +18,18 @@
  *
  * edge cases: the profile read failing or still loading keeps the panels on screen (they are
  * reachable either way); an adult or linked student who opens this URL is sent to the dashboard.
+ *
+ * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card"] | @implemented [2026-10-03]
+ * UI-59: drawn with the student tokens only, inside the Bare card. Copy and behaviour unchanged.
+ * The "why" sentence is a margin note (--margin, hairline --rule) where it was a shadcn Alert with
+ * role="alert": it is the page's standing explanation, not an error. Sign out stays an outline
+ * button; the link-code panel's own actions carry the page's work.
  */
 import { Redirect } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { ShieldAlert } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, LYC_INLINE_LINK } from "@/components/ui/button";
+import { BareCardHeader } from "@/components/layout/BareCardShell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { profileQuery, type ProfileHydration } from "@/hooks/useProfileQuery";
 import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
@@ -55,45 +60,46 @@ export default function GuardianRequired() {
   if (!user) return null;
 
   return (
-    <div className="space-y-6" data-testid="guardian-required">
-      <div className="mx-auto max-w-xl space-y-6">
-        <h1 className="text-2xl font-semibold text-[#0F2E48]">
-          Connect a guardian to get started
-        </h1>
-        <Alert>
-          <ShieldAlert className="h-4 w-4" />
-          <AlertDescription>
-            Because you&rsquo;re under 13, a parent or guardian needs to connect
-            to your account before you can start studying. This is part of the{" "}
-            <a
-              href="/legal/student-terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              Student Terms
-            </a>
-            .
-          </AlertDescription>
-        </Alert>
-
-        <StudentLinkCodePanel studentId={user.id} />
-        <StudentGuardiansPanel studentId={user.id} />
-
-        <p className="text-sm text-muted-foreground">
-          Until a guardian connects, you&rsquo;ll come back to this page
-          whenever you sign in. As soon as they enter your code, you&rsquo;ll go
-          straight on to your dashboard.
-        </p>
-
-        <Button
-          variant="outline"
-          onClick={() => void signOut()}
-          data-testid="guardian-required-sign-out"
+    <div className="flex flex-col gap-6" data-testid="guardian-required">
+      <div>
+        <BareCardHeader title="Connect a guardian to get started" />
+        <p
+          className="m-0 rounded-lg border border-lyc-rule bg-lyc-margin px-4 py-3 text-lyc-body text-lyc-ink"
+          data-testid="guardian-required-why"
         >
-          Sign out
-        </Button>
+          Because you&rsquo;re under 13, a parent or guardian needs to connect
+          to your account before you can start studying. This is part of the{" "}
+          <a
+            href="/legal/student-terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={LYC_INLINE_LINK}
+          >
+            Student Terms
+          </a>
+          .
+        </p>
       </div>
+
+      <StudentLinkCodePanel studentId={user.id} />
+      <StudentGuardiansPanel studentId={user.id} />
+
+      <p className="m-0 text-lyc-body text-lyc-muted">
+        {/* One string, so a formatter's line wrap never splits the sentence the N4 contract
+            test (consent-never-blocks) reads from this source. */}
+        {
+          "Until a guardian connects, you’ll come back to this page whenever you sign in. As soon as they enter your code, you’ll go straight on to your dashboard."
+        }
+      </p>
+
+      <Button
+        variant="lyc-outline"
+        className="self-start"
+        onClick={() => void signOut()}
+        data-testid="guardian-required-sign-out"
+      >
+        Sign out
+      </Button>
     </div>
   );
 }

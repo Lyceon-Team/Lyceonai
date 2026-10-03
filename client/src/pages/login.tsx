@@ -1,17 +1,23 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { AlertCircle } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CardContent, CardHeader } from "@/components/ui/card";
+import { Notice } from "@/components/student-ui";
 import { humanAuthError } from "@/lib/auth-error-messages";
 import {
   postAuthDestination,
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
 
+/**
+ * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (login, signup);
+ *       contracts/auth-standard-flow.contract.md AS-3, AS-5] | @implemented [2026-10-03]
+ * plain English: /login, inside the Bare card App.tsx wraps it in. UI-59 draws it with the
+ * student tokens only: the AS-3 redirect error (`?error=<code>`, shown as human copy, never the
+ * code) is a danger Notice (role="alert", as the amber shadcn Alert it replaces was), and the
+ * loading state is the still student skeleton. The landing decision below is unchanged.
+ */
 export default function Login() {
   const [, navigate] = useLocation();
   const { user, isAuthenticated, authLoading } = useSupabaseAuth();
@@ -76,37 +82,37 @@ export default function Login() {
     }
   }, [isAuthenticated, authLoading, user, navigate]);
 
-  // Show loading skeleton while checking auth state
+  // Show loading skeleton while checking auth state.
+  // UI-59: the student placeholder (`Skeleton variant="lyc"`: still, --seg-empty, aria-hidden)
+  // inside a polite status region named for what is loading.
   if (authLoading) {
     return (
-      <div>
-        <div>
-          <CardHeader>
-            <Skeleton className="h-8 w-3/4" />
-            <Skeleton className="h-4 w-full mt-2" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        </div>
+      <div
+        role="status"
+        aria-label="Loading..."
+        className="flex flex-col gap-4"
+        data-testid="login-loading"
+      >
+        <Skeleton variant="lyc" className="h-8 w-3/4" />
+        <Skeleton variant="lyc" className="h-4 w-full" />
+        <Skeleton variant="lyc" className="h-11 w-full" />
+        <Skeleton variant="lyc" className="h-11 w-full" />
+        <Skeleton variant="lyc" className="h-11 w-full" />
       </div>
     );
   }
 
   // Show auth form when ready
   return (
-    <div>
-      <div className="space-y-4">
-        {errorMessage && (
-          <Alert className="border-amber-200 bg-amber-50 text-amber-800">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{errorMessage}</AlertDescription>
-          </Alert>
-        )}
-        <SupabaseAuthForm />
-      </div>
+    <div className="flex flex-col gap-4">
+      {errorMessage && (
+        <Notice
+          tone="danger"
+          title={errorMessage}
+          data-testid="login-redirect-error"
+        />
+      )}
+      <SupabaseAuthForm />
     </div>
   );
 }

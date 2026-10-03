@@ -107,6 +107,14 @@ export type Shot = {
     reason: string;
   };
   /**
+   * UI-59: requests the browser fails itself (a network error, never reaching the server), for a
+   * state production reaches only when the network does: the app's error screen, which renders
+   * when a page's code chunk cannot load (a lazy route whose chunk request fails throws into the
+   * app's ErrorBoundary). `pathPattern` is a RegExp source over the request's pathname. The index
+   * records it with `reason`; the capture fails if no request matched.
+   */
+  failRequest?: { pathPattern: string; reason: string };
+  /**
    * A click path's proof: the pathname the page must land on after `steps` (a RegExp source).
    * The capture fails if it lands anywhere else, and the index records the expectation next to
    * the path it saw.
@@ -144,6 +152,9 @@ export type PageGroup = {
    * "mastery-skills" (UI-57): the harness bank retagged with each domain's canonical skills
    * (db.ts `useCanonicalSkills`) before any answer, so the Mastery page's skills lists are real
    * skill names, some measured by the base seed's answers and some not.
+   * "bare-pages" (UI-59): three more students (personas.ts BARE_PAGE_PERSONAS: an incomplete
+   * profile, an unlinked under-13, a pending deletion through the real SQL writer), the deletion
+   * lifecycle flag on and the deletion routes mounted in the harness server.
    * Off by default, so the other groups' payloads do not change.
    */
   seed?:
@@ -151,5 +162,6 @@ export type PageGroup = {
     | "exam-history"
     | "calendar-goal"
     | "lisa-history"
-    | "mastery-skills";
+    | "mastery-skills"
+    | "bare-pages";
 };

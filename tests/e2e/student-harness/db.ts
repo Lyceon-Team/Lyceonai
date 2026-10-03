@@ -18,7 +18,7 @@ import path from "node:path";
 import type { Client } from "pg";
 import { z } from "zod";
 import { buildHarnessDb, makeHarnessForm } from "../exam-harness/db";
-import { PERSONAS } from "./personas";
+import { BARE_PAGE_PERSONAS, PERSONAS } from "./personas";
 
 /**
  * The throwaway database's name. `STUDENT_HARNESS_DB` overrides it so two page groups can be
@@ -133,5 +133,84 @@ export async function buildStudentHarnessDb(): Promise<Client> {
       );
     }
   }
+  if (process.env.STUDENT_HARNESS_SEED === "bare-pages") {
+    await addBarePagePersonas(pg);
+  }
   return pg;
+}
+
+/** A date of birth `years` years before today (UTC), as YYYY-MM-DD. */
+function birthDateYearsAgo(years: number): string {
+  const d = new Date();
+  d.setUTCFullYear(d.getUTCFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * UI-59 (`seed: "bare-pages"`): the three bare-page personas (personas.ts BARE_PAGE_PERSONAS).
+ * Identity rows only, as above, plus the one lifecycle write production makes through SQL: the
+ * pending deletion is the REAL `request_account_deletion` function (soft-delete and a pending
+ * request row in one transaction), never a hand-written row. Its recovery-token hash is a fixed
+ * harness label; no recovery link is ever built from it. Each state is then checked as the
+ * profile route will read it, so a migration that changes the trigger or the writer fails here
+ * rather than producing a screenshot of the wrong page.
+ */
+async function addBarePagePersonas(pg: Client): Promise<void> {
+  for (const persona of Object.values(BARE_PAGE_PERSONAS)) {
+    await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, $2)`, [
+      persona.id,
+      persona.email,
+    ]);
+    await pg.query(
+      `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, $2, 'student', $3)`,
+      [persona.id, persona.email, persona.displayName],
+    );
+  }
+  // under13: eleven years old today, profile complete, no guardian link.
+  await pg.query(
+    `UPDATE public.profiles SET date_of_birth = $2::date, profile_completed_at = '2026-09-01T00:00:00Z'
+      WHERE id = $1::uuid`,
+    [BARE_PAGE_PERSONAS.under13.id, birthDateYearsAgo(11)],
+  );
+  // deleting: sixteen, profile complete, then the real deletion request.
+  await pg.query(
+    `UPDATE public.profiles SET date_of_birth = $2::date, profile_completed_at = '2026-09-01T00:00:00Z'
+      WHERE id = $1::uuid`,
+    [BARE_PAGE_PERSONAS.deleting.id, birthDateYearsAgo(16)],
+  );
+  await pg.query(
+    `SELECT * FROM public.request_account_deletion($1::uuid, $1::uuid, $2, 7)`,
+    [BARE_PAGE_PERSONAS.deleting.id, "student-harness-not-a-real-token-hash"],
+  );
+  const states = await pg.query<{
+    id: string;
+    is_under_13: boolean | null;
+    completed: boolean;
+    deleted: boolean;
+    pending: boolean;
+  }>(
+    `SELECT p.id, p.is_under_13, p.profile_completed_at IS NOT NULL AS completed,
+            p.deleted_at IS NOT NULL AS deleted,
+            EXISTS (SELECT 1 FROM public.account_deletion_requests r
+                     WHERE r.profile_id = p.id AND r.status = 'pending') AS pending
+       FROM public.profiles p WHERE p.id = ANY($1::uuid[])`,
+    [Object.values(BARE_PAGE_PERSONAS).map((p) => p.id)],
+  );
+  const byId = new Map(states.rows.map((r) => [r.id, r]));
+  const onboarding = byId.get(BARE_PAGE_PERSONAS.onboarding.id);
+  const under13 = byId.get(BARE_PAGE_PERSONAS.under13.id);
+  const deleting = byId.get(BARE_PAGE_PERSONAS.deleting.id);
+  if (!onboarding || onboarding.completed)
+    throw new Error("bare-pages: the onboarding persona is not incomplete");
+  if (!under13 || under13.is_under_13 !== true || !under13.completed)
+    throw new Error(
+      "bare-pages: the under-13 persona is not a complete under-13 student",
+    );
+  if (
+    !deleting ||
+    !deleting.deleted ||
+    !deleting.pending ||
+    deleting.is_under_13 !== false
+  )
+    throw new Error("bare-pages: the deleting persona has no pending deletion");
 }

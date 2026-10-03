@@ -51,7 +51,11 @@ import type {
   Theme,
   Viewport,
 } from "./groups/types";
-import { PERSONA_HEADER, type StudentPersona } from "./personas";
+import {
+  isStudentPersona,
+  PERSONA_HEADER,
+  type StudentPersona,
+} from "./personas";
 import { SEED_CLIENT_INSTANCE, type SeedManifest } from "./seed";
 
 const ROOT = path.resolve(
@@ -524,7 +528,8 @@ async function shootBuilt(
   fontCss: string,
 ): Promise<BuiltResult> {
   const file = `${shot.id}--${viewport}--${theme}--built.png`;
-  const persona = shot.persona === "signed-out" ? null : shot.persona;
+  // A fresh runner session needs one of the seeded students (UI-59's bare-page personas have none).
+  const persona = isStudentPersona(shot.persona) ? shot.persona : null;
   const fresh = shot.freshSession ?? null;
   if (fresh && persona === null)
     throw new Error(`${shot.id}: a fresh session needs a signed-in persona`);
@@ -598,6 +603,19 @@ async function shootBuilt(
         },
       );
     }
+    // UI-59: requests the browser fails itself (groups/types.ts `failRequest`).
+    const fail = shot.failRequest;
+    let failed = 0;
+    if (fail) {
+      const pattern = new RegExp(fail.pathPattern);
+      await page.route(
+        (url) => pattern.test(url.pathname),
+        async (route) => {
+          failed += 1;
+          await route.abort("failed");
+        },
+      );
+    }
     const settleAfterStep = async (): Promise<void> => {
       if (hold) await page.waitForTimeout(SETTLE_MS);
       else await settle(page);
@@ -658,6 +676,10 @@ async function shootBuilt(
       path: path.join(outDir, file),
       fullPage: shot.fullPage === true,
     });
+    if (fail && failed === 0)
+      throw new Error(
+        `${shot.id}: no request matched failRequest ${fail.pathPattern}`,
+      );
     if (hold && held.length === 0)
       throw new Error(
         `${shot.id}: ${hold.method} ${hold.path} was to be held but was never requested`,
@@ -843,6 +865,10 @@ function writeIndex(
       );
     if (shot.fullPage === true)
       lines.push("Full page: the whole document, not just the viewport.");
+    if (shot.failRequest !== undefined)
+      lines.push(
+        `Failed in the browser: requests whose path matches \`${shot.failRequest.pathPattern}\` get a network error and never reach the server. ${shot.failRequest.reason}`,
+      );
     if (shot.expectPath !== undefined)
       lines.push(
         `Click path: must land on a path matching \`${shot.expectPath}\` (the capture fails otherwise); the path it landed on is under each built shot.`,

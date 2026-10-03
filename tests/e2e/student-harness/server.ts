@@ -33,8 +33,18 @@ import express, {
 import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
 import { buildStudentHarnessDb } from "./db";
-import { isStudentPersona, PERSONA_HEADER, PERSONAS } from "./personas";
-import { seedLisaHistory, seedPracticeHistory } from "./seed";
+import {
+  BARE_PAGE_PERSONAS,
+  isBarePagePersona,
+  isStudentPersona,
+  PERSONA_HEADER,
+  PERSONAS,
+} from "./personas";
+import {
+  seedBarePagePersonas,
+  seedLisaHistory,
+  seedPracticeHistory,
+} from "./seed";
 
 if (process.env.NODE_ENV === "production") {
   throw new Error(
@@ -43,6 +53,17 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const PORT = Number(process.env.HARNESS_PORT ?? "5056");
+
+/**
+ * UI-59 (`seed: "bare-pages"`): the bare-card pages' personas exist, and the account-deletion
+ * lifecycle flag is on in THIS process, as it is wherever the pending-deletion screen can be
+ * reached in production (`isDeletionLifecycleV2Enabled`, server/lib/account-deletion-execute.ts):
+ * without it `/api/profile` never reports `pendingDeletion`. The deletion routes are mounted as
+ * server/index.ts mounts them, so the recovery page's request reaches the real route. Off in
+ * every other run, so their pages and payloads do not change.
+ */
+const BARE_PAGES = process.env.STUDENT_HARNESS_SEED === "bare-pages";
+if (BARE_PAGES) process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";
 
 type ProfileRow = {
   id: string;
@@ -91,6 +112,9 @@ async function main(): Promise<void> {
     await import("../../../server/routes/billing-routes");
   const { default: accountRoutes } =
     await import("../../../server/routes/account-routes");
+  const accountDeletionRoutes = BARE_PAGES
+    ? (await import("../../../server/routes/account-deletion-routes")).default
+    : null;
   const { legalRouter } = await import("../../../server/routes/legal-routes");
   const { default: tutorRuntimeRouter } =
     await import("../../../server/routes/tutor-runtime");
@@ -117,11 +141,17 @@ async function main(): Promise<void> {
     (req as unknown as { requestId: string }).requestId =
       `student-harness-${Date.now()}`;
     const as = req.header(PERSONA_HEADER);
-    if (!isStudentPersona(as)) return next();
+    // UI-59: the bare-page personas exist only in a `bare-pages` run (db.ts).
+    const personaId = isStudentPersona(as)
+      ? PERSONAS[as].id
+      : isBarePagePersona(as) && BARE_PAGES
+        ? BARE_PAGE_PERSONAS[as].id
+        : null;
+    if (personaId === null) return next();
     pg.query<ProfileRow>(
       `SELECT id, email, display_name, role, is_under_13, profile_completed_at, actor_id
          FROM public.profiles WHERE id = $1`,
-      [PERSONAS[as].id],
+      [personaId],
     ).then((r: { rows: ProfileRow[] }) => {
       const row = r.rows[0];
       if (!row) return next(new Error(`persona ${as} has no profile row`));
@@ -187,6 +217,7 @@ async function main(): Promise<void> {
   app.use("/api/guardian", auth.requireSupabaseAuth, guardianRouter);
   app.use("/api/billing", billingRoutes);
   app.use("/api/account", accountRoutes);
+  if (accountDeletionRoutes) app.use("/api/account", accountDeletionRoutes);
   app.get(
     "/api/practice/topics",
     auth.requireSupabaseAuth,
@@ -278,6 +309,8 @@ async function main(): Promise<void> {
             pg,
           );
         }
+        // UI-59: the bare-page personas' current legal acceptance (seed.ts).
+        if (BARE_PAGES) await seedBarePagePersonas(`http://localhost:${PORT}`);
         return seeded;
       })
       .then(

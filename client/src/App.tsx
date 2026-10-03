@@ -23,7 +23,7 @@ import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
 import { FullPageLoader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
-import { BareCard } from "@/components/layout/BareCardShell";
+import { BareCard, BareCardHeader } from "@/components/layout/BareCardShell";
 import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
 import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
@@ -481,16 +481,19 @@ export class ErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       // UI-41: the error screen is a Bare card (DESIGN.md §2). BareCard reads no context, so it
-      // renders here, above every provider. Light-locked like every un-migrated surface.
+      // renders here, above every provider. UI-59: on the student tokens only, so it follows the
+      // device theme (the boot script in index.html sets <html data-theme> before any provider).
       return (
-        <BareCard themeLock="light">
-          <div className="text-center">
-            <h1 className="mb-4 font-lyc-serif text-lyc-section font-semibold text-lyc-ink-strong">
-              Something went wrong
-            </h1>
-            <p className="mb-6 text-lyc-body text-lyc-muted">
-              An unexpected error occurred. Reloading the page usually fixes it.
-            </p>
+        <BareCard>
+          <div
+            className="flex flex-col items-center"
+            data-testid="error-screen"
+          >
+            <BareCardHeader
+              title="Something went wrong"
+              description="An unexpected error occurred. Reloading the page usually fixes it."
+              align="center"
+            />
             <Button
               type="button"
               variant="lyc-primary"
@@ -514,13 +517,14 @@ export class ErrorBoundary extends Component<
  * straight through. The server is authoritative (pendingDeletion comes from /api/profile via the auth
  * context + the global deletion lock); this only mirrors that state in the UI.
  */
-function DeletionGate({ children }: { children: ReactNode }) {
+export function DeletionGate({ children }: { children: ReactNode }) {
   const { user } = useSupabaseAuth();
   const [location] = useLocation();
   if (user?.pendingDeletion && location !== "/account/recover") {
-    // UI-41: the pending-deletion screen is a Bare card (DESIGN.md §2).
+    // UI-41: the pending-deletion screen is a Bare card (DESIGN.md §2). UI-59: on the student
+    // tokens only, so it follows the device theme.
     return (
-      <BareCard themeLock="light">
+      <BareCard>
         <PendingDeletionScreen />
       </BareCard>
     );
