@@ -26,7 +26,13 @@ export type ClickStep = { click: Record<Viewport, string | null> };
  */
 export type PickStep = { pick: "correct" | "incorrect" | "first" };
 
-export type Step = ClickStep | PickStep;
+/**
+ * UI-55: type a value into a field (the free calendar's inline setup form), addressed per
+ * viewport like a click. `null` for a viewport skips it there.
+ */
+export type FillStep = { fill: Record<Viewport, string | null>; value: string };
+
+export type Step = ClickStep | PickStep | FillStep;
 
 /**
  * UI-53: a fresh runner session for each capture, started through the REAL create route before
@@ -107,7 +113,10 @@ export type PageGroup = {
    * "exam-history" (UI-54): the paid student's full-length history, a third published form
    * ("Practice Test 3", never taken), a test walked to a scored report and a test left in
    * Reading and Writing Module 2, all through the real exam routes (seed.ts, db.ts).
+   * "calendar-goal" (UI-55): the paid student's SAT date set, through the real
+   * `PUT /api/calendar/profile`, to a day inside the current week, so the week, month and mini
+   * month can show the starred test day.
    * Off by default, so the other groups' payloads do not change.
    */
-  seed?: "review-history" | "exam-history";
+  seed?: "review-history" | "exam-history" | "calendar-goal";
 };

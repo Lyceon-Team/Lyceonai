@@ -69,7 +69,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 async function call(
   base: string,
   persona: StudentPersona,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT",
   path: string,
   body?: Record<string, unknown>,
 ): Promise<{ status: number; json: unknown }> {
@@ -340,9 +340,31 @@ async function seedExamHistory(
   };
 }
 
+/**
+ * UI-55 (`seed: "calendar-goal"`): the paid student's SAT date, set through the real
+ * `PUT /api/calendar/profile` (idempotency key and all), to the Sunday of the current week in
+ * UTC (the harness student's zone), or today when today is Sunday — a day the week view shows
+ * and never a past one (`makeStudyProfileUpsertSchema` refuses a date before today). The
+ * target score stays the exam harness's 1400. Runs before the student first opens /calendar, so
+ * the plan is generated from the profile with the date in it.
+ */
+async function seedCalendarGoal(base: string): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  const sunday = new Date(`${today}T00:00:00Z`);
+  sunday.setUTCDate(sunday.getUTCDate() + ((7 - sunday.getUTCDay()) % 7));
+  await call(base, "paid", "PUT", "/api/calendar/profile", {
+    target_exam_date: sunday.toISOString().slice(0, 10),
+    idempotency_key: "5e55a000-0000-4000-8000-000000000055",
+  });
+}
+
 export async function seedPracticeHistory(
   base: string,
-  options: { reviewHistory: boolean; examHistory?: boolean } = {
+  options: {
+    reviewHistory: boolean;
+    examHistory?: boolean;
+    calendarGoal?: boolean;
+  } = {
     reviewHistory: false,
   },
 ): Promise<SeedManifest> {
@@ -419,5 +441,7 @@ export async function seedPracticeHistory(
         (exam?.answered ?? 0),
     };
   }
+  // After the personas' legal acceptance above, like every other seeded write.
+  if (options.calendarGoal === true) await seedCalendarGoal(base);
   return out as SeedManifest;
 }

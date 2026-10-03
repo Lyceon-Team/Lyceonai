@@ -243,6 +243,8 @@ async function main(): Promise<void> {
       reviewHistory: process.env.STUDENT_HARNESS_SEED === "review-history",
       // UI-54: a scored and an in-progress full-length test for the paid student.
       examHistory: process.env.STUDENT_HARNESS_SEED === "exam-history",
+      // UI-55: the paid student's SAT date inside the current week (the starred test day).
+      calendarGoal: process.env.STUDENT_HARNESS_SEED === "calendar-goal",
     }).then(
       (seeded) => {
         // eslint-disable-next-line no-console -- the readiness line capture.ts waits for

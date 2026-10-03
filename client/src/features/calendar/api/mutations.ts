@@ -159,6 +159,9 @@ export function useStudyProfileMutation(): UseMutationResult<
     retry: 1,
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: calendarKeys.ranges() });
+      // UI-55: the free calendar reads the profile on its own key (OQ-25), outside the
+      // range prefix, so a save names it too or the form and goal card would show the old one.
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.profile() });
     },
   });
 }

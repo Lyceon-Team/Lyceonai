@@ -43,7 +43,7 @@ export type RightPanelWidth = 360 | 340 | 320;
  * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
  * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53; /tests, /tests/:sessionId
- * and /tests/:sessionId/report, UI-54). The timed exam module
+ * and /tests/:sessionId/report, UI-54; /calendar, UI-55). The timed exam module
  * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
@@ -123,7 +123,10 @@ export const STUDENT_ROUTE_SHELLS = {
   "/review": app(360, true, "column", null),
   // UI-54 (2026-10-03): Full-Length home is rebuilt on the student tokens only; off the lock too.
   "/tests": app(360, true, "column", null),
-  "/calendar": app(340, false, "full"),
+  // UI-55 (2026-10-03): the student calendar draws its chrome, grid and sheets with the student
+  // tokens only (`calendar-student.css`); off the light lock. The guardian calendar is not a
+  // student route and keeps its own shell.
+  "/calendar": app(340, false, "full", null),
   "/chat": app(320, false, "full"),
   "/mastery": app(null, false),
   "/upgrade": app(null, false),

@@ -4,8 +4,7 @@
  * @spec [Doc 05F §17.5, §8.1; owner rulings 2026-09-24 (Brief 10 Step 2 and Step 3);
  *        SCL-130 — R-08-17 reversed] | @implemented [2026-09-24]
  *
- * plain English: two questions, then three, then — for a student who cannot yet see a plan
- * — a panel showing what they would get. Expected outcome: a saved profile and a generated
+ * plain English: two questions, then three. Expected outcome: a saved profile and a generated
  * plan, from a student who answered nothing at all if that is what they chose to do.
  *
  * NOTHING IS REQUIRED AND NOTHING BLOCKS. This is the whole point of the change, so it is
@@ -30,10 +29,13 @@
  * carries the server's suggestion for when the browser cannot say, and the server applies
  * the Chicago fall-open (item 19) when what arrives is undetectable or invalid.
  *
- * THE THIRD PANEL IS FOR A FREE STUDENT ONLY. An entitled student's last press builds the
- * plan and the popup closes; a free student's last press shows them what they would get and
- * the upgrade CTA. Either way the answers are already saved — `PUT /api/calendar/profile`
- * runs before the entitlement gate — which is why the panel can say so truthfully.
+ * PAID STUDENTS ONLY, SINCE UI-55 (2026-10-03). The popup used to end on a third panel for a
+ * free student (what their plan would be, and the upgrade CTA). DESIGN.md §4 Calendar gives
+ * the free plan an INLINE form instead (test date and target, `FreeCalendar.tsx`) beside the
+ * plan upsell card, and the UI-41 audit found this popup unusable at 390px for exactly that
+ * student. So the page opens the popup only for a student the server serves the plan to; the
+ * last press builds the plan and closes it. A free student's answers are still saved before
+ * the entitlement gate (SCL-130), through the inline form.
  */
 import { useMemo, useState, type ReactNode } from "react";
 import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
@@ -42,6 +44,12 @@ import {
   useKeyboardShortcuts,
 } from "@/hooks/useKeyboardShortcuts";
 import { addDays, daysBetween } from "../lib/dates";
+import {
+  OPENING_STUDY_DAYS,
+  browserTimeZone,
+  maskOf,
+  openingDailyMinutes,
+} from "../lib/setup";
 import {
   EXAM_FREQUENCIES,
   examCadenceNote,
@@ -57,10 +65,8 @@ const SETUP_FREQUENCIES = EXAM_FREQUENCIES;
 const DAY_CHIPS = WEEKDAYS;
 
 /**
- * Mon–Fri: the opening POSITION, not a stored value and not a recommendation.
- * `calendar_runtime_config` holds no default day-mask — it bounds minutes and the exam
- * horizon — so this one is the prototype's, and it exists so that a student who presses
- * straight through saves a week that makes sense rather than an empty one.
+ * The study-day chips open on `OPENING_STUDY_DAYS` (Mon–Fri, `lib/setup`), shared with the free
+ * calendar's inline form so both create the same profile from the same silence.
  *
  * THE FULL-LENGTH DAY OPENS UNSET, and that is deliberate. R-08-27 (Doc 05F §122, §8.1
  * `:448`) makes the test weekday OPTIONAL and independent of study days, and a full-length
@@ -80,7 +86,6 @@ const DAY_CHIPS = WEEKDAYS;
  * because the real SAT is sat on a Saturday morning — rehearsing on that weekday is the
  * point, when the student chooses it.
  */
-const OPENING_DAYS = [1, 2, 3, 4, 5];
 
 /** §8.1: 400..1600 in steps of 10. The slider cannot express anything else. */
 const SCORE_MIN = 400;
@@ -117,21 +122,6 @@ export type SetupAnswers = {
   timezone: string;
 };
 
-function maskOf(days: readonly number[]): number {
-  let mask = 0;
-  for (const d of days) mask |= 1 << d;
-  return mask;
-}
-
-/** What the browser thinks the student's zone is. Undetectable is an answer, not a crash. */
-function browserTimeZone(fallback: string): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 function minutesLabel(minutes: number): string {
   if (minutes % 60 === 0) return `${minutes / 60} hr`;
   if (minutes > 60) return `${minutes / 60} hr`;
@@ -161,10 +151,10 @@ function Chip({
   );
 }
 
-function Dots({ step }: { step: 1 | 2 | 3 }): JSX.Element {
+function Dots({ step }: { step: 1 | 2 }): JSX.Element {
   return (
     <div className="dots" aria-hidden="true">
-      {[1, 2, 3].map((i) => (
+      {[1, 2].map((i) => (
         <i key={i} className={i <= step ? "on" : ""} />
       ))}
     </div>
@@ -174,33 +164,28 @@ function Dots({ step }: { step: 1 | 2 | 3 }): JSX.Element {
 export function SetupPopup({
   defaults,
   today,
-  entitled,
   onSubmit,
   onDismiss,
-  onUpgrade,
   pending,
   error,
 }: {
   defaults: CalendarSetupDefaults;
   /** The student's local today, for the live "N days to go" readout. */
   today: string;
-  /** False for a free student: the last press shows the third panel instead of closing. */
-  entitled: boolean;
   onSubmit: (answers: SetupAnswers) => void;
   onDismiss: () => void;
-  onUpgrade: () => void;
   pending: boolean;
   error: string | null;
 }): JSX.Element {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   // Opens on a date roughly a term away, so the control has a sensible position. It is
   // only STORED if the student leaves "I haven't picked a date yet" unchecked.
   const [examDate, setExamDate] = useState<string>(() => addDays(today, 60));
   const [noDate, setNoDate] = useState(false);
   const [score, setScore] = useState<number>(OPENING_SCORE);
-  const [days, setDays] = useState<readonly number[]>(OPENING_DAYS);
-  const [minutes, setMinutes] = useState<number>(
-    () => defaults.daily_minutes_presets[3] ?? defaults.daily_minutes_min,
+  const [days, setDays] = useState<readonly number[]>(OPENING_STUDY_DAYS);
+  const [minutes, setMinutes] = useState<number>(() =>
+    openingDailyMinutes(defaults),
   );
   /**
    * §8.1's practice-test DAY, in the same shape as the cadence below and for the same
@@ -370,9 +355,6 @@ export function SetupPopup({
     const body = answers();
     if (scoreSkipped) body.target_score = null;
     onSubmit(body);
-    // A free student stays to see the third panel. Their answers are already on the way —
-    // the write is not gated — so the panel's "saved either way" is a fact, not a promise.
-    if (!entitled) setStep(3);
   }
 
   return (
@@ -400,18 +382,12 @@ export function SetupPopup({
             ✕
           </button>
           <h2 id="calendar-setup-title">
-            {step === 1
-              ? "Let's set up your plan"
-              : step === 2
-                ? "When do you study?"
-                : "Your plan is ready"}
+            {step === 1 ? "Let's set up your plan" : "When do you study?"}
           </h2>
           <div className="lede">
             {step === 1
               ? "Two quick questions. You can change any of this later."
-              : step === 2
-                ? "This is what we plan around."
-                : ""}
+              : "This is what we plan around."}
           </div>
         </header>
 
@@ -466,7 +442,7 @@ export function SetupPopup({
                 />
               </div>
             </>
-          ) : step === 2 ? (
+          ) : (
             <>
               <div className="field">
                 <label>Study days</label>
@@ -583,29 +559,6 @@ export function SetupPopup({
                 {minutesLabel(minutes)} a day · {setupExamNote()}
               </p>
             </>
-          ) : (
-            <>
-              <div className="cta">
-                <b>
-                  {daysToGo === null
-                    ? "A plan built around your week"
-                    : `${daysToGo} days to your SAT`}
-                </b>
-                A {days.length}-day-a-week plan
-                {scoreSkipped ? "" : ` aiming at ${score}`} — practice, review
-                and full-length tests, rebuilt every week as you improve.
-                <button
-                  type="button"
-                  onClick={onUpgrade}
-                  data-testid="calendar-setup-upgrade"
-                >
-                  Unlock my study plan
-                </button>
-              </div>
-              <p className="note">
-                Your test date and target score are saved either way.
-              </p>
-            </>
           )}
 
           {error === null ? null : (
@@ -636,7 +589,7 @@ export function SetupPopup({
                 Continue
               </button>
             </>
-          ) : step === 2 ? (
+          ) : (
             <>
               <button
                 type="button"
@@ -653,22 +606,9 @@ export function SetupPopup({
                 disabled={pending}
                 data-testid="calendar-setup-done"
               >
-                {pending
-                  ? "Saving…"
-                  : entitled
-                    ? "Build my plan"
-                    : "See what I'd get"}
+                {pending ? "Saving…" : "Build my plan"}
               </button>
             </>
-          ) : (
-            <button
-              type="button"
-              className="skip"
-              onClick={onDismiss}
-              data-testid="calendar-setup-later"
-            >
-              Maybe later
-            </button>
           )}
         </footer>
       </div>

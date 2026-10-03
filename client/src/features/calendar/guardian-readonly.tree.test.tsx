@@ -22,6 +22,7 @@ import type {
 } from "@lyceon/shared/calendar";
 import { CalendarView } from "./CalendarView";
 import { SUPPRESSION_COPY_TABLE } from "./components/Chrome";
+import { GoalCard } from "./components/StudentChrome";
 import { guardianViewModel, studentViewModel } from "./lib/view-model";
 
 const TODAY = "2026-09-21";
@@ -253,6 +254,7 @@ function renderStudent(): HTMLElement {
         launch: () => {},
         acknowledge: () => {},
         refreshPending: false,
+        regenerated: false,
         launchPending: false,
       }}
     />,
@@ -400,14 +402,28 @@ describe("guardian calendar is read-only (§16, R-08-22)", () => {
   // The band a parent reads must be the band the student reads, not a re-derivation of it.
   // `PROJECTION` is one constant shared by both fixtures, so this compares the values the
   // two surfaces actually render rather than two hand-written copies that could drift.
+  //
+  // UI-55: the student reads the band in the goal card of the App shell's right panel (the
+  // card `CalendarView` renders there from the same `projection` prop), printed as the
+  // prototype prints it, "680–1060". The numbers are what must agree.
   it("renders the SAME projected band as the student surface, number for number", () => {
     const guardian = renderGuardian().textContent ?? "";
     cleanup();
-    const student = renderStudent().textContent ?? "";
-    for (const fragment of ["1400", "Target", "680 – 1060", "Projected"]) {
+    const student =
+      render(
+        <GoalCard
+          today={TODAY}
+          testDate="2026-11-07"
+          targetScore={STUDENT_RESPONSE.profile.target_score}
+          projection={STUDENT_RESPONSE.projection ?? []}
+        />,
+      ).container.textContent ?? "";
+    for (const fragment of ["1400", "Target", "Projected"]) {
       expect(guardian).toContain(fragment);
       expect(student).toContain(fragment);
     }
+    expect(guardian).toContain("680 – 1060");
+    expect(student).toContain("680–1060");
   });
 
   // §16 gives a guardian NO write path, so an empty slot must state a fact, never ask for
@@ -509,9 +525,10 @@ describe("the student surface DOES render what the guardian surface must not", (
     expect(within(sheet).getByText("Remove")).toBeTruthy();
   });
 
-  it("renders Refresh plan, the plan banner and draggable blocks", () => {
+  it("renders Regenerate plan, the plan banner and draggable blocks", () => {
     const container = renderStudent();
-    expect(container.textContent).toContain("Refresh plan");
+    // UI-55: the student header's control (DESIGN.md §4 Calendar), "Refresh plan" before.
+    expect(container.textContent).toContain("Regenerate plan");
     expect(
       container.querySelector('[data-testid="calendar-plan-banner"]'),
     ).not.toBeNull();

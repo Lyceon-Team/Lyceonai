@@ -356,6 +356,7 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/practice",
       "/review",
       "/tests",
+      "/calendar",
       "/practice/session/:sessionId",
       "/tests/:sessionId",
       "/tests/:sessionId/report",
@@ -403,6 +404,16 @@ describe("the table says what DESIGN.md §2 says", () => {
     }
     // /score-report is not rebuilt by UI-54: it stays pinned light.
     expect(STUDENT_ROUTE_SHELLS["/score-report"].themeLock).toBe("light");
+  });
+
+  it("UI-55: the calendar follows the device theme, full width with its 340px panel and no footer", () => {
+    expect(STUDENT_ROUTE_SHELLS["/calendar"]).toEqual({
+      shell: "app",
+      panel: 340,
+      footer: false,
+      content: "full",
+      themeLock: null,
+    });
   });
 
   it("the timed module: no back arrow, light only", () => {

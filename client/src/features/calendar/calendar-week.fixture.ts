@@ -262,14 +262,22 @@ const ESTIMATES = {
 const TARGET_SCORE = 1350;
 const TARGET_EXAM_DATE = "2026-12-06";
 
-/** The student's `GET /api/calendar` answer for that week, through its schema and envelope. */
-export function studentCalendarWeek(today: string): Record<string, unknown> {
+/**
+ * The student's `GET /api/calendar` answer for that week, through its schema and envelope.
+ * `over.testDate` moves the profile's SAT date (UI-55: a date inside the week, so the test day
+ * is starred in the grid); everything else is the same payload.
+ */
+export function studentCalendarWeek(
+  today: string,
+  over: { testDate?: string | null } = {},
+): Record<string, unknown> {
   const { range } = calendarWeekRange(today);
   const payload = calendarReadyResponseSchema.parse({
     status: "ready",
     profile: {
       timezone: TIMEZONE,
-      target_exam_date: TARGET_EXAM_DATE,
+      target_exam_date:
+        over.testDate === undefined ? TARGET_EXAM_DATE : over.testDate,
       target_score: TARGET_SCORE,
       study_days_mask: 63,
       daily_minutes: 45,

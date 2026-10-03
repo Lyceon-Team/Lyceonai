@@ -1,17 +1,21 @@
 // @vitest-environment jsdom
 /**
- * The calendar rail's "Lyceon" wordmark: the student's calendar keeps it; a caller can hide it.
+ * The calendar's own "Lyceon" wordmark is gone from both surfaces.
  *
- * @spec [owner decision 2026-10-01 on PR 1003, item 6 ("hide its 'Lyceon' wordmark when
- *       viewer='guardian', via a prop, not a fork. Student snapshots must stay identical");
- *       Guardian_Closure_Plan R11] | @implemented [2026-10-01]
+ * @spec [owner decision 2026-10-01 on PR 1003, item 6 (the guardian rail drops the wordmark;
+ *       its shell carries the logo); student-UI register UI-55, §2 (the App shell's rail carries
+ *       the logo; the calendar's left column moves into the right panel), UI-41 finding ("the
+ *       calendar's own rail and wordmark" were interim duplication)] | @implemented
+ *       [2026-10-01; UI-55 2026-10-03]
  *
- * plain English: the student calendar — the one with no other chrome above it — draws the
- * wordmark at the top of its rail, exactly as before. The guardian half is driven through the
- * real guardian route in `features/guardian/calendar-tab.test.tsx`.
+ * plain English: until UI-55 the student's calendar drew a dark rail of its own with a
+ * "Lyceon" wordmark at its top, under the App shell's rail and logo. The student calendar now
+ * renders its Canvas-style header and the shell's right panel instead, and no rail of its
+ * own. The guardian half (no wordmark under the guardian shell) is driven through the real
+ * guardian route in `features/guardian/calendar-tab.test.tsx`.
  */
 import React from "react";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CalendarReadyResponse } from "@lyceon/shared/calendar";
 import { CalendarView } from "./CalendarView";
@@ -22,8 +26,8 @@ afterEach(cleanup);
 
 const TODAY = "2026-10-01";
 
-describe("the calendar rail's wordmark", () => {
-  it("the student's calendar keeps it", () => {
+describe("the student calendar's chrome", () => {
+  it("is the App-shell header, with no rail and no wordmark of its own", () => {
     const { requestId: _requestId, ...payload } = studentCalendarWeek(TODAY);
     render(
       <CalendarView
@@ -32,6 +36,7 @@ describe("the calendar rail's wordmark", () => {
         today={TODAY}
         viewerName="A Student"
         targetExamDate={null}
+        targetScore={null}
         streak={undefined}
         fullLengthSuppressions={[]}
         planUpdate={null}
@@ -39,13 +44,12 @@ describe("the calendar rail's wordmark", () => {
         backHref="/dashboard"
       />,
     );
-    expect(
-      document.querySelector(".lyceon-calendar .rail .who"),
-    ).not.toBeNull();
-    expect(
-      document
-        .querySelector(".lyceon-calendar .rail .brand")
-        ?.textContent?.trim(),
-    ).toBe("Lyceon");
+    // Presence first: the page drew its header and its week.
+    expect(screen.getByTestId("calendar-header")).toBeTruthy();
+    expect(screen.getByTestId("calendar-week-grid")).toBeTruthy();
+    // Then the absence: no rail, no wordmark, no identity card.
+    expect(document.querySelector(".lyceon-calendar .rail")).toBeNull();
+    expect(document.querySelector(".brand")).toBeNull();
+    expect(document.querySelector(".who")).toBeNull();
   });
 });

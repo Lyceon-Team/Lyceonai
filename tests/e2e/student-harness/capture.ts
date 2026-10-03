@@ -583,6 +583,12 @@ async function shootBuilt(
         await settle(page);
         continue;
       }
+      if ("fill" in step) {
+        const field = step.fill[viewport];
+        if (field === null) continue;
+        await page.locator(field).first().fill(step.value);
+        continue;
+      }
       const selector = step.click[viewport];
       if (selector === null) continue;
       await page.locator(selector).first().click();
@@ -758,7 +764,9 @@ function writeIndex(
       lines.push(
         "pick" in step
           ? `Step: pick the ${step.pick} choice (resolved from the served item's stored order in the harness database).`
-          : `Step: click \`${JSON.stringify(step.click)}\`.`,
+          : "fill" in step
+            ? `Step: type \`${step.value}\` into \`${JSON.stringify(step.fill)}\`.`
+            : `Step: click \`${JSON.stringify(step.click)}\`.`,
       );
     if (shot.expectText !== undefined)
       lines.push(

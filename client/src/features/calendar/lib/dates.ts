@@ -230,6 +230,22 @@ export function rangeLabel(view: "week" | "month", cursor: string): string {
 }
 
 /**
+ * The student calendar's centred title (UI-55; DESIGN.md §4 Calendar, `M/D – M/D`):
+ * "9/28 – 10/4" in week view, as `Calendar.dc.html` formats it, and "September 2026" in month
+ * view, as `rangeLabel` does. The guardian's header keeps `rangeLabel`.
+ */
+export function numericRangeLabel(
+  view: "week" | "month",
+  cursor: string,
+): string {
+  if (view === "month") return rangeLabel("month", cursor);
+  const dates = weekDates(cursor);
+  const md = (date: string): string =>
+    `${parse(date).getUTCMonth() + 1}/${dayOfMonth(date)}`;
+  return `${md(dates[0] ?? cursor)} – ${md(dates[dates.length - 1] ?? cursor)}`;
+}
+
+/**
  * Today in the viewer's browser zone, as `YYYY-MM-DD`. Moved here from the guardian calendar
  * page (G4-03) so the guardian Dashboard's countdown and week use the same "today" as the
  * calendar tab. Every day's status is still the server's, in the student's zone.

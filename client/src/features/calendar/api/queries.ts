@@ -24,6 +24,7 @@ import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import type {
   CalendarResponse,
   GuardianCalendarResponse,
+  ProfileReadResponse,
   StreakSummary,
 } from "@lyceon/shared/calendar";
 import { calendarKeys } from "./keys";
@@ -33,7 +34,12 @@ import { calendarKeys } from "./keys";
 // renders its own upsell (ruling 3). Exam forms read inside the calendar sheets are the exam's
 // query, not the calendar's, and keep the modal.
 import { ENTITLEMENT_DENIAL_INLINE_META } from "@/components/billing/upgrade-modal";
-import { fetchCalendar, fetchGuardianCalendar, fetchStreak } from "./client";
+import {
+  fetchCalendar,
+  fetchGuardianCalendar,
+  fetchStreak,
+  fetchStudyProfile,
+} from "./client";
 import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
 
 /**
@@ -162,6 +168,26 @@ export function useStreak(options?: {
     queryFn: fetchStreak,
     enabled: options?.enabled ?? true,
     ...QUERY_FRESHNESS.calendarStreak,
+    retry: 1,
+  });
+}
+
+/**
+ * GET /api/calendar/profile — the free calendar's read (OQ-25, UI-55). A free student's
+ * `GET /api/calendar` answers 402 once a profile exists, so this is the only way the page can
+ * show the test date and target they saved. Same freshness as the range reads (§17.7: refetch
+ * on focus, so a change made in Settings shows on return). Carries the inline-denial meta like
+ * every calendar read (UI-44), although the route has no entitlement gate to deny with.
+ */
+export function useStudyProfile(options?: {
+  enabled?: boolean;
+}): UseQueryResult<ProfileReadResponse, Error> {
+  return useQuery<ProfileReadResponse, Error>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
+    queryKey: calendarKeys.profile(),
+    queryFn: fetchStudyProfile,
+    enabled: options?.enabled ?? true,
+    ...QUERY_FRESHNESS.calendarRange,
     retry: 1,
   });
 }

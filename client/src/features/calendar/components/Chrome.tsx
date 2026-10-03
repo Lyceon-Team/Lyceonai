@@ -7,6 +7,15 @@
  * banner and the facts strip. Expected outcome: the same chrome the prototype draws, with
  * every control that writes anything absent on the guardian surface.
  *
+ * SINCE UI-55 (2026-10-03) THE RAIL AND THE TOP BAR ARE THE GUARDIAN'S. The student calendar
+ * moved onto the App shell (`StudentChrome.tsx`: a Canvas-style header, and the mini month,
+ * goal card, schedule summary and Show filters in the shell's right panel, register §2), so
+ * the student-only parts of these two went with it: the rail's "Lyceon" wordmark (the shell
+ * carries the logo) and its "Your schedule" card (now in the panel), and the header's Edit
+ * schedule and Refresh plan controls (now the student header's). The guardian render is
+ * unchanged — it never had any of them. The banner, the suppression notice, the facts strip
+ * and the header facts remain shared.
+ *
  * THE GUARDIAN DIFFERENCE IS IN THE PROPS, NOT IN A FLAG. `TopBar` takes `onRefresh?`, and a
  * guardian caller passes nothing; there is no `readOnly` branch inside to get wrong. Same
  * for the banner's dismiss and the rail's type filters, which stay because filtering is a
@@ -66,8 +75,6 @@ export function LeftRail({
   onPickDate,
   onMonthStep,
   footer,
-  schedule,
-  hideBrand = false,
 }: {
   name: string;
   subtitle: string;
@@ -80,44 +87,17 @@ export function LeftRail({
   onPickDate: (date: string) => void;
   onMonthStep: (delta: number) => void;
   footer: string;
-  /**
-   * §17.3's "Your schedule" card. ABSENT for a guardian, like every other control on this
-   * surface — the difference is the missing prop, not a `readOnly` branch inside.
-   *
-   * SUMMARY ONLY — no control. The card used to carry its own "Change schedule" button, a
-   * second way into the settings sheet that the design dropped two revisions ago; the
-   * prototype's rail has the summary and no button (`docs/design/calendar-prototype.html`,
-   * the `plancard`). "Edit schedule" in the header is the single entry point, so there is
-   * one place to look for it and one control to keep working.
-   */
-  schedule?: { summary: string };
-  /**
-   * Drops the rail's "Lyceon" wordmark. The guardian calendar sits inside `GuardianShell`,
-   * whose header already carries the logo, so a second mark one inch below it is noise (owner
-   * decision 2026-10-01, item 6). A PROP, not a fork: the student calendar passes nothing
-   * and renders exactly as before.
-   */
-  hideBrand?: boolean;
 }): JSX.Element {
   const dates = monthGridDates(miniMonth);
+  // No "Lyceon" wordmark: the guardian calendar sits inside `GuardianShell`, whose header
+  // carries the logo (owner decision 2026-10-01, item 6), and the student calendar, the only
+  // surface that showed it, moved onto the App shell, which carries its own (UI-55).
   return (
     <aside className="rail">
-      {hideBrand ? null : (
-        <div className="brand">
-          <i aria-hidden="true" /> Lyceon
-        </div>
-      )}
       <div className="who">
         <b>{name}</b>
         <span>{subtitle}</span>
       </div>
-
-      {schedule === undefined ? null : (
-        <div className="schedcard" data-testid="rail-schedule-card">
-          <b>Your schedule</b>
-          <span data-testid="rail-schedule-summary">{schedule.summary}</span>
-        </div>
-      )}
 
       <div className="mini">
         <header>
@@ -381,7 +361,10 @@ export function HeaderFacts({
  * the `.top` grid and its six `.slot`s):
  *
  *   L1  ← Dashboard              C1  ‹ › Today · range · Week/Month     R1  1400 Target
- *   L2  Edit schedule · Refresh  C2  🔥 6 day streak · 47 days to test   R2  680 – 1060 Projected
+ *   L2  (empty)                  C2  🔥 6 day streak · 47 days to test   R2  680 – 1060 Projected
+ *
+ * L2 held the student's Edit schedule and Refresh plan until UI-55 moved the student calendar
+ * onto the App shell; this header is now the guardian's, and a guardian has neither (§16).
  *
  * The prototype's drag-to-rearrange mode and its Student/Parent toggle are demo devices and
  * do not ship; the slots they moved around are what ships.
@@ -409,9 +392,6 @@ export function TopBar({
   daysToTest,
   targetScore,
   projection,
-  onRefresh,
-  refreshPending,
-  onEditSchedule,
 }: {
   /** `/dashboard` for a student, `/guardian` for a guardian — the page decides. */
   backHref: string;
@@ -449,11 +429,6 @@ export function TopBar({
   targetScore: number | null;
   /** Doc 05C's section rows, passed through untouched. `undefined` when none were served. */
   projection: readonly SectionProjectionDto[] | undefined;
-  /** Absent for a guardian — §16 gives them no write path, so no Refresh control exists. */
-  onRefresh?: () => void;
-  refreshPending?: boolean;
-  /** §17.3. Absent for a guardian, for the same reason as `onRefresh`. */
-  onEditSchedule?: () => void;
 }): JSX.Element {
   return (
     <div className="top">
@@ -530,32 +505,10 @@ export function TopBar({
       </div>
 
       {/* ── L2 ─────────────────────────────────────────────────────────── */}
-      <div className="slot" data-slot="L2">
-        {onEditSchedule === undefined ? null : (
-          <div className="item" data-item="edit">
-            <button
-              type="button"
-              className="btn sched"
-              onClick={onEditSchedule}
-              data-testid="topbar-edit-schedule"
-            >
-              <span aria-hidden="true">✎</span> Edit schedule
-            </button>
-          </div>
-        )}
-        {onRefresh === undefined ? null : (
-          <div className="item" data-item="refresh">
-            <button
-              type="button"
-              className="btn primary"
-              onClick={onRefresh}
-              disabled={refreshPending === true}
-            >
-              {refreshPending === true ? "Refreshing…" : "Refresh plan"}
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Kept, empty, so the header grid does not reflow: Edit schedule and Refresh plan were
+          the student's and moved to the student header with UI-55; a guardian has neither
+          (§16). */}
+      <div className="slot" data-slot="L2" />
 
       {/* ── C2 ─────────────────────────────────────────────────────────── */}
       <div className="slot" data-slot="C2">
