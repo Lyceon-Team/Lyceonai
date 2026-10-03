@@ -291,6 +291,64 @@ mutate "$ROUTES" \
         return res.status(400).json({' || exit 2
 run_plant A16d "A16d:" "serve the first page for a malformed sessions cursor"
 
+# --- A17a-b: the pool rows carry the four criteria only (register §8 F-52, 2026-10-03) ---
+# The proof lives in the OQ-22 criteria suite (real create routes, real pool route), so these
+# two plants run that file instead of TEST_FILE.
+F52_TEST_FILE="tests/ci/session-criteria.pg.ci.test.ts"
+ROUTE_TEST_FILE="$TEST_FILE"
+
+mutate "$POOL" \
+  '        filters: toSessionCriteria(stored.session_spec),' \
+  '        filters: (row.filters ?? null) as SourceSessionRow["filters"],' || exit 2
+TEST_FILE="$F52_TEST_FILE"
+run_plant A17a "F-52:" "copy a practice session's stored filters into its pool row"
+TEST_FILE="$ROUTE_TEST_FILE"
+
+mutate "$POOL" \
+  '        filters: toSessionCriteria(row.filters, reviewDifficultyLabel),' \
+  '        filters: (row.filters ?? null) as SourceSessionRow["filters"],' || exit 2
+TEST_FILE="$F52_TEST_FILE"
+run_plant A17b "F-52:" "copy a review session's stored filters into its pool row"
+TEST_FILE="$ROUTE_TEST_FILE"
+
+
+# --- A18a-d: the practice runner's reads (student UI UI-53, register §8 F-64, §9 OQ-35, 2026-10-03) ---
+# F-64: concurrent /next calls on one session never 500 and serve one item; OQ-35: /state says
+# `shortened` and sends no pool count. Proof file: tests/ci/practice-runner.pg.ci.test.ts.
+RUNNER_TEST_FILE="tests/ci/practice-runner.pg.ci.test.ts"
+
+mutate "$PRACTICE" \
+  '  if (!promoted) {
+    // F-64: another /next promoted this item first (see the doc comment above).' \
+  '  if (!promoted) {
+    return args.res.status(500).json({ error: "session_item_promote_failed", requestId });
+    // F-64: another /next promoted this item first (see the doc comment above).' || exit 2
+TEST_FILE="$RUNNER_TEST_FILE"
+run_plant A18a "F-64" "lost CAS answers 500 again"
+TEST_FILE="$ROUTE_TEST_FILE"
+
+mutate "$PRACTICE" \
+  '  if (await hasUnresolvedItemBefore(args.sessionId, nextPrebuilt.ordinal)) {' \
+  '  if (false) {' || exit 2
+TEST_FILE="$RUNNER_TEST_FILE"
+run_plant A18b "F-64" "promote past an already-served item"
+TEST_FILE="$ROUTE_TEST_FILE"
+
+mutate "$PRACTICE" \
+  '      shortened: isShortenedSession(metadata),' \
+  '      shortened: false,' || exit 2
+TEST_FILE="$RUNNER_TEST_FILE"
+run_plant A18c "OQ-35" "never shortened"
+TEST_FILE="$ROUTE_TEST_FILE"
+
+mutate "$PRACTICE" \
+  '      shortened: isShortenedSession(metadata),' \
+  '      shortened: isShortenedSession(metadata),
+      source_pool_count: metadata.source_pool_count,' || exit 2
+TEST_FILE="$RUNNER_TEST_FILE"
+run_plant A18d "OQ-35" "the pool size reaches the client"
+TEST_FILE="$ROUTE_TEST_FILE"
+
 echo ""
 echo "plants fired: $PASSES   plants that did not fire: $FAILURES"
 if [ "$FAILURES" -ne 0 ]; then

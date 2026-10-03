@@ -14,6 +14,7 @@ import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
 } from "../../apps/api/src/lib/rate-limit-ledger";
+import { dryRunPracticeQuota, toPracticeQuota } from "../lib/practice-quota";
 import {
   hasCanonicalOptionSet,
   buildServedOptions,
@@ -50,6 +51,7 @@ import {
   DEFAULT_PRACTICE_SESSION_MODE,
   practiceSessionModeSchema,
 } from "../../packages/shared/src/session-mode";
+import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -1120,6 +1122,14 @@ function sendClientConflict(
   });
 }
 
+/**
+ * @spec [Doc-02B_V4 §13 "Quota Check Mechanism", "What Counts Against Quota"; owner ruling
+ *        (Karl) 2026-10-03 OQ-43 / F-61] | @implemented [2026-10-03]
+ * plain English: the serve-time gate (session start's first item, `GET /next`). It refuses
+ * (402) when the free student has already SUBMITTED the daily limit in the current
+ * America/Chicago day — the same SQL branch as the dry run behind `GET /quota`. Serving writes
+ * the item's serve-log row (the paid per-session cap reads it) but consumes no free quota.
+ */
 async function reservePracticeQuestionQuota(args: {
   userId: string;
   role: string | undefined;
@@ -1493,15 +1503,14 @@ export async function startOrReplaySession(args: {
   // @spec [Doc-02B_V4 §41; F2 creation-time clamp] | @implemented [2026-06-30]
   // Dry-run remaining daily quota for unpaid users and clamp requestedCount
   // so we never over-materialize sessions beyond the remaining free-tier allowance.
+  // Remaining = daily_quota_free minus answers submitted in the current America/Chicago day
+  // (owner ruling OQ-43 / F-61, 2026-10-03; Doc 02B §13 "Pre-Cap", "Zero Quota Remaining").
   if (args.role !== "admin") {
     try {
-      const dryRunDecision = await checkAndReservePracticeQuota({
-        studentUserId: args.userId,
+      // OQ-21: the one dry-run call, shared with GET /quota so the read and this 402 agree.
+      const dryRunDecision = await dryRunPracticeQuota({
+        userId: args.userId,
         role: args.role,
-        sessionId: null,
-        sessionItemId: null,
-        dryRun: true,
-        requestId: null,
       });
       if (!dryRunDecision.allowed) {
         return {
@@ -1848,6 +1857,33 @@ async function getNextPrebuiltQueuedItem(
   return (data as SessionItemRow | null) ?? null;
 }
 
+/**
+ * F-64: is any item before `ordinal` still unresolved (pending or served)? Items are served in
+ * ordinal order and resolve (answered or skipped) before the next is promoted, so when this is
+ * false every earlier item is resolved and none can be promoted again: the check cannot go stale
+ * between this read and the compare-and-swap that follows it.
+ */
+async function hasUnresolvedItemBefore(
+  sessionId: string,
+  ordinal: number,
+): Promise<boolean> {
+  const { data, error } = await supabaseServer
+    .from("practice_session_items")
+    .select("id")
+    .eq("session_id", sessionId)
+    .lt("ordinal", ordinal)
+    .in("status", ["pending", "served"])
+    .limit(1);
+
+  if (error) {
+    throw new Error(
+      `practice_session_items_unresolved_before_failed: ${error.message}`,
+    );
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
 async function findSessionItemById(
   sessionId: string,
   sessionItemId: string,
@@ -1884,6 +1920,21 @@ async function findSessionItemByClientAttemptId(
   return (data as SessionItemRow | null) ?? null;
 }
 
+/**
+ * @spec [Doc-02B_V4 §14 (resumable sessions; no duplicate items on refresh or resume); Coding
+ *        Standards §4.2, §9; student-UI register §8 F-64] | @implemented [2026-10-03]
+ * F-64 (plain English): two `/next` calls on one session at once (a double effect, a double
+ * click, two tabs on one client instance) both read the next item as `pending`; the promote
+ * below is a compare-and-swap on `status = 'pending'`, so one wins and the other updates no
+ * row. That loser used to answer 500 `session_item_promote_failed`. It now serves again once
+ * (`afterLostPromote`): the item the winner promoted is the session's served item, so the
+ * unresolved branch at the top returns it, and both callers get the SAME item. Nothing new is
+ * promoted and no second quota unit is reserved (the unresolved branch reserves none), so the
+ * call stays idempotent. If the second pass loses again (the winner's quota refusal returned
+ * the item to `pending` and a third caller took it), the answer is a clean 409
+ * `session_item_conflict`, never a 500. A real database error on the promote is still a 500.
+ * Review's promote re-reads the same way (review-canonical.ts `promoteNextItem`).
+ */
 async function serveNextForSession(args: {
   req: Request;
   res: Response;
@@ -1891,6 +1942,7 @@ async function serveNextForSession(args: {
   role: string | undefined;
   sessionId: string;
   clientInstanceId: string;
+  afterLostPromote?: boolean;
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
   const config = await loadPracticeConfig();
@@ -2084,6 +2136,20 @@ async function serveNextForSession(args: {
     });
   }
 
+  // F-64: promote only the item that is next in order. If any earlier item is still pending or
+  // served, a concurrent /next has already promoted the item before this one (this call read
+  // `pending` after it had), so promoting this one would leave two served items and skip one.
+  if (await hasUnresolvedItemBefore(args.sessionId, nextPrebuilt.ordinal)) {
+    if (!args.afterLostPromote) {
+      return serveNextForSession({ ...args, afterLostPromote: true });
+    }
+    return args.res.status(409).json({
+      error: "session_item_conflict",
+      message: "The next question was taken by another request. Try again.",
+      requestId,
+    });
+  }
+
   const now = new Date().toISOString();
   const { data: promoted, error: promoteErr } = await supabaseServer
     .from("practice_session_items")
@@ -2097,10 +2163,21 @@ async function serveNextForSession(args: {
     .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
-  if (promoteErr || !promoted) {
+  if (promoteErr) {
     return args.res.status(500).json({
       error: "session_item_promote_failed",
-      message: promoteErr?.message ?? "Unable to promote next prebuilt item",
+      message: promoteErr.message,
+      requestId,
+    });
+  }
+  if (!promoted) {
+    // F-64: another /next promoted this item first (see the doc comment above).
+    if (!args.afterLostPromote) {
+      return serveNextForSession({ ...args, afterLostPromote: true });
+    }
+    return args.res.status(409).json({
+      error: "session_item_conflict",
+      message: "The next question was taken by another request. Try again.",
       requestId,
     });
   }
@@ -2161,6 +2238,96 @@ async function serveNextForSession(args: {
     totalQuestions: await countSessionItems(args.sessionId),
   });
 }
+
+/**
+ * GET /api/practice/quota — today's free practice quota, read without consuming it.
+ *
+ * @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02: a read-only
+ *        `GET /api/practice/quota`, computed by the same function as the 402
+ *        (`checkAndReservePracticeQuota`, dry run); Doc 02B §12 Entitlement Matrix, §13; Doc 01A
+ *        §40 `getUsage`, §44] | @implemented [2026-10-03]
+ *
+ * plain English: the free quota line and ruler on Home and Practice. Same middleware as every
+ * practice route (the mount's auth and student-or-admin gate, then auth, profile complete and the
+ * under-13 link gate here); no entitlement gate, because the free student is the reader. The
+ * number comes from `dryRunPracticeQuota`, the call the session-start 402 makes, so the read and
+ * the refusal cannot disagree; a dry run writes no ledger row. Body: `{unlimited, limit,
+ * remaining, resetAt}` (`practiceQuotaSchema`). A paid student, and an admin (the wrapper's admin
+ * bypass), read `unlimited: true` with nulls. Since the OQ-43 / F-61 ruling (Karl, 2026-10-03)
+ * the count is answers submitted in the current America/Chicago day and `resetAt` the next
+ * Chicago midnight (Doc 02B §13); the SQL function changed, this handler did not.
+ * edge cases: ledger unavailable, or a decision without numbers → 503 (fail closed, never a
+ * guessed number), like the 402 sites. Logs carry the user id and the decision code, nothing else.
+ */
+router.get(
+  "/quota",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireGuardianLinkForUnder13,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
+
+    const unavailable = {
+      error: "Usage check unavailable",
+      code: "RATE_LIMIT_DB_UNAVAILABLE",
+      message:
+        "Unable to read practice quota at this time. Please retry shortly.",
+      requestId,
+    };
+
+    try {
+      const decision = await dryRunPracticeQuota({
+        userId: user.id,
+        role: user.role,
+      });
+      const quota = toPracticeQuota(decision);
+      if (!quota.ok) {
+        logger.error(
+          "PRACTICE_QUOTA",
+          "quota_read_incomplete",
+          "Practice quota dry run returned no usable numbers; failing closed",
+          undefined,
+          { code: decision.code },
+          { userId: user.id, ...(requestId ? { requestId } : {}) },
+        );
+        return res.status(503).json(unavailable);
+      }
+      return res.json(quota.value);
+    } catch (error: unknown) {
+      if (error instanceof RateLimitUnavailableError) {
+        logger.warn(
+          "PRACTICE_QUOTA",
+          "quota_read_unavailable",
+          "Practice quota ledger unavailable; failing closed",
+          undefined,
+          { userId: user.id, ...(requestId ? { requestId } : {}) },
+        );
+        return res.status(503).json(unavailable);
+      }
+      logger.error(
+        "PRACTICE_QUOTA",
+        "quota_read_failed",
+        "Practice quota read failed",
+        error,
+        undefined,
+        { userId: user.id, ...(requestId ? { requestId } : {}) },
+      );
+      return res.status(500).json({
+        error: "quota_read_failed",
+        message: "Unable to read practice quota",
+        requestId,
+      });
+    }
+  },
+);
 
 /**
  * Returns a list of uncompleted practice sessions for the current user.
@@ -2226,6 +2393,11 @@ router.get(
           target_question_count: metadata.target_question_count || 0,
           total_items: count || 0,
           answered_items: answered || 0,
+          // @spec [student-UI register §9 OQ-22, owner ruling (Karl) 2026-10-02] |
+          // @implemented [2026-10-03] | plain English: the four arrays the student chose
+          // (empty when none), projected from session_spec by the shared builder. Never
+          // `filters`, never the pool size or requested count stored beside the spec.
+          criteria: toSessionCriteria(metadata.session_spec),
         };
       }),
     );
@@ -2717,9 +2889,35 @@ router.get(
         : null,
       clientInstanceId: boundClient ?? null,
       readOnly: state === "completed" || state === "abandoned",
+      // OQ-22 (owner ruling 2026-10-02): the chosen criteria for the runner title; see
+      // packages/shared/src/session-criteria.ts for the empty-array rule.
+      criteria: toSessionCriteria(metadata.session_spec),
+      // OQ-35 (owner ruling 2026-10-02): the filters matched fewer questions than the session
+      // asked for. A boolean only: neither stored count is sent (register §2, no bank counts).
+      shortened: isShortenedSession(metadata),
     });
   },
 );
+
+/**
+ * @spec [student-UI register §9 OQ-35, owner ruling (Karl) 2026-10-02] | @implemented [2026-10-03]
+ * plain English: true when the pool the session's filters matched held fewer questions than the
+ * session asked for, so the session serves fewer (creation stores both counts:
+ * `source_pool_count` and `requested_count`). A free plan's quota trims `requested_count` BEFORE
+ * the pool is read, so a quota-trimmed session is not "shortened" by its filters and reads false.
+ * Sessions stored without the counts (legacy rows, the diagnostic) read false.
+ */
+function isShortenedSession(metadata: SessionMetadata): boolean {
+  const pool = metadata.source_pool_count;
+  const requested = metadata.requested_count;
+  return (
+    typeof pool === "number" &&
+    typeof requested === "number" &&
+    Number.isFinite(pool) &&
+    Number.isFinite(requested) &&
+    pool < requested
+  );
+}
 
 async function findSessionItemForSubmission(
   sessionId: string,

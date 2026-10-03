@@ -19,6 +19,7 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readEntitlementDenial } from "../../packages/shared/src/entitlement-denial";
+import { studyProfileSchema } from "../../packages/shared/src/calendar/profile";
 
 const STUDENT = "11111111-1111-1111-1111-111111111111";
 const BLOCK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
@@ -795,5 +796,168 @@ describe("setup runs before the entitlement gate", () => {
 
     expect(res.status).toBe(200);
     expect(upsertProfileMock).toHaveBeenCalled();
+  });
+});
+
+// ── GET /profile: the study profile, ungated (owner ruling OQ-25, 2026-10-02) ─
+
+/**
+ * @spec [Doc-05F_V1.0 §15, §16; SCL-130; owner ruling OQ-25 (Karl, 2026-10-02, clarified)]
+ * | @implemented [2026-10-03]
+ *
+ * plain English: a free student reads their own saved test date and target without the paid
+ * plan read, and the read can never carry plan data. The round trip against real SQL (PUT then
+ * GET, real `readStudyProfile`) is `calendar.profile-read.pg.ci.test.ts`; here the service is
+ * stubbed and the question is gating, status, and what the route lets through.
+ */
+describe("OQ-25 — GET /profile serves the study profile to any tier, and never a plan", () => {
+  /** Parsed through the canonical wire schema, so the fixture is a shape the read can emit. */
+  const SAVED_PROFILE = studyProfileSchema.parse({
+    timezone: "America/Chicago",
+    target_exam_date: "2027-03-13",
+    target_score: 1400,
+    study_days_mask: 62,
+    daily_minutes: 60,
+    full_length_weekday: null,
+    full_length_interval_weeks: null,
+    planner_mode: "auto",
+    setup_completed_at: "2026-10-01T12:00:00.000Z",
+  });
+
+  /** Every top-level key a plan read carries, which this route must never. */
+  const PLAN_KEYS = [
+    "status",
+    "days",
+    "blocks",
+    "facts",
+    "streak",
+    "projection",
+    "version_no",
+    "plan_version_id",
+    "latest_unacknowledged_nonstudent_change",
+    "diagnostic_state",
+    "entitled",
+  ] as const;
+
+  it("a FREE student with no profile gets 200 { profile: null }, not 402 or 404", async () => {
+    entitled = false;
+    readProfileMock.mockResolvedValue(null);
+
+    const res = await request(buildApp()).get("/api/calendar/profile");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ profile: null, requestId: "req-test" });
+    expect(readProfileMock).toHaveBeenCalledWith(STUDENT, "req-test");
+  });
+
+  for (const tier of [
+    { name: "FREE", entitled: false },
+    { name: "PAID", entitled: true },
+  ]) {
+    it(`a ${tier.name} student with a profile gets exactly the profile and no plan data`, async () => {
+      entitled = tier.entitled;
+      readProfileMock.mockResolvedValue(SAVED_PROFILE);
+
+      const res = await request(buildApp()).get("/api/calendar/profile");
+
+      expect(res.status).toBe(200);
+      // Presence before absence: the profile is there, field for field.
+      expect(res.body.profile).toEqual(SAVED_PROFILE);
+      expect(res.body.profile.target_exam_date).toBe("2027-03-13");
+      expect(res.body.profile.target_score).toBe(1400);
+      // The top level is the profile and the correlation id, nothing else.
+      expect(Object.keys(res.body).sort()).toEqual(["profile", "requestId"]);
+      for (const key of PLAN_KEYS) {
+        expect(res.body).not.toHaveProperty(key);
+        expect(res.body.profile).not.toHaveProperty(key);
+      }
+      // No plan read at all — so no `generateOnFirstOpen` (R-08-04) for an unentitled caller.
+      expect(readCalendarMock).not.toHaveBeenCalled();
+      expect(regeneratePlanMock).not.toHaveBeenCalled();
+    });
+  }
+
+  it("does not ask the entitlement service — the read is ungated by construction", async () => {
+    entitled = false;
+    readProfileMock.mockResolvedValue(SAVED_PROFILE);
+    const { EntitlementService } = await import(
+      "../../server/services/entitlement-service"
+    );
+
+    const res = await request(buildApp()).get("/api/calendar/profile");
+
+    expect(res.status).toBe(200);
+    expect(EntitlementService.canAccessFeature).not.toHaveBeenCalled();
+  });
+
+  it("CHOKEPOINT: a plan field smuggled onto the profile is a 500, never served", async () => {
+    // A later edit that spreads plan data onto the profile object must not reach the wire:
+    // the strict response schema refuses it.
+    readProfileMock.mockResolvedValue({
+      ...SAVED_PROFILE,
+      blocks: [{ block_id: BLOCK_ID }],
+    });
+
+    const res = await request(buildApp()).get("/api/calendar/profile");
+
+    expect(res.status).toBe(500);
+    expect(res.body.error?.code).toBe("CALENDAR_ERROR");
+    expect(JSON.stringify(res.body)).not.toContain(BLOCK_ID);
+  });
+
+  it("a thrown read is a 500 with a correlation id and no detail", async () => {
+    readProfileMock.mockRejectedValue(new Error("study_profile_read_failed: boom"));
+
+    const res = await request(buildApp()).get("/api/calendar/profile");
+
+    expect(res.status).toBe(500);
+    expect(res.body.requestId).toBe("req-test");
+    expect(JSON.stringify(res.body)).not.toContain("boom");
+  });
+
+  it("refuses an unauthenticated caller with 401 and reads nothing", async () => {
+    const res = await request(buildApp(false)).get("/api/calendar/profile");
+
+    expect(res.status).toBe(401);
+    expect(readProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("reads the SESSION's student, whatever the query names", async () => {
+    readProfileMock.mockResolvedValue(null);
+    const OTHER = "22222222-2222-2222-2222-222222222222";
+
+    await request(buildApp()).get(`/api/calendar/profile?student_id=${OTHER}`);
+
+    expect(readProfileMock).toHaveBeenCalledTimes(1);
+    expect(readProfileMock).toHaveBeenCalledWith(STUDENT, "req-test");
+  });
+
+  it("a GUARDIAN is refused 403 by the real mount gate and reads nothing (student-only)", async () => {
+    // The real `requireStudentOrAdmin`, mounted as server/index.ts mounts it. A guardian
+    // reads the exam date and target through the guardian calendar, which carries the
+    // link-active AND entitlement-active derivation; this route does not, so it is closed.
+    const { requireStudentOrAdmin } = await import(
+      "../../server/middleware/supabase-auth"
+    );
+    const app = express();
+    app.use((req, _res, next) => {
+      req.requestId = "req-test";
+      req.user = {
+        id: "55555555-5555-4555-8555-555555555555",
+        email: "g@example.test",
+        display_name: null,
+        role: "guardian",
+        isAdmin: false,
+        isGuardian: true,
+        actor_id: "66666666-6666-4666-8666-666666666666",
+      };
+      next();
+    });
+    app.use("/api/calendar", requireStudentOrAdmin, calendarRouter);
+
+    const res = await request(app).get("/api/calendar/profile");
+
+    expect(res.status).toBe(403);
+    expect(readProfileMock).not.toHaveBeenCalled();
   });
 });

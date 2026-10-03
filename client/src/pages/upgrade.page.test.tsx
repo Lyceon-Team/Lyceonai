@@ -9,17 +9,14 @@ const getBillingPlansMock = vi.fn();
 const startSubscriptionCheckoutMock = vi.fn();
 const toastMock = vi.fn();
 
-vi.mock("@/components/layout/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: toastMock }),
 }));
 
 vi.mock("@/lib/billing-client", () => ({
   getBillingPlans: (...args: unknown[]) => getBillingPlansMock(...args),
-  startSubscriptionCheckout: (...args: unknown[]) => startSubscriptionCheckoutMock(...args),
+  startSubscriptionCheckout: (...args: unknown[]) =>
+    startSubscriptionCheckoutMock(...args),
 }));
 
 function createWrapper() {
@@ -31,14 +28,18 @@ function createWrapper() {
   });
 
   return function Wrapper({ children }: { children: React.ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
   };
 }
 
 describe("Upgrade page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    startSubscriptionCheckoutMock.mockResolvedValue("https://checkout.test/session");
+    startSubscriptionCheckoutMock.mockResolvedValue(
+      "https://checkout.test/session",
+    );
   });
 
   it("renders monthly, quarterly, and yearly plan cards", async () => {
@@ -135,4 +136,3 @@ describe("Upgrade page", () => {
     });
   });
 });
-

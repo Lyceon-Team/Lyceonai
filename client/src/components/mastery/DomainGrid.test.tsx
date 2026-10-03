@@ -17,7 +17,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
 import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
 import { DomainGrid } from "./DomainGrid";
-import { levelTone } from "./LevelPill";
+import { levelFill, levelTone } from "./LevelPill";
 
 afterEach(cleanup);
 
@@ -132,7 +132,7 @@ describe("DomainGrid — all eight domains", () => {
 /**
  * The five-segment mastery meter (owner review 2026-10-01, final round item 3): under each
  * card's pill, `mastery_level` 0–4 fills 1–5 segments and null ("Not enough answers yet")
- * fills 0; filled segments take the level's `LevelPill` tone; the meter is one labelled image
+ * fills 0; filled segments take the level's `--lvN-fill` token (UI-42); the meter is one labelled image
  * and its segments are hidden from screen readers. The six level names are the seed rows'
  * (`20260820000000_mastery_levels.sql`), passed in as the server sends them.
  */
@@ -165,7 +165,7 @@ describe("DomainGrid — the five-segment mastery meter", () => {
   }
 
   it.each(STATES)(
-    "$displayName (level $level) fills $filled of 5 segments, in the pill's tone",
+    "$displayName (level $level) fills $filled of 5 segments, in the level's fill token",
     ({ levelKey, level, displayName, filled }) => {
       const { container } = render(
         <DomainGrid
@@ -188,37 +188,35 @@ describe("DomainGrid — the five-segment mastery meter", () => {
       expect(segments.map((s) => s.dataset.filled)).toEqual(
         Array.from({ length: 5 }, (_v, i) => (i < filled ? "true" : "false")),
       );
-      // A filled segment is painted in the pill's TEXT tone — the darker shade of the same
-      // hue (owner review 2026-10-01: the pale background shade was too faint) — as its
-      // background (`bg-current` over the pill's `text-*` class). An empty one is neutral.
+      // UPDATED DELIBERATELY 2026-10-03 (UI-42; UI-00e: the pill colours became the level-ramp
+      // tokens; DESIGN.md §1 ramp, §3 Mastery row). The meter is now the one segment renderer
+      // `MasteryRow` also draws. A filled segment takes the level's `--lvN-fill` token — the
+      // ramp's saturated shade, which is what the 2026-10-01 review asked for in place of the
+      // pale background shade (`bg-current` over the pill's ink did that before tokens). An
+      // empty one takes `--seg-empty`. The pill keeps the level's bg/ink/border tokens.
       const pill = within(
         meter.closest("[data-domain]") as HTMLElement,
       ).getByTestId("level-pill");
-      // The colour class, not the size class the pill also carries (`text-xs`).
-      const toneText = levelTone(levelKey)
-        .split(" ")
-        .find((c) => c.startsWith("text-"));
-      expect(toneText).toBeDefined();
-      expect(pill.classList.contains(toneText!)).toBe(true);
-      for (const seg of on) {
-        expect(seg.classList.contains(toneText!)).toBe(true);
-        expect(seg.classList.contains("bg-current")).toBe(true);
-      }
-      for (const seg of segments.filter((s) => s.dataset.filled === "false")) {
-        expect(seg.classList.contains("bg-current")).toBe(false);
-        expect(seg.classList.contains("bg-muted")).toBe(true);
-      }
+      for (const cls of levelTone(levelKey).split(" "))
+        expect(pill.classList.contains(cls), cls).toBe(true);
+      for (const seg of on)
+        expect(seg.classList.contains(levelFill(levelKey))).toBe(true);
+      for (const seg of segments.filter((s) => s.dataset.filled === "false"))
+        expect(seg.classList.contains("bg-lyc-seg-empty")).toBe(true);
       // Full width of the card's content area: the meter stretches, each segment shares it.
       expect(meter.classList.contains("w-full")).toBe(true);
       for (const seg of segments)
         expect(seg.classList.contains("flex-1")).toBe(true);
-      // Accessible: one labelled image; the segments themselves are hidden.
+      // Accessible: one labelled image ("level N of 5" for a measured level; the unmeasured
+      // state is not a level); the segments themselves are hidden.
       expect(meter.getAttribute("role")).toBe("img");
       expect(meter.getAttribute("aria-label")).toBe(
-        `Mastery: ${displayName}, ${filled} of 5`,
+        levelKey === "unmeasured"
+          ? `Mastery: ${displayName}`
+          : `Mastery: ${displayName}, level ${filled} of 5`,
       );
       for (const seg of segments)
-        expect(seg.getAttribute("aria-hidden")).toBe("true");
+        expect(seg.closest("[aria-hidden='true']")).not.toBeNull();
     },
   );
 

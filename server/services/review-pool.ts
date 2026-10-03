@@ -35,6 +35,8 @@ import {
   type ReviewPoolSpec,
   type ReviewPoolSummaryResponse,
   type ReviewSourceEngine,
+  type SessionCriteriaDifficulty,
+  toSessionCriteria,
 } from "@lyceon/shared";
 import {
   mapGenesisQuestionRow,
@@ -192,6 +194,20 @@ async function loadServableQuestions(
 /** Practice's difficulty-token mapping, verbatim (practice-canonical.ts:1519-1521). */
 function difficultyTokenToInt(token: string): number {
   return token === "easy" ? 1 : token === "hard" ? 3 : 2;
+}
+
+/**
+ * @spec [student-UI register §9 OQ-22, owner ruling (Karl) 2026-10-02] | @implemented [2026-10-03]
+ * plain English: the label a stored review difficulty token reports as in session
+ * `criteria`, derived from `difficultyTokenToInt` above so the criteria say what the
+ * pool actually filtered on (any token other than easy/hard filters as medium) rather
+ * than a second copy of the rule.
+ */
+export function reviewDifficultyLabel(
+  token: string,
+): SessionCriteriaDifficulty {
+  const level = difficultyTokenToInt(token);
+  return level === 1 ? "easy" : level === 3 ? "hard" : "medium";
 }
 
 /**
@@ -404,7 +420,7 @@ export function resolveTimeZone(tz: string | null | undefined): {
   }
 }
 
-function localParts(
+export function localParts(
   iso: string | null,
   timeZone: string,
 ): { date: string | null; time: string | null } {
@@ -667,19 +683,33 @@ async function describeSourceSessions(
 
   const meta = new Map<
     string,
-    { created_at: string | null; mode: string | null; filters: unknown }
+    {
+      created_at: string | null;
+      mode: string | null;
+      filters: SourceSessionRow["filters"];
+    }
   >();
 
+  // F-52 (register §8) | @implemented [2026-10-03]: the stored `filters` object is never
+  // copied out. It holds the pool size, the requested count, the selection mode, the
+  // client instance id and the idempotency key next to the student's choice. Each row
+  // carries only the four criteria arrays, built fresh by the shared `toSessionCriteria`
+  // (OQ-22), from practice's `filters.session_spec` and from review's flat `filters` —
+  // the same projections practice and review `/state` and `/sessions/open` use.
   if (practiceIds.length > 0) {
     const { data } = await supabaseServer
       .from("practice_sessions")
       .select("id, created_at, mode, filters")
       .in("id", practiceIds);
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const stored =
+        row.filters && typeof row.filters === "object"
+          ? (row.filters as Record<string, unknown>)
+          : {};
       meta.set(`practice:${String(row.id)}`, {
         created_at: typeof row.created_at === "string" ? row.created_at : null,
         mode: typeof row.mode === "string" ? row.mode : null,
-        filters: row.filters ?? null,
+        filters: toSessionCriteria(stored.session_spec),
       });
     }
   }
@@ -693,7 +723,7 @@ async function describeSourceSessions(
       meta.set(`review:${String(row.id)}`, {
         created_at: typeof row.created_at === "string" ? row.created_at : null,
         mode: typeof row.mode === "string" ? row.mode : null,
-        filters: row.filters ?? null,
+        filters: toSessionCriteria(row.filters, reviewDifficultyLabel),
       });
     }
   }

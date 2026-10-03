@@ -21,12 +21,17 @@ import QuestionRenderer from "./question-renderer";
 
 afterEach(() => cleanup());
 
+/** [visible letter, choice text] per choice, in DOM (on-screen) order. */
 function lettersAndTexts(container: HTMLElement): Array<[string, string]> {
-  return Array.from(container.querySelectorAll("button")).map((b) => {
-    const [letter, text] = Array.from(b.children).map(
-      (c) => c.textContent ?? "",
-    );
-    return [letter ?? "", text ?? ""];
+  return Array.from(
+    container.querySelectorAll('[data-testid="runner-choice"]'),
+  ).map((b) => {
+    const letter =
+      b.querySelector('[data-testid="runner-choice-letter"]')?.textContent ??
+      "";
+    // The text span is the one that is neither the letter, the sr-only label nor a tag.
+    const text = b.children[2]?.textContent ?? "";
+    return [letter, text];
   });
 }
 
@@ -56,16 +61,17 @@ describe("question runner: display letters by position", () => {
     ]);
   });
 
-  it("never shows a canonical letter: an option keyed C shown first is A", () => {
+  it("never shows a canonical letter: an option whose id is C, shown first, is A", () => {
+    // UI-53: the renderer letters by position only; even an id that IS a letter is not shown.
     const { container } = render(
       <QuestionRenderer
         question={{
           stem: "Pick one.",
           options: [
-            { key: "C", text: "twelve" },
-            { key: "A", text: "six" },
-            { key: "D", text: "fifteen" },
-            { key: "B", text: "nine" },
+            { id: "C", text: "twelve" },
+            { id: "A", text: "six" },
+            { id: "D", text: "fifteen" },
+            { id: "B", text: "nine" },
           ],
         }}
         selectedAnswer={null}

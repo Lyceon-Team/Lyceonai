@@ -641,8 +641,10 @@ app.use(
   examRuntimeRouter,
 );
 
-// Full-length exam score report (Doc 04C §16.1 student reads only)
-// @spec [Doc-04C_V1.0 §16.1, §16.5; E7a] | @implemented [2026-09-25]
+// Full-length exam score report (Doc 04C §16.1 student reads only) and, since OQ-30
+// (owner ruling 2026-10-02), the student's scored-sessions list (§16.3,
+// GET /api/tests/sessions?state=scored; entitlement-first, as the runtime).
+// @spec [Doc-04C_V1.0 §16.1, §16.3, §16.5; E7a; OQ-30] | @implemented [2026-09-25; 2026-10-03]
 // Same stack as the runtime. Ownership is decided before entitlement inside the
 // router (04C §16.5): a lapsed entitlement on an OWNED session is a 200
 // `unavailable` payload, a missing or foreign session a bare 403.

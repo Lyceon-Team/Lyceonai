@@ -67,6 +67,7 @@ import {
   engineAnswerResponseSchema,
   engineNextItemResponseSchema,
   engineSessionStateResponseSchema,
+  practiceSessionStateResponseSchema,
 } from "../../packages/shared/src/practice-response-schema";
 import {
   reviewOpenSessionsResponseSchema,
@@ -188,6 +189,15 @@ function sessionState(sessionId: string, mode: string): unknown {
     lastServedUnansweredItem: null,
     clientInstanceId: null,
     readOnly: false,
+    criteria: { sections: ["M"], domains: [], skills: [], difficulties: [] },
+  });
+}
+
+/** Practice's /state adds OQ-35's `shortened` (UI-53); the runner page parses it strictly typed. */
+function practiceSessionState(sessionId: string): unknown {
+  return practiceSessionStateResponseSchema.parse({
+    ...(sessionState(sessionId, "balanced") as Record<string, unknown>),
+    shortened: false,
   });
 }
 
@@ -641,7 +651,7 @@ test("practice-desmos", async ({ page }) => {
     ({ method, path: p }) => {
       const base = `/api/practice/sessions/${PRACTICE_SESSION}`;
       if (p === `${base}/state`)
-        return { body: sessionState(PRACTICE_SESSION, "balanced") };
+        return { body: practiceSessionState(PRACTICE_SESSION) };
       if (p === `${base}/next`)
         return { body: nextItem(PRACTICE_SESSION, PRACTICE_ITEM) };
       if (method === "POST" && p === `${base}/calculator-state`) {

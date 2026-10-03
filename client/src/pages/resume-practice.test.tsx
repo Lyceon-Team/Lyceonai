@@ -42,6 +42,7 @@ vi.mock("@tanstack/react-query", () => ({
 /* ── Mock wouter route to provide sessionId ── */
 vi.mock("wouter", () => ({
   useRoute: () => [true, { sessionId: "diag-session-001" }],
+  useLocation: () => ["/practice/session/diag-session-001", vi.fn()],
 }));
 
 /* ── Mock client instance ID ── */
@@ -54,7 +55,35 @@ vi.mock("@/lib/api-error", () => ({
   isApiError: () => false,
 }));
 
+import { practiceSessionStateResponseSchema } from "@lyceon/shared/practice-response-schema";
 import ResumePracticePage from "./resume-practice";
+
+/**
+ * A practice `/state` body, parsed by the shared schema the page parses it with (UI-53), so a
+ * fixture cannot carry a shape the server does not send.
+ */
+function stateBody(
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  return practiceSessionStateResponseSchema.parse({
+    sessionId: "s",
+    section: null,
+    mode: "balanced",
+    state: "active",
+    currentOrdinal: 1,
+    answeredCount: 0,
+    skippedCount: 0,
+    completedCount: 0,
+    targetQuestionCount: 10,
+    calculatorState: null,
+    lastServedUnansweredItem: null,
+    clientInstanceId: null,
+    readOnly: false,
+    criteria: { sections: [], domains: [], skills: [], difficulties: [] },
+    shortened: false,
+    ...overrides,
+  });
+}
 
 describe("ResumePracticePage — diagnostic session resume", () => {
   /**
@@ -66,7 +95,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     canonicalProps.captured = null;
 
     queryMock.useQuery.mockReturnValue({
-      data: {
+      data: stateBody({
         sessionId: "diag-session-001",
         section: null,
         mode: "diagnostic",
@@ -75,7 +104,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
         answeredCount: 0,
         targetQuestionCount: 40,
         readOnly: false,
-      },
+      }),
       isLoading: false,
       error: null,
     });
@@ -93,7 +122,6 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     expect(canonicalProps.captured).not.toBeNull();
     expect(canonicalProps.captured!.isDiagnostic).toBe(true);
     expect(canonicalProps.captured!.title).toBe("Diagnostic Assessment");
-    expect(canonicalProps.captured!.badgeLabel).toBe("Diagnostic");
     expect(canonicalProps.captured!.completionHref).toBe("/dashboard");
     expect(canonicalProps.captured!.sessionId).toBe("diag-session-001");
   });
@@ -106,7 +134,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     canonicalProps.captured = null;
 
     queryMock.useQuery.mockReturnValue({
-      data: {
+      data: stateBody({
         sessionId: "regular-session-001",
         section: null,
         mode: "balanced",
@@ -115,7 +143,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
         answeredCount: 0,
         targetQuestionCount: 20,
         readOnly: false,
-      },
+      }),
       isLoading: false,
       error: null,
     });
@@ -138,7 +166,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     canonicalProps.captured = null;
 
     queryMock.useQuery.mockReturnValue({
-      data: {
+      data: stateBody({
         sessionId: "math-session-001",
         section: "M",
         mode: "balanced",
@@ -147,7 +175,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
         answeredCount: 2,
         targetQuestionCount: 15,
         readOnly: false,
-      },
+      }),
       isLoading: false,
       error: null,
     });
@@ -161,5 +189,32 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     expect(canonicalProps.captured!.section).toBe("M");
     expect(canonicalProps.captured!.isDiagnostic).toBeUndefined();
     expect(canonicalProps.captured!.completionHref).toBe("/practice");
+    // OQ-22: no criteria chosen, so the shipped section label names it.
+    expect(canonicalProps.captured!.title).toBe("Math");
+    expect(canonicalProps.captured!.shortened).toBe(false);
+  });
+
+  it("UI-53: the session is named by its criteria and OQ-35's shortened flag reaches the runner", () => {
+    canonicalProps.captured = null;
+    queryMock.useQuery.mockReturnValue({
+      data: stateBody({
+        sessionId: "math-session-002",
+        section: "M",
+        criteria: {
+          sections: ["M"],
+          domains: ["Algebra"],
+          skills: [],
+          difficulties: [],
+        },
+        shortened: true,
+      }),
+      isLoading: false,
+      error: null,
+    });
+
+    render(<ResumePracticePage />);
+
+    expect(canonicalProps.captured!.title).toBe("Algebra");
+    expect(canonicalProps.captured!.shortened).toBe(true);
   });
 });

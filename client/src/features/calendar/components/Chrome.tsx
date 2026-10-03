@@ -218,7 +218,7 @@ function addSevenDays(date: string): string {
  * The student strings are unchanged, and that matters: this brief must not quietly reword
  * the student's header while adding the guardian's.
  */
-const ABSENT_COPY = {
+export const ABSENT_COPY = {
   student: {
     target: "Set a target",
     testDate: "Add your test date",

@@ -950,6 +950,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-profile-upsert.json \
             --file tests/ci/calendar.profile-upsert.pg.ci.test.ts
 
+      # @spec [Doc 05F §15, §16; SCL-130; owner ruling OQ-25 (Karl, 2026-10-02)]
+      # | @implemented [2026-10-03]
+      # GET /api/calendar/profile against the real migrations: the ungated study-profile read,
+      # round-tripped through the real PUT for a free and a paid student, and no plan key on
+      # the wire. Through the summary gate so a skipped (no-PG) run is red, not green.
+      - name: Calendar profile read (real route, real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.profile-read.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-profile-read.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-profile-read.json \
+            --file tests/ci/calendar.profile-read.pg.ci.test.ts
+
       # REVIEW IS NO LONGER A STUB, AND THIS STEP HAD NOT NOTICED. It ran the review
       # contract with no PG environment, so `describe.skipIf(!PG_AVAILABLE)` skipped the
       # entire real-engine half -- 9 passed, 6 SKIPPED, exit 0, green from the outside.
@@ -1278,6 +1296,49 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-admin-denied.json \
             --file tests/ci/guardian-admin-denied.pg.ci.test.ts
 
+      # @spec [student-UI register §9 OQ-29, owner ruling (Karl) 2026-10-02: the feature-access map
+      # on GET /api/profile] | @implemented [2026-10-03]
+      # The map's proof (commit 062cfc86) ran in NO job: like every *.pg.ci suite it skips
+      # without PGHOST, and the whole-suite step has none, so "green" meant 6 skipped tests.
+      # Paid all granted; free all locked for plan; paid under-13 LISA locked for age; guardian
+      # null; agrees with requireStudentOnly; the routes' own feature keys. Real route over real
+      # PG; behind the summary gate, so a skipped suite cannot read as green.
+      - name: Feature-access map (OQ-29) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/feature-access-map.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-feature-access-map.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-feature-access-map.json \
+            --file tests/ci/feature-access-map.pg.ci.test.ts
+
+      # @spec [student-UI register §8 F-62; owner ruling (Karl) 2026-10-03: wire the three LISA
+      # database proofs into CI] | @implemented [2026-10-03] | Crisis review queue, memory
+      # compaction and scope ownership, each on a disposable database. They skip without PGHOST
+      # and no step named them, so the `ci` job reported them skipped. Behind the summary gate,
+      # so a skipped file cannot read as green.
+      - name: LISA ephemeral-PG proofs (F-62) → real PG
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
+            tests/ci/memory-compaction.ephemeral-pg.proof.test.ts \
+            tests/ci/scope-ownership.ephemeral-pg.proof.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-lisa-ephemeral.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-lisa-ephemeral.json \
+            --file tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
+            --file tests/ci/memory-compaction.ephemeral-pg.proof.test.ts \
+            --file tests/ci/scope-ownership.ephemeral-pg.proof.test.ts
+
       # @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
       # An unrecognised profile role ('tutor'/'teacher') is refused with 403 ROLE_UNRECOGNIZED by
       # the real session middleware, the row is never rewritten, public routes still answer. Real
@@ -1312,6 +1373,25 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-date-of-birth-lock.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-date-of-birth-lock.json \
             --file tests/ci/date-of-birth-lock.pg.ci.test.ts
+
+      # @spec [student-UI register OQ-26, owner ruling 2026-10-02; F-38] | @implemented [2026-10-03]
+      # GET /api/profile `user.hasPassword`: true for email/password and for Google + password,
+      # false for Google-only, null (still 200) on a failed identity read, and false exactly
+      # when POST /api/auth/change-password refuses NO_PASSWORD_IDENTITY. Real route over real
+      # PG, identities through the shared GoTrue stand-in. Behind the summary gate, so a
+      # skipped suite cannot read as green.
+      - name: Profile hasPassword (OQ-26) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/profile-has-password.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-profile-has-password.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-profile-has-password.json \
+            --file tests/ci/profile-has-password.pg.ci.test.ts
 
       # @spec [Guardian_Closure_Plan G2-05; audit G-AUD-03; R6; SCL-187] | @implemented [2026-09-29]
       # The email-consent flow is removed: an under-13 student completes the profile, no
@@ -1416,6 +1496,46 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-billing-managed-by.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-billing-managed-by.json \
             --file tests/ci/billing-managed-by.pg.ci.test.ts
+
+      # @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02; owner ruling (Karl)
+      #        2026-10-03 OQ-43 / F-61, Doc 02B §13] | @implemented [2026-10-03]
+      # GET /api/practice/quota on the real practice router and the real
+      # check_and_reserve_practice_quota, over sessions served and answered through the real
+      # routes: fresh (resetAt = next America/Chicago midnight), served/skipped consume nothing,
+      # an answer consumes one and its idempotent replay nothing, limit−1 and limit (the read, the
+      # GET /next 402 and the POST /sessions 402 agree; the pre-cap equals remaining), the Chicago
+      # day boundary and DST via p_now, paid unlimited, reading consumes nothing, 401 and guardian
+      # 403. Verdict read from vitest's JSON report: a PG-backed suite that skips is a vacuous pass.
+      - name: Practice quota (OQ-21 read, OQ-43 Doc 02B §13 rule) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/practice-quota.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-practice-quota.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-quota.json \
+            --file tests/ci/practice-quota.pg.ci.test.ts
+
+      # @spec [student-UI register §8 F-64, §9 OQ-35; Doc 02B §9 next/serve] | @implemented
+      # [2026-10-03] | Concurrent GET /next on one session (pooled connections, 10 rounds × 8
+      # calls): never a 500, every 200 the same item, exactly one item served, pre-submit
+      # correct_answer and explanation null. /state `shortened` true when the stored pool count
+      # is below the requested count, and neither count on the wire. Behind the summary gate.
+      - name: Practice runner (F-64 concurrent /next, OQ-35 shortened) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/practice-runner.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-practice-runner.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-runner.json \
+            --file tests/ci/practice-runner.pg.ci.test.ts
 
       # The G2-04 assertions are worth what their plants prove. One product-source mutation per
       # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
@@ -1798,8 +1918,10 @@ jobs:
 
       # @spec [brief R3 §4; ruled plan §2] Review API → real PG proof.
       # Named BY FILE here on purpose: the whole-suite `pnpm test` step in the `ci` job
-      # sets no PGHOST, so `describe.skipIf(!PG_AVAILABLE)` skips both files and exits 0.
+      # sets no PGHOST, so `describe.skipIf(!PG_AVAILABLE)` skips these files and exits 0.
       # A PG test not named in a service-backed job runs nowhere and reports green.
+      # session-criteria (OQ-22, owner ruling 2026-10-02) drives practice AND review
+      # /state and /sessions/open through the same harness, so it runs here.
       - name: Review API + queue end-to-end → real PG proof
         env:
           PGHOST: localhost
@@ -1811,10 +1933,12 @@ jobs:
           pnpm exec vitest run \
             tests/ci/review.routes.pg.ci.test.ts \
             tests/ci/review.queue-e2e.pg.ci.test.ts \
+            tests/ci/session-criteria.pg.ci.test.ts \
             --reporter=default --reporter=json --outputFile=/tmp/vitest-review.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-review.json \
             --file tests/ci/review.routes.pg.ci.test.ts \
-            --file tests/ci/review.queue-e2e.pg.ci.test.ts
+            --file tests/ci/review.queue-e2e.pg.ci.test.ts \
+            --file tests/ci/session-criteria.pg.ci.test.ts
 
       # @spec [Doc-04A_V2.2 §7-§16; E6] Exam runtime API -> real PG proof: whole exams
       # through the real /api/tests handlers (both routing paths, both modes), answers by
@@ -1866,6 +1990,26 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-shell.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-shell.json \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts
+
+      # @spec [Doc-04C_V1.0 §16.3, §15.1; Doc-04A_V2.2 §16.2; SCL-185; owner ruling OQ-30
+      # 2026-10-02] | @implemented [2026-10-03]
+      # GET /api/tests/sessions?state=scored over real exams sat through the real /api/tests
+      # routers: only the caller's scored sessions, newest first (id DESC on a tie), each row
+      # equal to its own /report; the UI-01 403 for an unpaid caller; 400 for any other state;
+      # 401; anti-leak key scan after presence; a score without its disclosure is a 500.
+      # Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Exam scored sessions list → real PG proof (OQ-30)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-scored-sessions.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-scored-sessions.json \
+            --file tests/ci/exam-scored-sessions.handler-pg.ci.test.ts
 
       # @spec [SCL-154 .. SCL-158; E9]
       # One exam through the real /api/tests handlers: the final submit's hand-off

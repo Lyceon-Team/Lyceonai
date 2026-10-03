@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -118,7 +117,7 @@ function BrowseTopics() {
   };
 
   return (
-    <AppShell>
+    <>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
@@ -346,7 +345,7 @@ function BrowseTopics() {
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }
 

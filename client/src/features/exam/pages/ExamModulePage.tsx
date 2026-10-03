@@ -36,6 +36,7 @@ import { CALC_COLUMN_HEIGHT_PX, CALC_DEFAULT_PCT, CALC_MIN_PX } from "@/componen
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
+import { buildExamModuleKeymap, useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import {
   examErrorCode,
   fetchExamSession,
@@ -406,6 +407,30 @@ function ModuleRunner(props: {
     if (prev !== undefined) goTo(prev);
   };
 
+  /**
+   * @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3] | @implemented [2026-10-03]
+   * plain English: ← / → do exactly what the footer Back and Next buttons do, through the
+   * one shared hook. There is no Enter binding: Enter on a focused choice selects it through
+   * the button itself, and no key reaches module submit — that stays behind
+   * SubmitModuleDialog's confirmation. Suspended while the navigator or submit dialog is open
+   * or a submit is in flight; arrows typed in the grid-in box or the calculator stay there.
+   */
+  const reviewBack = ordinals[ordinals.length - 1];
+  useKeyboardShortcuts(
+    buildExamModuleKeymap({
+      onPrevious:
+        view.kind === "review"
+          ? reviewBack === undefined
+            ? null
+            : () => goTo(reviewBack)
+          : indexOfCurrent > 0
+            ? onBack
+            : null,
+      onNext: view.kind === "question" ? onNext : null,
+    }),
+    { enabled: !navOpen && !submitOpen && !submitting },
+  );
+
   const onConfirmSubmit = async () => {
     setSubmitting(true);
     leaveCurrent();
@@ -455,7 +480,9 @@ function ModuleRunner(props: {
   ) : null;
 
   return (
-    <div className="exam-root flex h-screen flex-col" data-testid="exam-module">
+    // UI-41: h-full, not h-screen: the Focus shell's top bar sits above, and its <main> is the
+    // remaining height.
+    <div className="exam-root flex h-full flex-col" data-testid="exam-module">
       <div ref={headerRef} className="shrink-0">
         <ExamHeader section={section} module={module} timer={<ExamTimer remainingMs={clock.remainingMs} />} tools={tools} />
       </div>

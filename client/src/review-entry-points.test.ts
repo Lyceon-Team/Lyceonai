@@ -7,13 +7,13 @@
  *
  * Plants, per brief R4 §3:
  *   U8 — remove the nav entry (`{ href: "/review", … }` from `layout/app-shell.tsx`'s
- *        `navItems`, or the dashboard tile) and the matching assertion goes red.
+ *        `RAIL_ITEMS`, or Home's review links) and the matching assertion goes red.
  *   U9 — remove `"/review"` from `RETURN_PATH_ALLOWLIST` and both halves go red: the
  *        allowlist membership, and `sanitizeReturnPath("/review")`.
  *
  * WHY THESE READ SOURCE TEXT. A nav entry and a route registration are facts about
- * FILES, not about a rendered tree: `navItems` (`layout/app-shell.tsx:56-62`) feeds both
- * the desktop nav and the mobile drawer from one array, and `App.tsx` mounts routes
+ * FILES, not about a rendered tree: `RAIL_ITEMS` (`layout/app-shell.tsx`, UI-41) feeds both
+ * the desktop rail and the mobile tab bar from one array, and `App.tsx` mounts routes
  * inside a `<Switch>` that needs the whole router to render. Asserting on the source is
  * the honest, non-brittle way to pin "the entry exists" — and it is the only way to pin
  * R1's own carry-over rule, that every allowlist entry is a route in `App.tsx`.
@@ -41,32 +41,38 @@ describe("U8 — review is reachable from normal navigation", () => {
     expect(shell).toContain('href: "/review"');
     expect(shell).toContain('label: "Review"');
 
-    // One array, two renderers — so the single entry covers the mobile drawer too.
-    expect(shell).toContain("const navItems");
-    const navItemsBlock = shell.slice(
-      shell.indexOf("const navItems"),
-      shell.indexOf("];", shell.indexOf("const navItems")),
+    // One array, two renderers (UI-41: the desktop rail and the mobile tab bar), so the single
+    // entry covers both.
+    expect(shell).toContain("const RAIL_ITEMS");
+    const railBlock = shell.slice(
+      shell.indexOf("const RAIL_ITEMS"),
+      shell.indexOf("];", shell.indexOf("const RAIL_ITEMS")),
     );
-    expect(navItemsBlock).toContain("/review");
-    expect(navItemsBlock).toContain("/practice");
+    expect(railBlock).toContain("/review");
+    expect(railBlock).toContain("/practice");
   });
 
-  it("the dashboard carries a Review tile pointing at /review", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    // The claim is "a tile links to /review", not "the tag is spelled this way on one
-    // line". #829 moved the className onto the same tag, which broke the literal without
-    // touching reachability.
-    expect(dashboard).toMatch(/<Link\b[^>]*?href="\/review"/);
-    expect(dashboard).toContain("Review Queue");
+  it("Home links to /review on both plans", () => {
+    // UI-50 (2026-10-03): the pre-redesign "Review Queue" tile is gone. The new Home reaches
+    // review from the free Home's "Go to review" and the paid panel's "See all sessions"
+    // (Main.dc.html). The claim is "a link goes to /review", not the tag's line layout (#829).
+    const free = read("client/src/components/home/FreeHome.tsx");
+    expect(free).toMatch(
+      /<Link\b[^>]*?href="\/review"[^>]*>\s*Go to review\s*</,
+    );
+    const panel = read("client/src/components/home/HomePanel.tsx");
+    expect(panel).toMatch(
+      /<Link\b[^>]*?href="\/review"[^>]*>\s*See all sessions\s*</,
+    );
   });
 
   it("practice's landing carries the secondary action back to /review", () => {
+    // UI-51 (2026-10-03): the "Quick Actions" card is gone; Practice.dc.html's "Recent practice"
+    // heading carries "Review what you missed", which links to /review.
     const practice = read("client/src/pages/practice.tsx");
-    const actionsBlock = practice.slice(
-      practice.indexOf("const secondaryActions"),
-      practice.indexOf("];", practice.indexOf("const secondaryActions")),
+    expect(practice).toMatch(
+      /<Link\b[^>]*?href="\/review"[^>]*>\s*Review what you missed\s*</,
     );
-    expect(actionsBlock).toContain('href: "/review"');
   });
 
   /**
