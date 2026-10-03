@@ -116,9 +116,8 @@ export type EngineConfig = {
   };
   /** Where the loop navigates when the session completes or the student ends it. */
   completionHref: string;
-  /** Back-link target for the in-session shell. */
+  /** Where the session's end-state buttons return to (the Focus shell's back arrow has its own). */
   backHref: string;
-  backLabel: string;
   features: {
     /**
      * The 40-item baseline flow, which hides Skip and End Session so all 40 items land.
@@ -193,7 +192,6 @@ export const PRACTICE_ENGINE_CONFIG: EngineConfig = {
   },
   completionHref: "/practice",
   backHref: "/practice",
-  backLabel: "Back to Practice",
   features: { diagnostic: true, calculator: true, tutor: false },
 };
 
@@ -250,6 +248,5 @@ export const REVIEW_ENGINE_CONFIG: EngineConfig = {
   },
   completionHref: "/review",
   backHref: "/review",
-  backLabel: "Back to Review",
   features: { diagnostic: false, calculator: true, tutor: true },
 };

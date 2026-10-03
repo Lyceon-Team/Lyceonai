@@ -49,7 +49,6 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -198,7 +197,7 @@ export default function ReviewPage() {
   );
 
   return (
-    <AppShell showFooter>
+    <>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         <header className="mb-8">
           <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
@@ -649,6 +648,6 @@ export default function ReviewPage() {
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

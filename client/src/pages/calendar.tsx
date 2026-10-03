@@ -169,6 +169,9 @@ export default function CalendarPage(): JSX.Element {
     return (
       <CalendarView
         backHref="/dashboard"
+        // UI-41: the App shell's rail is the way back (Home); "← Dashboard" would be a
+        // second exit beside it, so it is hidden here as it is in the guardian tab (G4-04).
+        hideBackLink
         model={null}
         // Dismissed for this visit: the plan behind it un-blurs and nothing is saved. The
         // next mount asks the server again, gets `setup_required` again (no profile), and
@@ -222,6 +225,7 @@ export default function CalendarPage(): JSX.Element {
   return (
     <CalendarView
       backHref="/dashboard"
+      hideBackLink
       model={model}
       today={today}
       viewer="student"

@@ -6,7 +6,6 @@ import { FullPageLoader } from "@/components/student-ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
@@ -249,8 +248,8 @@ export default function ProfileComplete() {
     // server/exception string is never rendered in the CardDescription.
     const message = resolveOnboardingErrorMessage(error, "load");
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
+      <div>
+        <div>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-[#0F2E48]">
               <AlertCircle className="h-5 w-5 text-amber-700" />
@@ -270,14 +269,14 @@ export default function ProfileComplete() {
               Back To Login
             </Button>
           </CardContent>
-        </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-lg">
+    <div>
+      <div>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserRound className="h-5 w-5 text-primary" />
@@ -398,7 +397,7 @@ export default function ProfileComplete() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

@@ -56,9 +56,6 @@ vi.mock("wouter", () => ({
     <a href={href}>{children}</a>
   ),
 }));
-vi.mock("@/components/layout/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 
 import MasteryPage from "./mastery";
 

@@ -16,8 +16,9 @@
  * from the inbox view to the archive view; nothing is deleted here. Each item shows the
  * server-rendered in-app title and body in full (the email rendering of the same event
  * never reaches the client — one event, one payload, two channel-appropriate renderings).
- * Rendered inside the shell that matches the viewer: GuardianShell for a guardian, AppShell
- * for a student — the same page in both, so neither role is a recipient without a surface.
+ * Rendered inside the shell that matches the viewer: GuardianShell for a guardian (chosen
+ * here), the student App shell for a student (applied by the router's StudentRouteFrame, UI-41)
+ * — the same page in both, so neither role is a recipient without a surface.
  *
  * Accessibility: the heading takes focus on mount so a keyboard or screen-reader user lands
  * on the page's name; the unread count is announced from a polite live region; every control
@@ -32,7 +33,6 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { AppShell } from "@/components/layout/app-shell";
 import { GuardianShell } from "@/components/layout/GuardianShell";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -55,11 +55,7 @@ import type { NotificationFeedItem } from "@lyceon/shared/notifications-schema";
 export default function NotificationsPage() {
   const { isGuardian } = useSupabaseAuth();
   const content = <NotificationsFeed />;
-  return isGuardian ? (
-    <GuardianShell>{content}</GuardianShell>
-  ) : (
-    <AppShell>{content}</AppShell>
-  );
+  return isGuardian ? <GuardianShell>{content}</GuardianShell> : content;
 }
 
 export function NotificationsFeed() {

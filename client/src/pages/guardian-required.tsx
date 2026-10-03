@@ -55,10 +55,7 @@ export default function GuardianRequired() {
   if (!user) return null;
 
   return (
-    <div
-      className="min-h-screen bg-background px-4 py-10"
-      data-testid="guardian-required"
-    >
+    <div className="space-y-6" data-testid="guardian-required">
       <div className="mx-auto max-w-xl space-y-6">
         <h1 className="text-2xl font-semibold text-[#0F2E48]">
           Connect a guardian to get started
