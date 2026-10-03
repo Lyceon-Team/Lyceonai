@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from "react";
 import MathRenderer from "@/components/MathRenderer";
-import { Textarea } from "@/components/ui/textarea";
 import { NumericEntryInput } from "@/components/practice/NumericEntryInput";
+import { RUNNER_OPTION_ATTR } from "@/hooks/useKeyboardShortcuts";
 
 type QuestionOption = {
   id?: string | null;
@@ -112,7 +112,6 @@ export default function QuestionRenderer({
     if (!hasUsableMcChoices && !isGrid) {
       onMissingMcChoices?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasUsableMcChoices, isGrid]);
 
   const selectedNorm = (selectedAnswer ?? "").trim();
@@ -208,6 +207,9 @@ export default function QuestionRenderer({
             <button
               key={opt.id}
               type="button"
+              // Enter on a focused option submits the selection rather than re-clicking it
+              // (@spec [student-UI register §2 Keyboard, UI-45] | @implemented [2026-10-03]).
+              {...{ [RUNNER_OPTION_ATTR]: "" }}
               className={`${base} ${border}`}
               disabled={disabled || showResult}
               onClick={() => onSelectAnswer(opt.id)}

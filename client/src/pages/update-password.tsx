@@ -6,7 +6,6 @@ import {
 } from "@lyceon/shared/password-policy";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
@@ -78,8 +77,8 @@ export default function UpdatePassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md mx-auto">
+    <div>
+      <div>
         <CardHeader>
           <CardTitle className="text-2xl flex items-center gap-2">
             <Lock className="h-5 w-5" />
@@ -145,7 +144,7 @@ export default function UpdatePassword() {
             ) : null}
           </form>
         </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

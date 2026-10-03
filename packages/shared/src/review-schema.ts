@@ -27,6 +27,7 @@ import {
   engineSessionStateResponseSchema,
   engineSkipResponseSchema,
 } from "./practice-response-schema.js";
+import { sessionCriteriaSchema } from "./session-criteria.js";
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -280,6 +281,8 @@ export const reviewOpenSessionsResponseSchema = z.object({
       target_question_count: z.number(),
       total_items: z.number(),
       answered_items: z.number(),
+      // OQ-22, owner ruling (Karl) 2026-10-02 | @implemented [2026-10-03].
+      criteria: sessionCriteriaSchema,
     }),
   ),
   maxConcurrentSessions: z.number(),
@@ -297,12 +300,29 @@ export const reviewTerminateResponseSchema = z.object({
 });
 
 /**
+ * A full-length source row's one fact: the form's name, so the picker can say "Practice
+ * Test 1" (review-pool.ts `describeSourceSessions`). Strict: nothing else from the exam
+ * session leaves the server.
+ */
+export const reviewPoolExamFiltersSchema = z
+  .object({ test_form_name: z.string().min(1) })
+  .strict();
+
+/**
  * One past session that still has open queue entries, for R4's session picker.
  *
  * Ruling 20: no stored labels. The row carries facts — the source session's local date
- * and time in the caller's zone, its mode and filters, and how many of its questions
- * are still open — and R4 formats "Thu, Sep 17 → Practice · 2:40 PM · Math · Algebra ·
- * 4 to review" from them.
+ * and time in the caller's zone, its mode and what it was started with, and how many of
+ * its questions are still open — and R4 formats "Thu, Sep 17 → Practice · 2:40 PM ·
+ * Math · Algebra · 4 to review" from them.
+ *
+ * `filters` — @spec [student-UI register §8 F-52 ("send only `sections`, `domains`,
+ * `skills`, `difficulties`"); §9 OQ-22 (criteria shape)] | @implemented [2026-10-03]:
+ * a practice or review row carries the session's criteria (`sessionCriteriaSchema`,
+ * strict, the four arrays built by `toSessionCriteria`) and never the stored `filters`
+ * object, which holds pool sizes, the requested count, the client instance id and the
+ * idempotency key. A full-length row carries `{test_form_name}` only. `null` when the
+ * source session row is gone or a form is no longer published.
  */
 export const reviewPoolSourceSessionSchema = z.object({
   source_engine: reviewSourceEngineSchema,
@@ -311,7 +331,9 @@ export const reviewPoolSourceSessionSchema = z.object({
   local_date: z.string().nullable(),
   local_time: z.string().nullable(),
   mode: z.string().nullable(),
-  filters: z.unknown().nullable(),
+  filters: z
+    .union([sessionCriteriaSchema, reviewPoolExamFiltersSchema])
+    .nullable(),
   open_count: z.number(),
 });
 export type ReviewPoolSourceSession = z.infer<

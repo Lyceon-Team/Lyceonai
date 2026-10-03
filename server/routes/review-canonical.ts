@@ -66,6 +66,7 @@ import {
   buildReviewPool,
   buildReviewPoolSummary,
   decodeSourceSessionsCursor,
+  reviewDifficultyLabel,
   type ReviewPoolRow,
 } from "../services/review-pool";
 import {
@@ -77,8 +78,10 @@ import {
   reviewPoolQuerySchema,
   reviewResumeBodySchema,
   reviewSkipBodySchema,
+  toSessionCriteria,
   type ReviewPoolSessionsCursor,
   type ReviewPoolSpec,
+  type SessionCriteria,
 } from "@lyceon/shared";
 import type { ReviewSessionItemRow } from "../../packages/shared/src/review-table-schema";
 
@@ -166,6 +169,22 @@ type ReviewSessionMetadata = {
 function asReviewSessionMetadata(raw: unknown): ReviewSessionMetadata {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return { ...(raw as ReviewSessionMetadata) };
+}
+
+/**
+ * @spec [student-UI register §9 OQ-22, owner ruling (Karl) 2026-10-02: "The chosen criteria
+ *        on practice and review `/state` and `/sessions/open`, with no counts."]
+ *        | @implemented [2026-10-03]
+ * plain English: the four criteria arrays of a review session, projected from the stored
+ * `filters` (where `poolSpecToFilters` put the student's choice). expected outcome: `filter`
+ * mode shows what was chosen; `queue` and `session` modes store no criteria and show four
+ * empty arrays (a redo's source session is not one of the four criteria). Difficulty tokens
+ * report as the pool applied them (`reviewDifficultyLabel`). trade-offs: none of `filters`
+ * is spread; only the builder's fresh four-key object leaves, so the idempotency key, the
+ * target count and anything added to `filters` later cannot ride along.
+ */
+function reviewSessionCriteria(filters: unknown): SessionCriteria {
+  return toSessionCriteria(filters, reviewDifficultyLabel);
 }
 
 function normalizeClientInstanceId(value: unknown): string | null {
@@ -1509,6 +1528,7 @@ router.get(
             metadata.target_question_count ?? s.target_count,
           total_items: total,
           answered_items: counts.completedCount,
+          criteria: reviewSessionCriteria(s.filters),
         };
       }),
     );
@@ -1661,6 +1681,7 @@ router.get(
         : null,
       clientInstanceId: normalizeClientInstanceId(metadata.client_instance_id),
       readOnly: state === "completed" || state === "abandoned",
+      criteria: reviewSessionCriteria(session.filters),
     });
   },
 );

@@ -12,6 +12,7 @@ export * from "./exam-score-renewal-schema.js";
 export * from "./guardian-subject.js";
 export * from "./entitlement-denial.js";
 export * from "./feature-access.js";
+export * from "./practice-quota.js";
 export * from "./rule4-columns.js";
 export * from "./student-resources.js";
 export * from "./student-link-code-schema.js";
@@ -24,6 +25,7 @@ export * from "./support-contact.js";
 export * from "./practice-response-schema.js";
 export * from "./practice-reference-schema.js";
 export * from "./review-schema.js";
+export * from "./session-criteria.js";
 export * from "./tutor-lifecycle-schema.js";
 
 // Doc 05F Study Calendar — shared layer (schemas, allocator, read model).

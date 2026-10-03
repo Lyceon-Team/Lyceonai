@@ -33,7 +33,7 @@
  */
 import { useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { FullPageLoader } from "@/components/student-ui";
 import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
@@ -68,14 +68,15 @@ export default function ResumeReviewPage() {
   });
 
   if (isLoading) {
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
+    // The shared FullPageLoader (role="status", named by its label). Light-locked until this
+    // page moves onto a themed student shell in Wave 5.
     return (
-      <div
-        className="flex h-screen items-center justify-center"
+      <FullPageLoader
+        themeLock="light"
+        label="Loading your review session..."
         data-testid="review-session-loading"
-      >
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-3 text-lg">Loading your review session...</span>
-      </div>
+      />
     );
   }
 

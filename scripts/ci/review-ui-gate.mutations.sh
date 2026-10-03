@@ -26,6 +26,8 @@ FILES=(
   "client/src/lib/review-session-picker.ts"
   "client/src/hooks/useReview.ts"
   "client/src/pages/review.tsx"
+  "client/src/components/review/review-landing-model.ts"
+  "client/src/lib/route-shells.ts"
   "client/src/pages/resume-review.tsx"
   "client/src/pages/resume-practice.tsx"
   "client/src/components/practice/CanonicalPracticePage.tsx"
@@ -142,29 +144,28 @@ assert s.count(a) == 1
 s = s.replace(a, "      \"Responses submit directly to canonical practice endpoints. If you leave and return, Lyceon restores your unresolved state from runtime session truth.\",", 1)'
 
 # ── R4.1b — Review by topic sits above the past-sessions picker ──────────────────────
+# Re-pointed 2026-10-03 (student UI UI-52): the PageCard comment markers are gone; the plant
+# swaps the two JSX blocks of the rebuilt page (ReviewByTopic, then PastSessions).
 plant "R4.1b" "swap the topic picker back below the past-sessions picker" \
   "client/src/pages/review.test.tsx" \
   "client/src/pages/review.tsx" \
-  'import re
-topic_i = s.index("{/* \u2500\u2500 2. Review by topic")
-past_i = s.index("{/* \u2500\u2500 3. Review a past session")
-tail_i = s.index("{/* \u2500\u2500 Aside:")
-# The two blocks are contiguous; swapping them is the whole plant.
+  'topic_i = s.index("          {total > 0 && topics.data !== undefined ? (")
+past_i = s.index("          {total > 0 ? (\n            <PastSessions")
+end_i = s.index("        </>\n      )}", past_i)
+assert s.count("          {total > 0 && topics.data !== undefined ? (") == 1
 topic = s[topic_i:past_i]
-rest = s[past_i:tail_i]
-# rest ends with the indentation of the Aside comment; keep it on the topic block.
-indent_len = len(rest) - len(rest.rstrip(" "))
-past = rest[: len(rest) - indent_len]
-pad = rest[len(rest) - indent_len :]
-s = s[:topic_i] + past + topic.rstrip() + "\n\n" + pad + s[tail_i:]'
+past = s[past_i:end_i]
+s = s[:topic_i] + past + "\n" + topic.rstrip("\n") + "\n" + s[end_i:]'
 
 # ── U4 — all three entry modes render ────────────────────────────────────────────────
+# Re-pointed 2026-10-03 (student UI UI-52): the topic section's test id moved to the
+# rebuilt ReviewByTopic section.
 plant "U4" "drop the topic section from the landing" \
   "client/src/pages/review.test.tsx" \
   "client/src/pages/review.tsx" \
-  'a = "<div className=\"space-y-5\" data-testid=\"review-topic-picker\">"
+  'a = "      data-testid=\"review-topic-picker\""
 assert s.count(a) == 1
-s = s.replace(a, "<div className=\"space-y-5\" data-testid=\"review-topic-picker-REMOVED\">", 1)'
+s = s.replace(a, "      data-testid=\"review-topic-picker-REMOVED\"", 1)'
 
 # ── U5 — day grouping uses the BROWSER timezone ──────────────────────────────────────
 plant "U5" "compute today in UTC instead of the browser timezone" \
@@ -198,10 +199,12 @@ assert s.count(a) == 1
 s = s.replace(a, "  if (false) {", 1)'
 
 # ── U8 — review is reachable from the global nav ─────────────────────────────────────
+# Re-pointed 2026-10-03 (student UI UI-41): the top-nav `navItems` array became the rail's
+# `RAIL_ITEMS`, so the plant removes the whole Review rail entry.
 plant "U8" "remove the Review entry from the live global nav" \
   "client/src/review-entry-points.test.ts" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "  { href: \"/review\", label: \"Review\", icon: RotateCcw },\n"
+  'a = "  {\n    key: \"review\",\n    label: \"Review\",\n    href: \"/review\",\n    icon: RotateCcw,\n    lock: null,\n    inTabBar: true,\n  },\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
@@ -214,6 +217,179 @@ plant "U9" "remove /review from RETURN_PATH_ALLOWLIST" \
   'a = "  \"/review\": [\"student\", \"admin\"],\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
+
+# ── UI-52 — the rebuilt Review page (student UI, 2026-10-03) ─────────────────────────
+# @spec [student-UI register UI-52; DESIGN.md §4 Review; OQ-22, OQ-24, UI-16, SCL-110]
+# Each plant mutates one site of the page or its model; review.test.tsx must go red.
+# `\x24` and `\x60` stand for "$" and a backtick inside this unquoted heredoc.
+
+plant "UI52-Q1" "queue card: say 0 questions whatever the pool total" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/components/review/review-landing-model.ts" \
+  'a = "  return \x60\x24{total} \x24{total === 1 ? \"question\" : \"questions\"} to review\x60;"
+assert s.count(a) == 1
+s = s.replace(a, "  return \x60\x24{0} questions to review\x60;", 1)'
+
+plant "UI52-Q2" "Start reviewing sends filter mode instead of queue" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "onClick={() => void start({ mode: \"queue\" })}"
+assert s.count(a) == 1
+s = s.replace(a, "onClick={() => void start({ mode: \"filter\", filters: {} })}", 1)'
+
+plant "UI52-Q3" "a started session stays on /review instead of the runner" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "      navigate(\x60/review/session/\x24{result.sessionId}\x60);"
+assert s.count(a) == 1
+s = s.replace(a, "      navigate(\"/review\");", 1)'
+
+plant "UI52-Q4" "an empty pool draws the error notice's test id" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "{pool.isError ? ("
+assert s.count(a) == 1
+s = s.replace(a, "{pool.isError || (pool.pool?.total ?? 1) === 0 ? (", 1)'
+
+plant "UI52-Q5" "drop the UTC fallback line" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "{pool.pool?.timezoneFallback === true ? ("
+assert s.count(a) == 1
+s = s.replace(a, "{false ? (", 1)'
+
+plant "UI52-Q6" "a second filled primary action (the topic button)" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "            variant=\"lyc-outline\"\n            disabled={!canStart || count === 0}"
+assert s.count(a) == 1
+s = s.replace(a, "            variant=\"lyc-primary\"\n            disabled={!canStart || count === 0}", 1)'
+
+plant "UI52-O1" "open sessions lose their criteria name" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "const title = sessionTitle(\"review\", s.criteria, s.section);"
+assert s.count(a) == 1
+s = s.replace(a, "const title = \"Review session\";", 1)'
+
+plant "UI52-O2" "End confirms but never terminates" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "if (confirming !== null) onEnd(confirming.id);"
+assert s.count(a) == 1
+s = s.replace(a, "void onEnd;", 1)'
+
+plant "UI52-O3" "the session limit is reached one session later" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "open.sessions.length >= open.maxConcurrentSessions;"
+assert s.count(a) == 1
+s = s.replace(a, "open.sessions.length > open.maxConcurrentSessions;", 1)'
+
+plant "UI52-T1" "domain chips lose their own-queue count" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "{domainChipLabel(d.label, own)}"
+assert s.count(a) == 1
+s = s.replace(a, "{d.label}", 1)'
+
+plant "UI52-T2" "domain chips become single-select" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = ": [...prev, d.value],"
+assert s.count(a) == 1
+s = s.replace(a, ": [d.value],", 1)'
+
+plant "UI52-T3" "the section switch keeps the old section's chosen domains" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "                    setChosen([]);\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "UI52-T4" "the topic start drops the section" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "? { sections: [section], domains: chosen }"
+assert s.count(a) == 1
+s = s.replace(a, "? { domains: chosen }", 1)'
+
+plant "UI52-P1" "the past-session list starts expanded" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "const [expanded, setExpanded] = useState(false);"
+assert s.count(a) == 1
+s = s.replace(a, "const [expanded, setExpanded] = useState(true);", 1)'
+
+plant "UI52-P2" "the toggle shows a past-session count (OQ-24 says none)" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "<span>Past sessions</span>"
+assert s.count(a) == 1
+s = s.replace(a, "<span>Past sessions ({rows.length})</span>", 1)'
+
+plant "UI52-P3" "show a whole server page at once instead of five" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/components/review/review-landing-model.ts" \
+  'a = "export const PAST_SESSIONS_STEP = 5;"
+assert s.count(a) == 1
+s = s.replace(a, "export const PAST_SESSIONS_STEP = 20;", 1)'
+
+plant "UI52-P4" "Load more never asks the server for its next page" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/components/review/review-landing-model.ts" \
+  'a = "  return nextShown > loaded && serverHasMore;"
+assert s.count(a) == 1
+s = s.replace(a, "  return false;", 1)'
+
+plant "UI52-P5" "Redo names the wrong source session" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "source_session_id: row.source_session_id,"
+assert s.count(a) == 1
+s = s.replace(a, "source_session_id: row.source_engine,", 1)'
+
+plant "UI52-R1" "the panel's by-section counts read zero" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "{bySection.get(s) ?? 0}</span>"
+assert s.count(a) == 1
+s = s.replace(a, "{0}</span>", 1)'
+
+plant "UI52-R2" "paid: no mastery rows" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "{masteryGranted && mastery.data !== undefined ? ("
+assert s.count(a) == 1
+s = s.replace(a, "{false ? (", 1)'
+
+plant "UI52-R3" "free: read mastery anyway (a gated read)" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "enabled: masteryGranted && studentId.length > 0,"
+assert s.count(a) == 1
+s = s.replace(a, "enabled: studentId.length > 0,", 1)'
+
+plant "UI52-R4" "free: the locked card opens nothing" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "upgrade.open(\"mastery_detail\", masteryAccess.reason)"
+assert s.count(a) == 1
+s = s.replace(a, "void masteryAccess.reason", 1)'
+
+plant "UI52-F1" "free: gate review behind the upgrade modal" \
+  "client/src/pages/review.test.tsx" \
+  "client/src/pages/review.tsx" \
+  'a = "    setStartFailure(null);\n    const result = await create.startSession(spec);"
+assert s.count(a) == 1
+s = s.replace(a, "    setStartFailure(null);\n    if (!masteryGranted) {\n      upgrade.open(\"mastery_detail\", \"plan\");\n      return;\n    }\n    const result = await create.startSession(spec);", 1)'
+
+plant "UI52-S1" "put /review back on the light lock" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/review\": app(360, true, \"column\", null),"
+assert s.count(a) == 1
+s = s.replace(a, "  \"/review\": app(360, true),", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

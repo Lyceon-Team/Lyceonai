@@ -188,6 +188,7 @@ function sessionState(sessionId: string, mode: string): unknown {
     lastServedUnansweredItem: null,
     clientInstanceId: null,
     readOnly: false,
+    criteria: { sections: ["M"], domains: [], skills: [], difficulties: [] },
   });
 }
 

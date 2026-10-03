@@ -4,8 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { LevelPill } from "@/components/mastery/LevelPill";
 import { MasteryMeter } from "@/components/mastery/MasteryMeter";
 import type { MasteryDomainNode, MasterySection } from "@/lib/masteryApi";
-import { UNMEASURED_DISPLAY_NAME } from "@lyceon/shared/mastery-levels";
-import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
+import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
 
 /** Server order: Math, then Reading & Writing (`canonicalDomainPairs`). */
 const ALL_SECTIONS: readonly MasterySection[] = ["M", "RW"];
@@ -20,7 +19,8 @@ const ALL_SECTIONS: readonly MasterySection[] = ["M", "RW"];
  * (the name from `mastery_levels`, never a client table). Extracted from `pages/mastery.tsx`
  * so the student page and the guardian Dashboard render ONE component (R11), not two.
  *
- * ALWAYS THE CANONICAL DOMAINS. The cards are driven by `CANONICAL_DOMAINS_BY_SECTION` — the
+ * ALWAYS THE CANONICAL DOMAINS (`canonicalDomainNodes`, shared with Home since UI-50). The
+ * cards are driven by `CANONICAL_DOMAINS_BY_SECTION` — the
  * list and order the server's `canonicalDomainPairs` uses — not by the rows handed in. A
  * served row keeps its level and the server's words; a domain with no row is a card reading
  * "Not enough answers yet" (the `unmeasured` state), never a missing card. The server already
@@ -48,19 +48,7 @@ export function DomainGrid({
   onOpen?: (target: { section: MasterySection; domain: string }) => void;
 }): JSX.Element {
   const openSkills = viewer === "student" ? onOpen : undefined;
-  const served = new Map(domains.map((d) => [`${d.section}:${d.domain}`, d]));
-  const nodes: MasteryDomainNode[] = sections.flatMap((section) =>
-    CANONICAL_DOMAINS_BY_SECTION[section].map(
-      (domain): MasteryDomainNode =>
-        served.get(`${section}:${domain}`) ?? {
-          section,
-          domain,
-          levelKey: "unmeasured",
-          level: null,
-          displayName: UNMEASURED_DISPLAY_NAME,
-        },
-    ),
-  );
+  const nodes = canonicalDomainNodes(domains, sections);
   return (
     <div
       className="grid grid-cols-1 sm:grid-cols-2 gap-4"
@@ -101,10 +89,13 @@ export function DomainGrid({
                 </Button>
               )}
             </div>
+            {/* The one segment renderer `MasteryRow` also draws (UI-42), stretched across
+                the card. The card keeps its title / pill / meter layout until Wave 5 rebuilds
+                the Mastery page with mastery rows (UI-37). */}
             <MasteryMeter
               levelKey={node.levelKey}
-              level={node.level}
               displayName={node.displayName}
+              size="fill"
             />
           </CardContent>
         </Card>

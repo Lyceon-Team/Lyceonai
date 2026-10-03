@@ -64,6 +64,11 @@ export type ProfileHydrationUser = {
   guardianConsentRequired: boolean;
   /** Parsed by its consumer against `outstandingLegalSchema`; never trusted as typed here. */
   outstandingLegal: unknown;
+  /**
+   * OQ-26: does the account sign in with a password (false: Google-only, so Settings hides
+   * "Change password"). `null` when the server could not read the identities: unknown, not false.
+   */
+  hasPassword: boolean | null;
 };
 
 export type ProfileHydration =
@@ -71,6 +76,11 @@ export type ProfileHydration =
       authenticated: true;
       featureFlags?: { accountDeletionLifecycleV2?: boolean };
       pendingDeletion?: { scheduledHardDeleteAt: string } | null;
+      /**
+       * OQ-29: the student's feature-access map (null for every other role). Parsed by its one
+       * consumer, `useFeatureAccess`, against the shared `featureAccessMapSchema`.
+       */
+      featureAccess?: unknown;
       user: ProfileHydrationUser | null;
     }
   | {
@@ -128,6 +138,26 @@ export function useProfileQuery(options?: {
     ...profileQuery,
     enabled: options?.enabled ?? true,
   });
+}
+
+/**
+ * Whether Settings → Account shows the Change password form.
+ *
+ * @spec [student-UI register OQ-26 (`hasPassword` on GET /api/profile), OQ-41 (owner ruling,
+ *        Karl, 2026-10-03: "`hasPassword: null` shows the password form; the server's F-38
+ *        refusal stays the authority"), F-38] | @implemented [2026-10-03]
+ *
+ * plain English: hidden ONLY for `false` (a Google-only account has no password to change).
+ * `true` shows it, and so does `null` (the server could not read the identities: unknown, not
+ * Google-only). This is presentation: `POST /api/auth/change-password` checks
+ * `hasPasswordIdentity` itself and refuses a Google-only account with NO_PASSWORD_IDENTITY, so a
+ * form shown on `null` cannot grant anything. Edge case: a profile with no user (signed out)
+ * never reaches Settings; callers pass `user.hasPassword` from a signed-in profile.
+ */
+export function showsChangePassword(
+  hasPassword: ProfileHydrationUser["hasPassword"],
+): boolean {
+  return hasPassword !== false;
 }
 
 /** Sign-out: drop the cached profile so nothing reads the previous account's flags. */

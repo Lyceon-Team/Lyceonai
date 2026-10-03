@@ -26,6 +26,7 @@
  */
 
 import { z } from "zod";
+import { sessionCriteriaSchema } from "./session-criteria.js";
 
 /** Per-session opaque option token. The canonical A-D letter never leaves the server. */
 export const studentSafeOptionSchema = z.object({
@@ -92,6 +93,9 @@ export const engineSessionStateResponseSchema = z.object({
     .nullable(),
   clientInstanceId: z.string().nullable(),
   readOnly: z.boolean(),
+  // OQ-22, owner ruling (Karl) 2026-10-02 | @implemented [2026-10-03]: the chosen criteria,
+  // four arrays and nothing else (strict). Review's /state carries it too.
+  criteria: sessionCriteriaSchema,
 });
 
 /**
@@ -170,3 +174,37 @@ export const ENGINE_RESPONSE_SCHEMAS = {
 } as const;
 
 export type EngineResponseRoute = keyof typeof ENGINE_RESPONSE_SCHEMAS;
+
+/**
+ * GET /api/practice/sessions/open — practice-canonical.ts `/sessions/open`.
+ *
+ * @spec [Doc-02B §14 (resumable sessions); student-UI register OQ-22 (owner ruling, Karl,
+ *        2026-10-02: sessions named by their `criteria`), UI-50 (Home's "Pick up where you left
+ *        off" and the free diagnostic card read this)] | @implemented [2026-10-03]
+ *
+ * plain English: the open (created or active) practice sessions, newest first, with counts of
+ * the student's OWN session (`total_items` served so far, `answered_items` answered or skipped)
+ * and the chosen criteria. `section` is the canonical code or null. A diagnostic is a row with
+ * `mode: "diagnostic"`.
+ */
+export const practiceOpenSessionSchema = z.object({
+  id: z.string(),
+  section: z.string().nullable(),
+  mode: z.string(),
+  status: z.enum(["created", "active"]),
+  created_at: z.string(),
+  target_question_count: z.number(),
+  total_items: z.number(),
+  answered_items: z.number(),
+  criteria: sessionCriteriaSchema,
+});
+export type PracticeOpenSession = z.infer<typeof practiceOpenSessionSchema>;
+
+export const practiceOpenSessionsResponseSchema = z.object({
+  sessions: z.array(practiceOpenSessionSchema),
+  maxConcurrentSessions: z.number(),
+  requestId: z.string().optional(),
+});
+export type PracticeOpenSessionsResponse = z.infer<
+  typeof practiceOpenSessionsResponseSchema
+>;
