@@ -24,6 +24,7 @@
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { offCentre, type Check } from "./guardian-harness/centring";
+import { pinBrowserToday } from "./guardian-harness/today";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -70,6 +71,8 @@ async function serve(
   page: Page,
   opts: { students?: "two" | "none" | "with-revoked" } = {},
 ): Promise<void> {
+  // The fixtures' week is cut on E2E_TODAY; the app's "today" must be the same day.
+  await pinBrowserToday(page);
   const roster =
     opts.students === "none"
       ? { students: [] }

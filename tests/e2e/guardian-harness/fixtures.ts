@@ -18,15 +18,17 @@ import {
   CY,
   EXAM_SESSION,
   billingStatus,
-  calendarWeek,
   examList,
   examReport,
   masteryDomains,
   roster,
 } from "../../../client/src/features/guardian/test-harness";
 import { billingPlansResponseSchema } from "../../../packages/shared/src/billing-schema";
-import { studentCalendarWeek } from "../../../client/src/features/calendar/calendar-week.fixture";
-import { browserLocalToday } from "../../../client/src/features/calendar/lib/dates";
+import {
+  guardianCalendarWeek,
+  studentCalendarWeek,
+} from "../../../client/src/features/calendar/calendar-week.fixture";
+import { E2E_TODAY } from "./today";
 
 const fixtures = {
   ADA,
@@ -44,9 +46,12 @@ const fixtures = {
     { id: BO, name: "Bo", lapsed: true },
   ]),
   // The real week (`calendar-week.fixture.ts`): the guardian's projection of it here, and the
-  // student's own payload for the SAME week below — one range, two audiences.
-  calendarWeek: calendarWeek(),
-  studentCalendar: studentCalendarWeek(browserLocalToday()),
+  // student's own payload for the SAME week below — one range, two audiences. Both are cut
+  // on the pinned `E2E_TODAY` (`./today`), never the real clock: the week's shape depends on
+  // the weekday. `guardianCalendarWeek(E2E_TODAY)` is the harness's `calendarWeek()` with no
+  // overrides, on the pinned date.
+  calendarWeek: guardianCalendarWeek(E2E_TODAY),
+  studentCalendar: studentCalendarWeek(E2E_TODAY),
   masteryDomains: masteryDomains(),
   examList: examList(),
   examReport: examReport(),
