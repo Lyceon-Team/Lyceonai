@@ -47,6 +47,10 @@ FILES=(
   "client/src/features/calendar/components/StudentChrome.tsx"
   "client/src/features/calendar/components/WeekGrid.tsx"
   "client/src/features/calendar/api/queries.ts"
+  "client/src/pages/chat.tsx"
+  "client/src/components/tutor/TutorThreadParts.tsx"
+  "client/src/hooks/tutor-client.ts"
+  "client/src/styles/student-tokens.css"
 )
 
 snapshot_all() {
@@ -831,6 +835,179 @@ plant "UI55-F1" "a free first save drops the schedule the route requires on crea
   'a = "              ? { ...openingSchedule(setupDefaults), ...goal }"
 assert s.count(a) == 1
 s = s.replace(a, "              ? goal", 1)'
+
+# ── UI-56: LISA (client/src/pages/chat.ui56.test.tsx) ──────────────────────────────────
+
+T56="client/src/pages/chat.ui56.test.tsx"
+
+plant "UI56-TL1" "/chat put back on the light lock" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/chat\": app(320, false, \"full\", null),"
+assert s.count(a) == 1
+s = s.replace(a, "  \"/chat\": app(320, false, \"full\"),", 1)'
+
+plant "UI56-K1" "Enter in the LISA composer sends nothing" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "      onSend: onSubmit,"
+assert s.count(a) == 1
+s = s.replace(a, "      onSend: () => undefined,", 1)'
+
+plant "UI56-K2" "Shift+Enter matches the Enter binding (sends, no new line)" \
+  "$T56" \
+  "client/src/hooks/useKeyboardShortcuts.ts" \
+  'a = "    event.shiftKey === (binding.shift ?? false) &&"
+assert s.count(a) == 1
+s = s.replace(a, "    true &&", 1)'
+
+plant "UI56-S1" "the student bubble loses its You label" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "        {isStudent ? \"You\" : \"LISA\"}"
+assert s.count(a) == 1
+s = s.replace(a, "        {isStudent ? \"\" : \"LISA\"}", 1)'
+
+plant "UI56-T1" "Send stays enabled while LISA is thinking" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "            disabled={disabled}\n            className=\"h-[50px]"
+assert s.count(a) == 1
+s = s.replace(a, "            disabled={false}\n            className=\"h-[50px]", 1)'
+
+plant "UI56-T2" "the typing bubble loses its LISA label" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "      <span className=\"text-lyc-meta font-semibold text-lyc-muted\">LISA</span>"
+assert s.count(a) == 1
+s = s.replace(a, "      <span className=\"text-lyc-meta font-semibold text-lyc-muted\">Tutor</span>", 1)'
+
+plant "UI56-T3" "the dots bounce with a Tailwind animation, not the reduced-motion-aware .lyc-dot" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "        <span className=\"lyc-dot\" />\n        <span className=\"lyc-dot\" />\n        <span className=\"lyc-dot\" />"
+assert s.count(a) == 1
+b = "        <span className=\"h-2 w-2 animate-bounce rounded-full\" />\n" * 3
+s = s.replace(a, b.rstrip("\n"), 1)'
+
+plant "UI56-T4" "the thinking sentence comes back beside the dots" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "        <span className=\"lyc-dot\" />\n      </span>"
+assert s.count(a) == 1
+s = s.replace(a, "        <span className=\"lyc-dot\" />\n        LISA is thinking...\n      </span>", 1)'
+
+plant "UI56-M1" "reduced motion keeps the pulse" \
+  "$T56" \
+  "client/src/styles/student-tokens.css" \
+  'a = "  .lyc-dot {\n    animation: none;\n    opacity: 0.6;"
+assert s.count(a) == 1
+s = s.replace(a, "  .lyc-dot {\n    animation: lyc-dot 1.2s infinite ease-in-out;\n    opacity: 0.6;", 1)'
+
+plant "UI56-D1" "the disclaimer is the old two-sentence copy" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "  \"LISA can make mistakes; your practice results are the source of truth.\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"LISA can make mistakes. Your practice results are the source of truth.\";", 1)'
+
+plant "UI56-D2" "the composer placeholder is the old one" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "export const LISA_COMPOSER_PLACEHOLDER = \"Ask LISA about a question or a skill\";"
+assert s.count(a) == 1
+s = s.replace(a, "export const LISA_COMPOSER_PLACEHOLDER = \"Message LISA...\";", 1)'
+
+plant "UI56-H1" "Show older does not send the server's cursor" \
+  "$T56" \
+  "client/src/hooks/tutor-client.ts" \
+  'a = "      if (pageParam) params.set(\"cursor\", pageParam);\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "UI56-H2" "history filtered to active sessions again (OQ-39 (f))" \
+  "$T56" \
+  "client/src/hooks/tutor-client.ts" \
+  'a = "new URLSearchParams({ surface: \"standalone\" })"
+assert s.count(a) == 1
+s = s.replace(a, "new URLSearchParams({ surface: \"standalone\", status: \"active\" })", 1)'
+
+plant "UI56-H3" "Show older never drawn" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "      {hasMore ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {false ? (", 1)'
+
+plant "UI56-N1" "New session creates but does not open the new column" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    createThen((id) => navigateToConversation(id));"
+assert s.count(a) == 1
+s = s.replace(a, "    createThen(() => undefined);", 1)'
+
+plant "UI56-F1" "a first message with no conversation open is never sent" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    void send(queued.text);"
+assert s.count(a) == 1
+s = s.replace(a, "    void queued.text;", 1)'
+
+plant "UI56-E1" "an ended conversation keeps its composer" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "      ) : isEnded ? null : ("
+assert s.count(a) == 1
+s = s.replace(a, "      ) : false ? null : (", 1)'
+
+plant "UI56-P1" "the page logs the student's message" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    if (!text) return;\n    setDraft(\"\");"
+assert s.count(a) == 1
+s = s.replace(a, "    if (!text) return;\n    console.info(\"lisa send\", text);\n    setDraft(\"\");", 1)'
+
+plant "UI56-L1" "the map is ignored: a locked student gets the conversation (and its tutor requests)" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  if (tutor?.access === \"locked\") return <LisaLocked reason={tutor.reason} />;"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "UI56-L2" "the lock reason is ignored: under 13 gets the plan pitch" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  if (tutor?.access === \"locked\") return <LisaLocked reason={tutor.reason} />;"
+assert s.count(a) == 1
+s = s.replace(a, "  if (tutor?.access === \"locked\") return <LisaLocked reason=\"plan\" />;", 1)'
+
+plant "UI56-L3" "Unlock LISA opens the age message instead of the plans modal" \
+  "$T56 tests/ci/feedback-ux.contract.test.ts" \
+  "client/src/pages/chat.tsx" \
+  'a = "upgrade.open(\"tutor_access\", \"plan\")"
+assert s.count(a) == 1
+s = s.replace(a, "upgrade.open(\"tutor_access\", \"age\")", 1)'
+
+plant "UI56-L4" "the age card shows the plan body" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const copy = UPGRADE_MODAL_COPY.tutor_access[reason];"
+assert s.count(a) == 1
+s = s.replace(a, "  const copy = UPGRADE_MODAL_COPY.tutor_access.plan;", 1)'
+
+plant "UI56-L5" "the age card offers Unlock LISA" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "        {reason === \"plan\" ? ("
+assert s.count(a) == 1
+s = s.replace(a, "        {true ? (", 1)'
+
+plant "UI56-W1" "a server refusal no longer draws the locked state (W4-11)" \
+  "client/src/pages/chat.upgrade.contract.test.tsx tests/ci/feedback-ux.contract.test.ts" \
+  "client/src/pages/chat.tsx" \
+  'a = "  if (denied) return <LisaLocked reason=\"plan\" />;"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

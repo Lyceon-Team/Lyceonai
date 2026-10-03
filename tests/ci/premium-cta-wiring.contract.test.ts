@@ -143,10 +143,13 @@ describe("Premium CTA wiring contract", () => {
       "client/src/components/tutor/ScopedTutorPanel.tsx",
     );
 
-    // W4-11: both LISA surfaces draw the LISA upgrade card, which is the one
-    // billing card with LISA's pitch — not a second card.
+    // W4-11: the in-review panel draws the LISA upgrade card, which is the one
+    // billing card with LISA's pitch — not a second card. UI-56 (2026-10-03): the
+    // standalone page's denial is its locked state, which opens the app's one upgrade
+    // modal for `tutor_access` (UI-44), and still keys on the tutor's own reader.
     const lisaCard = read("client/src/components/tutor/LisaUpgradeCard.tsx");
-    expect(chat).toContain("LisaUpgradeCard");
+    expect(chat).toContain("isLisaEntitlementDenial(");
+    expect(chat).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
     expect(chat).toContain("useTutorTurn");
     expect(tutorTurn).toContain("mapTutorErrorToPremiumReason");
     expect(reviewPanel).toContain("LisaUpgradeCard");

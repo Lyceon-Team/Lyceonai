@@ -357,6 +357,7 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/review",
       "/tests",
       "/calendar",
+      "/chat",
       "/practice/session/:sessionId",
       "/tests/:sessionId",
       "/tests/:sessionId/report",
@@ -410,6 +411,16 @@ describe("the table says what DESIGN.md §2 says", () => {
     expect(STUDENT_ROUTE_SHELLS["/calendar"]).toEqual({
       shell: "app",
       panel: 340,
+      footer: false,
+      content: "full",
+      themeLock: null,
+    });
+  });
+
+  it("UI-56: LISA follows the device theme, full width with its 320px panel and no footer", () => {
+    expect(STUDENT_ROUTE_SHELLS["/chat"]).toEqual({
+      shell: "app",
+      panel: 320,
       footer: false,
       content: "full",
       themeLock: null,

@@ -27,7 +27,8 @@
  * Determinism: option order is tokenised per session by the server, so which answers are right
  * is the server's choice, not ours; the NUMBER of answers is fixed.
  */
-import { PERSONA_HEADER, type StudentPersona } from "./personas";
+import type { Client } from "pg";
+import { PERSONA_HEADER, PERSONAS, type StudentPersona } from "./personas";
 
 export type SeededPersona = {
   completedPracticeSessionId: string;
@@ -39,6 +40,8 @@ export type SeededPersona = {
   scoredExamSessionId: string | null;
   /** UI-54: a full-length test left in Reading and Writing Module 2, else null. */
   inProgressExamSessionId: string | null;
+  /** UI-56 (`seed: "lisa-history"`, paid only): the LISA conversation with turns, else null. */
+  lisaConversationId: string | null;
   answered: number;
 };
 export type SeedManifest = Record<StudentPersona, SeededPersona>;
@@ -433,6 +436,7 @@ export async function seedPracticeHistory(
       diagnosticSessionId,
       scoredExamSessionId: exam?.scoredExamSessionId ?? null,
       inProgressExamSessionId: exam?.inProgressExamSessionId ?? null,
+      lisaConversationId: null,
       answered:
         answeredDiagnostic +
         answeredCompleted +
@@ -444,4 +448,124 @@ export async function seedPracticeHistory(
   // After the personas' legal acceptance above, like every other seeded write.
   if (options.calendarGoal === true) await seedCalendarGoal(base);
   return out as SeedManifest;
+}
+
+/**
+ * UI-56 (`seed: "lisa-history"`): the paid student's LISA history.
+ *
+ * plain English: four standalone conversations, each created through the REAL
+ * `POST /api/tutor/conversations` (entitlement gate, Zod parse, scope resolution, insert), the
+ * route the page's New session calls. Their turns cannot go through `POST /api/tutor/messages`:
+ * that route calls the model (the tutor orchestrator) and Google's safety services, which this
+ * harness never reaches. So the turns are written as rows, the way the tutor's own route tests
+ * seed them (tests/helpers/fake-tutor-db.ts), with the title and times the message route would
+ * have left. The words are the prototype's illustrative conversation (Lisa.dc.html), so the
+ * side-by-side compares like with like. The oldest is ended (OQ-39 (f): the history includes
+ * ended sessions). Returns the conversation with turns.
+ */
+export async function seedLisaHistory(
+  base: string,
+  pg: Client,
+): Promise<string> {
+  const day = (offsetDays: number, minute: number): string => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - offsetDays);
+    d.setUTCHours(10, minute, 0, 0);
+    return d.toISOString();
+  };
+  const conversations: ReadonlyArray<{
+    title: string;
+    at: string;
+    ended: boolean;
+    turns: ReadonlyArray<readonly ["student" | "tutor", string]>;
+  }> = [
+    {
+      title: "Feeling stuck on transitions",
+      at: day(9, 5),
+      ended: true,
+      turns: [["student", "Feeling stuck on transitions"]],
+    },
+    {
+      title: "What is my mastery score in algebra?",
+      at: day(9, 20),
+      ended: false,
+      turns: [["student", "What is my mastery score in algebra?"]],
+    },
+    {
+      title: "Math",
+      at: day(0, 1),
+      ended: false,
+      turns: [["student", "Math"]],
+    },
+    {
+      title: "Slope from standard form",
+      at: day(0, 30),
+      ended: false,
+      turns: [
+        [
+          "student",
+          "I keep getting slope questions wrong when the line is written like 3x + 2y = 12.",
+        ],
+        [
+          "tutor",
+          "Let's start with what slope tells you. If you rewrite that equation so y is by itself on one side, what do you get?",
+        ],
+        ["student", "y = -3/2x + 6?"],
+        [
+          "tutor",
+          "Exactly. Now compare it with y = mx + b. Which number is the slope?",
+        ],
+      ],
+    },
+  ];
+  let withTurns = "";
+  for (const [index, conv] of conversations.entries()) {
+    const { json } = await call(
+      base,
+      "paid",
+      "POST",
+      "/api/tutor/conversations",
+      {
+        entry_mode: "general",
+        source_surface: "dashboard",
+        idempotency_key: `5e56a000-0000-4000-8000-00000000000${index}`,
+      },
+    );
+    const data = isObject(json) && isObject(json.data) ? json.data : null;
+    const id = data?.conversation_id;
+    if (typeof id !== "string")
+      throw new Error("tutor conversation create returned no id");
+    for (const [turn, [role, message]] of conv.turns.entries()) {
+      const at = new Date(
+        Date.parse(conv.at) - (conv.turns.length - turn) * 60_000,
+      );
+      await pg.query(
+        `INSERT INTO public.tutor_messages (conversation_id, student_id, role, content_kind, message, created_at)
+         VALUES ($1::uuid, $2::uuid, $3, 'message', $4, $5::timestamptz)`,
+        [id, PERSONAS.paid.id, role, message, at.toISOString()],
+      );
+    }
+    // The table's own BEFORE UPDATE trigger stamps updated_at = now(); the history's dates are
+    // the point of this seed, so in this throwaway database only, that one trigger is held off
+    // for this one write.
+    await pg.query(
+      `ALTER TABLE public.tutor_conversations DISABLE TRIGGER tutor_conversations_updated_at`,
+    );
+    try {
+      await pg.query(
+        `UPDATE public.tutor_conversations
+            SET title = $2, updated_at = $3::timestamptz,
+                status = CASE WHEN $4::boolean THEN 'ended' ELSE status END,
+                ended_at = CASE WHEN $4::boolean THEN $3::timestamptz ELSE ended_at END
+          WHERE id = $1::uuid`,
+        [id, conv.title, conv.at, conv.ended],
+      );
+    } finally {
+      await pg.query(
+        `ALTER TABLE public.tutor_conversations ENABLE TRIGGER tutor_conversations_updated_at`,
+      );
+    }
+    if (conv.turns.length > 1) withTurns = id;
+  }
+  return withTurns;
 }

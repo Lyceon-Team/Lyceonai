@@ -564,6 +564,26 @@ async function shootBuilt(
       },
     );
     const page = await context.newPage();
+    // UI-56: a held request (groups/types.ts `holdRequest`) is answered by nobody until the
+    // screenshot is taken, then aborted. A page route outranks the context's local-only route.
+    const held: Array<() => Promise<void>> = [];
+    const hold = shot.holdRequest;
+    if (hold) {
+      await page.route(
+        (url) => url.pathname === hold.path,
+        async (route) => {
+          if (route.request().method() !== hold.method) {
+            await route.fallback();
+            return;
+          }
+          held.push(() => route.abort());
+        },
+      );
+    }
+    const settleAfterStep = async (): Promise<void> => {
+      if (hold) await page.waitForTimeout(SETTLE_MS);
+      else await settle(page);
+    };
     await page.goto(
       `${stack.baseUrl}${fillRoute(shot.route, stack.manifest, sessionId)}`,
       { waitUntil: "domcontentloaded" },
@@ -580,7 +600,7 @@ async function shootBuilt(
           throw new Error(`${shot.id}: a pick step needs a fresh session`);
         const at = await pickIndex(fresh, sessionId, step.pick);
         await page.locator('[data-testid="runner-choice"]').nth(at).click();
-        await settle(page);
+        await settleAfterStep();
         continue;
       }
       if ("fill" in step) {
@@ -592,8 +612,18 @@ async function shootBuilt(
       const selector = step.click[viewport];
       if (selector === null) continue;
       await page.locator(selector).first().click();
-      await settle(page);
+      await settleAfterStep();
     }
+    if (shot.expectVisible !== undefined)
+      await page
+        .locator(shot.expectVisible)
+        .first()
+        .waitFor({ state: "visible", timeout: 20_000 });
+    if (shot.expectGone !== undefined)
+      await page
+        .locator(shot.expectGone)
+        .first()
+        .waitFor({ state: "detached", timeout: 20_000 });
     if (shot.expectText !== undefined)
       await page
         .getByText(shot.expectText, { exact: true })
@@ -610,6 +640,11 @@ async function shootBuilt(
       path: path.join(outDir, file),
       fullPage: shot.fullPage === true,
     });
+    if (hold && held.length === 0)
+      throw new Error(
+        `${shot.id}: ${hold.method} ${hold.path} was to be held but was never requested`,
+      );
+    for (const abort of held) await abort();
     const dom = await page.evaluate(() => ({
       htmlTheme: document.documentElement.getAttribute("data-theme"),
       overflowX: Math.max(
@@ -771,6 +806,18 @@ function writeIndex(
     if (shot.expectText !== undefined)
       lines.push(
         `Must then show the text \`${shot.expectText}\` (the capture fails otherwise).`,
+      );
+    if (shot.holdRequest !== undefined)
+      lines.push(
+        `Held: the browser's \`${shot.holdRequest.method} ${shot.holdRequest.path}\` is left unanswered through the screenshot, then aborted (it never reaches the server).`,
+      );
+    if (shot.expectVisible !== undefined)
+      lines.push(
+        `Must then show \`${shot.expectVisible}\` (the capture fails otherwise).`,
+      );
+    if (shot.expectGone !== undefined)
+      lines.push(
+        `Must then show no \`${shot.expectGone}\` (the capture fails otherwise).`,
       );
     if (shot.fullPage === true)
       lines.push("Full page: the whole document, not just the viewport.");

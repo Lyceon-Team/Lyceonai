@@ -34,7 +34,7 @@ import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
 import { buildStudentHarnessDb } from "./db";
 import { isStudentPersona, PERSONA_HEADER, PERSONAS } from "./personas";
-import { seedPracticeHistory } from "./seed";
+import { seedLisaHistory, seedPracticeHistory } from "./seed";
 
 if (process.env.NODE_ENV === "production") {
   throw new Error(
@@ -92,6 +92,11 @@ async function main(): Promise<void> {
   const { default: accountRoutes } =
     await import("../../../server/routes/account-routes");
   const { legalRouter } = await import("../../../server/routes/legal-routes");
+  const { default: tutorRuntimeRouter } =
+    await import("../../../server/routes/tutor-runtime");
+  const { TutorConfig } = await import("../../../server/services/tutor-config");
+  // As server/index.ts: the tutor's runtime config, read once from this database.
+  await TutorConfig.bootLoad();
 
   const app = express();
   app.use(express.json());
@@ -224,6 +229,25 @@ async function main(): Promise<void> {
     auth.requireStudentOrAdmin,
     reviewRouter,
   );
+  // UI-56: LISA. A tutor TURN is never served here: `POST /api/tutor/messages` calls the model
+  // (the tutor orchestrator) and Google's safety services, and this harness reaches neither. It
+  // is refused before the router; the typing-state capture holds the browser's request instead
+  // (capture.ts `holdRequest`), so it never arrives. Every other tutor route (list, detail,
+  // create, end) is the real router, behind the stub's guards.
+  app.post("/api/tutor/messages", (_req: Request, res: Response) => {
+    res.status(503).json({
+      error: {
+        code: "not_in_student_harness",
+        message: "The student harness never runs a tutor turn.",
+      },
+    });
+  });
+  app.use(
+    "/api/tutor",
+    auth.requireSupabaseAuth,
+    auth.requireStudentOnly,
+    tutorRuntimeRouter,
+  );
 
   // Anything else the client asks for is outside this harness; capture.ts lists each miss.
   app.use("/api", (req, res) => {
@@ -245,18 +269,29 @@ async function main(): Promise<void> {
       examHistory: process.env.STUDENT_HARNESS_SEED === "exam-history",
       // UI-55: the paid student's SAT date inside the current week (the starred test day).
       calendarGoal: process.env.STUDENT_HARNESS_SEED === "calendar-goal",
-    }).then(
-      (seeded) => {
-        // eslint-disable-next-line no-console -- the readiness line capture.ts waits for
-        console.log(`student harness ready ${JSON.stringify(seeded)}`);
-      },
-      (err: unknown) => {
-        // eslint-disable-next-line no-console -- a failed seed must stop the run, loudly
-        console.error("student harness seed failed:", err);
-        server.close();
-        process.exit(1);
-      },
-    );
+    })
+      .then(async (seeded) => {
+        // UI-56: the paid student's LISA history (seed.ts `seedLisaHistory`).
+        if (process.env.STUDENT_HARNESS_SEED === "lisa-history") {
+          seeded.paid.lisaConversationId = await seedLisaHistory(
+            `http://localhost:${PORT}`,
+            pg,
+          );
+        }
+        return seeded;
+      })
+      .then(
+        (seeded) => {
+          // eslint-disable-next-line no-console -- the readiness line capture.ts waits for
+          console.log(`student harness ready ${JSON.stringify(seeded)}`);
+        },
+        (err: unknown) => {
+          // eslint-disable-next-line no-console -- a failed seed must stop the run, loudly
+          console.error("student harness seed failed:", err);
+          server.close();
+          process.exit(1);
+        },
+      );
   });
 }
 

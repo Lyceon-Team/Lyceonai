@@ -50,9 +50,17 @@ describe("Feedback UX hardening contract", () => {
    * inline shape — is in the list.
    */
   it("routes every premium denial through the one CTA component", () => {
-    // W4-11: chat draws `LisaUpgradeCard`, which is the one CTA component with
-    // LISA's pitch. Pinned in two steps so neither link can quietly go.
-    expect(read("client/src/pages/chat.tsx")).toContain("LisaUpgradeCard");
+    // UI-56 (2026-10-03): chat leaves this list, as Home did under UI-50. Its one paid
+    // boundary is the locked state, whose "Unlock LISA" opens the app's one upgrade modal
+    // (UI-44; DESIGN.md §3) in place; a server refusal draws the same state. The in-review
+    // panel still draws `LisaUpgradeCard`, which is the one CTA component with LISA's pitch.
+    const chat = read("client/src/pages/chat.tsx");
+    expect(chat).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
+    expect(chat).toMatch(/if \(denied\) return <LisaLocked reason="plan" \/>;/);
+    expect(chat).not.toContain("<LisaUpgradeCard");
+    expect(read("client/src/components/tutor/ScopedTutorPanel.tsx")).toContain(
+      "<LisaUpgradeCard />",
+    );
     const surfaces = [
       "client/src/components/tutor/LisaUpgradeCard.tsx",
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed

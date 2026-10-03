@@ -43,7 +43,7 @@ export type RightPanelWidth = 360 | 340 | 320;
  * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
  * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53; /tests, /tests/:sessionId
- * and /tests/:sessionId/report, UI-54; /calendar, UI-55). The timed exam module
+ * and /tests/:sessionId/report, UI-54; /calendar, UI-55; /chat, UI-56). The timed exam module
  * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
@@ -127,7 +127,9 @@ export const STUDENT_ROUTE_SHELLS = {
   // tokens only (`calendar-student.css`); off the light lock. The guardian calendar is not a
   // student route and keeps its own shell.
   "/calendar": app(340, false, "full", null),
-  "/chat": app(320, false, "full"),
+  // UI-56 (2026-10-03): LISA is rebuilt on the student tokens only (the page and the thread
+  // parts it shares with the review panel); off the light lock.
+  "/chat": app(320, false, "full", null),
   "/mastery": app(null, false),
   "/upgrade": app(null, false),
   // Settings: no right panel (DESIGN.md §4), footer yes (§2).
@@ -135,9 +137,12 @@ export const STUDENT_ROUTE_SHELLS = {
   "/notifications": app(null, false),
   // Focus shell: the runners, the exam session and report pages.
   // UI-53 (2026-10-03): the practice runner is rebuilt on the student tokens only; off the light
-  // lock. The review runner keeps it: its LISA panel (ScopedTutorPanel and the thread parts it
-  // shares with /chat) still draws with the app-wide light tokens until the LISA row rebuilds
-  // them, and a dark runner around a light-token LISA leaves its text dark on dark.
+  // lock. The review runner keeps it: its LISA panel still draws partly with the app-wide light
+  // tokens, and a dark runner around a light-token LISA leaves its text dark on dark. UI-56
+  // (2026-10-03) moved the thread parts it shares with /chat (bubbles, typing indicator,
+  // composer, paused bar, crisis card) onto the student tokens; the panel's own frame, header
+  // chip and opener (ScopedTutorPanel) and its denial card (LisaUpgradeCard, the shared billing
+  // card) are not, so the lock stays (OQ-54 (a)).
   "/practice/session/:sessionId": focus("Practice", "/practice", false, null),
   "/review/session/:sessionId": focus("Review", "/review"),
   // UI-54 (2026-10-03): the exam session page and the report are rebuilt on the student tokens

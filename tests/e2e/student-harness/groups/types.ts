@@ -83,6 +83,17 @@ export type Shot = {
   freshSession?: FreshSession;
   /** UI-53: text the page must show after `steps` (e.g. "Question 2 of 10"); the capture fails otherwise. */
   expectText?: string;
+  /** UI-56: a selector the page must show after `steps` (the capture fails otherwise). */
+  expectVisible?: string;
+  /** UI-56: a selector the page must NOT show after `steps` (e.g. no bubbles in a new column). */
+  expectGone?: string;
+  /**
+   * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
+   * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`
+   * waits). The request never reaches the harness server. Steps then wait a fixed settle time
+   * instead of network idle, which a held request would never reach.
+   */
+  holdRequest?: { method: "POST" | "GET"; path: string };
   /**
    * A click path's proof: the pathname the page must land on after `steps` (a RegExp source).
    * The capture fails if it lands anywhere else, and the index records the expectation next to
@@ -116,7 +127,9 @@ export type PageGroup = {
    * "calendar-goal" (UI-55): the paid student's SAT date set, through the real
    * `PUT /api/calendar/profile`, to a day inside the current week, so the week, month and mini
    * month can show the starred test day.
+   * "lisa-history" (UI-56): four LISA conversations for the paid student (seed.ts
+   * `seedLisaHistory`), one with the prototype's four turns, one ended.
    * Off by default, so the other groups' payloads do not change.
    */
-  seed?: "review-history" | "exam-history" | "calendar-goal";
+  seed?: "review-history" | "exam-history" | "calendar-goal" | "lisa-history";
 };
