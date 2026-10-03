@@ -290,6 +290,25 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(report.score.total_scaled).toBe(
       report.score.rw_scaled + report.score.math_scaled,
     );
+    // SCL-199 WIRE (G5-04): every list item carries `total_scaled` — read on the RAW body, so a
+    // missing key fails here before the strict schema would — and the scored one is exactly
+    // its report's total, from real Postgres (`exam_list_forms` reads the same score run).
+    for (const item of list.body.tests as Record<string, unknown>[]) {
+      for (const key of [
+        "total_scaled",
+        "rw_scaled",
+        "math_scaled",
+        "session_state",
+        "abandoned_at",
+      ]) {
+        expect(item, key).toHaveProperty(key);
+      }
+    }
+    expect(tests[0]!.total_scaled).toBe(report.score.total_scaled);
+    // G5-08: the section scores and session state too, from the same row.
+    expect(tests[0]!.rw_scaled).toBe(report.score.rw_scaled);
+    expect(tests[0]!.math_scaled).toBe(report.score.math_scaled);
+    expect(tests[0]!.session_state).toBe("completed");
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
 
@@ -473,6 +492,19 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
       throw new Error(report.report_state);
     expect(report.score).not.toHaveProperty("total_scaled");
     expect(report.score.math_scaled).toBeNull();
+    // SCL-199: the list never shows a total the report does not have — partial is null.
+    const list = await get(GUARDIAN, `/api/students/${PART_STUDENT}/tests`);
+    const item = (list.body.tests as Record<string, unknown>[]).find(
+      (t) => t.session_id === partSid,
+    );
+    expect(item).toBeDefined();
+    expect(item).toHaveProperty("total_scaled", null);
+    // G5-08: the scored section as the report shows it, the other null; abandoned, not completed.
+    expect(item).toHaveProperty("rw_scaled", report.score.rw_scaled);
+    expect(item).toHaveProperty("math_scaled", null);
+    expect(item).toHaveProperty("session_state", "partial_scored_abandoned");
+    expect(item).toHaveProperty("completed_at", null);
+    expect(item?.abandoned_at).not.toBeNull();
     expect(new Set(report.domain_breakdown.map((r) => r.section))).toEqual(
       new Set(["RW"]),
     );
@@ -488,6 +520,18 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(pending.body.report).not.toHaveProperty("score");
     expect(pending.body.report).not.toHaveProperty("domain_breakdown");
     expect(pending.body.report).not.toHaveProperty("disclosure");
+    // SCL-199: scoring_pending lists with a null total, never a number.
+    const pendingList = await get(
+      GUARDIAN,
+      `/api/students/${PART_STUDENT}/tests`,
+    );
+    const pendingItem = (
+      pendingList.body.tests as Record<string, unknown>[]
+    ).find((t) => t.session_id === pendingSid);
+    expect(pendingItem).toHaveProperty("report_state", "scoring_pending");
+    expect(pendingItem).toHaveProperty("total_scaled", null);
+    expect(pendingItem).toHaveProperty("rw_scaled", null);
+    expect(pendingItem).toHaveProperty("math_scaled", null);
     await drain();
 
     const r = await testPg!.query(

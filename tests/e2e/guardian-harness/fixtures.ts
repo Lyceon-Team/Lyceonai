@@ -18,6 +18,7 @@ import {
   CY,
   EXAM_SESSION,
   billingStatus,
+  boardScenario,
   calendarWeek,
   examList,
   examReport,
@@ -50,6 +51,9 @@ const fixtures = {
   masteryDomains: masteryDomains(),
   examList: examList(),
   examReport: examReport(),
+  // G5-06: the canvas boards' own values (owner brief 2026-10-02), for the review screenshots
+  // that sit beside the boards. Same schemas and projections as the scenario above.
+  board: boardScenario(browserLocalToday()),
   billingStatus: billingStatus(),
   // The plans the purchase card offers, through the shared schema. Amounts are illustrative:
   // the route reads them live from Stripe, and this is a layout check, not a price check.

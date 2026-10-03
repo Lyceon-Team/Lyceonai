@@ -30,7 +30,11 @@
  *   incident reference that is operational, §12.3); unavailable_at / resume_action.
  */
 import { z } from "zod";
-import { examModeSchema, examSectionSchema } from "./exam-runtime-schema";
+import {
+  examModeSchema,
+  examSectionSchema,
+  examSessionStateSchema,
+} from "./exam-runtime-schema";
 import {
   examDisclosureSchema,
   examReportStateSchema,
@@ -275,6 +279,12 @@ export function toGuardianExamReport(
  * The student's latest attempt on each form, as 04A's forms listing already derives it
  * (`exam_list_forms`) — no second listing query. Forms never sat are left out: a guardian
  * has nothing to read there and no way to start one.
+ *
+ * Every field here is one the student also sees (Doc-04C §2.6 rule 7): the session state
+ * drives the student's own card words (`formCardStateLabel`), and the instants and scores
+ * are the student report's. G5-08 (owner brief 2026-10-02) added `session_state`,
+ * `abandoned_at`, `rw_scaled` and `math_scaled` so the guardian list and Dashboard card say
+ * what the student's card and report say, from the same producer fields.
  */
 export const guardianExamListItemSchema = z
   .object({
@@ -284,43 +294,98 @@ export const guardianExamListItemSchema = z
     mode: examModeSchema,
     attempt_number_for_form: z.number().int().positive(),
     report_state: examReportStateSchema,
-    // SCL-192: required-present, null when the attempt never completed. The Dashboard's latest
-    // test is the newest non-null value (owner ruling 2026-09-30).
+    // G5-08: `latest_session.state`, which tells "In progress" from "Not finished" on the
+    // student's card for the same `not_completed` report state.
+    session_state: examSessionStateSchema,
+    // SCL-192: required-present, null when the attempt never completed. G5-08: with
+    // `abandoned_at`, the outcome's instant (a partial score is abandoned, never completed).
     completed_at: z.string().nullable(),
+    abandoned_at: z.string().nullable(),
+    // SCL-199: required-present. A `scored` item carries all three; a `partial_scored` item
+    // has no total and its scored section(s) only, exactly as the student's report shows; any
+    // other state carries none. The Dashboard card compares like with like (G5-04, G5-08).
+    total_scaled: z.number().int().min(400).max(1600).nullable(),
+    rw_scaled: sectionScaled.nullable(),
+    math_scaled: sectionScaled.nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((item, ctx) => {
+    const none =
+      item.total_scaled === null &&
+      item.rw_scaled === null &&
+      item.math_scaled === null;
+    const ok =
+      item.report_state === "scored"
+        ? item.total_scaled !== null &&
+          item.rw_scaled !== null &&
+          item.math_scaled !== null
+        : item.report_state === "partial_scored"
+          ? item.total_scaled === null &&
+            (item.rw_scaled !== null || item.math_scaled !== null)
+          : none;
+    if (!ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `scores do not match report_state ${item.report_state}`,
+      });
+    }
+  });
 
 const guardianExamListSchema = z
   .object({ tests: z.array(guardianExamListItemSchema) })
   .strict();
 export type GuardianExamList = z.infer<typeof guardianExamListSchema>;
 
+/** One latest session's facts from `exam_list_forms`, keyed by session id (SCL-192/199). */
+export const guardianListSessionFactsSchema = z
+  .object({
+    completed_at: z.string().nullable(),
+    abandoned_at: z.string().nullable(),
+    total_scaled: z.number().int().nullable(),
+    rw_scaled: z.number().int().nullable(),
+    math_scaled: z.number().int().nullable(),
+  })
+  .strict();
+export type GuardianListSessionFacts = z.infer<
+  typeof guardianListSessionFactsSchema
+>;
+
 /**
- * @spec [SCL-181] | @implemented [2026-09-27]
+ * @spec [SCL-181; SCL-192; SCL-199; Guardian_Closure_Plan G5-08] | @implemented [2026-09-27]
  * plain English: the forms listing in, the guardian's list out — one row per form the
  * student has sat, its latest attempt. Timings, question counts and selectability are
- * the student's controls and are not carried. Pure; parsed on the way out. SCL-192: each item
- * carries its session's `completed_at` from `completedAt` (keyed by session id).
+ * the student's controls and are not carried. Pure; parsed on the way out. Each item takes
+ * its session's instants and scores from `sessions` (keyed by session id), and carries scores
+ * only where the student's report shows them: all three when scored, the section scores when
+ * partial, none otherwise — whatever the score run holds.
  */
 export function toGuardianExamList(
   forms: ExamFormsResponse,
-  completedAt: Readonly<Record<string, string | null>>,
+  sessions: Readonly<Record<string, GuardianListSessionFacts>>,
 ): GuardianExamList {
-  const tests = forms.forms.flatMap((f) =>
-    f.latest_session === null
-      ? []
-      : [
-          {
-            session_id: f.latest_session.session_id,
-            test_form_id: f.test_form_id,
-            test_form_name: f.name,
-            mode: f.latest_session.mode,
-            attempt_number_for_form: f.latest_session.attempt_number_for_form,
-            report_state: f.latest_session.report_state,
-            completed_at: completedAt[f.latest_session.session_id] ?? null,
-          },
-        ],
-  );
+  const tests = forms.forms.flatMap((f) => {
+    const l = f.latest_session;
+    if (l === null) return [];
+    const facts = sessions[l.session_id];
+    const scored = l.report_state === "scored";
+    const partial = l.report_state === "partial_scored";
+    return [
+      {
+        session_id: l.session_id,
+        test_form_id: f.test_form_id,
+        test_form_name: f.name,
+        mode: l.mode,
+        attempt_number_for_form: l.attempt_number_for_form,
+        report_state: l.report_state,
+        session_state: l.state,
+        completed_at: facts?.completed_at ?? null,
+        abandoned_at: facts?.abandoned_at ?? null,
+        total_scaled: scored ? (facts?.total_scaled ?? null) : null,
+        rw_scaled: scored || partial ? (facts?.rw_scaled ?? null) : null,
+        math_scaled: scored || partial ? (facts?.math_scaled ?? null) : null,
+      },
+    ];
+  });
   return guardianExamListSchema.parse({ tests });
 }
 
