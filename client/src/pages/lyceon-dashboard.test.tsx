@@ -413,7 +413,7 @@ const LAUNCHED_SESSION = "55555555-5555-4555-8555-555555555555";
 type Scenario = {
   calendar?: "ready" | "setup_required";
   estimateStatus?: EstimateResponse["estimateStatus"];
-  sections?: "projected" | "none";
+  projection?: "projected" | "none";
   diagnosticAnswered?: number;
   quota?: number | "unlimited";
 };
@@ -449,7 +449,7 @@ function install(s: Scenario): void {
         return json(MASTERY);
       if (path === `/api/students/${STUDENT}/projections/sections`)
         return json(
-          s.sections === "none"
+          s.projection === "none"
             ? { ok: true, sections: [], requestId: "r" }
             : SECTIONS,
         );
@@ -711,7 +711,7 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
   it("renders the free Home and calls no paid route", async () => {
     const { container } = await mount("free", {
       estimateStatus: "no_baseline",
-      sections: "none",
+      projection: "none",
     });
     expect(screen.getByTestId("home").getAttribute("data-plan")).toBe("free");
     expect(
@@ -813,7 +813,7 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
   it("a finished diagnostic (baseline_pending) offers no diagnostic, and Go to practice is the primary", async () => {
     const { container } = await mount("free", {
       estimateStatus: "baseline_pending",
-      sections: "none",
+      projection: "none",
     });
     await waitFor(() =>
       expect(
