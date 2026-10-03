@@ -60,8 +60,8 @@ export function PendingDeletionScreen() {
   });
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#EAF0FF] to-white p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 space-y-5">
+    <div>
+      <div className="space-y-5">
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-semibold text-neutral-800">
             Your account is scheduled for deletion

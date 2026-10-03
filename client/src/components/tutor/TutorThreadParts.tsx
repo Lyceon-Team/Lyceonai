@@ -27,6 +27,10 @@ import remarkGfm from "remark-gfm";
 import { MathRenderer } from "@/components/MathRenderer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  buildLisaComposerKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 import type {
   TutorMessage,
   CrisisCategory,
@@ -363,14 +367,17 @@ export function Composer({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (!disabled && draft.trim()) {
-        onSubmit();
-      }
-    }
-  };
+  // @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3] | @implemented [2026-10-03]
+  // plain English: Enter sends and Shift+Enter adds a new line, through the one shared hook
+  // listening on this textarea only. Enter that confirms an IME composition, Ctrl/Cmd/Alt+Enter
+  // and a held-down Enter's repeats do not send.
+  useKeyboardShortcuts(
+    buildLisaComposerKeymap({
+      canSend: !disabled && draft.trim().length > 0,
+      onSend: onSubmit,
+    }),
+    { target: textareaRef },
+  );
 
   return (
     <div className="border-t border-border bg-background p-4">
@@ -386,7 +393,6 @@ export function Composer({
           ref={textareaRef}
           value={draft}
           onChange={(e) => onDraftChange(e.target.value)}
-          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}

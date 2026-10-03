@@ -40,9 +40,6 @@ vi.mock("wouter", () => ({
   useLocation: () => ["/dashboard", vi.fn()],
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
-vi.mock("@/components/layout/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 vi.mock("@/hooks/useDiagnosticStart", () => ({
   useDiagnosticStart: () => ({
     startDiagnostic: vi.fn(),

@@ -478,13 +478,45 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
         request(app).get(`/api/tests/sessions/${sid}/report`),
       );
       expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({
+      // Owner ruling OQ-34 (2026-10-02), Doc 04C §11.5b / §12.1b step 3: the lapsed
+      // owner's payload carries the renewal action. Whole payload, from the real route.
+      const data = examStudentReportPayloadSchema.parse(res.body.data);
+      expect(data).toEqual({
         report_state: "unavailable",
+        session_id: sid,
+        test_form_id: FORM,
+        test_form_name: "Practice Test 1",
         unavailable_reason: "entitlement_lapsed",
+        unavailable_at: null,
+        resume_action: { type: "renew_entitlement", url: null },
+        review_unlocked: false,
       });
       expect(JSON.stringify(res.body)).not.toMatch(/scaled|disclosure/);
     } finally {
       LAPSED.delete(STUDENT);
+    }
+  });
+
+  it("report: a lapsed NON-owner still gets the bare 403, same as a missing session (§16.6)", async () => {
+    LAPSED.add(OTHER);
+    try {
+      const foreign = await as(OTHER)(
+        request(app).get(`/api/tests/sessions/${sid}/report`),
+      );
+      const missing = await as(OTHER)(
+        request(app).get(
+          `/api/tests/sessions/00000000-0000-4000-8000-00000000dead/report`,
+        ),
+      );
+      expect(foreign.status).toBe(403);
+      expect(missing.status).toBe(403);
+      expect(foreign.body.error).toEqual(missing.body.error);
+      expect(foreign.body).not.toHaveProperty("data");
+      expect(JSON.stringify(foreign.body)).not.toMatch(
+        /resume_action|renew_entitlement|unavailable_reason/,
+      );
+    } finally {
+      LAPSED.delete(OTHER);
     }
   });
 

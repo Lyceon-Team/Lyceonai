@@ -20,7 +20,6 @@ import { Link, useLocation } from "wouter";
 import type { ExamMode } from "@lyceon/shared/exam-runtime-schema";
 import type { ExamFormsResponse } from "@lyceon/shared/exam-report-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
-import { AppShell } from "@/components/layout/app-shell";
 import {
   createExamSession,
   existingSessionId,
@@ -59,7 +58,7 @@ export default function TestsHomePage() {
   const [selected, setSelected] = useState<string | null>(null);
 
   return (
-    <AppShell>
+    <>
       <div className="exam-root -mx-4 min-h-full px-4 py-8 md:px-10">
         <div className="mx-auto flex max-w-6xl flex-col gap-6">
           <div className="flex flex-col gap-1.5">
@@ -96,7 +95,7 @@ export default function TestsHomePage() {
           )}
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }
 

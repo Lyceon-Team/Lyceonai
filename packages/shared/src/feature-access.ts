@@ -20,6 +20,12 @@ export const LOCKABLE_FEATURE_KEYS = [
   "mastery_detail",
 ] as const;
 export type LockableFeatureKey = (typeof LOCKABLE_FEATURE_KEYS)[number];
+/**
+ * @spec [student-UI register UI-44] | @implemented [2026-10-03] | plain English: the narrowing
+ * the upgrade modal applies to a denial's `details.feature`, which may name any of the eight seed
+ * keys; only these four have a modal.
+ */
+export const lockableFeatureKeySchema = z.enum(LOCKABLE_FEATURE_KEYS);
 
 export const featureLockReasonSchema = z.enum(["plan", "age"]);
 export type FeatureLockReason = z.infer<typeof featureLockReasonSchema>;

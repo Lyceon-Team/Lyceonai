@@ -2,10 +2,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Loader2, UserRound } from "lucide-react";
+import { FullPageLoader } from "@/components/student-ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
@@ -235,15 +235,11 @@ export default function ProfileComplete() {
   }
 
   if (isLoading) {
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
+    // The shared FullPageLoader (role="status", named by its label). Light-locked until this
+    // page moves onto a themed student shell in Wave 5.
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-sm text-muted-foreground">
-            Loading profile completion...
-          </p>
-        </div>
-      </div>
+      <FullPageLoader themeLock="light" label="Loading profile completion..." />
     );
   }
 
@@ -252,8 +248,8 @@ export default function ProfileComplete() {
     // server/exception string is never rendered in the CardDescription.
     const message = resolveOnboardingErrorMessage(error, "load");
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
+      <div>
+        <div>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-[#0F2E48]">
               <AlertCircle className="h-5 w-5 text-amber-700" />
@@ -273,14 +269,14 @@ export default function ProfileComplete() {
               Back To Login
             </Button>
           </CardContent>
-        </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-lg">
+    <div>
+      <div>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserRound className="h-5 w-5 text-primary" />
@@ -401,7 +397,7 @@ export default function ProfileComplete() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

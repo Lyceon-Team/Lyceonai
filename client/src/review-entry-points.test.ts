@@ -7,13 +7,13 @@
  *
  * Plants, per brief R4 §3:
  *   U8 — remove the nav entry (`{ href: "/review", … }` from `layout/app-shell.tsx`'s
- *        `navItems`, or the dashboard tile) and the matching assertion goes red.
+ *        `RAIL_ITEMS`, or the dashboard tile) and the matching assertion goes red.
  *   U9 — remove `"/review"` from `RETURN_PATH_ALLOWLIST` and both halves go red: the
  *        allowlist membership, and `sanitizeReturnPath("/review")`.
  *
  * WHY THESE READ SOURCE TEXT. A nav entry and a route registration are facts about
- * FILES, not about a rendered tree: `navItems` (`layout/app-shell.tsx:56-62`) feeds both
- * the desktop nav and the mobile drawer from one array, and `App.tsx` mounts routes
+ * FILES, not about a rendered tree: `RAIL_ITEMS` (`layout/app-shell.tsx`, UI-41) feeds both
+ * the desktop rail and the mobile tab bar from one array, and `App.tsx` mounts routes
  * inside a `<Switch>` that needs the whole router to render. Asserting on the source is
  * the honest, non-brittle way to pin "the entry exists" — and it is the only way to pin
  * R1's own carry-over rule, that every allowlist entry is a route in `App.tsx`.
@@ -41,14 +41,15 @@ describe("U8 — review is reachable from normal navigation", () => {
     expect(shell).toContain('href: "/review"');
     expect(shell).toContain('label: "Review"');
 
-    // One array, two renderers — so the single entry covers the mobile drawer too.
-    expect(shell).toContain("const navItems");
-    const navItemsBlock = shell.slice(
-      shell.indexOf("const navItems"),
-      shell.indexOf("];", shell.indexOf("const navItems")),
+    // One array, two renderers (UI-41: the desktop rail and the mobile tab bar), so the single
+    // entry covers both.
+    expect(shell).toContain("const RAIL_ITEMS");
+    const railBlock = shell.slice(
+      shell.indexOf("const RAIL_ITEMS"),
+      shell.indexOf("];", shell.indexOf("const RAIL_ITEMS")),
     );
-    expect(navItemsBlock).toContain("/review");
-    expect(navItemsBlock).toContain("/practice");
+    expect(railBlock).toContain("/review");
+    expect(railBlock).toContain("/practice");
   });
 
   it("the dashboard carries a Review tile pointing at /review", () => {

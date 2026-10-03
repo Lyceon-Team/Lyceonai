@@ -22,6 +22,12 @@
  *
  * PracticeShell is exempt by name with its reason stated. An exemption is visible in the diff
  * that adds it; an omission is not — which is the whole point of discovering rather than listing.
+ *
+ * WHERE THE "EVERY SHELL" RULE LIVES. contracts/notifications.contract.md §3 defines the in_app
+ * channel and its feed; it does not itself require a bell in every layout. The "every shell"
+ * rule is this test's, and the exemptions below are where it bends. OQ-47 (Karl, 2026-10-03,
+ * ruled): the bell sits in the App shell's left rail above Help, App shell only; the Focus shell
+ * and the Bare card stay exempt.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -32,6 +38,8 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 import { GuardianShell } from "./GuardianShell";
+import { StudentRouteFrame } from "./StudentRouteFrame";
+import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import NotificationsPage from "@/pages/notifications";
 
 type TestUser = {
@@ -80,7 +88,11 @@ const RENDER: Record<
   string,
   (children: React.ReactNode) => React.ReactElement
 > = {
-  "app-shell.tsx": (children) => <AppShell>{children}</AppShell>,
+  "app-shell.tsx": (children) => (
+    <UpgradeModalProvider autoOpenOnDenial={false}>
+      <AppShell>{children}</AppShell>
+    </UpgradeModalProvider>
+  ),
   "GuardianShell.tsx": (children) => <GuardianShell>{children}</GuardianShell>,
 };
 
@@ -90,6 +102,15 @@ const EXEMPT: Record<string, string> = {
     "the practice runner header (score, streak, progress) is a focused-mode surface with no " +
     "user menu either; whether it should carry a bell is an owner decision, recorded here so " +
     "it cannot be mistaken for an oversight",
+  // UI-41 (DESIGN.md §2). OQ-47 (Karl, 2026-10-03, ruled): exempt; the bell is App shell only.
+  "FocusShell.tsx":
+    "the Focus shell (runners, exam session and report pages) carries only the way back and " +
+    "the page's context; DESIGN.md §2 draws no bell there, and the timed module is Bluebook",
+  // OQ-47 (Karl, 2026-10-03, ruled): exempt; the bell is App shell only.
+  "BareCardShell.tsx":
+    "the Bare card frames sign-in, recovery, the pending-deletion lock, 404 and the error " +
+    "screen: signed-out or blocking surfaces, and the error screen renders above every " +
+    "provider the bell needs",
 };
 
 function discoverShellFiles(): string[] {
@@ -266,7 +287,15 @@ describe("the /notifications page renders inside each shell by role (gate 3)", (
 
   it("a student gets the page inside AppShell (student header, bell in header)", async () => {
     authState = signedIn("student");
-    const { container } = withClient(<NotificationsPage />);
+    // UI-41: the router applies the student's shell (StudentRouteFrame, the wrapper App.tsx puts
+    // around /notifications), so the page is rendered the way the route renders it.
+    const { container } = withClient(
+      <UpgradeModalProvider autoOpenOnDenial={false}>
+        <StudentRouteFrame route="/notifications">
+          <NotificationsPage />
+        </StudentRouteFrame>
+      </UpgradeModalProvider>,
+    );
     expect(await screen.findByTestId("notifications-page")).toBeTruthy();
     const header = container.querySelector("header");
     expect(header).not.toBeNull();

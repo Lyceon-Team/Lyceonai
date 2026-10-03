@@ -5,7 +5,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { CardContent, CardHeader } from "@/components/ui/card";
 import { humanAuthError } from "@/lib/auth-error-messages";
 import {
   postAuthDestination,
@@ -79,8 +79,8 @@ export default function Login() {
   // Show loading skeleton while checking auth state
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md mx-auto">
+      <div>
+        <div>
           <CardHeader>
             <Skeleton className="h-8 w-3/4" />
             <Skeleton className="h-4 w-full mt-2" />
@@ -90,15 +90,15 @@ export default function Login() {
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </CardContent>
-        </Card>
+        </div>
       </div>
     );
   }
 
   // Show auth form when ready
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md mx-auto space-y-4">
+    <div>
+      <div className="space-y-4">
         {errorMessage && (
           <Alert className="border-amber-200 bg-amber-50 text-amber-800">
             <AlertCircle className="h-4 w-4" />

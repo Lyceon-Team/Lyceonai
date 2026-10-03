@@ -22,12 +22,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { practiceTopicsResponseSchema } from "@lyceon/shared/practice-reference-schema";
 
-vi.mock("@/components/layout/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="app-shell">{children}</div>
-  ),
-}));
-
 vi.mock("wouter", () => ({
   useLocation: () => ["/practice", vi.fn()],
   Link: ({ href, children }: { href: string; children: React.ReactNode }) => (
