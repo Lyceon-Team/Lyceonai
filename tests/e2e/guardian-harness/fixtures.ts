@@ -27,7 +27,7 @@ import {
 } from "../../../client/src/features/guardian/test-harness";
 import { billingPlansResponseSchema } from "../../../packages/shared/src/billing-schema";
 import { studentCalendarWeek } from "../../../client/src/features/calendar/calendar-week.fixture";
-import { browserLocalToday } from "../../../client/src/features/calendar/lib/dates";
+import { E2E_TODAY } from "./clock";
 
 const fixtures = {
   ADA,
@@ -46,14 +46,16 @@ const fixtures = {
   ]),
   // The real week (`calendar-week.fixture.ts`): the guardian's projection of it here, and the
   // student's own payload for the SAME week below — one range, two audiences.
-  calendarWeek: calendarWeek(),
-  studentCalendar: studentCalendarWeek(browserLocalToday()),
+  // Built for the job's one pinned "today" (./clock.ts), never the real date: the specs freeze
+  // the browser's clock on the same day, so the week the app draws is the week served.
+  calendarWeek: calendarWeek({ today: E2E_TODAY }),
+  studentCalendar: studentCalendarWeek(E2E_TODAY),
   masteryDomains: masteryDomains(),
   examList: examList(),
   examReport: examReport(),
   // G5-06: the canvas boards' own values (owner brief 2026-10-02), for the review screenshots
   // that sit beside the boards. Same schemas and projections as the scenario above.
-  board: boardScenario(browserLocalToday()),
+  board: boardScenario(E2E_TODAY),
   billingStatus: billingStatus(),
   // The plans the purchase card offers, through the shared schema. Amounts are illustrative:
   // the route reads them live from Stripe, and this is a layout check, not a price check.
