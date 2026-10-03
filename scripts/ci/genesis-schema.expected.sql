@@ -5709,7 +5709,7 @@ BEGIN
 
   v_at := COALESCE(v_s.completed_at, v_s.abandoned_at, v_run.computed_at);
 
-  -- R4 — review: served items of submitted modules, wrong or blank.
+  -- R4 — review: served items of SUBMITTED SECTIONS (SCL-205), wrong or blank.
   FOR it IN
     SELECT i.section, i.module, i.ordinal, i.question_id, a.answer
       FROM test_session_items i
@@ -5719,8 +5719,7 @@ BEGIN
         ON a.test_session_id = i.test_session_id AND a.section = i.section
        AND a.module = i.module AND a.ordinal = i.ordinal
      WHERE i.test_session_id = v_s.id
-       AND (   (i.module = '1' AND sec.state IN ('module1_submitted', 'module2_active', 'submitted'))
-            OR (i.module <> '1' AND sec.state = 'submitted'))
+       AND sec.state = 'submitted'   -- SCL-205: both modules submitted, or nothing
        AND NOT is_answer_correct(a.answer, i.question_id)
      ORDER BY CASE i.section WHEN 'RW' THEN 1 ELSE 2 END, i.module, i.ordinal
   LOOP

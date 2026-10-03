@@ -564,7 +564,11 @@ export default function ReviewPage() {
                                     )}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    {sourceFiltersLine(row.mode, row.filters)}
+                                    {sourceFiltersLine(
+                                      row.mode,
+                                      row.filters,
+                                      row.source_engine,
+                                    )}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-3">
