@@ -61,6 +61,10 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import type { ImperativePanelHandle } from "react-resizable-panels";
+import {
+  buildRunnerKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 
 const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
   easy: "Easy",
@@ -333,6 +337,38 @@ export default function CanonicalPracticePage(props: {
     [persistCalculatorState],
   );
 
+  const isLastQuestion = currentIndex + 1 === totalQuestions;
+  const goNext = (): void => {
+    if (isLastQuestion) {
+      void endSession();
+    } else {
+      void nextQuestion();
+    }
+  };
+  const runnerBusy = isSubmitting || isLoading || isEndingSession;
+
+  /**
+   * @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3, §4 Question runner keys]
+   * | @implemented [2026-10-03]
+   * plain English: the runner's keys through the one shared hook — ↑/↓ choose, Enter submits
+   * (the selected option, or the typed grid-in answer from its box), and after feedback Enter
+   * or → does exactly what the Next/Done button does. Every key is gated the way its button
+   * is (busy, canSubmit), so the keyboard can never do what the buttons cannot.
+   */
+  useKeyboardShortcuts(
+    buildRunnerKeymap({
+      phase: showResult ? "feedback" : "answering",
+      busy: runnerBusy,
+      optionIds: (question?.options ?? []).map((o) => o.id),
+      selectedOptionId: selectedAnswer,
+      canSubmit,
+      onSelectOption: setSelectedAnswer,
+      onSubmit: () => void submitAnswer({ skipped: false }),
+      onNext: goNext,
+    }),
+    { enabled: question !== null },
+  );
+
   const typedError = error as Record<string, unknown> | null;
   const isConflict =
     typedError !== null &&
@@ -596,18 +632,8 @@ export default function CanonicalPracticePage(props: {
             )}
 
             {showResult ? (
-              <Button
-                className="w-full"
-                disabled={isSubmitting || isLoading || isEndingSession}
-                onClick={() => {
-                  if (currentIndex + 1 === totalQuestions) {
-                    endSession();
-                  } else {
-                    nextQuestion();
-                  }
-                }}
-              >
-                {currentIndex + 1 === totalQuestions ? "Done" : "Next Question"}
+              <Button className="w-full" disabled={runnerBusy} onClick={goNext}>
+                {isLastQuestion ? "Done" : "Next Question"}
               </Button>
             ) : null}
           </div>
