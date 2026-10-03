@@ -101,7 +101,7 @@ export default function HomePage() {
   };
 
   // @spec [docs/plans/seo/seo-marketing-vertical.md R13, F7] | @implemented [2026-10-03] |
-  // plain English: the hero A/B test is gone. It picked a variant with Math.random() inside an
+  // plain English: the hero A/B test is gone. It picked a random variant inside an
   // effect and stored it in localStorage, so the first render (and so the prerendered HTML)
   // showed "Loading..." instead of the headline, and every first visit wrote to storage.
   // Variant A's copy is the only hero now; A/B testing returns later via PostHog experiments.

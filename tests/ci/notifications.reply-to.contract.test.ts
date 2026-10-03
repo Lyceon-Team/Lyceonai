@@ -142,8 +142,8 @@ describe("public pages carry the mailbox the published documents name", () => {
     Owner ruling 2026-10-03 (Karl, on #1054): the privacy contact is support@lyceon.ai, as published
     in Privacy Policy v4 (legal/privacy-policy/v4/en.md). No change.
 
-    This used to read the hand-written page copy in server/seo-content.ts, which routed privacy
-    copy to PRIVACY_EMAIL. That copy never reached production (the Express SSR path it fed was
+    This used to read a hand-written copy of the public pages that routed privacy copy to
+    PRIVACY_EMAIL. That copy never reached production (the Express SSR path it fed was
     unreachable on Vercel) and was deleted in SEO F4. The assertions below run on the prerendered
     pages, which render the published documents themselves, and pin the ruled contract.
   */
