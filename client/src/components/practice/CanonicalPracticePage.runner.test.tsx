@@ -288,7 +288,7 @@ async function loaded(ordinal = 1): Promise<void> {
 
 function choice(text: string): HTMLElement {
   return screen.getByRole("radio", {
-    name: new RegExp(text.replace(/[=]/g, "\\=")),
+    name: new RegExp(text.replace(/[.*+?^${}()|[\]\\=]/g, "\\$&")),
   });
 }
 
