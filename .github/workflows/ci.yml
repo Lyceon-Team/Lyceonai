@@ -689,6 +689,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-seams-gates.sh
 
+      # SCL-206: real exams feed the score projection. The two most recent completed
+      # full-lengths, in order, never an older third or an abandoned one; NULL below the
+      # Q4 gate; the API read-through refreshes only its own session; the drain consumes
+      # the rest, survives a row whose refresh raises, and replays as a no-op.
+      # @spec [Doc-05C_V1 §5.7, §8.3, §13.1; SCL-206] | @implemented [2026-10-03]
+      - name: Projection full-length blend gates (SCL-206)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/projection-full-length-gates.sh
+
       # G1: the exam report's per-domain breakdown. Ownership (one bare 403), agreement
       # with score_runs' module counts and the served items, the ROUTING PREMISE on the
       # live forms (2A and 2B identical per domain, SCL-160), the row key allowlist,
