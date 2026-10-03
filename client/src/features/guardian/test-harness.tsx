@@ -157,9 +157,11 @@ export function calendarWeek(
     total?: number;
     targetScore?: number | null;
     testDate?: string | null;
+    /** The week's "today"; the browser specs pin it (`tests/e2e/guardian-harness/clock.ts`). */
+    today?: string;
   } = {},
 ): Record<string, unknown> {
-  const real = guardianCalendarWeek(browserLocalToday(), {
+  const real = guardianCalendarWeek(over.today ?? browserLocalToday(), {
     ...(over.streak === undefined ? {} : { streak: over.streak }),
     ...(over.targetScore === undefined
       ? {}
