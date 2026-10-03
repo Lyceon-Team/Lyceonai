@@ -34,6 +34,10 @@ const routeSchema = z.union([
       dest: z.string().optional(),
       headers: z.record(z.string(), z.string()).optional(),
       continue: z.boolean().optional(),
+      // SEO Wave 1A (#1054): 301 redirects and the final 404 carry a status; the
+      // directory-index rewrite applies only when its file exists (check).
+      status: z.number().int().optional(),
+      check: z.boolean().optional(),
     })
     .strict(),
 ]);

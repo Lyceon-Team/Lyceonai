@@ -310,3 +310,72 @@ export function edgeRedirects(
       : [],
   );
 }
+
+/** A vercel.json legacy route, as far as the generator needs to know one. */
+export type VercelRoute = {
+  src?: string;
+  dest?: string;
+  status?: number;
+  check?: boolean;
+  continue?: boolean;
+  handle?: string;
+  headers?: Record<string, string>;
+};
+
+/**
+ * Routes the generator does not own and re-emits UNCHANGED, in their existing order, ahead of
+ * everything it derives: the page security-headers route(s) (`continue: true` with headers — F-59,
+ * owned by the security workstream) and the serverless-function routes (`dest: /api/index`).
+ */
+export function preservedVercelRoutes(
+  existing: readonly VercelRoute[],
+): VercelRoute[] {
+  return existing.filter(
+    (route) =>
+      (route.continue === true && route.headers !== undefined) ||
+      route.dest === "/api/index",
+  );
+}
+
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §5 F2; owner instruction 2026-10-03 (security-headers
+ *   route emitted unchanged as the first route)] | @implemented [2026-10-03]
+ *
+ * plain English: the whole `routes` array of vercel.json. In order:
+ *   1. the preserved routes — security headers first, then the function routes — byte-for-byte;
+ *   2. 301s for the registry's redirect rows;
+ *   3. `filesystem` (prerendered pages, assets, legal files);
+ *   4. `/` → the prerendered homepage;
+ *   5. the SPA shell for every route that is not prerendered (BEFORE the directory-index rewrite:
+ *      Vercel carries a missed `check: true` rewrite forward, so a later SPA row would never match
+ *      — the preview proved it on /dashboard);
+ *   6. the directory-index rewrite, applied only when the file exists;
+ *   7. 404.html for everything else.
+ * Throws if the preserved set has no security-headers route or it is not first, so the generator
+ * can never silently drop or reorder it.
+ */
+export function buildVercelRoutes(
+  rows: readonly RouteRegistryRow[],
+  existing: readonly VercelRoute[],
+): VercelRoute[] {
+  const preserved = preservedVercelRoutes(existing);
+  const first = preserved[0];
+  if (!first || first.continue !== true || first.headers === undefined) {
+    throw new Error(
+      "vercel.json: the security-headers route (continue: true) must exist and be the first route",
+    );
+  }
+  return [
+    ...preserved,
+    ...edgeRedirects(rows).map((r) => ({
+      src: r.source,
+      status: 301,
+      headers: { Location: r.location },
+    })),
+    { handle: "filesystem" },
+    { src: "^/$", dest: "/index.html" },
+    ...spaShellSources(rows).map((src) => ({ src, dest: "/app.html" })),
+    { src: "^/(.+?)/?$", dest: "/$1/index.html", check: true },
+    { src: "^/.*$", status: 404, dest: "/404.html" },
+  ];
+}

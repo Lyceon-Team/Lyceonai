@@ -15,10 +15,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { PrerenderedSite } from "../client/src/prerender/entry-server";
 import { BLOG_POSTS } from "../shared/content/blog";
 import {
+  buildVercelRoutes,
   edgeRedirects,
   parseRouteRegistry,
   routePatternToVercelSource,
   spaShellSources,
+  type VercelRoute,
 } from "../shared/seo/route-registry";
 import { BASE_URL } from "../shared/seo/structured-data";
 import {
@@ -26,15 +28,6 @@ import {
   getPrerenderedSite,
   loadRouteRegistry,
 } from "./lib/prerendered-site";
-
-type VercelRoute = {
-  src?: string;
-  dest?: string;
-  status?: number;
-  check?: boolean;
-  handle?: string;
-  headers?: Record<string, string>;
-};
 
 const vercel = JSON.parse(
   readFileSync(resolve(REPO_ROOT, "vercel.json"), "utf8"),
@@ -119,7 +112,38 @@ describe("registry parser", () => {
   });
 });
 
+/** The page security headers (register F-59), owned by the security workstream. */
+const SECURITY_HEADERS = [
+  "Content-Security-Policy",
+  "Content-Security-Policy-Report-Only",
+  "X-Frame-Options",
+  "X-Content-Type-Options",
+  "Referrer-Policy",
+  "Permissions-Policy",
+] as const;
+
 describe("vercel.json is derived from the registry", () => {
+  it("is exactly what the generator writes (pnpm run generate:vercel-routes)", () => {
+    expect(vercel.routes.length).toBeGreaterThan(40);
+    expect(buildVercelRoutes(registry, vercel.routes)).toEqual(vercel.routes);
+  });
+
+  it("keeps the security-headers route first, unchanged, carrying every page header", () => {
+    const first = vercel.routes[0];
+    expect(first?.continue).toBe(true);
+    for (const header of SECURITY_HEADERS) {
+      expect(first?.headers?.[header], header).toBeTruthy();
+    }
+    expect(buildVercelRoutes(registry, vercel.routes)[0]).toBe(first);
+  });
+
+  it("refuses to generate without the security-headers route first", () => {
+    const withoutHeaders = vercel.routes.filter((r) => r.continue !== true);
+    expect(() => buildVercelRoutes(registry, withoutHeaders)).toThrow(
+      /security-headers route/,
+    );
+  });
+
   const filesystemAt = vercel.routes.findIndex(
     (r) => r.handle === "filesystem",
   );
@@ -152,7 +176,8 @@ describe("vercel.json is derived from the registry", () => {
 
 /**
  * A model of Vercel's legacy `routes` evaluation, enough for these rules: first match wins,
- * `handle: filesystem` serves an existing file, and a `check: true` rewrite whose destination
+ * a `continue: true` route sets headers and matching goes on, `handle: filesystem` serves an
+ * existing file, and a `check: true` rewrite whose destination
  * does not exist CONTINUES MATCHING WITH THE REWRITTEN PATH (Vercel carries the rewrite forward —
  * the preview proved it: with the SPA rows after the directory-index row, `/dashboard` became
  * `/dashboard/index.html`, matched nothing, and 404'd). Checked against the files the build writes.
@@ -163,6 +188,8 @@ function resolveRequest(
 ): { status: number; file?: string; location?: string } {
   let path = requestPath;
   for (const route of vercel.routes) {
+    // A `continue: true` route only sets headers (resolveHeaders); matching goes on.
+    if (route.continue === true) continue;
     if (route.handle === "filesystem") {
       const file = path.slice(1);
       if (file !== "" && files.has(file)) return { status: 200, file };
@@ -184,6 +211,23 @@ function resolveRequest(
     return { status: route.status ?? 200, file: dest.slice(1) };
   }
   return { status: 404 };
+}
+
+/**
+ * The headers Vercel sets on a response: every `continue: true` route whose src matches the
+ * request path contributes its headers, and matching continues (they all precede the routes that
+ * end matching).
+ */
+function resolveHeaders(requestPath: string): Record<string, string> {
+  return Object.assign(
+    {},
+    ...vercel.routes
+      .filter(
+        (r) =>
+          r.continue === true && r.src && new RegExp(r.src).test(requestPath),
+      )
+      .map((r) => r.headers ?? {}),
+  ) as Record<string, string>;
 }
 
 function listFiles(dir: string): string[] {
@@ -244,6 +288,28 @@ describe("F2 — real 404s, legal handling intact (model of vercel.json over the
   ])("%s → %i %s", (path, status, file) => {
     expect(resolveRequest(path, files)).toEqual({ status, file });
   });
+
+  it.each([
+    "/",
+    "/blog/is-digital-sat-harder",
+    "/legal/privacy-policy",
+    "/dashboard",
+    "/does-not-exist",
+  ])("%s carries every page security header", (path) => {
+    const headers = resolveHeaders(path);
+    for (const header of SECURITY_HEADERS) {
+      expect(headers[header], `${path} ${header}`).toBe(
+        vercel.routes[0]?.headers?.[header],
+      );
+    }
+  });
+
+  it.each(["/api/health", "/auth/callback"])(
+    "%s (the API function) gets no page headers",
+    (path) => {
+      expect(resolveHeaders(path)).toEqual({});
+    },
+  );
 
   it.each([
     ["/privacy", "/legal/privacy-policy"],

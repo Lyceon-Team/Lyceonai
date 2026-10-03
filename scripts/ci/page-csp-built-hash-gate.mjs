@@ -14,11 +14,19 @@
  *   - every hash in that script-src belongs to an inline script of the built page (no stale one);
  *   - the theme script's hash equals THEME_BOOT_SCRIPT_HASH, the constant the Express CSP uses.
  *
- * usage: node scripts/ci/page-csp-built-hash-gate.mjs [built-index.html] [vercel.json]
- * (defaults: dist/public/index.html, vercel.json). The selftest passes mutated copies.
+ * usage: node scripts/ci/page-csp-built-hash-gate.mjs [built-page.html] [vercel.json]
+ * (defaults: EVERY .html page under dist/public, vercel.json). The selftest passes mutated copies.
+ *
+ * SEO Wave 1A (2026-10-03, #1054): the public pages are now prerendered, so dist/public holds 22
+ * pages plus 404.html and app.html (the SPA shell) — each a copy of the built template carrying the
+ * same theme script. By default every one of them is checked, not only index.html. And a
+ * prerendered page carries JSON-LD in <script type="application/ld+json">: a data block, which the
+ * HTML spec never executes, so CSP script-src never evaluates it and it needs no hash. Only
+ * executable scripts (no type, a JavaScript MIME type, or "module") are hashed; anything else is a
+ * data block. An executable inline script still needs its hash, whatever page it is on.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,35 +34,68 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-const builtPath = process.argv[2] ?? path.join(root, "dist/public/index.html");
+const builtArg = process.argv[2];
 const vercelPath = process.argv[3] ?? path.join(root, "vercel.json");
 const headersTs = path.join(root, "server/middleware/security-headers.ts");
 
 const problems = [];
 
-if (!existsSync(builtPath)) {
+function htmlFiles(dir) {
+  return readdirSync(dir).flatMap((name) => {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) return htmlFiles(full);
+    return name.endsWith(".html") ? [full] : [];
+  });
+}
+
+const publicDir = path.join(root, "dist/public");
+const builtPaths = builtArg
+  ? [builtArg]
+  : existsSync(publicDir)
+    ? htmlFiles(publicDir)
+    : [];
+if (builtPaths.length === 0 || !builtPaths.every((p) => existsSync(p))) {
   console.error(
-    `page-csp-built-hash-gate: ${builtPath} not found; run the build first`,
+    `page-csp-built-hash-gate: ${builtArg ?? "dist/public/*.html"} not found; run the build first`,
   );
   process.exit(1);
 }
-const html = readFileSync(builtPath, "utf8");
 
-const openings = [...html.matchAll(/<script\b[^>]*>/gi)].length;
-const scripts = [
-  ...html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script\b[^>]*>/gi),
-];
-if (scripts.length !== openings) {
-  problems.push(
-    `${openings} <script> openings but ${scripts.length} closed scripts`,
-  );
+/** HTML spec: a script with no type, a JavaScript MIME type, or "module" executes; any other type is a data block. */
+const JS_TYPES = new Set([
+  "",
+  "module",
+  "text/javascript",
+  "application/javascript",
+  "application/ecmascript",
+  "text/ecmascript",
+]);
+function executable(tag) {
+  const type = /\btype\s*=\s*["']?([^"'\s>]*)/i.exec(tag)?.[1];
+  return type === undefined || JS_TYPES.has(type.trim().toLowerCase());
 }
-const inline = scripts
-  .filter((m) => !/\bsrc\s*=/i.test(m[1]))
-  .map((m) => ({
-    tag: m[1],
-    hash: `sha256-${createHash("sha256").update(m[2]).digest("base64")}`,
-  }));
+
+const pages = builtPaths.map((file) => {
+  const html = readFileSync(file, "utf8");
+  const rel = path.relative(root, file);
+  const openings = [...html.matchAll(/<script\b[^>]*>/gi)].length;
+  const scripts = [
+    ...html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script\b[^>]*>/gi),
+  ];
+  if (scripts.length !== openings) {
+    problems.push(
+      `${rel}: ${openings} <script> openings but ${scripts.length} closed scripts`,
+    );
+  }
+  const inline = scripts
+    .filter((m) => !/\bsrc\s*=/i.test(m[1]) && executable(m[1]))
+    .map((m) => ({
+      tag: m[1],
+      hash: `sha256-${createHash("sha256").update(m[2]).digest("base64")}`,
+    }));
+  return { rel, inline };
+});
+const inline = pages.flatMap((p) => p.inline);
 
 const vercel = JSON.parse(readFileSync(vercelPath, "utf8"));
 const route = (vercel.routes ?? []).find(
@@ -72,11 +113,13 @@ const allowed = [
   ...(scriptSrc ?? "").matchAll(/'(sha256-[A-Za-z0-9+/=]+)'/g),
 ].map((m) => m[1]);
 
-for (const s of inline) {
-  if (!allowed.includes(s.hash)) {
-    problems.push(
-      `built inline script ${s.tag} hashes to ${s.hash}, not in the page script-src`,
-    );
+for (const page of pages) {
+  for (const s of page.inline) {
+    if (!allowed.includes(s.hash)) {
+      problems.push(
+        `${page.rel}: built inline script ${s.tag} hashes to ${s.hash}, not in the page script-src`,
+      );
+    }
   }
 }
 for (const h of allowed) {
@@ -90,12 +133,17 @@ for (const h of allowed) {
 const pinned = /THEME_BOOT_SCRIPT_HASH\s*=\s*"([^"]+)"/.exec(
   readFileSync(headersTs, "utf8"),
 )?.[1];
-const theme = inline.find((s) => /id="lyceon-theme-boot"/.test(s.tag));
-if (!theme) problems.push('built page has no <script id="lyceon-theme-boot">');
-else if (theme.hash !== pinned) {
-  problems.push(
-    `built theme script hashes to ${theme.hash}; THEME_BOOT_SCRIPT_HASH is ${pinned}`,
-  );
+for (const page of pages) {
+  const theme = page.inline.find((s) => /id="lyceon-theme-boot"/.test(s.tag));
+  if (!theme) {
+    problems.push(
+      `${page.rel}: built page has no <script id="lyceon-theme-boot">`,
+    );
+  } else if (theme.hash !== pinned) {
+    problems.push(
+      `${page.rel}: built theme script hashes to ${theme.hash}; THEME_BOOT_SCRIPT_HASH is ${pinned}`,
+    );
+  }
 }
 
 if (problems.length > 0) {
@@ -103,5 +151,5 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  `page-csp-built-hash-gate: ok (${inline.length} inline script(s), ${allowed.length} allowed hash(es))`,
+  `page-csp-built-hash-gate: ok (${pages.length} page(s), ${inline.length} executable inline script(s), ${allowed.length} allowed hash(es))`,
 );
