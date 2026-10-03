@@ -1519,6 +1519,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-quota.json \
             --file tests/ci/practice-quota.pg.ci.test.ts
 
+      # @spec [student-UI register §8 F-64, §9 OQ-35; Doc 02B §9 next/serve] | @implemented
+      # [2026-10-03] | Concurrent GET /next on one session (pooled connections, 10 rounds × 8
+      # calls): never a 500, every 200 the same item, exactly one item served, pre-submit
+      # correct_answer and explanation null. /state `shortened` true when the stored pool count
+      # is below the requested count, and neither count on the wire. Behind the summary gate.
+      - name: Practice runner (F-64 concurrent /next, OQ-35 shortened) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/practice-runner.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-practice-runner.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-runner.json \
+            --file tests/ci/practice-runner.pg.ci.test.ts
+
       # The G2-04 assertions are worth what their plants prove. One product-source mutation per
       # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
       # per student — the stored-flag design; a learning read and checkout ungated; the gate
