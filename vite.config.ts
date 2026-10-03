@@ -33,14 +33,20 @@ export default defineConfig(({ mode }) => {
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
-  // Dev server only: scan every client module for dependencies at startup. By default Vite
-  // crawls from index.html, so a dependency behind a lazy route is found only when a page
-  // first loads it — and Vite then reloads EVERY open page ("optimized dependencies
-  // changed. reloading"). In the guardian Playwright job (two workers, cold cache) one of
-  // those reloads landed mid-test and destroyed the page under measurement (PR #1040).
-  // Tests are excluded: they import test-only packages the app never serves.
+  // Dev server only. Without this, Vite finds dependencies as the browser first imports them,
+  // re-bundles, and reloads every open page ("optimized dependencies changed. reloading"). On
+  // a cold CI start that reload landed mid-test in guardian-e2e: opening the add-student
+  // dialog first imports @radix-ui/react-dialog, so the page reloaded while the test measured
+  // it (the Suspense fallback on screen, or "Execution context was destroyed"). Crawling every
+  // client source file at startup bundles all of them before the first page loads. Tests are
+  // left out: they import test-only packages the browser never loads.
   optimizeDeps: {
-    entries: ["index.html", "src/**/*.{ts,tsx}", "!src/**/*.test.{ts,tsx}"],
+    entries: [
+      "index.html",
+      "src/**/*.{ts,tsx}",
+      "!src/**/*.test.{ts,tsx}",
+      "!src/**/__tests__/**",
+    ],
   },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
