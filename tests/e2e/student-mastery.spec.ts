@@ -1,14 +1,14 @@
 /**
- * The STUDENT mastery page in a real browser — screenshots for the owner's review (R11: the
- * guardian Dashboard and this page render one `DomainGrid`, meter included).
+ * The STUDENT mastery page in a real browser — screenshots for the owner's review. Since UI-57
+ * (2026-10-03) this page draws `MasteryRow` per domain, not the guardian Dashboard's `DomainGrid`.
  *
  * @spec [owner review 2026-10-01, final round ("refresh the review page's screenshots for the
  *       Dashboard, the Calendar and the student mastery page at both widths"); R12 (16px)]
  *   | @implemented [2026-10-01]
  *
  * plain English: serves `/mastery` to a signed-in student with the guardian harness's mastery
- * payload (`masteryDomains()`, through the shared schema: four served rows, so four cards
- * read "Not enough answers yet" with empty meters) and screenshots it at 1440 and 390. No 16px
+ * payload (`masteryDomains()`, through the shared schema: four served rows, so four
+ * rows read "Not enough answers yet" with empty meters) and screenshots it at 1440 and 390. No 16px
  * check here: the student page keeps the student type scale, and the floor is a
  * guardian-surface rule (R12).
  *
@@ -74,13 +74,13 @@ for (const vp of [
       },
     );
     await page.goto("/mastery");
-    await page.getByTestId("domain-grid").waitFor({ timeout: 15_000 });
+    await page.getByTestId("mastery").waitFor({ timeout: 15_000 });
     await page.waitForTimeout(400);
     await page.screenshot({
       path: path.join(SHOTS, `student-mastery-${vp.name}.png`),
       fullPage: true,
     });
-    // Presence: all eight cards, each with its meter.
-    expect(await page.getByTestId("mastery-meter").count()).toBe(8);
+    // Presence: all eight domain rows, served or not (UI-57 fills the unserved ones).
+    expect(await page.getByTestId("mastery-domain").count()).toBe(8);
   });
 }
