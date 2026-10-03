@@ -43,12 +43,12 @@ type Fixtures = {
   calendarWeek: unknown;
   masteryDomains: unknown;
   examList: unknown;
-  examReport: unknown;
+  examReports: Record<string, unknown>;
   board: {
     calendarWeek: unknown;
     masteryDomains: unknown;
     examList: unknown;
-    examReport: unknown;
+    examReports: Record<string, unknown>;
   };
   billingStatus: unknown;
   billingPlans: unknown;
@@ -79,7 +79,7 @@ async function serve(
 ): Promise<void> {
   // The fixtures' week is cut on E2E_TODAY; the app's "today" must be the same day.
   await pinBrowserToday(page);
-  // G5-06: the board scenario answers Ada's four Dashboard reads with the boards' values.
+  // G5-06: the board scenario answers Ada's Dashboard reads with the boards' values.
   const ada4 = opts.board === true ? F.board : F;
   const roster =
     opts.students === "none"
@@ -126,8 +126,12 @@ async function serve(
     if (p === `${ada}/calendar`) return json(ada4.calendarWeek);
     if (p === `${ada}/mastery/domains`) return json(ada4.masteryDomains);
     if (p === `${ada}/tests`) return json(ada4.examList);
-    if (p === `${ada}/tests/${F.EXAM_SESSION}/report`)
-      return json(ada4.examReport);
+    // G5-09: each session's report by id — the card's only score source (latest + previous).
+    const report = /^\/api\/students\/[^/]+\/tests\/([^/]+)\/report$/.exec(p);
+    if (p.startsWith(`${ada}/`) && report !== null) {
+      const body = ada4.examReports[report[1]!];
+      if (body !== undefined) return json(body);
+    }
     if (p.startsWith(`/api/students/${F.CY}/`)) {
       return json({ error: "Not found", requestId: "r" }, 404);
     }
@@ -629,6 +633,58 @@ const PHONE_CENTRING: readonly {
       {
         what: "row link",
         selector: "[data-testid=guardian-exam-list] article a",
+        mode: "box",
+      },
+    ],
+  },
+  {
+    // G5-07 (owner brief 2026-10-03): the exam detail page centres on a phone too — the
+    // report line and title, the total and its facts, the disclosure summary, the section
+    // cards and the back link. The per-domain bars stay left-aligned (domain-card content).
+    name: "Full-length test detail",
+    path: (f) => `/guardian/${f.ADA}/exams/${f.EXAM_SESSION}`,
+    ready: "exam-total-score",
+    checks: [
+      {
+        what: "report line",
+        selector: "[data-testid=guardian-exam-report] > div:first-child > p",
+        mode: "text",
+      },
+      {
+        what: "report title",
+        selector: "[data-testid=guardian-exam-report] h1",
+        mode: "text",
+      },
+      {
+        what: "total and facts row",
+        selector:
+          "[data-testid=guardian-exam-report] div:has(> div > [data-testid=exam-total-score])",
+        mode: "lines",
+      },
+      {
+        what: "total label",
+        selector: "[data-testid=exam-total-score] + span",
+        mode: "text",
+      },
+      {
+        what: "attempt facts",
+        selector: "[data-testid=guardian-exam-report] dl",
+        mode: "lines",
+      },
+      {
+        what: "disclosure summary",
+        selector:
+          "[data-testid=guardian-exam-report] [data-testid=exam-disclosure]",
+        mode: "text",
+      },
+      {
+        what: "section card",
+        selector: "[data-testid=exam-section-score]",
+        mode: "text",
+      },
+      {
+        what: "back link",
+        selector: "[data-testid=guardian-exam-back]",
         mode: "box",
       },
     ],

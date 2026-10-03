@@ -5,7 +5,8 @@
  * @spec [Guardian_Closure_Plan G5-08 (owner brief 2026-10-02: one state per real session, the
  *       guardian card, list and detail show the student's state, label and numbers); Doc-04C
  *       §2.6 rule 7 (strict subset), §12.2/§12.3; SCL-181 (route family, projection);
- *       SCL-199 (list scores); owner decisions 2026-10-02 (a partial score is compared section
+ *       G5-09 (owner brief 2026-10-03: scores only through the report route; the list carries
+ *       none; the card reads at most two report calls); owner decisions 2026-10-02 (a partial score is compared section
  *       to section; the failed state shows its title only; "you/your" names the student)]
  *       | @implemented [2026-10-02]
  *
@@ -25,13 +26,23 @@
  * change chip is proven on real numbers: the partial's scored section minus that section of
  * the previous scored outcome.
  *
+ * G5-09: every number on the card is the guardian REPORT route's — the real list, which carries
+ * no score field in any state (asserted on the raw wire), only chooses the sessions; the card's
+ * report calls are logged and are exactly the latest's (and, for the chip, the previous's).
+ *
  * The deliberate differences are not compared: the guardian sees bars without counts
  * (SCL-189), no skills and no answers, and no resume or review control (§12.3).
  *
  * Runs only where PGHOST is set; named by file in CI (.github/workflows/ci.yml).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import request from "supertest";
 import express, {
   type Express,
@@ -457,6 +468,48 @@ describe.skipIf(!PG_AVAILABLE)(
       });
     }
 
+    it("G5-09: no guardian list item, in any real state, carries a score field", () => {
+      const items = CASES.flatMap(
+        (x) =>
+          (guardianList.get(x.student) as { tests: Record<string, unknown>[] })
+            .tests,
+      );
+      // Presence first: every case's session is listed, and the scored one has its scores on
+      // its report.
+      for (const x of CASES) {
+        expect(
+          items.some((t) => t.session_id === x.sid),
+          x.key,
+        ).toBe(true);
+      }
+      const scored = guardianReport.get(c("scored").sid) as {
+        report: { score: { total_scaled: number } };
+      };
+      expect(scored.report.score.total_scaled).toBeGreaterThanOrEqual(400);
+      for (const t of items) {
+        expect(
+          Object.keys(t).filter((k) => /scaled|score/i.test(k)),
+          String(t.session_id),
+        ).toEqual([]);
+      }
+    });
+
+    /** The report calls the guardian app made, by session id. */
+    const reportReads = (): string[] =>
+      net.log.flatMap((l) => {
+        const m = /\/tests\/([^/?]+)\/report/.exec(l);
+        return m === null ? [] : [m[1]!];
+      });
+
+    async function settledCard(): Promise<HTMLElement> {
+      await screen.findByTestId("latest-test-meta");
+      const card = screen.getByTestId("latest-test-card");
+      await waitFor(() =>
+        expect(card.getAttribute("data-change-settled")).toBe("true"),
+      );
+      return card;
+    }
+
     it("every state is real: the producer made exactly the six", () => {
       expect(
         CASES.map((x) => [x.key, student.get(x.sid)?.report_state]),
@@ -540,9 +593,12 @@ describe.skipIf(!PG_AVAILABLE)(
         const own = studentView(student.get(x.sid)!);
         serve(x);
         mountApp(Router, `/guardian/${x.student}`);
-        const card = await screen
-          .findByTestId("latest-test-meta")
-          .then(() => screen.getByTestId("latest-test-card"));
+        const card = await settledCard();
+        // G5-09: the card's numbers came through the report route — its own report was read,
+        // and the only other report read is the previous scored test's (at most two).
+        const reads = new Set(reportReads());
+        expect(reads.has(x.sid), `${x.key}: own report read`).toBe(true);
+        expect(reads.size, `${x.key}: report reads`).toBeLessThanOrEqual(2);
         expect(text(within(card).getByTestId("latest-test-meta"))).toContain(
           student.get(x.sid)!.test_form_name,
         );
@@ -590,7 +646,11 @@ describe.skipIf(!PG_AVAILABLE)(
       const delta = now.score[key]! - before.score[key];
       serve(x);
       mountApp(Router, `/guardian/${x.student}`);
-      await screen.findByTestId("latest-test-meta");
+      await settledCard();
+      // G5-09: both sides of the chip came from the report route: exactly these two reads.
+      expect(new Set(reportReads())).toEqual(
+        new Set([x.sid, partialPreviousSid]),
+      );
       const chip = screen.getByTestId("latest-test-change");
       const label = section === "RW" ? "Reading and Writing" : "Math";
       expect(text(chip)).toBe(

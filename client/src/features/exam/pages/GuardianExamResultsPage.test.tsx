@@ -222,9 +222,6 @@ describe("guardian exam pages against the API", () => {
       [SID]: {
         completed_at: "2026-09-20T15:00:00.000Z",
         abandoned_at: null,
-        total_scaled: 1340,
-        rw_scaled: 690,
-        math_scaled: 650,
       },
     }).tests;
     // The never-sat form is not listed: a guardian has nothing to read there.
