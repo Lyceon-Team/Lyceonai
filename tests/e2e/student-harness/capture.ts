@@ -370,7 +370,7 @@ function fillRoute(
   }
   return route.replace(
     /\{(free|paid)\.(\w+)\}/g,
-    (_m, persona: StudentPersona, key: string) => {
+    (_m, persona: "free" | "paid", key: string) => {
       const value = (manifest[persona] as Record<string, unknown>)[key];
       if (typeof value !== "string")
         throw new Error(
@@ -577,6 +577,24 @@ async function shootBuilt(
             return;
           }
           held.push(() => route.abort());
+        },
+      );
+    }
+    // UI-58: a request answered by the browser itself (groups/types.ts `fulfillRequest`).
+    const fulfil = shot.fulfillRequest;
+    if (fulfil) {
+      await page.route(
+        (url) => url.pathname === fulfil.path,
+        async (route) => {
+          if (route.request().method() !== fulfil.method) {
+            await route.fallback();
+            return;
+          }
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(fulfil.body),
+          });
         },
       );
     }
@@ -810,6 +828,10 @@ function writeIndex(
     if (shot.holdRequest !== undefined)
       lines.push(
         `Held: the browser's \`${shot.holdRequest.method} ${shot.holdRequest.path}\` is left unanswered through the screenshot, then aborted (it never reaches the server).`,
+      );
+    if (shot.fulfillRequest !== undefined)
+      lines.push(
+        `Stubbed in the browser: \`${shot.fulfillRequest.method} ${shot.fulfillRequest.path}\` is answered by the browser itself and never reaches the server. ${shot.fulfillRequest.reason}`,
       );
     if (shot.expectVisible !== undefined)
       lines.push(

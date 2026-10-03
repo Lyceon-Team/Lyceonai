@@ -124,6 +124,20 @@ const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const HelpPage = lazy(() => import("@/pages/help"));
+
+/**
+ * @spec [student-UI register UI-58; Guardian_Closure_Plan G4-08] | @implemented [2026-10-03]
+ * plain English: `/profile` is two pages behind one URL. A student (or admin) gets Settings in
+ * the App shell (UI-58); a guardian keeps the guardian profile in the guardian shell (G4-08),
+ * which `StudentRouteFrame` leaves unwrapped for a guardian. Chosen by role for presentation
+ * only; every read and write on both pages is authorised by the server.
+ */
+function ProfileRoute(): JSX.Element {
+  const { user } = useSupabaseAuth();
+  return user?.role === "guardian" ? <UserProfile /> : <SettingsPage />;
+}
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 const GuardianRequired = lazy(() => import("@/pages/guardian-required"));
 
@@ -345,7 +359,18 @@ export function Router() {
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
               <StudentRouteFrame route="/profile">
-                <UserProfile />
+                <ProfileRoute />
+              </StudentRouteFrame>
+            </RequireRole>
+          )}
+        />
+        {/* UI-58 (OQ-46): the Help page; the rail, the avatar menu and the footer land here. */}
+        <Route
+          path="/help"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <StudentRouteFrame route="/help">
+                <HelpPage />
               </StudentRouteFrame>
             </RequireRole>
           )}

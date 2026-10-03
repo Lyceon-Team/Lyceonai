@@ -40,13 +40,15 @@ import {
 import { getEntitlementDenial } from "@/lib/api-error";
 import { resolveCtaCopy } from "@/lib/billing-cta";
 import { LISA_UPGRADE_PITCH } from "@/components/tutor/LisaUpgradeCard";
+import { sectionHref } from "@/components/settings/settings-sections";
 
 /**
- * OQ-39(e) "See plans" → Settings → Billing. `/profile` is today's Settings, and
- * `UserProfile.tsx` selects its billing tab from `?tab=billing`. When the Settings route lands,
- * this is the one line to change.
+ * OQ-39(e) "See plans" → Settings → Billing (`/profile?tab=billing`), spelled by the Settings
+ * page's own `sectionHref`. UI-58 (2026-10-03): Settings derives its section from the URL on every
+ * render, so this navigation lands on Billing even when the student is already on /profile (the
+ * UI-44 known limitation, closed).
  */
-export const UPGRADE_PLANS_DESTINATION = "/profile?tab=billing";
+export const UPGRADE_PLANS_DESTINATION = sectionHref("billing");
 
 type UpgradeModalCopy = {
   readonly title: string;

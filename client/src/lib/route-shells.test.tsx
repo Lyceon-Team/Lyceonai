@@ -54,6 +54,8 @@ vi.mock("@/features/exam/pages/ExamReportPage", pageStub);
 vi.mock("@/features/exam/pages/ExamSessionPage", pageStub);
 vi.mock("@/features/exam/pages/TestsHomePage", pageStub);
 vi.mock("@/pages/UserProfile", pageStub);
+vi.mock("@/pages/settings", pageStub);
+vi.mock("@/pages/help", pageStub);
 vi.mock("@/pages/account-recover", pageStub);
 vi.mock("@/pages/admin/CrisisReviewDetail", pageStub);
 vi.mock("@/pages/admin/CrisisReviewList", pageStub);
@@ -359,6 +361,10 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/calendar",
       "/chat",
       "/mastery",
+      "/upgrade",
+      "/profile",
+      "/help",
+      "/notifications",
       "/practice/session/:sessionId",
       "/tests/:sessionId",
       "/tests/:sessionId/report",
@@ -438,6 +444,20 @@ describe("the table says what DESIGN.md §2 says", () => {
     });
   });
 
+  it("UI-58: the plans page, Settings, Help and Notifications follow the device theme; Settings and Help carry the footer, none has a right panel", () => {
+    const column = (footer: boolean) => ({
+      shell: "app",
+      panel: null,
+      footer,
+      content: "column",
+      themeLock: null,
+    });
+    expect(STUDENT_ROUTE_SHELLS["/profile"]).toEqual(column(true));
+    expect(STUDENT_ROUTE_SHELLS["/help"]).toEqual(column(true));
+    expect(STUDENT_ROUTE_SHELLS["/upgrade"]).toEqual(column(false));
+    expect(STUDENT_ROUTE_SHELLS["/notifications"]).toEqual(column(false));
+  });
+
   it("the timed module: no back arrow, light only", () => {
     expect(STUDENT_ROUTE_SHELLS["/tests/:sessionId/:section/:module"]).toEqual({
       shell: "focus",
@@ -478,13 +498,20 @@ describe("the table says what DESIGN.md §2 says", () => {
     expect(panel("/profile")).toBeNull();
   });
 
-  it("the legal footer is on Home, Practice, Review, Full-Length and Settings only", () => {
+  it("the legal footer is on Home, Practice, Review, Full-Length, Settings and Help only", () => {
     const withFooter = tableKeys.filter((k) => {
       const spec = STUDENT_ROUTE_SHELLS[k as StudentShellRoute];
       return spec.shell === "app" && spec.footer;
     });
     expect(withFooter.sort()).toEqual(
-      ["/dashboard", "/practice", "/review", "/tests", "/profile"].sort(),
+      [
+        "/dashboard",
+        "/practice",
+        "/review",
+        "/tests",
+        "/profile",
+        "/help",
+      ].sort(),
     );
   });
 });

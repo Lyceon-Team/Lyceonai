@@ -31,6 +31,18 @@ export const PERSONAS = {
     displayName: "Sam Rivera",
     dateOfBirth: "2009-09-03",
   },
+  /**
+   * UI-58: a student whose plan a guardian pays (F-40). An active premium entitlement that
+   * carries a Stripe subscription id, on a profile with no Stripe customer, which is exactly
+   * what `deriveBillingManagedBy` reads as `guardian`. No practice is seeded for this persona;
+   * Settings is the only page shot as it.
+   */
+  managed: {
+    id: "00000000-0000-4000-8000-0000000058a1",
+    email: "managed.student@example.test",
+    displayName: "Jordan Lee",
+    dateOfBirth: "2010-02-20",
+  },
 } as const;
 
 export type StudentPersona = keyof typeof PERSONAS;
@@ -39,5 +51,5 @@ export type Persona = StudentPersona | "signed-out";
 export function isStudentPersona(
   value: string | undefined,
 ): value is StudentPersona {
-  return value === "free" || value === "paid";
+  return value === "free" || value === "paid" || value === "managed";
 }

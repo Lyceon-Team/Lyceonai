@@ -78,27 +78,41 @@ describe("Premium CTA wiring contract", () => {
     );
   });
 
-  it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
-    const userProfile = readCode("client/src/pages/UserProfile.tsx");
+  /**
+   * UI-58 (2026-10-03): the student's billing moved from UserProfile.tsx (now the guardian's
+   * profile only) to Settings → Billing, and its button follows `managedBy` (F-40). The same
+   * wiring rules hold there; the behaviour itself is proven in client/src/pages/settings.test.tsx.
+   */
+  it("wires Settings → Billing to canonical billing status + portal/upgrade actions", () => {
+    const billing = readCode(
+      "client/src/components/settings/BillingSection.tsx",
+    );
 
     // UI-14 (2026-09-29) and G4-09 (G-AUD-26): the page reads billing status through the ONE
     // shared, parsed hook — one key and one fetch function for every surface — rather than
     // spelling the key itself. The hook's key is pinned in
     // tests/ci/query-freshness.contract.test.ts.
-    expect(userProfile).toContain("useBillingStatusQuery");
-    expect(userProfile).not.toMatch(/\/api\/billing\/status/);
+    expect(billing).toContain("useBillingStatusQuery");
+    expect(billing).not.toMatch(/\/api\/billing\/status/);
     // One portal hook, not a fourth copy of the mutation.
-    expect(userProfile).toContain("useBillingPortal");
+    expect(billing).toContain("useBillingPortal");
     /**
      * `navigate('/upgrade')` USED to be asserted here, and it was the bug: the
      * button was enabled for a guardian with a linked student and pointed at a
      * route `RequireRole` bounces them from. The destination now comes from the
      * resolver, which cannot return `/upgrade` for a guardian.
      */
-    expect(userProfile).toContain("resolveCtaDestination");
-    expect(userProfile).not.toContain("navigate('/upgrade')");
-    expect(userProfile).toContain("Manage Subscription");
-    expect(userProfile).toContain("View Plans");
+    expect(billing).toContain("resolveCtaDestination");
+    expect(billing).not.toMatch(/["'`]\/upgrade["'`]/);
+    // F-40: the state comes from the server's `managedBy`, not a client re-derivation.
+    expect(billing).toContain('status.managedBy === "guardian"');
+    expect(billing).not.toContain("hasManageableSubscription");
+    expect(billing).toContain("Manage billing");
+    expect(billing).toContain("See plans");
+    // The guardian profile keeps no student billing card.
+    const userProfile = readCode("client/src/pages/UserProfile.tsx");
+    expect(userProfile).not.toContain("useBillingPortal");
+    expect(userProfile).not.toContain("useBillingStatusQuery");
   });
 
   /**

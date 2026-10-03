@@ -90,14 +90,24 @@ export async function buildStudentHarnessDb(): Promise<Client> {
   if (process.env.STUDENT_HARNESS_SEED === "mastery-skills") {
     await useCanonicalSkills(pg);
   }
-  const free = PERSONAS.free;
-  await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, $2)`, [
-    free.id,
-    free.email,
-  ]);
+  // The paid student comes from the exam harness's database; the others are built here.
+  for (const persona of [PERSONAS.free, PERSONAS.managed]) {
+    await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, $2)`, [
+      persona.id,
+      persona.email,
+    ]);
+    await pg.query(
+      `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, $2, 'student', $3)`,
+      [persona.id, persona.email, persona.displayName],
+    );
+  }
+  // UI-58: the guardian-managed student (F-40). A subscription id on the student's own
+  // entitlement and no Stripe customer on the profile: the route's `managedBy` reads `guardian`.
+  // The id is a harness label, never sent anywhere (nothing here calls Stripe).
   await pg.query(
-    `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, $2, 'student', $3)`,
-    [free.id, free.email, free.displayName],
+    `INSERT INTO public.entitlements (profile_id, tier, status, stripe_subscription_id)
+       VALUES ($1::uuid, 'premium', 'active', 'sub_harness_guardian_paid')`,
+    [PERSONAS.managed.id],
   );
   for (const persona of Object.values(PERSONAS)) {
     await pg.query(

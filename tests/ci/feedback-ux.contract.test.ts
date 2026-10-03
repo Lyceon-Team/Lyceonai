@@ -107,6 +107,9 @@ describe("Feedback UX hardening contract", () => {
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
       "client/src/pages/UserProfile.tsx",
+      // UI-58: Settings → Billing reaches the plans page through the resolver only.
+      "client/src/pages/settings.tsx",
+      "client/src/components/settings/BillingSection.tsx",
       "client/src/components/billing/PremiumUpgradePrompt.tsx",
     ];
     for (const surface of surfaces) {
@@ -161,6 +164,10 @@ describe("Feedback UX hardening contract", () => {
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
       "client/src/pages/UserProfile.tsx",
+      // UI-58: the student Settings page and its sections.
+      "client/src/pages/settings.tsx",
+      "client/src/components/settings/BillingSection.tsx",
+      "client/src/components/settings/AccountSection.tsx",
       "client/src/components/guardian/CheckoutReturnPoller.tsx",
     ];
     for (const file of auditedFiles) {

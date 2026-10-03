@@ -48,6 +48,7 @@
     U+2215, U+FEFF, U+FFFD;
 }
 
+:root[data-theme="dark"] .lyc.lyc[data-theme-preview="light"],
 .lyc,
 :root[data-theme="dark"] .lyc[data-theme-lock="light"] {
   --paper: #fffaef;
@@ -108,6 +109,7 @@
  * the pill used before (UI-00e lists them), so those pages keep their colours. The dark set
  * below still overrides them inside `.lyc`.
  */
+:root[data-theme="dark"] .lyc.lyc[data-theme-preview="light"],
 :root,
 .lyc,
 :root[data-theme="dark"] .lyc[data-theme-lock="light"] {
@@ -135,7 +137,12 @@
   --lv4-bd: #a7f3d0;
 }
 
-:root[data-theme="dark"] .lyc:not([data-theme-lock="light"]) {
+/* UI-58 (2026-10-03): `data-theme-preview="dark"` / `"light"` draw one small `.lyc` element with
+   that set whatever the page's theme: Settings → Appearance's swatches, which must show dark on a
+   light page and light on a dark one. Unlike `data-theme-lock` (a shell's pin, which the
+   screenshot harness reads as the page's lock), it marks only a preview. Nothing else carries it. */
+:root[data-theme="dark"] .lyc:not([data-theme-lock="light"]),
+.lyc[data-theme-preview="dark"] {
   --paper: #121b24;
   --margin: #16212c;
   --sheet: #1b2733;
@@ -219,7 +226,8 @@
   font-size: var(--lyc-text-body);
 }
 
-:root[data-theme="dark"] .lyc:not([data-theme-lock="light"]) {
+:root[data-theme="dark"] .lyc:not([data-theme-lock="light"]),
+.lyc[data-theme-preview="dark"] {
   color-scheme: dark;
 }
 

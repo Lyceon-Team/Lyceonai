@@ -140,6 +140,7 @@ describe("E1 — Vercel Analytics is off on every role-gated surface", () => {
       "/review",
       "/review/session/abc123",
       "/profile",
+      "/help",
     ]) {
       expect(`${p}:${isAnalyticsAllowedPath(p)}`).toBe(`${p}:false`);
     }

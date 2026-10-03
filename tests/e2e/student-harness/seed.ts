@@ -44,7 +44,8 @@ export type SeededPersona = {
   lisaConversationId: string | null;
   answered: number;
 };
-export type SeedManifest = Record<StudentPersona, SeededPersona>;
+/** UI-58: the guardian-managed persona has no practice seed, so the manifest names free and paid. */
+export type SeedManifest = Record<"free" | "paid", SeededPersona>;
 
 /**
  * The client instance the seed binds its sessions to. A shot that opens a seeded session presets
@@ -372,6 +373,9 @@ export async function seedPracticeHistory(
   },
 ): Promise<SeedManifest> {
   const out: Partial<SeedManifest> = {};
+  // UI-58: the guardian-managed student only needs the current Terms and Privacy Policy accepted
+  // (Settings is its only page); no practice history.
+  await call(base, "managed", "POST", "/api/legal/reaccept", {});
   for (const persona of ["free", "paid"] as const) {
     // The current Terms and Privacy Policy, accepted through the real re-accept route (the one
     // the blocking re-consent modal calls), so pages render without that modal over them.

@@ -20,6 +20,13 @@
  * here), the student App shell for a student (applied by the router's StudentRouteFrame, UI-41)
  * — the same page in both, so neither role is a recipient without a surface.
  *
+ * UI-58 (2026-10-03, DESIGN.md §4 "Not prototyped: Notifications" — built to the shell spec,
+ * screenshots to Karl): drawn with the student tokens only, so it follows the device theme in
+ * the App shell (OQ-49: off the light lock). Behaviour is unchanged: seen on open, read
+ * explicit, the archive view, the cursor. A guardian's copy renders in the guardian shell
+ * inside a light-pinned `.lyc` root (the guardian surface is light only), and every line on the
+ * page is 16px or larger, so the guardian type floor (R12) holds there too.
+ *
  * Accessibility: the heading takes focus on mount so a keyboard or screen-reader user lands
  * on the page's name; the unread count is announced from a polite live region; every control
  * is a labelled button (no icon-only actions); the relative time carries the absolute time
@@ -34,7 +41,7 @@ import {
 } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { GuardianShell } from "@/components/layout/GuardianShell";
-import { Button } from "@/components/ui/button";
+import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
@@ -54,8 +61,17 @@ import type { NotificationFeedItem } from "@lyceon/shared/notifications-schema";
 
 export default function NotificationsPage() {
   const { isGuardian } = useSupabaseAuth();
-  const content = <NotificationsFeed />;
-  return isGuardian ? <GuardianShell>{content}</GuardianShell> : content;
+  if (!isGuardian) return <NotificationsFeed />;
+  return (
+    <GuardianShell>
+      <div
+        className="lyc mx-auto max-w-[800px] px-4 py-8 sm:px-6"
+        data-theme-lock="light"
+      >
+        <NotificationsFeed />
+      </div>
+    </GuardianShell>
+  );
 }
 
 export function NotificationsFeed() {
@@ -129,10 +145,7 @@ export function NotificationsFeed() {
   };
 
   return (
-    <div
-      className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-3xl"
-      data-testid="notifications-page"
-    >
+    <div className="flex flex-col gap-6" data-testid="notifications-page">
       <p
         className="sr-only"
         aria-live="polite"
@@ -143,19 +156,18 @@ export function NotificationsFeed() {
           : `${unread} unread notifications`}
       </p>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <h1
           ref={headingRef}
           tabIndex={-1}
-          className="text-2xl font-bold focus:outline-none"
+          className="m-0 font-lyc-serif text-lyc-section font-semibold tracking-normal text-lyc-ink-strong focus:outline-none sm:text-lyc-title"
           data-testid="notifications-heading"
         >
           Notifications
         </h1>
         {view === "inbox" && (
           <Button
-            variant="outline"
-            size="sm"
+            variant="lyc-outline"
             onClick={() => markAllRead.mutate()}
             disabled={!hasUnreadInInbox || markAllRead.isPending}
             data-testid="button-mark-all-read"
@@ -170,9 +182,8 @@ export function NotificationsFeed() {
         onValueChange={(next) =>
           setView(next === "archived" ? "archived" : "inbox")
         }
-        className="mb-4"
       >
-        <TabsList aria-label="Notification views">
+        <TabsList variant="lyc" aria-label="Notification views">
           <TabsTrigger value="inbox" data-testid="tab-inbox">
             Inbox
           </TabsTrigger>
@@ -184,33 +195,32 @@ export function NotificationsFeed() {
 
       {feed.isLoading ? (
         <p
-          className="text-sm text-muted-foreground"
+          className="m-0 text-lyc-body text-lyc-muted"
           data-testid="notifications-page-loading"
         >
           Loading…
         </p>
       ) : feed.isError ? (
-        <div className="space-y-2" data-testid="notifications-page-error">
-          <p className="text-sm text-muted-foreground">
+        <div
+          className="flex flex-col items-start gap-3"
+          data-testid="notifications-page-error"
+        >
+          <p className="m-0 text-lyc-body text-lyc-muted">
             Could not load your notifications.
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void feed.refetch()}
-          >
+          <Button variant="lyc-outline" onClick={() => void feed.refetch()}>
             Try again
           </Button>
         </div>
       ) : items.length === 0 ? (
         <div
-          className="rounded-lg border border-dashed p-8 text-center"
+          className="rounded-lg border border-dashed border-lyc-rule-strong px-6 py-8 text-center"
           data-testid="notifications-page-empty"
         >
-          <p className="font-medium">
+          <p className="m-0 font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong">
             {view === "inbox" ? "You're all caught up" : "Nothing archived"}
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="m-0 mt-1.5 text-lyc-body text-lyc-muted">
             {view === "inbox"
               ? "When a guardian is linked to or removed from your account, it will show up here."
               : "Notifications you archive from your inbox will be kept here."}
@@ -218,7 +228,7 @@ export function NotificationsFeed() {
         </div>
       ) : (
         <ul
-          className="divide-y rounded-lg border"
+          className="m-0 list-none divide-y divide-lyc-rule border-y border-lyc-rule p-0"
           data-testid="notifications-list"
         >
           {items.map((item) => (
@@ -235,9 +245,9 @@ export function NotificationsFeed() {
       )}
 
       {feed.hasNextPage && (
-        <div className="mt-4 flex justify-center">
+        <div className="flex justify-center">
           <Button
-            variant="outline"
+            variant="lyc-outline"
             onClick={() => void feed.fetchNextPage()}
             disabled={feed.isFetchingNextPage}
             data-testid="button-load-more"
@@ -267,7 +277,7 @@ function NotificationRow({
   const absolute = absoluteTime(item.createdAt);
   return (
     <li
-      className={`px-4 py-4 ${unread ? "bg-muted/40" : ""}`}
+      className={`py-5 ${unread ? "bg-lyc-margin px-3" : "px-1"}`}
       data-testid={`notification-row-${item.messageId}`}
       data-unread={unread ? "true" : "false"}
     >
@@ -276,13 +286,13 @@ function NotificationRow({
           <div className="min-w-0 flex-1">
             <h2
               id={`notification-title-${item.messageId}`}
-              className={`text-base ${unread ? "font-semibold" : "font-medium"}`}
+              className={`m-0 text-[17px] tracking-normal text-lyc-ink-strong ${unread ? "font-semibold" : "font-medium"}`}
             >
               {unread && (
                 <>
                   <span
                     aria-hidden="true"
-                    className="inline-block h-2 w-2 rounded-full bg-primary mr-2 align-middle"
+                    className="mr-2 inline-block h-2 w-2 rounded-full bg-lyc-ink-strong align-middle"
                   />
                   <span className="sr-only">Unread: </span>
                 </>
@@ -290,7 +300,7 @@ function NotificationRow({
               {item.href ? (
                 <button
                   type="button"
-                  className="text-left hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                  className={`${LYC_FOCUS} rounded-sm bg-transparent p-0 text-left font-[inherit] text-lyc-ink-strong underline underline-offset-4 hover:no-underline`}
                   onClick={() => onOpen(item)}
                   data-testid={`notification-open-${item.messageId}`}
                 >
@@ -301,7 +311,7 @@ function NotificationRow({
               )}
             </h2>
             {item.body && (
-              <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">
+              <p className="m-0 mt-1.5 whitespace-pre-line text-lyc-body text-lyc-ink">
                 {item.body}
               </p>
             )}
@@ -310,7 +320,7 @@ function NotificationRow({
             dateTime={item.createdAt}
             title={absolute}
             aria-label={absolute}
-            className="text-xs text-muted-foreground whitespace-nowrap"
+            className="whitespace-nowrap text-lyc-body text-lyc-muted"
             data-testid={`notification-time-${item.messageId}`}
           >
             {relativeTime(item.createdAt)}
@@ -319,8 +329,7 @@ function NotificationRow({
         <div className="mt-3 flex flex-wrap gap-2">
           {unread && (
             <Button
-              size="sm"
-              variant="ghost"
+              variant="lyc-quiet"
               onClick={() => onMarkRead(item.messageId)}
               aria-label={`Mark "${item.title}" as read`}
               data-testid={`button-mark-read-${item.messageId}`}
@@ -330,8 +339,7 @@ function NotificationRow({
           )}
           {view === "inbox" ? (
             <Button
-              size="sm"
-              variant="ghost"
+              variant="lyc-quiet"
               onClick={() => onArchive(item.messageId)}
               aria-label={`Archive "${item.title}"`}
               data-testid={`button-archive-${item.messageId}`}
@@ -340,7 +348,7 @@ function NotificationRow({
             </Button>
           ) : (
             item.archivedAt && (
-              <span className="text-xs text-muted-foreground self-center">
+              <span className="self-center text-lyc-body text-lyc-muted">
                 Archived{" "}
                 <time
                   dateTime={item.archivedAt}

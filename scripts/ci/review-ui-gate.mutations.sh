@@ -53,6 +53,22 @@ FILES=(
   "client/src/styles/student-tokens.css"
   "client/src/pages/mastery.tsx"
   "client/src/components/mastery/MasteryRow.tsx"
+  "client/src/components/settings/settings-sections.ts"
+  "client/src/pages/settings.tsx"
+  "client/src/components/settings/ProfileSection.tsx"
+  "client/src/components/settings/AccountSection.tsx"
+  "client/src/components/settings/BillingSection.tsx"
+  "client/src/components/settings/LinkSection.tsx"
+  "client/src/components/settings/AppearanceSection.tsx"
+  "client/src/lib/settings-api.ts"
+  "client/src/hooks/useProfileQuery.ts"
+  "client/src/components/account-deletion/DeleteAccountCard.tsx"
+  "client/src/components/student/StudentGuardiansPanel.tsx"
+  "client/src/components/student/StudentLinkCodePanel.tsx"
+  "client/src/components/layout/LegalFooter.tsx"
+  "client/src/pages/help.tsx"
+  "client/src/pages/upgrade.tsx"
+  "client/src/pages/notifications.tsx"
 )
 
 snapshot_all() {
@@ -1133,6 +1149,255 @@ plant "UI57-D3" "the wide pill track back to 132px (the unmeasured pill overlaps
   'a = "      ? \"sm:grid-cols-[minmax(0,1fr)_176px_184px]\""
 assert s.count(a) == 1
 s = s.replace(a, "      ? \"sm:grid-cols-[minmax(0,1fr)_176px_132px]\"", 1)'
+
+# ── UI-58: Settings, Help, Notifications, the plans page ──────────────────────────────────
+# @spec [student-UI register UI-58; OQ-20, OQ-27, OQ-28 / F-54, OQ-26 / OQ-41, UI-S4, UI-S7 /
+#        F-40, UI-S8, OQ-38, OQ-39, OQ-46, UI-44, UI-47, OQ-49] | @implemented [2026-10-03]
+# Each plant edits one product line (anchors asserted unique) and must redden the named test.
+# The name route's server plants live with its real-PG test (needs Postgres), not here.
+T58="client/src/pages/settings.test.tsx"
+H58="client/src/pages/help.test.tsx"
+
+plant "UI58-S1" "a Notifications section comes back (OQ-27)" \
+  "$T58" \
+  "client/src/components/settings/settings-sections.ts" \
+  'a = "  { id: \"billing\", label: \"Billing\" },\n"
+assert s.count(a) == 1
+s = s.replace(a, a + "  { id: \"notifications\", label: \"Notifications\" },\n", 1)'
+
+plant "UI58-S2" "the ?tab= value is ignored" \
+  "$T58" \
+  "client/src/components/settings/settings-sections.ts" \
+  'a = "  const tab = new URLSearchParams(search).get(\"tab\");"
+assert s.count(a) == 1
+s = s.replace(a, "  const tab: string | null = null;", 1)'
+
+plant "UI58-S3" "the section is read once from the page URL, not the router (UI-44 limitation back)" \
+  "$T58" \
+  "client/src/pages/settings.tsx" \
+  'a = "  const active = sectionFromSearch(search, viewer);"
+assert s.count(a) == 1
+s = s.replace(a, "  const active = sectionFromSearch(window.location.search, viewer);", 1)'
+
+plant "UI58-P1" "OQ-20 inverted: the goal fields show without a calendar profile" \
+  "$T58" \
+  "client/src/components/settings/ProfileSection.tsx" \
+  'a = "      {goal === null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {goal !== null ? (", 1)'
+
+plant "UI58-P2" "the goal save sends an unchanged test date too" \
+  "$T58" \
+  "client/src/components/settings/ProfileSection.tsx" \
+  'a = "    if (nextDate !== goal.target_exam_date)\n"
+assert s.count(a) == 1
+s = s.replace(a, "    if (true)\n", 1)'
+
+plant "UI58-P3" "the name save carries marketingOptIn (F-54)" \
+  "$T58" \
+  "client/src/lib/settings-api.ts" \
+  'a = "  const body = profileNameUpdateRequestSchema.parse({ displayName });"
+assert s.count(a) == 1
+s = s.replace(a, "  const body = { displayName, marketingOptIn: false };", 1)'
+
+plant "UI58-P4" "the name save goes to the onboarding route" \
+  "$T58" \
+  "client/src/lib/settings-api.ts" \
+  'a = "export const PROFILE_NAME_PATH = \"/api/profile/name\" as const;"
+assert s.count(a) == 1
+s = s.replace(a, "export const PROFILE_NAME_PATH = \"/api/profile\" as const;", 1)'
+
+plant "UI58-P5" "About you renders while UI-S8 holds" \
+  "$T58" \
+  "client/src/components/settings/ProfileSection.tsx" \
+  'a = "      <SectionHeading id={headingId}>Profile</SectionHeading>"
+assert s.count(a) == 1
+s = s.replace(a, a + "\n      <h3>About you</h3>", 1)'
+
+plant "UI58-A1" "Change password shows only for hasPassword true (null hidden, OQ-41)" \
+  "$T58" \
+  "client/src/hooks/useProfileQuery.ts" \
+  'a = "  return hasPassword !== false;"
+assert s.count(a) == 1
+s = s.replace(a, "  return hasPassword === true;", 1)'
+
+plant "UI58-A2" "Change password shows for a Google-only account (F-38)" \
+  "$T58" \
+  "client/src/hooks/useProfileQuery.ts" \
+  'a = "  return hasPassword !== false;"
+assert s.count(a) == 1
+s = s.replace(a, "  return true;", 1)'
+
+plant "UI58-A3" "the change is sent without the current password" \
+  "$T58" \
+  "client/src/lib/settings-api.ts" \
+  'a = "  const body = changePasswordRequestSchema.parse(input);"
+assert s.count(a) == 1
+s = s.replace(a, "  const body = { new_password: input.new_password };", 1)'
+
+plant "UI58-A4" "Update password is enabled with no current password" \
+  "$T58" \
+  "client/src/components/settings/AccountSection.tsx" \
+  'a = "          disabled={mutation.isPending || current.length === 0}"
+assert s.count(a) == 1
+s = s.replace(a, "          disabled={mutation.isPending}", 1)'
+
+plant "UI58-A5" "a server-worded refusal shows generic copy" \
+  "$T58" \
+  "client/src/lib/settings-api.ts" \
+  'a = "  if (isApiError(error) && error.code && SERVER_WORDED_CODES.has(error.code)) {"
+assert s.count(a) == 1
+s = s.replace(a, "  if (false) {", 1)'
+
+plant "UI58-A6" "the Delete account box confirms without the typed phrase" \
+  "$T58" \
+  "client/src/components/account-deletion/DeleteAccountCard.tsx" \
+  'a = "  const confirmed = isConfirmed(confirmText);\n  return (\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const confirmed = confirmText.length >= 0;\n  return (\n", 1)'
+
+plant "UI58-B1" "a guardian-managed plan shows Manage billing (F-40)" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "  if (status.managedBy === \"guardian\") return \"guardian\";"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "UI58-B2" "a free student is shown the self-paid state" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "  if (status.effectiveAccess || status.needsPaymentUpdate) return \"self\";"
+assert s.count(a) == 1
+s = s.replace(a, "  return \"self\";", 1)'
+
+plant "UI58-B3" "Manage billing never asks the portal route" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "          onClick={() => portal.open()}"
+assert s.count(a) == 1
+s = s.replace(a, "          onClick={() => undefined}", 1)'
+
+plant "UI58-G1" "the guardian sentence goes back to the pre-ruling words (OQ-38)" \
+  "$T58 $H58" \
+  "client/src/components/settings/LinkSection.tsx" \
+  'a = "\"A guardian can see your progress: mastery, test scores, your study plan and your projected score. They never see your answers or your conversations with LISA.\""
+assert s.count(a) == 1
+s = s.replace(a, "\"A guardian can see your mastery and your test scores. They never see your answers or your conversations with LISA.\"", 1)'
+
+plant "UI58-G2" "no link reads as 'Your guardians'" \
+  "$T58" \
+  "client/src/components/student/StudentGuardiansPanel.tsx" \
+  'a = "{noneLinked ? \"No guardian linked\" : \"Your guardians\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Your guardians\"}", 1)'
+
+plant "UI58-G3" "Get a new code never asks the regenerate route" \
+  "$T58 client/src/components/student" \
+  "client/src/components/student/StudentLinkCodePanel.tsx" \
+  'a = "              onClick={() => regenerate.mutate()}"
+assert s.count(a) == 1
+s = s.replace(a, "              onClick={() => undefined}", 1)'
+
+plant "UI58-T1" "the theme choice is not saved on the device" \
+  "$T58" \
+  "client/src/components/settings/AppearanceSection.tsx" \
+  'a = "    saveThemePreference(deviceStorage(), next);\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "UI58-T2" "the theme choice is not applied to the page" \
+  "$T58" \
+  "client/src/components/settings/AppearanceSection.tsx" \
+  'a = "      resolveTheme(next, systemPrefersDark(window)),"
+assert s.count(a) == 1
+s = s.replace(a, "      \"light\",", 1)'
+
+plant "UI58-T3" "the timed module follows the dark choice" \
+  "$T58" \
+  "client/src/lib/route-shells.ts" \
+  'a = "    themeLock: timed ? \"light\" : themeLock,"
+assert s.count(a) == 1
+s = s.replace(a, "    themeLock: timed ? null : themeLock,", 1)'
+
+plant "UI58-R1" "Settings stays pinned light (OQ-49)" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/profile\": app(null, true, \"column\", null),"
+assert s.count(a) == 1
+s = s.replace(a, "  \"/profile\": app(null, true),", 1)'
+
+plant "UI58-R2" "Help loses the footer" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/help\": app(null, true, \"column\", null),"
+assert s.count(a) == 1
+s = s.replace(a, "  \"/help\": app(null, false, \"column\", null),", 1)'
+
+plant "UI58-H1" "HELP_PATH back on the legal hub (OQ-46)" \
+  "$H58" \
+  "client/src/components/layout/LegalFooter.tsx" \
+  'a = "export const HELP_PATH = \"/help\";"
+assert s.count(a) == 1
+s = s.replace(a, "export const HELP_PATH = \"/legal\";", 1)'
+
+plant "UI58-H2" "an approved answer is reworded" \
+  "$H58" \
+  "client/src/pages/help.tsx" \
+  'a = "40 practice questions a day and unlimited review. Paid plans add your study calendar"
+assert s.count(a) == 1
+s = s.replace(a, "40 questions a day and unlimited review. Paid plans add your study calendar", 1)'
+
+plant "UI58-H3" "a question is dropped (six, not seven)" \
+  "$H58" \
+  "client/src/pages/help.tsx" \
+  'a = "    q: \"How do I delete my account?\","
+assert s.count(a) == 1
+i = s.index(a)
+start = s.rindex("  {\n", 0, i)
+end = s.index("  },\n", i) + len("  },\n")
+s = s[:start] + s[end:]'
+
+plant "UI58-H4" "Contact support leaves the support address" \
+  "$H58" \
+  "client/src/pages/help.tsx" \
+  'a = "          href={`mailto:${SUPPORT_EMAIL}`}"
+assert s.count(a) == 1
+s = s.replace(a, "          href=\"/legal\"", 1)'
+
+plant "UI58-H5" "Trust and Safety points at /trust (OQ-39 a)" \
+  "$H58" \
+  "client/src/pages/help.tsx" \
+  'a = "  { label: \"Trust and Safety\", href: \"/legal/trust-and-safety\" },"
+assert s.count(a) == 1
+s = s.replace(a, "  { label: \"Trust and Safety\", href: \"/trust\" },", 1)'
+
+plant "UI58-H6" "every question starts closed" \
+  "$H58" \
+  "client/src/pages/help.tsx" \
+  'a = "  const [open, setOpen] = useState<number>(0);"
+assert s.count(a) == 1
+s = s.replace(a, "  const [open, setOpen] = useState<number>(-1);", 1)'
+
+plant "UI58-U1" "the plans page's in-body back link returns (UI-41)" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "      <PageHeader\n        eyebrow=\"Membership\""
+assert s.count(a) == 1
+s = s.replace(a, "      <a href=\"/dashboard\">Back to Dashboard</a>\n" + a, 1)'
+
+plant "UI58-U2" "every plan button is filled (DESIGN.md §1 one primary)" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "                variant={isBestValue ? \"lyc-primary\" : \"lyc-outline\"}"
+assert s.count(a) == 1
+s = s.replace(a, "                variant=\"lyc-primary\"", 1)'
+
+plant "UI58-N1" "a notification's time drops to 12px" \
+  "client/src/pages/notifications.test.tsx" \
+  "client/src/pages/notifications.tsx" \
+  'a = "            className=\"whitespace-nowrap text-lyc-body text-lyc-muted\""
+assert s.count(a) == 1
+s = s.replace(a, "            className=\"whitespace-nowrap text-xs text-lyc-muted\"", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

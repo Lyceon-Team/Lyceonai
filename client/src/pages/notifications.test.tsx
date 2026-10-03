@@ -397,3 +397,34 @@ describe("NotificationsFeed (B3)", () => {
     expect(await screen.findByText("Nothing archived")).toBeTruthy();
   });
 });
+
+/**
+ * UI-58 (DESIGN.md §4 "Not prototyped: Notifications"; OQ-49): the page is drawn with the student
+ * tokens only and nothing on it is set below 16px, which also keeps the guardian type floor (R12)
+ * where a guardian sees the same feed. Presence first: rows, times and actions are on screen.
+ */
+describe("NotificationsFeed on the student tokens (UI-58)", () => {
+  it("uses no legacy colour or small-text utility, and the heading is the serif page title", async () => {
+    const { container } = renderFeed();
+    expect(await screen.findByText("Notification 1")).toBeTruthy();
+    expect(
+      screen.getByTestId(`notification-time-${item(1).messageId}`),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId(`button-archive-${item(1).messageId}`),
+    ).toBeTruthy();
+    const classes = Array.from(container.querySelectorAll("[class]")).map(
+      (el) => el.getAttribute("class") ?? "",
+    );
+    expect(classes.length).toBeGreaterThan(10);
+    const legacy = classes.filter((c) =>
+      /(^|\s)(text-xs|text-sm|text-muted-foreground|bg-muted\/40|bg-primary|text-lyc-meta|text-lyc-meta-lg|text-\[1[0-5]px\])(\s|$)/.test(
+        c,
+      ),
+    );
+    expect(legacy).toEqual([]);
+    expect(screen.getByTestId("notifications-heading").className).toContain(
+      "font-lyc-serif",
+    );
+  });
+});

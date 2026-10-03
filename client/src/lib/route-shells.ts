@@ -43,7 +43,8 @@ export type RightPanelWidth = 360 | 340 | 320;
  * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
  * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53; /tests, /tests/:sessionId
- * and /tests/:sessionId/report, UI-54; /calendar, UI-55; /chat, UI-56; /mastery, UI-57). The timed exam module
+ * and /tests/:sessionId/report, UI-54; /calendar, UI-55; /chat, UI-56; /mastery, UI-57; /upgrade,
+ * /profile, /help and /notifications, UI-58). The timed exam module
  * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
@@ -133,10 +134,13 @@ export const STUDENT_ROUTE_SHELLS = {
   // UI-57 (2026-10-03): the Mastery page is rebuilt on the student tokens only; off the light
   // lock. No right panel and no footer (UI-41 route table; DESIGN.md §2 lists neither for it).
   "/mastery": app(null, false, "column", null),
-  "/upgrade": app(null, false),
-  // Settings: no right panel (DESIGN.md §4), footer yes (§2).
-  "/profile": app(null, true),
-  "/notifications": app(null, false),
+  // UI-58 (2026-10-03): the plans page, Settings, Help and Notifications are rebuilt on the
+  // student tokens only; off the light lock. Settings and Help: no right panel (DESIGN.md §4),
+  // footer yes (§2). The plans page and Notifications: no panel, no footer (UI-41 route table).
+  "/upgrade": app(null, false, "column", null),
+  "/profile": app(null, true, "column", null),
+  "/help": app(null, true, "column", null),
+  "/notifications": app(null, false, "column", null),
   // Focus shell: the runners, the exam session and report pages.
   // UI-53 (2026-10-03): the practice runner is rebuilt on the student tokens only; off the light
   // lock. The review runner keeps it: its LISA panel still draws partly with the app-wide light

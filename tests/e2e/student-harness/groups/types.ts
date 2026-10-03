@@ -95,6 +95,18 @@ export type Shot = {
    */
   holdRequest?: { method: "POST" | "GET"; path: string };
   /**
+   * UI-58: a request the browser answers itself with a fixed body, for a page whose real answer
+   * needs a third party the harness never calls (`GET /api/billing/plans` reads prices from
+   * Stripe, and the harness has no Stripe key). The request never reaches the harness server; the
+   * index says so, with `reason`. The body must be built from the shared response schema.
+   */
+  fulfillRequest?: {
+    method: "GET";
+    path: string;
+    body: unknown;
+    reason: string;
+  };
+  /**
    * A click path's proof: the pathname the page must land on after `steps` (a RegExp source).
    * The capture fails if it lands anywhere else, and the index records the expectation next to
    * the path it saw.

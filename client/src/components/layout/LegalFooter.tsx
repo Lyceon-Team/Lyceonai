@@ -6,14 +6,14 @@
  * Full-Length, Settings and Help (chosen per route in `lib/route-shells.ts`). 14px, muted,
  * underlined on hover, links to the existing public legal routes.
  *
- * Help: no Help page is routed yet (the prototype has one; no register row builds it). Until it
- * lands, "Help" and "Help and FAQs" go to the legal hub, which holds every link the footer would
- * otherwise carry. `HELP_PATH` is the one line to change. Listed as an owner question in the UI-41
- * report.
+ * Help: `HELP_PATH` is the one target of the rail's Help item, the avatar menu's Help and this
+ * footer's "Help and FAQs". OQ-46 (owner ruling, Karl, 2026-10-03) kept it on the legal hub
+ * "until the Help page lands in Wave 5"; the Help page landed with UI-58 (2026-10-03), so it now
+ * points there.
  */
 import { Link } from "wouter";
 
-export const HELP_PATH = "/legal";
+export const HELP_PATH = "/help";
 
 const LINK_CLASS =
   "text-lyc-muted no-underline hover:text-lyc-ink-strong hover:underline";

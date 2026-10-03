@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   getSupabaseAdmin,
   requireRequestUser,
+  requireStudentAccount,
 } from "../middleware/supabase-auth";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
@@ -23,6 +24,11 @@ import {
   dateOfBirthSchema,
   setDateOfBirthRequestSchema,
 } from "../../packages/shared/src/profile-role-choice-schema";
+import {
+  displayNameSchema,
+  profileNameUpdateRequestSchema,
+  type ProfileNameUpdateResponse,
+} from "../../packages/shared/src/profile-name-schema";
 import {
   decideRoleChoice,
   dateOfBirthRefusal,
@@ -179,7 +185,8 @@ async function resolveHasPassword(
 }
 
 const profileCompletionSchema = z.object({
-  displayName: z.string().trim().min(1).max(120),
+  // OQ-28 (UI-58): the one display-name rule, shared with the Settings name save.
+  displayName: displayNameSchema,
   role: z.enum(["student", "guardian"]),
   // F-41: a real calendar date, through the shared schema (Brief 8 ruling 6). Not-in-the-future
   // and plausibility need today's date, so `dateOfBirthRefusal` applies them below.
@@ -571,6 +578,90 @@ router.patch("/", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("[PROFILE] Unexpected error:", error);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * PATCH /api/profile/name — Settings → Profile: change your display name, and nothing else.
+ *
+ * @spec [student-UI register OQ-28 (owner ruling, Karl, 2026-10-02: a narrow name-only save that
+ *        leaves `marketingOptIn` alone; "exact shape goes with the Settings migration"); F-54;
+ *        UI-58; Coding Standards §8.1 (auth → parse → domain → serialize), §8.2, §12.1]
+ *        | @implemented [2026-10-03]
+ *
+ * plain English: the session's own profile row gets a new `display_name`. The body is the shared
+ * `.strict()` schema, `{ displayName }` and no other key, so the onboarding PATCH's defaults
+ * (F-54: `marketingOptIn` defaulting to false, `role` required, `profile_completed_at`
+ * re-stamped) cannot reach this write: it updates `display_name` and `updated_at` only.
+ *
+ * Student accounts only, through the canonical `requireStudentAccount` (the student-background
+ * routes' gate): the Settings page that calls it is the student's (a guardian's /profile has no
+ * name editor, and an admin is never onboarded through this surface), so any other role is
+ * refused 403 `ROLE_NOT_PERMITTED` before the body is read; and it ends in the live under-13 link
+ * gate, so an under-13 student with no active guardian link is refused 403
+ * `GUARDIAN_LINK_REQUIRED` (the route is not in the owner-approved allowed set, G2-04). The row
+ * is the session principal's (`req.user.id`); nothing in the body names whose name to change.
+ *
+ * edge cases: the name is never logged (it is personal data); a missing profile row is a 404,
+ * never an insert; a write failure is a 500 carrying the error's code only.
+ */
+router.patch("/name", requireStudentAccount, async (req: Request, res: Response) => {
+  // 1. Auth: the session principal, from the server's own session (requireSupabaseAuth), already
+  //    held to a student account by `requireStudentAccount`.
+  const user = requireRequestUser(req, res);
+  if (!user) return;
+
+  // 2. Parse: the strict shared body. An extra key (marketingOptIn, role …) is a 400.
+  const parsed = profileNameUpdateRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: {
+        code: "INVALID_NAME",
+        message: "Enter a name between 1 and 120 characters.",
+        details: parsed.error.flatten(),
+      },
+    });
+  }
+
+  // 3. Domain: one column (and its timestamp) on the caller's own row.
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({
+        display_name: parsed.data.displayName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id)
+      .select("display_name")
+      .maybeSingle();
+
+    if (error) {
+      logger.error("PROFILE", "name_save_failed", "Name save failed", {
+        requestId: req.requestId,
+        code: error.code ?? "unknown",
+      });
+      return res.status(500).json({
+        error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
+      });
+    }
+    if (!data || typeof data.display_name !== "string") {
+      return res.status(404).json({
+        error: { code: "PROFILE_NOT_FOUND", message: "Profile not found" },
+      });
+    }
+
+    // 4. Serialize: the stored value, nothing else.
+    const body: ProfileNameUpdateResponse = { displayName: data.display_name };
+    return res.json(body);
+  } catch (err: unknown) {
+    logger.error("PROFILE", "name_save_exception", "Name save failed", {
+      requestId: req.requestId,
+      reason: err instanceof Error ? err.message : "unknown",
+    });
+    return res.status(500).json({
+      error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
+    });
   }
 });
 

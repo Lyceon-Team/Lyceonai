@@ -15,26 +15,8 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Modal, ModalClose } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Users, UserMinus } from "lucide-react";
 import { csrfFetch } from "@/lib/csrf";
 import {
   parseApiErrorFromResponse,
@@ -49,9 +31,7 @@ import {
   type StudentGuardianLinkView,
 } from "../../../../packages/shared/src/student-resources";
 
-const STUDENT_GUARDIAN_LINKS_QUERY_KEY = [
-  "student-guardian-links",
-] as const;
+const STUDENT_GUARDIAN_LINKS_QUERY_KEY = ["student-guardian-links"] as const;
 /** G-NEW-11: one cache entry per student, as `studentLinkCodeQueryKey`. */
 function studentGuardianLinksQueryKey(studentId: string) {
   return [...STUDENT_GUARDIAN_LINKS_QUERY_KEY, studentId] as const;
@@ -74,7 +54,23 @@ function guardianLabel(link: StudentGuardianLinkView): string {
   return trimmed.length > 0 ? trimmed : "A guardian";
 }
 
-export function StudentGuardiansPanel({ studentId }: { studentId: string }) {
+/**
+ * UI-58 (2026-10-03): drawn with the student tokens, inside the `.lyc` root of whichever student
+ * shell holds it (Settings → Guardian in the App shell; /guardian-required in the Bare card), and
+ * the confirmation is the student Modal, whose portal carries the same root. Behaviour, requests
+ * and test ids are unchanged. Settings passes `summary` (the OQ-38 sentence) and drops the empty
+ * hint, whose "above" points at a code that sits below the status box there; with no link the
+ * heading is the prototype's "No guardian linked".
+ */
+export function StudentGuardiansPanel({
+  studentId,
+  summary = "People who can see your progress summary. You can remove any of them at any time.",
+  emptyHint = "No guardian is linked to your account. Share your link code above to add one.",
+}: {
+  studentId: string;
+  summary?: string;
+  emptyHint?: string | null;
+}) {
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<StudentGuardianLinkView | null>(null);
   const [removedName, setRemovedName] = useState<string | null>(null);
@@ -117,128 +113,134 @@ export function StudentGuardiansPanel({ studentId }: { studentId: string }) {
   });
 
   const links = data ?? [];
+  const noneLinked = !isLoading && !error && links.length === 0;
 
   return (
-    <Card data-testid="student-guardians-panel">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5" />
-          Your guardians
-        </CardTitle>
-        <CardDescription>
-          People who can see your progress summary. You can remove any of them
-          at any time.
-        </CardDescription>
-      </CardHeader>
+    <div
+      className="flex flex-col gap-4 rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-6 text-lyc-ink sm:px-7"
+      data-testid="student-guardians-panel"
+    >
+      <h3 className="m-0 font-lyc-serif text-[21px] font-semibold tracking-normal text-lyc-ink-strong">
+        {noneLinked ? "No guardian linked" : "Your guardians"}
+      </h3>
+      <p className="m-0 text-[17px] leading-relaxed text-lyc-ink">{summary}</p>
 
-      <CardContent className="space-y-4">
-        {isLoading && (
-          <p className="text-sm text-muted-foreground">
-            Loading your guardians...
-          </p>
-        )}
+      {isLoading && (
+        <p className="m-0 text-lyc-body text-lyc-muted">
+          Loading your guardians...
+        </p>
+      )}
 
-        {error && (
-          <Alert>
-            <AlertDescription data-testid="student-guardians-error">
-              {toUserFacingMessage(error).message}
-            </AlertDescription>
-          </Alert>
-        )}
+      {error && (
+        <p
+          className="m-0 text-lyc-body text-lyc-danger"
+          role="alert"
+          data-testid="student-guardians-error"
+        >
+          {toUserFacingMessage(error).message}
+        </p>
+      )}
 
-        {revoke.error && (
-          <Alert>
-            <AlertDescription data-testid="student-guardians-revoke-error">
-              {toUserFacingMessage(revoke.error).message}
-            </AlertDescription>
-          </Alert>
-        )}
+      {revoke.error && (
+        <p
+          className="m-0 text-lyc-body text-lyc-danger"
+          role="alert"
+          data-testid="student-guardians-revoke-error"
+        >
+          {toUserFacingMessage(revoke.error).message}
+        </p>
+      )}
 
-        {removedName && (
-          <Alert>
-            <AlertDescription data-testid="student-guardians-removed">
-              {removedName} can no longer see your progress. They have been
-              notified.
-            </AlertDescription>
-          </Alert>
-        )}
+      {removedName && (
+        <p
+          className="m-0 text-lyc-body text-lyc-ink"
+          role="status"
+          data-testid="student-guardians-removed"
+        >
+          {removedName} can no longer see your progress. They have been
+          notified.
+        </p>
+      )}
 
-        {!isLoading && !error && links.length === 0 && (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="student-guardians-empty"
-          >
-            No guardian is linked to your account. Share your link code above to
-            add one.
-          </p>
-        )}
+      {noneLinked && emptyHint !== null && (
+        <p
+          className="m-0 text-lyc-body text-lyc-muted"
+          data-testid="student-guardians-empty"
+        >
+          {emptyHint}
+        </p>
+      )}
 
-        {links.length > 0 && (
-          <ul className="divide-y" data-testid="student-guardians-list">
-            {links.map((link) => (
-              <li
-                key={link.link_id}
-                className="flex items-center justify-between py-3"
-                data-testid={`student-guardian-${link.link_id}`}
+      {links.length > 0 && (
+        <ul
+          className="m-0 flex list-none flex-col divide-y divide-lyc-rule border-t border-lyc-rule p-0"
+          data-testid="student-guardians-list"
+        >
+          {links.map((link) => (
+            <li
+              key={link.link_id}
+              className="flex flex-wrap items-center justify-between gap-3 py-3"
+              data-testid={`student-guardian-${link.link_id}`}
+            >
+              <div>
+                <p className="m-0 text-[17px] font-semibold text-lyc-ink">
+                  {guardianLabel(link)}
+                </p>
+                <p className="m-0 text-lyc-meta-lg text-lyc-muted">
+                  Linked {new Date(link.linked_at).toLocaleDateString()}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="lyc-outline"
+                data-testid={`student-guardian-remove-${link.link_id}`}
+                disabled={revoke.isPending}
+                onClick={() => {
+                  setRemovedName(null);
+                  setPending(link);
+                }}
               >
-                <div>
-                  <p className="font-medium">{guardianLabel(link)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Linked {new Date(link.linked_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid={`student-guardian-remove-${link.link_id}`}
-                  disabled={revoke.isPending}
-                  onClick={() => {
-                    setRemovedName(null);
-                    setPending(link);
-                  }}
-                >
-                  <UserMinus className="h-4 w-4" />
-                  <span className="ml-2">Remove</span>
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* §36.3: "Remove guardian → confirmation". Never one click. */}
-      <AlertDialog
+      <Modal
         open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-      >
-        <AlertDialogContent data-testid="student-guardian-remove-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Remove {pending ? guardianLabel(pending) : "this guardian"}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              They will immediately stop seeing your progress summary and will
-              be notified that the link was removed. You can share a new link
-              code later if you change your mind.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="student-guardian-remove-cancel">
-              Keep guardian
-            </AlertDialogCancel>
-            <AlertDialogAction
+        onOpenChange={(open) => {
+          if (!open) setPending(null);
+        }}
+        title={`Remove ${pending ? guardianLabel(pending) : "this guardian"}?`}
+        description="They will immediately stop seeing your progress summary and will be notified that the link was removed. You can share a new link code later if you change your mind."
+        data-testid="student-guardian-remove-dialog"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="lyc-primary"
               data-testid="student-guardian-remove-confirm"
               disabled={revoke.isPending}
-              onClick={(e) => {
-                e.preventDefault();
+              onClick={() => {
                 if (pending) revoke.mutate(pending);
               }}
             >
               {revoke.isPending ? "Removing..." : "Remove guardian"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
+            </Button>
+            <ModalClose asChild>
+              <Button
+                type="button"
+                variant="lyc-quiet"
+                data-testid="student-guardian-remove-cancel"
+              >
+                Keep guardian
+              </Button>
+            </ModalClose>
+          </>
+        }
+      />
+    </div>
   );
 }
