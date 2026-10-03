@@ -198,7 +198,7 @@ if (asJson) {
   console.log("|---|---|---|---|---|---|---|---|");
   for (const r of rows) {
     console.log(
-      `| ${r.agent} | ${r.path} | ${r.status} | ${r.title.replace(/\|/g, "\\|")} | ${r.selfCanonical ? "yes" : "NO"} | ${r.jsonLd} | ${r.words} | ${r.result} |`,
+      `| ${r.agent} | ${r.path} | ${r.status} | ${r.title.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")} | ${r.selfCanonical ? "yes" : "NO"} | ${r.jsonLd} | ${r.words} | ${r.result} |`,
     );
   }
   console.log("\n| path | status | location | result |");
