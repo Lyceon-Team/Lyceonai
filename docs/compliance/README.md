@@ -18,4 +18,28 @@ reasoning and test evidence live here. Nothing in this folder is published as "e
 | Legal drafts and counsel sign-offs | Industry-standard drafts proposed for counsel, and the recorded sign-off for each | G7 |
 | School agreements | Each school's student data privacy agreement (the SDPC National DPA is the common template) and the terms Lyceon operates within | R33 |
 
-No section has content yet.
+## Legal drafts and counsel sign-offs
+
+Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not published. A draft becomes publishable only after counsel signs off and Karl approves; it is then copied into `legal/<slug>/<version>/`.
+
+| Draft | File | Doc 10 | Status | Counsel sign-off |
+|---|---|---|---|---|
+| Privacy Policy v5 | `legal-drafts/privacy-policy-v5.md` | §9.2 | Awaiting counsel | — |
+| Cookie Policy | `legal-drafts/cookie-policy.md` | §9.10 | Awaiting counsel | — |
+| Cookie banner text | `legal-drafts/cookie-banner-text.md` | §9.11 | Awaiting counsel | — |
+| Children's Online Privacy Notice | `legal-drafts/childrens-privacy-notice.md` | §9.14 | Awaiting counsel | — |
+| AI Content Disclosure | `legal-drafts/ai-content-disclosure.md` | §9.16 | Awaiting counsel | — |
+| California Notice at Collection | `legal-drafts/ca-notice-at-collection.md` | §9.12 | Awaiting counsel | — |
+| California Do-Not-Sell/Share and GPC | `legal-drafts/ca-do-not-sell-share-gpc.md` | §9.13 | Awaiting counsel | — |
+| Marketing Communications Consent | `legal-drafts/marketing-communications-consent.md` | §9.21 | Awaiting counsel | — |
+| Billing Terms v3 | `legal-drafts/billing-terms-v3.md` | — | Awaiting counsel | — |
+| School Data Privacy Addendum | `legal-drafts/school-data-privacy-addendum.md` | — (R33) | Awaiting counsel | — |
+| Parental Consent Mechanism | `legal-drafts/parental-consent-mechanism.md` | §9.15 | Awaiting counsel | — |
+| Sub-Processor List | `legal-drafts/sub-processor-list.md` | §9.18 | Awaiting counsel | — |
+
+Spec departures in these drafts are recorded in SCL-208. Open owner actions:
+- error-monitoring vendor: confirm or turn off;
+- Google Fonts: self-host before Privacy Policy v5 publishes (SEO-1);
+- postal address and telephone, for the children's notice and marketing emails.
+
+The other sections have no content yet.
