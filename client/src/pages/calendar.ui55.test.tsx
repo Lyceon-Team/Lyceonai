@@ -495,6 +495,18 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
     ).toBe("/profile");
   });
 
+  it('says "1 day until your SAT", singular, the day before the test', async () => {
+    await mount("paid", {
+      calendar: () => studentCalendarWeek(TODAY, { testDate: "2026-10-02" }),
+    });
+    const card = await screen.findByTestId("calendar-goal-card");
+    expect(within(card).getByTestId("calendar-countdown").textContent).toBe(
+      "1",
+    );
+    expect(card.textContent).toContain("day until your SAT");
+    expect(card.textContent).not.toContain("days until your SAT");
+  });
+
   it('shows no "Training for" while the dream school is held (OQ-37) and reads no background', async () => {
     await mount("paid");
     const card = await screen.findByTestId("calendar-goal-card");

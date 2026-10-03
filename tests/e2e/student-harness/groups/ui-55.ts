@@ -158,7 +158,7 @@ export const UI_55: PageGroup = {
           },
         },
       ],
-      expectText: "days until your SAT",
+      expectText: "until your SAT",
       fullPage: true,
       prototype: {
         kind: "none",

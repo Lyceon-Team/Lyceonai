@@ -377,7 +377,9 @@ export function GoalCard({
           >
             {daysToTest}
           </span>
-          <span className="text-[17px] text-lyc-ink">days until your SAT</span>
+          <span className="text-[17px] text-lyc-ink">
+            {daysToTest === 1 ? "day" : "days"} until your SAT
+          </span>
           <span
             className="mt-2 rounded-full bg-lyc-lv0-bg px-3 py-1 text-lyc-body font-semibold text-lyc-lv0-ink"
             data-testid="calendar-test-date-pill"
