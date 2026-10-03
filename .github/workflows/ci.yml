@@ -1278,6 +1278,26 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-admin-denied.json \
             --file tests/ci/guardian-admin-denied.pg.ci.test.ts
 
+      # @spec [student-UI register §9 OQ-29, owner ruling (Karl) 2026-10-02: the feature-access map
+      # on GET /api/profile] | @implemented [2026-10-03]
+      # The map's proof (commit 062cfc86) ran in NO job: like every *.pg.ci suite it skips
+      # without PGHOST, and the whole-suite step has none, so "green" meant 6 skipped tests.
+      # Paid all granted; free all locked for plan; paid under-13 LISA locked for age; guardian
+      # null; agrees with requireStudentOnly; the routes' own feature keys. Real route over real
+      # PG; behind the summary gate, so a skipped suite cannot read as green.
+      - name: Feature-access map (OQ-29) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/feature-access-map.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-feature-access-map.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-feature-access-map.json \
+            --file tests/ci/feature-access-map.pg.ci.test.ts
+
       # @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
       # An unrecognised profile role ('tutor'/'teacher') is refused with 403 ROLE_UNRECOGNIZED by
       # the real session middleware, the row is never rewritten, public routes still answer. Real
