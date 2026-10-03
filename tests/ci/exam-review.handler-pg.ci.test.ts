@@ -21,7 +21,8 @@
  *   E5  answering an exam miss in review resolves it exactly like a practice miss:
  *       correct graduates it, wrong requeues it at the back — and the requeued question
  *       is still "from that test" in session mode (provenance, as practice's A9);
- *   E6  partial: an abandoned exam enqueues only modules that were submitted;
+ *   E6  partial: an abandoned exam enqueues only sections that were submitted —
+ *       a section stopped after Module 1 enqueues nothing (SCL-205);
  *   E7  live: an exam that was never scored enqueues nothing and is not in the picker.
  *
  * LIMITS: superuser pg through makePgSupabase, mocked auth. Grants and RLS on the queue
@@ -149,8 +150,7 @@ describe.skipIf(!PG_AVAILABLE)(
            ON a.test_session_id = i.test_session_id AND a.section = i.section
           AND a.module = i.module AND a.ordinal = i.ordinal
         WHERE i.test_session_id = $1
-          AND (   (i.module = '1' AND sec.state IN ('module1_submitted','module2_active','submitted'))
-               OR (i.module <> '1' AND sec.state = 'submitted'))
+          AND sec.state = 'submitted'
           AND NOT public.is_answer_correct(a.answer, i.question_id)
         ORDER BY i.question_id`,
         [sid],
@@ -641,13 +641,30 @@ describe.skipIf(!PG_AVAILABLE)(
         .map((r) => ({ question_id: r.question_id, outcome: r.source_outcome }))
         .sort((a, b) => a.question_id.localeCompare(b.question_id));
       expect(got).toEqual(want);
-      // Nothing from a module that was never reached: Math Module 2.
-      const m2 = await testPg!.query(
-        `SELECT count(*)::int AS n FROM public.test_session_items
-        WHERE test_session_id = $1 AND section = 'M' AND module <> '1'`,
+      // SCL-205: Math stopped after Module 1, so Math queues nothing — though its
+      // Module 1 was served and holds misses. Only the submitted RW section counts.
+      const math = await testPg!.query(
+        `SELECT sec.state,
+                (SELECT count(*)::int FROM public.test_session_items i
+                  WHERE i.test_session_id = $1 AND i.section = 'M' AND i.module = '1') AS m1_served,
+                (SELECT count(*)::int FROM public.test_session_items i
+                  WHERE i.test_session_id = $1 AND i.section = 'M' AND i.module <> '1') AS m2_served
+           FROM public.test_session_sections sec
+          WHERE sec.test_session_id = $1 AND sec.section = 'M'`,
         [partSid],
       );
-      expect(m2.rows[0].n).toBe(0);
+      expect(math.rows[0]).toMatchObject({ state: "module1_submitted", m2_served: 0 });
+      expect(math.rows[0].m1_served).toBeGreaterThan(0);
+      const mathQuestions = new Set(
+        (
+          await testPg!.query(
+            `SELECT question_id FROM public.test_session_items WHERE test_session_id = $1 AND section = 'M'`,
+            [partSid],
+          )
+        ).rows.map((r: { question_id: string }) => r.question_id),
+      );
+      expect(got.filter((r) => mathQuestions.has(r.question_id))).toEqual([]);
+      expect(want.length).toBeGreaterThan(0);
 
       const res = await request(app)
         .get("/api/review/pool")

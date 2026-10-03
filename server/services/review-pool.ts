@@ -121,7 +121,8 @@ async function loadOpenQueueEntries(
  * miss is the open entry while the earlier one carries the session provenance.
  * trade-offs: two reads instead of a join, because PostgREST cannot embed a view.
  * edge cases: `full_length` sessions select exactly like practice ones: the exam's
- * scoring seam (`exam_apply_scored_seams`, SCL-158) writes its wrong and blank items with
+ * scoring seam (`exam_apply_scored_seams`, SCL-158 as amended by SCL-205: submitted sections
+ * only) writes its wrong and blank items with
  * `source_engine = 'full_length'` and `source_session_id` = the test session, so "review
  * this test" is this same filter. An exam that was never scored has no entries, and the
  * caller lands on the ordinary empty-pool response.
