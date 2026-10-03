@@ -1852,6 +1852,26 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-shell.json \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts
 
+      # @spec [Doc-04C_V1.0 §16.3, §15.1; Doc-04A_V2.2 §16.2; SCL-185; owner ruling OQ-30
+      # 2026-10-02] | @implemented [2026-10-03]
+      # GET /api/tests/sessions?state=scored over real exams sat through the real /api/tests
+      # routers: only the caller's scored sessions, newest first (id DESC on a tie), each row
+      # equal to its own /report; the UI-01 403 for an unpaid caller; 400 for any other state;
+      # 401; anti-leak key scan after presence; a score without its disclosure is a 500.
+      # Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Exam scored sessions list → real PG proof (OQ-30)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-scored-sessions.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-scored-sessions.json \
+            --file tests/ci/exam-scored-sessions.handler-pg.ci.test.ts
+
       # @spec [SCL-154 .. SCL-158; E9]
       # One exam through the real /api/tests handlers: the final submit's hand-off
       # scores, then consumes the seams event in a second call; every seam's rows are
