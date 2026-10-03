@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AppShell } from "@/components/layout/app-shell";
 import { GuardianShell } from "@/components/layout/GuardianShell";
 import { guardianPaths } from "@/features/guardian/paths";
 import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
@@ -108,9 +107,10 @@ export default function UserProfile() {
    * G4-08: a guardian's /profile is a guardian page — the guardian shell (one shell on every
    * guardian page, G4-01) with guardian sections only: no Progress tab (the student's own
    * practice figures) and billing pointing to Linked students & billing (G4-10). Chosen by
-   * role for presentation only; every read on this page is authorised server-side.
+   * role for presentation only; every read on this page is authorised server-side. A student's
+   * page gets the App shell from the router (StudentRouteFrame, UI-41), so it adds none here.
    */
-  const Shell = isGuardian ? GuardianShell : AppShell;
+  const Shell = isGuardian ? GuardianShell : Fragment;
   const [roleSwitchTarget, setRoleSwitchTarget] =
     useState<RoleSwitchTarget>("student");
   const [roleSwitchMessage, setRoleSwitchMessage] = useState("");

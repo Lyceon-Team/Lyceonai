@@ -848,8 +848,6 @@ export default function CanonicalPracticePage(props: {
     <PracticeShell
       title={props.title}
       eyebrow={engine.labels.shellEyebrow}
-      backLink={engine.backHref}
-      backLabel={engine.backLabel}
       score={{
         correct: score.correct,
         incorrect: score.incorrect,

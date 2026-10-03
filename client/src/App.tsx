@@ -22,7 +22,11 @@ import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
 import { FullPageLoader } from "@/components/student-ui";
+import { Button } from "@/components/ui/button";
+import { BareCard } from "@/components/layout/BareCardShell";
+import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
+import { useInAppHistoryTracking } from "@/lib/in-app-history";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
@@ -52,29 +56,60 @@ const ExamReportPage = lazy(
 function TestsHomeRoute() {
   return (
     <RequireRole allow={["student", "admin"]}>
-      <TestsHomePage />
+      <StudentRouteFrame route="/tests">
+        <TestsHomePage />
+      </StudentRouteFrame>
     </RequireRole>
   );
 }
 function ExamSessionRoute() {
   return (
     <RequireRole allow={["student", "admin"]}>
-      <ExamSessionPage />
+      <StudentRouteFrame route="/tests/:sessionId">
+        <ExamSessionPage />
+      </StudentRouteFrame>
     </RequireRole>
   );
 }
 function ExamModuleRoute() {
   return (
     <RequireRole allow={["student", "admin"]}>
-      <ExamModulePage />
+      <StudentRouteFrame route="/tests/:sessionId/:section/:module">
+        <ExamModulePage />
+      </StudentRouteFrame>
     </RequireRole>
   );
 }
 function ExamReportRoute() {
   return (
     <RequireRole allow={["student", "admin"]}>
-      <ExamReportPage />
+      <StudentRouteFrame route="/tests/:sessionId/report">
+        <ExamReportPage />
+      </StudentRouteFrame>
     </RequireRole>
+  );
+}
+// UI-41: the three unguarded student routes, wrapped in their shell at module scope (an inline
+// arrow would remount the page on every Switch render).
+function LoginRoute() {
+  return (
+    <StudentRouteFrame route="/login">
+      <Login />
+    </StudentRouteFrame>
+  );
+}
+function AccountRecoverRoute() {
+  return (
+    <StudentRouteFrame route="/account/recover">
+      <AccountRecover />
+    </StudentRouteFrame>
+  );
+}
+function NotFoundRoute() {
+  return (
+    <StudentRouteFrame route="*">
+      <NotFound />
+    </StudentRouteFrame>
   );
 }
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
@@ -122,12 +157,14 @@ const ROUTE_FALLBACK = (
 
 /** The route switch — exported so the guardian route walk (G4-01) renders the real table. */
 export function Router() {
+  // UI-41: the Focus shell's back arrow asks whether the entry behind is an in-app page.
+  useInAppHistoryTracking();
   return (
     <Suspense fallback={ROUTE_FALLBACK}>
       <Switch>
         {/* Public routes */}
         <Route path="/" component={HomePage} />
-        <Route path="/login" component={Login} />
+        <Route path="/login" component={LoginRoute} />
 
         {/* Signup redirects to login page (signup happens via modal/form on login page) */}
         <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
@@ -165,7 +202,9 @@ export function Router() {
           path="/dashboard"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <LyceonDashboard />
+              <StudentRouteFrame route="/dashboard">
+                <LyceonDashboard />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -173,7 +212,9 @@ export function Router() {
           path="/chat"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <Chat />
+              <StudentRouteFrame route="/chat">
+                <Chat />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -181,7 +222,9 @@ export function Router() {
           path="/practice"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <Practice />
+              <StudentRouteFrame route="/practice">
+                <Practice />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -189,7 +232,9 @@ export function Router() {
           path="/practice/topics"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <BrowseTopics />
+              <StudentRouteFrame route="/practice/topics">
+                <BrowseTopics />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -206,7 +251,9 @@ export function Router() {
           path="/practice/session/:sessionId"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <ResumePractice />
+              <StudentRouteFrame route="/practice/session/:sessionId">
+                <ResumePractice />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -227,7 +274,9 @@ export function Router() {
           path="/score-report"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <ScoreReport />
+              <StudentRouteFrame route="/score-report">
+                <ScoreReport />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -236,7 +285,9 @@ export function Router() {
           path="/calendar"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <Calendar />
+              <StudentRouteFrame route="/calendar">
+                <Calendar />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -250,7 +301,9 @@ export function Router() {
           path="/mastery"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <MasteryPage />
+              <StudentRouteFrame route="/mastery">
+                <MasteryPage />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -258,7 +311,9 @@ export function Router() {
           path="/upgrade"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <UpgradePage />
+              <StudentRouteFrame route="/upgrade">
+                <UpgradePage />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -267,7 +322,9 @@ export function Router() {
           path="/review"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <Review />
+              <StudentRouteFrame route="/review">
+                <Review />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -275,7 +332,9 @@ export function Router() {
           path="/review/session/:sessionId"
           component={() => (
             <RequireRole allow={["student", "admin"]}>
-              <ResumeReview />
+              <StudentRouteFrame route="/review/session/:sessionId">
+                <ResumeReview />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -284,7 +343,9 @@ export function Router() {
           path="/profile"
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
-              <UserProfile />
+              <StudentRouteFrame route="/profile">
+                <UserProfile />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -293,7 +354,9 @@ export function Router() {
           path="/guardian-required"
           component={() => (
             <RequireRole allow={["student"]}>
-              <GuardianRequired />
+              <StudentRouteFrame route="/guardian-required">
+                <GuardianRequired />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -301,7 +364,9 @@ export function Router() {
           path="/profile/complete"
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
-              <ProfileComplete />
+              <StudentRouteFrame route="/profile/complete">
+                <ProfileComplete />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -309,17 +374,21 @@ export function Router() {
           path="/update-password"
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
-              <UpdatePassword />
+              <StudentRouteFrame route="/update-password">
+                <UpdatePassword />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
         {/* §40.4 deletion recovery — public (token-gated, no session needed) */}
-        <Route path="/account/recover" component={AccountRecover} />
+        <Route path="/account/recover" component={AccountRecoverRoute} />
         <Route
           path="/notifications"
           component={() => (
             <RequireRole allow={["student", "guardian", "admin"]}>
-              <NotificationsPage />
+              <StudentRouteFrame route="/notifications">
+                <NotificationsPage />
+              </StudentRouteFrame>
             </RequireRole>
           )}
         />
@@ -357,7 +426,7 @@ export function Router() {
         ))}
 
         {/* 404 */}
-        <Route component={NotFound} />
+        <Route component={NotFoundRoute} />
       </Switch>
     </Suspense>
   );
@@ -385,23 +454,26 @@ export class ErrorBoundary extends Component<
 
   render() {
     if (this.state.hasError) {
+      // UI-41: the error screen is a Bare card (DESIGN.md §2). BareCard reads no context, so it
+      // renders here, above every provider. Light-locked like every un-migrated surface.
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#EAF0FF] to-white p-6">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
-            <h1 className="text-2xl font-semibold text-neutral-800 mb-4">
+        <BareCard themeLock="light">
+          <div className="text-center">
+            <h1 className="mb-4 font-lyc-serif text-lyc-section font-semibold text-lyc-ink-strong">
               Something went wrong
             </h1>
-            <p className="text-neutral-600 mb-6">
+            <p className="mb-6 text-lyc-body text-lyc-muted">
               An unexpected error occurred. Reloading the page usually fixes it.
             </p>
-            <button
+            <Button
+              type="button"
+              variant="lyc-primary"
               onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-[#3C6DF0] text-white rounded-lg hover:brightness-110 transition-all"
             >
               Reload Page
-            </button>
+            </Button>
           </div>
-        </div>
+        </BareCard>
       );
     }
 
@@ -420,7 +492,12 @@ function DeletionGate({ children }: { children: ReactNode }) {
   const { user } = useSupabaseAuth();
   const [location] = useLocation();
   if (user?.pendingDeletion && location !== "/account/recover") {
-    return <PendingDeletionScreen />;
+    // UI-41: the pending-deletion screen is a Bare card (DESIGN.md §2).
+    return (
+      <BareCard themeLock="light">
+        <PendingDeletionScreen />
+      </BareCard>
+    );
   }
   return <>{children}</>;
 }

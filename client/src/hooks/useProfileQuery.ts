@@ -76,6 +76,11 @@ export type ProfileHydration =
       authenticated: true;
       featureFlags?: { accountDeletionLifecycleV2?: boolean };
       pendingDeletion?: { scheduledHardDeleteAt: string } | null;
+      /**
+       * OQ-29: the student's feature-access map (null for every other role). Parsed by its one
+       * consumer, `useFeatureAccess`, against the shared `featureAccessMapSchema`.
+       */
+      featureAccess?: unknown;
       user: ProfileHydrationUser | null;
     }
   | {

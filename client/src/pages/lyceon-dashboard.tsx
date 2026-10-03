@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { Link, useLocation } from "wouter";
-import { AppShell } from "@/components/layout/app-shell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -112,15 +111,13 @@ export default function LyceonDashboard() {
     error: kpiError,
   } = useProgressKpis<KpiResponse>(!!user);
 
-  const {
-    data: estimateData,
-    isLoading: estimateLoading,
-  } = useQuery<EstimateResponse>({
-    queryKey: ["/api/progress/projection"],
-    queryFn: fetchScoreEstimate,
-    enabled: !!user,
-    staleTime: 60000,
-  });
+  const { data: estimateData, isLoading: estimateLoading } =
+    useQuery<EstimateResponse>({
+      queryKey: ["/api/progress/projection"],
+      queryFn: fetchScoreEstimate,
+      enabled: !!user,
+      staleTime: 60000,
+    });
 
   // Vertical-B Slice 2: 402→200 contract change — the projection endpoint
   // now returns 200 with estimateStatus discriminator. Premium lock is conveyed
@@ -192,7 +189,7 @@ export default function LyceonDashboard() {
   };
 
   return (
-    <AppShell showFooter>
+    <>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         <div className="mb-10">
           <h1
@@ -506,8 +503,7 @@ export default function LyceonDashboard() {
               <div className="rounded-lg bg-muted/45 p-4 space-y-2">
                 <p className="text-sm font-medium">Current live signals</p>
                 <p className="text-sm text-muted-foreground">
-                  {weekQuestions} questions solved this week
-.
+                  {weekQuestions} questions solved this week .
                 </p>
               </div>
 
@@ -532,6 +528,6 @@ export default function LyceonDashboard() {
           </Card>
         </section>
       </div>
-    </AppShell>
+    </>
   );
 }

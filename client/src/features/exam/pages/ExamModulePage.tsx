@@ -480,7 +480,9 @@ function ModuleRunner(props: {
   ) : null;
 
   return (
-    <div className="exam-root flex h-screen flex-col" data-testid="exam-module">
+    // UI-41: h-full, not h-screen: the Focus shell's top bar sits above, and its <main> is the
+    // remaining height.
+    <div className="exam-root flex h-full flex-col" data-testid="exam-module">
       <div ref={headerRef} className="shrink-0">
         <ExamHeader section={section} module={module} timer={<ExamTimer remainingMs={clock.remainingMs} />} tools={tools} />
       </div>

@@ -49,9 +49,6 @@ vi.mock("wouter", () => ({
   useLocation: () => ["/practice", vi.fn()],
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
-vi.mock("@/components/layout/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 vi.mock("@/hooks/useActiveSessions", () => ({
   useActiveSessions: () => ({
     sessions: [],

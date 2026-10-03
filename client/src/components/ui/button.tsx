@@ -10,8 +10,9 @@ import { cn } from "@/lib/utils";
  * plain English: the one Button. The student variants (`lyc-*`) and sizes extend it rather than
  * forking a second button. The focus ring for them comes from the variant classes below (3px
  * --focus outline, 2px offset), and the box-shadow ring of the base classes is switched off.
+ * Exported (UI-41) so the shells' links take the same ring instead of a second copy of it.
  */
-const LYC_FOCUS =
+export const LYC_FOCUS =
   "transition-none focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-lyc-focus focus-visible:ring-0 focus-visible:ring-offset-0";
 
 const buttonVariants = cva(
