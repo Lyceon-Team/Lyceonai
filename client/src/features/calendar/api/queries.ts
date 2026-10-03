@@ -27,6 +27,12 @@ import type {
   StreakSummary,
 } from "@lyceon/shared/calendar";
 import { calendarKeys } from "./keys";
+// @spec [student-UI register UI-44; §2 Free versus paid, Step 2 ruling 3; Doc 05F §15, §17.5]
+// | @implemented [2026-10-03] | plain English: every calendar read and write carries the inline
+// opt-out, so the app-wide upgrade modal stays closed on a calendar denial: the calendar page
+// renders its own upsell (ruling 3). Exam forms read inside the calendar sheets are the exam's
+// query, not the calendar's, and keep the modal.
+import { ENTITLEMENT_DENIAL_INLINE_META } from "@/components/billing/upgrade-modal";
 import { fetchCalendar, fetchGuardianCalendar, fetchStreak } from "./client";
 import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
 
@@ -61,6 +67,7 @@ export function useCalendar(
 ): UseQueryResult<CalendarResponse, Error> {
   const timezone = deviceTimezone();
   return useQuery<CalendarResponse, Error>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     queryKey: calendarKeys.range(from, to, timezone),
     queryFn: () => fetchCalendar(from, to, timezone),
     enabled: options?.enabled ?? true,
@@ -117,6 +124,7 @@ export function usePrefetchAdjacentRange(
       for (const neighbour of neighbours) {
         const range = rangeForView(view, neighbour);
         void client.prefetchQuery({
+          meta: ENTITLEMENT_DENIAL_INLINE_META,
           queryKey: calendarKeys.range(range.from, range.to, timezone),
           queryFn: () => fetchCalendar(range.from, range.to, timezone),
           staleTime: QUERY_FRESHNESS.calendarRange.staleTime,
@@ -149,6 +157,7 @@ export function useStreak(options?: {
   enabled?: boolean;
 }): UseQueryResult<StreakSummary, Error> {
   return useQuery<StreakSummary, Error>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     queryKey: calendarKeys.streak(),
     queryFn: fetchStreak,
     enabled: options?.enabled ?? true,
@@ -172,6 +181,7 @@ export function useGuardianCalendar(
   options?: { enabled?: boolean },
 ): UseQueryResult<GuardianCalendarResponse, Error> {
   return useQuery<GuardianCalendarResponse, Error>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     queryKey: calendarKeys.guardianRange(studentId, from, to),
     queryFn: () => fetchGuardianCalendar(studentId, from, to),
     enabled: (options?.enabled ?? true) && studentId.length > 0,

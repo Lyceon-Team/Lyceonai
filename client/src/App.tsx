@@ -9,6 +9,7 @@ import {
 } from "@/contexts/SupabaseAuthContext";
 import { PendingDeletionScreen } from "@/components/account-deletion/PendingDeletionScreen";
 import { UIProvider } from "@/components/providers/ui-provider";
+import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { Analytics } from "@vercel/analytics/react";
 
 import { analyticsBeforeSend } from "./lib/analytics-surface";
@@ -424,6 +425,23 @@ function DeletionGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * @spec [student-UI register UI-44; §2 Free versus paid; SCL-185; OQ-29; OQ-39(e); DESIGN.md §3]
+ * | @implemented [2026-10-03]
+ * plain English: the one upgrade modal, mounted once inside the query client so its denial
+ * listener sees every query and mutation. It auto-opens on `entitlement_required` for a student
+ * only: a guardian's per-student reads answer the same body, and this is the student's modal. A
+ * display choice; the server decides every request.
+ */
+function StudentUpgradeModal({ children }: { children: ReactNode }) {
+  const { user } = useSupabaseAuth();
+  return (
+    <UpgradeModalProvider autoOpenOnDenial={user?.role === "student"}>
+      {children}
+    </UpgradeModalProvider>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
@@ -431,9 +449,11 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <SupabaseAuthProvider>
             <UIProvider>
-              <DeletionGate>
-                <Router />
-              </DeletionGate>
+              <StudentUpgradeModal>
+                <DeletionGate>
+                  <Router />
+                </DeletionGate>
+              </StudentUpgradeModal>
             </UIProvider>
           </SupabaseAuthProvider>
         </QueryClientProvider>
