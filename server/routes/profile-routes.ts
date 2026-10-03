@@ -18,6 +18,7 @@ import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state";
+import { hasPasswordIdentity } from "../lib/password-credentials";
 import {
   dateOfBirthSchema,
   setDateOfBirthRequestSchema,
@@ -132,6 +133,51 @@ function outstandingLegalDocs(
   return outstanding;
 }
 
+/**
+ * @spec [student-UI register §9 OQ-26, owner ruling (Karl) 2026-10-02: `hasPassword` on
+ *        GET /api/profile; register F-38 (Google-only accounts have no password to change);
+ *        Coding Standards §12.1] | @implemented [2026-10-03]
+ *
+ * plain English: does this account sign in with a password? Answered by `hasPasswordIdentity`,
+ * the SAME predicate `POST /api/auth/change-password` (and `/update-password`) refuse with
+ * `NO_PASSWORD_IDENTITY`, so Settings hiding "Change password" and the route refusing it cannot
+ * disagree. A display hint only; the password routes still enforce.
+ *
+ * Cost: one GoTrue admin read (`auth.admin.getUserById`) per profile load — the identities are
+ * not on the request's user. It is started before the profile's own database reads and awaited
+ * at the end, so it overlaps them rather than adding a sequential round trip.
+ *
+ * Failure: `null`, logged at ERROR with the request id only. NEVER THROWS INTO THE PROFILE
+ * RESPONSE: this endpoint is the sign-in hydration path (see `outstandingLegalDocs` for the
+ * outage that posture came from), and an unreadable identity list is not a reason to refuse an
+ * account. `null` is "unknown", never a guess: `true` would offer a form the route refuses,
+ * `false` would hide a working one. Trade-off: the ruling names `boolean`; `null` is the one
+ * extra value, and only on a failed read.
+ */
+async function resolveHasPassword(
+  userId: string,
+  requestId: string | undefined,
+): Promise<boolean | null> {
+  try {
+    return await hasPasswordIdentity(userId);
+  } catch (err: unknown) {
+    logger.error(
+      "PROFILE",
+      "has_password_unavailable",
+      "Could not read the account's identities; hasPassword is null",
+      undefined,
+      {
+        requestId,
+        reason:
+          err instanceof Error && err.message === "identity_read_failed"
+            ? "identity_read_failed"
+            : "unexpected",
+      },
+    );
+    return null;
+  }
+}
+
 const profileCompletionSchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   role: z.enum(["student", "guardian"]),
@@ -153,6 +199,10 @@ router.get("/", async (req: Request, res: Response) => {
     if (!user) {
       return;
     }
+
+    // OQ-26: started now, awaited at the end, so the GoTrue read overlaps the database reads.
+    // Never rejects (see `resolveHasPassword`), so an early return below leaves nothing unhandled.
+    const hasPasswordRead = resolveHasPassword(user.id, req.requestId);
 
     const supabase = getSupabaseAdmin();
 
@@ -241,6 +291,7 @@ router.get("/", async (req: Request, res: Response) => {
     // OQ-29 (owner ruling 2026-10-02): the rail locks and the upgrade-vs-age choice, computed by
     // each gated route's own predicate. A display hint; every route still enforces.
     const featureAccess = await resolveFeatureAccess(user);
+    const hasPassword = await hasPasswordRead;
 
     return res.json({
       authenticated: true,
@@ -269,6 +320,9 @@ router.get("/", async (req: Request, res: Response) => {
         // documents this person owes, their current version and title from
         // legal/, and what they last accepted. The client is told, never asked.
         outstandingLegal,
+        // OQ-26 (owner ruling 2026-10-02): false for a Google-only account, so Settings hides
+        // "Change password"; null only when the identity read failed (see `resolveHasPassword`).
+        hasPassword,
       },
     });
   } catch (error: any) {

@@ -64,6 +64,11 @@ export type ProfileHydrationUser = {
   guardianConsentRequired: boolean;
   /** Parsed by its consumer against `outstandingLegalSchema`; never trusted as typed here. */
   outstandingLegal: unknown;
+  /**
+   * OQ-26: does the account sign in with a password (false: Google-only, so Settings hides
+   * "Change password"). `null` when the server could not read the identities: unknown, not false.
+   */
+  hasPassword: boolean | null;
 };
 
 export type ProfileHydration =
