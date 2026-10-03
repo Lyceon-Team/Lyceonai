@@ -43,6 +43,7 @@ export const examSessionStateSchema = z.enum([
   "abandoned_final",
   "partial_scored_abandoned",
 ]);
+export type ExamSessionState = z.infer<typeof examSessionStateSchema>;
 
 export const examSectionStateSchema = z.enum([
   "not_started",

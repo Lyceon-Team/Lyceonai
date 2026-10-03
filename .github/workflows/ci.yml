@@ -151,6 +151,14 @@ jobs:
       - name: Boot probe self-test (proves each failure mode turns it red)
         run: bash scripts/ci/boot-probe.selftest.sh
 
+      # Register §8 F-59: the page CSP in vercel.json must allow exactly the inline scripts the
+      # BUILT page ships (the source-file test cannot see what Vite writes).
+      - name: Page CSP matches the built inline scripts (F-59)
+        run: node scripts/ci/page-csp-built-hash-gate.mjs
+
+      - name: Page CSP gate self-test (proves each rule turns it red)
+        run: bash scripts/ci/page-csp-built-hash-gate.selftest.sh
+
       # @spec [Codex audit Finding 4] The worker's tsconfig uses NodeNext, which
       # rejects extensionless relative imports (TS2835). The monorepo root build
       # does NOT compile apps/workers/, so a broken import passes CI until
@@ -1879,6 +1887,26 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-guardian-exam.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam.json \
             --file tests/ci/guardian-exam-results.handler-pg.ci.test.ts
+
+      # G5-08: the guardian's exam list, detail and Dashboard card say what the student's own
+      # card and report say. One real session per state (scored, partial, pending, failed,
+      # abandoned, in progress) made by the real exam functions; the student's truth from the
+      # real student route rendered by the student's own components; the guardian's from the
+      # real guardian routes rendered by the real app. Named BY FILE.
+      # @spec [Guardian_Closure_Plan G5-08; Doc 04C §2.6, §12.2, §12.3; SCL-181; SCL-199]
+      # | @implemented [2026-10-02]
+      - name: Guardian exam mirror → real PG proof (G5-08)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-exam-mirror.handler-pg.ci.test.tsx \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-guardian-exam-mirror.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam-mirror.json \
+            --file tests/ci/guardian-exam-mirror.handler-pg.ci.test.tsx
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that

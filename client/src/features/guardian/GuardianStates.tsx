@@ -237,7 +237,9 @@ export function GuardianNoExamsState({ name }: { name: string }): JSX.Element {
   return (
     <StateCard
       testId="guardian-state-no-exams"
-      title={`${name} hasn't finished a full-length practice test yet`}
+      // G5-08: an attempt in progress now shows on the card ("In progress", the student's word),
+      // so this is only ever the student's "Not started": no attempt at all.
+      title={`${name} hasn't started a full-length test yet`}
     >
       Results appear here after they finish one.
     </StateCard>

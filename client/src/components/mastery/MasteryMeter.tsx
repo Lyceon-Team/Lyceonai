@@ -5,7 +5,7 @@ import type {
 import { levelTone } from "@/components/mastery/LevelPill";
 
 /** Five segments: one per level from Foundations (`mastery_level` 0) to Strong (4). */
-const MASTERY_METER_SEGMENTS = 5;
+export const MASTERY_METER_SEGMENTS = 5;
 
 /**
  * How many segments a level fills: `mastery_level` 0–4 fills 1–5, and null — "Not enough
@@ -13,8 +13,22 @@ const MASTERY_METER_SEGMENTS = 5;
  * 2026-08-20 RULE 3): Foundations is a measured level and shows one segment; an unmeasured
  * domain shows an empty meter.
  */
-function masteryMeterFill(level: MasteryLevel): number {
+export function masteryMeterFill(level: MasteryLevel): number {
   return level === null ? 0 : level + 1;
+}
+
+/**
+ * A level's INK: the pill's TEXT tone — the darker shade of the level's hue — as a class, for
+ * painting a fill through `bg-current` (owner review 2026-10-01: the pale background shade read
+ * too faint). Taken from `levelTone` itself, so a meter, a legend swatch and the pill cannot
+ * disagree on a level's colour. Shared with the guardian Dashboard's mastery card (G5-03).
+ */
+export function levelInk(levelKey: MasteryLevelKey): string {
+  return (
+    levelTone(levelKey)
+      .split(" ")
+      .find((c) => c.startsWith("text-")) ?? "text-foreground"
+  );
 }
 
 /**
@@ -44,13 +58,7 @@ export function MasteryMeter({
   displayName: string;
 }): JSX.Element {
   const filled = masteryMeterFill(level);
-  // The pill's TEXT tone — the darker shade of the level's hue — painted as the fill through
-  // `bg-current` (owner review 2026-10-01: the pale background shade read too faint). Taken
-  // from `levelTone` itself, so the meter and the pill cannot disagree on a level's colour.
-  const ink =
-    levelTone(levelKey)
-      .split(" ")
-      .find((c) => c.startsWith("text-")) ?? "text-foreground";
+  const ink = levelInk(levelKey);
   return (
     <span
       role="img"
