@@ -14,6 +14,10 @@
  *   - `.lyc[data-theme-lock="light"]` keeps the light set whatever the setting. The timed exam
  *     module renders with it (DESIGN.md §2: the timed module is light only).
  * The type scale and font families are DESIGN.md §1. Nothing below 14px.
+ *
+ * ONE DELIBERATE DIVERGENCE from the design package: the light `--focus` (F-63, owner ruling
+ * Karl 2026-10-03: the focus ring meets 3:1). The design file still holds #7FA6C9; it is the
+ * owner's design source and is not edited from here. The dark `--focus` is unchanged.
  */
 /*
  * Self-hosted fonts (DESIGN.md §1; UI-12). Approved by the owner 2026-10-02: the two latin-subset
@@ -68,7 +72,10 @@
   --tick: #c9bfa8;
   --danger: #9b2c2c;
   --danger-bg: #fdf2f2;
-  --focus: #7fa6c9;
+  /* F-63 (owner ruling 2026-10-03): darkened from the design package's #7fa6c9 (2.14 to
+     2.56:1 on the light surfaces) to meet 3:1 (WCAG 2.2 SC 1.4.11) on every surface the ring is
+     drawn over, the navy rail included. Same hue and saturation; see the contrast test. */
+  --focus: #4b82b3;
   --step: #b9a67e;
   --ok: #065f46;
   --cat-math-bg: #e8effa;

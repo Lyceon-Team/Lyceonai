@@ -6,7 +6,8 @@
  *        place with no navigation and no call to the gated endpoint; ruling 3: Calendar keeps the
  *        lock as a hint and navigates); OQ-29 (map on GET /api/profile, reason plan | age; under
  *        13 gets the age message); OQ-4 (five tabs; avatar menu Calendar, Settings, Help, Sign
- *        out); DESIGN.md §1 (3px focus ring, nothing below 14px), §2; issue #829 (one anchor per
+ *        out); OQ-47 (bell in the rail above Help, ruled 2026-10-03); OQ-48 (avatar menu order,
+ *        ruled 2026-10-03); DESIGN.md §1 (3px focus ring, nothing below 14px), §2; issue #829 (one anchor per
  *        nav item, with its href)] | @implemented [2026-10-03]
  *
  * THE MAP IS THE SERVER'S. Every fixture below is the output of `resolveFeatureAccess`, the
@@ -363,17 +364,47 @@ describe("mobile (OQ-4)", () => {
     );
   });
 
-  it("the avatar menu holds Calendar, Settings, Help and Sign out", async () => {
-    renderShell(await serverMap({ paid: true, under13: false }));
+  /** The open avatar menu's items, in the order they render. */
+  function openMenuItemIds(): string[] {
     const trigger = screen.getByTestId("button-user-menu");
     trigger.focus();
     fireEvent.keyDown(trigger, { key: "Enter" });
+    return screen
+      .getAllByRole("menuitem")
+      .map((el) => el.getAttribute("data-testid") ?? "");
+  }
+
+  it("the avatar menu reads Calendar, Settings, Help, Sign out, in that order (OQ-48)", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    expect(openMenuItemIds()).toEqual([
+      "menu-calendar",
+      "menu-profile",
+      "menu-help",
+      "menu-logout",
+    ]);
     expect(screen.getByTestId("menu-calendar").textContent).toBe("Calendar");
     expect(screen.getByTestId("menu-profile").textContent).toContain(
       "Settings",
     );
     expect(screen.getByTestId("menu-help").textContent).toBe("Help");
     expect(screen.getByTestId("menu-logout").textContent).toContain("Sign Out");
+  });
+
+  it("an admin keeps the menu at every width, same order, Crisis review before Sign out", async () => {
+    authState = signedIn("admin");
+    renderShell(null);
+    // The admin's menu is not wrapped in lg:hidden (W2-7), and no avatar link replaces it.
+    expect(
+      screen.getByTestId("button-user-menu").closest(".lg\\:hidden"),
+    ).toBeNull();
+    expect(screen.queryByTestId("rail-account")).toBeNull();
+    expect(openMenuItemIds()).toEqual([
+      "menu-calendar",
+      "menu-profile",
+      "menu-help",
+      "menu-crisis-review",
+      "menu-logout",
+    ]);
   });
 });
 
@@ -389,6 +420,24 @@ describe("Help, the account avatar and the bell", () => {
     expect(avatar.getAttribute("href")).toBe("/profile");
     expect(avatar.getAttribute("aria-current")).toBe("page");
     expect(avatar.textContent).toBe("S");
+  });
+
+  it("the bell is in the rail directly above Help, and not hidden below lg (OQ-47)", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    const header = screen.getByTestId("app-shell-header");
+    const bellSlot = within(header).getByTestId("rail-bell");
+    expect(
+      within(bellSlot)
+        .getByTestId("button-notifications")
+        .getAttribute("aria-label"),
+    ).toBe("Notifications");
+    // Directly above Help in the rail column (the header IS the rail at lg).
+    expect(bellSlot.nextElementSibling).toBe(screen.getByTestId("rail-help"));
+    // Reachable on mobile: the slot carries no hide class, so it stays in the top bar below lg.
+    expect(bellSlot.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    expect(bellSlot.closest(".lg\\:hidden")).toBeNull();
+    // Exactly one bell in the shell: not duplicated into the tab bar or the content.
+    expect(screen.getAllByTestId("button-notifications")).toHaveLength(1);
   });
 });
 

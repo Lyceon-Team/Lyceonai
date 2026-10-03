@@ -3,7 +3,8 @@
  * request opens it.
  *
  * @spec [student-UI register UI-44, UI-3B; §2 Free versus paid; SCL-185 (UI-01); OQ-29;
- *        OQ-39(e); DESIGN.md §3 "Upgrade modal"] | @implemented [2026-10-03]
+ *        OQ-39(e); OQ-44 (ruled 2026-10-03); DESIGN.md §3 "Upgrade modal"]
+ *        | @implemented [2026-10-03]
  *
  * plain English: one data table holds every line the modal can show, keyed by the four lockable
  * `canAccessFeature` keys and by the lock reason (`plan` or `age`, OQ-29), so the copy Karl signs
@@ -15,8 +16,12 @@
  *   - Calendar: the prototype has no calendar modal (ruling 3: the calendar page is its own
  *     upsell), so it is the shipped student copy the calendar page already shows, produced by the
  *     canonical `resolveCtaCopy` with the calendar page's own benefit phrase.
- *   - Age (OQ-29): the server's own under-13 tutor refusal ("This feature requires an older
- *     account.", `requireStudentOnly`); the titles are chosen here and listed in the UI-44 report.
+ *   - Age (OQ-29, OQ-44): no new wording. The title is the feature's own approved plan title
+ *     (above) and the body is the server's own under-13 tutor refusal ("This feature requires an
+ *     older account.", `requireStudentOnly`, AGE_RESTRICTION). OQ-44 (Karl, 2026-10-03): "use the
+ *     approved prototype copy (Full-Length, mastery, and LISA's shipped headline). No new
+ *     wording." The two invented age titles ("LISA is for students 13 and older", "Not available
+ *     on your account") were removed under that ruling.
  * "See plans" goes to Settings → Billing (OQ-39(e)); Settings is not a route yet, so the
  * destination is the profile page's billing tab, held in ONE constant.
  *
@@ -48,21 +53,66 @@ type UpgradeModalCopy = {
   readonly body: string;
 };
 
-/** Lines shared by every feature's plan copy (prototype modal). */
+/** Lines shared by every feature's plan copy. Source: the prototype modal (`*.dc.html`). */
 export const UPGRADE_MODAL_SHARED_COPY = {
+  // Source: prototype modal paragraph, e.g. Calendar.dc.html "Included with every paid plan."
   includedLine: "Included with every paid plan.",
+  // Source: prototype modal primary link "See plans".
   primaryLabel: "See plans",
+  // Source: prototype modal close button "Not now".
   secondaryLabel: "Not now",
 } as const;
 
-/** The server's own words for the under-13 tutor refusal (`requireStudentOnly`, AGE_RESTRICTION). */
-const AGE_BODY = "This feature requires an older account.";
+/**
+ * Source: the server's own words for the under-13 tutor refusal (`requireStudentOnly`,
+ * AGE_RESTRICTION, server/middleware/supabase-auth.ts). Not retyped copy: the test asserts it
+ * equals the message the real middleware sends.
+ */
+export const UPGRADE_MODAL_AGE_BODY = "This feature requires an older account.";
 
-/** Doc 05F §15: the calendar page's student copy, from the canonical resolver. */
+/** Source: Doc 05F §15, the calendar page's shipped student copy, from the canonical resolver. */
 const CALENDAR_COPY = resolveCtaCopy(
   { kind: "student_unentitled" },
   { featureBenefit: "your study calendar" },
 );
+
+/**
+ * Source: prototype `LYC_COPY.full` (identical in every *.dc.html that defines it). The test
+ * reads `LYC_COPY` out of the prototype file and asserts equality.
+ */
+const FULL_LENGTH_PLAN_COPY: UpgradeModalCopy = {
+  title: "Full-length practice tests",
+  body: "Timed tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.",
+};
+
+/**
+ * Title source: shipped `LISA_UPGRADE_PITCH.title` (imported). Body source: prototype
+ * `LYC_COPY.lisa.body` (asserted against the prototype file by the test).
+ */
+const LISA_PLAN_COPY: UpgradeModalCopy = {
+  title: LISA_UPGRADE_PITCH.title,
+  body: "Stuck on a question? LISA works through it with you, asking the next question instead of handing you the answer.",
+};
+
+/** Source: prototype `LYC_COPY.mastery` (asserted against the prototype file by the test). */
+const MASTERY_PLAN_COPY: UpgradeModalCopy = {
+  title: "Mastery by domain and skill",
+  body: "See your level in all eight SAT domains and every skill inside them, and how each one moves as you practice.",
+};
+
+/** Source: `CALENDAR_COPY` above (shipped `resolveCtaCopy` output). */
+const CALENDAR_PLAN_COPY: UpgradeModalCopy = {
+  title: CALENDAR_COPY.title,
+  body: CALENDAR_COPY.body,
+};
+
+/**
+ * OQ-44: the age variant composes no sentence of its own. Title = the feature's approved plan
+ * title; body = the server's age message.
+ */
+function ageCopy(plan: UpgradeModalCopy): UpgradeModalCopy {
+  return { title: plan.title, body: UPGRADE_MODAL_AGE_BODY };
+}
 
 export const UPGRADE_MODAL_COPY: Readonly<
   Record<
@@ -71,29 +121,17 @@ export const UPGRADE_MODAL_COPY: Readonly<
   >
 > = {
   exam_full_length: {
-    plan: {
-      title: "Full-length practice tests",
-      body: "Timed tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.",
-    },
-    age: { title: "Not available on your account", body: AGE_BODY },
+    plan: FULL_LENGTH_PLAN_COPY,
+    age: ageCopy(FULL_LENGTH_PLAN_COPY),
   },
-  tutor_access: {
-    plan: {
-      title: LISA_UPGRADE_PITCH.title,
-      body: "Stuck on a question? LISA works through it with you, asking the next question instead of handing you the answer.",
-    },
-    age: { title: "LISA is for students 13 and older", body: AGE_BODY },
-  },
+  tutor_access: { plan: LISA_PLAN_COPY, age: ageCopy(LISA_PLAN_COPY) },
   calendar_access: {
-    plan: { title: CALENDAR_COPY.title, body: CALENDAR_COPY.body },
-    age: { title: "Not available on your account", body: AGE_BODY },
+    plan: CALENDAR_PLAN_COPY,
+    age: ageCopy(CALENDAR_PLAN_COPY),
   },
   mastery_detail: {
-    plan: {
-      title: "Mastery by domain and skill",
-      body: "See your level in all eight SAT domains and every skill inside them, and how each one moves as you practice.",
-    },
-    age: { title: "Not available on your account", body: AGE_BODY },
+    plan: MASTERY_PLAN_COPY,
+    age: ageCopy(MASTERY_PLAN_COPY),
   },
 };
 

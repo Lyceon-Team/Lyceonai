@@ -38,7 +38,17 @@ import type { LockableFeatureKey } from "@lyceon/shared/feature-access";
 import { apiRequest } from "@/lib/queryClient";
 import { useCalendar } from "@/features/calendar/api/queries";
 import { UpgradeModalProvider, useUpgradeModal } from "./UpgradeModal";
-import { UPGRADE_MODAL_COPY, UPGRADE_PLANS_DESTINATION } from "./upgrade-modal";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  UPGRADE_MODAL_COPY,
+  UPGRADE_MODAL_SHARED_COPY,
+  UPGRADE_PLANS_DESTINATION,
+} from "./upgrade-modal";
+import { LISA_UPGRADE_PITCH } from "@/components/tutor/LisaUpgradeCard";
+import { resolveCtaCopy } from "@/lib/billing-cta";
+import { requireStudentOnly } from "../../../../server/middleware/supabase-auth";
 import { sendPaymentRequired } from "../../../../server/lib/http-errors";
 import { sendTutorError } from "../../../../server/services/tutor-error-codes";
 
@@ -412,5 +422,157 @@ describe("UI-44: explicit open, actions and keyboard", () => {
       expect(screen.queryByTestId("upgrade-modal")).toBeNull(),
     );
     await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+});
+
+/**
+ * OQ-44 (Karl, 2026-10-03): "use the approved prototype copy (Full-Length, mastery, and LISA's
+ * shipped headline). No new wording." Every rendered title and body is compared with its SOURCE,
+ * not with the copy table: prototype strings are read out of the prototype's `LYC_COPY`, the LISA
+ * headline and the calendar line are imported from the shipped code that produces them, and the
+ * age body is what the real `requireStudentOnly` sends an under-13 student.
+ */
+const PROTOTYPE_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../docs/plans/student-ui/design/prototype",
+);
+
+type SourceCopy = { title: string; body: string };
+type ProtoCopy = Record<string, SourceCopy>;
+
+/** `LYC_COPY` from every prototype file that defines it; they must all agree. */
+function prototypeLycCopy(): ProtoCopy {
+  const files = fs
+    .readdirSync(PROTOTYPE_DIR)
+    .filter((f) => f.endsWith(".dc.html"));
+  const parsed: ProtoCopy[] = [];
+  for (const file of files) {
+    const src = fs.readFileSync(path.join(PROTOTYPE_DIR, file), "utf8");
+    const start = src.indexOf("const LYC_COPY = {");
+    if (start < 0) continue;
+    const block = src.slice(start, src.indexOf("};", start));
+    const copy: ProtoCopy = {};
+    for (const m of block.matchAll(
+      /(\w+): \{ title: '([^']*)', body: '([^']*)' \}/g,
+    )) {
+      const [, key, title, body] = m;
+      if (key !== undefined && title !== undefined && body !== undefined) {
+        copy[key] = { title, body };
+      }
+    }
+    parsed.push(copy);
+  }
+  const first = parsed[0];
+  if (first === undefined) throw new Error("no prototype defines LYC_COPY");
+  for (const other of parsed) expect(other).toEqual(first);
+  return first;
+}
+
+/** The message the real `requireStudentOnly` sends an under-13 student. */
+async function serverAgeMessage(): Promise<string> {
+  const app = express();
+  app.use((req, _res, next) => {
+    req.requestId = "req-oq44";
+    req.user = {
+      id: STUDENT,
+      email: "s@example.test",
+      display_name: null,
+      role: "student",
+      isAdmin: false,
+      isGuardian: false,
+      actor_id: STUDENT,
+      profile_completed_at: "2026-09-01T00:00:00.000Z",
+      is_under_13: true,
+      guardian_consent: false,
+    } as Express.Request["user"];
+    next();
+  });
+  app.get("/age", requireStudentOnly, (_req, res) => {
+    res.json({ ok: true });
+  });
+  const res = await request(app).get("/age");
+  expect(res.status).toBe(403);
+  const body: unknown = res.body;
+  const message =
+    typeof body === "object" && body !== null && "message" in body
+      ? body.message
+      : undefined;
+  if (typeof message !== "string") throw new Error("no age message served");
+  return message;
+}
+
+function renderedCopy(): SourceCopy {
+  const dialog = screen.getByTestId("upgrade-modal");
+  const describedBy = dialog.getAttribute("aria-describedby") ?? "";
+  return {
+    title: dialog.querySelector("h2")?.textContent ?? "",
+    body: document.getElementById(describedBy)?.textContent ?? "",
+  };
+}
+
+async function approvedSources(): Promise<{
+  plan: Record<LockableFeatureKey, SourceCopy>;
+  ageBody: string;
+}> {
+  const { full, lisa, mastery } = prototypeLycCopy();
+  if (full === undefined || lisa === undefined || mastery === undefined) {
+    throw new Error("prototype LYC_COPY lacks full / lisa / mastery");
+  }
+  const calendar = resolveCtaCopy(
+    { kind: "student_unentitled" },
+    { featureBenefit: "your study calendar" },
+  );
+  return {
+    plan: {
+      exam_full_length: full,
+      tutor_access: { title: LISA_UPGRADE_PITCH.title, body: lisa.body },
+      calendar_access: { title: calendar.title, body: calendar.body },
+      mastery_detail: mastery,
+    },
+    ageBody: await serverAgeMessage(),
+  };
+}
+
+describe("OQ-44: every rendered line traces to an approved source", () => {
+  it.each([
+    ["exam_full_length", "plan"],
+    ["tutor_access", "plan"],
+    ["calendar_access", "plan"],
+    ["mastery_detail", "plan"],
+    ["exam_full_length", "age"],
+    ["tutor_access", "age"],
+    ["calendar_access", "age"],
+    ["mastery_detail", "age"],
+  ] as const)("%s / %s renders its source copy", async (feature, reason) => {
+    const src = await approvedSources();
+    render(
+      <Harness>
+        <Opener feature={feature} reason={reason} />
+      </Harness>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Locked item" }));
+    const shown = renderedCopy();
+    // Presence before equality: the modal is up and both lines are non-empty.
+    expect(shown.title.length).toBeGreaterThan(0);
+    expect(shown.body.length).toBeGreaterThan(0);
+    // The age variant reuses the feature's approved title; it composes no title of its own.
+    expect(shown.title).toBe(src.plan[feature].title);
+    expect(shown.body).toBe(
+      reason === "plan" ? src.plan[feature].body : src.ageBody,
+    );
+  });
+
+  it("the prototype's LISA headline is the shipped one", () => {
+    expect(prototypeLycCopy().lisa?.title).toBe(LISA_UPGRADE_PITCH.title);
+  });
+
+  it("the shared lines occur in the prototype's modal markup", () => {
+    const calendar = fs.readFileSync(
+      path.join(PROTOTYPE_DIR, "Calendar.dc.html"),
+      "utf8",
+    );
+    for (const line of Object.values(UPGRADE_MODAL_SHARED_COPY)) {
+      expect(calendar).toContain(`>${line}</`);
+    }
   });
 });
