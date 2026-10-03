@@ -369,6 +369,36 @@ export const profileUpsertResponseSchema = z
   .strict();
 export type ProfileUpsertResponse = z.infer<typeof profileUpsertResponseSchema>;
 
+// ── GET /api/calendar/profile ───────────────────────────────────────────────
+
+/**
+ * @spec [Doc-05F_V1.0 §15 (API surface), §7.1 `student_study_profile`; SCL-130 (setup
+ *        renders before the entitlement gate); owner ruling OQ-25 (Karl, 2026-10-02,
+ *        clarified), docs/plans/student-ui/student-ui-vertical.md §9]
+ * | @implemented [2026-10-03]
+ *
+ * plain English: the study profile on its own — what the student told us (test date,
+ * target score, schedule) — so a FREE student's goal card, setup form and Settings can
+ * show their saved answers without the paid plan read. `null` is the pre-setup state,
+ * not an error.
+ *
+ * expected outcome: `{ profile: StudyProfile | null }` and nothing else. `.strict()` and
+ * built from `studyProfileSchema` (itself `.strict()`), so no plan block, plan id, version
+ * number or any plan-derived value can ride along: a key this schema does not name fails
+ * the parse rather than reaching the wire.
+ *
+ * trade-offs: dream schools are NOT here. They are not a `student_study_profile` column;
+ * they are served by `GET /api/profile/background` (`studentBackgroundSchema`), and OQ-37
+ * keeps them hidden on the calendar until UI-S8 closes. Copying them in would fork a second
+ * read of one resource.
+ */
+export const profileReadResponseSchema = z
+  .object({
+    profile: studyProfileSchema.nullable(),
+  })
+  .strict();
+export type ProfileReadResponse = z.infer<typeof profileReadResponseSchema>;
+
 // ── POST /plan/regenerate, /days/:date/regenerate, /days/:date/reset ────────
 
 export const idempotentMutationBodySchema = z
