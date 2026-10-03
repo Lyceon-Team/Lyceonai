@@ -10,8 +10,10 @@
  * to `/chat`, and the server also rendered a public "Tutor Transparency" page at
  * the same URL. Both are gone. The SPA route is now a plain redirect to `/chat`,
  * which is role-gated, so a signed-out visitor lands on `/login?next=%2Fchat`
- * and returns to `/chat` after sign-in. The trust pages link to `/chat`, and
- * `/tutor` is no longer advertised as a public page (SSR list, meta, sitemap).
+ * and returns to `/chat` after sign-in. The trust hub does not link to `/tutor`
+ * (its `/chat` card was removed under SEO Wave 1B F6, 2026-10-03, and
+ * `/trust/evidence` under F14), and `/tutor` is no longer advertised as a public
+ * page (SSR list, meta, sitemap).
  *
  * WHY SOURCE TEXT. `App.tsx`'s `Router` is not exported and mounts every page
  * lazily inside one `<Switch>`; the route registration is a fact about the
@@ -79,20 +81,23 @@ describe("UI-04 — /tutor is retired and redirects to /chat", () => {
     expect(loginPathWithReturn("/chat")).toBe("/login?next=%2Fchat");
   });
 
-  it("the trust pages link to /chat, not /tutor", () => {
-    for (const file of [
-      "client/src/pages/trust.tsx",
-      "client/src/pages/trust-evidence.tsx",
-    ]) {
-      const page = source(file);
-      expect(page, `${file} links to /chat`).toMatch(/href="\/chat"/);
-      expect(page, `${file} does not link to /tutor`).not.toMatch(
-        /href="\/tutor"/,
-      );
-      expect(page, `${file} has no developer-path link copy`).not.toContain(
-        "Open /tutor",
-      );
-    }
+  // F6/F14 (2026-10-03): the trust hub's "Tutor Transparency" card (which linked to /chat)
+  // and the /trust/evidence page are removed, so the trust hub is the only trust page left and
+  // it no longer links to the tutor at all. What this guarded still holds: no /tutor link.
+  it("the trust hub does not link to /tutor", () => {
+    const file = "client/src/pages/trust.tsx";
+    const page = source(file);
+    // Presence first: the page still carries its policy links.
+    expect(page, `${file} links to the legal hub`).toMatch(/href="\/legal"/);
+    expect(page, `${file} does not link to /tutor`).not.toMatch(
+      /href="\/tutor"/,
+    );
+    expect(page, `${file} has no developer-path link copy`).not.toContain(
+      "Open /tutor",
+    );
+    expect(
+      existsSync(resolve(REPO, "client/src/pages", "trust-evidence.tsx")),
+    ).toBe(false);
   });
 
   it("/tutor is no longer advertised as a public page (registry, meta, sitemap, prerendered trust hub)", async () => {
@@ -114,7 +119,8 @@ describe("UI-04 — /tutor is retired and redirects to /chat", () => {
     expect(Object.keys(PUBLIC_META)).not.toContain("/tutor");
     expect(site.sitemapXml).not.toContain("https://lyceon.ai/tutor<");
 
-    expect(trustPage?.html).toContain('href="/trust/evidence"');
+    expect(trustPage?.html).toContain('href="/legal"');
+    expect(trustPage?.html).not.toContain('href="/trust/evidence"');
     expect(trustPage?.html).not.toContain('href="/tutor"');
   });
 });

@@ -18,4 +18,4 @@ reasoning and test evidence live here. Nothing in this folder is published as "e
 | Legal drafts and counsel sign-offs | Industry-standard drafts proposed for counsel, and the recorded sign-off for each | G7 |
 | School agreements | Each school's student data privacy agreement (the SDPC National DPA is the common template) and the terms Lyceon operates within | R33 |
 
-No section has content yet.
+Filled so far: **Claim inventory**, `claim-inventory.md` (F6, SEO Wave 1B, 2026-10-03).

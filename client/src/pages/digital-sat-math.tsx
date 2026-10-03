@@ -7,7 +7,9 @@ import {
   BookOpen,
 } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
-import { DIGITAL_SAT_MATH_FAQS } from "@shared/seo/public-meta";
+import { DIGITAL_SAT_MATH_FAQS, faqParagraphs } from "@shared/seo/public-meta";
+import { CB_MATH } from "@shared/seo/sources";
+import { SourceLinks } from "@/components/common/source-links";
 import {
   Container,
   Card,
@@ -18,44 +20,19 @@ import {
 // One copy of this FAQ: the page renders it and its FAQPage JSON-LD is built from it (F1).
 const faqs = DIGITAL_SAT_MATH_FAQS;
 
-const topics = [
-  {
-    name: "Linear Equations",
-    difficulty: "Foundation",
-    coverage: "~13-15 questions",
-  },
-  {
-    name: "Systems of Equations",
-    difficulty: "Foundation",
-    coverage: "~4-6 questions",
-  },
-  {
-    name: "Quadratic Equations",
-    difficulty: "Advanced",
-    coverage: "~6-8 questions",
-  },
-  {
-    name: "Exponential Functions",
-    difficulty: "Advanced",
-    coverage: "~3-4 questions",
-  },
-  {
-    name: "Ratios & Percentages",
-    difficulty: "Data Analysis",
-    coverage: "~5-7 questions",
-  },
-  {
-    name: "Statistics & Probability",
-    difficulty: "Data Analysis",
-    coverage: "~4-6 questions",
-  },
-  {
-    name: "Geometry (Area, Volume)",
-    difficulty: "Geometry",
-    coverage: "~3-5 questions",
-  },
-  { name: "Trigonometry", difficulty: "Geometry", coverage: "~2-3 questions" },
-];
+/**
+ * The four Math content domains, as the College Board names them (CB_MATH).
+ *
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §0 rule 3, §5 F6] | @implemented [2026-10-03]
+ * | plain English: replaces a per-topic table of estimated question counts that the College
+ * Board does not publish (several were wrong). Names only, no counts.
+ */
+const MATH_DOMAINS = [
+  "Algebra",
+  "Advanced Math",
+  "Problem-Solving and Data Analysis",
+  "Geometry and Trigonometry",
+] as const;
 
 export default function DigitalSATMathPage() {
   return (
@@ -79,41 +56,27 @@ export default function DigitalSATMathPage() {
           </h1>
         </div>
 
-        <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-3xl">
-          The Digital SAT Math section tests algebra, advanced math, data
-          analysis, and geometry. With calculator access on all questions,
-          execution and review discipline matter as much as concept knowledge.
-        </p>
+        <div className="mb-12 max-w-3xl">
+          <p className="text-xl text-muted-foreground leading-relaxed">
+            The Digital SAT Math section covers Algebra, Advanced Math,
+            Problem-Solving and Data Analysis, and Geometry and Trigonometry.
+          </p>
+          <SourceLinks sources={[CB_MATH]} />
+        </div>
 
         <Section title="What's Tested on SAT Math">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-3 px-4 font-semibold">Topic</th>
-                  <th className="text-left py-3 px-4 font-semibold">
-                    Category
-                  </th>
-                  <th className="text-left py-3 px-4 font-semibold">
-                    Typical Coverage
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {topics.map((topic, index) => (
-                  <tr key={index} className="border-b border-border">
-                    <td className="py-3 px-4">{topic.name}</td>
-                    <td className="py-3 px-4 text-muted-foreground">
-                      {topic.difficulty}
-                    </td>
-                    <td className="py-3 px-4 text-muted-foreground">
-                      {topic.coverage}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="grid sm:grid-cols-2 gap-4">
+            {MATH_DOMAINS.map((domain) => (
+              <li
+                key={domain}
+                className="flex items-center gap-3 p-4 bg-secondary/50 rounded-xl"
+              >
+                <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0" />
+                <span>{domain}</span>
+              </li>
+            ))}
+          </ul>
+          <SourceLinks sources={[CB_MATH]} />
         </Section>
 
         <Section title="Common SAT Math Mistakes to Avoid">
@@ -125,7 +88,7 @@ export default function DigitalSATMathPage() {
                   Not reading the full question
                 </h3>
                 <p className="text-muted-foreground">
-                  Many students solve for x when the question asks for a
+                  It's easy to solve for x when the question asks for a
                   transformed expression. Re-check the prompt before choosing.
                 </p>
               </div>
@@ -158,7 +121,7 @@ export default function DigitalSATMathPage() {
               href="/blog/common-sat-math-algebra-mistakes"
               className="text-sm font-medium underline underline-offset-2"
             >
-              Read more: Common SAT Math Algebra Mistakes
+              Read more: Common Digital SAT Algebra Mistakes
             </Link>
           </div>
         </Section>
@@ -168,8 +131,8 @@ export default function DigitalSATMathPage() {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0 mt-0.5" />
               <p>
-                <strong>Practice adaptively</strong> so question difficulty
-                stays close to your current level.
+                <strong>Practise at the right level:</strong> questions that
+                challenge you without overwhelming you.
               </p>
             </div>
             <div className="flex items-start gap-3">
@@ -201,7 +164,12 @@ export default function DigitalSATMathPage() {
             {faqs.map((faq, index) => (
               <Card key={index}>
                 <h3 className="font-semibold mb-2">{faq.question}</h3>
-                <p className="text-muted-foreground">{faq.answer}</p>
+                <div className="text-muted-foreground space-y-2">
+                  {faqParagraphs(faq.answer).map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </div>
+                <SourceLinks sources={faq.sources} />
               </Card>
             ))}
           </div>
@@ -228,7 +196,7 @@ export default function DigitalSATMathPage() {
             <Card className="text-center flex flex-col justify-center">
               <h3 className="font-semibold mb-3">Ready to Practice?</h3>
               <p className="text-muted-foreground text-sm mb-4">
-                Start math practice with adaptive flow and guided review.
+                Start math practice with worked explanations.
               </p>
               <Link
                 href="/signup"

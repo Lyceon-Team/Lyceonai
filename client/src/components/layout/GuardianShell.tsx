@@ -73,10 +73,13 @@ export function GuardianShell({
 
 /**
  * G4-07 (R12): the real Lyceon logo, not a graduation-cap icon. The one logo asset,
- * `client/public/lyceon-logo.png`, is a 1024px square — the hexagon-and-book mark above the
- * LYCEON wordmark, on an OPAQUE cream (rgb 250 244 232). At header size the wordmark would be
- * unreadably small, so the viewBox shows only the MARK (centred at 512, 420 of 1024, about
- * 404px tall); the word "Lyceon" beside it is live text. No second asset is made.
+ * `client/public/lyceon-logo.png`, is a square — the hexagon-and-book mark above the
+ * LYCEON wordmark, on an OPAQUE cream (rgb 250 244 232). The <image> below draws it into a
+ * 1024-unit square whatever its pixel size, so the coordinates here are in those units (the
+ * file itself is 512px since SEO Wave 1B F8, 2026-10-03, down from 1024px). At header size the
+ * wordmark would be unreadably small, so the viewBox shows only the MARK (centred at 512, 420
+ * of 1024, about 404 units tall); the word "Lyceon" beside it is live text. No second asset
+ * is made.
  *
  * NO SQUARE BEHIND THE MARK (owner decision 2026-10-01, item 9). Drawn as a plain image, the
  * asset's cream showed as a square on the header's own, lighter cream background, and as a bright

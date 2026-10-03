@@ -109,19 +109,6 @@ routes:
     prerender: true
     indexable: true
     last_modified: 2026-09-29
-  # carried over until F14 removes it
-  - path_pattern: /trust/evidence
-    surface_class: unauth_marketing
-    clarity_allowed: false
-    masking_required: false
-    owning_doc: Doc-10
-    last_classified_at: 2026-10-03
-    is_internal_api: false
-    requires_cloudflare_access: false
-    requires_hmac: false
-    prerender: true
-    indexable: true
-    last_modified: 2026-09-29
   - path_pattern: /legal
     surface_class: unauth_marketing
     clarity_allowed: false
