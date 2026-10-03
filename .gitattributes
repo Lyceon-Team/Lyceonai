@@ -32,3 +32,11 @@
 # -text stores them verbatim; `eol=lf` normalisation would change the hash.
 # scripts/ci/scoring-evidence-packet-check.sh recomputes it on every CI run.
 scripts/ci/fixtures/scoring-v1.0/** -text
+
+# SEO vertical keyword map (docs/marketing/keyword-map/README.md). The CSVs are
+# Google Ads Keyword Planner exports in UTF-16LE and the xlsx is the derived
+# map; all three are committed byte-identical to Karl's inputs and must never
+# be EOL- or encoding-normalised. Scoped to this folder so other CSVs keep
+# their current treatment.
+docs/marketing/keyword-map/**/*.csv binary
+docs/marketing/keyword-map/**/*.xlsx binary
