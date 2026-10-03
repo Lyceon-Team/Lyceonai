@@ -2,7 +2,7 @@ import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
 import { levelFill } from "@/components/mastery/LevelPill";
 
 /** Five segments: one per level from Foundations (`mastery_level` 0) to Strong (4). */
-export const MASTERY_METER_SEGMENTS = 5;
+const MASTERY_METER_SEGMENTS = 5;
 
 /**
  * How many segments a level fills: L0–L4 (`mastery_level` 0–4) fill 1–5, the level index plus
@@ -18,7 +18,7 @@ export const MASTERY_METER_SEGMENTS = 5;
  * (`masteryLevelLabelInvariant`), and one input cannot disagree with itself. Exhaustive, with
  * no `default`, so a seventh level fails the build.
  */
-export function masteryMeterFill(levelKey: MasteryLevelKey): number {
+function masteryMeterFill(levelKey: MasteryLevelKey): number {
   switch (levelKey) {
     case "unmeasured":
       return 0;
@@ -40,7 +40,7 @@ export function masteryMeterFill(levelKey: MasteryLevelKey): number {
  * ordinal of the level on the five-step ladder, never a score or a count of answers; the
  * unmeasured state reads "Mastery: Not enough answers yet", because it is not a level.
  */
-export function masteryMeterLabel(
+function masteryMeterLabel(
   levelKey: MasteryLevelKey,
   displayName: string,
 ): string {
@@ -55,7 +55,7 @@ export function masteryMeterLabel(
  * `compact` are the mastery row's fixed tracks (prototype Main.dc.html 30×10px, gap 6px;
  * Practice.dc.html 26×9px, gap 5px).
  */
-export type MasteryMeterSize = "fill" | "wide" | "compact";
+type MasteryMeterSize = "fill" | "wide" | "compact";
 
 function track(size: MasteryMeterSize): { row: string; seg: string } {
   switch (size) {
