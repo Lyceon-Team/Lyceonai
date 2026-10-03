@@ -26,6 +26,15 @@
  * pill's text tone (`bg-current`). Checked when updating: every text node and every
  * data-testid, aria-label, data-level-key, data-domain, data-filled and role value is the
  * same as before; only the layout classes and the meter's position within the card changed.
+ *
+ * AND AGAIN, 2026-10-03 (student-UI register UI-42; UI-00e: the pill colours become the
+ * level-ramp tokens). `LevelPill` and `MasteryMeter` now draw with the `lyc` tokens (pill
+ * `bg-lyc-lvN-bg text-lyc-lvN-ink border-lyc-lvN-bd`, 14px; unmeasured dashed; filled segments
+ * `bg-lyc-lvN-fill`, empty `bg-lyc-seg-empty`), the segments sit in one aria-hidden wrapper, and
+ * the meter's label reads "level N of 5" (unmeasured: the name alone). Checked when updating:
+ * every text node, data-testid, data-domain and data-level-key is the same as before; only
+ * classes, the meter's aria-label and the wrapper changed. The light values equal the old
+ * Tailwind classes (UI-00e), so the page looks the same apart from the 14px pill.
  */
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

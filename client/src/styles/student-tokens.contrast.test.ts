@@ -23,10 +23,50 @@ function block(selectorStart: string): Record<string, string> {
   return out;
 }
 
+/**
+ * The light set is two blocks since UI-42 (2026-10-03): the level ramp and its two neutrals
+ * moved to a block that also matches `:root`, so the shared `LevelPill` and mastery meter keep
+ * their colours outside the `.lyc` root (the guardian Dashboard). Merged, it is the same 59.
+ */
+const RAMP_BLOCK =
+  ':root,\n.lyc,\n:root[data-theme="dark"] .lyc[data-theme-lock="light"] {';
+
 const SETS = {
-  light: block(".lyc,"),
+  light: { ...block(".lyc,"), ...block(RAMP_BLOCK) },
   dark: block(':root[data-theme="dark"] .lyc:not'),
 };
+
+describe("the level ramp resolves outside the student root", () => {
+  it("declares every --lv token, --seg-empty and --rule-strong on :root, in the light values", () => {
+    expect(css).toContain(RAMP_BLOCK);
+    const ramp = block(RAMP_BLOCK);
+    const names = [
+      "rule-strong",
+      "seg-empty",
+      ...[0, 1, 2, 3, 4].flatMap((n) =>
+        ["fill", "bg", "ink", "bd"].map((t) => `lv${n}-${t}`),
+      ),
+    ];
+    expect(Object.keys(ramp).sort()).toEqual([...names].sort());
+    // UI-00e: the light pill colours are the Tailwind 100/900/200 shades the pill used before.
+    expect([ramp["lv0-bg"], ramp["lv0-ink"], ramp["lv0-bd"]]).toEqual([
+      "#fef3c7",
+      "#78350f",
+      "#fde68a",
+    ]);
+    expect([ramp["lv4-bg"], ramp["lv4-ink"], ramp["lv4-bd"]]).toEqual([
+      "#d1fae5",
+      "#064e3b",
+      "#a7f3d0",
+    ]);
+  });
+
+  it("the dark set still overrides every ramp token inside .lyc", () => {
+    for (const name of Object.keys(block(RAMP_BLOCK))) {
+      expect(SETS.dark[name], name).toBeDefined();
+    }
+  });
+});
 
 type Rgba = [number, number, number, number];
 
