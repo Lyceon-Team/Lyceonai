@@ -34,7 +34,7 @@ We will update this list before adding a new sub-processor that processes person
 |---|---|
 | Supabase | `client/src/lib/supabase.ts:1-24`; `server/lib/supabase-ssr.ts`; `server/middleware/supabase-auth.ts` |
 | Vercel | `vercel.json` (build, crons, routes); `api/index.ts:1`; IP in logs at `server/logger.ts:1014` |
-| Vercel Analytics (to be retired by F10) | `client/src/App.tsx:442`; allow-list in `client/src/lib/analytics-surface.ts` |
+| Vercel Analytics (to be retired by F10) | `client/src/App.tsx:440`; allow-list in `client/src/lib/analytics-surface.ts` |
 | Stripe | `server/lib/stripe/client.ts:38`; `server/routes/billing-routes.ts:204,627,965` |
 | Google Cloud — tutor AI | `apps/workers/tutor-orchestrator/src/lib/vertex-client.ts:220,311`; model endpoint `global` (`apps/workers/tutor-orchestrator/cloudbuild.yaml:10-15`) |
 | Google Cloud — content safety | `server/services/tutor-model-armor.ts:80,300`; `server/services/tutor-crisis.ts:394-424` |
@@ -45,7 +45,7 @@ We will update this list before adding a new sub-processor that processes person
 | Slack | `server/services/crisis-notification.ts:13,96-129` (payload: IDs, reason label, SLA, admin link) |
 | Error-monitoring webhook | `server/logger.ts:685-713` (raw IP, digested user ID); destination "unspecified" in `infra/secret-class-inventory.yaml:211` |
 | **Removed since v4:** Google BigQuery | Never installed; nothing archived (SCL-106; `server/services/retention-sweep.ts:349-355`) |
-| **Not listed, being removed:** Google Fonts | `client/index.html:39-46`; to be self-hosted before Privacy Policy v5 (SEO-1) |
+| **Not listed, being removed:** Google Fonts | `client/index.html:39-48`; to be self-hosted before Privacy Policy v5 (SEO-1) |
 
 ---
 

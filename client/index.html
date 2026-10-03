@@ -18,7 +18,7 @@
       })();
     </script>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
     <!-- Page head (F1). Every public page is prerendered at build by
          scripts/build/prerender.mjs, which replaces everything between these markers with
@@ -39,11 +39,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Only the two families the app renders with: Poppins and Inter (index.css and tokens.css
-         font stacks, tailwind.config.ts, calendar.css). Poppins keeps the previous link's faces.
-         Inter is requested without the opsz axis because the removed index.css @import served
-         that face for weights 400-600 and, loading later, is what rendered them.
-         Student-ui register UI-12, 2026-09-29. -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
+         font stacks, tailwind.config.ts, calendar.css), and only the faces it uses (SEO Wave 1B
+         F8, 2026-10-03). Poppins: 400/500/600/700 (font-normal/medium/semibold/bold), 800 (the
+         legal pages' prose h1), and italic at 400 (<em>, blockquote) and 500 (one
+         `font-medium italic` line). Inter: roman 400-700, for the signed-in calendar and as a
+         fallback. Inter is requested without the opsz axis (student-ui register UI-12,
+         2026-09-29). The page previously requested every Poppins face and Inter's full range. -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>

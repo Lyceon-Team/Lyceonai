@@ -101,6 +101,9 @@ const EXPECTED: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  // SEO Wave 1B F5 (owner answer 8, 2026-10-03): two years, subdomains included, and
+  // deliberately NO `preload` — preload-list submission is hard to undo and is not approved.
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
 };
 
 const PAGE_PATHS = [

@@ -71,8 +71,7 @@ export default function LegalHub() {
               Legal & Trust
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Empowering students to learn with integrity in a
-              technology-assisted world.
+              Our policies and terms.
             </p>
           </div>
 
@@ -91,26 +90,19 @@ export default function LegalHub() {
                           was a second copy of a document's name. */}
                       {trustDoc.title}
                     </CardTitle>
-                    <CardDescription className="text-base">
-                      At Lyceon, we believe technology should strengthen
-                      learning, not replace it. We've built the platform with a
-                      safety-first, integrity-driven foundation.
-                    </CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <div className="grid sm:grid-cols-2 gap-4 mb-6">
                   <div className="flex items-start gap-3">
                     <Badge variant="outline" className="mt-1 shrink-0">
                       1
                     </Badge>
                     <div>
-                      <p className="font-medium text-sm">
-                        Academic Integrity First
-                      </p>
+                      <p className="font-medium text-sm">Academic integrity</p>
                       <p className="text-xs text-muted-foreground">
-                        We help students understand, not bypass learning
+                        See our Honor Code.
                       </p>
                     </div>
                   </div>
@@ -124,19 +116,6 @@ export default function LegalHub() {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         No data selling, no targeted advertising
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Badge variant="outline" className="mt-1 shrink-0">
-                      3
-                    </Badge>
-                    <div>
-                      <p className="font-medium text-sm">
-                        Responsible Technology
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Transparent, supervised, and safety-aware
                       </p>
                     </div>
                   </div>

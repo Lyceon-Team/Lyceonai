@@ -18,6 +18,8 @@ reasoning and test evidence live here. Nothing in this folder is published as "e
 | Legal drafts and counsel sign-offs | Industry-standard drafts proposed for counsel, and the recorded sign-off for each | G7 |
 | School agreements | Each school's student data privacy agreement (the SDPC National DPA is the common template) and the terms Lyceon operates within | R33 |
 
+Filled so far: **Claim inventory**, `claim-inventory.md` (F6, SEO Wave 1B, 2026-10-03); **Legal drafts and counsel sign-offs**, below (G7, 2026-10-03).
+
 ## Legal drafts and counsel sign-offs
 
 Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not published. A draft becomes publishable only after counsel signs off and Karl approves; it is then copied into `legal/<slug>/<version>/`.
@@ -41,5 +43,3 @@ Spec departures in these drafts are recorded in SCL-208. Open owner actions:
 - error-monitoring vendor: confirm or turn off;
 - Google Fonts: self-host before Privacy Policy v5 publishes (SEO-1);
 - postal address and telephone, for the children's notice and marketing emails.
-
-The other sections have no content yet.
