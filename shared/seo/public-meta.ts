@@ -118,7 +118,8 @@ export const DIGITAL_SAT_FAQS: readonly FaqItem[] = [
       PREMIUM feature as free (`server/routes/tutor-runtime.ts` denies every non-entitled profile
       with `entitlement_required`). F6 then named review (free for every tier, SCL-110), dropped
       "expanded guardian visibility" (a guardian sees nothing unless the student is on a paid
-      plan) and keeps "score estimate" (owner, 2026-10-03; Karl to confirm the wording).
+      plan) and names the free tier's score a "diagnostic score estimate" (wording confirmed by
+      Karl, 2026-10-03).
 
       THIS COPY IS THE ONE SEARCH ENGINES QUOTE: it feeds the FAQ structured data. The number
       must match the free card in `home.tsx` (`FREE_DAILY_PRACTICE_QUESTIONS`, from
@@ -127,7 +128,7 @@ export const DIGITAL_SAT_FAQS: readonly FaqItem[] = [
     */
     question: "What is free vs paid?",
     answer:
-      "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test with your score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans.",
+      "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test and your diagnostic score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans.",
   },
 ];
 
