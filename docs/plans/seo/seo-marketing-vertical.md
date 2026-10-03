@@ -242,6 +242,10 @@ Average score improvement (R31) · owned subreddit + Reddit API approval · LISA
 - Turnstile keys (when Q2 is ready).
 - Old video scripts from ChatGPT/Gemini (optional, before D5).
 
+**Launch blockers**
+
+- Repo `Lyceon-Team/Lyceonai` is public; must be made private before launch (conflicts with doctrine rules 2 and 4).
+
 ## 8. Open owner questions
 
 None open as of 2026-10-02. Doc 10A pre-draft Q&A runs separately (G6).
