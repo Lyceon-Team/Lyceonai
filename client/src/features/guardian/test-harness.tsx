@@ -165,11 +165,9 @@ export function calendarWeek(
     total?: number;
     targetScore?: number | null;
     testDate?: string | null;
-    /** The week's "today"; the browser specs pin it (`tests/e2e/guardian-harness/clock.ts`). */
-    today?: string;
   } = {},
 ): Record<string, unknown> {
-  const real = guardianCalendarWeek(over.today ?? browserLocalToday(), {
+  const real = guardianCalendarWeek(browserLocalToday(), {
     ...(over.streak === undefined ? {} : { streak: over.streak }),
     ...(over.targetScore === undefined
       ? {}
@@ -376,7 +374,6 @@ export function boardScenario(today: string = browserLocalToday()): {
   examReport: Record<string, unknown>;
 } {
   const { ok, requestId, ...week } = calendarWeek({
-    today,
     completed: 2,
     total: 15,
     targetScore: 1400,

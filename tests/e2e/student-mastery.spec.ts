@@ -15,7 +15,6 @@
  * run: as `guardian-surfaces.spec.ts` (Vite up, E2E_BASE_URL, E2E_SHOT_DIR).
  */
 import { expect, test, type Route } from "@playwright/test";
-import { pinClock } from "./guardian-harness/clock";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -23,13 +22,6 @@ import path from "path";
 if (process.env.E2E_CHROMIUM) {
   test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
 }
-
-// One "today" for the whole job (./guardian-harness/clock.ts): the fixtures are built for it and
-// the page's clock is frozen on it, in UTC, so no check depends on the day CI runs.
-test.use({ timezoneId: "UTC" });
-test.beforeEach(async ({ page }) => {
-  await pinClock(page);
-});
 
 const F = JSON.parse(
   execFileSync(
