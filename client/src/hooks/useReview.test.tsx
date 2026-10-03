@@ -59,6 +59,9 @@ function row(over: Record<string, unknown>): Record<string, unknown> {
     target_question_count: 5,
     total_items: 5,
     answered_items: 1,
+    // OQ-22 (owner ruling 2026-10-02): every row carries criteria; a queue-mode session
+    // chose none, which the server sends as four empty arrays.
+    criteria: { sections: [], domains: [], skills: [], difficulties: [] },
     ...over,
   };
 }

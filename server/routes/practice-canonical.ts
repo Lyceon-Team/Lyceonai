@@ -50,6 +50,7 @@ import {
   DEFAULT_PRACTICE_SESSION_MODE,
   practiceSessionModeSchema,
 } from "../../packages/shared/src/session-mode";
+import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -2226,6 +2227,11 @@ router.get(
           target_question_count: metadata.target_question_count || 0,
           total_items: count || 0,
           answered_items: answered || 0,
+          // @spec [student-UI register §9 OQ-22, owner ruling (Karl) 2026-10-02] |
+          // @implemented [2026-10-03] | plain English: the four arrays the student chose
+          // (empty when none), projected from session_spec by the shared builder. Never
+          // `filters`, never the pool size or requested count stored beside the spec.
+          criteria: toSessionCriteria(metadata.session_spec),
         };
       }),
     );
@@ -2717,6 +2723,9 @@ router.get(
         : null,
       clientInstanceId: boundClient ?? null,
       readOnly: state === "completed" || state === "abandoned",
+      // OQ-22 (owner ruling 2026-10-02): the chosen criteria for the runner title; see
+      // packages/shared/src/session-criteria.ts for the empty-array rule.
+      criteria: toSessionCriteria(metadata.session_spec),
     });
   },
 );

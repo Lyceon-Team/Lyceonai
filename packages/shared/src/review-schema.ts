@@ -27,6 +27,7 @@ import {
   engineSessionStateResponseSchema,
   engineSkipResponseSchema,
 } from "./practice-response-schema.js";
+import { sessionCriteriaSchema } from "./session-criteria.js";
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -280,6 +281,8 @@ export const reviewOpenSessionsResponseSchema = z.object({
       target_question_count: z.number(),
       total_items: z.number(),
       answered_items: z.number(),
+      // OQ-22, owner ruling (Karl) 2026-10-02 | @implemented [2026-10-03].
+      criteria: sessionCriteriaSchema,
     }),
   ),
   maxConcurrentSessions: z.number(),

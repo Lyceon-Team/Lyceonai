@@ -26,6 +26,7 @@
  */
 
 import { z } from "zod";
+import { sessionCriteriaSchema } from "./session-criteria.js";
 
 /** Per-session opaque option token. The canonical A-D letter never leaves the server. */
 export const studentSafeOptionSchema = z.object({
@@ -92,6 +93,9 @@ export const engineSessionStateResponseSchema = z.object({
     .nullable(),
   clientInstanceId: z.string().nullable(),
   readOnly: z.boolean(),
+  // OQ-22, owner ruling (Karl) 2026-10-02 | @implemented [2026-10-03]: the chosen criteria,
+  // four arrays and nothing else (strict). Review's /state carries it too.
+  criteria: sessionCriteriaSchema,
 });
 
 /**

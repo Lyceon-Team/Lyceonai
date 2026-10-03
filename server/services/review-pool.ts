@@ -34,6 +34,7 @@ import {
   type ReviewPoolSpec,
   type ReviewPoolSummaryResponse,
   type ReviewSourceEngine,
+  type SessionCriteriaDifficulty,
 } from "@lyceon/shared";
 import {
   mapGenesisQuestionRow,
@@ -187,6 +188,20 @@ async function loadServableQuestions(
 /** Practice's difficulty-token mapping, verbatim (practice-canonical.ts:1519-1521). */
 function difficultyTokenToInt(token: string): number {
   return token === "easy" ? 1 : token === "hard" ? 3 : 2;
+}
+
+/**
+ * @spec [student-UI register §9 OQ-22, owner ruling (Karl) 2026-10-02] | @implemented [2026-10-03]
+ * plain English: the label a stored review difficulty token reports as in session
+ * `criteria`, derived from `difficultyTokenToInt` above so the criteria say what the
+ * pool actually filtered on (any token other than easy/hard filters as medium) rather
+ * than a second copy of the rule.
+ */
+export function reviewDifficultyLabel(
+  token: string,
+): SessionCriteriaDifficulty {
+  const level = difficultyTokenToInt(token);
+  return level === 1 ? "easy" : level === 3 ? "hard" : "medium";
 }
 
 /**
