@@ -81,6 +81,12 @@
 | R30 | Review cadence = industry standard: success moments only, never during practice or exams, max once per 120 days, stop after a review or 2 dismissals, always dismissible. |
 | R31 | Removed/parked by doctrine: `/trust/evidence`; Doc 10 §6 public counters. Average score improvement (baseline → projection → reported actual) is post-launch, with real data, n≥100, Karl-approved. |
 
+### Analytics, session replay & FERPA (2026-10-02)
+| # | Ruling |
+|---|---|
+| R32 | PostHog product analytics + session replay on PostHog's standard defaults (amends R12a; SCL against Coding Standards §12.2). Purpose: entry points, clicks, dead ends, drop-off. Starts only after cookie consent; under-13 excluded; disclosed in the Privacy and Cookie Policies; PostHog DPA accepted. Nothing beyond industry standard. |
+| R33 | School and after-school sales are in scope, so FERPA applies. Industry standard: sign the school's student data privacy agreement (SDPC National DPA is the common template) and operate within it. |
+
 ---
 
 ## 2. Proof standard (internal only)
@@ -156,6 +162,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | G6 | Doc 10A pre-draft Q&A → draft → review → lock | Locked doc in Spec folder |
 | G7 | Legal drafts for counsel: Cookie Policy, Cookie Banner text, Children's Online Privacy Notice, AI Content Disclosure, CA Notice at Collection, CA Do-Not-Sell/GPC, Marketing Communications Consent, privacy policy update (PostHog replaces Vercel Analytics) | Published under `/legal/*`; counsel sign-off recorded internally (HTTP + register) |
 | G8 | Internal compliance register `docs/compliance/` created | File on `main` |
+| G9 | SCL: PostHog session replay per R32 (against Coding Standards §12.2) | SCL entry in register |
 
 ### Wave 1 — Foundation
 
@@ -175,6 +182,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | F12 | `infra/route-surface-classification.yaml` (Doc 06A §5.3.1) | CI fails on unregistered route |
 | F13 | Homepage rebuild (R5): prototype → Karl review → CC build; QOTD slot; diagnostic CTA | WALK + SHOT; HTTP prerender check |
 | F14 | `/trust/evidence` removed / folded into generic trust page | HTTP: 404 or redirect; not in sitemap |
+| F15 | PostHog replay per R32, behind F11 | CI shows no capture before consent or for under-13; SHOT of PostHog receiving pageviews and a replay |
 
 ### Wave 2 — Funnel, Question of the Day, reviews
 
