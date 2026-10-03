@@ -1857,6 +1857,33 @@ async function getNextPrebuiltQueuedItem(
   return (data as SessionItemRow | null) ?? null;
 }
 
+/**
+ * F-64: is any item before `ordinal` still unresolved (pending or served)? Items are served in
+ * ordinal order and resolve (answered or skipped) before the next is promoted, so when this is
+ * false every earlier item is resolved and none can be promoted again: the check cannot go stale
+ * between this read and the compare-and-swap that follows it.
+ */
+async function hasUnresolvedItemBefore(
+  sessionId: string,
+  ordinal: number,
+): Promise<boolean> {
+  const { data, error } = await supabaseServer
+    .from("practice_session_items")
+    .select("id")
+    .eq("session_id", sessionId)
+    .lt("ordinal", ordinal)
+    .in("status", ["pending", "served"])
+    .limit(1);
+
+  if (error) {
+    throw new Error(
+      `practice_session_items_unresolved_before_failed: ${error.message}`,
+    );
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
 async function findSessionItemById(
   sessionId: string,
   sessionItemId: string,
@@ -1893,6 +1920,21 @@ async function findSessionItemByClientAttemptId(
   return (data as SessionItemRow | null) ?? null;
 }
 
+/**
+ * @spec [Doc-02B_V4 §14 (resumable sessions; no duplicate items on refresh or resume); Coding
+ *        Standards §4.2, §9; student-UI register §8 F-64] | @implemented [2026-10-03]
+ * F-64 (plain English): two `/next` calls on one session at once (a double effect, a double
+ * click, two tabs on one client instance) both read the next item as `pending`; the promote
+ * below is a compare-and-swap on `status = 'pending'`, so one wins and the other updates no
+ * row. That loser used to answer 500 `session_item_promote_failed`. It now serves again once
+ * (`afterLostPromote`): the item the winner promoted is the session's served item, so the
+ * unresolved branch at the top returns it, and both callers get the SAME item. Nothing new is
+ * promoted and no second quota unit is reserved (the unresolved branch reserves none), so the
+ * call stays idempotent. If the second pass loses again (the winner's quota refusal returned
+ * the item to `pending` and a third caller took it), the answer is a clean 409
+ * `session_item_conflict`, never a 500. A real database error on the promote is still a 500.
+ * Review's promote re-reads the same way (review-canonical.ts `promoteNextItem`).
+ */
 async function serveNextForSession(args: {
   req: Request;
   res: Response;
@@ -1900,6 +1942,7 @@ async function serveNextForSession(args: {
   role: string | undefined;
   sessionId: string;
   clientInstanceId: string;
+  afterLostPromote?: boolean;
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
   const config = await loadPracticeConfig();
@@ -2093,6 +2136,20 @@ async function serveNextForSession(args: {
     });
   }
 
+  // F-64: promote only the item that is next in order. If any earlier item is still pending or
+  // served, a concurrent /next has already promoted the item before this one (this call read
+  // `pending` after it had), so promoting this one would leave two served items and skip one.
+  if (await hasUnresolvedItemBefore(args.sessionId, nextPrebuilt.ordinal)) {
+    if (!args.afterLostPromote) {
+      return serveNextForSession({ ...args, afterLostPromote: true });
+    }
+    return args.res.status(409).json({
+      error: "session_item_conflict",
+      message: "The next question was taken by another request. Try again.",
+      requestId,
+    });
+  }
+
   const now = new Date().toISOString();
   const { data: promoted, error: promoteErr } = await supabaseServer
     .from("practice_session_items")
@@ -2106,10 +2163,21 @@ async function serveNextForSession(args: {
     .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
-  if (promoteErr || !promoted) {
+  if (promoteErr) {
     return args.res.status(500).json({
       error: "session_item_promote_failed",
-      message: promoteErr?.message ?? "Unable to promote next prebuilt item",
+      message: promoteErr.message,
+      requestId,
+    });
+  }
+  if (!promoted) {
+    // F-64: another /next promoted this item first (see the doc comment above).
+    if (!args.afterLostPromote) {
+      return serveNextForSession({ ...args, afterLostPromote: true });
+    }
+    return args.res.status(409).json({
+      error: "session_item_conflict",
+      message: "The next question was taken by another request. Try again.",
       requestId,
     });
   }
@@ -2824,9 +2892,32 @@ router.get(
       // OQ-22 (owner ruling 2026-10-02): the chosen criteria for the runner title; see
       // packages/shared/src/session-criteria.ts for the empty-array rule.
       criteria: toSessionCriteria(metadata.session_spec),
+      // OQ-35 (owner ruling 2026-10-02): the filters matched fewer questions than the session
+      // asked for. A boolean only: neither stored count is sent (register §2, no bank counts).
+      shortened: isShortenedSession(metadata),
     });
   },
 );
+
+/**
+ * @spec [student-UI register §9 OQ-35, owner ruling (Karl) 2026-10-02] | @implemented [2026-10-03]
+ * plain English: true when the pool the session's filters matched held fewer questions than the
+ * session asked for, so the session serves fewer (creation stores both counts:
+ * `source_pool_count` and `requested_count`). A free plan's quota trims `requested_count` BEFORE
+ * the pool is read, so a quota-trimmed session is not "shortened" by its filters and reads false.
+ * Sessions stored without the counts (legacy rows, the diagnostic) read false.
+ */
+function isShortenedSession(metadata: SessionMetadata): boolean {
+  const pool = metadata.source_pool_count;
+  const requested = metadata.requested_count;
+  return (
+    typeof pool === "number" &&
+    typeof requested === "number" &&
+    Number.isFinite(pool) &&
+    Number.isFinite(requested) &&
+    pool < requested
+  );
+}
 
 async function findSessionItemForSubmission(
   sessionId: string,

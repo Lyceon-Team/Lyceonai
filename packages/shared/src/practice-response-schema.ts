@@ -99,6 +99,28 @@ export const engineSessionStateResponseSchema = z.object({
 });
 
 /**
+ * Practice's own GET /sessions/:sessionId/state: the engine shape plus `shortened`.
+ *
+ * @spec [student-UI register §9 OQ-35, owner ruling (Karl) 2026-10-02: "serve the shorter
+ *        session and say 'Fewer questions match these filters, so this session is shorter.' No
+ *        number"; register §2 Content rules (no bank counts)] | @implemented [2026-10-03]
+ *
+ * plain English: `shortened` is true when the session's filters matched fewer questions than it
+ * asked for, so it serves fewer. The server decides it from the two counts it stores; neither
+ * count is sent, so the runner can say the session is shorter without saying by how much. It is
+ * practice-only (review's pool is the student's own queue, not a filtered bank), so it extends
+ * the engine shape here rather than in `engineSessionStateResponseSchema`, which review must also
+ * satisfy (A14). Sessions stored before the counts existed read `false`.
+ */
+export const practiceSessionStateResponseSchema =
+  engineSessionStateResponseSchema.extend({
+    shortened: z.boolean(),
+  });
+export type PracticeSessionStateResponse = z.infer<
+  typeof practiceSessionStateResponseSchema
+>;
+
+/**
  * GET /sessions/:sessionId/next — practice-canonical.ts:2084 (serve) and :1958 (resume).
  * `currentIndex` is optional because only the option-heal branch at :1934 emits it;
  * the two ordinary branches do not. Modelling it as required would make this schema

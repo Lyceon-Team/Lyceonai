@@ -38,16 +38,21 @@ import {
   type BrowserContext,
   type Page,
 } from "@playwright/test";
+import pg from "pg";
+import { pgConnConfig } from "../../helpers/pg-supabase";
+import { STUDENT_HARNESS_DB } from "./db";
 import { PAGE_GROUPS } from "./groups";
 import type {
+  FreshSession,
   PageGroup,
+  PickStep,
   PrototypePairing,
   Shot,
   Theme,
   Viewport,
 } from "./groups/types";
 import { PERSONA_HEADER, type StudentPersona } from "./personas";
-import type { SeedManifest } from "./seed";
+import { SEED_CLIENT_INSTANCE, type SeedManifest } from "./seed";
 
 const ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
@@ -351,7 +356,18 @@ async function localOnly(
   });
 }
 
-function fillRoute(route: string, manifest: SeedManifest): string {
+function fillRoute(
+  route: string,
+  manifest: SeedManifest,
+  sessionId: string | null = null,
+): string {
+  if (route.includes("{session}")) {
+    if (sessionId === null)
+      throw new Error(
+        `route ${route} names {session} but the shot has no freshSession`,
+      );
+    route = route.replace("{session}", sessionId);
+  }
   return route.replace(
     /\{(free|paid)\.(\w+)\}/g,
     (_m, persona: StudentPersona, key: string) => {
@@ -363,6 +379,133 @@ function fillRoute(route: string, manifest: SeedManifest): string {
       return value;
     },
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// UI-53: fresh runner sessions and choices picked by what they are
+// ---------------------------------------------------------------------------------------------
+
+let freshCounter = 0;
+
+async function harnessDb(): Promise<pg.Client> {
+  const client = new pg.Client(pgConnConfig(STUDENT_HARNESS_DB));
+  await client.connect();
+  return client;
+}
+
+async function apiCall(
+  stack: Stack,
+  persona: StudentPersona,
+  method: "POST",
+  apiPath: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${stack.baseUrl}${apiPath}`, {
+    method,
+    headers: { "content-type": "application/json", [PERSONA_HEADER]: persona },
+    body: JSON.stringify(body),
+  });
+  const json: unknown = await res.json();
+  if (res.status >= 400 || json === null || typeof json !== "object")
+    throw new Error(
+      `${persona} ${method} ${apiPath} -> ${res.status} ${JSON.stringify(json).slice(0, 300)}`,
+    );
+  return json as Record<string, unknown>;
+}
+
+function itemsTable(engine: FreshSession["engine"]): string {
+  return engine === "review"
+    ? "review_session_items"
+    : "practice_session_items";
+}
+
+/** Starts a session through the real create route; retries when its first item is a grid-in. */
+async function startFreshSession(
+  stack: Stack,
+  persona: StudentPersona,
+  fresh: FreshSession,
+): Promise<string> {
+  const db = await harnessDb();
+  try {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      freshCounter += 1;
+      const created = await apiCall(
+        stack,
+        persona,
+        "POST",
+        `/api/${fresh.engine}/sessions`,
+        {
+          ...fresh.body,
+          client_instance_id: SEED_CLIENT_INSTANCE,
+          idempotency_key: `student-harness-fresh-${process.pid}-${freshCounter}`,
+        },
+      );
+      const id = created.sessionId;
+      if (typeof id !== "string")
+        throw new Error("fresh session: no sessionId");
+      if (fresh.mcqFirst !== true) return id;
+      const first = await db.query<{ question_item_type: string }>(
+        `SELECT question_item_type FROM public.${itemsTable(fresh.engine)}
+          WHERE session_id = $1 ORDER BY ordinal LIMIT 1`,
+        [id],
+      );
+      if (first.rows[0]?.question_item_type !== "grid_in") return id;
+      await endFreshSession(stack, persona, fresh, id);
+    }
+    throw new Error("fresh session: six starts in a row opened on a grid-in");
+  } finally {
+    await db.end();
+  }
+}
+
+async function endFreshSession(
+  stack: Stack,
+  persona: StudentPersona,
+  fresh: FreshSession,
+  sessionId: string,
+): Promise<void> {
+  await apiCall(
+    stack,
+    persona,
+    "POST",
+    `/api/${fresh.engine}/sessions/${sessionId}/terminate`,
+    { client_instance_id: SEED_CLIENT_INSTANCE },
+  );
+}
+
+/**
+ * The on-screen index of the choice a pick names, from the served item's stored display order
+ * (`option_order`, canonical keys in the order shown) and its correct key. Harness only: the
+ * page under test is never told.
+ */
+async function pickIndex(
+  fresh: FreshSession,
+  sessionId: string,
+  pick: PickStep["pick"],
+): Promise<number> {
+  if (pick === "first") return 0;
+  const db = await harnessDb();
+  try {
+    const r = await db.query<{
+      option_order: string[] | null;
+      question_correct_answer: string | null;
+    }>(
+      `SELECT option_order, question_correct_answer FROM public.${itemsTable(fresh.engine)}
+        WHERE session_id = $1 AND status = 'served' ORDER BY ordinal DESC LIMIT 1`,
+      [sessionId],
+    );
+    const row = r.rows[0];
+    const order = row?.option_order ?? null;
+    const correct = row?.question_correct_answer ?? null;
+    if (!order || !correct)
+      throw new Error("pick: the served item has no option order");
+    const at = order.indexOf(correct);
+    if (at === -1)
+      throw new Error("pick: the correct key is not in the option order");
+    return pick === "correct" ? at : at === 0 ? 1 : 0;
+  } finally {
+    await db.end();
+  }
 }
 
 async function settle(page: Page): Promise<void> {
@@ -381,6 +524,12 @@ async function shootBuilt(
   fontCss: string,
 ): Promise<BuiltResult> {
   const file = `${shot.id}--${viewport}--${theme}--built.png`;
+  const persona = shot.persona === "signed-out" ? null : shot.persona;
+  const fresh = shot.freshSession ?? null;
+  if (fresh && persona === null)
+    throw new Error(`${shot.id}: a fresh session needs a signed-in persona`);
+  const sessionId =
+    fresh && persona ? await startFreshSession(stack, persona, fresh) : null;
   const context = await browser.newContext({
     viewport: VIEWPORTS[viewport],
     colorScheme: theme,
@@ -416,7 +565,7 @@ async function shootBuilt(
     );
     const page = await context.newPage();
     await page.goto(
-      `${stack.baseUrl}${fillRoute(shot.route, stack.manifest)}`,
+      `${stack.baseUrl}${fillRoute(shot.route, stack.manifest, sessionId)}`,
       { waitUntil: "domcontentloaded" },
     );
     await settle(page);
@@ -426,11 +575,24 @@ async function shootBuilt(
         .first()
         .waitFor({ state: "visible", timeout: 20_000 });
     for (const step of shot.steps ?? []) {
+      if ("pick" in step) {
+        if (!fresh || sessionId === null)
+          throw new Error(`${shot.id}: a pick step needs a fresh session`);
+        const at = await pickIndex(fresh, sessionId, step.pick);
+        await page.locator('[data-testid="runner-choice"]').nth(at).click();
+        await settle(page);
+        continue;
+      }
       const selector = step.click[viewport];
       if (selector === null) continue;
       await page.locator(selector).first().click();
       await settle(page);
     }
+    if (shot.expectText !== undefined)
+      await page
+        .getByText(shot.expectText, { exact: true })
+        .first()
+        .waitFor({ state: "visible", timeout: 20_000 });
     if (shot.expectPath !== undefined) {
       const expected = new RegExp(shot.expectPath);
       await page.waitForURL((url) => expected.test(url.pathname), {
@@ -457,6 +619,8 @@ async function shootBuilt(
     return { file, finalPath: new URL(page.url()).pathname, ...dom };
   } finally {
     await context.close();
+    if (fresh && persona && sessionId !== null)
+      await endFreshSession(stack, persona, fresh, sessionId);
   }
 }
 
@@ -466,7 +630,12 @@ function protoKey(
   p: Extract<PrototypePairing, { kind: "screen" }>,
   theme: Theme,
 ): string {
-  const steps = (p.steps ?? []).length > 0 ? "--clicked" : "";
+  const steps =
+    p.state !== undefined
+      ? `--${p.state}`
+      : (p.steps ?? []).length > 0
+        ? "--clicked"
+        : "";
   return `proto--${p.file.replace(/\.dc\.html$/, "")}--${p.plan ?? "noplan"}--${theme}${steps}.png`;
 }
 
@@ -581,8 +750,20 @@ function writeIndex(
       lines.push(
         `Preset localStorage: \`${JSON.stringify(shot.localStorage)}\`.`,
       );
+    if (shot.freshSession)
+      lines.push(
+        `Fresh session per capture (real create route, ended after the shot): \`${shot.freshSession.engine} ${JSON.stringify(shot.freshSession.body)}\`.`,
+      );
     for (const step of shot.steps ?? [])
-      lines.push(`Step: click \`${JSON.stringify(step.click)}\`.`);
+      lines.push(
+        "pick" in step
+          ? `Step: pick the ${step.pick} choice (resolved from the served item's stored order in the harness database).`
+          : `Step: click \`${JSON.stringify(step.click)}\`.`,
+      );
+    if (shot.expectText !== undefined)
+      lines.push(
+        `Must then show the text \`${shot.expectText}\` (the capture fails otherwise).`,
+      );
     if (shot.fullPage === true)
       lines.push("Full page: the whole document, not just the viewport.");
     if (shot.expectPath !== undefined)
@@ -593,7 +774,11 @@ function writeIndex(
       lines.push(`Prototype: none. ${shot.prototype.reason}`);
     else
       lines.push(
-        `Prototype: \`${shot.prototype.file}\`${shot.prototype.note ? ` (${shot.prototype.note})` : ""}.`,
+        `Prototype: \`${shot.prototype.file}\`${shot.prototype.note ? ` (${shot.prototype.note})` : ""}${
+          (shot.prototype.steps ?? []).length > 0
+            ? `; clicked: ${(shot.prototype.steps ?? []).map((x) => `\`${x}\``).join(", ")}`
+            : ""
+        }.`,
       );
     lines.push(
       "",

@@ -42,7 +42,8 @@ export type RightPanelWidth = 360 | 340 | 320;
  * it: those page bodies still draw with the app-wide (light) tokens until their Wave 5 row
  * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
- * /practice, UI-51; /review, UI-52). The timed exam module stays "light" for good (DESIGN.md §2).
+ * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53). The timed exam module
+ * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
 
@@ -96,13 +97,14 @@ function focus(
   section: string,
   sectionHome: string,
   timed = false,
+  themeLock: ThemeLock = "light",
 ): FocusShellSpec {
   return {
     shell: "focus",
     section,
     sectionHome,
     back: !timed,
-    themeLock: "light",
+    themeLock: timed ? "light" : themeLock,
   };
 }
 
@@ -127,7 +129,11 @@ export const STUDENT_ROUTE_SHELLS = {
   "/profile": app(null, true),
   "/notifications": app(null, false),
   // Focus shell: the runners, the exam session and report pages.
-  "/practice/session/:sessionId": focus("Practice", "/practice"),
+  // UI-53 (2026-10-03): the practice runner is rebuilt on the student tokens only; off the light
+  // lock. The review runner keeps it: its LISA panel (ScopedTutorPanel and the thread parts it
+  // shares with /chat) still draws with the app-wide light tokens until the LISA row rebuilds
+  // them, and a dark runner around a light-token LISA leaves its text dark on dark.
+  "/practice/session/:sessionId": focus("Practice", "/practice", false, null),
   "/review/session/:sessionId": focus("Review", "/review"),
   "/tests/:sessionId": focus("Full-Length", "/tests"),
   "/tests/:sessionId/:section/:module": focus("Full-Length", "/tests", true),

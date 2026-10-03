@@ -20,8 +20,9 @@
  *     bell must be absent: that is the negative control, and it proves the positive assertion
  *     is looking at something that can change.
  *
- * PracticeShell is exempt by name with its reason stated. An exemption is visible in the diff
- * that adds it; an omission is not — which is the whole point of discovering rather than listing.
+ * Shells without a bell are exempt by name with their reason stated (UI-53 deleted the old
+ * PracticeShell and its exemption). An exemption is visible in the diff that adds it; an
+ * omission is not — which is the whole point of discovering rather than listing.
  *
  * WHERE THE "EVERY SHELL" RULE LIVES. contracts/notifications.contract.md §3 defines the in_app
  * channel and its feed; it does not itself require a bell in every layout. The "every shell"
@@ -98,10 +99,6 @@ const RENDER: Record<
 
 /** Shells that deliberately carry no bell. Adding one here is a reviewed decision, not an omission. */
 const EXEMPT: Record<string, string> = {
-  "PracticeShell.tsx":
-    "the practice runner header (score, streak, progress) is a focused-mode surface with no " +
-    "user menu either; whether it should carry a bell is an owner decision, recorded here so " +
-    "it cannot be mistaken for an oversight",
   // UI-41 (DESIGN.md §2). OQ-47 (Karl, 2026-10-03, ruled): exempt; the bell is App shell only.
   "FocusShell.tsx":
     "the Focus shell (runners, exam session and report pages) carries only the way back and " +

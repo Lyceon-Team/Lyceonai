@@ -16,7 +16,29 @@ export type Viewport = "desktop" | "mobile";
 export type Theme = "light" | "dark";
 
 /** A click, addressed per viewport. `null` for a viewport means "skip this shot there". */
-export type Step = { click: Record<Viewport, string | null> };
+export type ClickStep = { click: Record<Viewport, string | null> };
+
+/**
+ * UI-53: pick a runner choice by what it IS, resolved by capture.ts from the served item in
+ * the harness database (its stored `option_order` and correct key): "correct", "incorrect" (the
+ * first choice on screen that is not correct), or "first" (the first on screen). The client
+ * never knows which choice is correct; only the harness, reading its own database, does.
+ */
+export type PickStep = { pick: "correct" | "incorrect" | "first" };
+
+export type Step = ClickStep | PickStep;
+
+/**
+ * UI-53: a fresh runner session for each capture, started through the REAL create route before
+ * the page loads (`{session}` in the route is its id), bound to the seed's client instance, and
+ * ended through the real terminate route after the screenshot, so every viewport x theme starts
+ * on the same step. capture.ts retries a start whose first item is a grid-in (`mcqFirst`).
+ */
+export type FreshSession = {
+  engine: "practice" | "review";
+  body: Readonly<Record<string, unknown>>;
+  mcqFirst?: boolean;
+};
 
 export type PrototypePairing =
   | {
@@ -26,6 +48,11 @@ export type PrototypePairing =
       /** The canvas `plan` prop, where the screen has one (Runner and Report do not). */
       plan?: "paid" | "free" | "guardian-paid";
       steps?: readonly string[];
+      /**
+       * Names the clicked state in the prototype PNG's file name, when one screen is clicked
+       * into more than one state (UI-53: the runner selected, answered right, answered wrong).
+       */
+      state?: string;
       /** One line on what this screen shows, for the index. */
       note?: string;
     }
@@ -46,6 +73,10 @@ export type Shot = {
   /** A selector the built page must show before the screenshot (beyond network idle). */
   waitFor?: Record<Viewport, string>;
   steps?: readonly Step[];
+  /** UI-53: a fresh runner session per capture (see FreshSession). */
+  freshSession?: FreshSession;
+  /** UI-53: text the page must show after `steps` (e.g. "Question 2 of 10"); the capture fails otherwise. */
+  expectText?: string;
   /**
    * A click path's proof: the pathname the page must land on after `steps` (a RegExp source).
    * The capture fails if it lands anywhere else, and the index records the expectation next to

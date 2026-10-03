@@ -12,7 +12,8 @@
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderRunner } from "@/test-support/runner.harness";
 import {
   PRACTICE_ENGINE_CONFIG,
   REVIEW_ENGINE_CONFIG,
@@ -71,7 +72,6 @@ function hookState(overrides: Record<string, unknown> = {}) {
     submitAnswer: vi.fn(),
     nextQuestion: vi.fn(),
     handleMissingMcChoices: vi.fn(),
-    terminateSession: vi.fn(),
     calculatorState: null,
     persistCalculatorState: vi.fn(),
     submitBlocked: null,
@@ -99,15 +99,10 @@ function gridInState(overrides: Record<string, unknown> = {}) {
 function mountRunner(
   state: HookState,
   engine = PRACTICE_ENGINE_CONFIG,
-): ReturnType<typeof render> {
+): ReturnType<typeof renderRunner> {
   hookMock.useCanonicalPractice.mockReturnValue(state);
-  return render(
-    <CanonicalPracticePage
-      title="Practice"
-      badgeLabel="Reading"
-      section="reading_writing"
-      engine={engine}
-    />,
+  return renderRunner(
+    <CanonicalPracticePage title="Practice" section="RW" engine={engine} />,
   );
 }
 
@@ -152,9 +147,19 @@ describe("practice/review runner keys (§2 row 1)", () => {
     expect(state.submitAnswer).toHaveBeenCalledTimes(1);
     expect(state.submitAnswer).toHaveBeenCalledWith({ skipped: false });
 
-    const option = screen.getByRole("button", { name: /second/ });
+    const option = screen.getByRole("radio", { name: /second/ });
     press("Enter", option);
     expect(state.submitAnswer).toHaveBeenCalledTimes(2);
+  });
+
+  it("UI-53: ↑/↓ also move the selection when focus is on a choice (the choices are a radio group)", () => {
+    const state = hookState({ selectedAnswer: "opt-2", canSubmit: true });
+    mountRunner(state);
+    const option = screen.getByRole("radio", { name: /second/ });
+    press("ArrowDown", option);
+    expect(state.setSelectedAnswer).toHaveBeenLastCalledWith("opt-3");
+    press("ArrowUp", option);
+    expect(state.setSelectedAnswer).toHaveBeenLastCalledWith("opt-1");
   });
 
   it("Enter with nothing selected does nothing", () => {

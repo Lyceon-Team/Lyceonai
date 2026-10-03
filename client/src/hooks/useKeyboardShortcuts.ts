@@ -288,8 +288,20 @@ export function buildRunnerKeymap(input: RunnerKeymapInput): Keymap {
   };
 
   return [
-    { key: "ArrowDown", run: () => move(1) },
-    { key: "ArrowUp", run: () => move(-1) },
+    // UI-53 (2026-10-03): the choices are a `radiogroup` of `radio` buttons (Runner.dc.html),
+    // which the hook otherwise leaves to their native arrows. A button with role="radio" has
+    // none, so on a runner choice the arrows are this keymap's: they move the selection, as a
+    // radio group's arrows do.
+    {
+      key: "ArrowDown",
+      allowOnControls: isRunnerSubmitControl,
+      run: () => move(1),
+    },
+    {
+      key: "ArrowUp",
+      allowOnControls: isRunnerSubmitControl,
+      run: () => move(-1),
+    },
     {
       key: "Enter",
       allowInTextFields: isGridInField,

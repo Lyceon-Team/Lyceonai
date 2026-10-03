@@ -27,32 +27,30 @@
  * into a session the server will refuse at `/next`, which is exactly the abandoned-
  * session exposure ruling 17 forbids. So this page reads `readOnly` and stops.
  *
+ * UI-53 (2026-10-03, DESIGN.md §4, register OQ-22): the state is parsed with the shared
+ * `reviewSessionStateResponseSchema`; the runner is named by the session's criteria
+ * (`sessionTitle`, "Review session" when none were chosen); the states draw on the student
+ * tokens (this route stays on the light lock, route-shells.ts) and navigate client-side.
+ *
  * trade-offs: one extra render branch on every resume, in exchange for the guarantee
  * that no abandoned session is ever playable. edge cases: a `completed` session takes
  * the same branch with different copy — it is not an error either, it is finished.
  */
-import { useRoute } from "wouter";
+import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { reviewSessionStateResponseSchema } from "@lyceon/shared/review-schema";
+import type { EngineSessionStateResponse } from "@lyceon/shared/practice-response-schema";
 import { FullPageLoader } from "@/components/student-ui";
 import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
+import { RunnerStateCard } from "@/components/practice/RunnerStateCard";
+import { sessionTitle } from "@/components/home/home-model";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
 import { REVIEW_ENGINE_CONFIG } from "@/lib/engine-config";
 
-/** The subset of `GET /api/review/sessions/:id/state` this shell reads. */
-type ReviewSessionState = {
-  sessionId: string;
-  section: string | null;
-  mode: string | null;
-  state: string;
-  currentOrdinal: number;
-  answeredCount: number;
-  targetQuestionCount: number;
-  readOnly: boolean;
-};
-
-export default function ResumeReviewPage() {
+export default function ResumeReviewPage(): JSX.Element {
   const [, params] = useRoute("/review/session/:sessionId");
+  const [, navigate] = useLocation();
   const sessionId = params?.sessionId;
   const clientInstanceId = getClientInstanceId();
 
@@ -60,17 +58,19 @@ export default function ResumeReviewPage() {
     data: session,
     isLoading,
     error,
-  } = useQuery<ReviewSessionState>({
+    refetch,
+  } = useQuery<unknown, Error, EngineSessionStateResponse>({
     queryKey: [
       `/api/review/sessions/${sessionId}/state?client_instance_id=${clientInstanceId}`,
     ],
+    select: (raw) => reviewSessionStateResponseSchema.parse(raw),
     enabled: !!sessionId,
   });
 
   if (isLoading) {
     // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
-    // The shared FullPageLoader (role="status", named by its label). Light-locked until this
-    // page moves onto a themed student shell in Wave 5.
+    // The shared FullPageLoader (role="status", named by its label). Light-locked with the
+    // review runner route (route-shells.ts, UI-53).
     return (
       <FullPageLoader
         themeLock="light"
@@ -82,35 +82,24 @@ export default function ResumeReviewPage() {
 
   if (error || !session) {
     const is404 = isApiError(error) && error.status === 404;
-    const errorTitle = is404 ? "Session Not Found" : "Session Error";
-    const errorMessage = is404
-      ? "This review session no longer exists or has been removed."
-      : "Something went wrong loading this session. Please try again.";
-
     return (
-      <div
-        className="flex h-screen flex-col items-center justify-center p-4"
+      <RunnerStateCard
+        tone="danger"
         data-testid="review-session-error"
-      >
-        <h1 className="text-2xl font-bold text-red-600 mb-4">{errorTitle}</h1>
-        <p className="text-muted-foreground mb-6">{errorMessage}</p>
-        <div className="flex gap-3">
-          {!is404 && (
-            <button
-              onClick={() => window.location.reload()}
-              className="border border-border text-foreground px-6 py-2 rounded-md font-medium"
-            >
-              Retry
-            </button>
-          )}
-          <button
-            onClick={() => window.location.assign("/review")}
-            className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium"
-          >
-            Back to Review
-          </button>
-        </div>
-      </div>
+        title={is404 ? "Session Not Found" : "Session Error"}
+        message={
+          is404
+            ? "This review session no longer exists or has been removed."
+            : "Something went wrong loading this session. Please try again."
+        }
+        primary={{
+          label: "Back to Review",
+          onClick: () => navigate("/review"),
+        }}
+        secondary={
+          is404 ? null : { label: "Retry", onClick: () => void refetch() }
+        }
+      />
     );
   }
 
@@ -118,32 +107,27 @@ export default function ResumeReviewPage() {
   if (session.readOnly) {
     const wasAbandoned = session.state === "abandoned";
     return (
-      <div
-        className="flex h-screen flex-col items-center justify-center p-4 text-center"
+      <RunnerStateCard
+        tone="neutral"
         data-testid="review-session-closed"
-      >
-        <h1 className="text-2xl font-semibold mb-3">
-          {wasAbandoned ? "This session has ended" : "Session complete"}
-        </h1>
-        <p className="text-muted-foreground mb-6 max-w-md">
-          {wasAbandoned
+        title={wasAbandoned ? "This session has ended" : "Session complete"}
+        message={
+          wasAbandoned
             ? "This review session was ended or timed out. Your questions are still in the queue — start a new session to keep going."
-            : "You finished this review session. Anything you missed is back in the queue."}
-        </p>
-        <button
-          onClick={() => window.location.assign("/review")}
-          className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium"
-        >
-          Back to Review
-        </button>
-      </div>
+            : "You finished this review session. Anything you missed is back in the queue."
+        }
+        primary={{
+          label: "Back to Review",
+          onClick: () => navigate("/review"),
+        }}
+        secondary={null}
+      />
     );
   }
 
   return (
     <CanonicalPracticePage
-      title="Review Session"
-      badgeLabel="Review"
+      title={sessionTitle("review", session.criteria, null)}
       section="random"
       sessionId={sessionId}
       engine={REVIEW_ENGINE_CONFIG}

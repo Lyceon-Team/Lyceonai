@@ -351,9 +351,31 @@ describe("the table says what DESIGN.md §2 says", () => {
     const unlocked = (
       Object.keys(STUDENT_ROUTE_SHELLS) as StudentShellRoute[]
     ).filter((route) => STUDENT_ROUTE_SHELLS[route].themeLock === null);
-    expect(unlocked).toEqual(["/dashboard", "/practice", "/review"]);
+    expect(unlocked).toEqual([
+      "/dashboard",
+      "/practice",
+      "/review",
+      "/practice/session/:sessionId",
+    ]);
     // The topic explorer is not rebuilt (OQ-3 open): it stays pinned light.
     expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
+  });
+
+  it("UI-53: the practice runner follows the device theme; the review runner stays pinned light (its LISA panel is not on the student tokens yet)", () => {
+    expect(STUDENT_ROUTE_SHELLS["/practice/session/:sessionId"]).toEqual({
+      shell: "focus",
+      section: "Practice",
+      sectionHome: "/practice",
+      back: true,
+      themeLock: null,
+    });
+    expect(STUDENT_ROUTE_SHELLS["/review/session/:sessionId"]).toEqual({
+      shell: "focus",
+      section: "Review",
+      sectionHome: "/review",
+      back: true,
+      themeLock: "light",
+    });
   });
 
   it("the timed module: no back arrow, light only", () => {

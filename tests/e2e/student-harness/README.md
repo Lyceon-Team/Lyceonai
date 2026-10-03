@@ -22,6 +22,14 @@ A shot may name `expectPath` (a pathname pattern): its `steps` are then a click 
 capture fails unless the page lands on a matching path (UI-50's "Start today's plan" and
 "Start diagnostic").
 
+Runner shots (UI-53) add three fields. `freshSession` starts a new practice or review session
+through the real create route before every capture (`{session}` in the route is its id) and ends
+it through the real terminate route afterwards, so every viewport and theme shows the same step.
+A `{ pick: "correct" | "incorrect" | "first" }` step clicks a choice by what it is, resolved from
+the served item's stored order and correct key in the harness database (the page never knows).
+`expectText` makes the capture wait for a text after the steps ("Question 2 of 10"). A
+prototype pairing's `state` names a clicked prototype state in its PNG file name.
+
 Output: `docs/plans/student-ui/evidence/wave5/<group>/` — one PNG per built shot
 (`<shot>--<desktop|mobile>--<light|dark>--built.png`), one per prototype state
 (`proto--<Screen>--<plan>--<theme>[--clicked].png`), and `index.md` with a built | prototype
