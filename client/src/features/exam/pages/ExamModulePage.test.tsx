@@ -349,3 +349,76 @@ describe("exam completion marks the KPIs stale (Brief 10)", () => {
     expect(kpiInvalidations(invalidate)).toBe(0);
   });
 });
+
+/**
+ * @spec [student-UI register §2 Keyboard (Exam module row), UI-45; DESIGN.md §3]
+ * @implemented [2026-10-03]
+ *
+ * plain English: ← / → move between questions exactly as Back and Next do; Enter selects a
+ * focused choice through the button itself and never submits the module — submit is reached
+ * only through SubmitModuleDialog's confirm button. Driven through the real page against the
+ * in-memory server above.
+ */
+describe("exam module keys (UI-45)", () => {
+  const stemOf = (n: number) => `Which choice best completes question ${n}?`;
+
+  it("→ goes to the next question and ← back; ← on the first question stays put", async () => {
+    mount(RW1);
+    await screen.findByText(stemOf(1));
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(screen.getByText(stemOf(1))).toBeTruthy();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await screen.findByText(stemOf(2))).toBeTruthy();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await screen.findByText(stemOf(3))).toBeTruthy();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByText(stemOf(2))).toBeTruthy();
+  });
+
+  it("→ past the last question opens the review page, never the submit dialog", async () => {
+    const { submitExamModule } = await import("../api/exam-api");
+    mount(RW1);
+    await screen.findByText(stemOf(1));
+    for (let i = 0; i < 3; i += 1) fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(await screen.findByTestId("exam-review-counts")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(screen.queryByTestId("exam-submit-confirm")).toBeNull();
+    expect(vi.mocked(submitExamModule)).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(await screen.findByText(stemOf(3))).toBeTruthy();
+  });
+
+  it("Enter never submits the module — not on the page, a choice, or with the dialog open", async () => {
+    const { submitExamModule } = await import("../api/exam-api");
+    mount(RW1);
+    await screen.findByText(stemOf(1));
+    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.keyDown(choiceButtons()[0]!, { key: "Enter" });
+
+    fireEvent.click(screen.getByTestId("exam-navigator-open"));
+    fireEvent.click(await screen.findByRole("button", { name: "Go to review page" }));
+    const reviewSubmit = await screen.findByTestId("exam-review-submit");
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(screen.queryByTestId("exam-submit-confirm")).toBeNull();
+
+    fireEvent.click(reviewSubmit);
+    const confirm = await screen.findByTestId("exam-submit-confirm");
+    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.keyDown(confirm, { key: "Enter" });
+    fireEvent.keyDown(confirm, { key: "ArrowLeft" });
+    expect(vi.mocked(submitExamModule)).not.toHaveBeenCalled();
+    expect(screen.getByTestId("exam-submit-confirm")).toBeTruthy();
+  });
+
+  it("arrows do nothing while the question navigator is open", async () => {
+    mount(RW1);
+    await screen.findByText(stemOf(1));
+    fireEvent.click(screen.getByTestId("exam-navigator-open"));
+    await screen.findByRole("button", { name: "Go to review page" });
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(screen.getByText(stemOf(1))).toBeTruthy();
+    expect(screen.queryByText(stemOf(2))).toBeNull();
+  });
+});

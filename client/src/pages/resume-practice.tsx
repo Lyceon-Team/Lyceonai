@@ -36,7 +36,7 @@
 import { useRoute } from "wouter";
 import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { FullPageLoader } from "@/components/student-ui";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
 import {
@@ -73,12 +73,10 @@ export default function ResumePracticePage() {
   });
 
   if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-3 text-lg">Initializing session...</span>
-      </div>
-    );
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
+    // The shared FullPageLoader (role="status", named by its label). Light-locked until this
+    // page moves onto a themed student shell in Wave 5.
+    return <FullPageLoader themeLock="light" label="Initializing session..." />;
   }
 
   if (error || !session) {

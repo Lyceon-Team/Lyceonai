@@ -14,7 +14,7 @@
  */
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { navItems } from "@/components/layout/app-shell";
+import { RAIL_ITEMS } from "@/components/layout/app-shell";
 import {
   ADA,
   billingStatus,
@@ -72,7 +72,7 @@ describe("G4-08 the guardian's /profile", () => {
     const hrefs = Array.from(document.querySelectorAll("a[href]")).map((a) =>
       a.getAttribute("href"),
     );
-    for (const item of navItems) {
+    for (const item of RAIL_ITEMS) {
       expect(hrefs).not.toContain(item.href);
     }
     // The student's own practice figures are not a guardian section.

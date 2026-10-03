@@ -1,3 +1,9 @@
+import { estimateStatusReadSchema } from "@lyceon/shared/diagnostic-state";
+import {
+  sectionProjectionsResponseSchema,
+  studentResourceUrl,
+  type SectionProjectionsResponse,
+} from "@lyceon/shared/student-resources";
 import { apiRequest } from "./queryClient";
 
 /**
@@ -121,4 +127,30 @@ export type EstimateResponse =
 export async function fetchScoreEstimate(): Promise<EstimateResponse> {
   const response = await apiRequest("/api/progress/projection");
   return response.json();
+}
+
+/**
+ * @spec [student-UI register OQ-36 (owner ruling 2026-10-02), §8 F-51; Doc 05C (a student reads
+ *        their own projection with no entitlement check)] | @implemented [2026-10-03]
+ *
+ * plain English: Home's two projection reads. The range comes from
+ * `GET /api/students/:id/projections/sections` (ungated, both plans), summed by
+ * `projectedRange`. `/api/progress/projection` is read for `estimateStatus` ONLY, parsed through
+ * a schema that keeps that one field, so its `confidenceBand` never reaches the page (F-51).
+ * A body either schema rejects throws: a contract mismatch is an error, not an empty result.
+ */
+export async function fetchSectionProjections(
+  studentId: string,
+): Promise<SectionProjectionsResponse> {
+  const response = await apiRequest(
+    studentResourceUrl(studentId, "projectionsSections"),
+  );
+  return sectionProjectionsResponseSchema.parse(await response.json());
+}
+
+export const ESTIMATE_STATUS_PATH = "/api/progress/projection";
+
+export async function fetchEstimateStatus(): Promise<EstimateStatus> {
+  const response = await apiRequest(ESTIMATE_STATUS_PATH);
+  return estimateStatusReadSchema.parse(await response.json()).estimateStatus;
 }

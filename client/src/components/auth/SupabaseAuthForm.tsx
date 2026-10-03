@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Card,
   CardContent,
   CardDescription,
   CardFooter,
@@ -178,7 +177,7 @@ export function SupabaseAuthForm() {
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto">
+    <div>
       <CardHeader>
         <CardTitle className="text-2xl">
           {mode === "reset" ? "Reset Password" : "Lyceon"}
@@ -536,6 +535,6 @@ export function SupabaseAuthForm() {
       <CardFooter className="flex justify-center text-sm text-muted-foreground">
         Authentication and legal consent are handled in one standard flow.
       </CardFooter>
-    </Card>
+    </div>
   );
 }

@@ -14,6 +14,7 @@ import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
 } from "../../apps/api/src/lib/rate-limit-ledger";
+import { dryRunPracticeQuota, toPracticeQuota } from "../lib/practice-quota";
 import {
   hasCanonicalOptionSet,
   buildServedOptions,
@@ -50,6 +51,7 @@ import {
   DEFAULT_PRACTICE_SESSION_MODE,
   practiceSessionModeSchema,
 } from "../../packages/shared/src/session-mode";
+import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -1120,6 +1122,14 @@ function sendClientConflict(
   });
 }
 
+/**
+ * @spec [Doc-02B_V4 §13 "Quota Check Mechanism", "What Counts Against Quota"; owner ruling
+ *        (Karl) 2026-10-03 OQ-43 / F-61] | @implemented [2026-10-03]
+ * plain English: the serve-time gate (session start's first item, `GET /next`). It refuses
+ * (402) when the free student has already SUBMITTED the daily limit in the current
+ * America/Chicago day — the same SQL branch as the dry run behind `GET /quota`. Serving writes
+ * the item's serve-log row (the paid per-session cap reads it) but consumes no free quota.
+ */
 async function reservePracticeQuestionQuota(args: {
   userId: string;
   role: string | undefined;
@@ -1493,15 +1503,14 @@ export async function startOrReplaySession(args: {
   // @spec [Doc-02B_V4 §41; F2 creation-time clamp] | @implemented [2026-06-30]
   // Dry-run remaining daily quota for unpaid users and clamp requestedCount
   // so we never over-materialize sessions beyond the remaining free-tier allowance.
+  // Remaining = daily_quota_free minus answers submitted in the current America/Chicago day
+  // (owner ruling OQ-43 / F-61, 2026-10-03; Doc 02B §13 "Pre-Cap", "Zero Quota Remaining").
   if (args.role !== "admin") {
     try {
-      const dryRunDecision = await checkAndReservePracticeQuota({
-        studentUserId: args.userId,
+      // OQ-21: the one dry-run call, shared with GET /quota so the read and this 402 agree.
+      const dryRunDecision = await dryRunPracticeQuota({
+        userId: args.userId,
         role: args.role,
-        sessionId: null,
-        sessionItemId: null,
-        dryRun: true,
-        requestId: null,
       });
       if (!dryRunDecision.allowed) {
         return {
@@ -2163,6 +2172,96 @@ async function serveNextForSession(args: {
 }
 
 /**
+ * GET /api/practice/quota — today's free practice quota, read without consuming it.
+ *
+ * @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02: a read-only
+ *        `GET /api/practice/quota`, computed by the same function as the 402
+ *        (`checkAndReservePracticeQuota`, dry run); Doc 02B §12 Entitlement Matrix, §13; Doc 01A
+ *        §40 `getUsage`, §44] | @implemented [2026-10-03]
+ *
+ * plain English: the free quota line and ruler on Home and Practice. Same middleware as every
+ * practice route (the mount's auth and student-or-admin gate, then auth, profile complete and the
+ * under-13 link gate here); no entitlement gate, because the free student is the reader. The
+ * number comes from `dryRunPracticeQuota`, the call the session-start 402 makes, so the read and
+ * the refusal cannot disagree; a dry run writes no ledger row. Body: `{unlimited, limit,
+ * remaining, resetAt}` (`practiceQuotaSchema`). A paid student, and an admin (the wrapper's admin
+ * bypass), read `unlimited: true` with nulls. Since the OQ-43 / F-61 ruling (Karl, 2026-10-03)
+ * the count is answers submitted in the current America/Chicago day and `resetAt` the next
+ * Chicago midnight (Doc 02B §13); the SQL function changed, this handler did not.
+ * edge cases: ledger unavailable, or a decision without numbers → 503 (fail closed, never a
+ * guessed number), like the 402 sites. Logs carry the user id and the decision code, nothing else.
+ */
+router.get(
+  "/quota",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireGuardianLinkForUnder13,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
+
+    const unavailable = {
+      error: "Usage check unavailable",
+      code: "RATE_LIMIT_DB_UNAVAILABLE",
+      message:
+        "Unable to read practice quota at this time. Please retry shortly.",
+      requestId,
+    };
+
+    try {
+      const decision = await dryRunPracticeQuota({
+        userId: user.id,
+        role: user.role,
+      });
+      const quota = toPracticeQuota(decision);
+      if (!quota.ok) {
+        logger.error(
+          "PRACTICE_QUOTA",
+          "quota_read_incomplete",
+          "Practice quota dry run returned no usable numbers; failing closed",
+          undefined,
+          { code: decision.code },
+          { userId: user.id, ...(requestId ? { requestId } : {}) },
+        );
+        return res.status(503).json(unavailable);
+      }
+      return res.json(quota.value);
+    } catch (error: unknown) {
+      if (error instanceof RateLimitUnavailableError) {
+        logger.warn(
+          "PRACTICE_QUOTA",
+          "quota_read_unavailable",
+          "Practice quota ledger unavailable; failing closed",
+          undefined,
+          { userId: user.id, ...(requestId ? { requestId } : {}) },
+        );
+        return res.status(503).json(unavailable);
+      }
+      logger.error(
+        "PRACTICE_QUOTA",
+        "quota_read_failed",
+        "Practice quota read failed",
+        error,
+        undefined,
+        { userId: user.id, ...(requestId ? { requestId } : {}) },
+      );
+      return res.status(500).json({
+        error: "quota_read_failed",
+        message: "Unable to read practice quota",
+        requestId,
+      });
+    }
+  },
+);
+
+/**
  * Returns a list of uncompleted practice sessions for the current user.
  */
 router.get(
@@ -2226,6 +2325,11 @@ router.get(
           target_question_count: metadata.target_question_count || 0,
           total_items: count || 0,
           answered_items: answered || 0,
+          // @spec [student-UI register §9 OQ-22, owner ruling (Karl) 2026-10-02] |
+          // @implemented [2026-10-03] | plain English: the four arrays the student chose
+          // (empty when none), projected from session_spec by the shared builder. Never
+          // `filters`, never the pool size or requested count stored beside the spec.
+          criteria: toSessionCriteria(metadata.session_spec),
         };
       }),
     );
@@ -2717,6 +2821,9 @@ router.get(
         : null,
       clientInstanceId: boundClient ?? null,
       readOnly: state === "completed" || state === "abandoned",
+      // OQ-22 (owner ruling 2026-10-02): the chosen criteria for the runner title; see
+      // packages/shared/src/session-criteria.ts for the empty-array rule.
+      criteria: toSessionCriteria(metadata.session_spec),
     });
   },
 );

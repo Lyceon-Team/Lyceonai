@@ -185,6 +185,14 @@ export function monthName(date: string): string {
   return MONTHS[parse(date).getUTCMonth()] ?? "";
 }
 
+/**
+ * "Monday, 28 September" — Home's date line and test-day phrase (Main.dc.html; UI-50). The
+ * comma is the prototype's; `longDate` below is the calendar sheet's form without it.
+ */
+export function weekdayDayMonth(date: string): string {
+  return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""}, ${dayAndMonth(date)}`;
+}
+
 /** "Monday 21 September" — the side sheet's date line. */
 export function longDate(date: string): string {
   return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""} ${dayOfMonth(date)} ${monthName(date)}`;
