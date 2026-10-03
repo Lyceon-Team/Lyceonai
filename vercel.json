@@ -45,8 +45,7 @@
     {
       "src": "^/(?!api(?:/|$)|auth/callback$).*",
       "headers": {
-        "Content-Security-Policy": "frame-ancestors 'none'",
-        "Content-Security-Policy-Report-Only": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'sha256-VwLEl5LYkYRmisEJhPIWmpxw7wjpR9ShDYgf9CXNsx8=' https://www.desmos.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:",
+        "Content-Security-Policy": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'sha256-VwLEl5LYkYRmisEJhPIWmpxw7wjpR9ShDYgf9CXNsx8=' 'unsafe-eval' https://www.desmos.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'",
         "X-Frame-Options": "DENY",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
