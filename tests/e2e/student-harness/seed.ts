@@ -87,7 +87,7 @@ async function call(
 async function startSession(
   base: string,
   persona: StudentPersona,
-  section: "math" | "rw",
+  section: "math" | "rw" | null,
   criteria?: { key: string; sections: string[]; domains: string[] },
 ): Promise<string> {
   const body: Record<string, unknown> =
@@ -152,32 +152,27 @@ const REVIEW_HISTORY_SESSION_SIZE = 5;
 /** The extra sessions' criteria: a section and one domain each (the harness bank's domains). */
 const REVIEW_HISTORY_SESSIONS: ReadonlyArray<{
   key: string;
-  section: "math" | "rw";
   sections: string[];
   domains: string[];
 }> = [
-  { key: "rh-alg", section: "math", sections: ["M"], domains: ["Algebra"] },
+  { key: "rh-alg", sections: ["M"], domains: ["Algebra"] },
   {
     key: "rh-cas",
-    section: "rw",
     sections: ["RW"],
     domains: ["Craft and Structure"],
   },
   {
     key: "rh-adv",
-    section: "math",
     sections: ["M"],
     domains: ["Advanced Math"],
   },
   {
     key: "rh-ini",
-    section: "rw",
     sections: ["RW"],
     domains: ["Information and Ideas"],
   },
   {
     key: "rh-geo",
-    section: "math",
     sections: ["M"],
     domains: ["Geometry and Trigonometry"],
   },
@@ -193,7 +188,7 @@ async function seedReviewHistory(
 ): Promise<{ answered: number; openReviewSessionId: string }> {
   let answered = 0;
   for (const spec of REVIEW_HISTORY_SESSIONS) {
-    const id = await startSession(base, persona, spec.section, spec);
+    const id = await startSession(base, persona, null, spec);
     answered += await answerItems(base, persona, id, Number.MAX_SAFE_INTEGER);
   }
   const { json } = await call(base, persona, "POST", "/api/review/sessions", {
