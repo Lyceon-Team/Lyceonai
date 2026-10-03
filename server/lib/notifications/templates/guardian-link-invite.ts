@@ -12,7 +12,7 @@
  */
 import { escapeHtml, type EmailRender } from "./shared";
 
-export type GuardianLinkInviteInput = {
+type GuardianLinkInviteInput = {
   studentDisplayName: string;
   code: string;
   redeemUrl: string;
@@ -40,7 +40,7 @@ export function guardianLinkInviteEmail(
   const subject = `${name} invited you to follow their SAT prep on Lyceon`;
 
   const canSee =
-    "As a guardian you can see their progress summary: overall and skill-level mastery and activity trends.";
+    "As a guardian you can see their progress summary: mastery by domain and activity trends.";
   const cannotSee =
     "You cannot see individual questions, their answers, their tutor conversations, or session details.";
   const howTo =

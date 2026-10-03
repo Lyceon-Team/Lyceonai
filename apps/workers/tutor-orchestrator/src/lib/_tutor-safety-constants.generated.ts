@@ -123,6 +123,53 @@ export function buildMcqPatterns(letter: string): ReadonlyArray<RegExp> {
 }
 
 /**
+ * @spec [Brief 13 Step 0b ruling 3 (owner, Karl, 2026-10-02): the leak scan catches positional
+ *        phrasing; INV-03-04] | @implemented [2026-10-02]
+ *
+ * plain English: choices are lettered A–D by on-screen position, so "the second choice",
+ * "option 2" and "the last one" name the same option as "B" or "D". These are the phrases that
+ * point at the option in display position `letter`. Used two ways: inside the assertion frames
+ * below (a leak), and bare for the echo exemption (did the student already say it?).
+ * edge cases: "last" names D only, since SAT multiple-choice items have four options. A bare
+ * mention ("look at the second choice") is not a leak on its own, the same as a bare "B".
+ */
+export function positionalReferenceSource(letter: string): string | null {
+  const index = ["A", "B", "C", "D"].indexOf(letter.trim().toUpperCase());
+  if (index < 0) return null;
+  const n = index + 1;
+  const word = ["first", "second", "third", "fourth"][index];
+  const ord = ["1st", "2nd", "3rd", "4th"][index];
+  const ordinal = n === 4 ? `(?:${word}|${ord}|last)` : `(?:${word}|${ord})`;
+  return (
+    `(?:(?:the\\s+)?${ordinal}\\s+(?:one|option|choice|answer)\\b` +
+    `|(?:option|choice|answer|number)\\s*(?:#\\s*)?${n}(?!\\d)` +
+    `|#\\s*${n}(?!\\d))`
+  );
+}
+
+/**
+ * MCQ leak patterns that name the correct option by position rather than by letter.
+ */
+export function buildMcqPositionalPatterns(
+  letter: string,
+): ReadonlyArray<RegExp> {
+  const r = positionalReferenceSource(letter);
+  if (r === null) return [];
+  return [
+    new RegExp(
+      `(?:correct|right)\\s+(?:answer|option|choice)\\s+is\\s+${r}`,
+      "i",
+    ),
+    new RegExp(`the\\s+answer\\s+is\\s+${r}`, "i"),
+    new RegExp(`(?:^|:\\s*)Answer:\\s*${r}`, "im"),
+    new RegExp(`(?:choose|select|pick|go\\s+with)\\s+${r}`, "i"),
+    new RegExp(`${r}\\s+is\\s+(?:the\\s+)?(?:correct|right)`, "i"),
+    new RegExp(`definitely\\s+${r}`, "i"),
+    new RegExp(`it'?s\\s+${r}`, "i"),
+  ];
+}
+
+/**
  * Checks if a numeric value appears in text in a context that indicates
  * answer disclosure. Two-pass logic:
  *   1. Assertion-context: if a disclosure phrase ("the answer is", "you
@@ -261,7 +308,10 @@ export function hasAnswerLeak(
 
     // MCQ: single letter A-D
     if (/^[A-Da-d]$/.test(trimmed)) {
-      const patterns = buildMcqPatterns(trimmed);
+      const patterns = [
+        ...buildMcqPatterns(trimmed),
+        ...buildMcqPositionalPatterns(trimmed),
+      ];
       let mcqLeaked = false;
       for (const pattern of patterns) {
         if (pattern.test(text)) {
@@ -276,6 +326,11 @@ export function hasAnswerLeak(
       if (studentMessages && studentMessages.length > 0) {
         for (const msg of studentMessages) {
           if (answerValueAppearsIn(msg, trimmed)) {
+            return false; // echo — not a leak
+          }
+          // The student named the same option by position ("I think it's the second one").
+          const positional = positionalReferenceSource(trimmed);
+          if (positional !== null && new RegExp(positional, "i").test(msg)) {
             return false; // echo — not a leak
           }
         }

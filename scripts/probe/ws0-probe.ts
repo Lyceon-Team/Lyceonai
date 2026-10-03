@@ -11,9 +11,9 @@
  *
  * Contract: contracts/ws0-stop-the-bleed.contract.md
  * Proves:   GAP-TB-01, GAP-TB-02, GAP-TB-03, GAP-TU-06 (the DB-trust-boundary
- *           assertions). GAP-ID-11 is proven by the route tests
- *           (tests/ci/guardian-consent.id11.contract.test.ts), NOT here, because
- *           the forgery vector is an app-layer flow not reachable anonymously.
+ *           assertions). GAP-ID-11 (consent-token forgery) is retired: the consent
+ *           flow it guarded was removed in G2-05 (#978), and
+ *           tests/ci/consent-flow-removed.pg.ci.test.ts proves it stays gone.
  *           GAP-MA-09 is proven by the migration's verification block (pg_trigger),
  *           which needs catalog access this anon/auth probe does not have.
  *

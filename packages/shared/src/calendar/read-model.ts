@@ -393,7 +393,6 @@ export const guardianDayBlockSchema = z
     status: blockStatusSchema,
   })
   .strict();
-export type GuardianDayBlock = z.infer<typeof guardianDayBlockSchema>;
 
 /**
  * A day as a guardian may see it: the same facts, none of the plan machinery.

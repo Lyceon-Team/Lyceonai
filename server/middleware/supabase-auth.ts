@@ -270,26 +270,6 @@ export function requireRequestUser(
   return req.user;
 }
 
-export function requireRequestAuthContext(
-  req: AuthenticatedRequest,
-  res: Response,
-): { user: SupabaseUser; supabase: SupabaseClient } | null {
-  const user = requireRequestUser(req, res);
-  if (!user) {
-    return null;
-  }
-
-  if (!req.supabase) {
-    sendNoUser(req, res);
-    return null;
-  }
-
-  return {
-    user,
-    supabase: req.supabase,
-  };
-}
-
 function isTestEnvironment(): boolean {
   return process.env.VITEST === "true" || process.env.NODE_ENV === "test";
 }
@@ -433,40 +413,6 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
     const value = (_supabaseAdmin as any)[prop];
     if (typeof value === "function") {
       return value.bind(_supabaseAdmin);
-    }
-    return value;
-  },
-});
-
-// Supabase client with anon key (enforces RLS)
-// Lazy initialization with environment-based error handling
-let _supabaseAnon: SupabaseClient | null = null;
-const supabaseAnon = new Proxy({} as SupabaseClient, {
-  get(_target, prop) {
-    if (!_supabaseAnon) {
-      const url = process.env.SUPABASE_URL;
-      const key = process.env.SUPABASE_ANON_KEY;
-
-      if (!url || !key) {
-        if (isTestEnvironment()) {
-          // In test environment, return placeholder client
-          _supabaseAnon = createClient(
-            "https://placeholder.supabase.co",
-            "placeholder-key",
-          );
-        } else {
-          // In production/dev, throw on first use
-          throw new Error(
-            "SUPABASE_URL and SUPABASE_ANON_KEY must be set in production/development",
-          );
-        }
-      } else {
-        _supabaseAnon = createClient(url, key);
-      }
-    }
-    const value = (_supabaseAnon as any)[prop];
-    if (typeof value === "function") {
-      return value.bind(_supabaseAnon);
     }
     return value;
   },
@@ -922,8 +868,9 @@ export async function requireGuardianLinkForUnder13(
 
 /**
  * Middleware to require completed onboarding profile before feature access.
- * Blocks when profile_completed_at is null — covers both "DOB not yet set" and
- * "under-13 awaiting guardian consent" at a single server-side enforcement point.
+ * Blocks when profile_completed_at is null ("DOB not yet set"). An under-13 student is gated
+ * separately, on every request, by the live link check `requireGuardianLinkForUnder13` (G2-04);
+ * there is no stored consent state.
  * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
  */
 export function requireProfileComplete(
@@ -974,6 +921,14 @@ export function requireProfileComplete(
  *   Under-13 students are blocked even with guardian consent — spec is explicit, no exception.
  *   Students with unknown age state are blocked until DOB is confirmed.
  */
+/**
+ * The tutor's age test, on its own so the feature-access map (OQ-29) asks the exact question
+ * `requireStudentOnly` asks. Fail-closed: only an explicit `false` passes.
+ */
+export function passesTutorAgeGate(user: Pick<SupabaseUser, "is_under_13">): boolean {
+  return user.is_under_13 === false;
+}
+
 export function requireStudentOnly(
   req: Request,
   res: Response,
@@ -1008,7 +963,7 @@ export function requireStudentOnly(
   // Doc 03B §3.2.1: age_below_minimum → 403, code age_restriction.
   // Fail-closed: absent/undefined/unrecognized is_under_13 is denied.
   // Only explicit `false` (age confirmed ≥ 13) passes.
-  if (req.user.is_under_13 !== false) {
+  if (!passesTutorAgeGate(req.user)) {
     logger.warn(
       "AUTH",
       "age_restriction",
@@ -1077,15 +1032,49 @@ export function requireStudentOrAdmin(
 }
 
 /**
+ * @spec [Brief 8 ruling 1 (owner, 2026-10-01): the background endpoints are "student-only, no
+ *       entitlement check"; SCL-187 rule 1 (APPLIED); Coding Standards §6.1, §11.3]
+ * | @implemented [2026-10-01]
+ *
+ * plain English: the gate for a surface that holds the STUDENT's own data and nobody else's —
+ * Settings → Profile background. Only `role === 'student'` passes: a guardian gets 403
+ * `ROLE_NOT_PERMITTED` (guardians never see or touch these fields), and so does an admin, because
+ * an admin has no student background to edit and no admin surface reads one. Then the live
+ * under-13 link gate, as on every student surface the calendar's dream-school picker shares.
+ *
+ * Why not `requireStudentOrAdmin`: it admits admins. Why not `requireStudentOnly`: that is LISA's
+ * gate and refuses every under-13 account outright (Doc 03 §12.5), which is right for the tutor
+ * and wrong here — a linked under-13 student may use the calendar, and so its picker.
+ */
+export function requireStudentAccount(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) {
+    return sendNoUser(req, res);
+  }
+  if (req.user.isAdmin || req.user.role !== "student") {
+    logger.warn(
+      "AUTH",
+      "role_not_permitted",
+      "Non-student role attempted to access a student-account surface",
+      { userId: req.user.id, role: req.user.role, path: req.path },
+      { requestId: req.requestId },
+    );
+    return sendForbidden(res, {
+      error: "Role not permitted",
+      message: "Only students can access this feature.",
+      requestId: req.requestId,
+      extra: { code: "ROLE_NOT_PERMITTED" },
+    });
+  }
+  return requireGuardianLinkForUnder13(req, res, next);
+}
+
+/**
  * Get Supabase admin client (bypasses RLS - use carefully!)
  */
 export function getSupabaseAdmin() {
   return supabaseAdmin;
-}
-
-/**
- * Get Supabase anon client (enforces RLS)
- */
-export function getSupabaseAnon() {
-  return supabaseAnon;
 }

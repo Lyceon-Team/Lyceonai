@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { resolveFeatureAccess } from "../lib/feature-access";
 import { z } from "zod";
 import {
   getSupabaseAdmin,
@@ -17,10 +18,15 @@ import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state";
-import { setDateOfBirthRequestSchema } from "../../packages/shared/src/profile-role-choice-schema";
+import {
+  dateOfBirthSchema,
+  setDateOfBirthRequestSchema,
+} from "../../packages/shared/src/profile-role-choice-schema";
 import {
   decideRoleChoice,
+  dateOfBirthRefusal,
   guardianAgeRefusal,
+  INVALID_DATE_OF_BIRTH,
   isSelfAssignableRole,
   loadRoleChoiceFacts,
   NOT_SELF_ASSIGNABLE,
@@ -129,8 +135,11 @@ function outstandingLegalDocs(
 const profileCompletionSchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   role: z.enum(["student", "guardian"]),
-  dateOfBirth: z.string().optional().nullable(),
-  guardianEmail: z.string().email().optional().nullable(),
+  // F-41: a real calendar date, through the shared schema (Brief 8 ruling 6). Not-in-the-future
+  // and plausibility need today's date, so `dateOfBirthRefusal` applies them below.
+  dateOfBirth: dateOfBirthSchema.optional().nullable(),
+  // Guardian final purge, item 3 (owner brief 2026-10-02): `guardianEmail` is gone. It only ever
+  // addressed the removed consent email (G2-05); an unknown key is stripped here, never written.
   marketingOptIn: z.boolean().optional().default(false),
 });
 
@@ -154,7 +163,7 @@ router.get("/", async (req: Request, res: Response) => {
     const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, email, display_name, role, is_under_13, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
+        "id, email, display_name, role, is_under_13, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at, stripe_customer_id",
       )
       .eq("id", user.id)
       .single();
@@ -229,8 +238,13 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
+    // OQ-29 (owner ruling 2026-10-02): the rail locks and the upgrade-vs-age choice, computed by
+    // each gated route's own predicate. A display hint; every route still enforces.
+    const featureAccess = await resolveFeatureAccess(user);
+
     return res.json({
       authenticated: true,
+      featureAccess,
       // Server-authority flags + grace-window state (see the @spec note above).
       featureFlags: {
         accountDeletionLifecycleV2: lifecycleV2,
@@ -246,11 +260,8 @@ router.get("/", async (req: Request, res: Response) => {
         isAdmin: user.isAdmin,
         isGuardian: user.isGuardian,
         is_under_13: profileRow.is_under_13,
-        guardianEmail: profileRow.guardian_email,
         dateOfBirth: profileRow.date_of_birth,
         marketingOptIn: profileRow.marketing_opt_in,
-        studentLinkCode: profileRow.student_link_code,
-        student_link_code: profileRow.student_link_code,
         profileCompletedAt: profileRow.profile_completed_at ?? null,
         requiredProfileComplete,
         guardianConsentRequired,
@@ -302,7 +313,7 @@ router.patch("/", async (req: Request, res: Response) => {
       await supabase
         .from("profiles")
         .select(
-          "id, role, profile_completed_at, guardian_email, date_of_birth",
+          "id, role, profile_completed_at, date_of_birth",
         )
         .eq("id", userId)
         .single();
@@ -363,6 +374,11 @@ router.patch("/", async (req: Request, res: Response) => {
     // Validate request body
     const validation = profileCompletionSchema.safeParse(req.body);
     if (!validation.success) {
+      // F-41: a malformed date of birth is the person's input being wrong, so it gets the coded
+      // refusal the onboarding page shows verbatim (AS-3), not the generic "Invalid profile data".
+      if (validation.error.issues.some((issue) => issue.path[0] === "dateOfBirth")) {
+        return sendRoleChoiceRefusal(res, INVALID_DATE_OF_BIRTH);
+      }
       return res.status(400).json({
         error: "Invalid profile data",
         details: validation.error.errors,
@@ -399,6 +415,22 @@ router.patch("/", async (req: Request, res: Response) => {
       ? storedDateOfBirth
       : (data.dateOfBirth ?? null);
 
+    // F-41: a NEW date of birth must be a plausible past date. A stored (locked) one is not
+    // re-judged: it was accepted when it was written, and refusing it now would lock the person
+    // out of their own profile. An under-13 date is ACCEPTED here — see `dateOfBirthRefusal`.
+    if (!dateOfBirthLocked && effectiveDateOfBirth) {
+      const dobRefusal = dateOfBirthRefusal(effectiveDateOfBirth, new Date());
+      if (dobRefusal) {
+        logger.warn(
+          "PROFILE",
+          "date_of_birth_refused",
+          "Date of birth refused at onboarding",
+          { code: dobRefusal.code, requestId: req.requestId },
+        );
+        return sendRoleChoiceRefusal(res, dobRefusal);
+      }
+    }
+
     if (data.role === "student" && !effectiveDateOfBirth) {
       return res.status(400).json({
         error: "Date of birth is required for student accounts",
@@ -427,9 +459,6 @@ router.patch("/", async (req: Request, res: Response) => {
       data.role === "student" && effectiveDateOfBirth
         ? calculateAge(effectiveDateOfBirth) < 13
         : false;
-    const guardianEmail =
-      data.guardianEmail ?? existingProfile.guardian_email ?? null;
-
     // G2-05 (R6): the email-consent flow is gone. It wrote `guardian_consent_requests` rows (on a
     // column the table never had, so every under-13 completion failed with 500), emailed a link
     // to a page that does not exist, and withheld `profile_completed_at` from under-13 students.
@@ -445,7 +474,6 @@ router.patch("/", async (req: Request, res: Response) => {
         // G2-03: a locked date of birth is not written at all, and `is_under_13` is never
         // written — the age trigger derives it from the date of birth.
         ...(dateOfBirthLocked ? {} : { date_of_birth: effectiveDateOfBirth }),
-        guardian_email: guardianEmail,
         marketing_opt_in: data.marketingOptIn,
         profile_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -479,12 +507,9 @@ router.patch("/", async (req: Request, res: Response) => {
         email: profile.email,
         displayName: profile.display_name,
         dateOfBirth: profile.date_of_birth,
-        guardianEmail: profile.guardian_email,
         isUnder13: profile.is_under_13,
-        guardianConsent: guardianConnected,
         marketingOptIn: profile.marketing_opt_in,
         profileCompletedAt: profile.profile_completed_at,
-        studentLinkCode: profile.student_link_code,
         role: profile.role,
       },
       guardianConsentRequired,

@@ -18,8 +18,9 @@
  *   vite --port 5173`), then
  *   E2E_BASE_URL=http://localhost:5173 E2E_SHOT_DIR=<dir> \
  *     pnpm exec playwright test tests/e2e/guardian-surfaces.spec.ts
- * Not part of `pnpm test` (vitest) and not run in CI: it needs a browser and a dev server, as
- * the exam e2e specs do.
+ * Not part of `pnpm test` (vitest): it needs a browser and a dev server. CI runs it, with
+ * `student-calendar.spec.ts` and `student-mastery.spec.ts`, in the `guardian-e2e` job
+ * (guardian closeout, Part B step 3).
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { offCentre, type Check } from "./guardian-harness/centring";
@@ -289,6 +290,33 @@ for (const vp of VIEWPORTS) {
 }
 
 /**
+ * The route loader is a guardian surface too: every lazy guardian page shows it while its module
+ * loads, and on a cold dev server it was still on screen when `add-student-modal @1440` measured
+ * (CI, 2026-10-02: `{"tag":"p","text":"Loading...","px":14}`). Stalling the page's module holds
+ * the loader on screen, so the floor is checked on it every run rather than only when a load
+ * happens to be slow.
+ */
+for (const vp of VIEWPORTS) {
+  test(`route loader @${vp.name}: no text under 16px`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await serve(page);
+    // Never answered: the lazy page cannot resolve, so the Suspense fallback stays up.
+    await page.route(
+      "**/features/guardian/GuardianStudentsPage.tsx*",
+      () => {},
+    );
+    await page.goto("/guardian/students");
+    await page.getByTestId("page-loader").waitFor({ timeout: 15_000 });
+    // Presence before absence: the loader's own text is on screen, so the scan is not empty.
+    await expect(
+      page.getByTestId("page-loader").getByText("Loading...", { exact: true }),
+    ).toBeVisible();
+    const small = await smallText(page);
+    expect(small, JSON.stringify(small, null, 2)).toEqual([]);
+  });
+}
+
+/**
  * Owner decisions 2026-10-01 on PR 1003, items 7 and 9 — the shell header, in a real browser.
  *   7. At 390 the header shows "Lyceon" and drops "Guardian" (not the other way round).
  *   9. No background square behind the logo mark: the pixels at the mark's corners are the
@@ -452,6 +480,28 @@ const PHONE_CENTRING: readonly {
         selector: ".lyceon-calendar .facts",
         mode: "lines",
       },
+      // Owner review 2026-10-01, final round item 1: on a phone everything inside a block
+      // card centres too — title, "~N min" line, scope chips and progress bar.
+      {
+        what: "block-card title",
+        selector: ".lyceon-calendar .col .block .ttl",
+        mode: "text",
+      },
+      {
+        what: "block-card meta line",
+        selector: ".lyceon-calendar .col .block .sub",
+        mode: "text",
+      },
+      {
+        what: "block-card scope chips",
+        selector: ".lyceon-calendar .col .block .dom",
+        mode: "lines",
+      },
+      {
+        what: "block-card progress bar",
+        selector: ".lyceon-calendar .col .block .progress",
+        mode: "box",
+      },
     ],
   },
   {
@@ -568,6 +618,47 @@ test.describe("phone centring at 390 (item 10)", () => {
       await s.act?.(page);
       await page.waitForTimeout(300);
       expect(await offCentre(page, s.checks)).toEqual([]);
+    });
+  }
+});
+
+/**
+ * Owner review 2026-10-01 (#1013, item 1): the mastery meter spans the full width of its
+ * card's content area, at both widths. Measured: every meter's box against its card's
+ * content box (padding excluded), within 1px. Presence first: the Dashboard draws 8 meters.
+ */
+test.describe("the mastery meter spans its card", () => {
+  for (const vp of VIEWPORTS) {
+    test(`@${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await serve(page);
+      await page.goto(`/guardian/${F.ADA}`);
+      await page
+        .getByTestId("dashboard-exam")
+        .first()
+        .waitFor({ timeout: 15_000 });
+      const gaps = await page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll<HTMLElement>("[data-testid=mastery-meter]"),
+        ).map((meter) => {
+          const content = meter
+            .closest("[data-domain]")
+            ?.querySelector<HTMLElement>(":scope > div:last-child");
+          if (!content) return { left: 999, right: 999 };
+          const c = content.getBoundingClientRect();
+          const s = getComputedStyle(content);
+          const m = meter.getBoundingClientRect();
+          return {
+            left: Math.abs(m.left - (c.left + parseFloat(s.paddingLeft))),
+            right: Math.abs(c.right - parseFloat(s.paddingRight) - m.right),
+          };
+        }),
+      );
+      expect(gaps).toHaveLength(8);
+      for (const g of gaps) {
+        expect(g.left).toBeLessThanOrEqual(1);
+        expect(g.right).toBeLessThanOrEqual(1);
+      }
     });
   }
 });

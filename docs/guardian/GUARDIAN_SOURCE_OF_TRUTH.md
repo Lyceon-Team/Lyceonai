@@ -1,31 +1,32 @@
 # Guardian Source Of Truth
 
+(updated 2026-10-01, guardian closeout: references to deleted files, helpers and middleware replaced with what exists now.)
+
 ## Runtime Owner
-- Guardian runtime and reporting source of truth: `server/routes/guardian-routes.ts`.
+- Guardian-only routes (roster, link redeem, unlink): `server/routes/guardian-routes.ts`, mounted at `/api/guardian`.
+- Guardian reads of a student's data: `server/routes/student-resources.ts`, mounted at `/api/students`. The same handler serves the student and a linked guardian.
 - Mounted owner: `server/index.ts`.
 
 ## Relationship Truth
-- Canonical guardian/student relationship truth: `guardian_links` via `server/lib/account.ts` helpers:
-  - `isGuardianLinkedToStudent`
-  - `getAllGuardianStudentLinks`
-  - `createGuardianLink`
-  - `revokeGuardianLink`
+- Canonical guardian/student relationship truth: the `guardian_links` table.
+- Read helpers in `server/lib/account.ts`: `getAllGuardianStudentLinks`, `getGuardianLinkForStudent`, `getAnyGuardianLinkForPair`, `getGuardianLinkById`, `getActiveGuardianLinksForStudent`.
+- Writes go through audited SQL functions, called from `server/lib/account.ts`:
+  - `createActiveGuardianLink` → `public.create_active_guardian_link_audited`
+  - `revokeGuardianLink` → `public.revoke_guardian_link_audited`
+- Link codes: `server/lib/student-link-code.ts` (issue, read, single-use redeem).
 
-## Entitlement Truth
-- Canonical premium visibility gate: `server/middleware/guardian-entitlement.ts` using linked-pair resolution from `server/lib/account.ts`.
-- Guardian visibility is denied when link is missing/revoked or linked-pair entitlement is inactive.
+## Access Truth
+- One derivation: SQL `public.guardian_view_decision(uuid, uuid)`, executable by `service_role` only.
+- Called by `server/services/guardian-subject.ts` (`resolveGuardianViewDecision`), which is called by `resolveSubject` in `server/middleware/subject-resolver.ts`.
+- `resolveSubject` puts the subject on `req.subject` (`via: 'self'` or `via: 'guardian'`). Unlinked → 404. Linked but student unentitled → 402.
+- Per-feature gate: the `requiresEntitlement` route table in `server/routes/student-resources.ts` (`entitlementGate`), applied to the STUDENT's entitlement.
+- Guardian visibility is denied when the link is missing or revoked, or the student's entitlement is inactive.
 
-## Reporting Builders Used By Guardian Runtime
-- Practice summary projection: `server/services/kpi-truth-layer.ts`
-  - `buildCanonicalPracticeKpiSnapshot`
-  - `buildStudentKpiView` (guardian uses filtered shared weekly metrics only)
-- Calendar month projection:
-  - `apps/api/src/services/calendar-month-view.ts` -> `buildCalendarMonthView(userId, start, end, timezone)`
-  - guardian route only applies entitlement/link checks and visibility filtering of returned day fields
-- Full-length report summary projection:
-  - `apps/api/src/services/fullLengthExam.ts` (`getExamReport`) + guardian-safe transform in `server/routes/guardian-routes.ts`
-- Weakness rollup source:
-  - `apps/api/src/services/mastery-read.ts` (`fetchDomainMasteryRows`) — domain-grain `student_domain_mastery` only (AC#19: guardians never see per-skill mastery or mastery_score/mastery_pct) + guardian-safe projection in `server/routes/guardian-routes.ts`
+## Reporting Builders Used By Guardian Reads
+- KPI: `server/services/canonical-runtime-views.ts` → `readGuardianKpiOverall` (streak only, SCL-188). `kpi/sections` and `kpi/domains` return empty lists for a guardian.
+- Calendar: `server/services/calendar/read-service.ts` → `readGuardianCalendar` (`{ days, facts, streak }`).
+- Full-length exam results: `server/services/exam-runtime-service.ts` (`listExamFormsWithCompletion`) and `server/services/exam-report-service.ts` (`readExamReport`), shaped by `toGuardianExamList` / `toGuardianExamReport` in `packages/shared/src/exam-guardian-report-schema.ts`.
+- Domain mastery: `apps/api/src/services/mastery-view.ts` → `readDomainMasteryView` (domain grain only). `/mastery/skills` refuses a guardian with 403 (SCL-194).
 
 ## Non-Canonical / Disallowed for Guardian Reporting
 - Client-side filtering as a security boundary.
@@ -36,6 +37,9 @@
 ## Regression Guards
 - `tests/ci/guardian-reporting.contract.test.ts`
 - `tests/ci/guardian.anti-leak.ci.test.ts`
-- `tests/ci/guardian-full-length-report.contract.test.ts`
-- `tests/ci/guardian-linking.contract.test.ts`
-
+- `tests/ci/subject-resolver.contract.test.ts`
+- `tests/ci/student-resources.contract.test.ts`
+- `tests/ci/guardian-denial-sweep.pg.ci.test.ts`
+- `tests/ci/guardian-exam-results.handler-pg.ci.test.ts`
+- `tests/ci/guardian-link-code.pg.ci.test.ts`
+- `tests/ci/guardian-access-audit.pg.ci.test.ts`

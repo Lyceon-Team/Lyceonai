@@ -46,6 +46,7 @@ import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
+import { useProgressKpis } from "@/hooks/useProgressKpis";
 import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
 import {
   isMathSection,
@@ -147,10 +148,7 @@ function Practice() {
     isError: kpiError,
     error: kpiErrorObj,
     refetch: refetchKpis,
-  } = useQuery<KpiResponse>({
-    queryKey: ["/api/progress/kpis"],
-    enabled: !!user && !authLoading,
-  });
+  } = useProgressKpis<KpiResponse>(!!user && !authLoading);
 
   // Doc 05F §15, INV-08-20: the day streak has no `calendar_access` check, so it is safe to
   // ask for on the practice page for every student, entitled or not.

@@ -18,9 +18,9 @@
  * and tests.
  *
  * THERE IS NO GUARDIAN SHAPE. One response per resource; a guardian receives the student's
- * response. The only guardian-specific behaviour in the whole contract is that
- * `/mastery/skills` returns an empty list for `via='guardian'`, and that is Doc 05B §10.4's
- * specified denial-by-absence-of-policy, not a different shape.
+ * response, with two exceptions, neither a different shape: the KPI routes narrow a
+ * guardian to the streak (SCL-188), and `/mastery/skills` refuses a guardian with 403 —
+ * guardians see no skills, anywhere (SCL-194, amending Doc 05B §10.4's empty list).
  */
 import { z } from "zod";
 import { masterySectionSchema } from "./mastery-levels.js";
@@ -114,9 +114,6 @@ export type StudentGuardianLinkView = z.infer<
 export const studentGuardianLinksViewSchema = z.object({
   links: z.array(studentGuardianLinkViewSchema),
 });
-export type StudentGuardianLinksView = z.infer<
-  typeof studentGuardianLinksViewSchema
->;
 
 /** Full client-side path for the student's active links, e.g. `/api/students/<id>/links`. */
 export function studentLinksUrl(studentId: string): string {
@@ -201,18 +198,6 @@ export const domainKpiSchema = z.object({
 });
 export type DomainKpiDto = z.infer<typeof domainKpiSchema>;
 
-export const sectionKpiResponseSchema = z.object({
-  sections: z.array(sectionKpiSchema),
-  requestId: z.string().optional(),
-});
-export type SectionKpiResponse = z.infer<typeof sectionKpiResponseSchema>;
-
-export const domainKpiResponseSchema = z.object({
-  domains: z.array(domainKpiSchema),
-  requestId: z.string().optional(),
-});
-export type DomainKpiResponse = z.infer<typeof domainKpiResponseSchema>;
-
 // ---------------------------------------------------------------------------
 // Projections — the band, never the blend anchors (Doc 05C §10.5).
 // ---------------------------------------------------------------------------
@@ -234,22 +219,6 @@ export const projectionSnapshotSchema = sectionProjectionSchema
     snapshotKind: z.string(),
   });
 export type ProjectionSnapshotDto = z.infer<typeof projectionSnapshotSchema>;
-
-export const sectionProjectionsResponseSchema = z.object({
-  sections: z.array(sectionProjectionSchema),
-  requestId: z.string().optional(),
-});
-export type SectionProjectionsResponse = z.infer<
-  typeof sectionProjectionsResponseSchema
->;
-
-export const projectionSnapshotsResponseSchema = z.object({
-  snapshots: z.array(projectionSnapshotSchema),
-  requestId: z.string().optional(),
-});
-export type ProjectionSnapshotsResponse = z.infer<
-  typeof projectionSnapshotsResponseSchema
->;
 
 // ---------------------------------------------------------------------------
 // kpi/overall — two audiences, two shapes (G3-01, SCL-188).
@@ -339,6 +308,3 @@ export const studentKpiOverallResponseSchema =
   studentKpiOverallSchema.extend(kpiEnvelope);
 export const guardianKpiOverallResponseSchema =
   guardianKpiOverallSchema.extend(kpiEnvelope);
-export type GuardianKpiOverallResponse = z.infer<
-  typeof guardianKpiOverallResponseSchema
->;

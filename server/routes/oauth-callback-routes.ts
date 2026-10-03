@@ -31,6 +31,7 @@ import {
   postAuthDestination,
   sanitizeReturnPath,
 } from "../../packages/shared/src/return-path";
+import { grantPasswordRecovery } from "../lib/password-credentials.js";
 
 const router = Router();
 
@@ -226,6 +227,25 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
     }
 
     const user = result.data.user;
+
+    // Brief 8 ruling 4 (owner choice 2026-10-01): a completed recovery link is the ONE thing that
+    // lets /update-password set a password without the current one, and it is recorded here, on
+    // the server, rather than inferred later from the session. Fails closed: with no grant the
+    // student could not set the password anyway, so they are told the link failed and can request
+    // another, rather than reaching a form that will refuse them.
+    if (otp?.type === "recovery") {
+      try {
+        await grantPasswordRecovery(user.id);
+      } catch {
+        logger.error(
+          "OAUTH",
+          "recovery_grant_failed",
+          "Could not record the recovery grant; refusing the recovery handoff",
+          { failure: "recovery_link_invalid" },
+        );
+        return res.redirect(`${siteUrl}/login?error=recovery_link_invalid`);
+      }
+    }
 
     let redirectPath: string;
     try {

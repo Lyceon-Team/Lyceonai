@@ -8,7 +8,7 @@ Canonical mount points:
 - `server/index.ts` -> `app.use("/api/guardian", guardianRoutes)`
 - `server/routes/full-length-exam-routes.ts`
 - `server/routes/guardian-routes.ts`
-- `server/middleware/guardian-entitlement.ts`
+- `server/routes/student-resources.ts` + `server/middleware/subject-resolver.ts` (guardian exam-result reads at `/api/students/:studentId/tests` and `/tests/:sessionId/report`; updated 2026-10-01, `server/middleware/guardian-entitlement.ts` no longer exists)
 
 ## Canonical Runtime Paths
 - Session create/start:
@@ -61,7 +61,7 @@ Guardian exam-report access requires both:
 Guardian payment does not create guardian-owned access; visibility is always derived from the linked student's entitlement.
 
 Enforcement stack:
-- `requireGuardianEntitlement` gates linked student + entitlement
+- Guardian reads go through `resolveSubject` (`server/middleware/subject-resolver.ts`: linked pair AND the student's entitlement, via `guardian_view_decision`) and the route-table entitlement gate in `server/routes/student-resources.ts` (`exam_full_length`). (Updated 2026-10-01, guardian closeout: `requireGuardianEntitlement` no longer exists.)
 - Guardian route re-checks explicit link authorization
 - Guardian response sanitizes report to summary-only scoring fields (no question-level dumps)
 

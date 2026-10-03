@@ -10,7 +10,7 @@
  * withdrawal came from the subject rather than from an operator or a script is this row.
  *
  * WHY A MODULE AND NOT FOUR LINES IN THE ROUTE. Because `audit_logs` already has exactly this
- * shape twice — `auditGuardianLink` and `recordSubjectAccess` — and Coding Standards §8.1 keeps
+ * shape — `recordSubjectAccess`, and the SQL `guardian_link_audit` — and Coding Standards §8.1 keeps
  * business logic out of handlers while §2 keeps DB access in centralized utilities. A third,
  * inlined writer would be the start of divergence in how this table gets written.
  *

@@ -21,6 +21,9 @@
  *   The migration 20260827000000 moved the body into
  *   `guardian_view_decision(guardian, student)` and left the RLS-facing one-arg
  *   form as a delegation, so the application can pass the principal explicitly.
+ *   (Both boolean forms were dropped on 2026-10-01 with the RLS policies that called
+ *   them — migration 20261017000000, SCL-196 — so this is now the only caller of the
+ *   gate in any form.)
  *   Anything this file decided for itself would be a second derivation.
  *
  * FAIL-CLOSED, TWICE OVER. An RPC error returns `not_linked`, and a value the

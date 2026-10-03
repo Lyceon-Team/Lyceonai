@@ -22,6 +22,8 @@ type Question = {
   explanation?: string | null;
 };
 
+const DISPLAY_LETTERS = ["A", "B", "C", "D"] as const;
+
 type NormalizedOption = {
   id: string;
   text: string;
@@ -141,8 +143,6 @@ export default function QuestionRenderer({
     );
   }, [options, resolvedCorrectOptionId]);
 
-  const showCanonicalChoiceLabels = options.every((opt) => !!opt.canonicalKey);
-
   if (!hasUsableMcChoices) {
     if (isGrid) {
       return (
@@ -182,7 +182,11 @@ export default function QuestionRenderer({
       </div>
 
       <div className="space-y-3">
-        {options.map((opt) => {
+        {options.map((opt, index) => {
+          // Display letter by on-screen position (Brief 13 Step 0b ruling 1, owner 2026-10-02):
+          // "B" is always the second choice shown. Never the canonical letter, which the served
+          // payload does not carry and which would contradict what LISA is told.
+          const displayLetter = DISPLAY_LETTERS[index] ?? null;
           const isSelected = selectedNorm.length > 0 && opt.id === selectedNorm;
           const isCorrectChoice =
             !!resolvedCorrectOptionId && opt.id === resolvedCorrectOptionId;
@@ -208,7 +212,7 @@ export default function QuestionRenderer({
               disabled={disabled || showResult}
               onClick={() => onSelectAnswer(opt.id)}
             >
-              {showCanonicalChoiceLabels ? (
+              {displayLetter ? (
                 <div
                   className={`
                   flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-semibold transition
@@ -219,7 +223,7 @@ export default function QuestionRenderer({
                   }
                 `}
                 >
-                  {opt.canonicalKey}
+                  {displayLetter}
                 </div>
               ) : null}
 

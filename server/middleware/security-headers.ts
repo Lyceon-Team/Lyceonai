@@ -6,12 +6,30 @@ const SECURITY_HEADERS = {
   xPermittedCrossDomainPolicies: 'none',
 };
 
-function buildCspDirectives(isProd: boolean) {
-  const scriptSrc = ["'self'", "'unsafe-inline'"];
-  if (!isProd) {
-    // Vite dev server and source maps require relaxed eval in non-production.
-    scriptSrc.push("'unsafe-eval'");
-  }
+/**
+ * @spec [student-UI register §8 F-58, owner ruling (Karl) 2026-10-02: replace the blanket inline
+ *        allowance with the sha256 of the one inline script; UI-47] | @implemented [2026-10-02]
+ *
+ * plain English: the only inline script the app ships is the theme boot in client/index.html
+ * (`<script id="lyceon-theme-boot">`). In production `script-src` allows our own origin plus
+ * exactly that script's hash, never `'unsafe-inline'`, so any other inline script (injected or
+ * added later) does not run. tests/ci/csp-theme-hash.ci.test.ts recomputes the hash from
+ * client/index.html and fails if it no longer matches this constant, and fails if any other
+ * inline script appears.
+ * trade-offs: outside production the Vite dev server injects its own inline preamble and needs
+ * eval, so development keeps `'unsafe-inline'` and `'unsafe-eval'`.
+ * edge cases: in production Vercel serves index.html from its CDN, not through Express, so today
+ * this policy reaches only the /api responses and the HTML pages carry no CSP at all (register
+ * §8 F-59, an owner question: setting it on the pages via vercel.json also needs the Desmos
+ * calculator's origin). `serializeCsp` gives the value such a header would carry.
+ */
+export const THEME_BOOT_SCRIPT_HASH =
+  "sha256-VwLEl5LYkYRmisEJhPIWmpxw7wjpR9ShDYgf9CXNsx8=";
+
+export function buildCspDirectives(isProd: boolean) {
+  const scriptSrc = isProd
+    ? ["'self'", `'${THEME_BOOT_SCRIPT_HASH}'`]
+    : ["'self'", "'unsafe-inline'", "'unsafe-eval'"];
 
   return {
     defaultSrc: ["'self'"],
@@ -62,4 +80,19 @@ export function securityHeadersMiddleware(): RequestHandler {
   };
 }
 
-
+/**
+ * The policy as one header value, in helmet's serialization (`name value;name value`). Tests use
+ * it to compare against the header Express actually sends.
+ */
+export function serializeCsp(
+  directives: ReturnType<typeof buildCspDirectives>,
+): string {
+  return Object.entries(directives)
+    .filter(([, value]) => value !== null)
+    .map(([name, value]) => {
+      const kebab = name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+      const list = value as string[];
+      return list.length > 0 ? `${kebab} ${list.join(" ")}` : kebab;
+    })
+    .join(";");
+}

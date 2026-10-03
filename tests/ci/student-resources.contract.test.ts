@@ -279,7 +279,13 @@ vi.mock("../../server/logger", () => ({
 }));
 
 type Req = express.Request & {
-  user?: { id: string; role: string; is_under_13: boolean };
+  user?: {
+    id: string;
+    role: string;
+    is_under_13: boolean;
+    isGuardian: boolean;
+    isAdmin: boolean;
+  };
   requestId?: string;
 };
 
@@ -290,10 +296,14 @@ async function call(principal: string, studentId: string, path: string) {
     const r = req as Req;
     // A real session always carries the derived `is_under_13`; G2-06 refuses a student without it
     // (age unknown), and G2-04 would ask for a link for an under-13 one. This student is 13+.
+    // `isGuardian`/`isAdmin` as the real middleware derives them from `role`
+    // (server/middleware/supabase-auth.ts, "Attach user to request").
     r.user = {
       id: principal,
       role: principal === GUARDIAN ? "guardian" : "student",
       is_under_13: false,
+      isGuardian: principal === GUARDIAN,
+      isAdmin: false,
     };
     r.requestId = "req-sr";
     next();
@@ -343,6 +353,8 @@ describe("subject-scoped resources — one route, two callers", () => {
       expect(findRule4Keys(res.body)).toEqual([]);
     });
 
+    // Skills are refused to a guardian outright (SCL-194), asserted under §10.4 below.
+    if (path === STUDENT_RESOURCE_PATHS.masterySkills) continue;
     it(`ANTI-LEAK ${path} — no RULE-4 key at any depth, as GUARDIAN`, async () => {
       const res = await call(GUARDIAN, STUDENT, path);
       expect(res.status).toBe(200);
@@ -572,14 +584,33 @@ describe("subject-scoped resources — one route, two callers", () => {
   });
 
   // -- §10.4 SKILLS DENIAL ----------------------------------------------------
-  it("SKILLS — a guardian gets 200 and an empty list, never 403 (Doc 05B §10.4)", async () => {
-    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);
-    expect(guardian.status).toBe(200);
-    expect(guardian.body.skills).toEqual([]);
-    // `catalogEmpty` reports on the QUESTION BANK, not on the caller's permissions. Saying
-    // "the catalogue is empty" here would be a claim about the bank made from a denial.
-    expect(guardian.body.catalogEmpty).toBe(false);
-  });
+  // Owner ruling 2026-10-01 (#1013 review, item 2), SCL-194: guardians see no skills,
+  // anywhere. The skills read refuses a guardian with 403 and a logged code — replacing
+  // §10.4's "200 and an empty list" — and the refusal is the ROLE's, decided before the
+  // resolver reads anything about the student, so it is the same 403 for a linked, an
+  // unlinked and an unentitled student: the answer says nothing about the student at all.
+  it.each([
+    ["linked and entitled", "allow"],
+    ["not linked", "not_linked"],
+    ["entitlement lapsed", "student_unentitled"],
+  ] as const)(
+    "SKILLS — a guardian gets 403 with a logged code (%s), never a skill row",
+    async (_label, outcome) => {
+      const { logger } = await import("../../server/logger");
+      decision.mockReturnValue(outcome);
+      const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);
+      expect(guardian.status).toBe(403);
+      expect(guardian.body.error).toBe("Student access required");
+      expect(guardian.body).not.toHaveProperty("skills");
+      expect(JSON.stringify(guardian.body)).not.toMatch(/skill_code|Algebra/);
+      // The resolver never ran: nothing about this student was read to answer a guardian.
+      expect(decision).not.toHaveBeenCalled();
+      const logged = vi
+        .mocked(logger.warn)
+        .mock.calls.filter((c) => c[1] === "guardian_blocked");
+      expect(logged).toHaveLength(1);
+    },
+  );
 
   it("SKILLS — the student gets their rows from the same route", async () => {
     const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);

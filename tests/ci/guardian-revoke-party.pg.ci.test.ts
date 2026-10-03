@@ -31,10 +31,13 @@ const MIGRATION = resolve(
   "../../supabase/migrations/20261013000000_guardian_revoke_party_check.sql",
 );
 
+/**
+ * The guardian functions that still exist. `guardian_can_view_student(uuid)` and
+ * `guardian_can_view_student_as(uuid, uuid)` were dropped with the dead RLS policies that were
+ * their only callers (migration 20261017000000, G-NEW-15, SCL-196).
+ */
 const SIGNATURES = [
   "public.guardian_view_decision(uuid,uuid)",
-  "public.guardian_can_view_student_as(uuid,uuid)",
-  "public.guardian_can_view_student(uuid)",
   "public.guardian_link_audit(text,uuid,uuid,jsonb,uuid,text)",
   "public.create_active_guardian_link_audited(uuid,uuid,text)",
   "public.revoke_guardian_link_audited(uuid,uuid,uuid,text,text)",
@@ -132,14 +135,28 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(await linkStatus()).toBe("revoked");
     });
 
-    it("grants read f/f/f/t (guardian_can_view_student: f/f/t/t) even after a platform-style default grant", async () => {
+    it("every guardian function reads f/f/f/t even after a platform-style default grant", async () => {
       // Simulate Supabase's default privileges on new functions in `public`.
       for (const sig of SIGNATURES) {
         await pg.query(
           `GRANT EXECUTE ON FUNCTION ${sig} TO anon, authenticated`,
         );
       }
-      await pg.query(readFileSync(MIGRATION, "utf8"));
+      // Re-apply the migration's own grants. Its two statements on the dropped boolean forms
+      // (20261017000000) are left out: those functions no longer exist, so there is nothing
+      // for them to grant — and presence before absence, exactly their REVOKE and GRANT
+      // (two each) are skipped.
+      const statements = readFileSync(MIGRATION, "utf8")
+        .replace(/^--.*$/gm, "")
+        .split(";")
+        .filter((s) => s.trim() !== "");
+      const dropped = statements.filter((s) =>
+        /guardian_can_view_student(_as)?\(/.test(s),
+      );
+      expect(dropped).toHaveLength(4);
+      await pg.query(
+        statements.filter((s) => !dropped.includes(s)).join(";") + ";",
+      );
 
       const r = await pg.query(
         `SELECT sig,
@@ -166,8 +183,6 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       expect(got).toEqual({
         "public.guardian_view_decision(uuid,uuid)": "f/f/f/t",
-        "public.guardian_can_view_student_as(uuid,uuid)": "f/f/f/t",
-        "public.guardian_can_view_student(uuid)": "f/f/t/t",
         "public.guardian_link_audit(text,uuid,uuid,jsonb,uuid,text)": "f/f/f/t",
         "public.create_active_guardian_link_audited(uuid,uuid,text)": "f/f/f/t",
         "public.revoke_guardian_link_audited(uuid,uuid,uuid,text,text)":

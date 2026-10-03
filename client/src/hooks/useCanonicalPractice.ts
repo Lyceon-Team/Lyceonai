@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { queryClient } from "@/lib/queryClient";
+import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
 import { csrfFetch } from "@/lib/csrf";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isSubmittableAnswer } from "@/lib/practice-submission";
@@ -557,6 +559,10 @@ export function useCanonicalPractice(
           | PracticeAnswerResponse
           | PracticeSkipResponse;
         if (data.state) setSessionState(data.state);
+        // Owner ruling 2026-10-01: the KPI read no longer polls, so the answer that completes
+        // the session marks it stale (practice and review both run through this hook).
+        if (data.state === "completed")
+          void invalidateProgressKpis(queryClient);
 
         if (data.stats) {
           setScore((prev) => mergeStats(prev, data.stats));

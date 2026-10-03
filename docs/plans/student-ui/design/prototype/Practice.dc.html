@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lyceon practice</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+body{margin:0;background:#FFFAEF}
+.lyc{
+--paper:#FFFAEF;--margin:#F7F0DF;--sheet:#FFFFFF;--ink:#1F2A33;--ink-strong:#0F2E48;--muted:#5A6470;
+--rule:#E3D9C3;--rule-soft:#E8DFCB;--rule-strong:#B9A67E;--input-bd:#B9C4CF;--chip:#EEF2F6;--hover:#F2EAD6;
+--rail:#0F2E48;--rail-ink:#C9D3DC;--rail-on-bg:#FFFAEF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#0F2E48;--primary-ink:#FFFAEF;--scrim:rgba(15,46,72,0.45);--tick:#C9BFA8;--seg-empty:#EAE0CB;
+--danger:#9B2C2C;--danger-bg:#FDF2F2;--focus:#7FA6C9;--step:#B9A67E;--ok:#065F46;
+--lv0-fill:#F59E0B;--lv0-bg:#FEF3C7;--lv0-ink:#78350F;--lv0-bd:#FDE68A;
+--lv1-fill:#F97316;--lv1-bg:#FFEDD5;--lv1-ink:#7C2D12;--lv1-bd:#FED7AA;
+--lv2-fill:#0EA5E9;--lv2-bg:#E0F2FE;--lv2-ink:#0C4A6E;--lv2-bd:#BAE6FD;
+--lv3-fill:#2563EB;--lv3-bg:#DBEAFE;--lv3-ink:#1E3A8A;--lv3-bd:#BFDBFE;
+--lv4-fill:#059669;--lv4-bg:#D1FAE5;--lv4-ink:#064E3B;--lv4-bd:#A7F3D0;
+--cat-math-bg:#E8EFFA;--cat-math-bd:#2563EB;--cat-math-ink:#1E3A8A;
+--cat-rw-bg:#F3EDF8;--cat-rw-bd:#7E4FA8;--cat-rw-ink:#4A2668;
+--cat-review-bg:#FBF0E2;--cat-review-bd:#C2650A;--cat-review-ink:#7C3A06;
+--cat-test-bg:#EDF0F3;--cat-test-bd:#0F2E48;--cat-test-ink:#0F2E48}
+.lyc.dark{
+--paper:#121B24;--margin:#16212C;--sheet:#1B2733;--ink:#E7E1D4;--ink-strong:#F4EEDF;--muted:#A9B2BB;
+--rule:#2D3B49;--rule-soft:#26333F;--rule-strong:#6E6249;--input-bd:#3B4B5B;--chip:#233140;--hover:#22303D;
+--rail:#0A1219;--rail-ink:#9FB0BF;--rail-on-bg:#F4EEDF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#F4EEDF;--primary-ink:#0F2E48;--scrim:rgba(4,8,12,0.6);--tick:#4A5868;--seg-empty:#2A3846;
+--danger:#F2A7A7;--danger-bg:#2A1B1E;--focus:#8FB4D6;--step:#8C7B57;--ok:#6EE7B7;
+--lv0-fill:#FBBF24;--lv0-bg:rgba(245,158,11,0.16);--lv0-ink:#FDE68A;--lv0-bd:rgba(251,191,36,0.4);
+--lv1-fill:#FB923C;--lv1-bg:rgba(249,115,22,0.16);--lv1-ink:#FED7AA;--lv1-bd:rgba(251,146,60,0.4);
+--lv2-fill:#38BDF8;--lv2-bg:rgba(14,165,233,0.16);--lv2-ink:#BAE6FD;--lv2-bd:rgba(56,189,248,0.4);
+--lv3-fill:#60A5FA;--lv3-bg:rgba(37,99,235,0.18);--lv3-ink:#BFDBFE;--lv3-bd:rgba(96,165,250,0.45);
+--lv4-fill:#34D399;--lv4-bg:rgba(5,150,105,0.18);--lv4-ink:#A7F3D0;--lv4-bd:rgba(52,211,153,0.4);
+--cat-math-bg:rgba(96,165,250,0.12);--cat-math-bd:#60A5FA;--cat-math-ink:#BFDBFE;
+--cat-rw-bg:rgba(192,132,252,0.12);--cat-rw-bd:#C084FC;--cat-rw-ink:#E9D5FF;
+--cat-review-bg:rgba(251,146,60,0.12);--cat-review-bd:#FB923C;--cat-review-ink:#FED7AA;
+--cat-test-bg:rgba(244,238,223,0.08);--cat-test-bd:#F4EEDF;--cat-test-ink:#F4EEDF}
+.lyc a{color:var(--ink-strong)}
+.lyc button,.lyc select,.lyc input{font-family:inherit}
+.lyc a:focus-visible,.lyc button:focus-visible,.lyc select:focus-visible,.lyc input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.rail-item:hover{filter:brightness(1.12)}
+.btn-primary:hover{filter:brightness(1.12)}
+.btn-quiet:hover{background:var(--hover)}
+.opt:hover{background:var(--margin)}
+.lyc a.foot-link{color:var(--muted);text-decoration:none}.lyc a.foot-link:hover{color:var(--ink-strong);text-decoration:underline}
+@keyframes lyc-dot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+.lyc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);animation:lyc-dot 1.2s infinite ease-in-out}
+.lyc-dot:nth-child(2){animation-delay:.15s}.lyc-dot:nth-child(3){animation-delay:.3s}
+@media (prefers-reduced-motion: reduce){.lyc-dot{animation:none;opacity:.6}}
+</style>
+</helmet>
+<div class="lyc {{themeClass}}" style="width: 1440px; height: 900px; display: flex; position: relative; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; overflow: hidden">
+<nav aria-label="Main" style="width: 96px; flex-shrink: 0; height: 100%; background: var(--rail); display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 20px 8px; box-sizing: border-box">
+<a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 22px; text-decoration: none; color: #FFFAEF">
+<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round"><path d="M2 9l10-5 10 5-10 5z M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5 M22 9v6"></path></svg>
+<span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 18px; font-weight: 600; letter-spacing: 0.01em">Lyceon</span>
+</a>
+<sc-for list="{{nav}}" as="item" hint-placeholder-count="6">
+<sc-if value="{{item.isModal}}" hint-placeholder-val="{{false}}">
+<button type="button" class="rail-item" onClick="{{item.open}}" aria-label="{{item.aria}}" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border: 0; border-radius: 8px; width: 100%; cursor: pointer; position: relative; {{item.tone}}">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="{{item.d}}"></path></svg>
+<span style="font-size: 14px; font-weight: 500">{{item.label}}</span>
+<sc-if value="{{item.lockBadge}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lock)" aria-hidden="true" style="position: absolute; top: 6px; right: 14px; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg></sc-if>
+</button>
+</sc-if>
+<sc-if value="{{item.isLink}}" hint-placeholder-val="{{true}}">
+<a href="{{item.href}}" class="rail-item" aria-current="{{item.current}}" aria-label="{{item.aria}}" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border-radius: 8px; text-decoration: none; position: relative; {{item.tone}}">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="{{item.d}}"></path></svg>
+<span style="font-size: 14px; font-weight: 500">{{item.label}}</span>
+<sc-if value="{{item.lockBadge}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--lock)" aria-hidden="true" style="position: absolute; top: 6px; right: 14px; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg></sc-if>
+</a>
+</sc-if>
+</sc-for>
+<div style="flex-grow: 1"></div>
+<a href="Help.dc.html" class="rail-item" aria-current="{{helpCurrent}}" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border-radius: 8px; text-decoration: none; {{helpTone}}">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9.5 9a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2.2-2.4 3.8 M12 17h.01"></path></svg>
+<span style="font-size: 14px; font-weight: 500">Help</span>
+</a>
+<a href="Settings.dc.html" aria-label="Account and settings" aria-current="{{acctCurrent}}" style="display: flex; justify-content: center; padding: 10px 0 4px; text-decoration: none">
+<span style="width: 40px; height: 40px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-family: 'Source Serif 4', Georgia, serif; font-size: 18px; font-weight: 600; {{acctTone}}">A</span>
+</a>
+</nav>
+
+<main style="flex-grow: 1; min-width: 0; height: 100%; overflow-y: auto; padding: 56px 72px 72px; box-sizing: border-box">
+<div style="max-width: 800px; display: flex; flex-direction: column; gap: 36px">
+<header style="display: flex; flex-direction: column; gap: 10px">
+<h1 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 42px; line-height: 1.15; font-weight: 600; color: var(--ink-strong)">Practice</h1>
+<p style="margin: 0; font-size: 19px; line-height: 1.5; color: var(--muted)">Choose a section, then narrow it down by domain, skill and difficulty.</p>
+</header>
+
+<section aria-label="What to practice" style="background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 28px 32px; display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; align-items: center; gap: 20px">
+<span style="font-size: 17px; font-weight: 600; color: var(--ink); width: 110px">Section</span>
+<div role="group" aria-label="Section" style="display: flex; border: 1px solid var(--ink-strong); border-radius: 6px; overflow: hidden">
+<sc-for list="{{sections}}" as="s" hint-placeholder-count="2">
+<button type="button" onClick="{{s.pick}}" aria-pressed="{{s.pressed}}" style="height: 44px; padding: 0 22px; border: 0; font-size: 17px; font-weight: 600; cursor: pointer; {{s.tone}}">{{s.label}}</button>
+</sc-for>
+</div>
+</div>
+
+<div style="display: flex; align-items: flex-start; gap: 20px">
+<span style="font-size: 17px; font-weight: 600; color: var(--ink); width: 110px; padding-top: 7px">Your criteria</span>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex-grow: 1; min-height: 40px">
+<span style="font-size: 16px; padding: 7px 14px; border-radius: 6px; background: var(--chip); color: var(--ink-strong); font-weight: 600">Section: {{sectionName}}</span>
+<sc-for list="{{chips}}" as="c" hint-placeholder-count="2">
+<span style="display: flex; align-items: center; gap: 4px; font-size: 16px; padding: 3px 4px 3px 14px; border-radius: 6px; background: var(--chip); color: var(--ink-strong)">
+<span>{{c.label}}</span>
+<button type="button" onClick="{{c.remove}}" aria-label="{{c.aria}}" style="width: 32px; height: 32px; border: 0; background: transparent; color: var(--ink-strong); cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 4px">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 2.5; stroke-linecap: round"><path d="M6 6l12 12 M18 6L6 18"></path></svg>
+</button>
+</span>
+</sc-for>
+<sc-if value="{{hasChips}}" hint-placeholder-val="{{false}}">
+<button type="button" onClick="{{clearAll}}" style="border: 0; background: transparent; color: var(--ink-strong); font-size: 16px; font-weight: 600; text-decoration: underline; cursor: pointer; padding: 8px 4px">Clear all</button>
+</sc-if>
+</div>
+</div>
+
+<div style="display: flex; align-items: flex-start; gap: 20px">
+<span style="font-size: 17px; font-weight: 600; color: var(--ink); width: 110px; padding-top: 10px">Add filters</span>
+<div style="position: relative; flex-grow: 1">
+<div style="display: flex; gap: 10px">
+<sc-for list="{{menus}}" as="mn" hint-placeholder-count="3">
+<button type="button" onClick="{{mn.toggle}}" aria-expanded="{{mn.expanded}}" style="height: 44px; padding: 0 16px 0 20px; border-radius: 999px; font-size: 17px; cursor: pointer; display: flex; align-items: center; gap: 8px; {{mn.tone}}">
+<span>{{mn.label}}</span>
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M6 9l6 6 6-6"></path></svg>
+</button>
+</sc-for>
+</div>
+<sc-if value="{{menuOpen}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; top: 54px; left: 0; width: 520px; background: var(--sheet); border: 1px solid var(--rule-strong); border-radius: 8px; box-shadow: 0 12px 28px rgba(15, 46, 72, 0.14); padding: 10px; box-sizing: border-box; z-index: 5; display: flex; flex-direction: column; gap: 6px">
+<p style="margin: 4px 12px 2px; font-size: 15px; color: var(--muted)">{{menuHint}}</p>
+<div style="max-height: 340px; overflow-y: auto; display: flex; flex-direction: column">
+<sc-for list="{{options}}" as="o" hint-placeholder-count="5">
+<label class="opt" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-size: 17px; line-height: 1.35; color: var(--ink)">
+<input type="checkbox" checked="{{o.on}}" onChange="{{o.toggle}}" style="width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--ink-strong)">
+<span style="flex-grow: 1">{{o.name}}</span>
+</label>
+</sc-for>
+</div>
+<div style="display: flex; justify-content: flex-end; border-top: 1px solid var(--rule-soft); padding: 10px 4px 2px">
+<button type="button" onClick="{{closeMenu}}" class="btn-primary" style="height: 44px; padding: 0 22px; border: 0; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 16px; font-weight: 600; cursor: pointer">Done</button>
+</div>
+</div>
+</sc-if>
+</div>
+</div>
+</section>
+
+<section aria-labelledby="start-h" style="display: flex; flex-direction: column; gap: 16px; border-top: 1px solid var(--rule); padding-top: 28px">
+<h2 id="start-h" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 28px; font-weight: 600; color: var(--ink-strong)">Your session</h2>
+<p style="margin: 0; font-size: 18px; line-height: 1.55; color: var(--ink)">{{summary}}</p>
+<div style="display: flex; align-items: center; gap: 20px">
+<label style="display: flex; align-items: center; gap: 12px; font-size: 17px; color: var(--ink)">
+<span>Questions per session</span>
+<select value="{{size}}" onChange="{{pickSize}}" style="height: 44px; padding: 0 12px; border: 1px solid var(--input-bd); border-radius: 6px; background: var(--sheet); font-size: 17px; color: var(--ink)">
+<option value="5">5</option>
+<option value="10">10</option>
+<option value="15">15</option>
+<option value="20">20</option>
+<option value="25">25</option>
+<option value="30">30</option>
+</select>
+</label>
+<a href="Runner.dc.html" class="btn-primary" style="height: 52px; padding: 0 28px; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 18px; font-weight: 600; text-decoration: none; display: flex; align-items: center">{{startLabel}}</a>
+</div>
+<sc-if value="{{free}}" hint-placeholder-val="{{false}}">
+<p style="margin: 0; font-size: 17px; line-height: 1.5; color: var(--muted)">You have 40 of 40 free practice questions left today. Review is always unlimited.</p>
+</sc-if>
+</section>
+
+<sc-if value="{{paid}}" hint-placeholder-val="{{true}}">
+<section aria-labelledby="sug-h" style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 id="sug-h" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 28px; font-weight: 600; color: var(--ink-strong)">Suggested for you</h2>
+<p style="margin: 0; font-size: 17px; color: var(--muted)">{{sugNote}}</p>
+</div>
+<ul style="list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule)">
+<sc-for list="{{suggestions}}" as="sg" hint-placeholder-count="2">
+<li style="display: grid; grid-template-columns: minmax(0, 1fr) 176px 190px; gap: 24px; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--rule)">
+<span style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 21px; font-weight: 600; color: var(--ink-strong)">{{sg.name}}</span>
+<span style="font-size: 16px; color: var(--muted)">{{sg.level}}</span>
+</span>
+<span aria-hidden="true" style="display: flex; gap: 6px">
+<sc-for list="{{sg.segs}}" as="seg" hint-placeholder-count="5">
+<span style="width: 30px; height: 10px; border-radius: 5px; {{seg.tone}}"></span>
+</sc-for>
+</span>
+<button type="button" class="btn-quiet" onClick="{{sg.pick}}" style="justify-self: end; height: 44px; padding: 0 18px; border: 1px solid var(--ink-strong); border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 16px; font-weight: 600; cursor: pointer">Practice this domain</button>
+</li>
+</sc-for>
+</ul>
+</section>
+</sc-if>
+
+<section aria-labelledby="past-h" style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px">
+<h2 id="past-h" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 28px; font-weight: 600; color: var(--ink-strong)">Recent practice</h2>
+<a href="#" style="font-size: 17px; font-weight: 600">Review what you missed</a>
+</div>
+<ul style="list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule)">
+<sc-for list="{{pastSessions}}" as="p" hint-placeholder-count="4">
+<li style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 0; border-bottom: 1px solid var(--rule)">
+<span style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 18px; font-weight: 600; color: var(--ink)">{{p.when}}</span>
+<span style="font-size: 16px; color: var(--muted)">{{p.scope}}</span>
+</span>
+<span style="font-size: 16px; color: var(--ink)">{{p.note}}</span>
+</li>
+</sc-for>
+</ul>
+</section>
+</div>
+<footer aria-label="Legal and help" style="max-width: 800px; margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--rule-soft); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; font-size: 14px; color: var(--muted)">
+<span>© 2026 Lyceon</span>
+<a href="#" class="foot-link">Privacy Policy</a>
+<a href="#" class="foot-link">Terms</a>
+<a href="#" class="foot-link">Trust and Safety</a>
+<a href="Help.dc.html" class="foot-link">Help and FAQs</a>
+</footer>
+</main>
+
+<aside aria-label="Your progress" style="width: 360px; flex-shrink: 0; height: 100%; overflow-y: auto; background: var(--margin); border-left: 1px solid var(--rule); padding: 48px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 36px">
+<section aria-labelledby="mast-h" style="display: flex; flex-direction: column; gap: 16px">
+<h2 id="mast-h" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 20px; font-weight: 600; color: var(--ink-strong)">Mastery</h2>
+<sc-if value="{{paid}}" hint-placeholder-val="{{true}}">
+<sc-for list="{{mastery}}" as="g" hint-placeholder-count="2">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<h3 style="margin: 0 0 4px; font-size: 15px; font-weight: 600; color: var(--muted)">{{g.section}}</h3>
+<sc-for list="{{g.domains}}" as="d" hint-placeholder-count="4">
+<a href="#" style="display: flex; flex-direction: column; gap: 8px; padding: 11px 0; text-decoration: none; color: var(--ink); border-bottom: 1px solid var(--rule-soft)">
+<span style="font-size: 16px; line-height: 1.35">{{d.name}}</span>
+<span style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<span aria-hidden="true" style="display: flex; gap: 5px">
+<sc-for list="{{d.segs}}" as="sg" hint-placeholder-count="5">
+<span style="width: 26px; height: 9px; border-radius: 5px; {{sg.tone}}"></span>
+</sc-for>
+</span>
+<span style="font-size: 14px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; {{d.pill}}">{{d.level}}</span>
+</span>
+</a>
+</sc-for>
+</div>
+</sc-for>
+
+<a href="#" style="font-size: 16px; font-weight: 600">See every skill</a>
+</sc-if>
+<sc-if value="{{free}}" hint-placeholder-val="{{false}}">
+<div style="background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--ink-strong)" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg>
+<h3 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 20px; font-weight: 600; color: var(--ink-strong)">Track mastery by domain and skills</h3>
+<p style="margin: 0; font-size: 16px; line-height: 1.5; color: var(--muted)">See your level in all eight SAT domains and every skill inside them.</p>
+<button type="button" class="btn-quiet" onClick="{{openMastery}}" style="align-self: flex-start; height: 44px; padding: 0 18px; border: 1px solid var(--ink-strong); border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 16px; font-weight: 600; cursor: pointer">See what's included</button>
+</div>
+</sc-if>
+</section>
+<section aria-labelledby="how-h" style="display: flex; flex-direction: column; gap: 10px">
+<h2 id="how-h" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 20px; font-weight: 600; color: var(--ink-strong)">How practice counts</h2>
+<p style="margin: 0; font-size: 16px; line-height: 1.55; color: var(--ink)">Every answer updates your mastery. Anything you miss or skip goes to your review queue.</p>
+</section>
+</aside>
+
+<sc-if value="{{modalOpen}}" hint-placeholder-val="{{false}}">
+<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 10">
+<div role="dialog" aria-modal="true" aria-labelledby="up-title" style="width: 540px; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; position: relative">
+<button type="button" aria-label="Close" onClick="{{closeModal}}" class="btn-quiet" style="position: absolute; top: 14px; right: 14px; width: 44px; height: 44px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-strong); cursor: pointer; display: flex; align-items: center; justify-content: center">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 2; stroke-linecap: round"><path d="M6 6l12 12 M18 6L6 18"></path></svg>
+</button>
+<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ink-strong)" aria-hidden="true" style="stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round"><path d="M7 11V8a5 5 0 0 1 10 0v3 M5 11h14v10H5z"></path></svg>
+<h2 id="up-title" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 30px; line-height: 1.2; font-weight: 600; color: var(--ink-strong)">{{mTitle}}</h2>
+<p style="margin: 0; font-size: 18px; line-height: 1.6; color: var(--ink)">{{mBody}}</p>
+<p style="margin: 0; font-size: 16px; line-height: 1.5; color: var(--muted)">Included with every paid plan.</p>
+<div style="display: flex; align-items: center; gap: 16px; padding-top: 8px">
+<a href="Settings.dc.html" class="btn-primary" style="height: 52px; padding: 0 28px; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 18px; font-weight: 600; text-decoration: none; display: flex; align-items: center">See plans</a>
+<button type="button" onClick="{{closeModal}}" class="btn-quiet" style="height: 52px; padding: 0 20px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 18px; font-weight: 600; cursor: pointer">Not now</button>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"plan":{"editor":"enum","options":["paid","free","guardian-paid"],"default":"paid"},"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":900}}'>
+
+const LYC_ICONS = {
+  home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+  practice: 'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',
+  review: 'M3 12a9 9 0 1 0 3-6.7 M3 4v5h5',
+  full: 'M8 3h8v3H8z M6 5H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-1 M8 12h8 M8 16h5',
+  calendar: 'M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4',
+  lisa: 'M4 5h16v11H9l-5 4z'
+};
+// Locked items: Full-Length and LISA open the upgrade modal in place; Calendar navigates to its own page, which does the upsell (Doc 05F), and keeps the lock as a hint.
+function lycNav(free, activeKey, open) {
+  const defs = [
+    { key: 'home', label: 'Home', href: 'Main.dc.html', gate: 'none' },
+    { key: 'practice', label: 'Practice', href: 'Practice.dc.html', gate: 'none' },
+    { key: 'review', label: 'Review', href: 'Review.dc.html', gate: 'none' },
+    { key: 'full', label: 'Full-Length', href: 'FullLength.dc.html', gate: 'modal' },
+    { key: 'calendar', label: 'Calendar', href: 'Calendar.dc.html', gate: 'page' },
+    { key: 'lisa', label: 'LISA', href: 'Lisa.dc.html', gate: 'modal' }
+  ];
+  return defs.map(function (n) {
+    const isModal = free && n.gate === 'modal';
+    const locked = free && n.gate !== 'none';
+    const active = n.key === activeKey;
+    return {
+      label: n.label, href: n.href, d: LYC_ICONS[n.key],
+      isModal: isModal, isLink: !isModal, lockBadge: locked,
+      current: active ? 'page' : 'false',
+      aria: locked ? n.label + ', included with a paid plan' : n.label,
+      open: open(n.key),
+      tone: active ? 'background: var(--rail-on-bg); color: var(--rail-on-ink);' : 'background: transparent; color: var(--rail-ink);'
+    };
+  });
+}
+const LYC_COPY = {
+  full: { title: 'Full-length practice tests', body: 'Timed tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.' },
+  lisa: { title: 'A Tutor That Knows The SAT And Knows You', body: 'Stuck on a question? LISA works through it with you, asking the next question instead of handing you the answer.' },
+  mastery: { title: 'Mastery by domain and skill', body: 'See your level in all eight SAT domains and every skill inside them, and how each one moves as you practice.' }
+};
+// Production ladder (mastery_levels): 0 Foundations ... 4 Strong. Colours follow LevelPill.tsx:16-34 (amber, orange, sky, blue, emerald).
+const LYC_LEVELS = ['Foundations', 'Building', 'Developing', 'Proficient', 'Strong'];
+function lycRow(name, lvl) {
+  const segs = [];
+  for (let i = 0; i < 5; i++) {
+    segs.push({ tone: 'background: ' + ((lvl !== null && i <= lvl) ? 'var(--lv' + lvl + '-fill)' : 'var(--seg-empty)') + ';' });
+  }
+  return {
+    name: name, lvl: lvl, segs: segs,
+    level: lvl === null ? 'Not enough answers yet' : LYC_LEVELS[lvl],
+    pill: lvl === null ? 'background: transparent; color: var(--muted); border: 1px dashed var(--rule-strong);'
+      : 'background: var(--lv' + lvl + '-bg); color: var(--lv' + lvl + '-ink); border: 1px solid var(--lv' + lvl + '-bd);'
+  };
+}
+function lycMastery() {
+  return [
+    { key: 'M', section: 'Math', domains: [
+      lycRow('Algebra', 1), lycRow('Advanced Math', 1),
+      lycRow('Problem Solving and Data Analysis', 2), lycRow('Geometry and Trigonometry', 2)
+    ] },
+    { key: 'RW', section: 'Reading and Writing', domains: [
+      lycRow('Information and Ideas', 3), lycRow('Craft and Structure', 0),
+      lycRow('Expression of Ideas', 0), lycRow('Standard English Conventions', 2)
+    ] }
+  ];
+}
+function lycHelp(active) { return { helpCurrent: active ? 'page' : 'false', helpTone: active ? 'background: var(--rail-on-bg); color: var(--rail-on-ink);' : 'color: var(--rail-ink);' }; }
+function lycTheme(t) { return t === 'dark' ? 'dark' : ''; }
+
+// Taxonomy from production (canonical_skill_catalog). Names only: students never see question-bank counts.
+const LYC_TAXONOMY = {
+  M: [
+    { domain: 'Algebra', skills: ['Linear Equations in One Variable', 'Linear Equations in Two Variables', 'Linear Functions', 'Linear Inequalities in One or Two Variables', 'Systems of Two Linear Equations in Two Variables'] },
+    { domain: 'Advanced Math', skills: ['Equivalent Expressions', 'Nonlinear Equations in One Variable and Systems of Equations in Two Variables', 'Nonlinear Functions'] },
+    { domain: 'Problem Solving and Data Analysis', skills: ['Ratios, Rates, Proportional Relationships, and Units', 'Percentages', 'One-Variable Data: Distributions and Measures of Center and Spread', 'Two-Variable Data: Models and Scatterplots', 'Probability and Conditional Probability', 'Inference from Sample Statistics and Margin of Error', 'Evaluating Statistical Claims: Observational Studies and Experiments'] },
+    { domain: 'Geometry and Trigonometry', skills: ['Area and Volume', 'Lines, Angles, and Triangles', 'Right Triangles and Trigonometry', 'Circles'] }
+  ],
+  RW: [
+    { domain: 'Information and Ideas', skills: ['Central Ideas and Details', 'Command of Evidence', 'Inferences'] },
+    { domain: 'Craft and Structure', skills: ['Words in Context', 'Text Structure and Purpose', 'Cross-Text Connections'] },
+    { domain: 'Expression of Ideas', skills: ['Rhetorical Synthesis', 'Transitions'] },
+    { domain: 'Standard English Conventions', skills: ['Boundaries', 'Form, Structure, and Sense'] }
+  ]
+};
+function lycList(items) {
+  if (items.length <= 1) { return items.join(''); }
+  return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+}
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { section: 'M', domains: [], skills: [], diffs: [], menu: null, size: 10, modal: null };
+  }
+  renderVals() {
+    const self = this;
+    const st = this.state;
+    const plan = this.props.plan ?? 'paid';
+    const free = plan === 'free';
+    const open = function (k) { return function () { self.setState({ modal: k }); }; };
+    const DIFFS = ['Easy', 'Medium', 'Hard'];
+    const has = function (arr, v) { return arr.indexOf(v) !== -1; };
+    const toggleIn = function (arr, v) { return has(arr, v) ? arr.filter(function (x) { return x !== v; }) : arr.concat([v]); };
+    const groups = LYC_TAXONOMY[st.section];
+    const sectionName = st.section === 'M' ? 'Math' : 'Reading and Writing';
+    const pool = [];
+    groups.forEach(function (g) { if (!st.domains.length || has(st.domains, g.domain)) { g.skills.forEach(function (s) { pool.push(s); }); } });
+    const setDomains = function (next) {
+      const allowed = [];
+      groups.forEach(function (g) { if (!next.length || has(next, g.domain)) { g.skills.forEach(function (s) { allowed.push(s); }); } });
+      self.setState({ domains: next, skills: st.skills.filter(function (s) { return has(allowed, s); }) });
+    };
+    let options = [];
+    let menuHint = '';
+    if (st.menu === 'domain') {
+      menuHint = 'Choose one or more domains.';
+      options = groups.map(function (g) { return { name: g.domain, on: has(st.domains, g.domain), toggle: function () { setDomains(toggleIn(st.domains, g.domain)); } }; });
+    } else if (st.menu === 'skill') {
+      menuHint = st.domains.length ? 'Skills in the domains you chose.' : 'All skills in this section. Pick a domain first to shorten the list.';
+      options = pool.map(function (s) { return { name: s, on: has(st.skills, s), toggle: function () { self.setState({ skills: toggleIn(st.skills, s) }); } }; });
+    } else if (st.menu === 'difficulty') {
+      menuHint = 'Choose one or more difficulty levels.';
+      options = DIFFS.map(function (d) { return { name: d, on: has(st.diffs, d), toggle: function () { self.setState({ diffs: toggleIn(st.diffs, d) }); } }; });
+    }
+    const menus = [['domain', 'Domain', st.domains.length], ['skill', 'Skill', st.skills.length], ['difficulty', 'Difficulty', st.diffs.length]].map(function (m) {
+      const isOpen = st.menu === m[0];
+      const active = isOpen || m[2] > 0;
+      return {
+        label: m[2] ? m[1] + ' (' + m[2] + ')' : m[1],
+        expanded: isOpen ? 'true' : 'false',
+        toggle: function () { self.setState({ menu: isOpen ? null : m[0] }); },
+        tone: active ? 'border: 1px solid var(--primary-bg); background: var(--primary-bg); color: var(--primary-ink);' : 'border: 1px solid var(--input-bd); background: var(--sheet); color: var(--ink);'
+      };
+    });
+    const chips = [];
+    st.domains.forEach(function (d) { chips.push({ label: 'Domain: ' + d, aria: 'Remove ' + d, remove: function () { setDomains(st.domains.filter(function (x) { return x !== d; })); } }); });
+    st.skills.forEach(function (s) { chips.push({ label: 'Skill: ' + s, aria: 'Remove ' + s, remove: function () { self.setState({ skills: st.skills.filter(function (x) { return x !== s; }) }); } }); });
+    st.diffs.forEach(function (d) { chips.push({ label: 'Difficulty: ' + d, aria: 'Remove ' + d, remove: function () { self.setState({ diffs: st.diffs.filter(function (x) { return x !== d; }) }); } }); });
+    const sections = [['M', 'Math'], ['RW', 'Reading and Writing']].map(function (s) {
+      const on = st.section === s[0];
+      return {
+        label: s[1], pressed: on ? 'true' : 'false',
+        pick: function () { if (!on) { self.setState({ section: s[0], domains: [], skills: [], menu: null }); } },
+        tone: on ? 'background: var(--primary-bg); color: var(--primary-ink);' : 'background: var(--sheet); color: var(--ink-strong);'
+      };
+    });
+    const scopeText = st.skills.length ? lycList(st.skills) : (st.domains.length ? lycList(st.domains) : 'every domain');
+    const diffText = st.diffs.length ? lycList(st.diffs.map(function (d) { return d.toLowerCase(); })) + ' questions' : 'questions of any difficulty';
+    const summary = sectionName + ': ' + scopeText + ', ' + diffText + '.';
+    const m = st.modal ? LYC_COPY[st.modal] : { title: '', body: '' };
+    const mastery = lycMastery();
+    const current = mastery.filter(function (g) { return g.key === st.section; })[0];
+    const suggestions = current.domains.slice().sort(function (a, b) { return a.lvl - b.lvl; }).slice(0, 2).map(function (d) {
+      return { name: d.name, level: d.level, segs: d.segs, pick: function () { self.setState({ domains: [d.name], skills: [], menu: null }); } };
+    });
+    if (st.section === 'RW') { mastery.reverse(); }
+    return {
+      themeClass: lycTheme(this.props.theme),
+      free: free, paid: !free,
+      nav: lycNav(free, 'practice', open),
+      ...lycHelp(false), acctCurrent: 'false', acctTone: 'background: var(--rail-on-bg); color: var(--rail-on-ink);',
+      sections: sections, sectionName: sectionName,
+      chips: chips, hasChips: chips.length > 0,
+      clearAll: function () { self.setState({ domains: [], skills: [], diffs: [] }); },
+      menus: menus, menuOpen: !!st.menu, menuHint: menuHint, options: options,
+      closeMenu: function () { self.setState({ menu: null }); },
+      summary: summary,
+      size: String(st.size),
+      pickSize: function (e) { self.setState({ size: Number(e.target.value) }); },
+      startLabel: 'Start ' + st.size + ' questions',
+      modalOpen: !!st.modal, mTitle: m.title, mBody: m.body,
+      closeModal: function () { self.setState({ modal: null }); },
+      openMastery: open('mastery'),
+      mastery: mastery, suggestions: suggestions,
+      sugNote: 'Your lowest mastery levels in ' + current.section + ' come first.',
+      pastSessions: [
+        { when: 'Fri 25 Sep, 12:49 PM', scope: 'Mixed', note: '1 to review' },
+        { when: 'Fri 25 Sep, 12:45 PM', scope: 'Mixed', note: '1 to review' },
+        { when: 'Tue 22 Sep, 3:55 PM', scope: 'Mixed', note: '1 to review' },
+        { when: 'Tue 22 Sep, 12:46 AM', scope: 'Mixed', note: '2 to review' }
+      ]
+    };
+  }
+}
+
+</script>
+</body>
+</html>

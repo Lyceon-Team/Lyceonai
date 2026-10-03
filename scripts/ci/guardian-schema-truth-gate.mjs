@@ -23,7 +23,7 @@
  *   wrong column name raises 42703 on the first call and the defect cannot exist.
  *
  *   THE WHOLE DIFFICULTY IS THE DISCRIMINATOR, and it is worth stating because the obvious
- *   check is wrong. Keying on `vi.mock(...supabase...)` flags `guardian-link.pg.ci.test.ts` —
+ *   check is wrong. Keying on `vi.mock(...supabase...)` flags `guardian-unlinked.pg.ci.test.ts` —
  *   the exemplar. That file mocks the supabase MODULE and hands back an adapter backed by a
  *   real `pg.Client`; the mock is the seam, not the substitute. So the test is not "does it
  *   mock", it is "IS THE MOCK BACKED BY A REAL POSTGRES CONNECTION".

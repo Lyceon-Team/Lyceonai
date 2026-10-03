@@ -11,9 +11,10 @@
 #   SNAPSHOT — every compute appends an immutable snapshot row (Q6 audit trail, INV-05C-17).
 #   GATE — below the Q4 8-domain gate the projection columns are ALL NULL (INV-05C-14); the row
 #      is still upserted ("not enough evidence yet").
-#   RLS / GRANT STRUCT (§7.4/§7.5) — RLS enabled on all 4 projection tables; guardian read policies
-#      on projections + snapshots; NO authenticated read policy on refresh-state/outbox; snapshots
-#      append-only (no UPDATE/DELETE policy); authenticated has NO grant on blend-anchor/hash cols.
+#   RLS / GRANT STRUCT (§7.4/§7.5) — RLS enabled on all 4 projection tables; NO read policy on
+#      projections + snapshots (SCL-196); NO authenticated read policy on refresh-state/outbox;
+#      snapshots append-only (no UPDATE/DELETE policy); authenticated holds NO column grant on
+#      projections or snapshots (SCL-198: every read is the service role's).
 #   INV-05C-16 — the projection constant keys are NOT in canonicalize_mastery_constants's hash list.
 set -euo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5433}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
@@ -94,15 +95,16 @@ RLS=$(psql_db "$DB" -tAc "
                      'student_projection_refresh_state','projection_refresh_outbox');")
 if [ "$RLS" = "true" ]; then echo "    OK RLS enabled on all 4 projection tables"
 else echo "  FAIL: RLS not enabled on all 4 tables (bool_and=$RLS)"; exit 1; fi
-# guardian + student read policies on projections + snapshots; NONE on refresh-state/outbox.
+# SCL-196 (G-NEW-15, migration 20261017000000): NO policy on projections/snapshots — every read
+# is the service role's and the route layer enforces guardian visibility — and none on
+# refresh-state/outbox. RLS stays ON (checked above), so absence is denial.
 POL=$(psql_db "$DB" -tAc "
-  SELECT (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND policyname IN
-     ('student_section_projections_student_read','student_section_projections_guardian_read',
-      'projection_snapshots_student_read','projection_snapshots_guardian_read'))::text
+  SELECT (SELECT count(*) FROM pg_policies WHERE schemaname='public'
+     AND tablename IN ('student_section_projections','student_section_projection_snapshots'))::text
    ||'|'|| (SELECT count(*) FROM pg_policies WHERE schemaname='public'
             AND tablename IN ('student_projection_refresh_state','projection_refresh_outbox'))::text;")
-if [ "$POL" = "4|0" ]; then echo "    OK 4 read policies on projections/snapshots; 0 on refresh-state/outbox (denial by absence)"
-else echo "  FAIL: policy presence (projection-reads|bookkeeping) = $POL (expected 4|0)"; exit 1; fi
+if [ "$POL" = "0|0" ]; then echo "    OK 0 policies on projections/snapshots and on refresh-state/outbox (denial by absence, SCL-196)"
+else echo "  FAIL: policy count (projection-reads|bookkeeping) = $POL (expected 0|0)"; exit 1; fi
 # snapshots append-only: NO UPDATE/DELETE policy for any role; NO INSERT/UPDATE/DELETE for authenticated.
 APPEND=$(psql_db "$DB" -tAc "
   SELECT count(*) FROM pg_policies WHERE schemaname='public'
@@ -118,13 +120,17 @@ COLG=$(psql_db "$DB" -tAc "
                          'projection_constants_hash','mastery_model_version','refreshed_at_t_now');")
 if [ "$COLG" = "0" ]; then echo "    OK authenticated has NO grant on blend anchors / hashes / refreshed_at_t_now (§7.5/§10.5)"
 else echo "  FAIL: authenticated leaked $COLG admin-only column grant(s) on student_section_projections"; exit 1; fi
-# guardian-readable projected_score_* IS granted to authenticated (the §2.5 guardian-visible surface).
+# SCL-198: the §2.5 guardian-visible surface (projected_score_*, relevant_question_count) is served
+# by the route on the service role, so authenticated holds NO column grant on either table —
+# presence first: the service role, the one reader, still reads both.
 COLOK=$(psql_db "$DB" -tAc "
-  SELECT count(*) FROM information_schema.role_column_grants
-   WHERE table_name='student_section_projections' AND grantee='authenticated'
-     AND column_name IN ('projected_score_mid','projected_score_low','projected_score_high','relevant_question_count');")
-if [ "$COLOK" = "4" ]; then echo "    OK authenticated CAN read projected_score_*/relevant_question_count (guardian-visible surface, §2.5)"
-else echo "  FAIL: projected_score_* grant count = $COLOK (expected 4)"; exit 1; fi
+  SELECT has_table_privilege('service_role','public.student_section_projections','SELECT')::text
+   || '|' || has_table_privilege('service_role','public.student_section_projection_snapshots','SELECT')::text
+   || '|' || (SELECT count(*) FROM information_schema.role_column_grants
+               WHERE table_schema='public' AND grantee IN ('authenticated','anon')
+                 AND table_name IN ('student_section_projections','student_section_projection_snapshots'))::text;")
+if [ "$COLOK" = "true|true|0" ]; then echo "    OK service_role reads both projection tables; authenticated/anon hold no column grant (SCL-198)"
+else echo "  FAIL: projection read posture = $COLOK (expected true|true|0 — service_role reads, no authenticated/anon column grant)"; exit 1; fi
 
 echo "==> INV-05C-16: projection constants EXCLUDED from canonicalize_mastery_constants hash list"
 # The formula hash basis must NOT contain any PROJECTION_* key. canonicalize_mastery_constants()

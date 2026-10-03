@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lyceon exam report</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&amp;family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&amp;display=swap">
+<style>
+body{margin:0;background:#FFFAEF}
+.lyc{
+--paper:#FFFAEF;--margin:#F7F0DF;--sheet:#FFFFFF;--ink:#1F2A33;--ink-strong:#0F2E48;--muted:#5A6470;
+--rule:#E3D9C3;--rule-soft:#E8DFCB;--rule-strong:#B9A67E;--input-bd:#B9C4CF;--chip:#EEF2F6;--hover:#F2EAD6;
+--rail:#0F2E48;--rail-ink:#C9D3DC;--rail-on-bg:#FFFAEF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#0F2E48;--primary-ink:#FFFAEF;--scrim:rgba(15,46,72,0.45);--tick:#C9BFA8;--seg-empty:#EAE0CB;
+--danger:#9B2C2C;--danger-bg:#FDF2F2;--focus:#7FA6C9;--step:#B9A67E;--ok:#065F46;
+--lv0-fill:#F59E0B;--lv0-bg:#FEF3C7;--lv0-ink:#78350F;--lv0-bd:#FDE68A;
+--lv1-fill:#F97316;--lv1-bg:#FFEDD5;--lv1-ink:#7C2D12;--lv1-bd:#FED7AA;
+--lv2-fill:#0EA5E9;--lv2-bg:#E0F2FE;--lv2-ink:#0C4A6E;--lv2-bd:#BAE6FD;
+--lv3-fill:#2563EB;--lv3-bg:#DBEAFE;--lv3-ink:#1E3A8A;--lv3-bd:#BFDBFE;
+--lv4-fill:#059669;--lv4-bg:#D1FAE5;--lv4-ink:#064E3B;--lv4-bd:#A7F3D0;
+--cat-math-bg:#E8EFFA;--cat-math-bd:#2563EB;--cat-math-ink:#1E3A8A;
+--cat-rw-bg:#F3EDF8;--cat-rw-bd:#7E4FA8;--cat-rw-ink:#4A2668;
+--cat-review-bg:#FBF0E2;--cat-review-bd:#C2650A;--cat-review-ink:#7C3A06;
+--cat-test-bg:#EDF0F3;--cat-test-bd:#0F2E48;--cat-test-ink:#0F2E48}
+.lyc.dark{
+--paper:#121B24;--margin:#16212C;--sheet:#1B2733;--ink:#E7E1D4;--ink-strong:#F4EEDF;--muted:#A9B2BB;
+--rule:#2D3B49;--rule-soft:#26333F;--rule-strong:#6E6249;--input-bd:#3B4B5B;--chip:#233140;--hover:#22303D;
+--rail:#0A1219;--rail-ink:#9FB0BF;--rail-on-bg:#F4EEDF;--rail-on-ink:#0F2E48;--lock:#E8C98A;
+--primary-bg:#F4EEDF;--primary-ink:#0F2E48;--scrim:rgba(4,8,12,0.6);--tick:#4A5868;--seg-empty:#2A3846;
+--danger:#F2A7A7;--danger-bg:#2A1B1E;--focus:#8FB4D6;--step:#8C7B57;--ok:#6EE7B7;
+--lv0-fill:#FBBF24;--lv0-bg:rgba(245,158,11,0.16);--lv0-ink:#FDE68A;--lv0-bd:rgba(251,191,36,0.4);
+--lv1-fill:#FB923C;--lv1-bg:rgba(249,115,22,0.16);--lv1-ink:#FED7AA;--lv1-bd:rgba(251,146,60,0.4);
+--lv2-fill:#38BDF8;--lv2-bg:rgba(14,165,233,0.16);--lv2-ink:#BAE6FD;--lv2-bd:rgba(56,189,248,0.4);
+--lv3-fill:#60A5FA;--lv3-bg:rgba(37,99,235,0.18);--lv3-ink:#BFDBFE;--lv3-bd:rgba(96,165,250,0.45);
+--lv4-fill:#34D399;--lv4-bg:rgba(5,150,105,0.18);--lv4-ink:#A7F3D0;--lv4-bd:rgba(52,211,153,0.4);
+--cat-math-bg:rgba(96,165,250,0.12);--cat-math-bd:#60A5FA;--cat-math-ink:#BFDBFE;
+--cat-rw-bg:rgba(192,132,252,0.12);--cat-rw-bd:#C084FC;--cat-rw-ink:#E9D5FF;
+--cat-review-bg:rgba(251,146,60,0.12);--cat-review-bd:#FB923C;--cat-review-ink:#FED7AA;
+--cat-test-bg:rgba(244,238,223,0.08);--cat-test-bd:#F4EEDF;--cat-test-ink:#F4EEDF}
+.lyc a{color:var(--ink-strong)}
+.lyc button,.lyc select,.lyc input{font-family:inherit}
+.lyc a:focus-visible,.lyc button:focus-visible,.lyc select:focus-visible,.lyc input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.rail-item:hover{filter:brightness(1.12)}
+.btn-primary:hover{filter:brightness(1.12)}
+.btn-quiet:hover{background:var(--hover)}
+.opt:hover{background:var(--margin)}
+.lyc a.foot-link{color:var(--muted);text-decoration:none}.lyc a.foot-link:hover{color:var(--ink-strong);text-decoration:underline}
+@keyframes lyc-dot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+.lyc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);animation:lyc-dot 1.2s infinite ease-in-out}
+.lyc-dot:nth-child(2){animation-delay:.15s}.lyc-dot:nth-child(3){animation-delay:.3s}
+@media (prefers-reduced-motion: reduce){.lyc-dot{animation:none;opacity:.6}}
+</style>
+</helmet>
+<div class="lyc {{themeClass}}" style="width: 1440px; height: 900px; display: flex; position: relative; background: var(--paper); color: var(--ink); font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif; overflow: hidden">
+<div style="flex-grow: 1; height: 100%; display: flex; flex-direction: column; min-width: 0">
+<header style="flex-shrink: 0; display: flex; align-items: center; gap: 20px; padding: 18px 40px; border-bottom: 1px solid var(--rule); background: var(--paper)">
+<a href="FullLength.dc.html" aria-label="Back to full-length tests" class="btn-quiet" style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px 0 8px; border-radius: 6px; text-decoration: none; color: var(--ink-strong); font-size: 17px; font-weight: 600">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true" style="stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M15 18l-6-6 6-6"></path></svg>
+Full-Length
+</a>
+<span style="width: 1px; height: 28px; background: var(--rule)"></span>
+<span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 20px; font-weight: 600; color: var(--ink-strong)">Practice Test 1 report</span>
+<span style="font-size: 16px; color: var(--muted)">26 September 2026</span>
+</header>
+<main style="flex-grow: 1; overflow-y: auto; padding: 48px 72px 72px; box-sizing: border-box">
+<div style="max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 48px; align-items: start">
+
+<section aria-labelledby="scores-h" style="background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 24px">
+<h2 id="scores-h" style="margin: 0; font-size: 15px; font-weight: 600; color: var(--muted)">Total score</h2>
+<div style="display: flex; align-items: baseline; gap: 12px; margin-top: -16px">
+<span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 64px; line-height: 1; font-weight: 600; color: var(--ink-strong)">1120</span>
+<span style="font-size: 16px; color: var(--muted)">out of 1600</span>
+</div>
+<div style="border-top: 1px solid var(--rule); padding-top: 20px; display: flex; flex-direction: column; gap: 18px">
+<h3 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--muted)">Section scores</h3>
+<sc-for list="{{sections}}" as="s" hint-placeholder-count="2">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<span style="font-size: 18px; color: var(--ink)">{{s.name}}</span>
+<span style="display: flex; align-items: baseline; gap: 8px"><span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 34px; font-weight: 600; color: var(--ink-strong)">{{s.score}}</span><span style="font-size: 15px; color: var(--muted)">/ 800</span></span>
+</div>
+</sc-for>
+</div>
+<p style="margin: 0; font-size: 15px; line-height: 1.5; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px">Lyceon-modeled SAT score. Your official College Board score may differ.</p>
+<button type="button" class="btn-primary" style="height: 52px; border: 0; border-radius: 6px; background: var(--primary-bg); color: var(--primary-ink); font-size: 18px; font-weight: 600; cursor: pointer">Review your answers</button>
+</section>
+
+<section aria-labelledby="ks-h" style="display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h2 id="ks-h" style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 30px; font-weight: 600; color: var(--ink-strong)">Knowledge and skills</h2>
+<p style="margin: 0; font-size: 17px; color: var(--muted)">How you did across the eight content domains on this test.</p>
+</div>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px">
+<sc-for list="{{breakdown}}" as="col" hint-placeholder-count="2">
+<div style="display: flex; flex-direction: column; gap: 22px">
+<h3 style="margin: 0; font-family: 'Source Serif 4', Georgia, serif; font-size: 21px; font-weight: 600; color: var(--ink-strong); border-bottom: 1px solid var(--rule); padding-bottom: 10px">{{col.section}}</h3>
+<sc-for list="{{col.domains}}" as="d" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 17px; font-weight: 600; color: var(--ink)">{{d.name}}</span>
+<span style="font-size: 14px; color: var(--muted)">{{d.weight}}</span>
+<span role="img" aria-label="{{d.aria}}" style="display: flex; gap: 4px">
+<sc-for list="{{d.segs}}" as="sg" hint-placeholder-count="7">
+<span style="flex: 1; height: 14px; border-radius: 2px; {{sg.tone}}"></span>
+</sc-for>
+</span>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":900}}'>
+
+function lycTheme(t) { return t === 'dark' ? 'dark' : ''; }
+// segmentsFilled is computed by the server at read time (SCL-180 as amended): round half up of correct x 7 / total, clamped 0-7.
+// The student payload carries only the segment count, never correct or total.
+const LYC_REPORT = [
+  { section: 'Reading and Writing', domains: [
+    ['Information and Ideas', '26% of the section, 12 to 14 questions', 6],
+    ['Craft and Structure', '28% of the section, 13 to 15 questions', 5],
+    ['Expression of Ideas', '20% of the section, 8 to 12 questions', 4],
+    ['Standard English Conventions', '26% of the section, 11 to 15 questions', 3]
+  ] },
+  { section: 'Math', domains: [
+    ['Algebra', '35% of the section, 13 to 15 questions', 5],
+    ['Advanced Math', '35% of the section, 13 to 15 questions', 4],
+    ['Problem Solving and Data Analysis', '15% of the section, 5 to 7 questions', 3],
+    ['Geometry and Trigonometry', '15% of the section, 5 to 7 questions', 2]
+  ] }
+];
+class Component extends DCLogic {
+  renderVals() {
+    const breakdown = LYC_REPORT.map(function (c) {
+      return { section: c.section, domains: c.domains.map(function (d) {
+        const segs = [];
+        for (let i = 0; i < 7; i++) {
+          segs.push({ tone: i < d[2] ? 'background: var(--ink-strong); border: 1px solid var(--ink-strong);' : 'background: transparent; border: 1px solid var(--rule-strong);' });
+        }
+        return { name: d[0], weight: d[1], segs: segs, aria: d[0] + ': ' + d[2] + ' of 7' };
+      }) };
+    });
+    return {
+      themeClass: lycTheme(this.props.theme),
+      sections: [{ name: 'Reading and Writing', score: '620' }, { name: 'Math', score: '500' }],
+      breakdown: breakdown
+    };
+  }
+}
+
+</script>
+</body>
+</html>

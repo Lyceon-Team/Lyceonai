@@ -73,8 +73,14 @@ Some features are available to free tier but with **usage limits**:
 | `/profile` | student, guardian, admin | free | RequireRole allow=['student', 'guardian', 'admin'] | requireSupabaseAuth | `client/src/App.tsx:101`, `server/index.ts:286` |
 | `/profile/complete` | student, guardian, admin | free | RequireRole allow=['student', 'guardian', 'admin'] | requireSupabaseAuth | `client/src/App.tsx:102` |
 | **Guardian Routes** | | | | | |
-| `/guardian` | guardian, admin | entitled | RequireRole allow=['guardian', 'admin'], SubscriptionPaywall | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `client/src/App.tsx:105`, `client/src/pages/guardian-dashboard.tsx:175-188`, `server/routes/guardian-routes.ts:51-72` |
-| `/guardian/students/:studentId/calendar` | guardian, admin | entitled | RequireRole allow=['guardian', 'admin'] | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `client/src/App.tsx:106`, `server/routes/guardian-routes.ts` (canonical month projection via `buildCalendarMonthView`) |
+| `/guardian` | guardian | free | RequireRole allow=['guardian'] | `GET /api/guardian/students`: requireSupabaseAuth, requireGuardianRole | `client/src/features/guardian/routes.tsx`, `server/routes/guardian-routes.ts` |
+| `/guardian/students` | guardian | free | RequireRole allow=['guardian'] | `/api/guardian/*`: requireSupabaseAuth, requireGuardianRole | `client/src/features/guardian/routes.tsx`, `server/routes/guardian-routes.ts` |
+| `/guardian/:studentId` | guardian | entitled (the STUDENT's) | RequireRole allow=['guardian'], GuardianShell | `/api/students/:studentId/*`: requireSupabaseAuth, resolveSubject, entitlementGate | `client/src/features/guardian/routes.tsx`, `server/routes/student-resources.ts` |
+| `/guardian/:studentId/calendar` | guardian | entitled (the STUDENT's `calendar_access`) | RequireRole allow=['guardian'], GuardianShell | requireSupabaseAuth, resolveSubject, entitlementGate | `client/src/features/guardian/routes.tsx`, `server/routes/student-resources.ts` (`readGuardianCalendar`) |
+| `/guardian/:studentId/exams` | guardian | entitled (the STUDENT's `exam_full_length`) | RequireRole allow=['guardian'], GuardianShell | requireSupabaseAuth, resolveSubject, entitlementGate | `client/src/features/guardian/routes.tsx`, `server/routes/student-resources.ts` |
+| `/guardian/:studentId/exams/:sessionId` | guardian | entitled (the STUDENT's `exam_full_length`) | RequireRole allow=['guardian'], GuardianShell | requireSupabaseAuth, resolveSubject, entitlementGate | `client/src/features/guardian/routes.tsx`, `server/routes/student-resources.ts` |
+
+(Guardian rows updated 2026-10-01, guardian closeout: admins are refused on every guardian route (G2-01); the client paywall component and `requireGuardianEntitlement` are gone.)
 
 **†** entitled = Free tier has daily usage limits; entitled tier has unlimited access
 
@@ -147,11 +153,16 @@ Some features are available to free tier but with **usage limits**:
 
 | Endpoint | Role | Entitlement | Server Gate | Evidence |
 |----------|------|-------------|-------------|----------|
-| `GET /api/guardian/students` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:51-72` |
-| `POST /api/guardian/link` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:74-135` |
-| `DELETE /api/guardian/link/:studentId` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:135` |
-| `GET /api/students/:studentId/kpi/overall` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:184-265` |
-| `GET /api/students/:studentId/mastery/domains` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:435-517` |
+| `GET /api/guardian/students` | guardian | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts` |
+| `POST /api/guardian/link/redeem` | guardian | free | requireSupabaseAuth, requireGuardianRole, guardianLinkCodeEntryRateLimit | `server/routes/guardian-routes.ts` |
+| `DELETE /api/guardian/link/:studentId` | guardian | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts` |
+| `GET /api/students/:studentId/kpi/overall` | student, guardian | free for the student; guardian needs the student's active entitlement | requireSupabaseAuth, resolveSubject | `server/routes/student-resources.ts` (guardian gets the streak only, SCL-188) |
+| `GET /api/students/:studentId/mastery/domains` | student, guardian | `mastery_detail` (the STUDENT's) | requireSupabaseAuth, resolveSubject, entitlementGate | `server/routes/student-resources.ts` |
+| `GET /api/students/:studentId/calendar` | student, guardian | `calendar_access` (the STUDENT's) | requireSupabaseAuth, resolveSubject, entitlementGate | `server/routes/student-resources.ts` |
+| `GET /api/students/:studentId/tests` | student, guardian | `exam_full_length` (the STUDENT's) | requireSupabaseAuth, resolveSubject, entitlementGate | `server/routes/student-resources.ts` |
+| `GET /api/students/:studentId/tests/:sessionId/report` | student, guardian | `exam_full_length` (the STUDENT's) | requireSupabaseAuth, resolveSubject, entitlementGate | `server/routes/student-resources.ts` |
+
+A guardian is admitted to `/api/students/:studentId/*` only when `guardian_view_decision` returns `allow` (active link AND active student entitlement). Unlinked → 404; linked but unentitled → 402. `/mastery/skills` refuses a guardian with 403 (SCL-194).
 
 ### Admin APIs
 
@@ -197,25 +208,17 @@ Some features are available to free tier but with **usage limits**:
 
 ---
 
-### SubscriptionPaywall
-**File:** `client/src/components/guardian/SubscriptionPaywall.tsx`
+### Guardian lapsed state
+(updated 2026-10-01, guardian closeout: `SubscriptionPaywall` and `guardian-dashboard.tsx` no longer exist.)
 
-**Purpose:** Shows upgrade prompt for guardian features requiring paid entitlement
+**File:** `client/src/features/guardian/GuardianStates.tsx`
+
+**Purpose:** Shows the lapsed state when a per-student read answers 402, or the roster reports `has_active_entitlement: false`.
 
 **Behavior:**
-- Wraps guardian dashboard content
-- Checks if linked student has active paid subscription
-- Shows paywall UI if subscription is inactive or missing
-- Allows access if subscription is active or trialing
-
-**Usage:**
-```tsx
-<SubscriptionPaywall studentId={selectedStudentId}>
-  <GuardianDashboardContent />
-</SubscriptionPaywall>
-```
-
-**Evidence:** `client/src/pages/guardian-dashboard.tsx:175-188`, `client/src/components/guardian/SubscriptionPaywall.tsx:50-219`
+- Classifies a failed read: 402 → lapsed, 404 → revoked, anything else → error
+- Lapsed state links to the plan chooser for that student
+- UI only; the server refuses every gated read regardless
 
 ---
 
@@ -238,10 +241,10 @@ Some features are available to free tier but with **usage limits**:
 - **Evidence:** `server/middleware/supabase-auth.ts`
 
 **requireGuardianRole**
-- **File:** `server/middleware/supabase-auth.ts`
-- **Purpose:** Enforces guardian or admin role
-- **Behavior:** Returns 403 if user role is not guardian or admin
-- **Evidence:** `server/middleware/supabase-auth.ts`
+- **File:** `server/middleware/guardian-role.ts`
+- **Purpose:** Enforces guardian role (admins are refused, G2-01)
+- **Behavior:** Returns 403 if user role is not guardian
+- **Evidence:** `server/middleware/guardian-role.ts`
 
 **requireSupabaseAdmin**
 - **File:** `server/middleware/supabase-auth.ts`
@@ -251,14 +254,23 @@ Some features are available to free tier but with **usage limits**:
 
 ### Entitlement Enforcement Middleware
 
-**requireGuardianEntitlement**
-- **File:** `server/middleware/guardian-entitlement.ts`
-- **Purpose:** Enforces paid entitlement on linked student account
+**resolveSubject** (guardian reads of a student)
+- **File:** `server/middleware/subject-resolver.ts`
+- **Purpose:** Decides whether the caller may read this student's data
 - **Behavior:**
-  - Checks guardian's linked student account
-  - Validates student has active/trialing subscription
-  - Returns 402 PAYMENT_REQUIRED if entitlement missing or inactive
-- **Evidence:** `server/middleware/guardian-entitlement.ts:65-135`
+  - Self → admitted as `via: 'self'`
+  - Otherwise calls SQL `guardian_view_decision(uuid, uuid)` via `server/services/guardian-subject.ts`
+  - Not linked → 404; linked but student unentitled → 402 PAYMENT_REQUIRED
+  - Writes a `guardian_subject_access` row to `audit_logs`; fails closed (500) if it cannot
+- **Evidence:** `server/middleware/subject-resolver.ts`, `server/services/guardian-subject.ts`
+
+**entitlementGate** (per-feature, on the STUDENT)
+- **File:** `server/routes/student-resources.ts`
+- **Purpose:** Applies the `requiresEntitlement` route table (`mastery_detail`, `calendar_access`, `exam_full_length`) to the subject's entitlement
+- **Behavior:** Returns 402 when the student lacks the feature
+- **Evidence:** `server/routes/student-resources.ts` (`requiresEntitlement`, `entitlementGate`)
+
+(updated 2026-10-01, guardian closeout: `requireGuardianEntitlement` / `server/middleware/guardian-entitlement.ts` no longer exist.)
 
 **checkPracticeLimit()**
 - **File:** `server/middleware/usage-limits.ts`
@@ -288,7 +300,7 @@ Some features are available to free tier but with **usage limits**:
 
 Admins have unrestricted access to:
 - All student features (dashboard, practice, chat, etc.)
-- All guardian features (student monitoring, calendar, etc.)
+- Not guardian features: guardian routes admit `role = 'guardian'` only, and the subject resolver has no admin bypass (G2-01; owner ruling 2026-08-26 R5)
 - Admin-only endpoints (for example `/api/admin/db-health`)
 
 **Key Properties:**

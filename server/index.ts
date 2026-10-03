@@ -30,6 +30,7 @@ import {
   requireSupabaseAdmin,
   requireStudentOrAdmin,
   requireStudentOnly,
+  requireStudentAccount,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
@@ -64,6 +65,10 @@ import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
+import {
+  referenceSearchRouter,
+  studentBackgroundRouter,
+} from "./routes/student-background-routes";
 import internalCronRoutes from "./routes/internal-cron-routes";
 import internalMemoryRoutes from "./routes/internal-memory-routes";
 import internalRetentionRoutes from "./routes/internal-retention-routes";
@@ -415,6 +420,33 @@ app.use("/api/internal", internalRetentionRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
 
+// SCL-195 / Brief 8 ruling 1. Settings → Profile background. Mounted BEFORE /api/profile so the
+// more specific path is matched here. Student-only (`requireStudentAccount`: guardians and admins
+// refused, then the live under-13 link gate) and deliberately NO entitlement check — this is the
+// student's own optional profile, not a paid feature. Settings and the calendar's dream-school
+// picker share this one write path.
+app.use(
+  "/api/profile/background",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  studentBackgroundRouter,
+);
+
+// Brief 8 ruling 3. College and high-school search for the background pickers, rate-limited per
+// profile through the ledger's `reference_search` bucket. The ruling says "authenticated"; it is
+// mounted for STUDENT accounts (`requireStudentAccount`, which ends in the live under-13 link
+// gate) because the pickers exist only on student surfaces and the G1-11 guardian sweep admits a
+// guardian-reachable prefix only as a deliberate statement that guardians belong on it — none do
+// here. Recorded in register row UI-S3.
+app.use(
+  "/api/reference",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  referenceSearchRouter,
+);
+
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
 // PATCH /api/profile - profile completion/update route
@@ -745,12 +777,19 @@ app.get("/legal/:slug", (req, res, next) => {
 });
 app.use(express.static(staticPath));
 
+// @spec [Coding Standards §8.2, §8.3; student-ui register F-42, owner ruling 2026-10-01] |
+// @implemented [2026-10-01] | plain English: any `/api` request that no route answered gets the
+// API's JSON 404, whatever the method. It used to be answered only for GET (inside the SPA
+// fallback below); a POST, PUT, PATCH or DELETE fell through to Express's default HTML
+// `Cannot POST …` page, so a client parsing JSON got HTML (seen in production 2026-10-01). The
+// body is unchanged from the GET one, which tests and callers already read.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "API endpoint not found" });
+});
+
 // SPA fallback - serve index.html for all non-API routes
 // Private routes (dashboard, practice, etc.) get plain SPA shell
 app.get("*", (req, res) => {
-  if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "API endpoint not found" });
-  }
   res.sendFile(path.join(staticPath, "index.html"));
 });
 

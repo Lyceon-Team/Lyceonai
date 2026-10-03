@@ -10,7 +10,8 @@
  *   (1) a hex colour literal (`#0F2E48`, `#fff` …) — colour comes from the token set; and
  *   (2) a Tailwind text-size utility under 16px (`text-xs`, `text-sm`, `text-[13px]` …) —
  *       the static half of R12. The computed half, which also covers the SHARED components a
- *       guardian page renders, is `tests/e2e/guardian-surfaces.spec.ts`.
+ *       guardian page renders, is `tests/e2e/guardian-surfaces.spec.ts`, run by the
+ *       `guardian-e2e` CI job (since the guardian closeout; before that, only locally).
  * It also checks that `guardian-type-floor.generated.css` is what the calendar stylesheet
  * currently produces (`scripts/gen-guardian-type-floor.mjs --check`).
  *
