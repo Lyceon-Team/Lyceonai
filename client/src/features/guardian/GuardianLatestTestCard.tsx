@@ -2,11 +2,12 @@
  * The guardian Dashboard's compact latest-test card (G5-04, G5-08).
  *
  * @spec [Guardian_Closure_Plan G5-04, G5-08; ruling R13 (Karl, 2026-10-02); the canvas boards
- *       "Wave 5 — BUILD TARGET"; SCL-199 (scores on the guardian list item); SCL-192 (the
- *       latest test by its instant); SCL-182 (the disclosure summary beside every score);
+ *       "Wave 5 — BUILD TARGET"; G5-09 (owner brief 2026-10-03: scores reach a guardian only
+ *       through the report route); SCL-192/SCL-199 (the instants that pick the tests); SCL-182 (the disclosure summary beside every score);
  *       SCL-189 (no counts on the guardian surface); R12 (16px floor); owner decisions
  *       2026-10-02 (a partial score is compared section to section; "you/your" names the
- *       student; the failed state shows its title only)] | @implemented [2026-10-02]
+ *       student; the failed state shows its title only)]
+ *       | @implemented [2026-10-02; chip from two reports 2026-10-03]
  *
  * plain English: the student's latest full-length test at a glance, in the student's own words
  * — its name and date; for a scored test the total, the change since the previous scored
@@ -17,18 +18,21 @@
  * summary where there is a score, and "See full report →" to the detail page. Phone: every line
  * centred and stacked. Presentational: it is handed the item's report and the change.
  *
- * WHICH TEST (`pickCardExam`): the attempt that ended most recently — completed, or abandoned
- * (a partial score is abandoned, never completed) — by `completed_at ?? abandoned_at`; if none
- * has ended, an attempt in progress, which the student's own card calls "In progress".
+ * WHICH TESTS — list fields only, never a score (G5-09). `pickCardExam`: the attempt that ended
+ * most recently — completed, or abandoned (a partial score is abandoned, never completed) — by
+ * `completed_at ?? abandoned_at`; if none has ended, an attempt in progress, which the student's
+ * own card calls "In progress". `pickPreviousExam`: the newest attempt that ended before it with
+ * a scored outcome by its `report_state` (scored or partial-scored).
  *
- * THE CHANGE (`changeSinceLast`) compares the card's scored outcome with the previous scored
- * outcome (the newest one that ended before it), like with like: total with total when both have
- * one; otherwise the section they share ("▲ 20 in Reading and Writing since last test"), because
- * a partial score has no total (the student's own sentence says so) and a section score and a
- * total are different scales. No earlier attempt at all: "First test". Earlier attempts but none
- * scored, or no shared section: no chip. A drop wears the rust tone, a rise the blue —
- * `levelTone("L1")` and `levelTone("L3")`, borders dropped as the mastery pill drops them; zero is
- * the neutral tone. Every number comes from the list (SCL-199), so it costs no second report.
+ * THE CHANGE (`changeBetween`) is computed from the two REPORTS, read through the guardian
+ * report route with its schema — the latest's and the previous's, at most two report calls. Like
+ * with like: total with total when both have one; otherwise the section they share ("▲ 20 in
+ * Reading and Writing since last test"), because a partial score has no total (the student's own
+ * sentence says so) and a section score and a total are different scales. No earlier attempt at
+ * all: "First test". Earlier attempts but none scored, no shared section, or a previous report
+ * that failed, is withheld (no valid disclosure, so no score may be drawn from it) or no longer
+ * scored: no chip. A drop wears the rust tone, a rise the blue — `levelTone("L1")` and
+ * `levelTone("L3")`, borders dropped as the mastery pill drops them; zero is the neutral tone.
  *
  * NOT HERE: question counts and the per-domain bars (detail page), and no control but the link.
  * The score lines sit behind `DisclosedScore`, the report's gate: no disclosure, no score.
@@ -38,7 +42,10 @@ import type {
   GuardianExamList,
   GuardianExamReport,
 } from "@lyceon/shared/exam-guardian-report-schema";
-import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
+import {
+  EXAM_SECTION_LABEL,
+  examDisclosureSchema,
+} from "@lyceon/shared/exam-report-schema";
 import type { ExamSection } from "@lyceon/shared/exam-runtime-schema";
 import { levelTone } from "@/components/mastery/LevelPill";
 import { DisclosedScore } from "@/features/exam/components/DisclosedScore";
@@ -67,7 +74,7 @@ function endedAt(t: ExamListItem): number | null {
 }
 
 /**
- * @spec [Guardian_Closure_Plan G5-08; SCL-192; SCL-199] | @implemented [2026-10-02]
+ * @spec [Guardian_Closure_Plan G5-08, G5-09; SCL-192; SCL-199] | @implemented [2026-10-02]
  * plain English: the attempt the card shows — the newest that ended (completed or abandoned);
  * else one still in progress; null when the student has none. Pure.
  */
@@ -83,34 +90,32 @@ export function pickCardExam(
   return latest ?? tests.find((t) => IN_PROGRESS.has(t.session_state)) ?? null;
 }
 
-type Outcome = {
-  total: number | null;
-  RW: number | null;
-  M: number | null;
-};
+const SCORED_STATES: ReadonlySet<ExamListItem["report_state"]> = new Set([
+  "scored",
+  "partial_scored",
+]);
 
-/** The scored outcome as the student's report shows it, or null when there is no score. */
-function outcomeOf(t: ExamListItem): Outcome | null {
-  if (t.report_state !== "scored" && t.report_state !== "partial_scored") {
-    return null;
-  }
-  return { total: t.total_scaled, RW: t.rw_scaled, M: t.math_scaled };
-}
+/** Which earlier attempt the chip compares with, chosen from list fields alone. */
+export type PreviousExam =
+  | { kind: "first" }
+  | { kind: "none" }
+  | { kind: "previous"; item: ExamListItem };
 
 /**
- * @spec [Guardian_Closure_Plan G5-04, G5-08; SCL-199; owner decision 2026-10-02 (a partial
- *       score is compared section to section)] | @implemented [2026-10-02]
- * plain English: the card's scored outcome minus the previous scored outcome, like with like —
- * total with total, else the one section both have; "first" with no earlier attempt; "none"
- * when there is nothing comparable. Pure; every number from the list.
+ * @spec [Guardian_Closure_Plan G5-04, G5-08, G5-09; SCL-192; SCL-199] | @implemented [2026-10-03]
+ * plain English: the attempt the chip compares the card's with — the newest that ended before it
+ * with a scored outcome (`report_state` scored or partial-scored); "first" when no attempt ended
+ * before it; "none" when the card's own attempt has no score or nothing earlier was scored. List
+ * fields only (states and instants), never a score: the scores come from the reports. Pure.
  */
-export function changeSinceLast(
+export function pickPreviousExam(
   tests: readonly ExamListItem[],
   latest: ExamListItem,
-): ScoreChange {
-  const now = outcomeOf(latest);
+): PreviousExam {
   const at = endedAt(latest);
-  if (now === null || at === null) return { kind: "none" };
+  if (!SCORED_STATES.has(latest.report_state) || at === null) {
+    return { kind: "none" };
+  }
   const earlier = tests.filter((t) => {
     const e = endedAt(t);
     return t.session_id !== latest.session_id && e !== null && e < at;
@@ -118,24 +123,74 @@ export function changeSinceLast(
   if (earlier.length === 0) return { kind: "first" };
   let previous: ExamListItem | null = null;
   for (const t of earlier) {
-    if (outcomeOf(t) === null) continue;
+    if (!SCORED_STATES.has(t.report_state)) continue;
     if (previous === null || (endedAt(t) ?? 0) > (endedAt(previous) ?? 0)) {
       previous = t;
     }
   }
-  const before = previous === null ? null : outcomeOf(previous);
-  if (before === null) return { kind: "none" };
-  if (now.total !== null && before.total !== null) {
-    return { kind: "delta", delta: now.total - before.total, section: null };
+  return previous === null
+    ? { kind: "none" }
+    : { kind: "previous", item: previous };
+}
+
+type Outcome = {
+  total: number | null;
+  RW: number | null;
+  M: number | null;
+};
+
+/**
+ * A report's scored outcome as the student's report shows it, or null when it has no score a
+ * guardian may be shown — another state, or a disclosure that fails its schema (the gate
+ * `DisclosedScore` applies before drawing any score).
+ */
+function outcomeOf(report: GuardianExamReport): Outcome | null {
+  if (
+    report.report_state !== "scored" &&
+    report.report_state !== "partial_scored"
+  ) {
+    return null;
+  }
+  if (!examDisclosureSchema.safeParse(report.disclosure).success) return null;
+  return {
+    total: report.report_state === "scored" ? report.score.total_scaled : null,
+    RW: report.score.rw_scaled,
+    M: report.score.math_scaled,
+  };
+}
+
+/**
+ * @spec [Guardian_Closure_Plan G5-04, G5-08, G5-09; owner decision 2026-10-02 (a partial score
+ *       is compared section to section)] | @implemented [2026-10-03]
+ * plain English: the card's report minus the previous report, like with like — total with total,
+ * else the one section both have. `previous` is what `pickPreviousExam` chose; `before` is its
+ * report, undefined while it is loading or when the read failed or was refused. Anything not
+ * comparable is "none": no chip. Pure; every number from the two reports.
+ */
+export function changeBetween(
+  latest: GuardianExamReport,
+  previous: PreviousExam,
+  before: GuardianExamReport | undefined,
+): ScoreChange {
+  const now = outcomeOf(latest);
+  if (now === null || previous.kind === "none") return { kind: "none" };
+  if (previous.kind === "first") return { kind: "first" };
+  if (before === undefined || before.session_id !== previous.item.session_id) {
+    return { kind: "none" };
+  }
+  const then = outcomeOf(before);
+  if (then === null) return { kind: "none" };
+  if (now.total !== null && then.total !== null) {
+    return { kind: "delta", delta: now.total - then.total, section: null };
   }
   const shared = (["RW", "M"] as const).filter(
-    (s) => now[s] !== null && before[s] !== null,
+    (s) => now[s] !== null && then[s] !== null,
   );
   if (shared.length !== 1) return { kind: "none" };
   const section = shared[0]!;
   return {
     kind: "delta",
-    delta: (now[section] ?? 0) - (before[section] ?? 0),
+    delta: (now[section] ?? 0) - (then[section] ?? 0),
     section,
   };
 }
@@ -221,13 +276,19 @@ function SectionTile({
 /** The card's frame and heading; the Dashboard's loading and error states sit in it too. */
 export function LatestTestShell({
   meta,
+  changeSettled,
   children,
 }: {
   meta?: string;
+  /** False while the previous test's report is still being read (the chip may yet appear). */
+  changeSettled?: boolean;
   children: React.ReactNode;
 }): JSX.Element {
   return (
     <section
+      data-change-settled={
+        changeSettled === undefined ? undefined : String(changeSettled)
+      }
       className="flex flex-col items-center gap-[18px] rounded-[22px] border border-[color:var(--cream-300)] bg-white px-[30px] py-7 text-center sm:items-stretch sm:text-left"
       data-testid="latest-test-card"
     >
@@ -253,12 +314,14 @@ export function GuardianLatestTestCard({
   report,
   endedAt: ended,
   change,
+  changeSettled,
   studentName,
   href,
 }: {
   report: GuardianExamReport;
   endedAt: string | null;
   change: ScoreChange;
+  changeSettled: boolean;
   studentName: string;
   href: string;
 }): JSX.Element {
@@ -277,7 +340,7 @@ export function GuardianLatestTestCard({
   const withheld = guardianWithheldCopy(studentName);
   if (report.report_state === "scored") {
     return (
-      <LatestTestShell meta={meta}>
+      <LatestTestShell meta={meta} changeSettled={changeSettled}>
         <DisclosedScore disclosure={report.disclosure} withheldCopy={withheld}>
           <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-4">
             <span
@@ -299,7 +362,7 @@ export function GuardianLatestTestCard({
   }
   if (report.report_state === "partial_scored") {
     return (
-      <LatestTestShell meta={meta}>
+      <LatestTestShell meta={meta} changeSettled={changeSettled}>
         <DisclosedScore disclosure={report.disclosure} withheldCopy={withheld}>
           <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-4">
             {/* The student's own panel title for this state (ReportBody). */}
@@ -325,7 +388,7 @@ export function GuardianLatestTestCard({
   }
   const copy = guardianOutcomeCopy(report, studentName);
   return (
-    <LatestTestShell meta={meta}>
+    <LatestTestShell meta={meta} changeSettled={changeSettled}>
       <div className="flex flex-col gap-1.5">
         <span className={STATE_TITLE} data-testid="latest-test-state-title">
           {copy.title}

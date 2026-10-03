@@ -43,12 +43,12 @@ type Fixtures = {
   calendarWeek: unknown;
   masteryDomains: unknown;
   examList: unknown;
-  examReport: unknown;
+  examReports: Record<string, unknown>;
   board: {
     calendarWeek: unknown;
     masteryDomains: unknown;
     examList: unknown;
-    examReport: unknown;
+    examReports: Record<string, unknown>;
   };
   billingStatus: unknown;
   billingPlans: unknown;
@@ -79,7 +79,7 @@ async function serve(
 ): Promise<void> {
   // The fixtures' week is cut on E2E_TODAY; the app's "today" must be the same day.
   await pinBrowserToday(page);
-  // G5-06: the board scenario answers Ada's four Dashboard reads with the boards' values.
+  // G5-06: the board scenario answers Ada's Dashboard reads with the boards' values.
   const ada4 = opts.board === true ? F.board : F;
   const roster =
     opts.students === "none"
@@ -126,8 +126,12 @@ async function serve(
     if (p === `${ada}/calendar`) return json(ada4.calendarWeek);
     if (p === `${ada}/mastery/domains`) return json(ada4.masteryDomains);
     if (p === `${ada}/tests`) return json(ada4.examList);
-    if (p === `${ada}/tests/${F.EXAM_SESSION}/report`)
-      return json(ada4.examReport);
+    // G5-09: each session's report by id — the card's only score source (latest + previous).
+    const report = /^\/api\/students\/[^/]+\/tests\/([^/]+)\/report$/.exec(p);
+    if (p.startsWith(`${ada}/`) && report !== null) {
+      const body = ada4.examReports[report[1]!];
+      if (body !== undefined) return json(body);
+    }
     if (p.startsWith(`/api/students/${F.CY}/`)) {
       return json({ error: "Not found", requestId: "r" }, 404);
     }
