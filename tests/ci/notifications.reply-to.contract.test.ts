@@ -137,24 +137,28 @@ describe("no support/privacy literal outside the shared constant (Part B)", () =
   });
 });
 
-describe("public pages carry only mailboxes that exist", () => {
+describe("public pages carry the mailbox the published documents name", () => {
   /*
-    This used to read the hand-written page copy in server/seo-content.ts, which said
-    "privacy copy → PRIVACY_EMAIL". That copy never reached production (the Express SSR path it fed
-    was unreachable on Vercel) and was deleted in SEO F4 (2026-10-03). The prerendered pages render
-    the published documents themselves, and Privacy Policy v4 (legal/privacy-policy/v4/en.md) names
-    support@ for privacy requests, never privacy@ — so the per-surface mapping is not asserted here;
-    it is reported to the owner as a finding. What remains true of every public page is asserted.
+    Owner ruling 2026-10-03 (Karl, on #1054): the privacy contact is support@lyceon.ai, as published
+    in Privacy Policy v4 (legal/privacy-policy/v4/en.md). No change.
+
+    This used to read the hand-written page copy in server/seo-content.ts, which routed privacy
+    copy to PRIVACY_EMAIL. That copy never reached production (the Express SSR path it fed was
+    unreachable on Vercel) and was deleted in SEO F4. The assertions below run on the prerendered
+    pages, which render the published documents themselves, and pin the ruled contract.
   */
-  it("every prerendered page names the support mailbox where it names one, and never a mailbox that does not exist", async () => {
+  it("every legal page names support@, the Privacy Policy never names privacy@, and no page names a mailbox that does not exist", async () => {
     vi.resetModules();
     const { getPrerenderedSite } = await import("../lib/prerendered-site");
-    const { SUPPORT_EMAIL } = await import("../../packages/shared/src/support-contact");
+    const { SUPPORT_EMAIL, PRIVACY_EMAIL } = await import("../../packages/shared/src/support-contact");
     const site = await getPrerenderedSite();
     const legal = site.pages.filter((p) => p.path.startsWith("/legal"));
     // Presence before absence: the pages are real and do carry an address.
     expect(legal.length).toBeGreaterThan(5);
     for (const page of legal) expect(page.html, page.path).toContain(SUPPORT_EMAIL);
+    const privacy = site.pages.find((p) => p.path === "/legal/privacy-policy");
+    expect(privacy?.html).toContain(SUPPORT_EMAIL);
+    expect(privacy?.html).not.toContain(PRIVACY_EMAIL);
     for (const page of site.pages) {
       expect(page.html, page.path).not.toMatch(/(legal|hello|contact)@lyceon\.ai/);
     }
