@@ -2,7 +2,8 @@
  * Full-length exam — the student's scored sessions (score history), as it goes on the wire.
  *
  * @spec [Doc-04C_V1.0 §16.3 (multi-session listing, "a projection over the same canonical
- *        data"; V1.0 deferred it to V1.1), §8.1/§8.2 (field meanings), §8.3 (forbidden
+ *        data"; deferred there to V1.1, brought into V1.0 by SCL-207, owner ruling (Karl)
+ *        2026-10-03, register OQ-40), §8.1/§8.2 (field meanings), §8.3 (forbidden
  *        fields), §15.1 (every payload carrying a scaled score carries the three-field
  *        disclosure block), §16.8 (envelope)]
  *       [Owner ruling (Karl) 2026-10-02, student-ui register §9 OQ-30: "approved. A read of

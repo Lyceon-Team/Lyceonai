@@ -214,8 +214,8 @@ router.get(
 /**
  * OQ-30 — the student's scored full-length sessions (score history).
  *
- * @spec [Doc-04C_V1.0 §16.3 (multi-session listing; deferred to V1.1 there, built now on the
- *        owner's ruling below), §15.1 (disclosure on every scaled score), §16.7 (codes), §16.8
+ * @spec [Doc-04C_V1.0 §16.3 (multi-session listing; brought into V1.0 by SCL-207, owner
+ *        ruling (Karl) 2026-10-03, register OQ-40), §15.1 (disclosure on every scaled score), §16.7 (codes), §16.8
  *        (envelope {data, meta})]
  *       [Doc-04A_V2.2 §16.1 step 2, §16.2; SCL-185 (UI-01): the exam entitlement denial]
  *       [Owner ruling (Karl) 2026-10-02, student-ui register §9 OQ-30: "approved. A read of the

@@ -387,10 +387,10 @@ export type ProfileUpsertResponse = z.infer<typeof profileUpsertResponseSchema>;
  * number or any plan-derived value can ride along: a key this schema does not name fails
  * the parse rather than reaching the wire.
  *
- * trade-offs: dream schools are NOT here. They are not a `student_study_profile` column;
- * they are served by `GET /api/profile/background` (`studentBackgroundSchema`), and OQ-37
- * keeps them hidden on the calendar until UI-S8 closes. Copying them in would fork a second
- * read of one resource.
+ * trade-offs: dream schools are NOT here, by owner ruling (Karl) 2026-10-03, register OQ-42:
+ * "accepted; dream schools come only from /api/profile/background" (`studentBackgroundSchema`).
+ * They are not a `student_study_profile` column, and OQ-37 keeps them hidden on the calendar
+ * until UI-S8 closes. Copying them in would fork a second read of one resource.
  */
 export const profileReadResponseSchema = z
   .object({

@@ -1316,6 +1316,29 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-feature-access-map.json \
             --file tests/ci/feature-access-map.pg.ci.test.ts
 
+      # @spec [student-UI register §8 F-62; owner ruling (Karl) 2026-10-03: wire the three LISA
+      # database proofs into CI] | @implemented [2026-10-03] | Crisis review queue, memory
+      # compaction and scope ownership, each on a disposable database. They skip without PGHOST
+      # and no step named them, so the `ci` job reported them skipped. Behind the summary gate,
+      # so a skipped file cannot read as green.
+      - name: LISA ephemeral-PG proofs (F-62) → real PG
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
+            tests/ci/memory-compaction.ephemeral-pg.proof.test.ts \
+            tests/ci/scope-ownership.ephemeral-pg.proof.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-lisa-ephemeral.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-lisa-ephemeral.json \
+            --file tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
+            --file tests/ci/memory-compaction.ephemeral-pg.proof.test.ts \
+            --file tests/ci/scope-ownership.ephemeral-pg.proof.test.ts
+
       # @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
       # An unrecognised profile role ('tutor'/'teacher') is refused with 403 ROLE_UNRECOGNIZED by
       # the real session middleware, the row is never rewritten, public routes still answer. Real
