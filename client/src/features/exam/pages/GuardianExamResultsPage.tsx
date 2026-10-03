@@ -93,7 +93,7 @@ function Shell({
               ? guardianPaths.dashboard(studentId)
               : guardianPaths.exams(studentId)
           }
-          className="flex min-h-[48px] w-fit items-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-base font-medium"
+          className="flex min-h-[48px] w-fit items-center self-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-base font-medium sm:self-start"
           data-testid="guardian-exam-back"
         >
           {sessionId === undefined ? "Back to dashboard" : "Full-length tests"}
@@ -287,8 +287,12 @@ function Result({
     );
   }
   return (
+    // G5-07 (owner brief 2026-10-03): on a phone the detail centres its lines — title, line,
+    // total and facts, disclosure, section cards, panel — as the other guardian pages do (item
+    // 10); the per-domain bars stay left (`LeftAligned`). The shared student components are
+    // untouched: they inherit the alignment from this guardian-only wrapper.
     <div
-      className="flex flex-col gap-7"
+      className="flex flex-col gap-7 text-center sm:text-left"
       data-testid="guardian-exam-report"
       data-report-state={report.data.report_state}
     >
@@ -297,13 +301,18 @@ function Result({
   );
 }
 
+/** Domain-card content stays left-aligned on a phone (item 10), inside the centred detail. */
+function LeftAligned({ children }: { children: React.ReactNode }) {
+  return <div className="text-left">{children}</div>;
+}
+
 function AttemptFacts({
   report,
 }: {
   report: Extract<GuardianExamReport, { report_state: "scored" }>;
 }) {
   return (
-    <dl className="m-0 flex flex-wrap gap-8">
+    <dl className="m-0 flex flex-wrap justify-center gap-8 sm:justify-start">
       <Fact label="Timing" value={MODE_SHORT_LABEL[report.mode]} />
       <Fact label="Attempt" value={String(report.attempt_number_for_form)} />
     </dl>
@@ -397,7 +406,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             withheldCopy={withheld}
           >
             <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
+              <div className="flex flex-wrap items-end justify-center gap-x-10 gap-y-4 sm:justify-start">
                 <div className="flex flex-col">
                   <span
                     className="font-serif text-[64px] font-semibold leading-none"
@@ -414,7 +423,11 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
               <DisclosureNote disclosure={report.disclosure} />
             </div>
             <ScoreTabs
-              breakdown={<DomainBreakdown rows={report.domain_breakdown} />}
+              breakdown={
+                <LeftAligned>
+                  <DomainBreakdown rows={report.domain_breakdown} />
+                </LeftAligned>
+              }
             >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard
@@ -451,7 +464,11 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
               <DisclosureNote disclosure={report.disclosure} />
             </Panel>
             <ScoreTabs
-              breakdown={<DomainBreakdown rows={report.domain_breakdown} />}
+              breakdown={
+                <LeftAligned>
+                  <DomainBreakdown rows={report.domain_breakdown} />
+                </LeftAligned>
+              }
             >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard

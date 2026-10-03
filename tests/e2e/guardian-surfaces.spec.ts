@@ -638,6 +638,58 @@ const PHONE_CENTRING: readonly {
     ],
   },
   {
+    // G5-07 (owner brief 2026-10-03): the exam detail page centres on a phone too — the
+    // report line and title, the total and its facts, the disclosure summary, the section
+    // cards and the back link. The per-domain bars stay left-aligned (domain-card content).
+    name: "Full-length test detail",
+    path: (f) => `/guardian/${f.ADA}/exams/${f.EXAM_SESSION}`,
+    ready: "exam-total-score",
+    checks: [
+      {
+        what: "report line",
+        selector: "[data-testid=guardian-exam-report] > div:first-child > p",
+        mode: "text",
+      },
+      {
+        what: "report title",
+        selector: "[data-testid=guardian-exam-report] h1",
+        mode: "text",
+      },
+      {
+        what: "total and facts row",
+        selector:
+          "[data-testid=guardian-exam-report] div:has(> div > [data-testid=exam-total-score])",
+        mode: "lines",
+      },
+      {
+        what: "total label",
+        selector: "[data-testid=exam-total-score] + span",
+        mode: "text",
+      },
+      {
+        what: "attempt facts",
+        selector: "[data-testid=guardian-exam-report] dl",
+        mode: "lines",
+      },
+      {
+        what: "disclosure summary",
+        selector:
+          "[data-testid=guardian-exam-report] [data-testid=exam-disclosure]",
+        mode: "text",
+      },
+      {
+        what: "section card",
+        selector: "[data-testid=exam-section-score]",
+        mode: "text",
+      },
+      {
+        what: "back link",
+        selector: "[data-testid=guardian-exam-back]",
+        mode: "box",
+      },
+    ],
+  },
+  {
     name: "Linked students & billing",
     path: () => "/guardian/students",
     ready: "billing-manage",
