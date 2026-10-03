@@ -9,9 +9,12 @@
  *  - UI-11: the KaTeX stylesheet is not imported by the app entry (MathRenderer
  *    imports it, so it rides in the lazy chunk that renders math), and only the
  *    landing pages (`/`, `/login`, the 404) are eager in the router.
- *  - UI-12: web fonts load from one `<link>` in index.html with preconnect and
- *    `display=swap`, carry only the families the app renders with, and are not
- *    also pulled in by a CSS `@import`. index.html has no synchronous
+ *  - UI-12: web fonts are self-hosted (SEO vertical, 2026-10-03; until then one
+ *    Google Fonts `<link>`): index.css declares only the families the app
+ *    renders with, each face `font-display: swap` from a file in
+ *    client/public/fonts/ with its OFL licence beside it; index.html preloads
+ *    exactly the two above-the-fold faces and names no Google font host; nothing
+ *    is pulled in by a CSS `@import`. index.html has no synchronous
  *    third-party script (the Replit dev banner is gone). The calendar
  *    stylesheet no longer names "Bricolage Grotesque", a family nothing loads.
  *
@@ -25,7 +28,7 @@
  * production measurement and is not asserted here.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { stripComments } from "./lib/strip-comments";
 
@@ -53,48 +56,121 @@ const CALENDAR_STATES = stripComments(
 /** The families the app's own font stacks name first (Poppins, then Inter). */
 const USED_WEB_FONT_FAMILIES = ["Inter", "Poppins"];
 
-function googleFontLinks(html: string): string[] {
+type FontFace = {
+  family: string;
+  style: string;
+  weight: string;
+  src: string;
+  display: string;
+};
+
+/** Every @font-face in a stylesheet, with the properties the gate reads. */
+function fontFaces(css: string): FontFace[] {
+  return [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((m) => {
+    const body = m[1] ?? "";
+    const prop = (name: string): string =>
+      (body.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1] ?? "").trim();
+    return {
+      family: prop("font-family").replace(/["']/g, ""),
+      style: prop("font-style"),
+      weight: prop("font-weight"),
+      src: (prop("src").match(/url\("?([^")]+)"?\)/)?.[1] ?? "").trim(),
+      display: prop("font-display"),
+    };
+  });
+}
+
+/** Every `<link rel="preload" as="font">` tag in index.html. */
+function fontPreloads(html: string): string[] {
   return [...html.matchAll(/<link\b[^>]*>/g)]
     .map((m) => m[0])
-    .filter((tag) => tag.includes("fonts.googleapis.com/css"));
+    .filter((tag) => /rel="preload"/.test(tag) && /as="font"/.test(tag));
 }
 
-function familiesIn(href: string): string[] {
-  return [...href.matchAll(/family=([^:&"]+)/g)]
-    .map((m) => decodeURIComponent((m[1] ?? "").replace(/\+/g, " ")))
-    .sort();
-}
+const WEB_FACES = fontFaces(INDEX_CSS).filter((f) =>
+  USED_WEB_FONT_FAMILIES.includes(f.family),
+);
 
-describe("UI-12 fonts load from one link, only the used families", () => {
+describe("UI-12 fonts are self-hosted, only the used families and faces", () => {
   it("R1.0 the used families are the ones the app's font stacks name", () => {
     // Presence first: if the stacks stop naming these, the family list below is stale.
     expect(INDEX_CSS).toMatch(/--font-sans:\s*'Poppins',\s*'Inter'/);
     expect(CALENDAR_CSS).toMatch(/font-family:\s*Inter\b/);
   });
 
-  it("R1.1 index.html has exactly one Google Fonts stylesheet link, with display=swap and preconnect", () => {
-    const links = googleFontLinks(INDEX_HTML);
-    expect(links).toHaveLength(1);
-    const link = links[0] ?? "";
-    expect(link).toMatch(/rel="stylesheet"/);
-    expect(link).toMatch(/display=swap/);
-    expect(INDEX_HTML).toMatch(
-      /<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com">/,
-    );
-    expect(INDEX_HTML).toMatch(
-      /<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com" crossorigin>/,
-    );
+  it("R1.1 index.css declares exactly the used families, every face swap, from a committed file", () => {
+    const families = [
+      ...new Set(fontFaces(INDEX_CSS).map((f) => f.family)),
+    ].sort();
+    expect(families).toEqual(USED_WEB_FONT_FAMILIES);
+    // Poppins 400-800 roman plus italic 400 and 500; Inter one variable roman file.
+    expect(
+      WEB_FACES.map((f) => `${f.family} ${f.style} ${f.weight}`).sort(),
+    ).toEqual([
+      "Inter normal 400 700",
+      "Poppins italic 400",
+      "Poppins italic 500",
+      "Poppins normal 400",
+      "Poppins normal 500",
+      "Poppins normal 600",
+      "Poppins normal 700",
+      "Poppins normal 800",
+    ]);
+    for (const face of WEB_FACES) {
+      expect(face.display, `${face.src} swaps`).toBe("swap");
+      expect(face.src, "a same-origin /fonts/ path").toMatch(
+        /^\/fonts\/[\w.-]+\.woff2$/,
+      );
+      expect(
+        existsSync(resolve(REPO, "client/public", `.${face.src}`)),
+        `${face.src} is committed`,
+      ).toBe(true);
+    }
+    for (const licence of ["OFL-Poppins.md", "OFL-Inter.md"]) {
+      const text = read(`client/public/fonts/${licence}`);
+      expect(text, `${licence} is the OFL`).toContain(
+        "SIL Open Font License, Version 1.1",
+      );
+    }
   });
 
-  it("R1.2 the link requests only the families the app renders with", () => {
-    const link = googleFontLinks(INDEX_HTML)[0] ?? "";
-    expect(familiesIn(link)).toEqual(USED_WEB_FONT_FAMILIES);
+  it("R1.2 index.html preloads exactly the two above-the-fold web-font faces, each matching its @font-face src", () => {
+    const preloads = fontPreloads(INDEX_HTML);
+    const hrefOf = (tag: string): string =>
+      tag.match(/href="([^"]+)"/)?.[1] ?? "";
+    const all = preloads.map(hrefOf).sort();
+    // Poppins/Inter: only the homepage's above-the-fold faces (body 400, h1 700).
+    const webFont = all.filter((href) =>
+      /\/fonts\/(poppins|inter)-/.test(href),
+    );
+    expect(webFont).toEqual([
+      "/fonts/poppins-latin-400-normal.woff2",
+      "/fonts/poppins-latin-700-normal.woff2",
+    ]);
+    // The other two are the student UI's own faces (register UI-12/UI-40, approved 2026-10-02),
+    // pinned here so no further preload is added unnoticed.
+    expect(all.filter((href) => !webFont.includes(href))).toEqual([
+      "/fonts/source-sans-3-latin-variable.woff2",
+      "/fonts/source-serif-4-latin-variable.woff2",
+    ]);
+    for (const tag of preloads) {
+      // Without crossorigin the browser cannot reuse a font preload and fetches it twice.
+      expect(tag).toMatch(/\scrossorigin\b/);
+      expect(tag).toMatch(/type="font\/woff2"/);
+    }
+    const srcs = WEB_FACES.map((f) => f.src);
+    for (const href of webFont) expect(srcs).toContain(href);
   });
 
-  it("R1.3 no font is loaded by a CSS @import (index.html or index.css)", () => {
+  it("R1.3 no Google font host, and no font loaded by a CSS @import", () => {
+    // Presence first: the head still carries its preloads, so this file is the one served.
+    expect(fontPreloads(INDEX_HTML).length).toBeGreaterThan(0);
+    for (const host of ["fonts.googleapis.com", "fonts.gstatic.com"]) {
+      expect(INDEX_HTML).not.toContain(host);
+      expect(INDEX_CSS).not.toContain(host);
+    }
     expect(INDEX_HTML).not.toMatch(/@import/);
     expect(INDEX_CSS).not.toMatch(/@import/);
-    expect(INDEX_CSS).not.toMatch(/fonts\.googleapis\.com/);
   });
 });
 
