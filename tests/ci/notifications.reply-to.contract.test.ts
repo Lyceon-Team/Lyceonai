@@ -150,17 +150,21 @@ describe("public pages carry the mailbox the published documents name", () => {
   it("every legal page names support@, the Privacy Policy never names privacy@, and no page names a mailbox that does not exist", async () => {
     vi.resetModules();
     const { getPrerenderedSite } = await import("../lib/prerendered-site");
-    const { SUPPORT_EMAIL, PRIVACY_EMAIL } = await import("../../packages/shared/src/support-contact");
+    const { SUPPORT_EMAIL, PRIVACY_EMAIL } =
+      await import("../../packages/shared/src/support-contact");
     const site = await getPrerenderedSite();
     const legal = site.pages.filter((p) => p.path.startsWith("/legal"));
     // Presence before absence: the pages are real and do carry an address.
     expect(legal.length).toBeGreaterThan(5);
-    for (const page of legal) expect(page.html, page.path).toContain(SUPPORT_EMAIL);
+    for (const page of legal)
+      expect(page.html, page.path).toContain(SUPPORT_EMAIL);
     const privacy = site.pages.find((p) => p.path === "/legal/privacy-policy");
     expect(privacy?.html).toContain(SUPPORT_EMAIL);
     expect(privacy?.html).not.toContain(PRIVACY_EMAIL);
     for (const page of site.pages) {
-      expect(page.html, page.path).not.toMatch(/(legal|hello|contact)@lyceon\.ai/);
+      expect(page.html, page.path).not.toMatch(
+        /(legal|hello|contact)@lyceon\.ai/,
+      );
     }
   }, 60_000);
 });
