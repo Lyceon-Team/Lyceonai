@@ -151,6 +151,14 @@ jobs:
       - name: Boot probe self-test (proves each failure mode turns it red)
         run: bash scripts/ci/boot-probe.selftest.sh
 
+      # Register §8 F-59: the page CSP in vercel.json must allow exactly the inline scripts the
+      # BUILT page ships (the source-file test cannot see what Vite writes).
+      - name: Page CSP matches the built inline scripts (F-59)
+        run: node scripts/ci/page-csp-built-hash-gate.mjs
+
+      - name: Page CSP gate self-test (proves each rule turns it red)
+        run: bash scripts/ci/page-csp-built-hash-gate.selftest.sh
+
       # @spec [Codex audit Finding 4] The worker's tsconfig uses NodeNext, which
       # rejects extensionless relative imports (TS2835). The monorepo root build
       # does NOT compile apps/workers/, so a broken import passes CI until
