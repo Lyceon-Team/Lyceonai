@@ -78,6 +78,14 @@ const PAIRS: Array<[string, string]> = [
   ["muted", "sheet"],
   ["ink", "chip"],
   ["ink", "hover"],
+  // UI-46 shared primitives (@implemented 2026-10-03): the outline and quiet buttons, tab labels
+  // and headings are --ink-strong on every surface they sit on (a hovered button on --hover,
+  // the EmptyState on --sheet, the warning Notice and a Sheet on --margin); the info Notice is
+  // --ink on --chip and the success Notice --ok on --paper, both already listed.
+  ["ink-strong", "sheet"],
+  ["ink-strong", "hover"],
+  ["ink-strong", "margin"],
+  ["ink-strong", "chip"],
   ["primary-ink", "primary-bg"],
   ["rail-ink", "rail"],
   ["rail-on-ink", "rail-on-bg"],
