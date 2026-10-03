@@ -27,6 +27,7 @@ if (!/^https?:\/\//.test(base)) {
 }
 const asJson = process.argv.includes("--json");
 const PRODUCTION = "https://lyceon.ai";
+const PRODUCTION_URL = new URL(PRODUCTION);
 const MIN_WORDS = 150;
 const AGENTS = {
   Googlebot:
@@ -113,9 +114,11 @@ let failed = 0;
 const titles = new Map();
 
 for (const loc of locs) {
-  const path = loc.startsWith(PRODUCTION)
-    ? loc.slice(PRODUCTION.length) || "/"
-    : new URL(loc).pathname;
+  const locUrl = new URL(loc);
+  const path =
+    locUrl.origin === PRODUCTION_URL.origin
+      ? `${locUrl.pathname}${locUrl.search}` || "/"
+      : locUrl.pathname;
   for (const [agentName, agent] of Object.entries(AGENTS)) {
     const res = await get(`${base}${path}`, agent);
     const info = inspect(res.body);
