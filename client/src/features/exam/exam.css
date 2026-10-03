@@ -1,5 +1,7 @@
 /*
- * Exam shell tokens (E7b). Values from the Lyceon_Exam_Shell design artboards.
+ * Exam shell tokens (E7b). Values from the Lyceon_Exam_Shell design artboards. The timed module
+ * keeps these (Bluebook layout, light only; DESIGN.md §2); UI-54 moved its type onto the student
+ * typography tokens (font-lyc-serif, text-lyc-meta: nothing below 14px, DESIGN.md §1).
  * Scoped to .exam-root so nothing outside the exam changes.
  * Contrast: --exam-muted #5F5B53 on #FFFFFF is 6.6:1; on --exam-bg 6.1:1 (AA body text).
  */
@@ -15,6 +17,8 @@
   --exam-accent-soft: #e8eef7;
   --exam-marked: #a65a0b;
   --exam-highlight: #fde68a;
+  /* UI-54: the marked-for-review fill and the save-error strip (was a literal in two components). */
+  --exam-warn-bg: #fbf1e6;
   background: var(--exam-bg);
   color: var(--exam-ink);
 }

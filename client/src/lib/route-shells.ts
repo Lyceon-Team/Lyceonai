@@ -42,7 +42,8 @@ export type RightPanelWidth = 360 | 340 | 320;
  * it: those page bodies still draw with the app-wide (light) tokens until their Wave 5 row
  * rebuilds them, and a dark shell around a light-token body leaves body text dark on dark.
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
- * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53). The timed exam module
+ * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53; /tests, /tests/:sessionId
+ * and /tests/:sessionId/report, UI-54). The timed exam module
  * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
@@ -120,7 +121,8 @@ export const STUDENT_ROUTE_SHELLS = {
   "/practice/topics": app(null, false),
   // UI-52 (2026-10-03): Review is rebuilt on the student tokens only; off the light lock too.
   "/review": app(360, true, "column", null),
-  "/tests": app(360, true),
+  // UI-54 (2026-10-03): Full-Length home is rebuilt on the student tokens only; off the lock too.
+  "/tests": app(360, true, "column", null),
   "/calendar": app(340, false, "full"),
   "/chat": app(320, false, "full"),
   "/mastery": app(null, false),
@@ -135,9 +137,11 @@ export const STUDENT_ROUTE_SHELLS = {
   // them, and a dark runner around a light-token LISA leaves its text dark on dark.
   "/practice/session/:sessionId": focus("Practice", "/practice", false, null),
   "/review/session/:sessionId": focus("Review", "/review"),
-  "/tests/:sessionId": focus("Full-Length", "/tests"),
+  // UI-54 (2026-10-03): the exam session page and the report are rebuilt on the student tokens
+  // only; off the lock. The timed module keeps its Bluebook layout and stays light for good.
+  "/tests/:sessionId": focus("Full-Length", "/tests", false, null),
   "/tests/:sessionId/:section/:module": focus("Full-Length", "/tests", true),
-  "/tests/:sessionId/report": focus("Full-Length", "/tests"),
+  "/tests/:sessionId/report": focus("Full-Length", "/tests", false, null),
   "/score-report": focus("Full-Length", "/tests"),
   // Bare card.
   "/login": BARE,

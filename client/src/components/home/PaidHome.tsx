@@ -39,6 +39,7 @@ import { primaryActionLabel } from "@/features/calendar/lib/blocks";
 import { addDays, startOfWeek } from "@/features/calendar/lib/dates";
 import { fetchExamForms } from "@/features/exam/api/exam-api";
 import { examKeys } from "@/features/exam/api/keys";
+import { isExamInProgress } from "@/features/exam/lib/tests-home-model";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { useActiveReviewSessions, useReviewPool } from "@/hooks/useReview";
@@ -63,13 +64,6 @@ const SECTION_H2 =
   "m-0 font-lyc-serif text-lyc-section font-semibold text-lyc-ink-strong";
 const TEXT_LINK =
   "text-[17px] font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline";
-
-/** Exam session states a student can still continue (TestsHomePage's IN_PROGRESS). */
-const EXAM_IN_PROGRESS: ReadonlySet<string> = new Set([
-  "created",
-  "active",
-  "section_break",
-]);
 
 type PaidHomeProps = {
   studentId: string;
@@ -166,7 +160,7 @@ export function PaidHome({
       }),
     ),
     ...(exams.data?.forms ?? []).flatMap((f): ResumeRow[] =>
-      f.latest_session !== null && EXAM_IN_PROGRESS.has(f.latest_session.state)
+      f.latest_session !== null && isExamInProgress(f.latest_session.state)
         ? [
             {
               key: `exam:${f.latest_session.session_id}`,

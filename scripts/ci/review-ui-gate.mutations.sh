@@ -36,6 +36,13 @@ FILES=(
   "client/src/hooks/useKeyboardShortcuts.ts"
   "client/src/components/layout/app-shell.tsx"
   "packages/shared/src/return-path.ts"
+  "client/src/features/exam/lib/tests-home-model.ts"
+  "client/src/features/exam/pages/TestsHomePage.tsx"
+  "client/src/features/exam/pages/ExamReportPage.tsx"
+  "client/src/features/exam/components/DisclosedScore.tsx"
+  "client/src/features/exam/components/DomainSegments.tsx"
+  "client/src/features/exam/lib/domain-weights.ts"
+  "client/src/features/exam/components/ExamHeader.tsx"
 )
 
 snapshot_all() {
@@ -626,6 +633,161 @@ plant "UI53-C4" "the last answer closes the runner before its feedback is read" 
   'a = "        if (data.state) setSessionState(data.state);\n        // Owner ruling"
 assert s.count(a) == 1
 s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\") setSessionClosed(true);\n        // Owner ruling", 1)'
+
+
+# ── UI-54 — Full-Length home, exam session and report on the student tokens (2026-10-03) ─
+# DESIGN.md §4 Full-Length home and Exam report, FullLength.dc.html, Report.dc.html; register
+# UI-54, ruling 7, OQ-30..OQ-34, OQ-49. Each plant mutates product source at a single
+# occurrence (asserted count == 1) and must redden the named UI-54 test.
+T54_HOME="client/src/features/exam/pages/TestsHomePage.test.tsx"
+T54_REPORT="client/src/features/exam/pages/ExamReportPage.test.tsx"
+
+plant "UI54-P1" "Start outranks Resume as the one primary action" \
+  "$T54_HOME" \
+  "client/src/features/exam/lib/tests-home-model.ts" \
+  'a = "  return pick(\"resume\") ?? pick(\"start\") ?? pick(\"take-again\");"
+assert s.count(a) == 1
+s = s.replace(a, "  return pick(\"start\") ?? pick(\"resume\") ?? pick(\"take-again\");", 1)'
+
+plant "UI54-S1" "OQ-31: the completed card drops its score" \
+  "$T54_HOME" \
+  "client/src/features/exam/lib/tests-home-model.ts" \
+  'a = "  return `Completed ${dayMonth(row.completed_at)}. Score ${row.total_scaled}.`;"
+assert s.count(a) == 1
+s = s.replace(a, "  return `Completed ${dayMonth(row.completed_at)}.`;", 1)'
+
+plant "UI54-S2" "§15.1: the card score loses its disclosure" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "          <DisclosureNote disclosure={row.scored.disclosure} className={NOTE} />"
+assert s.count(a) == 1
+s = s.replace(a, "          null", 1)'
+
+plant "UI54-IP1" "OQ-32: the in-progress card ignores /state" \
+  "$T54_HOME" \
+  "client/src/features/exam/lib/tests-home-model.ts" \
+  'a = "    return `In progress: ${sectionDisplayLabel(position.section) ?? \"\"}, Module ${position.module}`;"
+assert s.count(a) == 1
+s = s.replace(a, "    return \"In progress\";", 1)'
+
+plant "UI54-H1" "OQ-30: a history row links to the session, not its report" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "              href={reportPath(row.session_id)}"
+assert s.count(a) == 1
+s = s.replace(a, "              href={sessionPath(row.session_id)}", 1)'
+
+plant "UI54-F1" "free plan: the forms read fires anyway" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "    queryFn: fetchExamForms,\n    staleTime: 0,\n    enabled: examGranted,"
+assert s.count(a) == 1
+s = s.replace(a, "    queryFn: fetchExamForms,\n    staleTime: 0,\n    enabled: true,", 1)'
+
+plant "UI54-F2" "free plan: no in-page upgrade card" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "      {examLocked !== null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {examLocked === undefined ? (", 1)'
+
+plant "UI54-ST1" "Start lands somewhere other than the exam session route" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "      navigate(sessionPath(session.session_id));"
+assert s.count(a) == 1
+s = s.replace(a, "      navigate(\"/tests\");", 1)'
+
+plant "UI54-R1" "§15.1: the report score card loses its disclosure" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "                <TimingFact mode={payload.mode} />\n              </div>\n              <div className=\"border-t border-lyc-rule pt-4\">\n                <DisclosureNote\n                  disclosure={payload.disclosure}\n                  className={NOTE}\n                />\n              </div>\n            </section>\n          </DisclosedScore>\n          <KnowledgeAndSkills payload={payload} />\n        </div>\n      );\n    case \"partial_scored\":"
+assert s.count(a) == 1
+s = s.replace(a, "                <TimingFact mode={payload.mode} />\n              </div>\n            </section>\n          </DisclosedScore>\n          <KnowledgeAndSkills payload={payload} />\n        </div>\n      );\n    case \"partial_scored\":", 1)'
+
+plant "UI54-R2" "the disclosure gate lets a score through without its disclosure" \
+  "$T54_REPORT" \
+  "client/src/features/exam/components/DisclosedScore.tsx" \
+  'a = "  if (!examDisclosureSchema.safeParse(disclosure).success) {"
+assert s.count(a) == 1
+s = s.replace(a, "  if (disclosure === \"never\") {", 1)'
+
+plant "UI54-R3" "OQ-33: Review your answers is back" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "                Total score\n              </h2>"
+assert s.count(a) == 1
+s = s.replace(a, "                Total score\n              </h2>\n              <button type=\"button\">Review your answers</button>", 1)'
+
+plant "UI54-R4" "OQ-34: the lapsed report does not open the upgrade modal" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "    opened.current = true;\n    open(\"exam_full_length\", \"plan\");"
+assert s.count(a) == 1
+s = s.replace(a, "    opened.current = true;", 1)'
+
+plant "UI54-R5" "the report top bar drops 'report'" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "            {payload.test_form_name} report"
+assert s.count(a) == 1
+s = s.replace(a, "            {payload.test_form_name}", 1)'
+
+plant "UI54-K1" "ruling 7: segments drawn in a mastery colour" \
+  "$T54_REPORT" \
+  "client/src/features/exam/components/DomainSegments.tsx" \
+  'a = "? \"border-lyc-ink-strong bg-lyc-ink-strong\""
+assert s.count(a) == 1
+s = s.replace(a, "? \"border-lyc-lv4-fill bg-lyc-lv4-fill\"", 1)'
+
+plant "UI54-K2" "ruling 7: one segment more than segments_filled" \
+  "$T54_REPORT" \
+  "client/src/features/exam/components/DomainSegments.tsx" \
+  'a = "i < r.segments_filled ? \"true\" : \"false\""
+assert s.count(a) == 1
+s = s.replace(a, "i <= r.segments_filled ? \"true\" : \"false\"", 1)'
+
+plant "UI54-K3" "ruling 7: an N-of-M count beside a domain" \
+  "$T54_REPORT" \
+  "client/src/features/exam/components/DomainSegments.tsx" \
+  'a = "                        {r.domain}\n                      </span>"
+assert s.count(a) == 1
+s = s.replace(a, "                        {r.domain} {r.segments_filled} of 7\n                      </span>", 1)'
+
+plant "UI54-K4" "a total = 0 domain is omitted without its reason" \
+  "$T54_REPORT" \
+  "client/src/features/exam/components/DomainSegments.tsx" \
+  'a = "    \"no_items_served\",\n  ];"
+assert s.count(a) == 1
+s = s.replace(a, "  ];", 1)'
+
+plant "UI54-K5" "a College Board weight line drifts" \
+  "$T54_REPORT" \
+  "client/src/features/exam/lib/domain-weights.ts" \
+  'a = "26% of the section, 12 to 14 questions"
+assert s.count(a) == 1
+s = s.replace(a, "27% of the section, 12 to 14 questions", 1)'
+
+plant "UI54-TL1" "/tests put back on the light lock" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/tests\": app(360, true, \"column\", null),"
+assert s.count(a) == 1
+s = s.replace(a, "  \"/tests\": app(360, true),", 1)'
+
+plant "UI54-TL2" "the timed module follows the device theme" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "    themeLock: timed ? \"light\" : themeLock,"
+assert s.count(a) == 1
+s = s.replace(a, "    themeLock: timed ? null : themeLock,", 1)'
+
+plant "UI54-TY1" "the timed module header drops below 14px" \
+  "client/src/features/exam/exam-module-typography.test.ts" \
+  "client/src/features/exam/components/ExamHeader.tsx" \
+  'a = "          className=\"m-0 text-lyc-meta text-[var(--exam-muted)]\""
+assert s.count(a) == 1
+s = s.replace(a, "          className=\"m-0 text-[13px] text-[var(--exam-muted)]\"", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

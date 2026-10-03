@@ -338,7 +338,7 @@ describe("the table says what DESIGN.md §2 says", () => {
     expect(home("/tests/:sessionId/report")).toBe("/tests");
   });
 
-  it("UI-50, UI-51, UI-52: Home, Practice and Review follow the device theme; the routes not yet rebuilt stay pinned light (OQ-49)", () => {
+  it("UI-50, UI-51, UI-52, UI-54: Home, Practice, Review and Full-Length follow the device theme; the routes not yet rebuilt stay pinned light (OQ-49)", () => {
     for (const route of ["/dashboard", "/practice", "/review"] as const) {
       expect(STUDENT_ROUTE_SHELLS[route], route).toEqual({
         shell: "app",
@@ -355,7 +355,10 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/dashboard",
       "/practice",
       "/review",
+      "/tests",
       "/practice/session/:sessionId",
+      "/tests/:sessionId",
+      "/tests/:sessionId/report",
     ]);
     // The topic explorer is not rebuilt (OQ-3 open): it stays pinned light.
     expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
@@ -376,6 +379,30 @@ describe("the table says what DESIGN.md §2 says", () => {
       back: true,
       themeLock: "light",
     });
+  });
+
+  it("UI-54: Full-Length home, the exam session page and the report follow the device theme", () => {
+    expect(STUDENT_ROUTE_SHELLS["/tests"]).toEqual({
+      shell: "app",
+      panel: 360,
+      footer: true,
+      content: "column",
+      themeLock: null,
+    });
+    for (const route of [
+      "/tests/:sessionId",
+      "/tests/:sessionId/report",
+    ] as const) {
+      expect(STUDENT_ROUTE_SHELLS[route], route).toEqual({
+        shell: "focus",
+        section: "Full-Length",
+        sectionHome: "/tests",
+        back: true,
+        themeLock: null,
+      });
+    }
+    // /score-report is not rebuilt by UI-54: it stays pinned light.
+    expect(STUDENT_ROUTE_SHELLS["/score-report"].themeLock).toBe("light");
   });
 
   it("the timed module: no back arrow, light only", () => {

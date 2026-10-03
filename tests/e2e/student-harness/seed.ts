@@ -35,6 +35,10 @@ export type SeededPersona = {
   /** The open review session (`seed: "review-history"` only), else null. */
   openReviewSessionId: string | null;
   diagnosticSessionId: string | null;
+  /** UI-54 (`seed: "exam-history"`, paid only): a full-length test walked to `scored`, else null. */
+  scoredExamSessionId: string | null;
+  /** UI-54: a full-length test left in Reading and Writing Module 2, else null. */
+  inProgressExamSessionId: string | null;
   answered: number;
 };
 export type SeedManifest = Record<StudentPersona, SeededPersona>;
@@ -203,9 +207,144 @@ async function seedReviewHistory(
   return { answered, openReviewSessionId: json.sessionId };
 }
 
+/** The exam harness's two published forms (tests/e2e/exam-harness/db.ts FORMS). */
+const EXAM_FORM_SCORED = "e7b00000-0000-4000-8000-0000000000f1";
+const EXAM_FORM_IN_PROGRESS = "e7b00000-0000-4000-8000-0000000000f2";
+
+type ExamItemsBody = {
+  items?: Array<{
+    question_id: string;
+    ordinal: number;
+    question_type: string;
+    options: Array<{ id: string }> | null;
+  }>;
+};
+
+/**
+ * Answers every item of one module through the real answer route: the first option on screen
+ * for a multiple-choice item (the server tokenises and orders the options per session, so which
+ * are right is its choice), "1" for a grid-in. Returns how many were answered.
+ */
+async function answerExamModule(
+  base: string,
+  persona: StudentPersona,
+  sessionId: string,
+  section: "RW" | "M",
+  module: "1" | "2",
+): Promise<number> {
+  const root = `/api/tests/sessions/${sessionId}/sections/${section}/modules/${module}`;
+  const { json } = await call(base, persona, "GET", `${root}/items`);
+  const items = (json as ExamItemsBody).items ?? [];
+  let answered = 0;
+  for (const item of items) {
+    const answer =
+      item.question_type === "multiple_choice"
+        ? (item.options?.[0]?.id ?? null)
+        : "1";
+    await call(base, persona, "POST", "/api/tests/answer", {
+      test_session_id: sessionId,
+      section,
+      module,
+      question_id: item.question_id,
+      ordinal: item.ordinal,
+      answer,
+      idempotency_key: `student-harness-${sessionId}-${section}${module}-${item.ordinal}`,
+    });
+    answered += 1;
+  }
+  return answered;
+}
+
+/**
+ * UI-54 (`seed: "exam-history"`): through the real exam routes, the paid student (1) sits
+ * Practice Test 1 under practice timing, answering every module, and waits until the report
+ * reads `scored` (scoring runs in-process on the last submit, as in the exam harness's
+ * disclosure spec); then (2) starts Practice Test 2, submits Reading and Writing Module 1 and
+ * starts Module 2, leaving it in progress. Practice timing, so the open module's clock pauses
+ * while no heartbeat arrives.
+ */
+async function seedExamHistory(
+  base: string,
+  persona: StudentPersona,
+): Promise<{
+  scoredExamSessionId: string;
+  inProgressExamSessionId: string;
+  answered: number;
+}> {
+  let answered = 0;
+  const create = async (formId: string): Promise<string> => {
+    const { json } = await call(base, persona, "POST", "/api/tests/sessions", {
+      test_form_id: formId,
+      mode: "lenient",
+    });
+    if (!isObject(json) || typeof json.session_id !== "string")
+      throw new Error("exam session create returned no session_id");
+    return json.session_id;
+  };
+  const moduleRoot = (sid: string, section: string, module: string): string =>
+    `/api/tests/sessions/${sid}/sections/${section}/modules/${module}`;
+
+  const scored = await create(EXAM_FORM_SCORED);
+  for (const section of ["RW", "M"] as const) {
+    for (const module of ["1", "2"] as const) {
+      await call(
+        base,
+        persona,
+        "POST",
+        `${moduleRoot(scored, section, module)}/start`,
+      );
+      answered += await answerExamModule(
+        base,
+        persona,
+        scored,
+        section,
+        module,
+      );
+      await call(
+        base,
+        persona,
+        "POST",
+        `${moduleRoot(scored, section, module)}/submit`,
+      );
+    }
+  }
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const { json } = await call(
+      base,
+      persona,
+      "GET",
+      `/api/tests/sessions/${scored}/report`,
+    );
+    const state =
+      isObject(json) && isObject(json.data)
+        ? json.data.report_state
+        : undefined;
+    if (state === "scored") break;
+    if (Date.now() > deadline)
+      throw new Error(
+        `exam report never reached scored (last: ${String(state)})`,
+      );
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  const open = await create(EXAM_FORM_IN_PROGRESS);
+  await call(base, persona, "POST", `${moduleRoot(open, "RW", "1")}/start`);
+  answered += await answerExamModule(base, persona, open, "RW", "1");
+  await call(base, persona, "POST", `${moduleRoot(open, "RW", "1")}/submit`);
+  await call(base, persona, "POST", `${moduleRoot(open, "RW", "2")}/start`);
+  return {
+    scoredExamSessionId: scored,
+    inProgressExamSessionId: open,
+    answered,
+  };
+}
+
 export async function seedPracticeHistory(
   base: string,
-  options: { reviewHistory: boolean } = { reviewHistory: false },
+  options: { reviewHistory: boolean; examHistory?: boolean } = {
+    reviewHistory: false,
+  },
 ): Promise<SeedManifest> {
   const out: Partial<SeedManifest> = {};
   for (const persona of ["free", "paid"] as const) {
@@ -260,16 +399,24 @@ export async function seedPracticeHistory(
     const review = options.reviewHistory
       ? await seedReviewHistory(base, persona)
       : null;
+    // Full-Length is paid: only the paid student has exam history.
+    const exam =
+      options.examHistory === true && persona === "paid"
+        ? await seedExamHistory(base, persona)
+        : null;
     out[persona] = {
       completedPracticeSessionId: completed,
       openPracticeSessionId: open,
       openReviewSessionId: review?.openReviewSessionId ?? null,
       diagnosticSessionId,
+      scoredExamSessionId: exam?.scoredExamSessionId ?? null,
+      inProgressExamSessionId: exam?.inProgressExamSessionId ?? null,
       answered:
         answeredDiagnostic +
         answeredCompleted +
         answeredOpen +
-        (review?.answered ?? 0),
+        (review?.answered ?? 0) +
+        (exam?.answered ?? 0),
     };
   }
   return out as SeedManifest;

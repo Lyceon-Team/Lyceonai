@@ -19,7 +19,17 @@ export function cellLabel(cell: ModuleCell, current: boolean): string {
 
 export function MarkedIcon({ size = 15 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="var(--exam-marked)" stroke="var(--exam-marked)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="var(--exam-marked)"
+      stroke="var(--exam-marked)"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -64,7 +74,10 @@ export function QuestionCell({
 
 export function StateLegend() {
   return (
-    <div className="flex flex-wrap items-center gap-5 text-[13px] text-[var(--exam-muted)]" aria-hidden="true">
+    <div
+      className="flex flex-wrap items-center gap-5 text-lyc-meta text-[var(--exam-muted)]"
+      aria-hidden="true"
+    >
       <span className="flex items-center gap-2">
         <span className="inline-block h-[15px] w-[15px] rounded bg-[var(--exam-accent)]" />
         Answered

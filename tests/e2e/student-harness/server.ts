@@ -241,6 +241,8 @@ async function main(): Promise<void> {
     void seedPracticeHistory(`http://localhost:${PORT}`, {
       // capture.ts passes the group's `seed` (groups/types.ts); only UI-52 asks for this.
       reviewHistory: process.env.STUDENT_HARNESS_SEED === "review-history",
+      // UI-54: a scored and an in-progress full-length test for the paid student.
+      examHistory: process.env.STUDENT_HARNESS_SEED === "exam-history",
     }).then(
       (seeded) => {
         // eslint-disable-next-line no-console -- the readiness line capture.ts waits for

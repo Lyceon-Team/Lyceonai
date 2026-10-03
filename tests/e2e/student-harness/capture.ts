@@ -856,7 +856,8 @@ async function main(): Promise<void> {
   try {
     for (const shot of group.shots) {
       for (const viewport of ["desktop", "mobile"] as const) {
-        for (const theme of THEMES) {
+        // UI-54: a shot may name its themes (the timed exam module is light only).
+        for (const theme of shot.themes ?? THEMES) {
           const built = await shootBuilt(
             browser,
             stack,

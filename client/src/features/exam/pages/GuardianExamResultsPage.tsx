@@ -54,7 +54,7 @@ import {
   SectionCard,
   Title,
   formatDate,
-} from "./ExamReportPage";
+} from "../components/ExamReportParts";
 import "../exam.css";
 
 const REPORT_STATE_LABEL: Record<

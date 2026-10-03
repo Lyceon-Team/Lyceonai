@@ -19,8 +19,16 @@ export const STUDENT_ID = "00000000-0000-4000-8000-0000000e7b01";
 /** G2: a guardian actively linked to STUDENT_ID, so the real resolver admits them. */
 export const GUARDIAN_ID = "00000000-0000-4000-8000-0000000e7b02";
 export const FORMS = [
-  { id: "e7b00000-0000-4000-8000-0000000000f1", tag: "E1", name: "Practice Test 1" },
-  { id: "e7b00000-0000-4000-8000-0000000000f2", tag: "E2", name: "Practice Test 2" },
+  {
+    id: "e7b00000-0000-4000-8000-0000000000f1",
+    tag: "E1",
+    name: "Practice Test 1",
+  },
+  {
+    id: "e7b00000-0000-4000-8000-0000000000f2",
+    tag: "E2",
+    name: "Practice Test 2",
+  },
 ] as const;
 
 const here = path.dirname(new URL(import.meta.url).pathname);
@@ -39,55 +47,79 @@ const RW_OPTIONS = [
 ];
 
 /**
+ * One published, readable harness form from the CI form fixture. `pg` must be the session
+ * that loaded `exam-form-fixture.sql` (its functions are `pg_temp`).
+ * @implemented [2026-10-03] (UI-54): split out of `buildHarnessDb` unchanged, so the student
+ * harness can add a third form with the same readable content (its "exam-history" seed).
+ */
+export async function makeHarnessForm(
+  pg: Client,
+  form: { readonly id: string; readonly tag: string; readonly name: string },
+): Promise<void> {
+  await pg.query(`SELECT pg_temp.exam_fixture_make_form($1, $2, 20, 15)`, [
+    form.id,
+    form.tag,
+  ]);
+  await pg.query(
+    `UPDATE public.test_forms SET status = 'published', published_at = now(), name = $2 WHERE id = $1`,
+    [form.id, form.name],
+  );
+  // Reading and Writing: a passage, a stem, four prose options.
+  await pg.query(
+    `UPDATE public.questions q
+        SET passage = ($2::text[])[1 + (fi.ordinal % 3)],
+            stem = 'Which choice best describes the overall structure of the text?',
+            options = jsonb_build_array(
+              jsonb_build_object('key','A','text',($3::text[])[1]),
+              jsonb_build_object('key','B','text',($3::text[])[2]),
+              jsonb_build_object('key','C','text',($3::text[])[3]),
+              jsonb_build_object('key','D','text',($3::text[])[4]))
+       FROM public.test_form_items fi
+      WHERE fi.question_id = q.id AND fi.test_form_id = $1 AND fi.section = 'RW'`,
+    [form.id, RW_PASSAGES, RW_OPTIONS],
+  );
+  // Math multiple choice: the correct option (A) is x = ordinal + 2.
+  await pg.query(
+    `UPDATE public.questions q
+        SET stem = 'If $3x + ' || (fi.ordinal + 1) || ' = ' || (3 * (fi.ordinal + 2) + fi.ordinal + 1) || '$, what is the value of $x$?',
+            options = jsonb_build_array(
+              jsonb_build_object('key','A','text', (fi.ordinal + 2)::text),
+              jsonb_build_object('key','B','text', (fi.ordinal + 3)::text),
+              jsonb_build_object('key','C','text', (fi.ordinal + 5)::text),
+              jsonb_build_object('key','D','text', (fi.ordinal + 7)::text))
+       FROM public.test_form_items fi
+      WHERE fi.question_id = q.id AND fi.test_form_id = $1 AND fi.section = 'M' AND q.item_type = 'mcq'`,
+    [form.id],
+  );
+  // Math grid-in: the fixture's accepted answer is '1'.
+  await pg.query(
+    `UPDATE public.questions q
+        SET stem = 'A line in the $xy$-plane passes through $(0, -3)$ and $(2, -1)$. What is the slope of the line?'
+       FROM public.test_form_items fi
+      WHERE fi.question_id = q.id AND fi.test_form_id = $1 AND q.item_type = 'grid_in'`,
+    [form.id],
+  );
+}
+
+/**
  * @implemented [2026-10-03] (student screenshot harness): `dbName` lets the student harness
  * build the same database under its own name, so running one harness never drops the other's.
  */
-export async function buildHarnessDb(dbName: string = HARNESS_DB): Promise<Client> {
+export async function buildHarnessDb(
+  dbName: string = HARNESS_DB,
+): Promise<Client> {
   const pg = await bootstrapPgDatabase(dbName);
-  await pg.query(fs.readFileSync(path.resolve(here, "../../../scripts/ci/lib/exam-form-fixture.sql"), "utf-8"));
-  for (const form of FORMS) {
-    await pg.query(`SELECT pg_temp.exam_fixture_make_form($1, $2, 20, 15)`, [form.id, form.tag]);
-    await pg.query(
-      `UPDATE public.test_forms SET status = 'published', published_at = now(), name = $2 WHERE id = $1`,
-      [form.id, form.name],
-    );
-    // Reading and Writing: a passage, a stem, four prose options.
-    await pg.query(
-      `UPDATE public.questions q
-          SET passage = ($2::text[])[1 + (fi.ordinal % 3)],
-              stem = 'Which choice best describes the overall structure of the text?',
-              options = jsonb_build_array(
-                jsonb_build_object('key','A','text',($3::text[])[1]),
-                jsonb_build_object('key','B','text',($3::text[])[2]),
-                jsonb_build_object('key','C','text',($3::text[])[3]),
-                jsonb_build_object('key','D','text',($3::text[])[4]))
-         FROM public.test_form_items fi
-        WHERE fi.question_id = q.id AND fi.test_form_id = $1 AND fi.section = 'RW'`,
-      [form.id, RW_PASSAGES, RW_OPTIONS],
-    );
-    // Math multiple choice: the correct option (A) is x = ordinal + 2.
-    await pg.query(
-      `UPDATE public.questions q
-          SET stem = 'If $3x + ' || (fi.ordinal + 1) || ' = ' || (3 * (fi.ordinal + 2) + fi.ordinal + 1) || '$, what is the value of $x$?',
-              options = jsonb_build_array(
-                jsonb_build_object('key','A','text', (fi.ordinal + 2)::text),
-                jsonb_build_object('key','B','text', (fi.ordinal + 3)::text),
-                jsonb_build_object('key','C','text', (fi.ordinal + 5)::text),
-                jsonb_build_object('key','D','text', (fi.ordinal + 7)::text))
-         FROM public.test_form_items fi
-        WHERE fi.question_id = q.id AND fi.test_form_id = $1 AND fi.section = 'M' AND q.item_type = 'mcq'`,
-      [form.id],
-    );
-    // Math grid-in: the fixture's accepted answer is '1'.
-    await pg.query(
-      `UPDATE public.questions q
-          SET stem = 'A line in the $xy$-plane passes through $(0, -3)$ and $(2, -1)$. What is the slope of the line?'
-         FROM public.test_form_items fi
-        WHERE fi.question_id = q.id AND fi.test_form_id = $1 AND q.item_type = 'grid_in'`,
-      [form.id],
-    );
-  }
-  await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, 'student@example.test')`, [STUDENT_ID]);
+  await pg.query(
+    fs.readFileSync(
+      path.resolve(here, "../../../scripts/ci/lib/exam-form-fixture.sql"),
+      "utf-8",
+    ),
+  );
+  for (const form of FORMS) await makeHarnessForm(pg, form);
+  await pg.query(
+    `INSERT INTO auth.users (id, email) VALUES ($1::uuid, 'student@example.test')`,
+    [STUDENT_ID],
+  );
   await pg.query(
     `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, 'student@example.test', 'student', 'Sam Rivera')`,
     [STUDENT_ID],
@@ -95,12 +127,18 @@ export async function buildHarnessDb(dbName: string = HARNESS_DB): Promise<Clien
   // G2: a linked guardian, and an active student entitlement, so the REAL resolver
   // (guardian_view_decision: link AND entitlement) admits the guardian to
   // /api/students/:studentId/tests. Nothing about the resolver is stubbed.
-  await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, 'guardian@example.test')`, [GUARDIAN_ID]);
+  await pg.query(
+    `INSERT INTO auth.users (id, email) VALUES ($1::uuid, 'guardian@example.test')`,
+    [GUARDIAN_ID],
+  );
   await pg.query(
     `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1::uuid, 'guardian@example.test', 'guardian', 'Gia Rivera')`,
     [GUARDIAN_ID],
   );
-  await pg.query(`INSERT INTO public.entitlements (profile_id, tier, status) VALUES ($1, 'premium', 'active')`, [STUDENT_ID]);
+  await pg.query(
+    `INSERT INTO public.entitlements (profile_id, tier, status) VALUES ($1, 'premium', 'active')`,
+    [STUDENT_ID],
+  );
   await pg.query(
     `INSERT INTO public.guardian_links
        (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at, accepted_at, accepted_by_profile_id, created_at)

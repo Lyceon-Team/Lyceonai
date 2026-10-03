@@ -88,6 +88,11 @@ export type Shot = {
    * the main column (DESIGN.md §2 Mobile), so only a full-page shot shows it.
    */
   fullPage?: boolean;
+  /**
+   * UI-54: the themes to shoot, when not both. The timed exam module is light only (DESIGN.md
+   * §2), so a dark capture of it would show the same page twice.
+   */
+  themes?: readonly Theme[];
   prototype: PrototypePairing;
 };
 
@@ -99,7 +104,10 @@ export type PageGroup = {
    * Extra history the group's pages need, seeded through the real routes after the base seed
    * (seed.ts). "review-history": more practice sessions with misses and an open review session,
    * so Review's queue, domain chips and past-session list (past five rows) are non-empty.
+   * "exam-history" (UI-54): the paid student's full-length history, a third published form
+   * ("Practice Test 3", never taken), a test walked to a scored report and a test left in
+   * Reading and Writing Module 2, all through the real exam routes (seed.ts, db.ts).
    * Off by default, so the other groups' payloads do not change.
    */
-  seed?: "review-history";
+  seed?: "review-history" | "exam-history";
 };

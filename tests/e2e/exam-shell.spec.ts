@@ -25,10 +25,12 @@ import path from "path";
 
 test.describe.configure({ mode: "serial" });
 // A container whose Playwright browser build differs from the pinned one names its own.
-if (process.env.E2E_CHROMIUM) test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
+if (process.env.E2E_CHROMIUM)
+  test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
 test.setTimeout(15 * 60_000);
 
-const SHOTS = process.env.E2E_SHOT_DIR ?? path.resolve("test-results/exam-shots");
+const SHOTS =
+  process.env.E2E_SHOT_DIR ?? path.resolve("test-results/exam-shots");
 fs.mkdirSync(SHOTS, { recursive: true });
 
 let pg: Client;
@@ -47,17 +49,30 @@ test.afterAll(async () => {
 });
 
 async function shot(page: Page, name: string): Promise<void> {
-  await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: false });
+  await page.screenshot({
+    path: path.join(SHOTS, `${name}.png`),
+    fullPage: false,
+  });
 }
 
 /** Anti-leak watch: any non-null answer field in any /api/tests response. */
 function watchForLeaks(page: Page): string[] {
   const leaks: string[] = [];
   const scan = (value: unknown, where: string): void => {
-    if (Array.isArray(value)) value.forEach((v, i) => scan(v, `${where}[${i}]`));
+    if (Array.isArray(value))
+      value.forEach((v, i) => scan(v, `${where}[${i}]`));
     else if (value !== null && typeof value === "object") {
       for (const [k, v] of Object.entries(value)) {
-        if (["correct_answer", "explanation", "correct_variants", "module2_path", "difficulty"].includes(k) && v !== null) {
+        if (
+          [
+            "correct_answer",
+            "explanation",
+            "correct_variants",
+            "module2_path",
+            "difficulty",
+          ].includes(k) &&
+          v !== null
+        ) {
           leaks.push(`${where}.${k}`);
         }
         scan(v, `${where}.${k}`);
@@ -83,14 +98,23 @@ function sessionIdOf(page: Page): string {
   return m[1]!;
 }
 
-async function position(page: Page): Promise<{ number: number; total: number }> {
-  const text = (await page.getByTestId("exam-navigator-open").textContent()) ?? "";
+async function position(
+  page: Page,
+): Promise<{ number: number; total: number }> {
+  const text =
+    (await page.getByTestId("exam-navigator-open").textContent()) ?? "";
   const m = /Question (\d+) of (\d+)/.exec(text);
   if (!m) throw new Error(`not on a question: ${text}`);
   return { number: Number(m[1]), total: Number(m[2]) };
 }
 
-async function tokenFor(sid: string, section: string, module: string, ordinal: number, letter: string): Promise<string> {
+async function tokenFor(
+  sid: string,
+  section: string,
+  module: string,
+  ordinal: number,
+  letter: string,
+): Promise<string> {
   const r = await pg.query(
     `SELECT option_token_map FROM public.test_session_items
       WHERE test_session_id = $1 AND section = $2 AND ordinal = $3
@@ -99,7 +123,10 @@ async function tokenFor(sid: string, section: string, module: string, ordinal: n
   );
   const map = r.rows[0]?.option_token_map as Record<string, string> | undefined;
   const hit = map && Object.entries(map).find(([, key]) => key === letter);
-  if (!hit) throw new Error(`no token for ${letter} at ${section}/${module}/${ordinal}`);
+  if (!hit)
+    throw new Error(
+      `no token for ${letter} at ${section}/${module}/${ordinal}`,
+    );
   return hit[0];
 }
 
@@ -114,22 +141,40 @@ async function answerCurrent(page: Page, correct: boolean): Promise<void> {
     await page.getByLabel("Enter your answer").blur();
     return;
   }
-  const token = await tokenFor(sid, section!, module!, number - 1, correct ? "A" : "B");
+  const token = await tokenFor(
+    sid,
+    section!,
+    module!,
+    number - 1,
+    correct ? "A" : "B",
+  );
   await page.locator(`[data-choice-token="${token}"]`).click();
-  await expect(page.locator(`[data-choice-token="${token}"]`)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(`[data-choice-token="${token}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 }
 
-async function answerModule(page: Page, correct: boolean, skip: ReadonlySet<number> = new Set()): Promise<void> {
+async function answerModule(
+  page: Page,
+  correct: boolean,
+  skip: ReadonlySet<number> = new Set(),
+): Promise<void> {
   for (;;) {
     const { number, total } = await position(page);
     if (!skip.has(number)) await answerCurrent(page, correct);
     if (number === total) break;
     await page.getByTestId("exam-next").click();
-    await expect(page.getByTestId("exam-navigator-open")).toContainText(`Question ${number + 1} of`);
+    await expect(page.getByTestId("exam-navigator-open")).toContainText(
+      `Question ${number + 1} of`,
+    );
   }
 }
 
-async function goToReviewAndSubmit(page: Page, shotName?: string): Promise<void> {
+async function goToReviewAndSubmit(
+  page: Page,
+  shotName?: string,
+): Promise<void> {
   await page.getByTestId("exam-next").click(); // Next on the last question -> review page
   await expect(page.getByTestId("exam-review-page")).toBeVisible();
   await page.getByTestId("exam-review-submit").click();
@@ -138,14 +183,20 @@ async function goToReviewAndSubmit(page: Page, shotName?: string): Promise<void>
     await page.waitForTimeout(400);
     await shot(page, shotName);
   }
-  await expect(page.getByText("You cannot return to this module.")).toBeVisible();
-  await expect(page.getByRole("alertdialog")).not.toContainText(/difficult|harder|easier/i);
+  await expect(
+    page.getByText("You cannot return to this module."),
+  ).toBeVisible();
+  await expect(page.getByRole("alertdialog")).not.toContainText(
+    /difficult|harder|easier/i,
+  );
   await page.getByTestId("exam-submit-confirm").click();
 }
 
 async function highlightFirstWords(page: Page, chars: number): Promise<void> {
   await page.evaluate((n) => {
-    const seg = document.querySelector('[data-testid="exam-passage"] [data-seg-kind="text"]');
+    const seg = document.querySelector(
+      '[data-testid="exam-passage"] [data-seg-kind="text"]',
+    );
     const node = seg?.firstChild;
     if (!node) throw new Error("no passage text");
     const range = document.createRange();
@@ -158,11 +209,16 @@ async function highlightFirstWords(page: Page, chars: number): Promise<void> {
   await page.getByRole("button", { name: "Highlight", exact: true }).click();
 }
 
-test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, anti-leak", async ({ page }) => {
+test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, anti-leak", async ({
+  page,
+}) => {
   const leaks = watchForLeaks(page);
   const desmosFailures: string[] = [];
   page.on("requestfailed", (req) => {
-    if (req.url().includes("desmos.com")) desmosFailures.push(`${new URL(req.url()).host} ${req.failure()?.errorText ?? ""}`);
+    if (req.url().includes("desmos.com"))
+      desmosFailures.push(
+        `${new URL(req.url()).host} ${req.failure()?.errorText ?? ""}`,
+      );
   });
   await page.setViewportSize({ width: 1280, height: 832 });
 
@@ -170,15 +226,19 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   await page.goto("/tests");
   const card = page.getByRole("article", { name: "Practice Test 1" });
   await expect(card.getByTestId("exam-form-state")).toHaveText("Not started");
-  await card.getByRole("button", { name: "Start test" }).click();
-  await expect(page.getByTestId("exam-start-panel")).toBeVisible();
+  // UI-54: the timing is chosen under "Before you start"; Start creates the session and lands
+  // on the session page, where "Begin Reading & Writing" starts Module 1.
   await expect(page.getByLabel(/Test-day timing/)).toBeChecked();
+  await card.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page).toHaveURL(/\/tests\/[0-9a-f-]{36}$/);
   await shot(page, "01-start");
   await page.getByTestId("exam-begin").click();
 
   // ── Reading and Writing, Module 1 ─────────────────────────────────────
   await expect(page).toHaveURL(/\/RW\/1$/);
-  await expect(page.getByTestId("exam-module-label")).toHaveText("Module 1 of 2");
+  await expect(page.getByTestId("exam-module-label")).toHaveText(
+    "Module 1 of 2",
+  );
   await expect(page.getByTestId("exam-choice").first()).toBeVisible();
   // No letters anywhere on an option.
   for (const text of await page.getByTestId("exam-choice").allTextContents()) {
@@ -186,16 +246,28 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   }
   // Question 1: select, cross out a DIFFERENT option, mark, highlight.
   await answerCurrent(page, true);
-  const selectedToken = await page.locator('[data-choice-token][aria-pressed="true"]').getAttribute("data-choice-token");
-  const crossTarget = (await page.locator('[data-choice-token][aria-pressed="false"]').first().getAttribute("data-choice-token"))!;
-  const crossIndex = await page.locator("[data-choice-token]").evaluateAll(
-    (els, t) => els.findIndex((e) => e.getAttribute("data-choice-token") === t),
-    crossTarget,
-  );
-  await page.getByRole("button", { name: `Cross out choice ${crossIndex + 1}` }).click();
+  const selectedToken = await page
+    .locator('[data-choice-token][aria-pressed="true"]')
+    .getAttribute("data-choice-token");
+  const crossTarget = (await page
+    .locator('[data-choice-token][aria-pressed="false"]')
+    .first()
+    .getAttribute("data-choice-token"))!;
+  const crossIndex = await page
+    .locator("[data-choice-token]")
+    .evaluateAll(
+      (els, t) =>
+        els.findIndex((e) => e.getAttribute("data-choice-token") === t),
+      crossTarget,
+    );
+  await page
+    .getByRole("button", { name: `Cross out choice ${crossIndex + 1}` })
+    .click();
   await page.getByTestId("exam-mark-review").click();
   await highlightFirstWords(page, 43);
-  await expect(page.locator('[data-testid="exam-passage"] mark')).toHaveCount(1);
+  await expect(page.locator('[data-testid="exam-passage"] mark')).toHaveCount(
+    1,
+  );
   await shot(page, "02-rw-module1-question");
 
   // Question 2 carries a formula: a selection ending inside it takes the whole formula.
@@ -204,7 +276,9 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
     const root = document.querySelector('[data-testid="exam-passage"]')!;
     const text = root.querySelector('[data-seg-kind="text"]')!.firstChild!;
     const math = root.querySelector('[data-seg-kind="math"]')!;
-    const inner = document.createTreeWalker(math, NodeFilter.SHOW_TEXT).nextNode()!;
+    const inner = document
+      .createTreeWalker(math, NodeFilter.SHOW_TEXT)
+      .nextNode()!;
     const range = document.createRange();
     range.setStart(text, 60);
     range.setEnd(inner, 1);
@@ -213,7 +287,9 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
     sel.addRange(range);
   });
   await page.getByRole("button", { name: "Highlight", exact: true }).click();
-  await expect(page.locator('[data-testid="exam-passage"] [data-seg-kind="math"]')).toHaveClass(/exam-highlight|bg-/);
+  await expect(
+    page.locator('[data-testid="exam-passage"] [data-seg-kind="math"]'),
+  ).toHaveClass(/exam-highlight|bg-/);
   await shot(page, "02b-rw-highlight-whole-formula");
 
   // Answer through question 9, leaving 10 and 14 unanswered (like the design).
@@ -230,25 +306,52 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   // ── RESUME: reload mid-module ─────────────────────────────────────────
   // Let the 5 s heartbeat (or the on-navigation beat) carry position 9.
   await expect
-    .poll(async () => (await pg.query(`SELECT current_ordinal FROM public.test_session_sections WHERE test_session_id = $1 AND section = 'RW'`, [sessionIdOf(page)])).rows[0]?.current_ordinal)
+    .poll(
+      async () =>
+        (
+          await pg.query(
+            `SELECT current_ordinal FROM public.test_session_sections WHERE test_session_id = $1 AND section = 'RW'`,
+            [sessionIdOf(page)],
+          )
+        ).rows[0]?.current_ordinal,
+    )
     .toBe(8);
   const timerBefore = await page.getByTestId("exam-timer").textContent();
   await page.reload();
-  await expect(page.getByTestId("exam-navigator-open")).toContainText("Question 9 of 27");
+  await expect(page.getByTestId("exam-navigator-open")).toContainText(
+    "Question 9 of 27",
+  );
   await shot(page, "03-resume-after-reload");
   const timerAfter = await page.getByTestId("exam-timer").textContent();
   // The server's remaining time: the reload costs seconds, not the module.
-  const secs = (t: string | null) => { const [m, s] = (t ?? "0:0").split(":").map(Number); return m! * 60 + s!; };
+  const secs = (t: string | null) => {
+    const [m, s] = (t ?? "0:0").split(":").map(Number);
+    return m! * 60 + s!;
+  };
   expect(secs(timerBefore) - secs(timerAfter)).toBeLessThan(15);
   expect(secs(timerBefore) - secs(timerAfter)).toBeGreaterThanOrEqual(0);
   // Question 1 after the reload: same selection, same crossed-out option, flag, highlight.
   await page.getByTestId("exam-navigator-open").click();
   await page.getByRole("button", { name: /^Question 1,/ }).click();
-  await expect(page.locator(`[data-choice-token="${selectedToken}"]`)).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("button", { name: `Cross out choice ${crossIndex + 1}` })).toHaveAttribute("aria-pressed", "true");
-  expect(await page.locator("[data-choice-token]").nth(crossIndex).getAttribute("data-choice-token")).toBe(crossTarget);
-  await expect(page.getByTestId("exam-mark-review")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator('[data-testid="exam-passage"] mark')).toHaveCount(1);
+  await expect(
+    page.locator(`[data-choice-token="${selectedToken}"]`),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: `Cross out choice ${crossIndex + 1}` }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(
+    await page
+      .locator("[data-choice-token]")
+      .nth(crossIndex)
+      .getAttribute("data-choice-token"),
+  ).toBe(crossTarget);
+  await expect(page.getByTestId("exam-mark-review")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator('[data-testid="exam-passage"] mark')).toHaveCount(
+    1,
+  );
   // ...and it is what the server stored: the token on screen maps to the stored letter.
   const stored = await pg.query(
     `SELECT a.answer, i.option_token_map ->> $2 AS letter
@@ -270,52 +373,89 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   await expect(page.getByTestId("exam-navigator-grid")).toBeVisible();
   await page.waitForTimeout(400); // let the dialog's open animation finish
   await shot(page, "04-navigator");
-  const cells = page.getByTestId("exam-navigator-grid").getByTestId("exam-question-cell");
-  const navAnswered = await cells.evaluateAll((els) => els.filter((e) => e.getAttribute("data-answered") === "true").length);
-  const navMarked = await cells.evaluateAll((els) => els.filter((e) => e.getAttribute("data-marked") === "true").length);
+  const cells = page
+    .getByTestId("exam-navigator-grid")
+    .getByTestId("exam-question-cell");
+  const navAnswered = await cells.evaluateAll(
+    (els) =>
+      els.filter((e) => e.getAttribute("data-answered") === "true").length,
+  );
+  const navMarked = await cells.evaluateAll(
+    (els) => els.filter((e) => e.getAttribute("data-marked") === "true").length,
+  );
   await page.getByRole("button", { name: "Go to review page" }).click();
   await expect(page.getByTestId("exam-review-page")).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const counts = page.getByTestId("exam-review-counts");
-  await expect(counts.locator('[data-count="Answered"]')).toHaveText(String(navAnswered));
-  await expect(counts.locator('[data-count="Marked for review"]')).toHaveText(String(navMarked));
+  await expect(counts.locator('[data-count="Answered"]')).toHaveText(
+    String(navAnswered),
+  );
+  await expect(counts.locator('[data-count="Marked for review"]')).toHaveText(
+    String(navMarked),
+  );
   expect(navAnswered).toBe(25);
   await shot(page, "05-review-page");
   await page.getByTestId("exam-review-submit").click();
-  await expect(page.getByTestId("exam-submit-counts")).toContainText("25 of 27");
+  await expect(page.getByTestId("exam-submit-counts")).toContainText(
+    "25 of 27",
+  );
   await page.waitForTimeout(400);
   await shot(page, "06-submit-dialog");
   await page.getByTestId("exam-submit-confirm").click();
 
   // ── RW Module 2 ────────────────────────────────────────────────────────
   await expect(page).toHaveURL(/\/RW\/2$/);
-  await expect(page.getByTestId("exam-module-label")).toHaveText("Module 2 of 2");
+  await expect(page.getByTestId("exam-module-label")).toHaveText(
+    "Module 2 of 2",
+  );
   const sid = sessionIdOf(page);
   // PLANT: the submitted Module 1 cannot be re-entered by URL.
   await page.goto(`/tests/${sid}/RW/1`);
   await expect(page).toHaveURL(new RegExp(`/tests/${sid}/RW/2$`));
   // CONTRAST: under test-day timing a hidden tab pauses nothing.
   const strictRemaining = async () =>
-    Number((await pg.query(`SELECT public.exam_remaining_ms($1, 'RW', clock_timestamp()) AS ms`, [sid])).rows[0].ms);
+    Number(
+      (
+        await pg.query(
+          `SELECT public.exam_remaining_ms($1, 'RW', clock_timestamp()) AS ms`,
+          [sid],
+        )
+      ).rows[0].ms,
+    );
   await page.evaluate(() => {
-    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
     document.dispatchEvent(new Event("visibilitychange"));
   });
   const strictBefore = await strictRemaining();
   await page.waitForTimeout(20_000);
   await page.evaluate(() => {
-    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await page.waitForTimeout(1_500);
   const strictAfter = await strictRemaining();
   // eslint-disable-next-line no-console -- evidence line
-  console.log("TEST-DAY NO PAUSE: remaining before hide", strictBefore, "after 20s hidden", strictAfter);
+  console.log(
+    "TEST-DAY NO PAUSE: remaining before hide",
+    strictBefore,
+    "after 20s hidden",
+    strictAfter,
+  );
   expect(strictBefore - strictAfter).toBeGreaterThanOrEqual(20_000);
 
   // PLANT: the timer does not advance when the system clock moves forward.
   const read = async () => {
-    const [m, s2] = ((await page.getByTestId("exam-timer").textContent()) ?? "0:0").split(":").map(Number);
+    const [m, s2] = (
+      (await page.getByTestId("exam-timer").textContent()) ?? "0:0"
+    )
+      .split(":")
+      .map(Number);
     return m! * 60 + s2!;
   };
   const t0 = await read();
@@ -334,13 +474,22 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
         return RealDate.now() + offset;
       }
     }
-    (window as unknown as { Date: DateConstructor }).Date = ShiftedDate as unknown as DateConstructor;
+    (window as unknown as { Date: DateConstructor }).Date =
+      ShiftedDate as unknown as DateConstructor;
   });
-  expect(await page.evaluate(() => Date.now())).toBeGreaterThan(Date.now() + 3 * 3600_000 - 60_000);
+  expect(await page.evaluate(() => Date.now())).toBeGreaterThan(
+    Date.now() + 3 * 3600_000 - 60_000,
+  );
   await page.waitForTimeout(3_000);
   const t1 = await read();
   // eslint-disable-next-line no-console -- evidence line
-  console.log("CLOCK PLANT: timer", t0, "s -> wall clock +3h, 3s later ->", t1, "s");
+  console.log(
+    "CLOCK PLANT: timer",
+    t0,
+    "s -> wall clock +3h, 3s later ->",
+    t1,
+    "s",
+  );
   expect(t0 - t1).toBeGreaterThanOrEqual(2);
   expect(t0 - t1).toBeLessThanOrEqual(5);
   await answerModule(page, true);
@@ -348,7 +497,9 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
 
   // ── Break ──────────────────────────────────────────────────────────────
   await expect(page.getByTestId("exam-break")).toBeVisible();
-  await expect(page.getByTestId("exam-break")).toContainText("the break ends on its own");
+  await expect(page.getByTestId("exam-break")).toContainText(
+    "the break ends on its own",
+  );
   await shot(page, "07-break");
   await page.getByTestId("exam-resume-now").click();
 
@@ -365,7 +516,9 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   // eslint-disable-next-line no-console -- evidence line
   console.log("DESMOS REQUEST FAILURES", JSON.stringify(desmosFailures));
   if (process.env.E2E_DESMOS_REACHABLE === "1") {
-    await expect(page.locator("#exam-calculator-panel .dcg-container").first()).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.locator("#exam-calculator-panel .dcg-container").first(),
+    ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("desmos-calculator-error")).toHaveCount(0);
     expect(desmosFailures).toEqual([]);
   } else {
@@ -383,15 +536,24 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   await answerModule(page, false);
   await goToReviewAndSubmit(page);
   await expect(page).toHaveURL(/\/M\/2$/);
-  await expect(page.getByTestId("exam-module-label")).toHaveText("Module 2 of 2");
+  await expect(page.getByTestId("exam-module-label")).toHaveText(
+    "Module 2 of 2",
+  );
   await shot(page, "09-math-module2");
   await answerModule(page, true);
   await goToReviewAndSubmit(page, "10-math-module2-submit");
 
   // ── Completion ────────────────────────────────────────────────────────
   await expect(page).toHaveURL(/\/report$/);
-  await expect(page.getByTestId("exam-report")).toHaveAttribute("data-report-state", /scored|scoring_pending/);
-  await expect(page.getByTestId("exam-report")).toHaveAttribute("data-report-state", "scored", { timeout: 30_000 });
+  await expect(page.getByTestId("exam-report")).toHaveAttribute(
+    "data-report-state",
+    /scored|scoring_pending/,
+  );
+  await expect(page.getByTestId("exam-report")).toHaveAttribute(
+    "data-report-state",
+    "scored",
+    { timeout: 30_000 },
+  );
   await expect(page.getByTestId("exam-disclosure").first()).toBeVisible();
   await shot(page, "11-score");
 
@@ -404,13 +566,16 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   expect(leaks).toEqual([]);
 });
 
-test("practice timing: RW routes down, Math routes up; a hidden tab pauses the clock", async ({ page }) => {
+test("practice timing: RW routes down, Math routes up; a hidden tab pauses the clock", async ({
+  page,
+}) => {
   const leaks = watchForLeaks(page);
   await page.setViewportSize({ width: 1280, height: 832 });
   await page.goto("/tests");
   const card = page.getByRole("article", { name: "Practice Test 2" });
-  await card.getByRole("button", { name: "Start test" }).click();
   await page.getByLabel(/Practice timing/).check();
+  await card.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page).toHaveURL(/\/tests\/[0-9a-f-]{36}$/);
   await page.getByTestId("exam-begin").click();
 
   await expect(page).toHaveURL(/\/RW\/1$/);
@@ -421,7 +586,9 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   await goToReviewAndSubmit(page);
 
   await expect(page.getByTestId("exam-break")).toBeVisible();
-  await expect(page.getByTestId("exam-break")).toContainText("when you're ready");
+  await expect(page.getByTestId("exam-break")).toContainText(
+    "when you're ready",
+  );
   await shot(page, "12-break-practice-timing");
   await page.getByTestId("exam-resume-now").click();
   await expect(page).toHaveURL(/\/M\/1$/);
@@ -430,21 +597,39 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   // and under practice timing gives the time back.
   const sid = sessionIdOf(page);
   const remaining = async () =>
-    Number((await pg.query(`SELECT public.exam_remaining_ms($1, 'M', clock_timestamp()) AS ms`, [sid])).rows[0].ms);
+    Number(
+      (
+        await pg.query(
+          `SELECT public.exam_remaining_ms($1, 'M', clock_timestamp()) AS ms`,
+          [sid],
+        )
+      ).rows[0].ms,
+    );
   await page.evaluate(() => {
-    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
     document.dispatchEvent(new Event("visibilitychange"));
   });
   const before = await remaining();
   await page.waitForTimeout(20_000);
   await page.evaluate(() => {
-    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await page.waitForTimeout(1_500);
   const after = await remaining();
   // eslint-disable-next-line no-console -- evidence line
-  console.log("PRACTICE PAUSE: remaining before hide", before, "after 20s hidden", after);
+  console.log(
+    "PRACTICE PAUSE: remaining before hide",
+    before,
+    "after 20s hidden",
+    after,
+  );
   expect(before - after).toBeLessThan(8_000); // 20 s away cost at most the pre-threshold slice
 
   await answerModule(page, true);
@@ -453,7 +638,11 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   await answerModule(page, true);
   await goToReviewAndSubmit(page);
 
-  await expect(page.getByTestId("exam-report")).toHaveAttribute("data-report-state", "scored", { timeout: 30_000 });
+  await expect(page.getByTestId("exam-report")).toHaveAttribute(
+    "data-report-state",
+    "scored",
+    { timeout: 30_000 },
+  );
   await expect(page.getByText("Practice", { exact: true })).toBeVisible();
   await shot(page, "13-score-practice-timing");
   const paths = await pg.query(
@@ -464,17 +653,32 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   console.log("PRACTICE PATHS", JSON.stringify(paths.rows));
 
   await page.goto("/tests");
-  await expect(page.getByRole("article", { name: "Practice Test 1" }).getByTestId("exam-form-state")).toHaveText("Scored");
-  await expect(page.getByRole("article", { name: "Practice Test 2" }).getByTestId("exam-form-state")).toHaveText("Scored");
-  await expect(page.getByTestId("exam-forms")).not.toContainText(/\b1[0-9]{3}\b/); // no score on a card
+  // OQ-31 (owner ruling 2026-10-02, supersedes E7b ruling 2): the card shows the completed
+  // test's score, and its §15.1 disclosure beside it.
+  for (const name of ["Practice Test 1", "Practice Test 2"]) {
+    const done = page.getByRole("article", { name });
+    await expect(done.getByTestId("exam-form-state")).toHaveText(
+      /^Completed \d{1,2} [A-Z][a-z]+\. Score \d{3,4}\.$/,
+    );
+    await expect(done.getByTestId("exam-disclosure")).toBeVisible();
+  }
   await shot(page, "14-tests-home-after");
   expect(leaks).toEqual([]);
 });
 
 /** Presses Tab until `target` has focus — proof it is in the keyboard order. */
-async function tabTo(page: Page, target: ReturnType<Page["locator"]>, max = 80): Promise<void> {
+async function tabTo(
+  page: Page,
+  target: ReturnType<Page["locator"]>,
+  max = 80,
+): Promise<void> {
   for (let i = 0; i < max; i++) {
-    if (await target.evaluate((el) => el === document.activeElement).catch(() => false)) return;
+    if (
+      await target
+        .evaluate((el) => el === document.activeElement)
+        .catch(() => false)
+    )
+      return;
     await page.keyboard.press("Tab");
   }
   throw new Error("not reachable by Tab");
@@ -485,19 +689,26 @@ async function focusIsVisible(page: Page): Promise<boolean> {
     const el = document.activeElement as HTMLElement | null;
     if (!el) return false;
     const cs = getComputedStyle(el);
-    return (cs.outlineStyle !== "none" && cs.outlineWidth !== "0px") || cs.boxShadow !== "none";
+    return (
+      (cs.outlineStyle !== "none" && cs.outlineWidth !== "0px") ||
+      cs.boxShadow !== "none"
+    );
   });
 }
 
-test("keyboard only: start, answer, cross out, mark, navigator, review page", async ({ page }) => {
+test("keyboard only: start, answer, cross out, mark, navigator, review page", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 832 });
   await page.goto("/tests");
   const card = page.getByRole("article", { name: "Practice Test 1" });
-  await tabTo(page, card.getByRole("button", { name: "Take again" }));
-  await page.keyboard.press("Enter");
+  // UI-54: timing first (under "Before you start"), then the row's action creates the session.
   await tabTo(page, page.getByLabel(/Test-day timing/));
   await page.keyboard.press("ArrowDown");
   await expect(page.getByLabel(/Practice timing/)).toBeChecked();
+  await tabTo(page, card.getByRole("button", { name: "Take again" }));
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/tests\/[0-9a-f-]{36}$/);
   await tabTo(page, page.getByTestId("exam-begin"));
   await page.keyboard.press("Enter");
 
@@ -513,7 +724,10 @@ test("keyboard only: start, answer, cross out, mark, navigator, review page", as
   await expect(cross).toHaveAttribute("aria-pressed", "true");
   await tabTo(page, page.getByTestId("exam-mark-review"));
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("exam-mark-review")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("exam-mark-review")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 
   // Navigator: open, reach a cell, jump; Escape returns focus to the trigger.
   const opener = page.getByTestId("exam-navigator-open");
@@ -535,7 +749,9 @@ test("keyboard only: start, answer, cross out, mark, navigator, review page", as
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("exam-navigator-grid")).toHaveCount(0);
-  await expect.poll(() => opener.evaluate((el) => el === document.activeElement)).toBe(true);
+  await expect
+    .poll(() => opener.evaluate((el) => el === document.activeElement))
+    .toBe(true);
 
   // Review page by keyboard, then back to question 1 from its grid.
   await page.keyboard.press("Enter");
@@ -550,8 +766,12 @@ test("keyboard only: start, answer, cross out, mark, navigator, review page", as
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("exam-submit-counts")).toHaveCount(0);
-  await expect.poll(() => submit.evaluate((el) => el === document.activeElement)).toBe(true);
-  const q1 = page.getByTestId("exam-review-page").getByRole("button", { name: /^Question 1, answered, marked for review/ });
+  await expect
+    .poll(() => submit.evaluate((el) => el === document.activeElement))
+    .toBe(true);
+  const q1 = page
+    .getByTestId("exam-review-page")
+    .getByRole("button", { name: /^Question 1, answered, marked for review/ });
   await tabTo(page, q1);
   await page.keyboard.press("Enter");
   await expect(opener).toContainText("Question 1 of 27");
@@ -560,7 +780,13 @@ test("keyboard only: start, answer, cross out, mark, navigator, review page", as
   const hide = page.getByRole("button", { name: "Hide" });
   await tabTo(page, hide);
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("exam-timer")).toHaveAttribute("aria-label", "Timer hidden");
+  await expect(page.getByTestId("exam-timer")).toHaveAttribute(
+    "aria-label",
+    "Timer hidden",
+  );
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("exam-timer")).toHaveAttribute("aria-label", /Time remaining/);
+  await expect(page.getByTestId("exam-timer")).toHaveAttribute(
+    "aria-label",
+    /Time remaining/,
+  );
 });

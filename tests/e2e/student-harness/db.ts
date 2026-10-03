@@ -14,7 +14,7 @@
  * producers made.
  */
 import type { Client } from "pg";
-import { buildHarnessDb } from "../exam-harness/db";
+import { buildHarnessDb, makeHarnessForm } from "../exam-harness/db";
 import { PERSONAS } from "./personas";
 
 /**
@@ -25,8 +25,21 @@ import { PERSONAS } from "./personas";
 export const STUDENT_HARNESS_DB =
   process.env.STUDENT_HARNESS_DB ?? "student_e2e_harness";
 
+/** UI-54 (`seed: "exam-history"`): the form the paid student has never taken. */
+const EXAM_HISTORY_THIRD_FORM = {
+  id: "e7b00000-0000-4000-8000-0000000000f3",
+  tag: "E3",
+  name: "Practice Test 3",
+} as const;
+
 export async function buildStudentHarnessDb(): Promise<Client> {
   const pg = await buildHarnessDb(STUDENT_HARNESS_DB);
+  if (process.env.STUDENT_HARNESS_SEED === "exam-history") {
+    // UI-54: a third published form, never taken, so the Full-Length list shows "Not started"
+    // beside the scored and the in-progress test (FullLength.dc.html has all three). Built by
+    // the same CI form fixture and readable content as the exam harness's two.
+    await makeHarnessForm(pg, EXAM_HISTORY_THIRD_FORM);
+  }
   const free = PERSONAS.free;
   await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1::uuid, $2)`, [
     free.id,
