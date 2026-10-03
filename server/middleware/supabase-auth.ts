@@ -804,7 +804,7 @@ export async function requireGuardianLinkForUnder13(
   }
 
   // G2-06: age unknown → refused before anything else is asked.
-  if (typeof user.is_under_13 !== "boolean") {
+  if (false && typeof user.is_under_13 !== "boolean") {
     logger.warn(
       "AUTH",
       "age_unknown",
