@@ -12,6 +12,7 @@ export * from "./exam-score-renewal-schema.js";
 export * from "./guardian-subject.js";
 export * from "./entitlement-denial.js";
 export * from "./feature-access.js";
+export * from "./practice-quota.js";
 export * from "./rule4-columns.js";
 export * from "./student-resources.js";
 export * from "./student-link-code-schema.js";

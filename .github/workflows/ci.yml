@@ -1402,6 +1402,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-billing-managed-by.json \
             --file tests/ci/billing-managed-by.pg.ci.test.ts
 
+      # @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02] | @implemented [2026-10-03]
+      # GET /api/practice/quota on the real practice router and the real
+      # check_and_reserve_practice_quota: fresh, after N served, at the limit (the same numbers as
+      # the 402), paid unlimited, reading consumes nothing, 401 and guardian 403. Verdict read from
+      # vitest's JSON report: a PG-backed suite that skips is a vacuous pass.
+      - name: Practice quota read (OQ-21) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/practice-quota.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-practice-quota.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-quota.json \
+            --file tests/ci/practice-quota.pg.ci.test.ts
+
       # The G2-04 assertions are worth what their plants prove. One product-source mutation per
       # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
       # per student — the stored-flag design; a learning read and checkout ungated; the gate

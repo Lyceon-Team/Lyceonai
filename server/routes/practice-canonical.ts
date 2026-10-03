@@ -14,6 +14,7 @@ import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
 } from "../../apps/api/src/lib/rate-limit-ledger";
+import { dryRunPracticeQuota, toPracticeQuota } from "../lib/practice-quota";
 import {
   hasCanonicalOptionSet,
   buildServedOptions,
@@ -1495,13 +1496,10 @@ export async function startOrReplaySession(args: {
   // so we never over-materialize sessions beyond the remaining free-tier allowance.
   if (args.role !== "admin") {
     try {
-      const dryRunDecision = await checkAndReservePracticeQuota({
-        studentUserId: args.userId,
+      // OQ-21: the one dry-run call, shared with GET /quota so the read and this 402 agree.
+      const dryRunDecision = await dryRunPracticeQuota({
+        userId: args.userId,
         role: args.role,
-        sessionId: null,
-        sessionItemId: null,
-        dryRun: true,
-        requestId: null,
       });
       if (!dryRunDecision.allowed) {
         return {
@@ -2161,6 +2159,94 @@ async function serveNextForSession(args: {
     totalQuestions: await countSessionItems(args.sessionId),
   });
 }
+
+/**
+ * GET /api/practice/quota — today's free practice quota, read without consuming it.
+ *
+ * @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02: a read-only
+ *        `GET /api/practice/quota`, computed by the same function as the 402
+ *        (`checkAndReservePracticeQuota`, dry run); Doc 02B §12 Entitlement Matrix, §13; Doc 01A
+ *        §40 `getUsage`, §44] | @implemented [2026-10-03]
+ *
+ * plain English: the free quota line and ruler on Home and Practice. Same middleware as every
+ * practice route (the mount's auth and student-or-admin gate, then auth, profile complete and the
+ * under-13 link gate here); no entitlement gate, because the free student is the reader. The
+ * number comes from `dryRunPracticeQuota`, the call the session-start 402 makes, so the read and
+ * the refusal cannot disagree; a dry run writes no ledger row. Body: `{unlimited, limit,
+ * remaining, resetAt}` (`practiceQuotaSchema`). A paid student, and an admin (the wrapper's admin
+ * bypass), read `unlimited: true` with nulls.
+ * edge cases: ledger unavailable, or a decision without numbers → 503 (fail closed, never a
+ * guessed number), like the 402 sites. Logs carry the user id and the decision code, nothing else.
+ */
+router.get(
+  "/quota",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireGuardianLinkForUnder13,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
+
+    const unavailable = {
+      error: "Usage check unavailable",
+      code: "RATE_LIMIT_DB_UNAVAILABLE",
+      message:
+        "Unable to read practice quota at this time. Please retry shortly.",
+      requestId,
+    };
+
+    try {
+      const decision = await dryRunPracticeQuota({
+        userId: user.id,
+        role: user.role,
+      });
+      const quota = toPracticeQuota(decision);
+      if (!quota.ok) {
+        logger.error(
+          "PRACTICE_QUOTA",
+          "quota_read_incomplete",
+          "Practice quota dry run returned no usable numbers; failing closed",
+          undefined,
+          { code: decision.code },
+          { userId: user.id, ...(requestId ? { requestId } : {}) },
+        );
+        return res.status(503).json(unavailable);
+      }
+      return res.json(quota.value);
+    } catch (error: unknown) {
+      if (error instanceof RateLimitUnavailableError) {
+        logger.warn(
+          "PRACTICE_QUOTA",
+          "quota_read_unavailable",
+          "Practice quota ledger unavailable; failing closed",
+          undefined,
+          { userId: user.id, ...(requestId ? { requestId } : {}) },
+        );
+        return res.status(503).json(unavailable);
+      }
+      logger.error(
+        "PRACTICE_QUOTA",
+        "quota_read_failed",
+        "Practice quota read failed",
+        error,
+        undefined,
+        { userId: user.id, ...(requestId ? { requestId } : {}) },
+      );
+      return res.status(500).json({
+        error: "quota_read_failed",
+        message: "Unable to read practice quota",
+        requestId,
+      });
+    }
+  },
+);
 
 /**
  * Returns a list of uncompleted practice sessions for the current user.
