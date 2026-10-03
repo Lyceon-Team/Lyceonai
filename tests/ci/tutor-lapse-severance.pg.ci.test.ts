@@ -41,6 +41,20 @@ const stamp = async (): Promise<Date | null> => {
   return r.rows[0]?.deleted_at ?? null;
 };
 
+/**
+ * The stamp at Postgres' own (microsecond) precision. A JS Date keeps only
+ * milliseconds, so two stamps written in the same millisecond compare equal
+ * even when the second one rewrote the first — which is exactly the defect
+ * C1.3 exists to catch (deletion-evidence self-test M47).
+ */
+const stampText = async (): Promise<string | null> => {
+  const r = await pg.query(
+    `SELECT deleted_at::text AS t FROM public.tutor_conversations WHERE id = $1`,
+    [CONVO],
+  );
+  return r.rows[0]?.t ?? null;
+};
+
 const setStatus = async (status: string): Promise<void> => {
   await pg.query(
     `UPDATE public.entitlements SET status = $2 WHERE profile_id = $1`,
@@ -113,11 +127,14 @@ describe.skipIf(!PG_AVAILABLE)(
         [STUDENT],
       );
       await setStatus("canceled");
-      const first = await stamp();
-      expect(first).toBeInstanceOf(Date);
+      const first = await stampText();
+      expect(first).not.toBeNull();
 
+      // The clock must visibly move between the two lapses, or a rewrite of the
+      // stamp would be indistinguishable from keeping it.
+      await pg.query(`SELECT pg_sleep(0.01)`);
       await setStatus("unpaid");
-      expect((await stamp())!.getTime()).toBe(first!.getTime());
+      expect(await stampText()).toBe(first);
     });
 
     it("C1.4 — resubscribing CLEARS the stamp (owner ruling C1)", async () => {
