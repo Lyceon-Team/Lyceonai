@@ -12,7 +12,8 @@
  *   Sitemap <loc>s name https://lyceon.ai; each is fetched at the same path on BASE_URL, and its
  *   canonical must equal the <loc> (the production URL), which is what "self-canonical" means for a
  *   preview. For a protected preview, set VERCEL_AUTOMATION_BYPASS_SECRET to send Vercel's
- *   x-vercel-protection-bypass header (never printed).
+ *   x-vercel-protection-bypass header, or CRAWL_COOKIE to send a Cookie header (e.g. the `_vercel_jwt`
+ *   a Vercel share link sets). Neither is ever printed.
  *
  * Exit 1 if any URL fails a check. Prints no cookies, tokens or headers.
  */
@@ -35,12 +36,14 @@ const AGENTS = {
 };
 
 const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+const cookie = process.env.CRAWL_COOKIE;
 function headers(agent) {
   const h = {
     "User-Agent": agent,
     Accept: "text/html,application/xml;q=0.9,*/*;q=0.8",
   };
   if (bypass) h["x-vercel-protection-bypass"] = bypass;
+  if (cookie) h.Cookie = cookie;
   return h;
 }
 

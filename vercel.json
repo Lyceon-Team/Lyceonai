@@ -72,11 +72,6 @@
       "dest": "/index.html"
     },
     {
-      "src": "^/(.+?)/?$",
-      "dest": "/$1/index.html",
-      "check": true
-    },
-    {
       "src": "^/login/?$",
       "dest": "/app.html"
     },
@@ -223,6 +218,11 @@
     {
       "src": "^/admin/crisis-review/[^/]+/?$",
       "dest": "/app.html"
+    },
+    {
+      "src": "^/(.+?)/?$",
+      "dest": "/$1/index.html",
+      "check": true
     },
     {
       "src": "^/.*$",

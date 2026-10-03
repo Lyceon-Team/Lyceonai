@@ -152,13 +152,16 @@ describe("vercel.json is derived from the registry", () => {
 
 /**
  * A model of Vercel's legacy `routes` evaluation, enough for these rules: first match wins,
- * `handle: filesystem` serves an existing file, `check: true` applies only when its destination
- * exists. It is checked here against the files the build writes.
+ * `handle: filesystem` serves an existing file, and a `check: true` rewrite whose destination
+ * does not exist CONTINUES MATCHING WITH THE REWRITTEN PATH (Vercel carries the rewrite forward —
+ * the preview proved it: with the SPA rows after the directory-index row, `/dashboard` became
+ * `/dashboard/index.html`, matched nothing, and 404'd). Checked against the files the build writes.
  */
 function resolveRequest(
-  path: string,
+  requestPath: string,
   files: Set<string>,
 ): { status: number; file?: string; location?: string } {
+  let path = requestPath;
   for (const route of vercel.routes) {
     if (route.handle === "filesystem") {
       const file = path.slice(1);
@@ -169,12 +172,16 @@ function resolveRequest(
     if (!match) continue;
     if (route.status === 301)
       return { status: 301, location: route.headers?.Location };
-    const dest = (route.dest ?? "")
-      .replace(/\$(\d)/g, (_m, i: string) => match[Number(i)] ?? "")
-      .slice(1);
-    if (route.check && !files.has(dest)) continue;
+    const dest = (route.dest ?? "").replace(
+      /\$(\d)/g,
+      (_m, i: string) => match[Number(i)] ?? "",
+    );
+    if (route.check && !files.has(dest.slice(1))) {
+      path = dest;
+      continue;
+    }
     if (route.dest === "/api/index") return { status: 200, file: "api" };
-    return { status: route.status ?? 200, file: dest };
+    return { status: route.status ?? 200, file: dest.slice(1) };
   }
   return { status: 404 };
 }
@@ -228,6 +235,8 @@ describe("F2 — real 404s, legal handling intact (model of vercel.json over the
     ],
     ["/legal/privacy-policy/v4/en.md", 200, "legal/privacy-policy/v4/en.md"],
     ["/dashboard", 200, "app.html"],
+    ["/dashboard/", 200, "app.html"],
+    ["/practice/session/abc", 200, "app.html"],
     ["/login", 200, "app.html"],
     ["/tests/abc/report", 200, "app.html"],
     ["/guardian/abc/exams/def", 200, "app.html"],
