@@ -32,6 +32,12 @@ import { err, ok, type Result } from "../../packages/shared/src/result";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
+import {
+  checkAndIncrement,
+  RateLimitUnavailableError,
+  type LedgerClient,
+} from "../../packages/shared/src/services/rate-limit-ledger";
+import { revokeOtherSessions } from "./session-revoke";
 
 /** The recovery grant's lifetime: long enough to type a new password, short enough to be single-sitting. */
 export const RECOVERY_GRANT_TTL_SECONDS = 15 * 60;
@@ -192,4 +198,132 @@ export async function consumePasswordRecovery(
       { requestId },
     );
   }
+}
+
+// ── F-46 (Brief 12 ruling 1, owner 2026-10-02): Doc 01 §12.1 steps 2 and 6 ───────────────────
+
+/** Doc 01A §39.2 / §46: the reset bucket, seeded at 3 per hour by 20261018000000. */
+export const PASSWORD_RESET_BUCKET = "password_reset_requests_hourly";
+
+/** `send`: ask Supabase to mail the link. `suppress`: send nothing; the caller answers the same. */
+export type PasswordResetDecision = "send" | "suppress";
+
+/**
+ * @spec [Doc 01 §12.1 step 2; Doc 01A §39–§47 (RateLimitLedger; §41 profile-keyed ledger);
+ *        Brief 12 ruling 1; AS3-AS5-RESET-ENUM-001] | @implemented [2026-10-02]
+ *
+ * plain English: may this reset request send an email? The address is matched to its account
+ * (`password_reset_subject`, case- and space-folded), and the request is counted against that
+ * account's `password_reset_requests_hourly` bucket, so the limit holds across requests,
+ * browsers and IPs. The caller answers every outcome with the same generic response, and holds it
+ * to the same minimum duration (`holdPasswordResetResponse`), so neither the body nor the time it
+ * takes tells a caller whether an address has an account.
+ *
+ * Outcomes:
+ *   - an address with no account: `send`. Supabase mails nothing to an unknown address, and the
+ *     ledger cannot count it (Doc 01A §41 keys on a profile), so the provider's own behaviour and
+ *     timing are kept exactly as they were;
+ *   - within the limit: `send`;
+ *   - over the limit: `suppress`;
+ *   - the lookup or the ledger unreadable: `suppress`, logged at ERROR. A limiter that opens on
+ *     failure is not one (Doc 01A §39's fail-closed posture), and the response does not change.
+ *
+ * Never logged: the address, the profile id, a token. Only the event and the request id.
+ */
+export async function decidePasswordResetSend(
+  email: string,
+  requestId?: string,
+): Promise<PasswordResetDecision> {
+  try {
+    const { data, error } = await supabaseServer.rpc("password_reset_subject", {
+      p_email: email.trim().toLowerCase(),
+    });
+    if (error) throw new Error("password_reset_subject_failed");
+    if (typeof data !== "string" || data.length === 0) return "send";
+
+    const result = await checkAndIncrement(
+      supabaseServer as unknown as LedgerClient,
+      { profileId: data, bucketKey: PASSWORD_RESET_BUCKET },
+    );
+    if (!result.allowed) {
+      logger.info(
+        "AUTH",
+        "password_reset_throttled",
+        "Reset email suppressed: the account's hourly reset limit is reached",
+        { requestId },
+      );
+      return "suppress";
+    }
+    return "send";
+  } catch (error: unknown) {
+    logger.error(
+      "AUTH",
+      "password_reset_throttle_unavailable",
+      "Reset throttle unreadable; no email sent (fail closed)",
+      undefined,
+      {
+        requestId,
+        reason:
+          error instanceof RateLimitUnavailableError
+            ? "ledger_unavailable"
+            : "lookup_failed",
+      },
+    );
+    return "suppress";
+  }
+}
+
+/**
+ * @spec [Doc 01 §12.1 step 2; AS3-AS5-RESET-ENUM-001; SCL-197 (PROPOSED)] | @implemented [2026-10-02]
+ *
+ * plain English: every reset response, sent or suppressed, known address or not, is held until at
+ * least this long after the request began. Only a request that sends reaches the provider, so
+ * without the floor a suppressed (over-limit) request would answer measurably faster, and that
+ * speed would say "this address has an account". The floor is set above the provider's usual
+ * round trip, so all three outcomes leave at the same time in the common case.
+ *
+ * Trade-offs, stated: a provider call slower than the floor still finishes later than a suppressed
+ * request, so this narrows the timing channel rather than closing it; and every reset request costs
+ * the requester about two seconds, which a "check your email" flow absorbs. The residual is recorded
+ * for the owner in SCL-197. Edge case: the floor is measured from the handler's start, so it never
+ * adds to a request that already took longer.
+ */
+export const PASSWORD_RESET_RESPONSE_FLOOR_MS = 2_000;
+
+let responseFloorOverrideMs: number | null = null;
+
+/** Tests shorten the floor; they never remove it. */
+export function setPasswordResetResponseFloorForTests(ms: number | null): void {
+  responseFloorOverrideMs = ms;
+}
+
+export async function holdPasswordResetResponse(
+  startedAtMs: number,
+): Promise<void> {
+  const floor = responseFloorOverrideMs ?? PASSWORD_RESET_RESPONSE_FLOOR_MS;
+  const wait = startedAtMs + floor - Date.now();
+  if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
+}
+
+/**
+ * @spec [Doc 01 §12.1 step 6 ("reset completes → all active sessions invalidated"); Brief 12
+ *        ruling 1; register F-46] | @implemented [2026-10-02]
+ *
+ * plain English: after a recovery password update succeeds, sign out every OTHER session of the
+ * account, so a device that knew the old password is locked out; the recovery session itself is
+ * kept, so the student lands signed in. Same call, scope and failure handling as the deletion
+ * request (F-32): best-effort, one ERROR line with the request id only, and the password update
+ * still succeeds.
+ */
+export async function revokeOtherSessionsAfterRecovery(
+  sessionClient: SupabaseClient,
+  requestId?: string,
+): Promise<void> {
+  await revokeOtherSessions(clients().admin(), sessionClient, {
+    component: "AUTH",
+    event: "password_reset_revoke_failed",
+    message:
+      "Session revoke failed after a recovery password update; the update stands",
+    requestId,
+  });
 }

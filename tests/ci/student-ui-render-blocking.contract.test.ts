@@ -103,14 +103,25 @@ describe("UI-12 no synchronous third-party script in index.html", () => {
     expect(INDEX_HTML).not.toMatch(/replit/i);
   });
 
-  it("R2.2 every script is a module, async or deferred", () => {
+  it("R2.2 every external script is a module, async or deferred", () => {
     const scripts = [...INDEX_HTML.matchAll(/<script\b[^>]*>/gi)].map(
       (m) => m[0],
     );
-    expect(scripts.length).toBeGreaterThan(0);
-    for (const tag of scripts) {
+    const external = scripts.filter((tag) => /\bsrc\s*=/i.test(tag));
+    expect(external.length).toBeGreaterThan(0);
+    for (const tag of external) {
       expect(tag).toMatch(/type\s*=\s*["']module["']|\basync\b|\bdefer\b/i);
     }
+  });
+
+  // UI-47 (theme before first paint) needs one synchronous INLINE script: it makes no request,
+  // so it is not a render-blocking resource, and deferring it would paint the wrong theme first.
+  // It is the only inline script allowed (amended 2026-10-02, Brief 13 Step 1).
+  it("R2.3 the only inline script is the theme boot", () => {
+    const inline = [...INDEX_HTML.matchAll(/<script\b[^>]*>/gi)]
+      .map((m) => m[0])
+      .filter((tag) => !/\bsrc\s*=/i.test(tag));
+    expect(inline).toEqual(['<script id="lyceon-theme-boot">']);
   });
 });
 

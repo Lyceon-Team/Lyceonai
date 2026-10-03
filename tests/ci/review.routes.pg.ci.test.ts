@@ -505,6 +505,115 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // A3b — F-49: the stored answer is the canonical key, like practice
+  // -------------------------------------------------------------------------
+  it("A3b: an answer is stored as the canonical key, on the item and on the attempt row, never the served token", async () => {
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+    const created = await createSession();
+    const sessionId = created.body.sessionId as string;
+    const next = await nextItem(sessionId);
+    const itemId = next.body.sessionItemId as string;
+    const token = await tokenFor(itemId, "A");
+    // Presence: the client answers with an opaque served token.
+    expect(token).toMatch(/^opt_[0-9a-f]{16}$/);
+
+    const answered = await request(app)
+      .post("/api/review/answer")
+      .send({ sessionId, sessionItemId: itemId, selectedAnswer: token });
+    expect(answered.status).toBe(200);
+
+    const item = await testPg!.query(
+      `SELECT selected_answer FROM public.review_session_items WHERE id = $1`,
+      [itemId],
+    );
+    expect(item.rows[0].selected_answer).toBe("A");
+    const attempt = await testPg!.query(
+      `SELECT selected_answer FROM public.review_error_attempts WHERE session_item_id = $1`,
+      [itemId],
+    );
+    expect(attempt.rows).toHaveLength(1);
+    expect(attempt.rows[0].selected_answer).toBe("A");
+  });
+
+  // -------------------------------------------------------------------------
+  // A3c — F-49 backfill: legacy token rows map to canonical keys, once
+  // -------------------------------------------------------------------------
+  it("A3c: the backfill maps legacy token answers to canonical keys on both tables, idempotently, and rolls back on an unmappable token", async () => {
+    const backfill = fs.readFileSync(
+      // F49_BACKFILL_PATH lets a reviewer point the test at a broken copy to watch it fail.
+      process.env.F49_BACKFILL_PATH ??
+        "scripts/ops/review-selected-answer-backfill.sql",
+      "utf8",
+    );
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+    const created = await createSession();
+    const sessionId = created.body.sessionId as string;
+    const next = await nextItem(sessionId);
+    const itemId = next.body.sessionItemId as string;
+    const tokenA = await tokenFor(itemId, "A");
+    const answered = await request(app)
+      .post("/api/review/answer")
+      .send({ sessionId, sessionItemId: itemId, selectedAnswer: tokenA });
+    expect(answered.status).toBe(200);
+
+    // A legacy row: what the route stored before the fix, on both tables.
+    await testPg!.query(
+      `UPDATE public.review_session_items SET selected_answer = $2 WHERE id = $1`,
+      [itemId, tokenA],
+    );
+    await testPg!.query(
+      `UPDATE public.review_error_attempts SET selected_answer = $2 WHERE session_item_id = $1`,
+      [itemId, tokenA],
+    );
+    const answers = async (): Promise<[string, string]> => {
+      const i = await testPg!.query(
+        `SELECT selected_answer FROM public.review_session_items WHERE id = $1`,
+        [itemId],
+      );
+      const a = await testPg!.query(
+        `SELECT selected_answer FROM public.review_error_attempts WHERE session_item_id = $1`,
+        [itemId],
+      );
+      return [i.rows[0].selected_answer, a.rows[0].selected_answer];
+    };
+    // Presence: the legacy token is really there before the backfill runs.
+    expect(await answers()).toEqual([tokenA, tokenA]);
+
+    type Counts = { phase: string; items_token: number; attempts_token: number };
+    const countsOf = (results: unknown): Counts[] => {
+      const list = Array.isArray(results) ? results : [results];
+      const hit = list.find(
+        (r: { rows?: Array<Record<string, unknown>> }) =>
+          Array.isArray(r.rows) && r.rows.length > 0 && "phase" in r.rows[0]!,
+      ) as { rows: Counts[] };
+      return hit.rows;
+    };
+
+    const first = countsOf(await testPg!.query(backfill));
+    expect(first).toEqual([
+      { phase: "before", items_token: 1, attempts_token: 1 },
+      { phase: "after", items_token: 0, attempts_token: 0 },
+    ]);
+    expect(await answers()).toEqual(["A", "A"]);
+
+    // Idempotent: a second run finds nothing to change.
+    const second = countsOf(await testPg!.query(backfill));
+    expect(second).toEqual([
+      { phase: "before", items_token: 0, attempts_token: 0 },
+      { phase: "after", items_token: 0, attempts_token: 0 },
+    ]);
+    expect(await answers()).toEqual(["A", "A"]);
+
+    // Fail closed: a token the map does not hold rolls the whole run back.
+    await testPg!.query(
+      `UPDATE public.review_session_items SET selected_answer = 'opt_0000000000000000' WHERE id = $1`,
+      [itemId],
+    );
+    await expect(testPg!.query(backfill)).rejects.toThrow(/F-49 backfill/);
+    await testPg!.query("ROLLBACK");
+  });
+
+  // -------------------------------------------------------------------------
   // A4 — create idempotency
   // -------------------------------------------------------------------------
   it("A4: a repeated create idempotency_key returns the same session", async () => {

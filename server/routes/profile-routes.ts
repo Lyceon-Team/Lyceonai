@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { resolveFeatureAccess } from "../lib/feature-access";
 import { z } from "zod";
 import {
   getSupabaseAdmin,
@@ -237,8 +238,13 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
+    // OQ-29 (owner ruling 2026-10-02): the rail locks and the upgrade-vs-age choice, computed by
+    // each gated route's own predicate. A display hint; every route still enforces.
+    const featureAccess = await resolveFeatureAccess(user);
+
     return res.json({
       authenticated: true,
+      featureAccess,
       // Server-authority flags + grace-window state (see the @spec note above).
       featureFlags: {
         accountDeletionLifecycleV2: lifecycleV2,
