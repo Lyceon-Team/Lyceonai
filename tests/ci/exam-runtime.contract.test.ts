@@ -139,9 +139,12 @@ describe("router surface (Doc 04A §16 + SCL-145/146; no admin surface)", () => 
     expect(routes.join(" ")).not.toMatch(/admin|publish|outbox|report/);
   });
 
-  it("the 04C report router mounts exactly the two student reads (§16.1)", () => {
+  it("the 04C report router mounts exactly the two student reads (§16.1) and the scored list (§16.3, OQ-30)", () => {
+    // OQ-30 (owner ruling 2026-10-02): GET /sessions?state=scored, the student's score
+    // history — Doc 04C §16.3's V1.1 listing, approved for now. Nothing else joins it.
     expect(surface(examReportRouter)).toEqual(
       [
+        "GET /sessions",
         "GET /sessions/:session_id/report",
         "GET /sessions/:session_id/report/status",
       ].sort(),

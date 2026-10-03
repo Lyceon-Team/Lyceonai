@@ -62,6 +62,9 @@ import { ENTITLEMENT_REQUIRED_CODE } from "../../packages/shared/src/entitlement
 // Defined beside the service so a non-route caller (the calendar adapter) reads the same
 // key without importing this router; re-exported so existing importers are unchanged.
 export { EXAM_FEATURE_KEY };
+/** The UI-01 exam denial message; shared with the 04C router's score-history list (OQ-30). */
+export const EXAM_ENTITLEMENT_DENIED_MESSAGE =
+  "Full-length exams need an active subscription.";
 const COMPONENT = "EXAM_ROUTES";
 
 const router = Router();
@@ -164,7 +167,7 @@ async function authorizeExamCaller(
       {
         status: 403,
         code: ENTITLEMENT_REQUIRED_CODE,
-        message: "Full-length exams need an active subscription.",
+        message: EXAM_ENTITLEMENT_DENIED_MESSAGE,
         details: { feature: EXAM_FEATURE_KEY },
       },
       req.requestId,

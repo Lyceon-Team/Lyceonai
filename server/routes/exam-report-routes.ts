@@ -9,8 +9,9 @@
  * @implemented [2026-09-25]
  *
  * plain English: the two 04C student reads, on their own router (the 04A runtime
- * router stays report-free). Order, per 04C §16.5 rather than the generic
- * auth -> entitlement -> Zod order: auth (401) -> Zod params (400) -> ownership in
+ * router stays report-free), plus the OQ-30 scored-sessions list at the bottom of this
+ * file (its own order and gate — see its annotation). The two per-session reads run
+ * in 04C §16.5's order rather than the generic auth -> entitlement -> Zod order: auth (401) -> Zod params (400) -> ownership in
  * SQL (403, no body detail) -> entitlement, which for an OWNED session classifies
  * as `revoked` and answers 200 `unavailable` -> derive -> one serializer per state.
  * Entitlement is only consulted after ownership, so a probe for someone else's
@@ -35,6 +36,7 @@ import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
 import {
   ReportIntegrityError,
+  listScoredSessions,
   readExamReport,
 } from "../services/exam-report-service";
 import { examSessionParamsSchema } from "../../packages/shared/src/exam-runtime-schema";
@@ -47,7 +49,16 @@ import {
   toStudentExamReport,
   type ExamStudentReportPayload,
 } from "../../packages/shared/src/exam-student-report-schema";
-import { EXAM_FEATURE_KEY } from "./exam-runtime-routes";
+import {
+  EXAM_ENTITLEMENT_DENIED_MESSAGE,
+  EXAM_FEATURE_KEY,
+} from "./exam-runtime-routes";
+import {
+  EXAM_SCORED_SESSIONS_LIMIT,
+  examScoredSessionsQuerySchema,
+  type ExamScoredSessionsPayload,
+} from "../../packages/shared/src/exam-scored-sessions-schema";
+import { ENTITLEMENT_REQUIRED_CODE } from "../../packages/shared/src/entitlement-denial";
 import { logRejectedRequest, routeOf } from "../lib/validation-log";
 
 const COMPONENT = "EXAM_REPORT";
@@ -197,6 +208,127 @@ router.get(
     const status = await reportFor(req, res, "report_status", toStatus);
     if (status === null) return;
     return res.status(200).json({ data: status, meta: meta(req) });
+  },
+);
+
+/**
+ * OQ-30 — the student's scored full-length sessions (score history).
+ *
+ * @spec [Doc-04C_V1.0 §16.3 (multi-session listing; deferred to V1.1 there, built now on the
+ *        owner's ruling below), §15.1 (disclosure on every scaled score), §16.7 (codes), §16.8
+ *        (envelope {data, meta})]
+ *       [Doc-04A_V2.2 §16.1 step 2, §16.2; SCL-185 (UI-01): the exam entitlement denial]
+ *       [Owner ruling (Karl) 2026-10-02, student-ui register §9 OQ-30: "approved. A read of the
+ *        student's completed full-length results (date, total, sections)."; OQ-31]
+ * @implemented [2026-10-03]
+ *
+ * plain English: GET /api/tests/sessions?state=scored. Coding Standards §8.1 order, which is
+ * NOT the per-session §16.5 order above: there is no session id to classify, so nothing can
+ * be enumerated and the `revoked` → 200 `unavailable` branch has no subject. The gate is the
+ * exam runtime's: auth (401) -> canAccessFeature(exam_full_length), refused with the UI-01
+ * body (403, `entitlement_required`, `details.feature: "exam_full_length"`) -> Zod query (400;
+ * only `state=scored`) -> one SQL read restricted to the caller's own sessions -> the strict
+ * wire schema -> {data, meta}.
+ *
+ * trade-offs / edge cases:
+ *  - A lapsed student gets the 403, not a list of `unavailable` rows: the entitlement denial is
+ *    the exam surface's (UI-01) and the owner's gate for this read; their per-session reports
+ *    still answer 200 `unavailable` (§11.5b).
+ *  - No cursor (§16.3 gives no rule): at most EXAM_SCORED_SESSIONS_LIMIT newest rows. Hitting
+ *    the cap is logged (`truncated`), never signalled by an extra payload field.
+ *  - Logs carry the request id, the row count and the truncation flag — never a score.
+ */
+router.get(
+  "/sessions",
+  ...studentGuards,
+  async (req: Request, res: Response) => {
+    const user = req.user;
+    if (user === undefined) {
+      return sendError(
+        req,
+        res,
+        401,
+        "unauthenticated",
+        "Sign in to continue.",
+      );
+    }
+    try {
+      if (
+        !(await EntitlementService.canAccessFeature(user.id, EXAM_FEATURE_KEY))
+      ) {
+        logger.info(
+          COMPONENT,
+          "entitlement_denied",
+          "a caller without exam_full_length was refused",
+          { path: req.path, requestId: req.requestId },
+        );
+        return sendError(
+          req,
+          res,
+          403,
+          ENTITLEMENT_REQUIRED_CODE,
+          EXAM_ENTITLEMENT_DENIED_MESSAGE,
+          { feature: EXAM_FEATURE_KEY },
+        );
+      }
+      const query = examScoredSessionsQuerySchema.safeParse(req.query);
+      if (!query.success) {
+        return sendError(
+          req,
+          res,
+          400,
+          "invalid_request",
+          "Invalid input",
+          query.error.flatten(),
+        );
+      }
+      const read = await listScoredSessions(user.id);
+      const data: ExamScoredSessionsPayload = read.payload;
+      logger.info(COMPONENT, "scored_sessions", "scored sessions served", {
+        requestId: req.requestId,
+        count: data.sessions.length,
+        truncated: read.truncated,
+        limit: EXAM_SCORED_SESSIONS_LIMIT,
+      });
+      return res.status(200).json({ data, meta: meta(req) });
+    } catch (error) {
+      if (error instanceof ReportIntegrityError) {
+        logger.error(
+          COMPONENT,
+          "report_data_integrity_violation",
+          "report invariant violated",
+          {
+            operation: "scored_sessions",
+            requestId: req.requestId,
+            reason: error.message,
+          },
+        );
+        return sendError(
+          req,
+          res,
+          500,
+          "report_data_integrity_violation",
+          "This report can't be shown right now.",
+        );
+      }
+      logger.error(
+        COMPONENT,
+        "scored_sessions_failed",
+        "an exam report route failed",
+        {
+          operation: "scored_sessions",
+          requestId: req.requestId,
+          reason: error instanceof Error ? error.message : "unknown",
+        },
+      );
+      return sendError(
+        req,
+        res,
+        500,
+        "internal_error",
+        "Something went wrong.",
+      );
+    }
   },
 );
 
