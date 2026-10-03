@@ -19,3 +19,6 @@ export { FullPageLoader, type FullPageLoaderProps } from "./FullPageLoader";
 export { Modal, ModalClose, type ModalProps } from "./Modal";
 export { Sheet, SheetClose, type SheetProps } from "./Sheet";
 export { Notice, type NoticeProps, type NoticeTone } from "./Notice";
+// UI-43: the shared Practice/Review filter bar. Consumed by the Wave 5 page rows (UI-51, UI-52).
+export { FilterBar, type FilterBarProps } from "./filter-bar/FilterBar";
+export { EMPTY_FILTER, type FilterBarValue } from "./filter-bar/filter-cascade";
