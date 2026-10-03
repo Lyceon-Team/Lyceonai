@@ -78,6 +78,11 @@ const LOCKED_FORMULA_CONSTANTS = [
 const SCORING_FUNCTIONS = new Set([
   "compute_section_projection",
   "bump_projection_refresh_counter",
+  // SCL-206: the 05C §8.3 outbox consumer — it calls the projection, so no projection
+  // constant may be smuggled in one call up.
+  "projection_refresh_outbox_process",
+  "projection_refresh_outbox_drain",
+  "projection_refresh_after_exam",
 ]);
 const PROJECTION_DENY = [
   ["200","SECTION_MIN_SCORE"],["800","SECTION_MAX_SCORE"],["600","section-score span (MAX-MIN)"],

@@ -4,10 +4,14 @@
 #       contract ws3-05b-05c §D/§E/§G3) — HARD CI GATES
 # ============================================================================
 # Against a THROWAWAY Postgres with the full migration pipeline applied (genesis..05b..05c):
-#   G3 PROJECTION PARITY — compute_section_projection (State A) over seeded domain mastery +
-#      section KPI == Python reference (scripts/ci/projection_parity.py) == Doc 05C §6 worked
-#      examples, bit-exact (mid/low/high exact integers after round-to-10), incl. Example 2
-#      Math 480 (380-580), a zero-evidence widest-band case, and a high-mastery case.
+#   G3 PROJECTION PARITY — compute_section_projection (States A/B/C) over seeded domain mastery +
+#      section KPI + completed full-lengths == Python reference (scripts/ci/projection_parity.py)
+#      == Doc 05C §6 worked examples and §13.1 P1-P5, bit-exact (mid/low/high exact integers after
+#      round-to-10; denominator, fl_count and the two exams picked), incl. Example 1 Math 630
+#      (610-660), Example 2 Math 480 (380-580), a zero-evidence widest-band case, a high-mastery
+#      case, and P4 (a third, older exam ignored) / P5 (an abandoned exam ignored). SCL-206.
+#      The real view behind the full-length terms is proven end to end, with real exams, by
+#      scripts/ci/projection-full-length-gates.sh.
 #   SNAPSHOT — every compute appends an immutable snapshot row (Q6 audit trail, INV-05C-17).
 #   GATE — below the Q4 8-domain gate the projection columns are ALL NULL (INV-05C-14); the row
 #      is still upserted ("not enough evidence yet").
@@ -43,17 +47,29 @@ for f in "$ROOT"/supabase/migrations/*.sql; do psql_db "$DB" -q -f "$f" >/dev/nu
 # explicit profiles rows are authoritative and not pre-empted by the trigger's default insert.
 psql_db "$DB" -q -c "DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;" >/dev/null
 
-echo "==> G3: projection parity (State A == Python reference == Doc 05C §6 worked examples)"
+# G3's full-length terms need exact section scores (560, 600, 640, ...), which only a
+# controlled seed gives. In THIS throwaway database the 04B view full_length_section_scores is
+# replaced by a table of its exact columns (SCL-157 / 05D §12.2), so the fixtures can insert the
+# rows the formula reads. Nothing else depends on the view; compute_section_projection binds the
+# name at call time. The real view is exercised by projection-full-length-gates.sh.
+psql_db "$DB" -q >/dev/null <<'SQL'
+DROP VIEW public.full_length_section_scores;
+CREATE TABLE public.full_length_section_scores (
+  student_id uuid NOT NULL, section text NOT NULL, section_scaled_score integer NOT NULL,
+  is_complete boolean NOT NULL, completed_at timestamptz, id uuid NOT NULL PRIMARY KEY);
+SQL
+
+echo "==> G3: projection parity (States A/B/C == Python reference == Doc 05C §6 / §13.1)"
 python3 "$ROOT/scripts/ci/projection_parity.py" gen | psql_db "$DB" -q -tA -f - > "$PSQL_OUT"
 python3 "$ROOT/scripts/ci/projection_parity.py" check --psql-out "$PSQL_OUT"
 
 echo "==> SNAPSHOT: each compute appended an immutable snapshot row (Q6 / INV-05C-17)"
-# Three fixtures computed once each => >= 3 current rows and >= 3 snapshot rows (one per compute).
+# Nine fixtures computed once each => 9 current rows and 9 snapshot rows (one per compute).
 SNAP=$(psql_db "$DB" -tAc "
   SELECT (SELECT count(*) FROM public.student_section_projections WHERE projected_score_mid IS NOT NULL)::text
     ||'|'|| (SELECT count(*) FROM public.student_section_projection_snapshots WHERE projected_score_mid IS NOT NULL)::text;")
-if [ "$SNAP" = "3|3" ]; then echo "    OK 3 current rows + 3 snapshot rows (current|snapshot = $SNAP)"
-else echo "  FAIL: current|snapshot rows = $SNAP (expected 3|3)"; exit 1; fi
+if [ "$SNAP" = "9|9" ]; then echo "    OK 9 current rows + 9 snapshot rows (current|snapshot = $SNAP)"
+else echo "  FAIL: current|snapshot rows = $SNAP (expected 9|9)"; exit 1; fi
 
 echo "==> Q4 GATE: below the 8-domain gate the projection columns are ALL NULL (INV-05C-14)"
 psql_db "$DB" -q >/dev/null <<'SQL'
@@ -154,4 +170,4 @@ DET=$(psql_db "$DB" -q -tAc "
 if [ "$DET" = "480,380,580" ]; then echo "    OK re-compute is deterministic (Example 2 stays 480,380,580)"
 else echo "  FAIL: determinism re-compute = $DET (expected 480,380,580)"; exit 1; fi
 
-echo "05C SECTION-PROJECTION (STATE A) GATES: PASS"
+echo "05C SECTION-PROJECTION (STATES A/B/C) GATES: PASS"

@@ -4528,8 +4528,8 @@ DECLARE
   v_gate_passed       boolean;
   v_weighted_mastery  numeric;
   v_mastery_term      numeric;
-  v_fl1_score         integer;     -- State A: always NULL (no full-lengths pre-WS-4)
-  v_fl2_score         integer;     -- State A: always NULL (no full-lengths pre-WS-4)
+  v_fl1_score         integer;     -- most recent completed full-length, this section (§5.7)
+  v_fl2_score         integer;     -- second most recent completed full-length, this section
   v_fl_count_used     integer;
   v_blend_numerator   numeric;
   v_blend_denominator integer;
@@ -4641,22 +4641,42 @@ BEGIN
     v_mastery_term :=
         v_section_min + (v_weighted_mastery * (v_section_max - v_section_min));
 
-    -- §5.7 resolve the full-length terms and compute the blend (INV-05C-13).
-    -- ┌─ NAMED FORWARD-REF (WS-4, BLOCKING_UPSTREAM_GAP — 04B object unnamed) ────────────────────┐
-    -- │ States B/C read the 04B completed-full-length section-score surface (the two most recent  │
-    -- │ completed full-lengths by completed_at, tiebreak id desc), adding fl1/fl2 to the numerator │
-    -- │ and 1/2 to the denominator. Doc 05C §5.7 / §11.C mark that object BLOCKING_UPSTREAM_GAP    │
-    -- │ until Doc 04B names it (columns student_id, section, section_scaled_score, is_complete,    │
-    -- │ completed_at, id; "completed = both modules submitted and scored"). State A has NO 04B     │
-    -- │ dependency, so NO full_length_section_scores read appears here — it is added in WS-4. The  │
-    -- │ blend numerator ALWAYS seeds with v_mastery_term (INV-05C-13), so the WS-4 addition is     │
-    -- │ purely additive (denominator 1 -> 2 -> 3) with no body restructure.                        │
-    -- └───────────────────────────────────────────────────────────────────────────────────────────┘
-    v_fl1_score         := NULL;   -- State A
-    v_fl2_score         := NULL;   -- State A
-    v_blend_numerator   := v_mastery_term;                 -- mastery term always present (INV-05C-13)
-    v_blend_denominator := 1;                              -- State A (no full-lengths pre-WS-4)
-    v_fl_count_used     := v_blend_denominator - 1;        -- 0 in State A
+    -- §5.7 resolve the full-length terms and compute the blend (INV-05C-13). The two most recent
+    -- COMPLETED full-lengths for this section, by completed_at, tiebreak id desc — §5.7 verbatim,
+    -- bound to the 04B surface SCL-157 named (full_length_section_scores; is_complete = the session
+    -- completed, so a partial/abandoned test never contributes, P5). A third, older one is never
+    -- read (P4). No staleness rule in V1.0 (Q1 State D).
+    SELECT fl.section_scaled_score
+    INTO   v_fl1_score
+    FROM   public.full_length_section_scores fl
+    WHERE  fl.student_id  = p_student_id
+      AND  fl.section     = p_section
+      AND  fl.is_complete = true
+    ORDER BY fl.completed_at DESC, fl.id DESC
+    LIMIT 1;
+
+    SELECT fl.section_scaled_score
+    INTO   v_fl2_score
+    FROM   public.full_length_section_scores fl
+    WHERE  fl.student_id  = p_student_id
+      AND  fl.section     = p_section
+      AND  fl.is_complete = true
+    ORDER BY fl.completed_at DESC, fl.id DESC
+    OFFSET 1 LIMIT 1;
+
+    -- The denominator adapts to how many full-lengths exist (States A/B/C). The mastery term is
+    -- ALWAYS present (INV-05C-13): the projection is never the full-length alone, never a clamp.
+    v_blend_numerator   := v_mastery_term;
+    v_blend_denominator := 1;
+    IF v_fl1_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl1_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    IF v_fl2_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl2_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    v_fl_count_used     := v_blend_denominator - 1;        -- 0, 1 or 2
     v_blended_raw       := v_blend_numerator / v_blend_denominator;
 
     -- §5.8 bounded range. relevant_question_count = 05B student_section_kpi.events_total (the same
@@ -5689,7 +5709,7 @@ BEGIN
 
   v_at := COALESCE(v_s.completed_at, v_s.abandoned_at, v_run.computed_at);
 
-  -- R4 — review: served items of submitted modules, wrong or blank.
+  -- R4 — review: served items of SUBMITTED SECTIONS (SCL-205), wrong or blank.
   FOR it IN
     SELECT i.section, i.module, i.ordinal, i.question_id, a.answer
       FROM test_session_items i
@@ -5699,8 +5719,7 @@ BEGIN
         ON a.test_session_id = i.test_session_id AND a.section = i.section
        AND a.module = i.module AND a.ordinal = i.ordinal
      WHERE i.test_session_id = v_s.id
-       AND (   (i.module = '1' AND sec.state IN ('module1_submitted', 'module2_active', 'submitted'))
-            OR (i.module <> '1' AND sec.state = 'submitted'))
+       AND sec.state = 'submitted'   -- SCL-205: both modules submitted, or nothing
        AND NOT is_answer_correct(a.answer, i.question_id)
      ORDER BY CASE i.section WHEN 'RW' THEN 1 ELSE 2 END, i.module, i.ordinal
   LOOP
@@ -8712,6 +8731,121 @@ BEGIN
   END IF;
 
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_after_exam(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_session uuid;
+  v_id      bigint;
+BEGIN
+  SELECT aggregate_id INTO v_session FROM public.exam_runtime_outbox
+   WHERE id = p_seams_outbox_event_id
+     AND event_type = 'test_session_scored'
+     AND status = 'published';
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('outcome', 'seams_not_published');
+  END IF;
+
+  SELECT outbox_id INTO v_id FROM public.projection_refresh_outbox
+   WHERE test_session_id = v_session
+     AND processed_at IS NULL
+   FOR UPDATE SKIP LOCKED;
+  IF NOT FOUND THEN
+    -- a partial session (no row), an anonymised student (no row), or already refreshed
+    RETURN jsonb_build_object('outcome', 'nothing_pending');
+  END IF;
+
+  PERFORM public.projection_refresh_outbox_process(v_id);
+  RETURN jsonb_build_object('outcome', 'refreshed');
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_outbox_drain(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_outbox_drain(p_limit integer DEFAULT 50) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r        record;
+  v_done   integer := 0;
+  v_failed integer := 0;
+  v_state  text;
+BEGIN
+  IF p_limit IS NULL OR p_limit < 1 THEN
+    RAISE EXCEPTION 'PROJECTION_DRAIN_INVALID_LIMIT: %', p_limit;
+  END IF;
+
+  FOR r IN
+    SELECT o.outbox_id
+      FROM public.projection_refresh_outbox o
+     WHERE o.processed_at IS NULL
+     ORDER BY o.requested_at, o.outbox_id
+     LIMIT p_limit
+     FOR UPDATE SKIP LOCKED
+  LOOP
+    BEGIN
+      IF public.projection_refresh_outbox_process(r.outbox_id) THEN
+        v_done := v_done + 1;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      -- The row stays unprocessed for the next run; the others still drain. SQLSTATE only:
+      -- projection messages carry the student id.
+      GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE;
+      RAISE WARNING 'PROJECTION_REFRESH_FAILED: outbox_id % sqlstate %', r.outbox_id, v_state;
+      v_failed := v_failed + 1;
+    END;
+  END LOOP;
+
+  RETURN jsonb_build_object('processed', v_done, 'failed', v_failed);
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_outbox_process(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.projection_refresh_outbox%ROWTYPE;
+BEGIN
+  SELECT * INTO v_row FROM public.projection_refresh_outbox
+   WHERE outbox_id = p_outbox_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_row.processed_at IS NOT NULL THEN
+    RETURN false;   -- unknown or already processed: a replay writes nothing
+  END IF;
+
+  PERFORM public.compute_section_projection(v_row.student_id, 'M',  now());
+  PERFORM public.compute_section_projection(v_row.student_id, 'RW', now());
+
+  -- The refresh just happened, so the throttle counter restarts (§8.3 step 2, §8.4).
+  INSERT INTO public.student_projection_refresh_state (student_id, events_since_refresh, last_refresh_at)
+  VALUES (v_row.student_id, 0, now())
+  ON CONFLICT (student_id) DO UPDATE
+     SET events_since_refresh = 0,
+         last_refresh_at      = now();
+
+  UPDATE public.projection_refresh_outbox
+     SET processed_at = now()
+   WHERE outbox_id = p_outbox_id;
+  RETURN true;
 END;
 $$;
 
@@ -21513,6 +21647,30 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.profiles_lock_date_of_birth() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION projection_refresh_after_exam(p_seams_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION projection_refresh_outbox_drain(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_outbox_drain(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_outbox_drain(p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION projection_refresh_outbox_process(p_outbox_id bigint); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) TO service_role;
 
 
 --

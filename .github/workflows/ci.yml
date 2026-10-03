@@ -689,6 +689,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-seams-gates.sh
 
+      # SCL-206: real exams feed the score projection. The two most recent completed
+      # full-lengths, in order, never an older third or an abandoned one; NULL below the
+      # Q4 gate; the API read-through refreshes only its own session; the drain consumes
+      # the rest, survives a row whose refresh raises, and replays as a no-op.
+      # @spec [Doc-05C_V1 §5.7, §8.3, §13.1; SCL-206] | @implemented [2026-10-03]
+      - name: Projection full-length blend gates (SCL-206)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/projection-full-length-gates.sh
+
       # G1: the exam report's per-domain breakdown. Ownership (one bare 403), agreement
       # with score_runs' module counts and the served items, the ROUTING PREMISE on the
       # live forms (2A and 2B identical per domain, SCL-160), the row key allowlist,
@@ -1887,6 +1902,24 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-guardian-exam.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam.json \
             --file tests/ci/guardian-exam-results.handler-pg.ci.test.ts
+
+      # Exam → review: a scored exam's wrong and blank items reach review exactly as a
+      # practice session's do — listed in the past-session picker (dated, named, counted),
+      # reviewable by session, part of the complete queue, resolved by the same triggers;
+      # a partial exam queues only what was submitted, a live one queues nothing.
+      # @spec [Doc-02B_V4 §16; SCL-154, SCL-158] | @implemented [2026-10-03]
+      - name: Exam → review (by session, complete queue) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-review.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-review.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-review.json \
+            --file tests/ci/exam-review.handler-pg.ci.test.ts
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-# @spec [Doc-05C_V1 §5 (compute_section_projection State A) / §6 (formula + §6.7 worked
-#   examples) / §4 (projection constants) / §13 (stress fixture, State-A subset);
-#   contract ws3-05b-05c §D1 / §G3] | @implemented [2026-06-13]
-# plain English: the INDEPENDENT Python reference for the STATE-A section-projection formula
-#   (blend_denominator=1, mastery term alone — no full-lengths pre-WS-4). It re-derives the
+# @spec [Doc-05C_V1 §5 (compute_section_projection States A/B/C) / §6 (formula + §6.7 worked
+#   examples) / §4 (projection constants) / §13.1 P1-P5 (blend states); SCL-206;
+#   contract ws3-05b-05c §D1 / §G3] | @implemented [2026-06-13; States B/C 2026-10-03]
+# plain English: the INDEPENDENT Python reference for the section-projection formula, States
+#   A/B/C: the mean of the mastery term and up to the two most recent COMPLETED full-length
+#   section scores (§5.7/§6.3; denominator 1, 2 or 3). It re-derives the
 #   §6 formula from a LOCAL constants dict matching the seeded mastery_constants values, over
 #   Doc 05C §6.7 worked-example fixtures (at minimum Example 2 Math 480 (380-580), plus a
 #   zero-evidence widest-band case and a high-mastery case). The 05c-projection-gates.sh
@@ -13,8 +14,10 @@
 #
 #   round_to_step uses Python's Decimal ROUND_HALF_UP (away from zero) to mirror Postgres numeric
 #   ROUND (banker's rounding is NOT used; §6.4). evidence band, clamp, and the [200,800] affine
-#   mastery-term map are the §6.5 formula verbatim. STATES B/C are deferred (WS-4) and are NOT
-#   modelled here.
+#   mastery-term map are the §6.5 formula verbatim. The full-length pick is re-derived here from
+#   the fixture's own exam list (filter completed, order by completed_at desc, take two) — not
+#   read back from the database — so a wrong ORDER BY / LIMIT / OFFSET / is_complete filter in
+#   the PL/pgSQL body cannot agree with it by construction.
 #
 # subcommands:
 #   gen   — emit the seed+compute SQL (domain mastery rows + section KPI + compute calls) for the
@@ -71,12 +74,22 @@ def clamp(value: Decimal, lo: int, hi: int) -> Decimal:
     return min(max(value, Decimal(lo)), Decimal(hi))
 
 
-def compute_state_a(section: str, masteries: dict, relevant_qcount: int) -> dict:
-    """The Doc 05C §6 State-A formula (blend_denominator=1)."""
+def pick_full_lengths(full_lengths: list) -> list:
+    """§5.7: the two most recent COMPLETED full-lengths by completed_at (desc). Incomplete
+    (partial/abandoned) tests never count (P5); a third, older one is never used (P4)."""
+    done = [f for f in full_lengths if f["complete"]]
+    done.sort(key=lambda f: f["completed_at"], reverse=True)
+    return [f["score"] for f in done[:2]]
+
+
+def compute(section: str, masteries: dict, relevant_qcount: int, full_lengths: list) -> dict:
+    """The Doc 05C §6 formula, States A/B/C (§6.3: blend_denominator = |inputs|)."""
     c = CONSTANTS
     weighted = sum(masteries[d] * WEIGHTS[section][d] for d in WEIGHTS[section])
     mastery_term = Decimal(c["SECTION_MIN"]) + weighted * (Decimal(c["SECTION_MAX"]) - Decimal(c["SECTION_MIN"]))
-    blended_raw = mastery_term / Decimal(1)  # State A
+    fls = pick_full_lengths(full_lengths)
+    inputs = [mastery_term] + [Decimal(x) for x in fls]   # the mastery term is ALWAYS present
+    blended_raw = sum(inputs) / Decimal(len(inputs))
 
     evidence_ratio = min(max(Decimal(relevant_qcount) / Decimal(c["TARGET_QCOUNT"]), Decimal(0)), Decimal(1))
     delta = c["MAX_DELTA"] - ((c["MAX_DELTA"] - c["MIN_DELTA"]) * evidence_ratio)
@@ -91,8 +104,10 @@ def compute_state_a(section: str, masteries: dict, relevant_qcount: int) -> dict
         "low": low,
         "high": high,
         "range_width": high - low,
-        "blend_denominator": 1,
-        "fl_count_used": 0,
+        "blend_denominator": len(inputs),
+        "fl_count_used": len(fls),
+        "fl1": fls[0] if len(fls) > 0 else None,
+        "fl2": fls[1] if len(fls) > 1 else None,
     }
 
 
@@ -110,7 +125,8 @@ FIXTURES = {
             "Geometry and Trigonometry": Decimal("0.467"),
         },
         "relevant_qcount": 20,
-        "expected": {"mid": 480, "low": 380, "high": 580},
+        "full_lengths": [],
+        "expected": {"mid": 480, "low": 380, "high": 580, "denom": 1, "flc": 0},
     },
     # Zero-evidence widest band: weighted 0.50 -> mastery_term 500; 0 relevant -> delta MAX_DELTA 100
     # -> 500 (400-600), widest possible band.
@@ -123,7 +139,8 @@ FIXTURES = {
             "Geometry and Trigonometry": Decimal("0.5"),
         },
         "relevant_qcount": 0,
-        "expected": {"mid": 500, "low": 400, "high": 600},
+        "full_lengths": [],
+        "expected": {"mid": 500, "low": 400, "high": 600, "denom": 1, "flc": 0},
     },
     # High mastery, full evidence: weighted 0.90 -> mastery_term 740; >= target (500) -> delta MIN 25
     # -> mid 740; low round_to_step(715,10)=720 (71.5 half-up -> 72); high round_to_step(765,10)=770
@@ -137,7 +154,77 @@ FIXTURES = {
             "Geometry and Trigonometry": Decimal("0.90"),
         },
         "relevant_qcount": 500,
-        "expected": {"mid": 740, "low": 720, "high": 770},
+        "full_lengths": [],
+        "expected": {"mid": 740, "low": 720, "high": 770, "denom": 1, "flc": 0},
+    },
+    # ── §13.1 blend states (SCL-206). Shared base: Math weighted mastery 0.4667 -> mastery term
+    # 200 + 0.4667·600 = 480.02 (§13.1 "≈ 0.4667 so mastery_term = 480"). 20 relevant questions
+    # -> delta 97 (as Example 2), so low/high = round(mid ∓ 97). §13.1 states mid, denominator and
+    # fl_count; low/high follow from §6.5 and are written out here.
+    # P1 State A: no full-lengths -> 480 (380-580).
+    "P1_STATE_A": {
+        "section": "M",
+        "masteries": {d: Decimal("0.4667") for d in WEIGHTS["M"]},
+        "relevant_qcount": 20,
+        "full_lengths": [],
+        "expected": {"mid": 480, "low": 380, "high": 580, "denom": 1, "flc": 0},
+    },
+    # P2 State B: one completed Math 560 -> (480.02+560)/2 = 520.01 -> 520 (420-620).
+    "P2_STATE_B": {
+        "section": "M",
+        "masteries": {d: Decimal("0.4667") for d in WEIGHTS["M"]},
+        "relevant_qcount": 20,
+        "full_lengths": [{"score": 560, "completed_at": "2026-09-01T10:00:00Z", "complete": True}],
+        "expected": {"mid": 520, "low": 420, "high": 620, "denom": 2, "flc": 1},
+    },
+    # P3 State C: 560 then 600 -> (480.02+560+600)/3 = 546.67 -> 550 (450-650).
+    "P3_STATE_C": {
+        "section": "M",
+        "masteries": {d: Decimal("0.4667") for d in WEIGHTS["M"]},
+        "relevant_qcount": 20,
+        "full_lengths": [
+            {"score": 560, "completed_at": "2026-09-01T10:00:00Z", "complete": True},
+            {"score": 600, "completed_at": "2026-09-08T10:00:00Z", "complete": True},
+        ],
+        "expected": {"mid": 550, "low": 450, "high": 650, "denom": 3, "flc": 2},
+    },
+    # P4 State C with 3 full-lengths: a third, OLDER 400 is excluded -> identical to P3.
+    "P4_THIRD_OLDER_EXCLUDED": {
+        "section": "M",
+        "masteries": {d: Decimal("0.4667") for d in WEIGHTS["M"]},
+        "relevant_qcount": 20,
+        "full_lengths": [
+            {"score": 400, "completed_at": "2026-08-25T10:00:00Z", "complete": True},
+            {"score": 560, "completed_at": "2026-09-01T10:00:00Z", "complete": True},
+            {"score": 600, "completed_at": "2026-09-08T10:00:00Z", "complete": True},
+        ],
+        "expected": {"mid": 550, "low": 450, "high": 650, "denom": 3, "flc": 2},
+    },
+    # P5 abandoned full-length excluded: its section score exists but is_complete = false
+    # (a partial_scored_abandoned session, SCL-157) -> State A, 480.
+    "P5_ABANDONED_EXCLUDED": {
+        "section": "M",
+        "masteries": {d: Decimal("0.4667") for d in WEIGHTS["M"]},
+        "relevant_qcount": 20,
+        "full_lengths": [{"score": 560, "completed_at": "2026-09-01T10:00:00Z", "complete": False}],
+        "expected": {"mid": 480, "low": 380, "high": 580, "denom": 1, "flc": 0},
+    },
+    # Example 1 (§6.7) State C, high evidence: masteries {0.82, 0.78, 0.70, 0.65} -> mastery term
+    # 657.5; FL1 640 (most recent), FL2 600 -> 632.5 -> 630; 540 relevant -> delta 25 -> 630 (610-660).
+    "EX1_STATE_C": {
+        "section": "M",
+        "masteries": {
+            "Algebra": Decimal("0.82"),
+            "Advanced Math": Decimal("0.78"),
+            "Problem Solving and Data Analysis": Decimal("0.70"),
+            "Geometry and Trigonometry": Decimal("0.65"),
+        },
+        "relevant_qcount": 540,
+        "full_lengths": [
+            {"score": 600, "completed_at": "2026-09-01T10:00:00Z", "complete": True},
+            {"score": 640, "completed_at": "2026-09-08T10:00:00Z", "complete": True},
+        ],
+        "expected": {"mid": 630, "low": 610, "high": 660, "denom": 3, "flc": 2},
     },
 }
 
@@ -154,11 +241,11 @@ def selfcheck() -> int:
     """Reference == Doc 05C §6 expected. Run before three-way comparison."""
     ok = True
     for fid, fx in FIXTURES.items():
-        r = compute_state_a(fx["section"], fx["masteries"], fx["relevant_qcount"])
+        r = compute(fx["section"], fx["masteries"], fx["relevant_qcount"], fx["full_lengths"])
         exp = fx["expected"]
-        for k in ("mid", "low", "high"):
-            if r[k] != exp[k]:
-                print(f"  SELFCHECK FAIL {fid}.{k}: reference={r[k]} expected={exp[k]}", file=sys.stderr)
+        for k, rk in (("mid", "mid"), ("low", "low"), ("high", "high"), ("denom", "blend_denominator"), ("flc", "fl_count_used")):
+            if r[rk] != exp[k]:
+                print(f"  SELFCHECK FAIL {fid}.{k}: reference={r[rk]} expected={exp[k]}", file=sys.stderr)
                 ok = False
         # range coherence (INV-05C-15)
         if not (r["low"] <= r["mid"] <= r["high"] and r["range_width"] == r["high"] - r["low"]):
@@ -166,7 +253,7 @@ def selfcheck() -> int:
             ok = False
     if not ok:
         return 1
-    print(f"PROJECTION SELFCHECK: PASS (reference == Doc 05C §6 expected over {len(FIXTURES)} State-A fixtures)")
+    print(f"PROJECTION SELFCHECK: PASS (reference == Doc 05C §6/§13.1 expected over {len(FIXTURES)} fixtures, States A/B/C)")
     return 0
 
 
@@ -225,6 +312,16 @@ def cmd_gen() -> int:
             "ON CONFLICT (student_id, section) DO UPDATE SET events_total=EXCLUDED.events_total;"
         )
 
+        # The fixture's full-lengths, into the gate's stand-in for full_length_section_scores
+        # (05c-projection-gates.sh replaces the view with a table of its exact columns).
+        for i, fl in enumerate(fx["full_lengths"]):
+            out.append(
+                "INSERT INTO public.full_length_section_scores "
+                "(student_id, section, section_scaled_score, is_complete, completed_at, id) VALUES ("
+                f"{_lit(sid)}, {_lit(section)}, {fl['score']}, {'true' if fl['complete'] else 'false'}, "
+                f"TIMESTAMPTZ {_lit(fl['completed_at'])}, {_lit(str(uuid.uuid5(_NS, f'fl:{fid}:{i}')))});"
+            )
+
         # Compute the projection with a FIXED p_t_now for determinism, then emit a tagged result row.
         out.append(
             "SELECT 'PARITY|' || {fid} || '|' || section || '|' "
@@ -232,7 +329,8 @@ def cmd_gen() -> int:
             "|| COALESCE(projected_score_low::text,'NULL') || '|' "
             "|| COALESCE(projected_score_high::text,'NULL') || '|' "
             "|| COALESCE(range_width::text,'NULL') || '|' "
-            "|| blend_denominator::text || '|' || fl_count_used::text "
+            "|| blend_denominator::text || '|' || fl_count_used::text || '|' "
+            "|| COALESCE(fl1_score::text,'NULL') || '|' || COALESCE(fl2_score::text,'NULL') "
             "FROM public.compute_section_projection("
             "{sid}, {section}, TIMESTAMPTZ '2026-06-13T00:00:00Z');".format(
                 fid=_lit(fid), sid=_lit(sid), section=_lit(section)
@@ -253,12 +351,14 @@ def cmd_check(psql_out: str) -> int:
             if not line.startswith("PARITY|"):
                 continue
             parts = line.split("|")
-            # PARITY | fid | section | mid | low | high | width | denom | fl_count
-            _, fid, section, mid, low, high, width, denom, flc = parts
+            # PARITY | fid | section | mid | low | high | width | denom | fl_count | fl1 | fl2
+            _, fid, section, mid, low, high, width, denom, flc, fl1, fl2 = parts
             rows[fid] = {
                 "section": section,
                 "mid": mid, "low": low, "high": high, "width": width,
                 "denom": int(denom), "flc": int(flc),
+                "fl1": None if fl1 == "NULL" else int(fl1),
+                "fl2": None if fl2 == "NULL" else int(fl2),
             }
 
     # Fail-closed (no false-green): a parser that silently matched zero rows would "pass" with no
@@ -275,7 +375,7 @@ def cmd_check(psql_out: str) -> int:
             print(f"  FAIL {fid}: no PL/pgSQL output row", file=sys.stderr)
             ok = False
             continue
-        ref = compute_state_a(fx["section"], fx["masteries"], fx["relevant_qcount"])
+        ref = compute(fx["section"], fx["masteries"], fx["relevant_qcount"], fx["full_lengths"])
         pg = rows[fid]
         exp = fx["expected"]
         # three-way: PL/pgSQL == Python reference == §6 expected
@@ -292,17 +392,25 @@ def cmd_check(psql_out: str) -> int:
         if int(pg["width"]) != ref["range_width"]:
             print(f"  FAIL {fid}.width: pg={pg['width']} ref={ref['range_width']}", file=sys.stderr)
             ok = False
-        if pg["denom"] != 1 or pg["flc"] != 0:
-            print(f"  FAIL {fid}: State A expects denom=1 fl_count=0, got denom={pg['denom']} flc={pg['flc']}", file=sys.stderr)
+        # blend state: PL/pgSQL == reference == §13.1 expected, and the same two exams picked
+        if not (pg["denom"] == ref["blend_denominator"] == exp["denom"]
+                and pg["flc"] == ref["fl_count_used"] == exp["flc"]):
+            print(f"  FAIL {fid}: denom pg={pg['denom']} ref={ref['blend_denominator']} exp={exp['denom']}; "
+                  f"fl_count pg={pg['flc']} ref={ref['fl_count_used']} exp={exp['flc']}", file=sys.stderr)
+            ok = False
+        if (pg["fl1"], pg["fl2"]) != (ref["fl1"], ref["fl2"]):
+            print(f"  FAIL {fid}: full-lengths used pg=({pg['fl1']}, {pg['fl2']}) ref=({ref['fl1']}, {ref['fl2']})", file=sys.stderr)
             ok = False
         if ok:
             print(f"  OK {fid} ({fx['section']}): {pg['mid']} ({pg['low']}-{pg['high']}) "
-                  f"== ref {ref['mid']} ({ref['low']}-{ref['high']}) == §6 {exp['mid']} ({exp['low']}-{exp['high']})")
+                  f"== ref {ref['mid']} ({ref['low']}-{ref['high']}) == §6 {exp['mid']} ({exp['low']}-{exp['high']}); "
+                  f"denom {pg['denom']}, full-lengths used ({pg['fl1']}, {pg['fl2']})")
 
     if not ok:
         print("PROJECTION PARITY: FAIL", file=sys.stderr)
         return 1
-    print(f"PROJECTION PARITY: PASS (three-way bit-exact over {len(FIXTURES)} State-A fixtures incl. Example 2 Math 480 (380-580))")
+    print(f"PROJECTION PARITY: PASS (three-way bit-exact over {len(FIXTURES)} fixtures, States A/B/C, incl. Example 1 "
+          f"Math 630 (610-660), Example 2 Math 480 (380-580) and §13.1 P1-P5)")
     return 0
 
 
