@@ -3890,6 +3890,8 @@ CREATE FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, 
     AS $_$
 DECLARE
   v_now timestamptz := COALESCE(p_now, now());
+  v_tz text;
+  v_local_day date;
   v_today_start timestamptz;
   v_tomorrow_start timestamptz;
   v_daily_limit integer;
@@ -3933,9 +3935,25 @@ BEGIN
   END IF;
   v_session_limit := v_config_val::integer;
 
-  -- UTC-day boundaries
-  v_today_start := date_trunc('day', v_now AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
-  v_tomorrow_start := v_today_start + interval '1 day';
+  -- Reset timezone from config (required — no hardcoded fallback). Doc 02B §13.
+  SELECT value #>> '{}' INTO v_tz
+  FROM public.practice_runtime_config
+  WHERE key = 'quota_reset_timezone';
+  IF v_tz IS NULL OR v_tz = '' THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Local-day boundaries in the configured zone (DST-correct: each boundary is a local
+  -- midnight converted to an absolute instant, never a fixed offset).
+  BEGIN
+    v_local_day := (v_now AT TIME ZONE v_tz)::date;
+  EXCEPTION WHEN invalid_parameter_value THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END;
+  v_today_start := v_local_day::timestamp AT TIME ZONE v_tz;
+  v_tomorrow_start := (v_local_day + 1)::timestamp AT TIME ZONE v_tz;
   v_reset_at := v_tomorrow_start;
 
   -- Resolve account + entitlement
@@ -3943,18 +3961,18 @@ BEGIN
   v_entitled := public._rl_has_active_entitlement(p_student_user_id);
   v_counts_toward_limit := NOT v_entitled;
 
-  -- Count today's consumed units (UTC-day window)
-  SELECT COALESCE(SUM(units), 0)::integer
+  -- Today's submitted practice answers (Doc 02B §13 "Quota Check Mechanism"). One row per
+  -- answered item: an idempotent replay re-reads the same row, a served or skipped item
+  -- never reaches 'answered'.
+  SELECT count(*)::integer
   INTO v_used
-  FROM public.usage_rate_limit_ledger l
-  WHERE l.scope = 'practice'
-    AND l.student_user_id = p_student_user_id
-    AND l.reservation_state IN ('consumed', 'finalized')
-    AND COALESCE((l.metadata->>'counts_toward_limit')::boolean, true)
-    AND l.created_at >= v_today_start
-    AND l.created_at < v_tomorrow_start;
+  FROM public.practice_session_items psi
+  WHERE psi.user_id = p_student_user_id
+    AND psi.status = 'answered'
+    AND psi.answered_at >= v_today_start
+    AND psi.answered_at < v_tomorrow_start;
 
-  -- Daily cap check (unpaid only)
+  -- Daily cap check (unpaid only) — the one branch the dry run and the serve share.
   IF v_counts_toward_limit AND v_used >= v_daily_limit THEN
     RETURN jsonb_build_object(
       'allowed', false,
@@ -3970,7 +3988,7 @@ BEGIN
     );
   END IF;
 
-  -- Per-session cap (paid users)
+  -- Per-session cap (paid users) — unchanged: counted over the session's serve ledger rows.
   IF p_session_id IS NOT NULL AND v_entitled THEN
     SELECT COALESCE(SUM(units), 0)::integer
     INTO v_session_used
@@ -4012,7 +4030,7 @@ BEGIN
     );
   END IF;
 
-  -- Idempotency: dedupe on session_item_id
+  -- Idempotency: dedupe the serve log on session_item_id
   IF p_session_item_id IS NOT NULL THEN
     v_dedupe_key := 'practice:served:' || p_session_item_id::text;
     SELECT l.id
@@ -4037,7 +4055,7 @@ BEGIN
     );
   END IF;
 
-  -- Insert ledger entry
+  -- Serve log row: feeds the paid per-session cap; the free daily count does not read it.
   INSERT INTO public.usage_rate_limit_ledger (
     scope, event_key, student_user_id, account_id,
     session_id, session_item_id, dedupe_key,
@@ -4055,9 +4073,8 @@ BEGIN
   )
   RETURNING id INTO v_inserted_id;
 
-  IF v_counts_toward_limit THEN
-    v_used := v_used + 1;
-  ELSE
+  -- A serve consumes no free quota (Doc 02B §13): only the paid session count steps.
+  IF NOT v_counts_toward_limit THEN
     v_session_used := v_session_used + 1;
   END IF;
 

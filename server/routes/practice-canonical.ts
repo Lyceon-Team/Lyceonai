@@ -1122,6 +1122,14 @@ function sendClientConflict(
   });
 }
 
+/**
+ * @spec [Doc-02B_V4 §13 "Quota Check Mechanism", "What Counts Against Quota"; owner ruling
+ *        (Karl) 2026-10-03 OQ-43 / F-61] | @implemented [2026-10-03]
+ * plain English: the serve-time gate (session start's first item, `GET /next`). It refuses
+ * (402) when the free student has already SUBMITTED the daily limit in the current
+ * America/Chicago day — the same SQL branch as the dry run behind `GET /quota`. Serving writes
+ * the item's serve-log row (the paid per-session cap reads it) but consumes no free quota.
+ */
 async function reservePracticeQuestionQuota(args: {
   userId: string;
   role: string | undefined;
@@ -1495,6 +1503,8 @@ export async function startOrReplaySession(args: {
   // @spec [Doc-02B_V4 §41; F2 creation-time clamp] | @implemented [2026-06-30]
   // Dry-run remaining daily quota for unpaid users and clamp requestedCount
   // so we never over-materialize sessions beyond the remaining free-tier allowance.
+  // Remaining = daily_quota_free minus answers submitted in the current America/Chicago day
+  // (owner ruling OQ-43 / F-61, 2026-10-03; Doc 02B §13 "Pre-Cap", "Zero Quota Remaining").
   if (args.role !== "admin") {
     try {
       // OQ-21: the one dry-run call, shared with GET /quota so the read and this 402 agree.
@@ -2175,7 +2185,9 @@ async function serveNextForSession(args: {
  * number comes from `dryRunPracticeQuota`, the call the session-start 402 makes, so the read and
  * the refusal cannot disagree; a dry run writes no ledger row. Body: `{unlimited, limit,
  * remaining, resetAt}` (`practiceQuotaSchema`). A paid student, and an admin (the wrapper's admin
- * bypass), read `unlimited: true` with nulls.
+ * bypass), read `unlimited: true` with nulls. Since the OQ-43 / F-61 ruling (Karl, 2026-10-03)
+ * the count is answers submitted in the current America/Chicago day and `resetAt` the next
+ * Chicago midnight (Doc 02B §13); the SQL function changed, this handler did not.
  * edge cases: ledger unavailable, or a decision without numbers → 503 (fail closed, never a
  * guessed number), like the 402 sites. Logs carry the user id and the decision code, nothing else.
  */

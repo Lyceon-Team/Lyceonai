@@ -14,6 +14,9 @@
  *     carries when the quota runs out (`remaining` 0 exactly when the serve route answers 402);
  *   - a paid student: `{unlimited: true, limit: null, remaining: null, resetAt: null}`. The
  *     enforcement skips the daily cap for an active entitlement, so there is no number to show.
+ * "Today" is the local day of `practice_runtime_config.quota_reset_timezone` (America/Chicago),
+ * and `resetAt` its next midnight as an absolute instant; the count is answers submitted, not
+ * questions served (owner ruling OQ-43 / F-61, Karl, 2026-10-03; Doc 02B §13).
  * A display hint only: the serving routes still decide on every request.
  */
 import { z } from "zod";
