@@ -30,6 +30,7 @@ import express, {
   type Request,
   type Response,
 } from "express";
+import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
 import { buildStudentHarnessDb } from "./db";
 import { isStudentPersona, PERSONA_HEADER, PERSONAS } from "./personas";
@@ -94,6 +95,16 @@ async function main(): Promise<void> {
 
   const app = express();
   app.use(express.json());
+  // The same global limiter, with the same values, that server/index.ts mounts before every
+  // route, so the harness's persona lookup and routes sit behind it as production's do.
+  app.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 1000,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+  );
 
   // The persona, read from `profiles` as the real supabaseAuthMiddleware builds req.user. No
   // header (or `signed-out`) leaves req.user unset, so every guarded route answers 401.
