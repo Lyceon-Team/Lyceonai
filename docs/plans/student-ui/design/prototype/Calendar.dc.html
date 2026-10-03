@@ -93,7 +93,7 @@ body{margin:0;background:#FFFAEF}
 <div style="display: flex; align-items: center; gap: 10px; justify-self: start">
 <div role="group" aria-label="View" style="display: flex; border: 1px solid var(--ink-strong); border-radius: 6px; overflow: hidden">
 <sc-for list="{{views}}" as="v" hint-placeholder-count="2">
-<button type="button" onClick="{{v.pick()}}" aria-pressed="{{v.pressed}}" style="height: 40px; padding: 0 16px; border: 0; font-size: 16px; font-weight: 600; cursor: pointer; {{v.tone}}">{{v.label}}</button>
+<button type="button" onClick="{{v.pick}}" aria-pressed="{{v.pressed}}" style="height: 40px; padding: 0 16px; border: 0; font-size: 16px; font-weight: 600; cursor: pointer; {{v.tone}}">{{v.label}}</button>
 </sc-for>
 </div>
 <button type="button" onClick="{{goToday}}" class="btn-quiet" style="height: 40px; padding: 0 16px; border: 1px solid var(--input-bd); border-radius: 6px; background: transparent; color: var(--ink-strong); font-size: 16px; font-weight: 600; cursor: pointer">Today</button>
