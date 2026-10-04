@@ -114,6 +114,20 @@ describe("free-tier claims agree across every public surface", () => {
   });
 
   /**
+   * The free tier's score has ONE name: "diagnostic score estimate" (wording confirmed by Karl,
+   * 2026-10-03; docs/compliance/claim-inventory.md H23/M9). Both copies of the claim, the free
+   * card and the FAQ answer search engines quote, must carry it.
+   */
+  it('names the free tier\'s score "diagnostic score estimate" in the page and the FAQ metadata', () => {
+    expect(readCode(HOME)).toContain("your diagnostic score estimate");
+    const answer = read(META).match(
+      /"What is free vs paid\?",\s*answer:\s*"([^"]+)"/,
+    );
+    expect(answer).not.toBeNull();
+    expect(answer?.[1]).toContain("your diagnostic score estimate");
+  });
+
+  /**
    * THE ASSERTION IS AN ABSENCE, AND IT IS THE ONE THAT MATTERS.
    *
    * `server/routes/tutor-runtime.ts:190` denies every non-entitled profile with

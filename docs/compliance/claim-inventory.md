@@ -46,7 +46,7 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 | "40 practice questions per day" (free) | home pricing card; FAQ "What is free vs paid?" | owner ruling 2026-09-03; parity pinned by `tests/ci/homepage-pricing.contract.test.ts` |
 | "No daily limit on practice questions" (paid) | home pricing card; /digital-sat | answer 3, 2026-10-03 |
 | "Built-in Desmos calculator on every Math question" (Lyceon practice) | FAQ "Can I use a calculator…" | answer 4: a true product claim approved by Karl, no citation; the SAT fact beside it cites CB_CALCULATOR |
-| "A full diagnostic test with your score estimate" | home pricing card; FAQ | answer 1: "score estimate" (**Karl to confirm the final wording**) |
+| "A full diagnostic test and your diagnostic score estimate" | home pricing card; FAQ "What is free vs paid?" | answer 1; wording "diagnostic score estimate" confirmed by Karl, 2026-10-03 (approved) |
 | "We don't sell student data." | home trust strip | approved (H8); matches Privacy Policy v4 |
 | "Study smarter for the SAT" (tagline); titles "Lyceon \| SAT Prep" | home, footer, /digital-sat hero | answer 2 |
 | College Board trademark notice | every public footer, /trust | answer 6 |
@@ -96,7 +96,7 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 | H20 | "Full-length exam outcomes" / "Module-level results and score estimate data…" | e | "Full-length practice test results (paid plans)" / "A score report after each practice test." | approved |
 | H21 | "…adaptive question flow, tutor chat, review cycles, and full-length test readiness." | b, c | "Build a daily SAT routine with practice, review and worked explanations. Upgrade for full-length practice tests, an AI tutor and a study plan." | approved |
 | H22 | "…monitor progress summaries and planning signals, with expanded visibility on paid plans." | b, c | X6 | approved |
-| H23 | "Full diagnostic test and your overall score estimate" | e | "A full diagnostic test with your score estimate" | answer 1 |
+| H23 | "Full diagnostic test and your overall score estimate" | e | "A full diagnostic test and your diagnostic score estimate" | answer 1; wording confirmed by Karl, 2026-10-03 |
 | H24 | "Unlock everything" | e | "Everything in Free, plus:" | approved |
 | H25 | "**Unlimited** practice questions" | e | "No daily limit on practice questions" | answer 3 |
 | H26 | "**Unlimited** tutor chat messages" | b | "AI tutor for step-by-step help" | approved |
@@ -117,7 +117,7 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 | M6 | "…alongside daily adaptive practice and review." | b | "Yes, on paid plans. Daily practice and review are free." | approved |
 | M7 | Q "How does progress tracking work…" | a | Q "Can I track my progress?" A "Yes. You can see your progress by section, with skill-level detail on paid plans." | approved |
 | M8 | Q "How does Lisa work?" | c, e | Removed | approved |
-| M9 | Free-vs-paid answer | e, b | "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test with your score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans." | approved; answer 1 |
+| M9 | Free-vs-paid answer | e, b | "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test and your diagnostic score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans." | approved; answer 1 |
 | M10 | Math domains | d | Kept | CB_MATH |
 | M11 | "…calculator use for the entire Math section, including Bluebook Desmos support." | d | "Yes. You can use a calculator at any point in the Math section, and a Desmos calculator is built into Bluebook, the College Board's testing app." plus the Lyceon line (see the kept-claims table) | CB_CALCULATOR; answer 4 |
 | M12 | "44 total Math questions split into two 22-question modules, with 70 minutes total." | d | "The Math section has 44 questions in two equal-length modules, with 70 minutes in total." | CB_STRUCTURE |
@@ -209,5 +209,5 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 ## Open items (owner)
 
 1. **Billing Terms v2** (`legal/billing-terms/v2/en.md:29`) still reads "Premium unlocks unlimited practice, the LISA tutor, … the complete mastery breakdown … and expanded guardian visibility". This contradicts H25/H26/X6 above. Published legal text changes only as a new version proposed for counsel (Doctrine rule 6; G7), so Wave 1B does not edit it. The guard carries it as one pinned exception that fails once the wording is fixed.
-2. **"score estimate"** (H23/M9): built as answer 1 directs; Karl to confirm the final wording.
+2. ~~**"score estimate"** (H23/M9)~~: closed. Karl confirmed "diagnostic score estimate" on 2026-10-03; applied to the homepage pricing card and the free-vs-paid FAQ (page and JSON-LD).
 3. **Blog dates and author** (B22): unchanged until the C4 rewrite (answer 5).
