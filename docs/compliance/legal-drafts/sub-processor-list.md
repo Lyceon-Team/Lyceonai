@@ -45,7 +45,7 @@ We will update this list before adding a new sub-processor that processes person
 | Slack | `server/services/crisis-notification.ts:13,96-129` (payload: IDs, reason label, SLA, admin link) |
 | Error-monitoring webhook | `server/logger.ts:685-713` (raw IP, digested user ID); destination "unspecified" in `infra/secret-class-inventory.yaml:211` |
 | **Removed since v4:** Google BigQuery | Never installed; nothing archived (SCL-106; `server/services/retention-sweep.ts:349-355`) |
-| **Not listed, being removed:** Google Fonts | `client/index.html:39-48`; to be self-hosted before Privacy Policy v5 (SEO-1) |
+| **Not listed, removed:** Google Fonts | Self-hosted on `seo` by #1088 (`a6944733`, SEO-1); no `fonts.googleapis.com` reference remains in `client/index.html`. Must be live in production before publication |
 
 ---
 

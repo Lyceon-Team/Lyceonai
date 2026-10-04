@@ -334,4 +334,4 @@ Decisions counsel must make before publication:
 11. **"Continued use constitutes acceptance."** v4 §11 had this. It is removed here in favour of notice-before-effect and consent where required. Confirm.
 12. **Analytics retention (§6.6).** v4 §6.6 also said de-identified analytics data is kept "for up to 24 months, then only in aggregate". v5 drops that sentence: Vercel Analytics has no de-identified tier that LYCEON controls, and the BigQuery archive the sentence related to was never used (SCL-106). v5 also narrows the Vercel Analytics statement to public pages, which matches `client/src/lib/analytics-surface.ts`. Confirm.
 13. **Naming safety tooling.** Google Cloud is described only by purpose, "AI services and content safety" (Karl, 2026-10-03). Do not describe how those checks work (doctrine rule 2).
-14. **Google Fonts.** Not listed: fonts are being self-hosted before v5 (SEO-1). v5 must not publish until that change is live in production.
+14. **Google Fonts.** Not listed: fonts are self-hosted on `seo` by #1088 (SEO-1). v5 must not publish until that change is live in production.

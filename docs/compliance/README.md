@@ -41,5 +41,5 @@ Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not pu
 
 Spec departures in these drafts are recorded in SCL-208. Open owner actions:
 - error-monitoring vendor: confirm or turn off;
-- Google Fonts: self-host before Privacy Policy v5 publishes (SEO-1);
+- Google Fonts: self-hosted on `seo` by #1088 (SEO-1); must be live in production before Privacy Policy v5 publishes;
 - postal address and telephone, for the children's notice and marketing emails.
