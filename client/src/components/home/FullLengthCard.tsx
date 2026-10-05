@@ -59,7 +59,11 @@ export function FullLengthCard(): JSX.Element {
       <div>
         {reason === null ? (
           <Button asChild variant="lyc-outline" size="lyc">
-            <Link href={FULL_LENGTH_HREF} data-testid="home-full-length-start">
+            <Link
+              href={FULL_LENGTH_HREF}
+              className="no-underline"
+              data-testid="home-full-length-start"
+            >
               {FULL_LENGTH_CARD_ACTION}
             </Link>
           </Button>
