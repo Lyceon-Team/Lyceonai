@@ -148,6 +148,49 @@ describe("today's question never reaches static HTML (R18, Q3)", () => {
   });
 });
 
+describe("approved QOTD wording (Karl, 2026-10-05; claim inventory open item 4)", () => {
+  const LINE = "A free SAT practice question every day — no account needed.";
+
+  it("the hub title, the homepage and hub line, and each archive description are the approved strings", () => {
+    expect(/<title>([^<]+)<\/title>/.exec(page(HUB).html)?.[1]).toBe(
+      "SAT Question of the Day – Free Daily SAT Practice | Lyceon",
+    );
+    for (const path of ["/", HUB])
+      expect(bodyText(page(path).html), path).toContain(LINE);
+    for (const row of QOTD_ARCHIVE_ROWS) {
+      const description = /<meta name="description" content="([^"]+)"/.exec(
+        page(`${HUB}/${row.qotd_date}`).html,
+      )?.[1];
+      expect(description, row.qotd_date).toMatch(
+        /^An SAT (Math|Reading and Writing): .+ practice question from [A-Z][a-z]+ \d{1,2}, \d{4}, with the correct answer and a worked explanation\.$/,
+      );
+    }
+  });
+
+  it('no QOTD page says "Digital" (the keyword ruling)', () => {
+    const paths = site.pages
+      .map((p) => p.path)
+      .filter((p) => p === HUB || p.startsWith(`${HUB}/`));
+    expect(paths.length).toBeGreaterThanOrEqual(2);
+    for (const path of paths) {
+      const html = page(path).html;
+      const head = html.slice(0, html.indexOf('<div id="root">'));
+      // The page's own content only: the site-wide nav and footer link to /digital-sat by name.
+      const main = html.slice(html.indexOf("<main>"), html.indexOf("</main>"));
+      expect(main.length, path).toBeGreaterThan(0);
+      expect(bodyText(main), path).not.toMatch(/\bDigital\b/);
+      expect(head, path).not.toMatch(/\bDigital\b/);
+    }
+    const home = bodyText(page("/").html);
+    const slot = home.slice(
+      home.indexOf("SAT Question of the Day"),
+      home.indexOf("How it works"),
+    );
+    expect(slot.length).toBeGreaterThan(0);
+    expect(slot).not.toMatch(/\bDigital\b/);
+  });
+});
+
 describe("Public Disclosure Doctrine §0.2 on QOTD pages", () => {
   // Words that would describe the mechanism behind which question appears on which day.
   const MECHANISM =
