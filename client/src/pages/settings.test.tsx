@@ -6,7 +6,7 @@
  *        only once a calendar profile exists), OQ-28 / F-54 (narrow name save, never
  *        `marketingOptIn`), OQ-26 / OQ-41 (`hasPassword`: true and null show Change password,
  *        false hides it), UI-S4 (the current password is required), UI-S7 / F-40 (Billing's three
- *        states from `managedBy`), UI-S8 (About you hidden), OQ-38 (the guardian sentence), UI-44
+ *        states from `managedBy`; the free box in the approved Help FAQ wording, OQ-61 (e)), UI-S8 (About you hidden), OQ-38 (the guardian sentence), UI-44
  *        (`?tab=billing` lands on Billing, also from /profile itself), UI-47 (Appearance per
  *        device; the timed module stays light); DESIGN.md §4 Settings; Coding Standards §14]
  *        | @implemented [2026-10-03]
@@ -58,6 +58,7 @@ import {
   PROFILE_QUERY_KEY,
   type ProfileHydration,
 } from "@/hooks/useProfileQuery";
+import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
 import { getQueryFn } from "@/lib/queryClient";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
@@ -804,6 +805,12 @@ describe("Billing: three states from managedBy and the plan (UI-S7 / F-40)", () 
     });
     const box = await screen.findByTestId("settings-billing-free");
     expect(box.textContent).toContain("Free plan");
+    // OQ-61 (e): the approved Help FAQ wording, the same sentences `/help` and `/upgrade` show,
+    // each a whole paragraph — not the Settings prototype's variant ("a study calendar",
+    // "full-length tests and LISA.").
+    expect(within(box).getByText(PLAN_FREE_INCLUDES).tagName).toBe("P");
+    expect(within(box).getByText(PLAN_PAID_ADDS).tagName).toBe("P");
+    expect(box.textContent).not.toContain("a study calendar");
     expect(screen.queryByTestId("button-manage-billing")).toBeNull();
     fireEvent.click(within(box).getByTestId("button-see-plans"));
     expect(history[history.length - 1]).toBe("/upgrade");

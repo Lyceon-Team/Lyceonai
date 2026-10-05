@@ -1485,6 +1485,22 @@ plant "UI58-B3" "Manage billing never asks the portal route" \
 assert s.count(a) == 1
 s = s.replace(a, "          onClick={() => undefined}", 1)'
 
+# OQ-61 (e): the free box shows the approved Help FAQ wording from `@/lib/plan-copy`. Each plant
+# puts one line back to the Settings prototype's variant, the drift the shared constants prevent.
+plant "UI58-B4" "the Billing free box's free line drifts from the approved wording" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {PLAN_FREE_INCLUDES}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        The diagnostic, your projected score, 40 practice questions a day and unlimited review.\n", 1)'
+
+plant "UI58-B5" "the Billing free box's paid line drifts from the approved wording" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {PLAN_PAID_ADDS}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        Paid plans add a study calendar, mastery for every domain and skill, full-length tests and LISA.\n", 1)'
+
 plant "UI58-G1" "the guardian sentence goes back to the pre-ruling words (OQ-38)" \
   "$T58 $H58" \
   "client/src/components/settings/LinkSection.tsx" \
