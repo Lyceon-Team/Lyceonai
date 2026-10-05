@@ -13,6 +13,11 @@
  * pattern only matches a letter in an answer-choice context (after "option", "choice" or
  * "answer", in parentheses, or "answer is X"). The batch tool treats a match as "review"; the
  * scheduler treats it as "skip", which costs at most an eligible question.
+ *
+ * CASE-SENSITIVE ON PURPOSE (owner, 2026-10-05): the letter must be a capital A-D, so the
+ * article in "answer a different question" never matches. No `i` flag, ever — tests in
+ * tests/ci/letter-reference.test.ts pin that. By content rule explanations never name a choice
+ * letter; this is a backstop.
  */
 export const EXPLANATION_LETTER_REFERENCE =
   /(?:Option|option|Choice|choice|Answer|answer)\s+[A-D]\b|\([A-D]\)|answer is [A-D]\b/;
