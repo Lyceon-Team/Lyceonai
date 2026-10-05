@@ -20,7 +20,8 @@
  * @implemented [2026-09-25; segments 2026-09-29; rebuilt on the student tokens 2026-10-03, UI-54]
  *
  * plain English: one view per report state, each drawing only its payload's fields. The top bar
- * (FocusBarContext) names the report ("Practice Test 1 report") and its date. A scored report is
+ * (FocusBarContext) names the report ("Full-Length Test 1 report" for a stored "Practice Test 1";
+ * `displayFormName`, owner ruling 2026-10-05) and its date. A scored report is
  * a score card (total out of 1600, each section out of 800, the timing it was taken under, the
  * disclosure) beside "Knowledge and skills" (seven segments per domain). A pending report polls
  * the cheap status read and reloads the report when the state changes; the page never guesses a
@@ -40,6 +41,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
+import { displayFormName } from "@lyceon/shared/exam-form-display";
 import type { ExamStudentReportPayload } from "@lyceon/shared/exam-student-report-schema";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
 import { FocusBarContext } from "@/components/layout/FocusShell";
@@ -146,7 +148,7 @@ function ReportLayout({
             className="min-w-0 truncate font-lyc-serif text-[20px] font-semibold text-lyc-ink-strong"
             data-testid="exam-report-title"
           >
-            {payload.test_form_name} report
+            {displayFormName(payload.test_form_name)} report
           </span>
           {date !== null ? (
             <span className="hidden shrink-0 text-lyc-body text-lyc-muted sm:inline">

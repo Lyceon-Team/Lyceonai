@@ -111,9 +111,19 @@ describe("sourceFiltersLine", () => {
   it("degrades to Mixed rather than throwing on junk in the jsonb column", () => {
     expect(sourceFiltersLine(null, "not-an-object")).toBe("Mixed");
     expect(sourceFiltersLine(null, null)).toBe("Mixed");
-    // A full-length row's one fact is its form's name.
+    // A full-length row's one fact is its form's name, shown through `displayFormName`
+    // (owner ruling 2026-10-05): both stored shapes read "Full-Length Test N"; a name of any
+    // other shape is shown as stored.
     expect(sourceFiltersLine(null, { test_form_name: "Practice Test 1" })).toBe(
-      "Practice Test 1",
+      "Full-Length Test 1",
+    );
+    expect(
+      sourceFiltersLine(null, {
+        test_form_name: "Full-Length Practice Test 2",
+      }),
+    ).toBe("Full-Length Test 2");
+    expect(sourceFiltersLine(null, { test_form_name: "Spring Mock" })).toBe(
+      "Spring Mock",
     );
     expect(sourceFiltersLine(null, { test_form_name: "" })).toBe("Mixed");
     // A full-length row whose form name the server could not supply.

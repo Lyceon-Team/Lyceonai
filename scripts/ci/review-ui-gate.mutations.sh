@@ -96,6 +96,8 @@ FILES=(
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
   "client/src/features/exam/components/ExamStatus.tsx"
+  "client/src/features/calendar/components/FullLengthFields.tsx"
+  "packages/shared/src/exam-form-display.ts"
 )
 
 snapshot_all() {
@@ -873,12 +875,14 @@ plant "UI54-R4" "OQ-34: the lapsed report does not open the upgrade modal" \
 assert s.count(a) == 1
 s = s.replace(a, "    opened.current = true;", 1)'
 
+# Re-pointed 2026-10-05 (form names, owner ruling): the title now renders
+# `displayFormName(payload.test_form_name)`; same plant, drops " report".
 plant "UI54-R5" "the report top bar drops 'report'" \
   "$T54_REPORT" \
   "client/src/features/exam/pages/ExamReportPage.tsx" \
-  'a = "            {payload.test_form_name} report"
+  'a = "            {displayFormName(payload.test_form_name)} report"
 assert s.count(a) == 1
-s = s.replace(a, "            {payload.test_form_name}", 1)'
+s = s.replace(a, "            {displayFormName(payload.test_form_name)}", 1)'
 
 plant "UI54-K1" "ruling 7: segments drawn in a mastery colour" \
   "$T54_REPORT" \
@@ -2102,6 +2106,59 @@ plant "FU-T3" "the unscored attempt points back to Tests" \
   'a = "You can start a new attempt from Full-Length."
 assert s.count(a) == 1
 s = s.replace(a, "You can start a new attempt from Tests.", 1)'
+
+# ── Form names (owner ruling, Karl, 2026-10-05) ──────────────────────────────────────
+# "Form names: display \"Full-Length Test 1/2/3\" in student UI as a display mapping only. Do
+# not rename test_forms rows (forms are immutable)." Each plant drops `displayFormName` at one
+# student surface, so the stored "Practice Test N" reaches the page again.
+plant "FN-1" "the Full-Length home's rows show the stored form name" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const name = displayFormName(row.form.name);"
+assert s.count(a) == 1
+s = s.replace(a, "  const name = row.form.name;", 1)'
+
+plant "FN-2" "the Full-Length home's score history shows the stored form name" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "                  {displayFormName(row.test_form_name)}"
+assert s.count(a) == 1
+s = s.replace(a, "                  {row.test_form_name}", 1)'
+
+plant "FN-3" "the report top bar shows the stored form name" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "            {displayFormName(payload.test_form_name)} report"
+assert s.count(a) == 1
+s = s.replace(a, "            {payload.test_form_name} report", 1)'
+
+plant "FN-4" "the review picker's full-length row shows the stored form name" \
+  "client/src/pages/review.test.tsx client/src/lib/review-session-picker.test.ts" \
+  "client/src/lib/review-session-picker.ts" \
+  'a = "    return displayFormName(bag.test_form_name);"
+assert s.count(a) == 1
+s = s.replace(a, "    return bag.test_form_name;", 1)'
+
+plant "FN-5" "Home's in-progress test row shows the stored form name" \
+  "client/src/pages/lyceon-dashboard.test.tsx" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "              title: displayFormName(f.name),"
+assert s.count(a) == 1
+s = s.replace(a, "              title: f.name,", 1)'
+
+plant "FN-6" "the calendar's form picker shows the stored form name" \
+  "client/src/features/calendar/components/FullLengthFields.wording.test.tsx" \
+  "client/src/features/calendar/components/FullLengthFields.tsx" \
+  'a = "              {displayFormName(form.name)}"
+assert s.count(a) == 1
+s = s.replace(a, "              {form.name}", 1)'
+
+plant "FN-7" "the mapping forgets the seed's 'Full-Length Practice Test N' shape" \
+  "packages/shared/src/__tests__/exam-form-display.test.ts $T54_HOME" \
+  "packages/shared/src/exam-form-display.ts" \
+  'a = "const STORED_FORM_NAME = /^(?:Full-Length )?Practice Test ([0-9]+)$/;"
+assert s.count(a) == 1
+s = s.replace(a, "const STORED_FORM_NAME = /^Practice Test ([0-9]+)$/;", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

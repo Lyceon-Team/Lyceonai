@@ -268,7 +268,7 @@ function forms(s: Scenario) {
       },
       {
         test_form_id: FORM_3,
-        name: "Practice Test 3",
+        name: "Full-Length Practice Test 3",
         is_selectable: true,
         question_count: 98,
         break_duration_ms: 600_000,
@@ -519,12 +519,12 @@ afterEach(() => {
 describe("paid: the test list (DESIGN.md §4)", () => {
   it("one primary action: Resume over Start", async () => {
     await mount("paid");
-    const resume = await within(row("Practice Test 2")).findByRole("link", {
+    const resume = await within(row("Full-Length Test 2")).findByRole("link", {
       name: "Resume",
     });
     expect(resume.getAttribute("href")).toBe(`/tests/${OPEN_SESSION}`);
     // Presence: Start on the never-taken form is drawn too, as an outline.
-    const start = within(row("Practice Test 3")).getByRole("button", {
+    const start = within(row("Full-Length Test 3")).getByRole("button", {
       name: "Start",
     });
     expect(start.className).toContain("border-lyc-ink-strong");
@@ -533,10 +533,13 @@ describe("paid: the test list (DESIGN.md §4)", () => {
 
   it("with nothing in progress, Start on the first never-taken form is the one primary", async () => {
     await mount("paid", { inProgress: false });
-    const start2 = await within(row("Practice Test 2")).findByRole("button", {
-      name: "Start",
-    });
-    const start3 = within(row("Practice Test 3")).getByRole("button", {
+    const start2 = await within(row("Full-Length Test 2")).findByRole(
+      "button",
+      {
+        name: "Start",
+      },
+    );
+    const start3 = within(row("Full-Length Test 3")).getByRole("button", {
       name: "Start",
     });
     expect(filledActions()).toEqual([start2]);
@@ -545,7 +548,7 @@ describe("paid: the test list (DESIGN.md §4)", () => {
 
   it("OQ-31: a completed test shows its score, with the disclosure beside it (§15.1)", async () => {
     await mount("paid");
-    const card = row("Practice Test 1");
+    const card = row("Full-Length Test 1");
     await waitFor(() =>
       expect(within(card).getByTestId("exam-form-state").textContent).toBe(
         "Completed 26 September. Score 1120.",
@@ -563,7 +566,7 @@ describe("paid: the test list (DESIGN.md §4)", () => {
 
   it("OQ-32: the in-progress test reads 'section, module' from its own /state", async () => {
     await mount("paid");
-    const card = row("Practice Test 2");
+    const card = row("Full-Length Test 2");
     await waitFor(() =>
       expect(within(card).getByTestId("exam-form-state").textContent).toBe(
         "In progress: Reading & Writing, Module 2",
@@ -575,7 +578,8 @@ describe("paid: the test list (DESIGN.md §4)", () => {
       `/api/tests/sessions/${OPEN_SESSION}/state`,
     ]);
     expect(
-      within(row("Practice Test 3")).getByTestId("exam-form-state").textContent,
+      within(row("Full-Length Test 3")).getByTestId("exam-form-state")
+        .textContent,
     ).toBe("Not started");
   });
 
@@ -589,7 +593,7 @@ describe("paid: the test list (DESIGN.md §4)", () => {
       "The clock pauses when you step away. Your report says so.",
     );
     fireEvent.click(
-      within(row("Practice Test 1")).getByRole("button", { name: "Start" }),
+      within(row("Full-Length Test 1")).getByRole("button", { name: "Start" }),
     );
     await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
     expect(
@@ -604,7 +608,7 @@ describe("paid: the test list (DESIGN.md §4)", () => {
   it("a 409 existing_active_session takes the student to that session", async () => {
     const { history } = await mount("paid", { conflict: true });
     fireEvent.click(
-      await within(row("Practice Test 3")).findByRole("button", {
+      await within(row("Full-Length Test 3")).findByRole("button", {
         name: "Start",
       }),
     );
@@ -615,7 +619,7 @@ describe("paid: the test list (DESIGN.md §4)", () => {
 /**
  * Owner ruling OQ-62 (b) (Karl, 2026-10-05): "'full-length test' wording". The list's heading and
  * its two states name the sittings "full-length tests"; the bare "Your tests" / "the tests" are
- * gone. (Form names such as "Practice Test 2" are database values, not copy, and stay.)
+ * gone. (Form names are database values; they are shown through `displayFormName`, below.)
  */
 describe("OQ-62 (b): the list names its sittings 'full-length tests'", () => {
   it("the heading is 'Your full-length tests', never 'Your tests'", async () => {
@@ -649,7 +653,7 @@ describe("OQ-62 (b): the list names its sittings 'full-length tests'", () => {
   it("Start's failure line says 'the full-length test'", async () => {
     await mount("paid", { startError: true });
     fireEvent.click(
-      await within(row("Practice Test 3")).findByRole("button", {
+      await within(row("Full-Length Test 3")).findByRole("button", {
         name: "Start",
       }),
     );
@@ -659,6 +663,56 @@ describe("OQ-62 (b): the list names its sittings 'full-length tests'", () => {
       ),
     ).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\bstart the test\b/);
+  });
+});
+
+/**
+ * Owner ruling (Karl, 2026-10-05): "Form names: display \"Full-Length Test 1/2/3\" in student UI
+ * as a display mapping only." The payload keeps the stored names ("Practice Test 1/2", and the E5
+ * seed's "Full-Length Practice Test 3"); every row title, its accessible name and the report
+ * link's label read "Full-Length Test N".
+ */
+describe("owner ruling 2026-10-05: form names display as 'Full-Length Test N'", () => {
+  it("row titles, row names and View report labels map the stored names; the payload is untouched", async () => {
+    await mount("paid");
+    const list = screen.getByTestId("tests-list");
+    const rows = within(list).getAllByTestId("tests-row");
+    // Presence first: three rows, each with a title.
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.querySelector("h3")?.textContent)).toEqual([
+      "Full-Length Test 1",
+      "Full-Length Test 2",
+      "Full-Length Test 3",
+    ]);
+    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual([
+      "Full-Length Test 1",
+      "Full-Length Test 2",
+      "Full-Length Test 3",
+    ]);
+    const report = await within(row("Full-Length Test 1")).findByTestId(
+      "tests-view-report",
+    );
+    expect(report.getAttribute("aria-label")).toBe(
+      "View report, Full-Length Test 1",
+    );
+    // The stored values are what the fixture serves; none reaches the page.
+    expect(forms({}).forms.map((f) => f.name)).toEqual([
+      "Practice Test 1",
+      "Practice Test 2",
+      "Full-Length Practice Test 3",
+    ]);
+    expect(document.body.textContent).not.toContain("Practice Test");
+  });
+
+  it("score history rows map the stored name", async () => {
+    await mount("paid");
+    const history = await screen.findByTestId("tests-history");
+    const rows = within(history).getAllByTestId("tests-history-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.querySelector("span span")?.textContent).toBe(
+      "Full-Length Test 1",
+    );
+    expect(history.textContent).not.toContain("Practice Test");
   });
 });
 
@@ -672,7 +726,8 @@ describe("paid: the right panel", () => {
       `/tests/${SCORED_SESSION}/report`,
     );
     expect(rows[0]!.textContent).toBe(
-      "Practice Test 11120" + "26 September. Reading & Writing 620, Math 500",
+      "Full-Length Test 11120" +
+        "26 September. Reading & Writing 620, Math 500",
     );
     expect(within(history).getByTestId("exam-disclosure").textContent).toBe(
       FIXTURE_DISCLOSURE.summary,
@@ -745,12 +800,12 @@ describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", 
     const body = screen.getByTestId("tests-home-body");
     // Focus moves to the revealed body, not to <body>.
     expect(document.activeElement).toBe(body);
-    const resume = await within(row("Practice Test 2")).findByRole("link", {
+    const resume = await within(row("Full-Length Test 2")).findByRole("link", {
       name: "Resume",
     });
     expect(resume.getAttribute("href")).toBe(`/tests/${OPEN_SESSION}`);
     expect(
-      within(row("Practice Test 3")).getByRole("button", { name: "Start" }),
+      within(row("Full-Length Test 3")).getByRole("button", { name: "Start" }),
     ).toBeTruthy();
     expect(filledActions()).toEqual([resume]);
     expect(await screen.findByTestId("tests-history")).toBeTruthy();
@@ -764,7 +819,7 @@ describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", 
     );
     fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
     fireEvent.click(
-      await within(row("Practice Test 1")).findByRole("button", {
+      await within(row("Full-Length Test 1")).findByRole("button", {
         name: "Start",
       }),
     );

@@ -28,6 +28,7 @@
  * showing a different selection than the one stored.
  */
 import { useQuery } from "@tanstack/react-query";
+import { displayFormName } from "@lyceon/shared/exam-form-display";
 import type { ExamMode } from "@lyceon/shared/exam-runtime-schema";
 import type { FullLengthScope } from "@lyceon/shared/calendar";
 import { fetchExamForms } from "../../exam/api/exam-api";
@@ -80,7 +81,7 @@ export function FullLengthFields({
           <option value={NEXT_TEST}>Next unused full-length test</option>
           {selectable.map((form) => (
             <option key={form.test_form_id} value={form.test_form_id}>
-              {form.name}
+              {displayFormName(form.name)}
             </option>
           ))}
           {storedMissing && scope.form_id !== null ? (
