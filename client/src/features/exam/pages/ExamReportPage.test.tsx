@@ -210,6 +210,10 @@ describe("Knowledge and skills (ruling 7: seven flat navy segments per domain fr
     expect(
       screen.getByRole("heading", { name: "Knowledge and skills" }),
     ).toBeTruthy();
+    // OQ-62 (b): the section's lead names the full-length test.
+    expect(document.body.textContent).toContain(
+      "How you did across the eight content domains on this full-length test.",
+    );
     // Presence: eight domains, each a bar of exactly seven segments.
     const rows = screen.getAllByTestId("exam-domain-row");
     expect(rows).toHaveLength(8);
@@ -333,6 +337,20 @@ describe("other states", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Scoring usually takes a few minutes",
     );
+  });
+
+  // OQ-62 (b) (Karl, 2026-10-05): the sitting is a "full-length test" in the report's states.
+  it("OQ-62 (b): the pending and unfinished states name the full-length test", () => {
+    show(studentPendingReport);
+    expect(document.body.textContent).toContain(
+      "Scoring your full-length test",
+    );
+    cleanup();
+    show(studentInProgressReport);
+    expect(document.body.textContent).toContain(
+      "This full-length test isn't finished",
+    );
+    expect(document.body.textContent).not.toMatch(/\bThis test\b/);
   });
 
   it("failed_requires_review: the payload's message and reference", () => {

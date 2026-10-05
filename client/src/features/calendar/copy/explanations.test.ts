@@ -97,6 +97,19 @@ describe("every canonical key has copy (§17.6: no key renders as raw text)", ()
 });
 
 describe("blockExplanation", () => {
+  // Owner ruling OQ-62 (b) (Karl, 2026-10-05): a sitting is a "full-length test".
+  it("OQ-62 (b): the three full-length sentences name the full-length test", () => {
+    expect(blockExplanation("exam_review_placeholder")).toBe(
+      "Going over what you missed on your last full-length test.",
+    );
+    expect(blockExplanation("exam_cadence")).toBe(
+      "A full-length test every two weeks keeps you test-ready.",
+    );
+    expect(blockExplanation("exam_review")).toBe(
+      "Going over what you missed on your last full-length test.",
+    );
+  });
+
   it("returns the §17.6 sentence for a known key", () => {
     expect(blockExplanation("review_due")).toBe(
       "Questions you missed earlier are due for a retry.",

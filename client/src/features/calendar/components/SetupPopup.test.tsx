@@ -95,6 +95,16 @@ describe("pressing straight through", () => {
    * must be a choice the student made — the press-through case below still asserts both
    * halves go out null.
    */
+  it("OQ-62 (b) (Karl, 2026-10-05): the two exam rows say 'Full-length test'", () => {
+    open();
+    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
+    // Presence: the schedule panel and both exam rows are drawn.
+    expect(screen.getByTestId("calendar-setup-fl")).toBeTruthy();
+    expect(screen.getByText("Full-length test day")).toBeTruthy();
+    expect(screen.getByText("Full-length test frequency")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bpractice tests?\b/i);
+  });
+
   it("the test-day row opens on the SERVED default, not on None", () => {
     open();
     // The row lives on the schedule panel, reached without answering anything.

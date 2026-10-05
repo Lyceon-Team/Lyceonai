@@ -89,6 +89,23 @@ function renderSheet(
 const chip = (group: string, label: string): HTMLElement =>
   within(screen.getByTestId(group)).getByRole("button", { name: label });
 
+describe("OQ-62 (b) (Karl, 2026-10-05): the two exam rows say 'Full-length test'", () => {
+  it("labels the day and frequency rows 'Full-length test …', never 'Practice test …'", () => {
+    renderSheet();
+    // Presence: both groups are drawn and carry the ruled wording as their names.
+    expect(screen.getByTestId("settings-full-length")).toHaveAttribute(
+      "aria-label",
+      "Full-length test day",
+    );
+    expect(
+      screen.getByTestId("settings-full-length-frequency"),
+    ).toHaveAttribute("aria-label", "Full-length test frequency");
+    expect(screen.getByText("Full-length test day")).toBeTruthy();
+    expect(screen.getByText("Full-length test frequency")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bpractice tests?\b/i);
+  });
+});
+
 describe("the sheet opens on the student's CURRENT schedule", () => {
   it("pre-selects the stored days, minutes and test day", () => {
     renderSheet();

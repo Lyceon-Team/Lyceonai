@@ -223,6 +223,8 @@ type Scenario = {
   formsError?: boolean;
   /** GET /api/tests/forms answers with no forms (the list's empty state). */
   noForms?: boolean;
+  /** POST /api/tests/sessions answers 500 (Start's error line). */
+  startError?: boolean;
 };
 
 function forms(s: Scenario) {
@@ -350,6 +352,8 @@ function install(s: Scenario): void {
     if (method === "GET" && url === `/api/students/${STUDENT}/mastery/domains`)
       return json(mastery());
     if (method === "POST" && url === "/api/tests/sessions") {
+      if (s.startError === true)
+        return json({ error: { message: "boom" } }, 500);
       if (s.conflict === true)
         return json(
           {
@@ -640,6 +644,21 @@ describe("OQ-62 (b): the list names its sittings 'full-length tests'", () => {
       await screen.findByText("No full-length tests are available yet."),
     ).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\bNo tests\b/);
+  });
+
+  it("Start's failure line says 'the full-length test'", async () => {
+    await mount("paid", { startError: true });
+    fireEvent.click(
+      await within(row("Practice Test 3")).findByRole("button", {
+        name: "Start",
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "We couldn't start the full-length test. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bstart the test\b/);
   });
 });
 
