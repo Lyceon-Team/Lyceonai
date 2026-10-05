@@ -81,7 +81,9 @@ import { membersCleared } from "@/features/calendar/lib/members";
 import { openingSchedule } from "@/features/calendar/lib/setup";
 import { studentViewModel } from "@/features/calendar/lib/view-model";
 import { toUserFacingMessage } from "@/lib/api-error";
-import "@/features/calendar/calendar.css";
+// The student calendar's whole stylesheet. `calendar.css` is the guardian calendar's alone
+// (owner ruling, Karl, 2026-10-05, "split it"); `calendar.ui55.test.tsx` fails if this page's
+// import graph reaches it again.
 import "@/features/calendar/calendar-student.css";
 
 export default function CalendarPage(): JSX.Element {

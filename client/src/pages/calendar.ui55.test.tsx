@@ -13,7 +13,9 @@
  *       [owner ruling (Karl, 2026-10-05, OQ-63): "Phone notice: show it for every full-length
  *        start on a phone, including calendar-launched starts. One shared pre-start check, same
  *        \"Continue anyway\". Test it from a calendar block at 390px."]
- * @implemented [2026-10-03; SCL-211 2026-10-05; OQ-63 2026-10-05]
+ *       [Codex audit finding 2; owner ruling (Karl, 2026-10-05): "split it" — the student
+ *        calendar's stylesheet is `calendar-student.css` alone; `calendar.css` is the guardian's]
+ * @implemented [2026-10-03; SCL-211 2026-10-05; OQ-63 2026-10-05; split 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (the right
  * panel portals into it) and the real upgrade modal with auto-open ON, over a scripted network
@@ -1012,5 +1014,96 @@ describe("phone: a full-length block's Start asks the shared pre-start check fir
       `POST /api/calendar/blocks/${FULL_LENGTH_BLOCK}/launch`,
     ]);
     expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+});
+
+/**
+ * The split (Codex audit finding 2; owner ruling, Karl, 2026-10-05: "split it"). The student
+ * calendar draws with `calendar-student.css` alone; the legacy `calendar.css` (literal palette,
+ * labels under 14px) is the guardian calendar's. This walks the static import graph from each
+ * page, through the `@/` alias and relative paths, and lists every stylesheet it reaches, so a
+ * re-import anywhere in the student tree (the page, `CalendarView`, a component) fails here.
+ * Presence before absence: the student graph must reach `calendar-student.css` and the shared
+ * `CalendarView`, and the guardian page's graph must reach `calendar.css`, so an absence cannot
+ * pass because the walker went blind.
+ */
+describe("UI-55 split: the student calendar's import graph never reaches calendar.css", () => {
+  const CLIENT_SRC = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+  );
+  const LEGACY = path.join(CLIENT_SRC, "features/calendar/calendar.css");
+  const STUDENT = path.join(
+    CLIENT_SRC,
+    "features/calendar/calendar-student.css",
+  );
+  const VIEW = path.join(CLIENT_SRC, "features/calendar/CalendarView.tsx");
+
+  const stripComments = (src: string): string =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+
+  const resolveSpecifier = (from: string, spec: string): string | null => {
+    let base: string;
+    if (spec.startsWith("@/")) base = path.join(CLIENT_SRC, spec.slice(2));
+    else if (spec.startsWith("."))
+      base = path.resolve(path.dirname(from), spec);
+    else return null; // a package: outside the client tree
+    for (const candidate of [
+      base,
+      `${base}.ts`,
+      `${base}.tsx`,
+      path.join(base, "index.ts"),
+      path.join(base, "index.tsx"),
+    ]) {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile())
+        return candidate;
+    }
+    return null;
+  };
+
+  /** Every file the entry reaches through static and dynamic imports. */
+  const importGraph = (entry: string): Set<string> => {
+    const seen = new Set<string>();
+    const queue = [entry];
+    while (queue.length > 0) {
+      const file = queue.pop();
+      if (file === undefined || seen.has(file)) continue;
+      seen.add(file);
+      if (!/\.tsx?$/.test(file)) continue;
+      const src = stripComments(fs.readFileSync(file, "utf8"));
+      const specifiers = [
+        ...src.matchAll(/\bimport\s+(?:[^'"`;]*?\sfrom\s+)?["']([^"']+)["']/g),
+        ...src.matchAll(/\bexport\s+[^'"`;]*?\sfrom\s+["']([^"']+)["']/g),
+        ...src.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g),
+      ].map((m) => m[1] ?? "");
+      for (const spec of specifiers) {
+        const resolved = resolveSpecifier(file, spec);
+        if (resolved !== null) queue.push(resolved);
+      }
+    }
+    return seen;
+  };
+
+  it("the student page reaches calendar-student.css and CalendarView, and not calendar.css", () => {
+    const graph = importGraph(path.join(CLIENT_SRC, "pages/calendar.tsx"));
+    expect(graph.has(STUDENT)).toBe(true);
+    expect(graph.has(VIEW)).toBe(true);
+    const sheets = [...graph]
+      .filter((file) => file.endsWith(".css"))
+      .map((file) => path.relative(CLIENT_SRC, file))
+      .sort();
+    expect(sheets).toContain("features/calendar/calendar-student.css");
+    expect(sheets).not.toContain("features/calendar/calendar.css");
+    expect(graph.has(LEGACY)).toBe(false);
+  });
+
+  it("the guardian calendar still reaches calendar.css (the walker can see the import)", () => {
+    const graph = importGraph(
+      path.join(CLIENT_SRC, "pages/guardian-student-calendar.tsx"),
+    );
+    expect(graph.has(VIEW)).toBe(true);
+    expect(graph.has(LEGACY)).toBe(true);
   });
 });
