@@ -378,8 +378,9 @@ orphaned by the UI-53 rebuild).
   `PracticeShell.tsx` (line 2 at `353a5b09^`).
 - **Why it was orphaned:** knip listed it under "Unused files" in both default and
   `--production` mode.
-- **Consequence:** `@radix-ui/react-progress` has had no live importer since `353a5b09`. It is
-  a candidate for Karl, since dependency changes need approval.
+- **Consequence:** `@radix-ui/react-progress` has had no live importer since `353a5b09`. Removal
+  approved by Karl 2026-10-05; removed from `package.json` and `pnpm-lock.yaml` with
+  `pnpm remove @radix-ui/react-progress` (UI-53 follow-up commit), build and tests as proof.
 
 ## UI-54: Full-Length home, exam session and report
 
@@ -1103,7 +1104,7 @@ pre|packages/shared/src/services/rate-limit-ledger.ts|BucketDefinition|infile_li
 
 ## Candidates for Karl
 
-1. **`@radix-ui/react-progress`** (package.json dependency).
+1. **`@radix-ui/react-progress`** (package.json dependency). **Removed** — approved by Karl 2026-10-05 (UI-53 follow-up commit).
    - It has had no live importer since UI-53 (`353a5b09`) removed `PracticeShell`, the only
      user of `ui/progress.tsx`. That file is now deleted (`7786da75`).
    - knip listed the dependency as unused both before and after this branch, because an unused
