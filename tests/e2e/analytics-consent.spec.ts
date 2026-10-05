@@ -343,8 +343,12 @@ test.describe("cookie consent → PostHog", () => {
 
     // Signed-in surface (RequireRole): the same kind of click carries no element text.
     const before = seen.events.length;
+    // /profile is the student Settings page (UI-58, merged in #1073): its sections are buttons in
+    // the "Settings sections" nav, not the old page's tabs. Any signed-in click proves the rule.
     await page.goto(`${BASE}/profile`);
-    const tab = page.getByRole("tab", { name: "Settings" });
+    const tab = page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Account" });
     await expect(tab).toBeVisible({ timeout: 15_000 });
     await tab.click();
     await expect
