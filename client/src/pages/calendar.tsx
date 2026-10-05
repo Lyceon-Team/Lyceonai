@@ -447,7 +447,6 @@ export default function CalendarPage(): JSX.Element {
           blockOutDay: (date) =>
             editDay.mutate(newIntent({ date, members: membersCleared() })),
           doItNow: (blockId) => doItNow.mutate(newIntent({ blockId, today })),
-          launch: (blockId, blockType) => void launch(blockId, blockType),
           // OQ-63: a full-length block asks the shared phone pre-start check first.
           launch: (blockId, blockType) =>
             blockType === "full_length"
