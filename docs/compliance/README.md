@@ -40,6 +40,7 @@ Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not pu
 | Sub-Processor List | `legal-drafts/sub-processor-list.md` | §9.18 | Awaiting counsel | — |
 
 Spec departures in these drafts are recorded in SCL-208. Open owner actions:
-- error-monitoring vendor: confirm or turn off;
 - Google Fonts: self-hosted on `seo` by #1088 (SEO-1); must be live in production before Privacy Policy v5 publishes;
-- postal address and telephone, for the children's notice and marketing emails.
+- postal address and telephone, for the children's notice and marketing emails: Karl will supply them; placeholders stay flagged in both counsel checklists until then.
+
+Resolved: error monitoring is not configured on Vercel, verified 2026-10-03 (Karl), so it is omitted from Privacy Policy v5 and the Sub-Processor List.

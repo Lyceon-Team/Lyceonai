@@ -150,7 +150,6 @@ We share information with the following providers, which process it only on LYCE
 | **Resend** | Email delivery | Your email address and the message we send |
 | **Desmos** | The graphing calculator on math questions | Technical data from your browser (such as IP address and browser type) when the calculator loads |
 | **Slack** | Internal alerts to LYCEON staff | Internal reference numbers only — no conversation content and no names |
-| **[ERROR-MONITORING VENDOR — TO BE CONFIRMED]** | Error monitoring | Error reports, which may include IP address and an internal account reference |
 | **PostHog** **[Effective when F10/F11 ship]** | Product analytics and session recording | Usage events and page interactions, as described in Section 9 |
 | **Cloudflare** **[Effective when Q2 ships]** | Abuse protection (Turnstile) on public question pages | Technical data from your browser |
 
@@ -324,7 +323,7 @@ Decisions counsel must make before publication:
 1. **Under-13 consent (SCL-187, SCL-051).** Is a parent or guardian redeeming the student's link code and accepting the Parent / Guardian Terms sufficient verifiable parental consent under 16 CFR §312.5(b)? We disclose an under-13 student's information to processors (Section 5.2), so the "email plus" method is not available. §4.5 deliberately makes no legal-sufficiency claim. Confirm or tighten.
 2. **Unlinked under-13 accounts (corrected contradiction #1).** v4 §4.6 and §6.4 said such an account is suspended or deleted. The product enforces neither: the account stays open but cannot reach learning features, and it holds only sign-up data (§4.1). This draft states what the product does. Counsel to decide whether 16 CFR §312.5(c)(1) requires deleting the sign-up data (in particular the email address) if no parent connects within a reasonable time. If it does, engineering must build that deletion before this section can promise it.
 3. **Consent records (corrected contradiction #2).** v4 §6.2 said guardian consent records are kept for 3 years. The product strips IP address and browser after 24 months and keeps the dated, non-identifying record permanently (SCL-085/SCL-095; `supabase/migrations/20260917120000_deletion_sweeps_and_config.sql:156-166`). §6.2 now says so. Confirm this period is adequate evidence of consent.
-4. **Error-monitoring vendor.** The §5.2 row is a placeholder. Karl to confirm the vendor or turn the webhook off (`server/logger.ts:685-713`, which sends raw IP and a digested user ID). Remove the row if it is turned off.
+4. **Error monitoring.** Resolved: the error-monitor webhook is not configured on Vercel, verified 2026-10-03 (Karl), so §5.2 does not list an error-monitoring provider. If it is ever configured, §5.2 and the Sub-Processor List must be updated before it goes live.
 5. **PostHog retention periods (§6.6).** Fill these in from the PostHog project settings before F10 ships.
 6. **Pre-consent measurement.** Plan R11 says PostHog runs "cookieless until consent". Confirm whether any measurement before an analytics choice is lawful in the EU/UK (ePrivacy Article 5(3)), or require analytics to wait for acceptance. §9 is written so that nothing beyond strictly necessary cookies runs without a choice.
 7. **Vercel Analytics 12-month figure.** This is carried from v4 until F10 retires it. Confirm it matches the Vercel plan's retention.

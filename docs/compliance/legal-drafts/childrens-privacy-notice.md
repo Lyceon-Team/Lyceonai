@@ -103,7 +103,7 @@ If we make a material change to how we collect, use or share your child's inform
 
 1. **Verifiable parental consent (SCL-187, SCL-051).** Is redeeming the student's link code, plus accepting the Parent / Guardian Terms, a consent method acceptable under 16 CFR §312.5(b)? This is the open question SCL-187 routes to counsel. Because the student's information is disclosed to processors, the "email plus" method does not apply.
 2. **Pre-consent data.** Before a parent connects, the account holds the child's name, email address and date of birth. Confirm whether §312.5(c) permits holding these without consent, and for how long. If not, decide the deletion period (see Privacy Policy v5 checklist item 2).
-3. **Operator contact details.** §312.4(d)(1) requires a postal address and telephone number. Placeholders are in Section 1.
+3. **Operator contact details.** §312.4(d)(1) requires a postal address and telephone number. Placeholders are in Section 1; Karl will supply them. Do not publish until they are filled in.
 4. **Retention policy.** The 2025 amendments require a written retention policy in the notice (§312.10). Confirm that referencing Privacy Policy Section 6 is sufficient, or whether it must be restated here.
 5. **Under-13 learning data in de-identified form.** Confirm that keeping de-identified learning records after deletion (Section 7) is consistent with §312.10 for under-13 accounts.
 6. **Jurisdictions.** Doc 10 §9.14 also names the Ireland 16+ digital consent age, the Australian Children's Online Privacy Code, and the UK Children's Code. Decide whether to add jurisdiction-specific sections here or in the Privacy Policy.

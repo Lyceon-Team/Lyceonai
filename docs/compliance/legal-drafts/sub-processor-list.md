@@ -18,7 +18,6 @@ These are the service providers that process personal information on LYCEON's be
 | **Resend** | Email delivery | Email address, message content | **[REGION — TO CONFIRM]** |
 | **Desmos** | Graphing calculator on math questions | Browser technical data (e.g. IP address) when the calculator loads | United States **[TO CONFIRM]** |
 | **Slack** | Internal staff alerts | Internal reference numbers only; no conversation content, no names | United States **[TO CONFIRM]** |
-| **[ERROR-MONITORING VENDOR — TO BE CONFIRMED]** | Error monitoring | Error reports, which may include IP address and an internal account reference | **[TO CONFIRM]** |
 | **PostHog** **[Effective when F10/F11 ship]** | Product analytics and session recording | Usage events and page interactions; no names or emails; IP discarded; under-13 excluded | **[EU or US — TO CONFIRM]** |
 | **Cloudflare** **[Effective when Q2 ships]** | Abuse protection (Turnstile) | Browser technical data | **[TO CONFIRM]** |
 
@@ -43,7 +42,7 @@ We will update this list before adding a new sub-processor that processes person
 | Resend | `server/lib/notifications/transport.ts:34,193` |
 | Desmos | `client/src/components/math/DesmosCalculator.tsx:104` |
 | Slack | `server/services/crisis-notification.ts:13,96-129` (payload: IDs, reason label, SLA, admin link) |
-| Error-monitoring webhook | `server/logger.ts:685-713` (raw IP, digested user ID); destination "unspecified" in `infra/secret-class-inventory.yaml:211` |
+| **Not listed, not configured:** error-monitoring webhook | `ERROR_MONITOR_WEBHOOK_URL` not configured on Vercel, verified 2026-10-03 (Karl). The code path is `server/logger.ts:685-713` (it would send raw IP and a digested user ID) and is inert while the variable is unset; destination "unspecified" in `infra/secret-class-inventory.yaml:211`. Setting the variable adds a sub-processor and needs this list and Privacy Policy v5 §5.2 updated first |
 | **Removed since v4:** Google BigQuery | Never installed; nothing archived (SCL-106; `server/services/retention-sweep.ts:349-355`) |
 | **Not listed, removed:** Google Fonts | Self-hosted on `seo` by #1088 (`a6944733`, SEO-1); no `fonts.googleapis.com` reference remains in `client/index.html`. Must be live in production before publication |
 
@@ -58,7 +57,7 @@ We will update this list before adding a new sub-processor that processes person
 ## Counsel checklist
 
 1. **Locations and transfer mechanisms.** Fill in each **[TO CONFIRM]** location from the provider contracts and DPAs, and add the transfer safeguard for each (SCCs, UK IDTA or addendum, or the Data Privacy Framework).
-2. **Error-monitoring vendor.** Karl to confirm or turn off. Remove the row if turned off.
+2. **Error monitoring.** Resolved: not configured on Vercel, verified 2026-10-03 (Karl), so it is omitted. No action unless it is configured later.
 3. **Desmos and Slack.** Confirm both are processors. Desmos is loaded by the user's browser; Slack is an internal staff tool that receives only internal reference numbers.
 4. **Change-notice period.** Decide whether to commit to a notice period before adding a sub-processor (e.g. 30 days), as B2B and school DPAs often require.
 5. **DPAs in place.** Confirm a signed DPA exists with each provider before publication. The PostHog DPA is a precondition of plan R32.

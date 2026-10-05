@@ -66,7 +66,7 @@ We store your current choice. **[Effective when Q5 ships]** We also record when 
 
 1. **Students aged 13–17.** Plan R26 permits marketing to students 13 and over who opt in. Confirm this is acceptable in each launch market. Some markets (e.g. the UK Children's Code) expect profiling and nudging to be off by default for under-18s. Decide whether 13–17 opt-in also needs a parent's knowledge.
 2. **CASL.** Confirm the checkbox wording meets CASL's requirements for express consent (purpose, identity of the requester, statement that consent can be withdrawn), and that the "offers" category is acceptable.
-3. **Postal address.** Required in every commercial email by CAN-SPAM §7704(a)(5) and CASL. Placeholder in Section 6.
+3. **Postal address.** Required in every commercial email by CAN-SPAM §7704(a)(5) and CASL. Placeholder in Section 6; Karl will supply it. Do not publish until it is filled in.
 4. **Consent record.** Today only the current choice is stored (`profiles.marketing_opt_in`, `supabase/migrations/20260619000100_profiles_auth_columns.sql:29`); there is no timestamp or source. Q5 must add them before marketing is sent. Confirm the fields (timestamp, source, value) and how long to keep them after opt-out.
 5. **Unsubscribe timing.** CAN-SPAM allows 10 business days. Confirm the wording "immediately, and in any case within 10 business days".
 6. **SMS.** Doc 10 §9.21 mentions SMS. No SMS exists, so this draft covers email only. Confirm that SMS must not be added without a separate consent draft.
