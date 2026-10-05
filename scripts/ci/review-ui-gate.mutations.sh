@@ -89,6 +89,8 @@ FILES=(
   "client/src/components/layout/BareCardShell.tsx"
   "client/src/components/tutor/ScopedTutorPanel.tsx"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
+  "client/src/features/exam/lib/phone-notice.ts"
+  "client/src/features/exam/components/ExamStatus.tsx"
 )
 
 snapshot_all() {
@@ -1869,6 +1871,82 @@ plant "UI59-CL2" "the card leading at class specificity (it would override a met
   'a = "\"[:where(&)_p]:leading-[1.55]\""
 assert s.count(a) == 1
 s = s.replace(a, "\"[&_p]:leading-[1.55]\"", 1)'
+
+# ── Owner rulings (Karl, 2026-10-05): mobile tab bar, avatar menu, Full-Length naming ─────
+# Tabs Home, Practice, Review, Calendar, LISA; avatar menu Full-Length, Settings, Help, Sign out
+# (supersedes OQ-4's tab bar and OQ-48's menu order); the Full-Length home's phone notice with
+# "Continue anyway", never blocked; every student-facing "Tests" label becomes "Full-Length".
+T41_RAIL="client/src/components/layout/app-shell.rail.test.tsx"
+
+plant "FU-M1" "Full-Length back on the phone tab bar" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: false,"
+assert s.count(a) == 1
+s = s.replace(a, "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: true,", 1)'
+
+plant "FU-M2" "Calendar off the phone tab bar (the OQ-4 bar)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: true,"
+assert s.count(a) == 1
+s = s.replace(a, "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: false,", 1)'
+
+plant "FU-M3" "the avatar menu leads with Calendar (the OQ-48 order)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      leadingItems={RAIL_ITEMS.filter((item) => !item.inTabBar).map((item) => ("
+assert s.count(a) == 1
+s = s.replace(a, "      leadingItems={RAIL_ITEMS.filter((item) => item.key === \"calendar\").map((item) => (", 1)'
+
+plant "FU-M4" "a locked Full-Length menu entry navigates instead of opening the modal" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "if (reason !== null && lock !== null && lock.behaviour === \"modal\") {"
+assert s.count(a) == 1
+s = s.replace(a, "if (reason !== null && lock !== null && lock.behaviour === \"navigate\") {", 1)'
+
+plant "FU-N1" "no phone notice on the Full-Length home" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const held = phone && !continued;"
+assert s.count(a) == 1
+s = s.replace(a, "  const held = false;", 1)'
+
+plant "FU-N2" "the phone notice blocks: Continue anyway reveals nothing" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "    setContinued(true);"
+assert s.count(a) == 1
+s = s.replace(a, "    setContinued(false);", 1)'
+
+plant "FU-N3" "the notice drifts from the ruling's words" \
+  "$T54_HOME" \
+  "client/src/features/exam/lib/phone-notice.ts" \
+  'a = "  \"Full-length tests are built for a laptop or tablet, like test day.\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"Full-length tests work best on a laptop or tablet.\";", 1)'
+
+plant "FU-T1" "the Full-Length home's title goes back to the old label" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "        title=\"Full-Length\""
+assert s.count(a) == 1
+s = s.replace(a, "        title=\"Full-length practice tests\"", 1)'
+
+plant "FU-T2" "the exam load error's way out says tests" \
+  "$T54_REPORT" \
+  "client/src/features/exam/components/ExamStatus.tsx" \
+  'a = "              Back to Full-Length"
+assert s.count(a) == 1
+s = s.replace(a, "              Back to tests", 1)'
+
+plant "FU-T3" "the unscored attempt points back to Tests" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "You can start a new attempt from Full-Length."
+assert s.count(a) == 1
+s = s.replace(a, "You can start a new attempt from Tests.", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
