@@ -108,7 +108,6 @@ describe("UI-14 — freshness values per data type", () => {
 
   it("the calendar refetches on window focus (Doc 05F §17.7)", () => {
     expect(QUERY_FRESHNESS.calendarRange.refetchOnWindowFocus).toBe(true);
-    expect(QUERY_FRESHNESS.calendarStreak.refetchOnWindowFocus).toBe(true);
   });
 });
 
@@ -124,9 +123,22 @@ describe("UI-14 — consumers take freshness from the config", () => {
     const sites = sitesOf(
       /queryKey:\s*\[\s*["']\/api\/practice\/topics["']\s*\]/,
     );
-    // Presence before absence: the sweep must find the three known call sites
-    // (practice, browse-topics, review), or it is proving nothing.
-    expect(sites.length).toBeGreaterThanOrEqual(3);
+    // Presence before absence: the sweep must find the two known call sites, or it is proving
+    // nothing. UI-51 (2026-10-03) moved Practice's and Review's inline reads into the one hook
+    // (`hooks/usePracticeTopics.ts`); browse-topics keeps its own until OQ-3 is decided.
+    expect(sites.map((s) => s.file).sort()).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("client/src/hooks/usePracticeTopics.ts"),
+        expect.stringContaining("client/src/pages/browse-topics.tsx"),
+      ]),
+    );
+    expect(
+      sites.some(
+        (s) =>
+          s.file.endsWith("pages/practice.tsx") ||
+          s.file.endsWith("pages/review.tsx"),
+      ),
+    ).toBe(false);
     for (const { file, block } of sites) {
       expect(block, file).toContain("QUERY_FRESHNESS.taxonomy");
     }
@@ -153,10 +165,14 @@ describe("UI-14 — consumers take freshness from the config", () => {
       .filter((s) => s.code.includes("/api/progress/kpis"))
       .map((s) => s.file);
     expect(naming).toEqual([hook!.file]);
-    // Both pages that show KPIs read them through the hook.
-    for (const page of ["pages/lyceon-dashboard.tsx", "pages/practice.tsx"]) {
+    // UI-50 (2026-10-03) took the KPI tiles off Home and UI-51 (2026-10-03) took "Weekly
+    // Activity" off Practice; DESIGN.md §4 gives neither page a KPI tile. The hook still has
+    // its callers (they invalidate or read it), so "only the hook names the endpoint" above is
+    // the rule that remains; here, the two rebuilt pages are pinned to reading no KPI at all.
+    for (const page of ["pages/practice.tsx", "pages/lyceon-dashboard.tsx"]) {
       const src = sources.find((s) => s.file.endsWith(`client/src/${page}`));
-      expect(src?.code, page).toContain("useProgressKpis");
+      expect(src, page).toBeDefined();
+      expect(src?.code, page).not.toContain("useProgressKpis");
     }
   });
 
@@ -168,7 +184,6 @@ describe("UI-14 — consumers take freshness from the config", () => {
       ),
     );
     expect(code).toContain("QUERY_FRESHNESS.calendarRange");
-    expect(code).toContain("QUERY_FRESHNESS.calendarStreak");
     expect(code).not.toMatch(/staleTime:\s*\d/);
   });
 });

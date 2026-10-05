@@ -30,10 +30,10 @@ import {
   pendingReport,
 } from "@/features/exam/test-fixtures/report-fixtures";
 import {
-  EXAM_SECTION_LABEL,
   examReportPayloadSchema,
   type ExamReportPayload,
 } from "@lyceon/shared/exam-report-schema";
+import { sectionDisplayLabel } from "@shared/section-display";
 import {
   ADA,
   examListWith,
@@ -144,10 +144,10 @@ describe("G5-04 the latest-test card", () => {
       /^1340$/,
     );
     const rw = within(root).getByTestId("latest-test-section-RW");
-    expect(rw).toHaveTextContent(EXAM_SECTION_LABEL.RW);
+    expect(rw).toHaveTextContent(sectionDisplayLabel("RW") ?? "");
     expect(rw).toHaveTextContent("690");
     const m = within(root).getByTestId("latest-test-section-M");
-    expect(m).toHaveTextContent(EXAM_SECTION_LABEL.M);
+    expect(m).toHaveTextContent(sectionDisplayLabel("M") ?? "");
     expect(m).toHaveTextContent("650");
     expect(
       within(root).getByTestId("latest-test-disclosure"),
@@ -348,7 +348,7 @@ describe("G5-04 the latest-test card", () => {
     // The fixture's latest scored test: Reading and Writing 690 (scoredReport).
     expect(
       within(await card()).getByTestId("latest-test-change"),
-    ).toHaveTextContent(/^▲ 40 in Reading and Writing since last test$/);
+    ).toHaveTextContent(/^▲ 40 in Reading & Writing since last test$/);
   });
 
   it("G5-08: an attempt still in progress is the student's 'This test isn't finished'", async () => {

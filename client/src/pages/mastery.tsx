@@ -1,272 +1,336 @@
-import { AppShell } from "@/components/layout/app-shell";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+/**
+ * Mastery (`/mastery`): the student's level in every SAT domain, and each domain's skills.
+ *
+ * @spec [student-UI register UI-57, UI-37, UI-42; register §2 (mastery and KPIs are paid:
+ *        `mastery_detail`; the free mastery slot is the locked card, empty outlines only; student
+ *        surfaces show `mastery_level` only, no raw accuracy anywhere — Step 2 ruling 6, SCL-186;
+ *        no confidence or vanity metrics — coding standards §10, §17); DESIGN.md §1 (tokens only,
+ *        14px floor, one primary action), §2 (App shell), §3 (Mastery row: five segments filled to
+ *        the level plus a level pill, unmeasured shows empty segments and a dashed "Not enough
+ *        answers yet" pill; Locked mastery card), §4 "Not prototyped" ("the Mastery page (domain
+ *        grid with mastery rows, then the skills list per domain)"); evidence/wiring-table.md §13
+ *        (the backing: `/mastery/domains`, `/mastery/skills`, both `mastery_detail`); OQ-29 (the
+ *        feature-access map decides what is locked); OQ-49 (this route comes off the light lock);
+ *        OQ-51 ("Reading & Writing"); UI-41 (no right panel, no footer; the in-body back link
+ *        was interim duplication and is removed); owner ruling 2026-08-20 RULE 1 (level names
+ *        from `mastery_levels`), RULE 5 (domain first, then its skills), RULE 6 (unmeasured is
+ *        its own state, one call to action, never one per row); owner ruling 2026-08-27 (one flat
+ *        skills fetch, filtered per domain); OQ-58 (owner ruling 2026-10-05: "Practise" →
+ *        "Practice", the app's US spelling)] | @implemented [2026-10-03; copy 2026-10-05]
+ *
+ * plain English: the page header, then the eight domains as wide mastery rows grouped by section
+ * (Math, then Reading & Writing, the server's canonical order). Each domain row is a button that
+ * opens that domain's skills beneath it, each skill again a mastery row. Every row shows the
+ * level only: five segments filled to `mastery_level` and the level's server-sent name. There is
+ * no percentage, accuracy, count of answers or score anywhere, because the payload carries none
+ * (Doc 05B §10.5 projects `mastery_level` only) and nothing here derives one.
+ *
+ * FREE = THE LOCKED CARD, NO REQUEST. Both reads are gated by `mastery_detail`. When the
+ * feature-access map says locked, the page draws `LockedMasteryCard` ("See what's included" opens
+ * the upgrade modal for `mastery_detail` with the map's reason) and asks the server for nothing.
+ * A server refusal (402 `entitlement_required`) draws the same card; the mastery queries carry no
+ * inline meta, so the app's upgrade modal also opens on that refusal (UI-44), as before.
+ *
+ * Replaces the pre-redesign page: the in-body Back button and "Mastery" eyebrow, the domain cards
+ * (`DomainGrid`, since deleted; the guardian Dashboard draws `GuardianMasteryCard`, R13), the separate skill screen with its "All domains"
+ * button, `PremiumUpgradePrompt` and `RecoveryNotice`.
+ *
+ * edge cases: a domain the server did not send reads "Not enough answers yet" (canonical list,
+ * `canonicalDomainNodes`); a domain whose catalogue is empty says so, distinct from a failed
+ * read; the grid's one "Start practicing" shows only when nothing is measured (RULE 6) and each
+ * opened domain with an unmeasured skill offers one outline "Practice <domain>".
+ */
+import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
-import { useState } from "react";
-import { isEntitlementDenialError } from "@/lib/api-error";
-import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
-import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { studentResourceUrl } from "@lyceon/shared/student-resources";
+import { useUpgradeModal } from "@/components/billing/UpgradeModal";
+import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
+import { MasteryRow } from "@/components/mastery/MasteryRow";
+import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import { Notice, PageHeader } from "@/components/student-ui";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { useFeatureAccess } from "@/hooks/useFeatureAccess";
+import { useProfileQuery } from "@/hooks/useProfileQuery";
+import { getEntitlementDenial } from "@/lib/api-error";
 import {
   fetchMasteryDomains,
   fetchMasterySkills,
   skillsForDomain,
+  type MasteryDomainNode,
   type MasterySection,
   type MasterySkillNode,
 } from "@/lib/masteryApi";
-import { studentResourceUrl } from "@lyceon/shared/student-resources";
-import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { LevelPill } from "@/components/mastery/LevelPill";
-import { DomainGrid } from "@/components/mastery/DomainGrid";
+import { sectionDisplayLabel } from "@shared/section-display";
 
-/**
- * @spec [owner ruling 2026-08-20 RULE 1 (six level names), RULE 4 (nine columns never
- *   exposed), RULE 5 (drill-down: domain first, THEN its skills), RULE 6 (NULL is a
- *   distinct state — a single CTA or blank, never a CTA per card); ruling 2026-08-21 Q2
- *   (skill names verbatim); Coding Standards §11] | @implemented [2026-08-21]
- *
- * plain English: two screens. The first is the eight canonical domains, each showing the
- * name of its mastery level. Clicking one opens that domain's skills. That is the whole
- * surface — there is no third level, no chart, and no number anywhere.
- *
- * WHAT IS DELIBERATELY ABSENT.
- *   `tierToBarPercent` does not come back. The old page drew a progress bar by mapping a
- *   tier to 25 / 60 / 100 percent — a number the mastery model never produced, invented on
- *   the client to make a coarse signal look precise. A bar is a percentage claim; the level
- *   is not a percentage. Nothing on this page renders a `%`.
- *
- * WHY THE NAMES COME FROM THE SERVER.
- *   `displayName` is `mastery_levels.display_name`, straight through. This component maps a
- *   level to a COLOUR (presentation) but never to a NAME — the names are a locked owner
- *   ruling stored in one table, and a client-side copy is exactly how the retired four-tier
- *   labels drifted from what the formula actually meant.
- *
- * expected outcome: a student with no events sees eight domain cards reading "Not enough
- * answers yet" and one CTA for the whole grid; a student mid-course sees per-domain names
- * and drills into any of them.
- * trade-offs: the skill panel is a second request rather than one big payload. That is the
- * point of RULE 5 — the domain screen stays fast and the skills load when asked for.
- * edge cases: `catalogEmpty` renders its own copy, distinct from both "no skills measured"
- * and a failed load. Those are three different facts and they get three different screens.
- */
+const SECTION_H2 =
+  "m-0 mb-1.5 font-lyc-serif text-lyc-section font-semibold text-lyc-ink-strong";
 
-function SkillPanel({
-  section,
-  domain,
-  onBack,
-  allSkills,
-  isLoading,
-  error,
-  refetch,
-}: {
-  section: MasterySection;
-  domain: string;
-  onBack: () => void;
-  allSkills: readonly MasterySkillNode[];
-  isLoading: boolean;
-  error: Error | null;
-  refetch: () => void;
-}) {
-  // NO SECOND REQUEST. Doc 05B §10.3 names `/mastery/skills` flat and §10.7 bounds it at
-  // ~80 rows, so the page fetches every skill once and each panel filters the rows it needs
-  // (owner ruling 2026-08-27, OQ3). Opening three domains used to cost three round trips.
-  const skills = skillsForDomain(allSkills, section, domain);
-  // RULE 6: ONE call to action for the panel, shown only when something in it is
-  // unmeasured — never one per card. Eight "Practise this" buttons on eight unmeasured
-  // skills is a wall of identical asks, and it makes "we have not measured this yet" look
-  // like a failure the student caused.
-  const hasUnmeasured = skills.some((s) => s.levelKey === "unmeasured");
+/** Math, then Reading & Writing: the server's order (`canonicalDomainPairs`). */
+const SECTIONS: readonly MasterySection[] = ["M", "RW"];
+
+/** Shipped copy (the pre-redesign page), unchanged. */
+const RETRY_MESSAGE = "Try again. If this keeps happening, refresh the page.";
+
+/** A refusal of THIS feature: only a `mastery_detail` denial draws the locked card. */
+function isMasteryDenial(error: unknown): boolean {
+  return getEntitlementDenial(error)?.feature === "mastery_detail";
+}
+
+type Access = "loading" | "granted" | "locked";
+
+export default function MasteryPage(): JSX.Element {
+  const { user } = useSupabaseAuth();
+  const studentId = user?.id ?? "";
+  const profile = useProfileQuery();
+  const map = useFeatureAccess();
+  const upgrade = useUpgradeModal();
+  const entry = map?.mastery_detail ?? null;
+
+  // The map decides first (OQ-29). A loaded profile with no map (a non-student viewer, or a body
+  // the schema rejects) does not hide the page: the request is made and the SERVER decides.
+  const access: Access =
+    entry?.access === "locked"
+      ? "locked"
+      : entry?.access === "granted" || profile.data !== undefined
+        ? "granted"
+        : "loading";
+  const enabled = access === "granted" && studentId.length > 0;
+
+  const domains = useQuery({
+    queryKey: [studentResourceUrl(studentId, "masteryDomains")],
+    queryFn: () => fetchMasteryDomains(studentId),
+    enabled,
+    retry: 1,
+  });
+  // One flat fetch for every skill; each opened domain filters its own (owner ruling 2026-08-27).
+  const skills = useQuery({
+    queryKey: [studentResourceUrl(studentId, "masterySkills")],
+    queryFn: () => fetchMasterySkills(studentId),
+    enabled,
+    retry: 1,
+  });
+
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  function toggle(key: string): void {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  const denied =
+    isMasteryDenial(domains.error) || isMasteryDenial(skills.error);
+  const lockReason = entry?.access === "locked" ? entry.reason : "plan";
+
+  let body: JSX.Element;
+  if (access === "locked" || denied) {
+    body = (
+      <div className="max-w-[440px]">
+        <LockedMasteryCard
+          onSeeWhatsIncluded={() => upgrade.open("mastery_detail", lockReason)}
+        />
+      </div>
+    );
+  } else if (domains.isError) {
+    body = (
+      <Notice
+        tone="danger"
+        title="We couldn't load mastery data."
+        message={RETRY_MESSAGE}
+        actionLabel="Try again"
+        onAction={() => void domains.refetch()}
+        data-testid="mastery-error"
+      />
+    );
+  } else if (domains.data === undefined) {
+    body = (
+      <div className="flex flex-col gap-3" data-testid="mastery-loading">
+        <Skeleton variant="lyc" className="h-12 w-full" />
+        <Skeleton variant="lyc" className="h-12 w-full" />
+        <Skeleton variant="lyc" className="h-12 w-full" />
+        <Skeleton variant="lyc" className="h-12 w-full" />
+      </div>
+    );
+  } else {
+    const served = domains.data.domains;
+    // Derived in render (coding standards §11.4). The grid draws all eight canonical domains, a
+    // missing one as unmeasured, so "nothing measured" is "no served domain is measured".
+    const allUnmeasured = served.every((d) => d.levelKey === "unmeasured");
+    body = (
+      <>
+        {SECTIONS.map((section) => (
+          <section
+            key={section}
+            aria-labelledby={`mastery-${section}-h`}
+            className="flex flex-col"
+            data-testid="mastery-section"
+            data-section-code={section}
+          >
+            <h2 id={`mastery-${section}-h`} className={SECTION_H2}>
+              {sectionDisplayLabel(section)}
+            </h2>
+            <div className="border-t border-lyc-rule">
+              {canonicalDomainNodes(served, [section]).map((node) => {
+                const key = `${node.section}:${node.domain}`;
+                return (
+                  <DomainBlock
+                    key={key}
+                    node={node}
+                    expanded={open.has(key)}
+                    onToggle={() => toggle(key)}
+                    skills={skills.data?.skills}
+                    skillsFailed={skills.isError}
+                    onRetrySkills={() => void skills.refetch()}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        ))}
+        {allUnmeasured ? (
+          // RULE 6 at grid level: one call to action when nothing is measured yet.
+          <div data-testid="grid-cta">
+            <Button asChild variant="lyc-primary" size="lyc-lg">
+              <Link href="/practice">Start practicing</Link>
+            </Button>
+          </div>
+        ) : null}
+      </>
+    );
+  }
 
   return (
-    <section data-testid="skill-panel">
-      <div className="flex items-center gap-3 mb-5">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          data-testid="panel-back"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          All domains
-        </Button>
-        <h2 className="text-xl font-semibold tracking-tight">{domain}</h2>
-      </div>
-
-      {isLoading && (
-        <div className="space-y-3">
-          <Skeleton className="h-14 w-full" />
-          <Skeleton className="h-14 w-full" />
-          <Skeleton className="h-14 w-full" />
-        </div>
-      )}
-
-      {error && (
-        <RecoveryNotice
-          title="We couldn't load this domain's skills."
-          message="Try again. If this keeps happening, refresh the page."
-          onRetry={() => void refetch()}
-        />
-      )}
-
-      {!isLoading && !error && skills.length === 0 && (
-        // Distinct from "no skills measured" AND from a failed load. `skills` is the
-        // question bank's catalogue for this domain unioned with the student's own rows, so
-        // an empty list means the BANK publishes nothing here — never that the student has
-        // done nothing, and never that the read failed (that is `error`, above).
-        <p
-          className="text-sm text-muted-foreground"
-          data-testid="catalog-empty"
-        >
-          There are no published questions in this domain yet, so there is
-          nothing to measure here.
-        </p>
-      )}
-
-      {!isLoading && !error && skills.length > 0 && (
-        <>
-          <ul className="space-y-2" data-testid="skill-list">
-            {skills.map((skill: MasterySkillNode) => (
-              <li
-                key={skill.skill}
-                className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-card/80 px-4 py-3"
-                data-testid="skill-row"
-              >
-                <span className="text-sm font-medium">{skill.skill}</span>
-                <LevelPill
-                  levelKey={skill.levelKey}
-                  displayName={skill.displayName}
-                />
-              </li>
-            ))}
-          </ul>
-
-          {hasUnmeasured && (
-            <div className="mt-6" data-testid="panel-cta">
-              <Button asChild>
-                <Link href="/practice">Practise {domain}</Link>
-              </Button>
-            </div>
-          )}
-        </>
-      )}
-    </section>
+    <div className="flex flex-col gap-10" data-testid="mastery">
+      <PageHeader
+        title="Your mastery"
+        description="Each domain shows where your answers place you. Levels move as you answer more questions."
+      />
+      {body}
+    </div>
   );
 }
 
-export default function MasteryPage() {
-  const { user } = useSupabaseAuth();
-  const [selected, setSelected] = useState<{
-    section: MasterySection;
-    domain: string;
-  } | null>(null);
-
-  // The subject is the signed-in student. The SAME fetchers serve the guardian dashboard
-  // with a linked student's id — one route per resource, per Doc 05B §10.3.
-  const studentId = user?.id ?? "";
-
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: [studentResourceUrl(studentId, "masteryDomains")],
-    queryFn: () => fetchMasteryDomains(studentId),
-    enabled: studentId.length > 0,
-    retry: 1,
-  });
-
-  const skillsQuery = useQuery({
-    queryKey: [studentResourceUrl(studentId, "masterySkills")],
-    queryFn: () => fetchMasterySkills(studentId),
-    enabled: studentId.length > 0,
-    retry: 1,
-  });
-
-  const domains = data?.domains ?? [];
-  // Derived in the render body — no useEffect for a value that is a pure function of the
-  // fetched data (Coding Standards §11.4).
-  // The grid draws all eight domains whatever is served, filling any missing one as
-  // unmeasured — so "nothing measured" is "no served domain is measured", empty included.
-  const allUnmeasured = domains.every((d) => d.levelKey === "unmeasured");
-
+/** One domain: its mastery row (a show/hide button) and, when open, its skills beneath it. */
+function DomainBlock({
+  node,
+  expanded,
+  onToggle,
+  skills,
+  skillsFailed,
+  onRetrySkills,
+}: {
+  node: MasteryDomainNode;
+  expanded: boolean;
+  onToggle: () => void;
+  skills: readonly MasterySkillNode[] | undefined;
+  skillsFailed: boolean;
+  onRetrySkills: () => void;
+}): JSX.Element {
+  const listId = useId();
   return (
-    <AppShell showFooter>
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
-        <header className="mb-8">
-          <div className="flex items-center gap-3 mb-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => window.history.back()}
-              className="mr-1"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              Mastery
-            </p>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">
-            Your mastery
-          </h1>
-          <p className="text-muted-foreground max-w-3xl">
-            Each domain shows where your answers place you. Levels move as you
-            answer more questions.
-          </p>
-        </header>
-
-        {isLoading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-        )}
-
-        {error &&
-          (isEntitlementDenialError(error) ? (
-            /* One CTA card, one destination resolver. This was an
-               `EmptyStateCTA` hardcoding `/upgrade`, which a guardian's role is
-               bounced from. */
-            <PremiumUpgradePrompt featureBenefit="your full mastery breakdown" />
-          ) : (
-            <RecoveryNotice
-              title="We couldn't load mastery data."
-              message="Try again. If this keeps happening, refresh the page."
-              onRetry={() => void refetch()}
-            />
-          ))}
-
-        {!isLoading && !error && selected && (
-          <SkillPanel
-            section={selected.section}
-            domain={selected.domain}
-            onBack={() => setSelected(null)}
-            allSkills={skillsQuery.data?.skills ?? []}
-            isLoading={skillsQuery.isLoading}
-            error={skillsQuery.error}
-            refetch={() => void skillsQuery.refetch()}
+    <div data-testid="mastery-domain" data-domain={node.domain}>
+      <MasteryRow
+        label={node.domain}
+        levelKey={node.levelKey}
+        displayName={node.displayName}
+        variant="wide"
+        disclosure={{ expanded, controls: listId, onToggle }}
+      />
+      <div id={listId} hidden={!expanded}>
+        {expanded ? (
+          <SkillList
+            section={node.section}
+            domain={node.domain}
+            skills={skills}
+            failed={skillsFailed}
+            onRetry={onRetrySkills}
           />
-        )}
-
-        {!isLoading && !error && !selected && (
-          <>
-            <DomainGrid
-              domains={domains}
-              onOpen={(target) => setSelected(target)}
-            />
-
-            {allUnmeasured && (
-              // RULE 6 again, at grid level: one CTA for the whole page when nothing has
-              // been measured yet, not eight identical ones.
-              <div className="mt-8" data-testid="grid-cta">
-                <Button asChild>
-                  <Link href="/practice">Start practising</Link>
-                </Button>
-              </div>
-            )}
-          </>
-        )}
+        ) : null}
       </div>
-    </AppShell>
+    </div>
+  );
+}
+
+function SkillList({
+  section,
+  domain,
+  skills,
+  failed,
+  onRetry,
+}: {
+  section: MasterySection;
+  domain: string;
+  skills: readonly MasterySkillNode[] | undefined;
+  failed: boolean;
+  onRetry: () => void;
+}): JSX.Element {
+  const frame = "border-b border-lyc-rule-soft py-4 pl-4 sm:pl-6";
+  if (failed) {
+    return (
+      <div className={frame}>
+        <Notice
+          tone="danger"
+          title="We couldn't load this domain's skills."
+          message={RETRY_MESSAGE}
+          actionLabel="Try again"
+          onAction={onRetry}
+          data-testid="skills-error"
+        />
+      </div>
+    );
+  }
+  if (skills === undefined) {
+    return (
+      <div
+        className={`${frame} flex flex-col gap-3`}
+        data-testid="skills-loading"
+      >
+        <Skeleton variant="lyc" className="h-10 w-full" />
+        <Skeleton variant="lyc" className="h-10 w-full" />
+      </div>
+    );
+  }
+  const rows = skillsForDomain(skills, section, domain);
+  if (rows.length === 0) {
+    // The catalogue for this domain is empty: distinct from "nothing measured" and from a failed
+    // read (above). `skills` is the bank's catalogue unioned with the student's own rows.
+    return (
+      <p
+        className={`${frame} m-0 text-lyc-body text-lyc-muted`}
+        data-testid="catalog-empty"
+      >
+        There are no published questions in this domain yet, so there is nothing
+        to measure here.
+      </p>
+    );
+  }
+  // RULE 6: one call to action per opened domain, only when something in it is unmeasured.
+  const hasUnmeasured = rows.some((s) => s.levelKey === "unmeasured");
+  // Indented under the domain; on wide screens the right padding is the domain row's chevron
+  // track and gap (20px + 24px), so the skills' meters and pills line up with the domain's.
+  return (
+    <div className="pl-4 sm:pl-6 sm:pr-11" data-testid="skill-list">
+      {rows.map((skill) => (
+        <MasteryRow
+          key={skill.skill}
+          label={skill.skill}
+          levelKey={skill.levelKey}
+          displayName={skill.displayName}
+          variant="wide"
+        />
+      ))}
+      {hasUnmeasured ? (
+        <div className="py-4" data-testid="panel-cta">
+          <Button asChild variant="lyc-outline" size="lyc">
+            <Link href="/practice">Practice {domain}</Link>
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

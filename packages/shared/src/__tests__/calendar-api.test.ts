@@ -17,6 +17,7 @@ import {
   idempotentMutationBodySchema,
   launchBodySchema,
   launchResponseSchema,
+  profileReadResponseSchema,
   profileUpsertResponseSchema,
   versionResponseSchema,
 } from "../calendar/api";
@@ -401,6 +402,28 @@ describe("mutations", () => {
       profileUpsertResponseSchema.safeParse({ profile: PROFILE, version_no: 8 })
         .success,
     ).toBe(true);
+  });
+
+  it("the ungated profile read is the profile or null, and refuses any plan key (OQ-25)", () => {
+    expect(profileReadResponseSchema.safeParse({ profile: PROFILE }).success).toBe(
+      true,
+    );
+    expect(profileReadResponseSchema.safeParse({ profile: null }).success).toBe(
+      true,
+    );
+    // Presence above, absence here: a plan field at either level fails the parse.
+    expect(
+      profileReadResponseSchema.safeParse({ profile: PROFILE, days: [] }).success,
+    ).toBe(false);
+    expect(
+      profileReadResponseSchema.safeParse({ profile: PROFILE, version_no: 8 })
+        .success,
+    ).toBe(false);
+    expect(
+      profileReadResponseSchema.safeParse({
+        profile: { ...PROFILE, blocks: [] },
+      }).success,
+    ).toBe(false);
   });
 
   it("do-it-now returns the new block", () => {

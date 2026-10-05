@@ -4,6 +4,8 @@ import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
+import { FullPageLoader } from "@/components/student-ui";
+import { requireRoleLoaderThemeLock } from "@/lib/route-shells";
 import {
   loginPathWithReturn,
   onboardingPathWithReturn,
@@ -60,13 +62,16 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   });
 
   if (authLoading || (user && profileLoading)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"; UI-59, OQ-60 (e) (owner
+    // ruling 2026-10-05)] | @implemented [2026-10-03; Bare routes 2026-10-05]
+    // The shared FullPageLoader (role="status", named by its label). This gate sits above the
+    // shell, so the loader takes its lock from the route table: a Bare route's own lock (the
+    // device theme since UI-59, so a dark device sees no light flash before the dark card), and
+    // light everywhere else (guardian, admin and still-pinned pages share this gate).
+    return requireRoleLoaderThemeLock(location) === "light" ? (
+      <FullPageLoader themeLock="light" />
+    ) : (
+      <FullPageLoader />
     );
   }
 

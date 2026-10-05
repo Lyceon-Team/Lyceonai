@@ -23,11 +23,21 @@
 import type { ReactNode } from "react";
 import { examDisclosureSchema } from "@lyceon/shared/exam-report-schema";
 
-export function DisclosureNote({ disclosure }: { disclosure: unknown }) {
+/**
+ * UI-54 (@implemented [2026-10-03]): `className` lets the student pages draw the note on the
+ * student tokens (DESIGN.md §1, 14px floor); the guardian report keeps the default.
+ */
+export function DisclosureNote({
+  disclosure,
+  className = "m-0 text-[13px] leading-relaxed text-[var(--exam-muted)]",
+}: {
+  disclosure: unknown;
+  className?: string;
+}) {
   const parsed = examDisclosureSchema.safeParse(disclosure);
   if (!parsed.success) return null;
   return (
-    <p className="m-0 text-[13px] leading-relaxed text-[var(--exam-muted)]" data-testid="exam-disclosure">
+    <p className={className} data-testid="exam-disclosure">
       {parsed.data.summary}
     </p>
   );
@@ -41,15 +51,22 @@ export function DisclosedScore({
   disclosure,
   children,
   withheldCopy = "Your score can't be shown right now. Please check back soon.",
+  withheldClassName = "rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] p-5 text-[15px]",
 }: {
   disclosure: unknown;
   children: ReactNode;
   /** G4-06: the guardian report names the student ("Ada's score …"); the student's reads "Your". */
   withheldCopy?: string;
+  /** UI-54 (@implemented [2026-10-03]): the student report draws the notice on the student tokens. */
+  withheldClassName?: string;
 }) {
   if (!examDisclosureSchema.safeParse(disclosure).success) {
     return (
-      <div role="alert" data-testid="exam-score-withheld" className="rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] p-5 text-[15px]">
+      <div
+        role="alert"
+        data-testid="exam-score-withheld"
+        className={withheldClassName}
+      >
         {withheldCopy}
       </div>
     );

@@ -40,26 +40,36 @@ const queryMock = vi.hoisted(() => ({ useQuery: vi.fn() }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: queryMock.useQuery }));
 vi.mock("wouter", () => ({
   useRoute: () => [true, { sessionId: "swept-session-001" }],
+  useLocation: () => ["/practice/session/swept-session-001", vi.fn()],
 }));
 vi.mock("@/lib/client-instance", () => ({
   getClientInstanceId: () => "test-client-instance",
 }));
 vi.mock("@/lib/api-error", () => ({ isApiError: () => false }));
 
+import { practiceSessionStateResponseSchema } from "@lyceon/shared/practice-response-schema";
 import ResumePracticePage from "./resume-practice";
 
+/** A practice `/state` body, parsed by the shared schema the page parses it with (UI-53). */
 function stateBody(over: Record<string, unknown>): Record<string, unknown> {
-  return {
+  return practiceSessionStateResponseSchema.parse({
     sessionId: "swept-session-001",
     section: "M",
     mode: "balanced",
     state: "active",
     currentOrdinal: 1,
     answeredCount: 0,
+    skippedCount: 0,
+    completedCount: 0,
     targetQuestionCount: 10,
+    calculatorState: null,
+    lastServedUnansweredItem: null,
+    clientInstanceId: null,
     readOnly: false,
+    criteria: { sections: [], domains: [], skills: [], difficulties: [] },
+    shortened: false,
     ...over,
-  };
+  });
 }
 
 describe("resume-practice — closed sessions are not playable (ruling 17)", () => {

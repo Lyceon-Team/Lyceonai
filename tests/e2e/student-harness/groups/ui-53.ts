@@ -1,0 +1,315 @@
+/**
+ * UI-53: the practice and review runners (Focus shell), selected, answered right and answered
+ * wrong, and the click path to the next question.
+ *
+ * @spec [student-UI register §6 Wave 5 UI-53 ("side-by-side screenshot with the signed-off
+ *        prototype ... and the page's main click path exercised"); design/DESIGN.md §4 Question
+ *        runner; design/prototype/Runner.dc.html; OQ-4 (390px, light and dark); OQ-35]
+ *        | @implemented [2026-10-03]
+ *
+ * plain English: every capture starts its own session through the real create route (paid
+ * persona, so the free quota does not run out across 4 captures per shot) and ends it after,
+ * so each viewport x theme shows question 1. Choices are picked by what they are ("correct",
+ * "incorrect", "first"), resolved by capture.ts from the served item's stored order in the
+ * harness database: the page itself never knows which choice is right. The prototype is
+ * clicked into the same state: Runner.dc.html's correct choice is its second (LYC_CORRECT = 1).
+ *
+ * OQ-54 (a) / OQ-57 (f), owner ruling 2026-10-05: the review runner's LISA panel is on the
+ * student tokens and the runner follows the device theme. Two shots show the panel itself (on a
+ * phone it stacks under the question, and the steps scroll it into view): in use (a first message sent, LISA's typing
+ * dots, the turn request held in the browser as UI-56 does) and, for the free student, the LISA
+ * card that replaces the composer when the server refuses the panel's on-load lookup.
+ */
+import { SEED_CLIENT_INSTANCE } from "../seed";
+import type { FreshSession, PageGroup, Step } from "./types";
+
+const RUNNER = {
+  desktop: '[data-testid="runner-choice"]',
+  mobile: '[data-testid="runner-choice"]',
+} as const;
+
+function both(selector: string): Step {
+  return { click: { desktop: selector, mobile: selector } };
+}
+
+const SUBMIT = both('[data-testid="runner-footer"] button:has-text("Submit")');
+const NEXT = both(
+  '[data-testid="runner-footer"] button:has-text("Next question")',
+);
+
+/** Math, so the bar shows Calculator and Reference as Runner.dc.html does. */
+const PRACTICE: FreshSession = {
+  engine: "practice",
+  body: { sections: ["M"], target_question_count: 10 },
+  mcqFirst: true,
+};
+/**
+ * The student's own misses, Reading and Writing only (the paid seed leaves misses in both
+ * sections). Queue mode serves the queue's head first, and once the Math multiple-choice misses
+ * at its head graduate (a right answer in an earlier capture), the head is a grid-in every time.
+ */
+const REVIEW: FreshSession = {
+  engine: "review",
+  body: { mode: "filter", filters: { sections: ["RW"] }, target_count: 10 },
+  mcqFirst: true,
+};
+/** OQ-35: more questions asked for than the harness bank has in one Math domain. */
+const SHORTENED: FreshSession = {
+  engine: "practice",
+  body: {
+    sections: ["M"],
+    domains: ["Geometry and Trigonometry"],
+    target_question_count: 30,
+  },
+  mcqFirst: true,
+};
+
+const CLIENT = { lyceon_client_instance_id: SEED_CLIENT_INSTANCE } as const;
+/** The review runner's LISA composer (ScopedTutorPanel). */
+const LISA_COMPOSER = {
+  desktop: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
+  mobile: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
+} as const;
+/**
+ * F-69 (owner ruling 2026-10-05): the Focus shell is `100dvh` and scrolls only inside `<main>`,
+ * so the document must fit the viewport with the shell's top bar in view, and the runner scrolls
+ * inside itself, so `<main>` has nothing to scroll (no band below the footer). capture.ts fails
+ * the capture otherwise. Asserted on both runners and on the LISA panel focused and in use.
+ */
+const FITS = {
+  topBar: '[data-testid="focus-shell-header"]',
+  unscrolled: "main#main",
+} as const;
+const PROTO_CHOICE = (n: number): string => `[role="radio"] >> nth=${n}`;
+const PROTO_SUBMIT = 'button:has-text("Submit")';
+
+export const UI_53: PageGroup = {
+  id: "UI-53",
+  title:
+    "UI-53 Practice and review runners (Focus shell): selected, correct, incorrect, light and dark, 1440 and 390",
+  shots: [
+    {
+      id: "practice-selected",
+      title:
+        "Practice runner, a choice selected (Submit enabled), before submitting",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "first" }],
+      expectFitsViewport: FITS,
+      prototype: {
+        kind: "screen",
+        file: "Runner.dc.html",
+        steps: [PROTO_CHOICE(0)],
+        state: "selected",
+        note: "the first choice clicked",
+      },
+    },
+    {
+      id: "practice-correct",
+      title:
+        "Practice runner, answered right: 'Correct answer' on the pick, the 'Correct' panel with the explanation, Next question",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "correct" }, SUBMIT],
+      prototype: {
+        kind: "screen",
+        file: "Runner.dc.html",
+        steps: [PROTO_CHOICE(1), PROTO_SUBMIT],
+        state: "correct",
+        note: "the correct (second) choice, then Submit",
+      },
+    },
+    {
+      id: "practice-incorrect",
+      title:
+        "Practice runner, answered wrong: 'Your answer' and 'Correct answer' tags, 'Not quite', the explanation, the review-queue note",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "incorrect" }, SUBMIT],
+      prototype: {
+        kind: "screen",
+        file: "Runner.dc.html",
+        steps: [PROTO_CHOICE(0), PROTO_SUBMIT],
+        state: "incorrect",
+        note: "a wrong (first) choice, then Submit",
+      },
+    },
+    {
+      id: "review-selected",
+      title:
+        "Review runner, a choice selected, before submitting (LISA beside the question at 1440)",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "first" }],
+      expectFitsViewport: FITS,
+      prototype: {
+        kind: "screen",
+        file: "Runner.dc.html",
+        steps: [PROTO_CHOICE(0)],
+        state: "selected",
+        note: "the first choice clicked (the canvas draws the practice runner; there is no review canvas)",
+      },
+    },
+    {
+      id: "review-correct",
+      title: "Review runner, answered right",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "correct" }, SUBMIT],
+      prototype: {
+        kind: "screen",
+        file: "Runner.dc.html",
+        steps: [PROTO_CHOICE(1), PROTO_SUBMIT],
+        state: "correct",
+        note: "the correct (second) choice, then Submit",
+      },
+    },
+    {
+      id: "review-incorrect",
+      title:
+        "Review runner, answered wrong (no review-queue note: the question is already in the queue)",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "incorrect" }, SUBMIT],
+      prototype: {
+        kind: "screen",
+        file: "Runner.dc.html",
+        steps: [PROTO_CHOICE(0), PROTO_SUBMIT],
+        state: "incorrect",
+        note: "a wrong (first) choice, then Submit",
+      },
+    },
+    {
+      id: "review-lisa-typing",
+      title:
+        "Review runner, LISA panel in use (OQ-54 (a), ruling 2026-10-05: student tokens, follows the device theme): a first message typed and sent creates the item's conversation (real POST /api/tutor/conversations); the student's bubble and LISA's typing dots show in the panel. The turn request is held in the browser, so no turn runs. On a phone the panel stacks under the question; typing into it scrolls it into view",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: LISA_COMPOSER,
+      holdRequest: { method: "POST", path: "/api/tutor/messages" },
+      steps: [
+        {
+          fill: {
+            desktop: LISA_COMPOSER.desktop,
+            mobile: LISA_COMPOSER.mobile,
+          },
+          value: "How should I start this one?",
+        },
+        both(
+          '[data-testid="scoped-tutor-panel"] button[aria-label="Send message"]',
+        ),
+      ],
+      expectVisible:
+        '[data-testid="scoped-tutor-panel"] [data-testid="lisa-typing"]',
+      expectFitsViewport: FITS,
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d), ruling W4-4 keeps LISA in the review runner). The panel reuses the UI-56 thread parts (Lisa.dc.html).",
+      },
+    },
+    {
+      id: "review-lisa-focused",
+      title:
+        "Review runner, the LISA composer focused (F-69, owner ruling 2026-10-05): the Focus shell's top bar stays in view and the document is the viewport's height (no blank band under the footer); on a phone the focus scrolls the panel into view inside the shell, never the window",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: LISA_COMPOSER,
+      steps: [
+        {
+          focus: {
+            desktop: LISA_COMPOSER.desktop,
+            mobile: LISA_COMPOSER.mobile,
+          },
+        },
+      ],
+      expectFitsViewport: FITS,
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d)). F-69's proof shot: the shell's top bar with the composer focused.",
+      },
+    },
+    {
+      id: "review-lisa-locked",
+      title:
+        "Review runner, free student: the server refuses LISA's on-load lookup, so the panel shows the LISA card (approved copy: LISA's headline and the prototype body, OQ-44) with Unlock LISA in place of the composer. The app's upgrade modal opens on the refusal (UI-44) and is closed with Not now before the shot; a click on the panel's question chip scrolls the panel into view (on a phone it stacks under the question)",
+      persona: "free",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: {
+        desktop: '[data-testid="lisa-upgrade"]',
+        mobile: '[data-testid="lisa-upgrade"]',
+      },
+      steps: [
+        both('[data-testid="upgrade-modal"] button:has-text("Not now")'),
+        both('[data-testid="tutor-question-chip"]'),
+      ],
+      expectVisible: '[data-testid="lisa-upgrade-unlock"]',
+      expectGone: '[data-testid="upgrade-modal"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped in the runner: the card is the Lisa.dc.html free card (plan = free) sized for the review runner's LISA panel.",
+      },
+    },
+    {
+      id: "practice-shortened",
+      title:
+        "Practice runner, a session shorter than asked for: OQ-35's sentence, no number",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: SHORTENED,
+      localStorage: CLIENT,
+      waitFor: {
+        desktop: '[data-testid="runner-shorter-note"]',
+        mobile: '[data-testid="runner-shorter-note"]',
+      },
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: OQ-35's ruled sentence (owner ruling 2026-10-02), shown on the first question of a shortened session.",
+      },
+    },
+    {
+      id: "click-practice-next",
+      title:
+        "Click path (practice): choose, Submit, Next question lands on 'Question 2 of M'",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "first" }, SUBMIT, NEXT],
+      expectText: "Question 2 of 10",
+      prototype: {
+        kind: "none",
+        reason:
+          "A click path: the screenshot is where Next landed, proven by the 'Question 2 of 10' text the capture waited for.",
+      },
+    },
+  ],
+};

@@ -1,5 +1,7 @@
 /**
- * The platform activity streak — Doc 05F §14, §15 `GET /api/me/streak`.
+ * The platform activity streak — Doc 05F §14. (§15's standalone streak route is retired:
+ * SCL-212, owner ruling 2026-10-05, OQ-61 (a). The streak is served inside the calendar
+ * payloads and `kpi/overall`, both read through here.)
  *
  * @spec [Doc-05F_V1.0 §14 (streak, R-08-25 B, INV-08-20), §15 (no
  *        `calendar_access` check); Doc_05F_formula_sheet.md §8 items 11 and 19;
@@ -10,21 +12,22 @@
  * columns Doc 05B already maintains and returns them. That is the whole service.
  *
  * WHY THIS FILE IS NOT UNDER `services/calendar/`. Sheet §8 item 11 is explicit —
- * "Streak is **not calendar-owned**". §14 names this path and this function, and §15
- * serves the streak WITHOUT a `calendar_access` check (INV-08-20), which is only
- * coherent if the streak has no calendar dependency at all. The calendar embeds it; it
- * does not own it. A copy under `services/calendar/` would make the practice page's
- * streak and the calendar's two different numbers.
+ * "Streak is **not calendar-owned**". §14 names this path and this function, and
+ * INV-08-20 keeps the streak independent of `calendar_access`, which is only coherent if
+ * the streak has no calendar dependency at all. The calendar embeds it; it does not own
+ * it. A copy under `services/calendar/` would make `kpi/overall`'s streak and the
+ * calendar's two different numbers.
  *
  * WHY THERE IS NO `computeActivityStreak`. §14 also names pure math in
  * `packages/shared/src/streak.ts`, and sheet item 11 supersedes that: until SCL-08-E
- * gives 05B a student-local day boundary and the rest-day skip, the route returns 05B's
+ * gives 05B a student-local day boundary and the rest-day skip, this returns 05B's
  * value. Writing the math here would be a second streak — one stored, one derived —
  * disagreeing the day they diverge. When SCL-08-E lands, the skip rule belongs in 05B's
  * refresh, not here.
  *
- * expected outcome: the same number appears in the calendar header and on the practice
- * page, because both come from this function and this function reads one row.
+ * expected outcome: the same number appears in the calendar payloads (which the guardian
+ * calendar and the guardian dashboard header render) and in `kpi/overall`, because all of
+ * them come from this file and it reads one row.
  *
  * trade-offs: `history_complete` is `false` on every path. That is not a placeholder —
  * it is the honest statement that the stored value uses 05B's UTC day boundary and
@@ -76,8 +79,8 @@ export async function resolveStudentTimeZone(studentId: string): Promise<string>
  *
  * plain English: the stored streak, as of today in the student's local date — 0 when the last
  * active day is before yesterday (`streakAsOfToday`). EVERY read of the current streak goes
- * through here: the calendar's `streak.current`, the practice page's `/api/me/streak`, and
- * both audiences of `kpi/overall`, so no two surfaces can disagree. A zero stored streak needs
+ * through here: the calendar's `streak.current` (student and guardian payloads) and both
+ * audiences of `kpi/overall`, so no two surfaces can disagree. A zero stored streak needs
  * no zone and reads nothing more.
  *
  * FAILS OPEN, TO `null`, IN ONE PLACE. "Today" needs the student's zone; when that read fails
@@ -128,10 +131,11 @@ const UNKNOWN: StreakSummary = {
 };
 
 /**
- * §15: `{ current, longest, history_complete }` for one student.
+ * §14: `{ current, longest, history_complete }` for one student, embedded in the calendar
+ * payloads.
  *
  * Fails OPEN, to `null`s. A streak is a decoration on every surface that renders it —
- * the calendar, the practice page — and none of them should 500 because a KPI read
+ * the student and guardian calendars — and none of them should 500 because a KPI read
  * failed. The `null` says "unknown" and the client renders no streak, which is the same
  * thing it renders for a student who has none.
  */

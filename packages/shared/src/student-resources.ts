@@ -212,6 +212,20 @@ export const sectionProjectionSchema = z.object({
 });
 export type SectionProjectionDto = z.infer<typeof sectionProjectionSchema>;
 
+/**
+ * `GET /api/students/:studentId/projections/sections` as `resource()` sends it:
+ * `{ ok: true, sections, requestId }`. Ungated (Doc 05C: a student reads their own projection
+ * with no entitlement check), so Home reads it on both plans (UI-50; OQ-36).
+ */
+export const sectionProjectionsResponseSchema = z.object({
+  ok: z.literal(true),
+  sections: z.array(sectionProjectionSchema),
+  requestId: z.string().optional(),
+});
+export type SectionProjectionsResponse = z.infer<
+  typeof sectionProjectionsResponseSchema
+>;
+
 export const projectionSnapshotSchema = sectionProjectionSchema
   .omit({ computedAt: true })
   .extend({

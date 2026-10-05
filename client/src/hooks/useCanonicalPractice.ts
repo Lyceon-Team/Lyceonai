@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
 import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
 import { csrfFetch } from "@/lib/csrf";
@@ -131,6 +131,10 @@ export type PracticeSessionSpecInput = {
    */
   review?: ReviewSessionSpec;
 };
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 function mergeStats(
   prev: {
@@ -269,6 +273,12 @@ export function useCanonicalPractice(
     "created" | "active" | "completed" | "abandoned"
   >("created");
   const [calculatorState, setCalculatorState] = useState<unknown | null>(null);
+  /**
+   * True once `/next` has answered 409 `session_closed` (F-53, UI-53): the session is over and
+   * there is no next item. Separate from `sessionState`, which the answer response also sets to
+   * "completed" on the last answer, while the student is still reading that answer's feedback.
+   */
+  const [sessionClosed, setSessionClosed] = useState(false);
 
   const [score, setScore] = useState({
     correct: 0,
@@ -438,61 +448,101 @@ export function useCanonicalPractice(
     sessionSpec?.targetQuestionCount,
   ]);
 
-  const fetchNextQuestion = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  /**
+   * @spec [student-UI register §8 F-64, UI-53] | @implemented [2026-10-03]
+   * plain English: one `/next` per step. While a `/next` is in flight, a second call (React
+   * StrictMode's double mount effect in development, a double click on Next, the keyboard and
+   * the button together) gets the SAME promise instead of a second request. A ref, not state,
+   * because StrictMode keeps refs across its simulated unmount and remount, and because the
+   * guard must hold within one render. The server answers a concurrent pair safely as well
+   * (F-64); this keeps the runner from asking twice in the first place.
+   */
+  const nextInFlight = useRef<Promise<PracticeNextResponse | null> | null>(
+    null,
+  );
 
-    try {
-      const effectiveSessionId = await ensureSession();
-      const nextRes = await csrfFetch(
-        engine.endpoints.next(effectiveSessionId, clientInstanceId),
-        {
-          method: "GET",
-          credentials: "include",
-          headers: { Accept: "application/json" },
-        },
-      );
+  const loadNextQuestion =
+    useCallback(async (): Promise<PracticeNextResponse | null> => {
+      setIsLoading(true);
+      setError(null);
 
-      const nextPayloadBody = await nextRes.json().catch(() => null);
+      try {
+        const effectiveSessionId = await ensureSession();
+        const nextRes = await csrfFetch(
+          engine.endpoints.next(effectiveSessionId, clientInstanceId),
+          {
+            method: "GET",
+            credentials: "include",
+            headers: { Accept: "application/json" },
+          },
+        );
 
-      if (!nextRes.ok) {
-        throw new Error(`Failed to load next question (${nextRes.status})`);
+        const nextPayloadBody = await nextRes.json().catch(() => null);
+
+        // F-53 (register §8): after the last item, the server completes the session and `/next`
+        // answers 409 `session_closed`. That is the end of the session, not an error: the page
+        // sees `sessionState === "completed"` and goes to the completion destination.
+        if (
+          nextRes.status === 409 &&
+          isObjectRecord(nextPayloadBody) &&
+          nextPayloadBody.error === "session_closed"
+        ) {
+          setSessionState("completed");
+          setSessionClosed(true);
+          setQuestion(null);
+          setSessionItemId(null);
+          return null;
+        }
+
+        if (!nextRes.ok) {
+          throw new Error(`Failed to load next question (${nextRes.status})`);
+        }
+
+        const data = (nextPayloadBody ?? {}) as PracticeNextResponse;
+
+        if (data.sessionId) setSessionId(data.sessionId);
+        setSessionItemId(data.sessionItemId ?? null);
+        setQuestion(normalizeQuestion(data.question ?? null));
+        if (data.state) setSessionState(data.state);
+        if (Object.prototype.hasOwnProperty.call(data, "calculatorState")) {
+          setCalculatorState(data.calculatorState ?? null);
+        }
+
+        if (typeof data.totalQuestions === "number")
+          setTotalQuestions(data.totalQuestions);
+        if (typeof data.currentIndex === "number")
+          setCurrentIndex(data.currentIndex);
+        if (typeof data.ordinal === "number")
+          setCurrentIndex(Math.max(0, data.ordinal - 1));
+
+        if (data.stats) {
+          setScore((prev) => mergeStats(prev, data.stats));
+        }
+
+        resetPerQuestionState();
+        return data;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load question";
+        setError(message);
+        setQuestion(null);
+        setSessionItemId(null);
+        return null;
+      } finally {
+        setIsLoading(false);
       }
+    }, [clientInstanceId, engine, ensureSession, resetPerQuestionState]);
 
-      const data = (nextPayloadBody ?? {}) as PracticeNextResponse;
-
-      if (data.sessionId) setSessionId(data.sessionId);
-      setSessionItemId(data.sessionItemId ?? null);
-      setQuestion(normalizeQuestion(data.question ?? null));
-      if (data.state) setSessionState(data.state);
-      if (Object.prototype.hasOwnProperty.call(data, "calculatorState")) {
-        setCalculatorState(data.calculatorState ?? null);
-      }
-
-      if (typeof data.totalQuestions === "number")
-        setTotalQuestions(data.totalQuestions);
-      if (typeof data.currentIndex === "number")
-        setCurrentIndex(data.currentIndex);
-      if (typeof data.ordinal === "number")
-        setCurrentIndex(Math.max(0, data.ordinal - 1));
-
-      if (data.stats) {
-        setScore((prev) => mergeStats(prev, data.stats));
-      }
-
-      resetPerQuestionState();
-      return data;
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to load question";
-      setError(message);
-      setQuestion(null);
-      setSessionItemId(null);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clientInstanceId, engine, ensureSession, resetPerQuestionState]);
+  const fetchNextQuestion =
+    useCallback((): Promise<PracticeNextResponse | null> => {
+      const pending = nextInFlight.current;
+      if (pending) return pending;
+      const request = loadNextQuestion().finally(() => {
+        nextInFlight.current = null;
+      });
+      nextInFlight.current = request;
+      return request;
+    }, [loadNextQuestion]);
 
   const submitAnswer = useCallback(
     async (opts: { skipped: boolean }) => {
@@ -632,38 +682,6 @@ export function useCanonicalPractice(
     await submitAnswer({ skipped: true });
   }, [question, submitAnswer]);
 
-  const terminateSession = useCallback(async () => {
-    if (!sessionId) return null;
-    if (sessionState === "completed" || sessionState === "abandoned")
-      return { state: sessionState };
-
-    const res = await csrfFetch(engine.endpoints.terminate(sessionId), {
-      method: "POST",
-      credentials: "include",
-      keepalive: true,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({ client_instance_id: clientInstanceId }),
-    });
-
-    const payloadBody = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      throw new Error(`Failed to terminate session (${res.status})`);
-    }
-
-    const data = (payloadBody ?? {}) as { state?: "abandoned" };
-    if (data.state === "abandoned") {
-      setSessionState("abandoned");
-      setSessionItemId(null);
-      setQuestion(null);
-      setCalculatorState(null);
-    }
-    return data;
-  }, [clientInstanceId, engine, sessionId, sessionState]);
-
   const persistCalculatorState = useCallback(
     async (nextCalculatorState: unknown | null) => {
       if (!sessionId) return null;
@@ -730,6 +748,8 @@ export function useCanonicalPractice(
     score,
     currentIndex,
     totalQuestions,
+    /** True once the server has closed the session and there is no next item (F-53). */
+    sessionClosed,
 
     canSubmit,
 
@@ -737,7 +757,6 @@ export function useCanonicalPractice(
     submitAnswer,
     nextQuestion,
     handleMissingMcChoices,
-    terminateSession,
     calculatorState,
     persistCalculatorState,
     submitBlocked,

@@ -31,6 +31,12 @@ export type WeekGridProps = {
   onAddBlock?: (date: string) => void;
   /** §17.2's day controls, as a ⋯ menu. Absent on the guardian surface. */
   dayActions?: DayActions;
+  /**
+   * UI-55 (DESIGN.md §4 Calendar): the student's SAT date, starred on its column with the
+   * prototype's "★ SAT test day" card. Only the student page passes it; the guardian grid
+   * renders exactly as before without it.
+   */
+  testDate?: string | null;
 };
 
 function DayColumn({
@@ -42,6 +48,7 @@ function DayColumn({
   onOpen,
   onAddBlock,
   dayActions,
+  isTestDay,
 }: {
   date: string;
   day: ViewDay | null;
@@ -51,6 +58,7 @@ function DayColumn({
   onOpen: (blockId: string) => void;
   onAddBlock?: (date: string) => void;
   dayActions?: DayActions;
+  isTestDay: boolean;
 }): JSX.Element {
   const { setNodeRef, isOver } = useDroppable({
     id: `day:${date}`,
@@ -81,6 +89,7 @@ function DayColumn({
     isRest ? "rest" : "",
     blockedOut ? "off" : "",
     date === today ? "today" : "",
+    isTestDay ? "testday" : "",
     isOver ? "drop" : "",
   ]
     .filter(Boolean)
@@ -92,12 +101,23 @@ function DayColumn({
       className={className}
       data-date={date}
       data-testid={`calendar-day-${date}`}
+      data-test-day={isTestDay ? "true" : undefined}
     >
       <div className="dayhead">
         <div className="dow">{shortWeekday(date)}</div>
         <div className="dnum">
           {dayOfMonth(date)}
           {date === today ? <em>Today</em> : null}
+          {isTestDay ? (
+            <span
+              className="star"
+              role="img"
+              aria-label="Test day"
+              data-testid={`calendar-test-star-${date}`}
+            >
+              ★
+            </span>
+          ) : null}
         </div>
         <div className="dmeta">
           {meta}
@@ -117,6 +137,12 @@ function DayColumn({
         ) : null}
       </div>
       <div className="stack">
+        {isTestDay ? (
+          <div className="testcard" data-testid="calendar-test-day-card">
+            <b>★ SAT test day</b>
+            <span>Good luck. You&apos;re ready.</span>
+          </div>
+        ) : null}
         {blockedOut ? (
           <DayOffCard
             date={date}
@@ -158,6 +184,7 @@ export function WeekGrid({
   onOpen,
   onAddBlock,
   dayActions,
+  testDate = null,
 }: WeekGridProps): JSX.Element {
   return (
     <div className="week" data-testid="calendar-week-grid">
@@ -172,6 +199,7 @@ export function WeekGrid({
           onOpen={onOpen}
           {...(onAddBlock === undefined ? {} : { onAddBlock })}
           {...(dayActions === undefined ? {} : { dayActions })}
+          isTestDay={testDate !== null && date === testDate}
         />
       ))}
     </div>

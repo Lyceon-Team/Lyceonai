@@ -1,33 +1,24 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { csrfFetch } from "@/lib/csrf";
+import {
+  practiceOpenSessionsResponseSchema,
+  type PracticeOpenSession,
+  type PracticeOpenSessionsResponse,
+} from "@lyceon/shared/practice-response-schema";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type ActiveSession = {
-  id: string;
-  section: string;
-  mode: string;
-  status: string;
-  /**
-   * The server emits `created_at` (practice-canonical.ts:2209), never `started_at`.
-   * This type said `started_at` and `practice.tsx:360` read it, so every open-session
-   * row rendered "Invalid DateTime" from `DateTime.fromISO(undefined)`. Fixed in R4
-   * while mirroring this hook for review, which returns the same field
-   * (review-schema.ts:274).
-   */
-  created_at: string;
-  target_question_count: number;
-  total_items: number;
-  answered_items: number;
-};
-
-type OpenSessionsResponse = {
-  sessions: ActiveSession[];
-  maxConcurrentSessions?: number;
-};
+/**
+ * @spec [student-UI register OQ-22 (criteria on `/sessions/open`), UI-50] | @implemented
+ * [2026-10-03] | plain English: the row type is the shared schema's (the server emits
+ * `created_at`, never `started_at`; R4 fixed a hand-written type that said otherwise), and the
+ * response is parsed with it, so a field the route stops sending fails here instead of
+ * rendering "undefined". The parse also carries `criteria` (OQ-22) to Home's resume rows.
+ */
+type ActiveSession = PracticeOpenSession;
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -37,11 +28,12 @@ export function useActiveSessions() {
   const { user, authLoading } = useSupabaseAuth();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error, refetch } =
-    useQuery<OpenSessionsResponse>({
-      queryKey: ["/api/practice/sessions/open"],
-      enabled: !!user && !authLoading,
-    });
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["/api/practice/sessions/open"],
+    enabled: !!user && !authLoading,
+    select: (raw: unknown): PracticeOpenSessionsResponse =>
+      practiceOpenSessionsResponseSchema.parse(raw),
+  });
 
   const terminateMutation = useMutation({
     mutationFn: async (sessionId: string) => {
@@ -59,7 +51,7 @@ export function useActiveSessions() {
     },
   });
 
-  const sessions = data?.sessions ?? [];
+  const sessions: ActiveSession[] = data?.sessions ?? [];
   const maxConcurrentSessions = data?.maxConcurrentSessions ?? null;
 
   return {

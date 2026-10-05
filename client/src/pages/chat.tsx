@@ -1,47 +1,73 @@
 /**
- * @spec [CC Brief "PR B: Standalone LISA Chat UI" §2–§5]
- * @implemented 2026-09-23
+ * LISA (`/chat`): the conversation in a 760px reading column, the composer, and the right
+ * panel's New session and history.
  *
- * plain English: Standalone LISA chat page with sidebar, 8 UI states
- * (Main, Thinking, FailedTurn, NewSession, Crisis, Safeguarding,
- * EndSession, empty), client_turn_id idempotency (§3), and crisis/
- * safeguarding support cards driven entirely by server response content.
+ * @spec [student-UI register UI-56; §2 Free versus paid (LISA is paid; the entitlement denial
+ *        contract, SCL-185: tutor denials stay 403 nested with `tutor_access`; LISA keeps its
+ *        own predicate), OQ-29 (the feature-access map, reason plan | age; an under-13 student
+ *        gets the age message, not the upgrade modal), OQ-39 (f) history includes ended
+ *        sessions, (g) no subject under the header, OQ-44 (LISA's headline is the shipped
+ *        `LISA_UPGRADE_PITCH.title`; no new wording), OQ-49 (this route comes off the light
+ *        lock: route-shells.ts), UI-16 (history pages on the server's cursor); DESIGN.md §1
+ *        (tokens only, 14px floor, motion only for the typing dots), §2 (App shell, LISA's right
+ *        panel 320px, no slim footer), §3 (Typing indicator; Keyboard hook, no hint text),
+ *        §4 LISA; prototype Lisa.dc.html (paid and free); evidence/wiring-table.md §10]
+ *       [CC Brief "PR B: Standalone LISA Chat UI" §2–§5 (client_turn_id idempotency, the crisis
+ *        and safeguarding cards drawn from the server's response); closure plan W4-11]
+ * @implemented [2026-09-23; UI-56 2026-10-03]
  *
- * @updated 2026-09-27 — W4-11 (closure plan): an unpaid student never reaches
- * a composer. Every tutor route refuses them first (`entitlement_required`,
- * checked before crisis detection per Doc 03B §6.5, kept by owner ruling
- * 2026-09-27), and the session list is one of those routes — so the refusal
- * arrives on load, before anything is typed, and the LISA upgrade card takes
- * the place of "New session" and of the composer. The card is drawn only on
- * the server's refusal; a paying student is never refused and never sees it.
+ * plain English: one page, three states, decided by the feature-access map on
+ * `GET /api/profile` before any tutor request is made:
+ *   - locked, reason `plan`: the prototype's free card (LISA's shipped headline, the prototype
+ *     body) and "Unlock LISA", which opens the app's upgrade modal for `tutor_access`. No tutor
+ *     route is called: the hooks that would call them are not mounted.
+ *   - locked, reason `age` (under 13): the same headline with the server's own age message and
+ *     no button. Never the upgrade pitch.
+ *   - otherwise (granted, or no map): the conversation. The header names it (its title, else
+ *     "New session") with End session; the column lists the turns, each labelled "You" or
+ *     "LISA", the typing indicator while LISA thinks; the composer sends on Enter, adds a line
+ *     on Shift+Enter (the shared keyboard hook), and Send is disabled while LISA thinks. With no
+ *     conversation open the composer still takes a first message: the conversation is created
+ *     then, and that message is sent through the same turn machine. The right panel holds
+ *     New session (creates one and opens its empty column) and "Your sessions", newest first,
+ *     with "Show older" while the server reports another page.
+ *
+ * THE SERVER STILL DECIDES. A map can be stale. Every tutor route refuses an unpaid student
+ * first (Doc 03B §6.5), and any `entitlement_required` refusal (on the list, a conversation,
+ * New session or a send) swaps the page for the locked card; the app's denial listener opens
+ * the modal on the same refusal (UI-44). No client claim opens a composer.
+ *
+ * PRIVACY. Nothing on this page logs. A tutor exchange is held in the query cache for display
+ * and nowhere else (Coding Standards §12.1; Doc 03B: exchanges are ephemeral).
+ *
+ * Replaces the pre-redesign page: its own full-height left sidebar with the LISA avatar and
+ * "Sessions", the mobile sessions drawer, the "Welcome to LISA" empty state, the "What are we
+ * working on?" subject shortcuts, the header's subject and start time, and "Load more sessions".
  */
-
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Loader2, Plus, Menu } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import type { FeatureLockReason } from "@lyceon/shared/feature-access";
+import { useUpgradeModal } from "@/components/billing/UpgradeModal";
+import { UPGRADE_MODAL_COPY } from "@/components/billing/upgrade-modal";
+import { AppShellPanel } from "@/components/layout/app-shell";
+import { Modal, ModalClose } from "@/components/student-ui";
+import { Button, LYC_FOCUS } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useConversation,
   useConversations,
   useCreateConversation,
   useEndConversation,
   type TutorConversationSummary,
+  type TutorMessage,
 } from "@/hooks/tutor-client";
+import { useFeatureAccess } from "@/hooks/useFeatureAccess";
+import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
 import {
   Composer,
   CrisisSupportCard,
   FailedTurnNotice,
-  LisaAvatar,
   MessageBubble,
   PausedBar,
   SuggestedActionLink,
@@ -49,12 +75,19 @@ import {
   useScrollToBottomOnChange,
 } from "@/components/tutor/TutorThreadParts";
 import {
-  LisaUpgradeCard,
+  LISA_UPGRADE_PITCH,
   isLisaEntitlementDenial,
 } from "@/components/tutor/LisaUpgradeCard";
+import { dayMonth } from "@/features/exam/lib/tests-home-model";
+
+/** Prototype Lisa.dc.html composer placeholder. */
+export const LISA_COMPOSER_PLACEHOLDER = "Ask LISA about a question or a skill";
+
+/** Shipped title of a conversation with none yet (the server titles it on the first turn). */
+const UNTITLED = "New session";
 
 // ---------------------------------------------------------------------------
-// Search param helper
+// Pure helpers
 // ---------------------------------------------------------------------------
 
 function useConversationIdFromSearch(): string | null {
@@ -64,233 +97,99 @@ function useConversationIdFromSearch(): string | null {
   return raw && raw.trim().length > 0 ? raw.trim() : null;
 }
 
-// ---------------------------------------------------------------------------
-// Time formatting
-// ---------------------------------------------------------------------------
-
-function formatTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+/** The history row's date line, as the prototype writes it: "Today", else "24 September". */
+export function historyWhen(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  return sameDay ? "Today" : dayMonth(iso);
 }
 
-function formatRelativeDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function subjectFromEntryMode(
-  surface: string | null,
-  sourceSurface: string,
-): string {
-  if (surface === "practice") return "Practice";
-  if (surface === "review") return "Review";
-  if (sourceSurface === "dashboard") return "";
-  return sourceSurface.charAt(0).toUpperCase() + sourceSurface.slice(1);
+function chatHref(conversationId: string): string {
+  return `/chat?conversationId=${encodeURIComponent(conversationId)}`;
 }
 
 // ---------------------------------------------------------------------------
-// EndSessionModal — matches mockup artboard 7
+// The page
 // ---------------------------------------------------------------------------
 
-function EndSessionModal({
-  open,
-  onOpenChange,
-  onConfirm,
-  pending,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-  pending: boolean;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>End this session?</DialogTitle>
-          <DialogDescription>
-            It will close and leave your sessions list. You won&apos;t be able
-            to reopen it.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-            className="min-h-[44px]"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={onConfirm}
-            disabled={pending}
-            className="min-h-[44px]"
-          >
-            {pending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-            End session
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+export default function ChatPage(): JSX.Element {
+  // OQ-29: the map decides before any tutor request; nothing is asked while the profile loads.
+  const profile = useProfileQuery();
+  const access = useFeatureAccess();
+  const tutor = access?.tutor_access ?? null;
 
-// ---------------------------------------------------------------------------
-// SessionsSidebar content
-// ---------------------------------------------------------------------------
-
-function SessionsListContent({
-  conversations,
-  activeId,
-  onSelect,
-  onNewSession,
-  newSessionPending,
-  locked,
-  hasMore,
-  onLoadMore,
-  loadingMore,
-}: {
-  conversations: TutorConversationSummary[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-  onNewSession: () => void;
-  newSessionPending: boolean;
-  /** The server refused this student LISA: nothing here may start a session. */
-  locked: boolean;
-  /** The server said another page exists (`pagination.has_more`, Doc 03B §8.5). */
-  hasMore: boolean;
-  onLoadMore: () => void;
-  loadingMore: boolean;
-}) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 p-4 pb-2">
-        <LisaAvatar />
-        <span className="text-lg font-semibold text-foreground">LISA</span>
-      </div>
-
-      <button
-        type="button"
-        onClick={onNewSession}
-        disabled={newSessionPending || locked}
-        className="mx-3 mt-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
-        aria-label="New session"
+  if (profile.isPending) {
+    return (
+      <div
+        className="flex flex-1 flex-col gap-4 px-4 py-6 lg:px-10 lg:py-8"
+        role="status"
+        aria-label="Loading LISA"
       >
-        {newSessionPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Plus className="h-4 w-4" />
-        )}
-        New session
-      </button>
-
-      <div className="mt-4 px-3">
-        <p className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Sessions
-        </p>
+        <Skeleton variant="lyc" className="h-10 w-2/3 max-w-[480px]" />
+        <Skeleton variant="lyc" className="h-24 w-full max-w-[760px]" />
       </div>
-
-      <div className="mt-2 flex-1 overflow-y-auto px-3 pb-4 space-y-1">
-        {conversations.map((conv) => (
-          <button
-            key={conv.conversation_id}
-            type="button"
-            onClick={() => onSelect(conv.conversation_id)}
-            className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors min-h-[44px] ${
-              conv.conversation_id === activeId
-                ? "bg-secondary"
-                : "hover:bg-secondary/50"
-            }`}
-          >
-            <p className="text-sm font-medium text-foreground truncate">
-              {conv.title ?? "New session"}
-            </p>
-            <p className="text-xs text-muted-foreground truncate">
-              {subjectFromEntryMode(conv.surface, conv.source_surface)}
-              {subjectFromEntryMode(conv.surface, conv.source_surface) && " · "}
-              {formatRelativeDate(conv.updated_at)}
-            </p>
-          </button>
-        ))}
-
-        {conversations.length === 0 && (
-          <p className="px-1 py-4 text-xs text-muted-foreground text-center">
-            No sessions yet
-          </p>
-        )}
-
-        {hasMore && (
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={loadingMore}
-            className="w-full rounded-lg px-3 py-2.5 text-center text-sm text-muted-foreground hover:bg-secondary/50 transition-colors min-h-[44px]"
-            data-testid="button-load-more-sessions"
-          >
-            {loadingMore ? (
-              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-            ) : (
-              "Load more sessions"
-            )}
-          </button>
-        )}
-      </div>
-    </div>
-  );
+    );
+  }
+  if (tutor?.access === "locked") return <LisaLocked reason={tutor.reason} />;
+  return <LisaConversation />;
 }
 
 // ---------------------------------------------------------------------------
-// NewSessionView — matches mockup artboard 4
+// Locked: free plan, or under 13
 // ---------------------------------------------------------------------------
 
-function NewSessionView({
-  onSendMessage,
-}: {
-  onSendMessage: (message: string) => void;
-}) {
+/**
+ * Prototype Lisa.dc.html, plan = free: the card in the content column, nothing in the right
+ * panel. Copy: the approved LISA modal copy (OQ-44): the shipped headline and the prototype
+ * body; under 13, the same headline and the server's age message with no button (OQ-29).
+ */
+function LisaLocked({ reason }: { reason: FeatureLockReason }): JSX.Element {
+  const upgrade = useUpgradeModal();
+  const copy = UPGRADE_MODAL_COPY.tutor_access[reason];
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
-      <LisaAvatar size="lg" />
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold text-foreground">
-          What are we working on?
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Pick a section to start, or just ask a question below.
+    <div
+      className="flex-1 px-4 py-6 lg:overflow-y-auto lg:px-[72px] lg:py-14"
+      data-testid="lisa-locked"
+      data-reason={reason}
+    >
+      <section
+        aria-labelledby="lisa-locked-h"
+        className="flex max-w-[762px] flex-col gap-4 rounded-lg border border-lyc-rule bg-lyc-sheet px-6 py-8 sm:px-10 sm:py-9"
+      >
+        <h1
+          id="lisa-locked-h"
+          className="m-0 font-lyc-serif text-[28px] font-semibold leading-tight text-lyc-ink-strong sm:text-[32px]"
+        >
+          {copy.title}
+        </h1>
+        <p className="m-0 text-[18px] leading-relaxed text-lyc-ink">
+          {copy.body}
         </p>
-      </div>
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={() => onSendMessage("Math")}
-          className="rounded-xl border border-border bg-card px-6 py-3 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
-        >
-          Math
-        </button>
-        <button
-          type="button"
-          onClick={() => onSendMessage("Reading & Writing")}
-          className="rounded-xl border border-border bg-card px-6 py-3 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
-        >
-          Reading & Writing
-        </button>
-      </div>
+        {reason === "plan" ? (
+          <Button
+            type="button"
+            variant="lyc-primary"
+            size="lyc-lg"
+            className="self-start"
+            data-testid="lisa-unlock"
+            onClick={() => upgrade.open("tutor_access", "plan")}
+          >
+            {LISA_UPGRADE_PITCH.actionLabel}
+          </Button>
+        ) : null}
+      </section>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// ChatPage — main component
+// The conversation (paid, or no map: the server decides)
 // ---------------------------------------------------------------------------
 
-export default function ChatPage() {
+function LisaConversation(): JSX.Element {
   const [, setLocation] = useLocation();
   const conversationId = useConversationIdFromSearch();
 
@@ -302,6 +201,7 @@ export default function ChatPage() {
   const {
     data: conversationsList,
     error: conversationsError,
+    isPending: conversationsPending,
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
@@ -311,7 +211,13 @@ export default function ChatPage() {
 
   const [draft, setDraft] = useState("");
   const [endModalOpen, setEndModalOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  /** A first message typed with no conversation open, while its conversation is created. */
+  const [firstMessage, setFirstMessage] = useState<string | null>(null);
+  /** That message, once its conversation exists, waiting for the page to open it. */
+  const [queued, setQueued] = useState<{
+    conversationId: string;
+    text: string;
+  } | null>(null);
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -338,8 +244,8 @@ export default function ChatPage() {
   const isEnded = conversation?.status === "ended";
   const hasMessages = messages.length > 0 || optimisticMessage !== null;
 
-  // W4-11: the server refused this student LISA — on the session list, the
-  // conversation, "New session" or a send. Only a server refusal counts.
+  // W4-11: the server refused this student LISA — on the session list, the conversation,
+  // "New session" or a send. Only a server refusal counts.
   const denied =
     isLisaEntitlementDenial(conversationsError) ||
     isLisaEntitlementDenial(conversationError) ||
@@ -349,60 +255,81 @@ export default function ChatPage() {
     createConversation.error !== null &&
     !isLisaEntitlementDenial(createConversation.error);
 
-  // Scroll management
+  const isThinking = turnState.kind === "thinking";
   const scrollTrigger =
     (messages.length + (optimisticMessage ? 1 : 0)) * 2 +
-    (turnState.kind === "thinking" ? 1 : 0);
+    (isThinking || firstMessage !== null ? 1 : 0);
   useScrollToBottomOnChange(scrollAnchorRef, scrollTrigger);
 
   // ── Navigation ────────────────────────────────────────────────────────
 
   const navigateToConversation = useCallback(
     (id: string) => {
-      setLocation(`/chat?conversationId=${encodeURIComponent(id)}`);
+      setLocation(id ? chatHref(id) : "/chat");
       resetTurn();
       setDraft("");
-      setMobileMenuOpen(false);
     },
     [setLocation, resetTurn],
   );
 
   // ── New session ───────────────────────────────────────────────────────
 
-  // `mutate`, not `mutateAsync` in a try with an empty catch: the failure
-  // stays on `createConversation.error`, which the page reads — an
-  // entitlement refusal draws the upgrade card, anything else the alert
-  // below "New session". The old catch swallowed the 403 while claiming it
-  // was handled there, and nothing read it (W4-11).
-  const handleNewSession = useCallback(() => {
-    createConversation.mutate(
-      {
-        entry_mode: "general",
-        source_surface: "dashboard",
-        idempotency_key: crypto.randomUUID(),
-      },
-      {
-        onSuccess: (conv) => navigateToConversation(conv.conversation_id),
-      },
-    );
-  }, [createConversation, navigateToConversation]);
-
-  // ── Send message ──────────────────────────────────────────────────────
-
-  const handleSendMessage = useCallback(
-    async (messageText: string) => {
-      setDraft("");
-      await send(messageText);
+  // `mutate`, never `mutateAsync` in an empty catch: the failure stays on
+  // `createConversation.error`, which the page reads (W4-11).
+  const createThen = useCallback(
+    (onCreated: (conversationId: string) => void, onFailed?: () => void) => {
+      createConversation.mutate(
+        {
+          entry_mode: "general",
+          source_surface: "dashboard",
+          idempotency_key: crypto.randomUUID(),
+        },
+        {
+          onSuccess: (conv) => onCreated(conv.conversation_id),
+          ...(onFailed ? { onError: onFailed } : {}),
+        },
+      );
     },
-    [send],
+    [createConversation],
   );
 
-  // ── Submit from composer ──────────────────────────────────────────────
+  const handleNewSession = useCallback(() => {
+    createThen((id) => navigateToConversation(id));
+  }, [createThen, navigateToConversation]);
+
+  // ── Send ──────────────────────────────────────────────────────────────
 
   const handleComposerSubmit = useCallback(() => {
-    if (!draft.trim()) return;
-    void handleSendMessage(draft);
-  }, [draft, handleSendMessage]);
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    if (conversationId) {
+      void send(text);
+      return;
+    }
+    // No conversation open: create one for this message, then send it there.
+    setFirstMessage(text);
+    createThen(
+      (id) => {
+        setQueued({ conversationId: id, text });
+        navigateToConversation(id);
+      },
+      () => {
+        // The student's words go back in the composer, never lost.
+        setFirstMessage(null);
+        setDraft(text);
+      },
+    );
+  }, [draft, conversationId, send, createThen, navigateToConversation]);
+
+  // Once the page has opened the conversation created for a first message, that message is
+  // sent through the turn machine, once: a server call, so an effect.
+  useEffect(() => {
+    if (queued === null || queued.conversationId !== conversationId) return;
+    setQueued(null);
+    setFirstMessage(null);
+    void send(queued.text);
+  }, [queued, conversationId, send]);
 
   // ── End session ───────────────────────────────────────────────────────
 
@@ -412,271 +339,164 @@ export default function ChatPage() {
       onSuccess: () => {
         setEndModalOpen(false);
         navigateToConversation("");
-        setLocation("/chat");
       },
     });
-  }, [conversationId, endConversation, navigateToConversation, setLocation]);
+  }, [conversationId, endConversation, navigateToConversation]);
 
-  // ── Composer state ────────────────────────────────────────────────────
+  // ── Locked by the server ──────────────────────────────────────────────
 
-  const isThinking = turnState.kind === "thinking";
-  const composerPlaceholder = isThinking
-    ? "LISA is responding..."
-    : "Message LISA...";
-  const composerDisabled = isThinking || isPaused || isEnded;
+  if (denied) return <LisaLocked reason="plan" />;
 
-  // Determine if we should show the new session view (no messages yet)
-  const showNewSessionView =
-    !!conversationId &&
-    !isLoading &&
-    !denied &&
-    !hasMessages &&
-    !isPaused &&
-    !isEnded;
+  const firstMessageBubble: TutorMessage | null =
+    firstMessage !== null
+      ? {
+          message_id: "pending-first-message",
+          role: "student",
+          content_kind: "message",
+          message: firstMessage,
+          created_at: new Date(0).toISOString(),
+          client_turn_id: null,
+        }
+      : null;
 
-  // ── Sidebar content (shared between desktop and mobile drawer) ──────
-
-  const sidebarContent = (
-    <SessionsListContent
-      conversations={conversations}
-      activeId={conversationId}
-      onSelect={navigateToConversation}
-      onNewSession={handleNewSession}
-      newSessionPending={createConversation.isPending}
-      locked={denied}
-      hasMore={!!hasNextPage}
-      onLoadMore={() => void fetchNextPage()}
-      loadingMore={!!isFetchingNextPage}
-    />
-  );
-
-  // ── No conversation: welcome and "New session", or the upgrade card ──
-
-  const emptyState = denied ? (
-    <LisaUpgradeCard />
-  ) : (
-    <>
-      <LisaAvatar size="lg" />
-      <div className="text-center">
-        <h2 className="text-xl font-semibold text-foreground">
-          Welcome to LISA
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Start a new session or pick one from the sidebar.
-        </p>
-      </div>
-      <Button
-        onClick={handleNewSession}
-        disabled={createConversation.isPending}
-        className="min-h-[44px]"
-      >
-        {createConversation.isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin mr-1" />
-        ) : (
-          <Plus className="h-4 w-4 mr-1" />
-        )}
-        New session
-      </Button>
-      {createFailed && (
-        <p className="text-sm text-muted-foreground" role="alert">
-          Couldn&apos;t start a session. Try again.
-        </p>
-      )}
-    </>
-  );
-
-  // ── No conversation selected — show empty state ────────────────────
-
-  if (!conversationId) {
-    return (
-      // SCL-204 / R32: the whole LISA page (log, composer, conversation titles) is `ph-no-capture`
-      // — tutor content is never recorded (Coding Standards §12).
-      <div className="ph-no-capture flex h-screen">
-        {/* Desktop sidebar */}
-        <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-border bg-card">
-          {sidebarContent}
-        </aside>
-
-        {/* Mobile header */}
-        <div className="flex flex-1 flex-col md:hidden">
-          <header className="flex items-center gap-2 border-b border-border p-4">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Open sessions menu"
-                  className="min-h-[44px] min-w-[44px]"
-                >
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0">
-                {sidebarContent}
-              </SheetContent>
-            </Sheet>
-            <span className="text-lg font-semibold text-foreground">LISA</span>
-          </header>
-          <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
-            {emptyState}
-          </div>
-        </div>
-
-        {/* Desktop empty */}
-        <div className="hidden md:flex flex-1 flex-col items-center justify-center gap-6 p-8">
-          {emptyState}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Chat view ─────────────────────────────────────────────────────────
+  const composerDisabled =
+    isThinking || isPaused || isEnded || firstMessage !== null;
 
   return (
-    // SCL-204 / R32: `ph-no-capture` — tutor content is never recorded (Coding Standards §12).
-    <div className="ph-no-capture flex h-screen">
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-border bg-card">
-        {sidebarContent}
-      </aside>
-
-      {/* Chat area */}
-      <div className="flex flex-1 flex-col min-w-0">
-        {/* Header */}
-        <header className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Mobile menu */}
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="md:hidden min-h-[44px] min-w-[44px]"
-                  aria-label="Open sessions menu"
-                >
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0">
-                {sidebarContent}
-              </SheetContent>
-            </Sheet>
-
-            <div className="min-w-0">
-              <h1 className="text-base font-semibold text-foreground truncate">
-                {conversation?.title ?? "New session"}
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                {hasMessages && conversation
-                  ? `${subjectFromEntryMode(conversation.surface, conversation.source_surface)}${subjectFromEntryMode(conversation.surface, conversation.source_surface) ? " · " : ""}Started ${formatTime(conversation.created_at)}`
-                  : "Not started"}
-              </p>
-            </div>
-          </div>
-
-          {/* End session button — not shown on unstarted or ended sessions */}
-          {hasMessages && !isEnded && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEndModalOpen(true)}
-              disabled={endConversation.isPending}
-              className="shrink-0 min-h-[44px]"
-              aria-label="End session"
-            >
-              End session
-            </Button>
-          )}
-        </header>
-
-        {/* Message area */}
-        <main
-          className="flex-1 overflow-y-auto p-4 space-y-4"
-          role="log"
-          aria-live="polite"
-          aria-atomic="false"
-          aria-label="Conversation with LISA"
+    // SCL-204 / R32: `ph-no-capture` — the whole LISA page (log, composer, conversation titles);
+    // tutor content is never recorded (Coding Standards §12).
+    <div
+      className="ph-no-capture flex min-h-0 flex-1 flex-col"
+      data-testid="lisa-page"
+    >
+      <header className="flex min-h-[73px] shrink-0 items-center justify-between gap-4 border-b border-lyc-rule px-4 py-4 lg:px-10 lg:min-h-[81px] lg:py-5">
+        <h1
+          className="m-0 min-w-0 truncate font-lyc-serif text-[22px] font-semibold text-lyc-ink-strong lg:text-[24px]"
+          data-testid="lisa-title"
         >
-          {/* Loading */}
-          {isLoading && (
-            <div
-              className="flex justify-center py-8"
-              role="status"
-              aria-label="Loading conversation"
-            >
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="sr-only">Loading conversation</span>
-            </div>
-          )}
+          {conversation?.title ?? UNTITLED}
+        </h1>
+        {conversationId && hasMessages && !isEnded ? (
+          <Button
+            type="button"
+            variant="lyc-outline"
+            size="lyc"
+            className="h-10 shrink-0 border-lyc-input-bd px-4 text-[15px]"
+            onClick={() => setEndModalOpen(true)}
+            disabled={endConversation.isPending}
+          >
+            End session
+          </Button>
+        ) : null}
+      </header>
 
-          {/* New session view */}
-          {showNewSessionView && (
-            <NewSessionView
-              onSendMessage={(msg) => void handleSendMessage(msg)}
-            />
-          )}
+      <div
+        className="min-h-0 flex-1 px-4 py-6 lg:overflow-y-auto lg:px-10 lg:py-8"
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-label="Conversation with LISA"
+      >
+        <ol
+          aria-label="Conversation"
+          className="m-0 mx-auto flex max-w-[760px] list-none flex-col gap-[22px] p-0"
+        >
+          {isLoading ? (
+            <li role="status" aria-label="Loading conversation">
+              <Skeleton variant="lyc" className="h-24 w-full" />
+            </li>
+          ) : null}
 
-          {/* Messages */}
           {!isLoading &&
             messages.map((message) => (
-              <MessageBubble key={message.message_id} message={message} />
+              <li key={message.message_id}>
+                <MessageBubble message={message} />
+              </li>
             ))}
 
-          {/* The student's just-sent message, before the thread refetches
-              (W2-10). Thinking and FailedTurn render below it. */}
-          {!isLoading && optimisticMessage && (
-            <MessageBubble
-              key={optimisticMessage.message_id}
-              message={optimisticMessage}
-              pending
-            />
-          )}
+          {/* The student's just-sent message, before the thread refetches (W2-10). */}
+          {!isLoading && optimisticMessage ? (
+            <li key={optimisticMessage.message_id}>
+              <MessageBubble message={optimisticMessage} pending />
+            </li>
+          ) : null}
 
-          {turnState.kind === "idle" && (
-            <SuggestedActionLink action={suggestedAction} />
-          )}
+          {firstMessageBubble ? (
+            <li>
+              <MessageBubble message={firstMessageBubble} pending />
+            </li>
+          ) : null}
 
-          {/* Thinking indicator */}
-          {turnState.kind === "thinking" && <ThinkingIndicator />}
+          {turnState.kind === "idle" &&
+          suggestedAction?.type === "start_practice" ? (
+            <li>
+              <SuggestedActionLink action={suggestedAction} />
+            </li>
+          ) : null}
 
-          {/* Failed turn notice */}
-          {turnState.kind === "failed" && (
-            <FailedTurnNotice onRetry={handleRetry} />
-          )}
+          {isThinking || firstMessage !== null ? (
+            <li>
+              <ThinkingIndicator />
+            </li>
+          ) : null}
 
-          {/* Crisis/Safeguarding support card */}
-          {showCrisisCard && crisisLane && effectiveCrisisContent && (
-            <CrisisSupportCard
-              lane={crisisLane}
-              content={effectiveCrisisContent}
-            />
-          )}
+          {turnState.kind === "failed" ? (
+            <li>
+              <FailedTurnNotice onRetry={handleRetry} />
+            </li>
+          ) : null}
 
-          <div ref={scrollAnchorRef} />
-        </main>
+          {showCrisisCard && crisisLane && effectiveCrisisContent ? (
+            <li>
+              <CrisisSupportCard
+                lane={crisisLane}
+                content={effectiveCrisisContent}
+              />
+            </li>
+          ) : null}
 
-        {/* Composer or Paused bar */}
-        {showCrisisCard || isPaused ? (
-          <PausedBar
-            onEnd={() => setEndModalOpen(true)}
-            onContinue={handleResume}
-            endPending={endConversation.isPending}
-            resumePending={resumePending}
-          />
-        ) : isEnded ? null : denied ? (
-          <LisaUpgradeCard />
-        ) : (
-          <Composer
-            draft={draft}
-            onDraftChange={setDraft}
-            onSubmit={handleComposerSubmit}
-            disabled={composerDisabled}
-            placeholder={composerPlaceholder}
-          />
-        )}
+          {createFailed ? (
+            <li>
+              <p className="m-0 text-lyc-body text-lyc-muted" role="alert">
+                Couldn&apos;t start a session. Try again.
+              </p>
+            </li>
+          ) : null}
+        </ol>
+        <div ref={scrollAnchorRef} />
       </div>
 
-      {/* End session modal */}
+      {showCrisisCard || isPaused ? (
+        <PausedBar
+          onEnd={() => setEndModalOpen(true)}
+          onContinue={handleResume}
+          endPending={endConversation.isPending}
+          resumePending={resumePending}
+        />
+      ) : isEnded ? null : (
+        <Composer
+          draft={draft}
+          onDraftChange={setDraft}
+          onSubmit={handleComposerSubmit}
+          disabled={composerDisabled}
+          placeholder={LISA_COMPOSER_PLACEHOLDER}
+        />
+      )}
+
+      <AppShellPanel>
+        <HistoryPanel
+          conversations={conversations}
+          loading={conversationsPending}
+          activeId={conversationId}
+          onSelect={navigateToConversation}
+          onNewSession={handleNewSession}
+          newSessionPending={createConversation.isPending}
+          hasMore={!!hasNextPage}
+          onShowOlder={() => void fetchNextPage()}
+          loadingOlder={isFetchingNextPage}
+        />
+      </AppShellPanel>
+
       <EndSessionModal
         open={endModalOpen}
         onOpenChange={setEndModalOpen}
@@ -684,5 +504,148 @@ export default function ChatPage() {
         pending={endConversation.isPending}
       />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Right panel: New session, Your sessions, Show older (UI-16 cursor)
+// ---------------------------------------------------------------------------
+
+function HistoryPanel({
+  conversations,
+  loading,
+  activeId,
+  onSelect,
+  onNewSession,
+  newSessionPending,
+  hasMore,
+  onShowOlder,
+  loadingOlder,
+}: {
+  conversations: TutorConversationSummary[];
+  loading: boolean;
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNewSession: () => void;
+  newSessionPending: boolean;
+  /** The server said another page exists (`pagination.has_more`, Doc 03B §8.5). */
+  hasMore: boolean;
+  onShowOlder: () => void;
+  loadingOlder: boolean;
+}): JSX.Element {
+  return (
+    <div className="flex flex-col gap-3.5" data-testid="lisa-history">
+      <Button
+        type="button"
+        variant="lyc-outline"
+        size="lyc"
+        className="w-full"
+        onClick={onNewSession}
+        disabled={newSessionPending}
+        data-testid="lisa-new-session"
+      >
+        New session
+      </Button>
+      <h2 className="m-0 mt-2 font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong">
+        Your sessions
+      </h2>
+      {loading ? (
+        <Skeleton variant="lyc" className="h-32 w-full" />
+      ) : conversations.length === 0 ? (
+        <p className="m-0 text-lyc-meta-lg text-lyc-muted">No sessions yet</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+          {conversations.map((conv) => {
+            const current = conv.conversation_id === activeId;
+            return (
+              <li key={conv.conversation_id}>
+                <a
+                  href={chatHref(conv.conversation_id)}
+                  aria-current={current ? "page" : undefined}
+                  data-testid="lisa-history-item"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onSelect(conv.conversation_id);
+                  }}
+                  className={`${LYC_FOCUS} flex flex-col gap-0.5 rounded-md px-3 py-2.5 no-underline hover:bg-lyc-hover ${
+                    current ? "bg-lyc-chip text-lyc-ink-strong" : "text-lyc-ink"
+                  }`}
+                >
+                  <span className="break-words text-lyc-body font-semibold">
+                    {conv.title ?? UNTITLED}
+                  </span>
+                  <span className="text-lyc-meta text-lyc-muted">
+                    {historyWhen(conv.updated_at)}
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {hasMore ? (
+        <Button
+          type="button"
+          variant="lyc-link"
+          className="self-start px-3 py-1.5 text-[15px]"
+          onClick={onShowOlder}
+          disabled={loadingOlder}
+          data-testid="lisa-show-older"
+        >
+          Show older
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// End session
+// ---------------------------------------------------------------------------
+
+function EndSessionModal({
+  open,
+  onOpenChange,
+  onConfirm,
+  pending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  pending: boolean;
+}): JSX.Element {
+  return (
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      data-testid="lisa-end-modal"
+      title="End this session?"
+      // Shipped copy, less its first sentence ("It will close and leave your sessions list"):
+      // OQ-39 (f) keeps ended sessions in the history.
+      description="You won't be able to reopen it."
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="lyc-primary"
+            size="lyc"
+            onClick={onConfirm}
+            disabled={pending}
+          >
+            End session
+          </Button>
+          <ModalClose asChild>
+            <Button
+              type="button"
+              variant="lyc-quiet"
+              size="lyc"
+              disabled={pending}
+            >
+              Cancel
+            </Button>
+          </ModalClose>
+        </>
+      }
+    />
   );
 }

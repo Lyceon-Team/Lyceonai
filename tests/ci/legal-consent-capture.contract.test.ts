@@ -423,7 +423,10 @@ describe("C5 — the re-consent prompt blocks everyone except a guardian", () =>
     );
     expect(guard).not.toMatch(/dismissible(?!=)/);
     // Every close path is now unconditional.
-    expect(modal).toContain('e.key === "Escape"');
+    // Esc goes through the shared keyboard hook (UI-45), unconditionally.
+    expect(modal).toContain(
+      "useKeyboardShortcuts(buildEscapeKeymap(onDismiss));",
+    );
     expect(modal).not.toContain("if (!dismissible");
     expect(modal).toContain("reconsent-dismiss");
     expect(modal).toContain("reconsent-not-now");

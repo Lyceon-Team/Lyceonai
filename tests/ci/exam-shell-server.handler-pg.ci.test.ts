@@ -443,6 +443,32 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
       session_id: sid,
       report_state: "scored",
     });
+
+    // SCL-206 (Doc 05C §8.3 step 3): the request that finished the exam also refreshed the
+    // projection from the outbox row its seams wrote — nothing else consumed it here (no
+    // drain runs in this test), so a stamped row is the API's read-through.
+    const outbox = await pg.query(
+      `SELECT processed_at IS NOT NULL AS processed FROM public.projection_refresh_outbox
+        WHERE test_session_id = $1`,
+      [sid],
+    );
+    expect(outbox.rows).toEqual([{ processed: true }]);
+    const projection = await pg.query(
+      `SELECT section, fl1_score, fl2_score, fl_count_used, blend_denominator, projected_score_mid
+         FROM public.student_section_projections WHERE student_id = $1 ORDER BY section`,
+      [STUDENT],
+    );
+    evidence("projection after the exam", projection.rows);
+    expect(projection.rows.map((r) => r.section)).toEqual(["M", "RW"]);
+    for (const row of projection.rows) {
+      // every answer right: 800 per section, the one completed full-length in the blend
+      expect(row).toMatchObject({
+        fl1_score: 800,
+        fl2_score: null,
+        fl_count_used: 1,
+        blend_denominator: 2,
+      });
+    }
   }, 120_000);
 
   it("report: unavailable (200) when the owner's entitlement has lapsed", async () => {
@@ -452,13 +478,45 @@ describe.skipIf(!PG_AVAILABLE)("E7a exam shell server → real PG", () => {
         request(app).get(`/api/tests/sessions/${sid}/report`),
       );
       expect(res.status).toBe(200);
-      expect(res.body.data).toMatchObject({
+      // Owner ruling OQ-34 (2026-10-02), Doc 04C §11.5b / §12.1b step 3: the lapsed
+      // owner's payload carries the renewal action. Whole payload, from the real route.
+      const data = examStudentReportPayloadSchema.parse(res.body.data);
+      expect(data).toEqual({
         report_state: "unavailable",
+        session_id: sid,
+        test_form_id: FORM,
+        test_form_name: "Practice Test 1",
         unavailable_reason: "entitlement_lapsed",
+        unavailable_at: null,
+        resume_action: { type: "renew_entitlement", url: null },
+        review_unlocked: false,
       });
       expect(JSON.stringify(res.body)).not.toMatch(/scaled|disclosure/);
     } finally {
       LAPSED.delete(STUDENT);
+    }
+  });
+
+  it("report: a lapsed NON-owner still gets the bare 403, same as a missing session (§16.6)", async () => {
+    LAPSED.add(OTHER);
+    try {
+      const foreign = await as(OTHER)(
+        request(app).get(`/api/tests/sessions/${sid}/report`),
+      );
+      const missing = await as(OTHER)(
+        request(app).get(
+          `/api/tests/sessions/00000000-0000-4000-8000-00000000dead/report`,
+        ),
+      );
+      expect(foreign.status).toBe(403);
+      expect(missing.status).toBe(403);
+      expect(foreign.body.error).toEqual(missing.body.error);
+      expect(foreign.body).not.toHaveProperty("data");
+      expect(JSON.stringify(foreign.body)).not.toMatch(
+        /resume_action|renew_entitlement|unavailable_reason/,
+      );
+    } finally {
+      LAPSED.delete(OTHER);
     }
   });
 

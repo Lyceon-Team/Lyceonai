@@ -27,7 +27,7 @@ export type {
 function guidanceForMetric(metricId: string, value: number | null): string {
   // A null streak is "could not be worked out" (the zone was unreadable), not "no evidence".
   if (value === null && metricId === "current_streak") {
-    return "Your streak can't be shown right now — keep practising and it will be back.";
+    return "Your streak can't be shown right now — keep practicing and it will be back.";
   }
   if (value === null) {
     return "No scored evidence in this window yet — complete a few questions to populate it.";

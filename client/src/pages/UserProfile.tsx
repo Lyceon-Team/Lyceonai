@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AppShell } from "@/components/layout/app-shell";
 import { GuardianShell } from "@/components/layout/GuardianShell";
 import { guardianPaths } from "@/features/guardian/paths";
-import { StudentLinkCodePanel } from "@/components/student/StudentLinkCodePanel";
-import { StudentGuardiansPanel } from "@/components/student/StudentGuardiansPanel";
 import { PageCard } from "@/components/common/page-card";
 import { EmptyState } from "@/components/common/empty-state";
+import { FullPageLoader } from "@/components/student-ui";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -36,11 +34,6 @@ import {
   Shield,
   LogOut,
   Calendar,
-  Trophy,
-  Target,
-  Clock,
-  TrendingUp,
-  Star,
   AlertCircle,
   CheckCircle,
   Mail,
@@ -49,12 +42,6 @@ import { toast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
-import { useBillingPortal } from "@/hooks/useBillingPortal";
-import {
-  billingStatusLabel,
-  useBillingStatusQuery,
-} from "@/hooks/useBillingStatusQuery";
-import { resolveCtaDestination } from "@/lib/billing-cta";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { SessionNotice } from "@/components/feedback/SessionNotice";
 import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
@@ -95,22 +82,26 @@ export function formatMemberSince(createdAt?: string): string {
   return parsed.toLocaleDateString();
 }
 
-// Note: UserStats are not currently tracked by backend
-// Progress tracking uses /api/progress/kpis and /api/progress/projection (score estimate)
-// These features are temporarily disabled and shown as placeholders
-
+/**
+ * The GUARDIAN's /profile (G4-08).
+ *
+ * @spec [Guardian_Closure_Plan G4-08, G4-10; student-UI register UI-58] | @implemented
+ *       [2026-09-30; narrowed to the guardian 2026-10-03]
+ *
+ * plain English: a guardian's /profile is a guardian page: the guardian shell (one shell on
+ * every guardian page, G4-01) with guardian sections only, and billing pointing to Linked
+ * students & billing (G4-10). Since UI-58 a student's /profile is the Settings page
+ * (`pages/settings.tsx`), chosen by role in App.tsx's `ProfileRoute`, so the student-only parts
+ * that lived here are gone: the Progress tab of placeholders, the link-code and linked-guardian
+ * panels (Settings → Guardian), and the student billing card (Settings → Billing, F-40).
+ * Presentation only; every read on this page is authorised server-side.
+ */
 export default function UserProfile() {
   const [activeTab, setActiveTab] = useState("profile");
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
-  const { user, signOut, isGuardian } = useSupabaseAuth();
-  /**
-   * G4-08: a guardian's /profile is a guardian page — the guardian shell (one shell on every
-   * guardian page, G4-01) with guardian sections only: no Progress tab (the student's own
-   * practice figures) and billing pointing to Linked students & billing (G4-10). Chosen by
-   * role for presentation only; every read on this page is authorised server-side.
-   */
-  const Shell = isGuardian ? GuardianShell : AppShell;
+  const { user, signOut } = useSupabaseAuth();
+  const Shell = GuardianShell;
   const [roleSwitchTarget, setRoleSwitchTarget] =
     useState<RoleSwitchTarget>("student");
   const [roleSwitchMessage, setRoleSwitchMessage] = useState("");
@@ -126,14 +117,6 @@ export default function UserProfile() {
     error: profileErrorObj,
     refetch: refetchProfile,
   } = useProfileQuery({ enabled: !!user });
-
-  const {
-    data: billingStatus,
-    isLoading: billingStatusLoading,
-    isError: billingStatusError,
-    error: billingStatusErrorObj,
-    refetch: refetchBillingStatus,
-  } = useBillingStatusQuery({ enabled: !!user && !isGuardian });
 
   // Logout handler
   const handleLogout = async () => {
@@ -171,12 +154,7 @@ export default function UserProfile() {
     }
 
     const tab = new URLSearchParams(window.location.search).get("tab");
-    if (
-      tab === "profile" ||
-      tab === "progress" ||
-      tab === "settings" ||
-      tab === "billing"
-    ) {
+    if (tab === "profile" || tab === "settings" || tab === "billing") {
       setActiveTab(tab);
     }
   }, [location]);
@@ -196,14 +174,6 @@ export default function UserProfile() {
     );
   }, [accountEmail, accountName, currentRole, roleSwitchTarget]);
 
-  /**
-   * ONE PORTAL HOOK. This site already had the only correct error behaviour of
-   * the three portal call sites, so it is the behaviour that was lifted rather
-   * than re-implemented — `useBillingPortal` now serves all three, and the
-   * `409 NO_STRIPE_CUSTOMER` case gets a sentence that is actually advice.
-   */
-  const portal = useBillingPortal();
-
   const roleSwitchSubject = `Role update request: ${currentRole} -> ${roleSwitchTarget}`;
   const roleSwitchMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(roleSwitchSubject)}&body=${encodeURIComponent(roleSwitchMessage)}`;
   const roleSwitchPreview = [
@@ -212,26 +182,18 @@ export default function UserProfile() {
     "",
     roleSwitchMessage,
   ].join("\n");
-  const hasManageableSubscription =
-    !!billingStatus &&
-    (billingStatus.effectiveAccess ||
-      billingStatus.needsPaymentUpdate ||
-      !!billingStatus.stripeSubscriptionId ||
-      billingStatus.stripeStatus === "active" ||
-      billingStatus.stripeStatus === "trialing" ||
-      billingStatus.stripeStatus === "past_due");
 
   if (profileLoading) {
     return (
       <Shell>
-        <div className="min-h-[60vh] flex items-center justify-center">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">
-              Loading your profile...
-            </p>
-          </div>
-        </div>
+        {/* @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] |
+            @implemented [2026-10-03] — the shared loader, in its region form inside the
+            page's own shell; light-locked until Wave 5 (UI-58) themes this page. */}
+        <FullPageLoader
+          fill="region"
+          themeLock="light"
+          label="Loading your profile..."
+        />
       </Shell>
     );
   }
@@ -357,19 +319,11 @@ export default function UserProfile() {
           onValueChange={setActiveTab}
           className="space-y-6"
         >
-          <TabsList
-            className={`grid w-full ${isGuardian ? "grid-cols-3" : "grid-cols-4"} bg-secondary/60`}
-          >
+          <TabsList className="grid w-full grid-cols-3 bg-secondary/60">
             <TabsTrigger value="profile" data-testid="tab-profile">
               <User className="h-4 w-4 mr-2" />
               Profile
             </TabsTrigger>
-            {!isGuardian && (
-              <TabsTrigger value="progress" data-testid="tab-progress">
-                <TrendingUp className="h-4 w-4 mr-2" />
-                Progress
-              </TabsTrigger>
-            )}
             <TabsTrigger value="settings" data-testid="tab-settings">
               <Settings className="h-4 w-4 mr-2" />
               Settings
@@ -549,109 +503,8 @@ export default function UserProfile() {
             </Card>
           </TabsContent>
 
-          {/* Progress Tab — the student's own figures. A guardian has no trigger for it (G4-08),
-              and Radix mounts only the active tab's content, so it never renders for them. */}
-          <TabsContent value="progress" className="space-y-6">
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Detailed progress tracking on this page is intentionally
-                disabled until the rebuild is complete. Visit the Dashboard for
-                the current live KPI truth.
-              </AlertDescription>
-            </Alert>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Trophy className="h-5 w-5 text-yellow-500" />
-                    Overall Score
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div
-                    className="text-3xl font-bold text-primary"
-                    data-testid="text-overall-score"
-                  >
-                    —
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Check Dashboard
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Target className="h-5 w-5 text-blue-500" />
-                    Questions Answered
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div
-                    className="text-3xl font-bold text-primary"
-                    data-testid="text-questions-total"
-                  >
-                    —
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Check Dashboard
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-green-500" />
-                    Study Time
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div
-                    className="text-3xl font-bold text-primary"
-                    data-testid="text-study-time"
-                  >
-                    —
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Check Dashboard
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Subject Progress</CardTitle>
-                <CardDescription>
-                  Your progress across different SAT sections
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <EmptyState
-                  title="Coming Soon"
-                  description="Subject-specific progress tracking will be available soon. Keep practicing!"
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           {/* Settings Tab */}
           <TabsContent value="settings" className="space-y-6">
-            {/* SCL-080: the student's own code. Guardians have no code of their own — they
-                enter one — so this is student-only. */}
-            {currentRole === "student" && user?.id && (
-              <StudentLinkCodePanel studentId={user.id} />
-            )}
-            {/* §36.3: "Student profile → Remove guardian → confirmation". The surface the
-                link-code panel's copy and the guardian_linked notification both promise. */}
-            {currentRole === "student" && user?.id && (
-              <StudentGuardiansPanel studentId={user.id} />
-            )}
-
             <Card>
               <CardHeader>
                 <CardTitle>Data & Privacy</CardTitle>
@@ -673,132 +526,29 @@ export default function UserProfile() {
 
           {/* Billing Tab */}
           <TabsContent value="billing" className="space-y-6">
-            {isGuardian ? (
-              // G4-10: a guardian's billing is per student and lives with the students.
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <CreditCard className="h-5 w-5" />
-                    Billing
-                  </CardTitle>
-                  <CardDescription className="text-base">
-                    Each student&rsquo;s subscription, and billing for every
-                    student you pay for, are on Linked students &amp; billing.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button asChild className="min-h-[48px] text-base">
-                    <Link
-                      href={guardianPaths.students}
-                      data-testid="profile-guardian-billing"
-                    >
-                      Linked students &amp; billing
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <CreditCard className="h-5 w-5" />
-                    Subscription
-                  </CardTitle>
-                  <CardDescription>
-                    Manage your subscription and billing information
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {billingStatusLoading ? (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        Loading live billing status...
-                      </AlertDescription>
-                    </Alert>
-                  ) : billingStatusError ? (
-                    isSessionError(billingStatusErrorObj) ? (
-                      <SessionNotice
-                        message={
-                          (billingStatusErrorObj as Error)?.message ??
-                          toUserFacingMessage(billingStatusErrorObj).message
-                        }
-                        onRefreshSession={() => window.location.reload()}
-                      />
-                    ) : (
-                      <RecoveryNotice
-                        message={
-                          (billingStatusErrorObj as Error)?.message ??
-                          toUserFacingMessage(billingStatusErrorObj).message
-                        }
-                        onRetry={() => void refetchBillingStatus()}
-                      />
-                    )
-                  ) : (
-                    <>
-                      <Alert>
-                        <Star className="h-4 w-4" />
-                        <AlertDescription>
-                          Subscription access is server-authoritative and
-                          sourced from the canonical entitlement state.
-                        </AlertDescription>
-                      </Alert>
-
-                      <div className="rounded-lg border p-4 space-y-2">
-                        <p className="text-sm text-muted-foreground">
-                          Current status
-                        </p>
-                        <p className="font-medium">
-                          {billingStatus
-                            ? billingStatusLabel(billingStatus)
-                            : "unknown"}
-                        </p>
-                        {billingStatus?.hasActiveLink === false && (
-                          <p className="text-sm text-muted-foreground">
-                            Link a student account first to unlock guardian
-                            premium billing.
-                          </p>
-                        )}
-                      </div>
-
-                      {hasManageableSubscription ? (
-                        <Button
-                          onClick={() => portal.open()}
-                          disabled={portal.isPending}
-                          data-testid="button-manage-subscription"
-                        >
-                          {portal.isPending
-                            ? "Opening portal..."
-                            : "Manage Subscription"}
-                        </Button>
-                      ) : (
-                        /**
-                         * ROLE-AWARE, THROUGH THE ONE RESOLVER.
-                         *
-                         * This navigated every role to `/upgrade`, which
-                         * `App.tsx` registers as
-                         * `RequireRole allow={["student","admin"]}`. A guardian
-                         * WITH a linked student passed the `disabled` check, so
-                         * the button was enabled, pressed, and bounced straight
-                         * back to `/guardian` by `RequireRole` — the control
-                         * existed, the server was correct, and the two did not
-                         * meet. `resolveCtaDestination` makes that unwritable.
-                         */
-                        <Button
-                          onClick={() =>
-                            navigate(resolveCtaDestination({ isGuardian }))
-                          }
-                          disabled={billingStatus?.hasActiveLink === false}
-                          data-testid="button-upgrade-subscription"
-                        >
-                          {"View Plans"}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+            {/* G4-10: a guardian's billing is per student and lives with the students. */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Billing
+                </CardTitle>
+                <CardDescription className="text-base">
+                  Each student&rsquo;s subscription, and billing for every
+                  student you pay for, are on Linked students &amp; billing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild className="min-h-[48px] text-base">
+                  <Link
+                    href={guardianPaths.students}
+                    data-testid="profile-guardian-billing"
+                  >
+                    Linked students &amp; billing
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

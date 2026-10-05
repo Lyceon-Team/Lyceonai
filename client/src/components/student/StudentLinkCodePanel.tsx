@@ -20,16 +20,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Copy, Check, RefreshCw, KeyRound } from "lucide-react";
+import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { csrfFetch } from "@/lib/csrf";
 import {
   parseApiErrorFromResponse,
@@ -51,9 +42,6 @@ import {
   inviteGuardianRequestSchema,
   type StudentLinkCodeView,
 } from "../../../../packages/shared/src/student-link-code-schema";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Mail } from "lucide-react";
 
 export const STUDENT_LINK_CODE_QUERY_KEY = ["student-link-code"] as const;
 /**
@@ -139,145 +127,149 @@ export function StudentLinkCodePanel({ studentId }: { studentId: string }) {
     },
   });
 
+  // UI-58 (2026-10-03): drawn with the student tokens (Settings → Guardian; the Bare card on
+  // /guardian-required), labels from Settings.dc.html ("Your link code", "Copy code", "Get a new
+  // code", "Email it to my guardian"). Requests, test ids and the consequence line unchanged.
   return (
-    <Card data-testid="student-link-code-panel">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <KeyRound className="h-5 w-5" />
-          Your guardian link code
-        </CardTitle>
-        <CardDescription>
-          Share this code with a parent or guardian so they can follow your
-          progress.
-        </CardDescription>
-      </CardHeader>
+    <div
+      className="flex flex-col gap-3.5 text-lyc-ink"
+      data-testid="student-link-code-panel"
+    >
+      <span className="text-[17px] font-semibold text-lyc-ink">
+        Your link code
+      </span>
 
-      <CardContent className="space-y-4">
-        {isLoading && (
-          <p className="text-sm text-muted-foreground">Loading your code...</p>
-        )}
+      {isLoading && (
+        <p className="m-0 text-lyc-body text-lyc-muted">Loading your code...</p>
+      )}
 
-        {error && (
-          <Alert>
-            <AlertDescription data-testid="student-link-code-error">
-              {toUserFacingMessage(error).message}
-            </AlertDescription>
-          </Alert>
-        )}
+      {error && (
+        <p
+          className="m-0 text-lyc-body text-lyc-danger"
+          role="alert"
+          data-testid="student-link-code-error"
+        >
+          {toUserFacingMessage(error).message}
+        </p>
+      )}
 
-        {data?.code && (
-          <>
-            <div className="flex items-center gap-3">
-              <code
-                data-testid="student-link-code-value"
-                className="text-2xl font-mono tracking-[0.3em] px-4 py-2 rounded-md bg-muted"
-              >
-                {data.code}
-              </code>
-              <Button
-                variant="outline"
-                size="sm"
-                data-testid="student-link-code-copy"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(data.code ?? "");
-                  setCopied(true);
-                }}
-              >
-                {copied ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-                <span className="ml-2">{copied ? "Copied" : "Copy"}</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid="student-link-code-regenerate"
-                disabled={regenerate.isPending}
-                onClick={() => regenerate.mutate()}
-              >
-                <RefreshCw className="h-4 w-4" />
-                <span className="ml-2">
-                  {regenerate.isPending ? "Regenerating..." : "Regenerate"}
-                </span>
-              </Button>
-            </div>
+      {data?.code && (
+        <>
+          <code
+            data-testid="student-link-code-value"
+            className="self-start rounded-lg border border-dashed border-lyc-rule-strong bg-lyc-sheet px-[22px] py-3.5 font-mono text-[30px] tracking-[0.14em] text-lyc-ink-strong"
+          >
+            {data.code}
+          </code>
+          <p className="m-0 text-lyc-meta-lg text-lyc-muted">
+            Give this code to your guardian. They enter it in their own Lyceon
+            guardian account.
+          </p>
 
-            {hours !== null && (
-              <p
-                className="text-sm text-muted-foreground"
-                data-testid="student-link-code-expiry"
-              >
-                {hours === 0 ? "Expires shortly" : `Expires in ${hours}h`}
-              </p>
-            )}
-
-            {/* The consequence, stated where the sharing happens. */}
+          {hours !== null && (
             <p
-              className="text-sm text-muted-foreground"
-              data-testid="student-link-code-consequence"
+              className="m-0 text-lyc-meta-lg text-lyc-muted"
+              data-testid="student-link-code-expiry"
             >
-              Anyone who enters this code becomes your guardian and can see your
-              progress reports. They cannot see your tutor conversations, and
-              you can remove them at any time. The code stops working once it
-              has been used.
+              {hours === 0 ? "Expires shortly" : `Expires in ${hours}h`}
             </p>
+          )}
 
-            <form
-              className="space-y-2 border-t pt-4"
-              data-testid="student-link-invite-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                setInviteSent(false);
-                if (inviteParse.success) invite.mutate(inviteParse.data.email);
+          {/* The consequence, stated where the sharing happens. */}
+          <p
+            className="m-0 text-lyc-body text-lyc-ink"
+            data-testid="student-link-code-consequence"
+          >
+            Anyone who enters this code becomes your guardian and can see your
+            progress reports. They cannot see your tutor conversations, and you
+            can remove them at any time. The code stops working once it has been
+            used.
+          </p>
+
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="lyc-outline"
+              data-testid="student-link-code-copy"
+              onClick={() => {
+                void navigator.clipboard?.writeText(data.code ?? "");
+                setCopied(true);
               }}
             >
-              <Label htmlFor="student-link-invite-email">
-                Or send this code by email
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="student-link-invite-email"
-                  data-testid="student-link-invite-email"
-                  type="email"
-                  autoComplete="off"
-                  placeholder="guardian@example.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                />
-                <Button
-                  type="submit"
-                  variant="outline"
-                  data-testid="student-link-invite-submit"
-                  disabled={!inviteParse.success || invite.isPending}
-                >
-                  <Mail className="h-4 w-4" />
-                  <span className="ml-2">
-                    {invite.isPending ? "Sending..." : "Send invite"}
-                  </span>
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                They will get this code and a link to enter it. They still have
-                to sign in to Lyceon before anything is shared.
+              {copied ? "Copied" : "Copy code"}
+            </Button>
+            <Button
+              type="button"
+              variant="lyc-link"
+              className="px-3"
+              data-testid="student-link-code-regenerate"
+              disabled={regenerate.isPending}
+              onClick={() => regenerate.mutate()}
+            >
+              {regenerate.isPending ? "Regenerating..." : "Get a new code"}
+            </Button>
+          </div>
+
+          <form
+            className="flex flex-col gap-2 border-t border-lyc-rule pt-4"
+            data-testid="student-link-invite-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setInviteSent(false);
+              if (inviteParse.success) invite.mutate(inviteParse.data.email);
+            }}
+          >
+            <label
+              htmlFor="student-link-invite-email"
+              className="text-[17px] font-semibold text-lyc-ink"
+            >
+              Or send this code by email
+            </label>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                id="student-link-invite-email"
+                data-testid="student-link-invite-email"
+                type="email"
+                autoComplete="off"
+                placeholder="guardian@example.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                className={`${LYC_FOCUS} h-11 min-w-0 flex-1 rounded-md border border-lyc-input-bd bg-lyc-sheet px-3.5 text-[17px] text-lyc-ink placeholder:text-lyc-muted`}
+              />
+              <Button
+                type="submit"
+                variant="lyc-outline"
+                data-testid="student-link-invite-submit"
+                disabled={!inviteParse.success || invite.isPending}
+              >
+                {invite.isPending ? "Sending..." : "Email it to my guardian"}
+              </Button>
+            </div>
+            <p className="m-0 text-lyc-meta-lg text-lyc-muted">
+              They will get this code and a link to enter it. They still have to
+              sign in to Lyceon before anything is shared.
+            </p>
+            {inviteSent && (
+              <p
+                className="m-0 text-lyc-body text-lyc-ink"
+                role="status"
+                data-testid="student-link-invite-sent"
+              >
+                Invite sent. It carries this code and expires with it.
               </p>
-              {inviteSent && (
-                <p className="text-sm" data-testid="student-link-invite-sent">
-                  Invite sent. It carries this code and expires with it.
-                </p>
-              )}
-              {invite.error && (
-                <Alert>
-                  <AlertDescription data-testid="student-link-invite-error">
-                    {toUserFacingMessage(invite.error).message}
-                  </AlertDescription>
-                </Alert>
-              )}
-            </form>
-          </>
-        )}
-      </CardContent>
-    </Card>
+            )}
+            {invite.error && (
+              <p
+                className="m-0 text-lyc-body text-lyc-danger"
+                role="alert"
+                data-testid="student-link-invite-error"
+              >
+                {toUserFacingMessage(invite.error).message}
+              </p>
+            )}
+          </form>
+        </>
+      )}
+    </div>
   );
 }

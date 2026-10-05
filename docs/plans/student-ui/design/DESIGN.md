@@ -60,12 +60,14 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - A centered card on `--paper`.
 - Used by: login, signup, profile completion, update password, account recovery, the pending-deletion screen, 404, and the error screen.
 
-**Mobile (OQ-4, ruled 2026-10-02).**
-- The rail becomes a bottom tab bar of five: **Home, Practice, Review, Full-Length, LISA.**
-- **Calendar moves off the tab bar.** Home's "Start today's plan" already launches the day's work, and Calendar stays reachable from the avatar menu and from Home.
-- A top bar carries the logo and the account avatar. The avatar menu holds Calendar, Settings, Help and Sign out.
+**Mobile (OQ-4, ruled 2026-10-02; tab bar and avatar menu revised by owner ruling, Karl, 2026-10-05; supersedes OQ-4 / OQ-48 menu order).**
+- Below `lg` (1024px) the rail becomes a bottom tab bar of five: **Home, Practice, Review, Calendar, LISA.** Calendar keeps its lock as a hint and navigates; LISA's lock opens the upgrade modal, as on the rail.
+- **Full-Length moves off the tab bar into the avatar menu.** The official SAT (Bluebook) can't be taken on a phone; full-length tests belong on a laptop or tablet.
+- A top bar carries the logo, the bell and the account avatar. The avatar menu holds **Full-Length, Settings, Help, Sign out**, in that order. Full-Length keeps its lock in the menu: locked, it opens the upgrade modal in place.
+- An admin keeps the avatar menu at every width, with the same entries and Crisis review before Sign out (OQ-48).
+- **Full-Length on a phone still works and is never blocked.** Its home shows the page title and the notice "Full-length tests are built for a laptop or tablet, like test day." with **Continue anyway**, which reveals the whole home (remembered for the visit). The notice's action is an outline button: Start or Resume stays the home's one filled action. The exam session, module and report pages never show it.
 - The right panel's content stacks below the main content.
-- The Focus shell and the Bare card are unchanged on mobile.
+- The desktop rail is unchanged. The Focus shell and the Bare card are unchanged on mobile.
 
 ---
 
@@ -110,6 +112,8 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - "Before you start".
 - Right panel: score history linking to reports, and mastery.
 - Free plan: an in-page upgrade card.
+- Page title "Full-Length" (owner naming ruling, Karl, 2026-10-05: every student-facing "Tests" label becomes "Full-Length"; the `/tests` route stays).
+- On a phone: the laptop-or-tablet notice with Continue anyway first (§2 Mobile).
 
 **Exam report** (Focus shell).
 - Total score out of 1600 and section scores out of 800.

@@ -3890,6 +3890,8 @@ CREATE FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, 
     AS $_$
 DECLARE
   v_now timestamptz := COALESCE(p_now, now());
+  v_tz text;
+  v_local_day date;
   v_today_start timestamptz;
   v_tomorrow_start timestamptz;
   v_daily_limit integer;
@@ -3900,6 +3902,7 @@ DECLARE
   v_account uuid := NULL;
   v_entitled boolean := false;
   v_counts_toward_limit boolean := true;
+  v_diagnostic_session boolean := false;
   v_dedupe_key text := NULL;
   v_existing_id uuid := NULL;
   v_inserted_id uuid := NULL;
@@ -3933,9 +3936,25 @@ BEGIN
   END IF;
   v_session_limit := v_config_val::integer;
 
-  -- UTC-day boundaries
-  v_today_start := date_trunc('day', v_now AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
-  v_tomorrow_start := v_today_start + interval '1 day';
+  -- Reset timezone from config (required — no hardcoded fallback). Doc 02B §13.
+  SELECT value #>> '{}' INTO v_tz
+  FROM public.practice_runtime_config
+  WHERE key = 'quota_reset_timezone';
+  IF v_tz IS NULL OR v_tz = '' THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Local-day boundaries in the configured zone (DST-correct: each boundary is a local
+  -- midnight converted to an absolute instant, never a fixed offset).
+  BEGIN
+    v_local_day := (v_now AT TIME ZONE v_tz)::date;
+  EXCEPTION WHEN invalid_parameter_value THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END;
+  v_today_start := v_local_day::timestamp AT TIME ZONE v_tz;
+  v_tomorrow_start := (v_local_day + 1)::timestamp AT TIME ZONE v_tz;
   v_reset_at := v_tomorrow_start;
 
   -- Resolve account + entitlement
@@ -3943,19 +3962,36 @@ BEGIN
   v_entitled := public._rl_has_active_entitlement(p_student_user_id);
   v_counts_toward_limit := NOT v_entitled;
 
-  -- Count today's consumed units (UTC-day window)
-  SELECT COALESCE(SUM(units), 0)::integer
-  INTO v_used
-  FROM public.usage_rate_limit_ledger l
-  WHERE l.scope = 'practice'
-    AND l.student_user_id = p_student_user_id
-    AND l.reservation_state IN ('consumed', 'finalized')
-    AND COALESCE((l.metadata->>'counts_toward_limit')::boolean, true)
-    AND l.created_at >= v_today_start
-    AND l.created_at < v_tomorrow_start;
+  -- A diagnostic serve is never refused by the free daily cap (OQ-50, Karl 2026-10-05). Read
+  -- from the student's own session row; an unknown or foreign session is not exempt.
+  IF p_session_id IS NOT NULL THEN
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.practice_sessions ps
+      WHERE ps.id = p_session_id
+        AND ps.user_id = p_student_user_id
+        AND ps.mode = 'diagnostic'
+    )
+    INTO v_diagnostic_session;
+  END IF;
 
-  -- Daily cap check (unpaid only)
-  IF v_counts_toward_limit AND v_used >= v_daily_limit THEN
+  -- Today's resolved practice questions (Doc 02B §13 as amended by SCL-209 / OQ-50): one row
+  -- per answered OR skipped item, dated by `occurred_at` (CHECK-guaranteed on both), outside
+  -- diagnostic sessions. An idempotent replay re-reads the same row; a served item that is
+  -- neither answered nor skipped counts zero.
+  SELECT count(*)::integer
+  INTO v_used
+  FROM public.practice_session_items psi
+  JOIN public.practice_sessions ps ON ps.id = psi.session_id
+  WHERE psi.user_id = p_student_user_id
+    AND psi.status IN ('answered', 'skipped')
+    AND psi.occurred_at >= v_today_start
+    AND psi.occurred_at < v_tomorrow_start
+    AND ps.mode <> 'diagnostic';
+
+  -- Daily cap check (unpaid only) — the one branch the dry run and the serve share; a
+  -- diagnostic serve passes it.
+  IF v_counts_toward_limit AND NOT v_diagnostic_session AND v_used >= v_daily_limit THEN
     RETURN jsonb_build_object(
       'allowed', false,
       'code', 'PRACTICE_FREE_DAILY_QUOTA_EXCEEDED',
@@ -3970,7 +4006,7 @@ BEGIN
     );
   END IF;
 
-  -- Per-session cap (paid users)
+  -- Per-session cap (paid users) — unchanged: counted over the session's serve ledger rows.
   IF p_session_id IS NOT NULL AND v_entitled THEN
     SELECT COALESCE(SUM(units), 0)::integer
     INTO v_session_used
@@ -4012,7 +4048,7 @@ BEGIN
     );
   END IF;
 
-  -- Idempotency: dedupe on session_item_id
+  -- Idempotency: dedupe the serve log on session_item_id
   IF p_session_item_id IS NOT NULL THEN
     v_dedupe_key := 'practice:served:' || p_session_item_id::text;
     SELECT l.id
@@ -4037,7 +4073,7 @@ BEGIN
     );
   END IF;
 
-  -- Insert ledger entry
+  -- Serve log row: feeds the paid per-session cap; the free daily count does not read it.
   INSERT INTO public.usage_rate_limit_ledger (
     scope, event_key, student_user_id, account_id,
     session_id, session_item_id, dedupe_key,
@@ -4055,9 +4091,8 @@ BEGIN
   )
   RETURNING id INTO v_inserted_id;
 
-  IF v_counts_toward_limit THEN
-    v_used := v_used + 1;
-  ELSE
+  -- A serve consumes no free quota (Doc 02B §13): only the paid session count steps.
+  IF NOT v_counts_toward_limit THEN
     v_session_used := v_session_used + 1;
   END IF;
 
@@ -4528,8 +4563,8 @@ DECLARE
   v_gate_passed       boolean;
   v_weighted_mastery  numeric;
   v_mastery_term      numeric;
-  v_fl1_score         integer;     -- State A: always NULL (no full-lengths pre-WS-4)
-  v_fl2_score         integer;     -- State A: always NULL (no full-lengths pre-WS-4)
+  v_fl1_score         integer;     -- most recent completed full-length, this section (§5.7)
+  v_fl2_score         integer;     -- second most recent completed full-length, this section
   v_fl_count_used     integer;
   v_blend_numerator   numeric;
   v_blend_denominator integer;
@@ -4641,22 +4676,42 @@ BEGIN
     v_mastery_term :=
         v_section_min + (v_weighted_mastery * (v_section_max - v_section_min));
 
-    -- §5.7 resolve the full-length terms and compute the blend (INV-05C-13).
-    -- ┌─ NAMED FORWARD-REF (WS-4, BLOCKING_UPSTREAM_GAP — 04B object unnamed) ────────────────────┐
-    -- │ States B/C read the 04B completed-full-length section-score surface (the two most recent  │
-    -- │ completed full-lengths by completed_at, tiebreak id desc), adding fl1/fl2 to the numerator │
-    -- │ and 1/2 to the denominator. Doc 05C §5.7 / §11.C mark that object BLOCKING_UPSTREAM_GAP    │
-    -- │ until Doc 04B names it (columns student_id, section, section_scaled_score, is_complete,    │
-    -- │ completed_at, id; "completed = both modules submitted and scored"). State A has NO 04B     │
-    -- │ dependency, so NO full_length_section_scores read appears here — it is added in WS-4. The  │
-    -- │ blend numerator ALWAYS seeds with v_mastery_term (INV-05C-13), so the WS-4 addition is     │
-    -- │ purely additive (denominator 1 -> 2 -> 3) with no body restructure.                        │
-    -- └───────────────────────────────────────────────────────────────────────────────────────────┘
-    v_fl1_score         := NULL;   -- State A
-    v_fl2_score         := NULL;   -- State A
-    v_blend_numerator   := v_mastery_term;                 -- mastery term always present (INV-05C-13)
-    v_blend_denominator := 1;                              -- State A (no full-lengths pre-WS-4)
-    v_fl_count_used     := v_blend_denominator - 1;        -- 0 in State A
+    -- §5.7 resolve the full-length terms and compute the blend (INV-05C-13). The two most recent
+    -- COMPLETED full-lengths for this section, by completed_at, tiebreak id desc — §5.7 verbatim,
+    -- bound to the 04B surface SCL-157 named (full_length_section_scores; is_complete = the session
+    -- completed, so a partial/abandoned test never contributes, P5). A third, older one is never
+    -- read (P4). No staleness rule in V1.0 (Q1 State D).
+    SELECT fl.section_scaled_score
+    INTO   v_fl1_score
+    FROM   public.full_length_section_scores fl
+    WHERE  fl.student_id  = p_student_id
+      AND  fl.section     = p_section
+      AND  fl.is_complete = true
+    ORDER BY fl.completed_at DESC, fl.id DESC
+    LIMIT 1;
+
+    SELECT fl.section_scaled_score
+    INTO   v_fl2_score
+    FROM   public.full_length_section_scores fl
+    WHERE  fl.student_id  = p_student_id
+      AND  fl.section     = p_section
+      AND  fl.is_complete = true
+    ORDER BY fl.completed_at DESC, fl.id DESC
+    OFFSET 1 LIMIT 1;
+
+    -- The denominator adapts to how many full-lengths exist (States A/B/C). The mastery term is
+    -- ALWAYS present (INV-05C-13): the projection is never the full-length alone, never a clamp.
+    v_blend_numerator   := v_mastery_term;
+    v_blend_denominator := 1;
+    IF v_fl1_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl1_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    IF v_fl2_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl2_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    v_fl_count_used     := v_blend_denominator - 1;        -- 0, 1 or 2
     v_blended_raw       := v_blend_numerator / v_blend_denominator;
 
     -- §5.8 bounded range. relevant_question_count = 05B student_section_kpi.events_total (the same
@@ -5689,7 +5744,7 @@ BEGIN
 
   v_at := COALESCE(v_s.completed_at, v_s.abandoned_at, v_run.computed_at);
 
-  -- R4 — review: served items of submitted modules, wrong or blank.
+  -- R4 — review: served items of SUBMITTED SECTIONS (SCL-205), wrong or blank.
   FOR it IN
     SELECT i.section, i.module, i.ordinal, i.question_id, a.answer
       FROM test_session_items i
@@ -5699,8 +5754,7 @@ BEGIN
         ON a.test_session_id = i.test_session_id AND a.section = i.section
        AND a.module = i.module AND a.ordinal = i.ordinal
      WHERE i.test_session_id = v_s.id
-       AND (   (i.module = '1' AND sec.state IN ('module1_submitted', 'module2_active', 'submitted'))
-            OR (i.module <> '1' AND sec.state = 'submitted'))
+       AND sec.state = 'submitted'   -- SCL-205: both modules submitted, or nothing
        AND NOT is_answer_correct(a.answer, i.question_id)
      ORDER BY CASE i.section WHEN 'RW' THEN 1 ELSE 2 END, i.module, i.ordinal
   LOOP
@@ -6827,6 +6881,66 @@ $$;
 --
 
 COMMENT ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) IS 'The one write path for the two post-exam notices. Returns emitted | duplicate. Idempotent per (student, occasion, event type) because the type is part of notification_event_id''s hash input. The score prompt goes to the student; the renewal decision goes to the payer (the student when payer_profile_id is NULL).';
+
+
+--
+-- Name: exam_scored_sessions(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) RETURNS jsonb
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_student_id IS NULL OR p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION 'exam_scored_sessions: invalid arguments'
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'sessions', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'session_id', x.session_id,
+               'test_form_name', x.test_form_name,
+               'completed_at', x.completed_at,
+               'total_scaled', x.total_scaled,
+               'rw_scaled', x.rw_scaled,
+               'math_scaled', x.math_scaled,
+               'disclosure', x.disclosure)
+             ORDER BY x.completed_at DESC, x.session_id DESC)
+        FROM (
+          SELECT s.id AS session_id,
+                 f.name AS test_form_name,
+                 s.completed_at,
+                 r.total_scaled,
+                 r.rw_scaled,
+                 r.math_scaled,
+                 CASE WHEN d.scoring_model_version IS NULL THEN NULL
+                      ELSE jsonb_build_object(
+                             'disclosure_version', d.disclosure_version,
+                             'summary', d.summary,
+                             'full_text_url', d.full_text_url)
+                 END AS disclosure
+            FROM test_sessions s
+            JOIN test_forms f ON f.id = s.test_form_id
+            JOIN score_runs r ON r.test_session_id = s.id
+            LEFT JOIN score_disclosure_versions d
+                   ON d.scoring_model_version = r.scoring_model_version
+           WHERE s.student_id = p_student_id
+             AND s.state = 'completed'
+             AND r.total_scaled IS NOT NULL
+           ORDER BY s.completed_at DESC, s.id DESC
+           LIMIT p_limit
+        ) x), '[]'::jsonb)));
+END;
+$$;
+
+
+--
+-- Name: FUNCTION exam_scored_sessions(p_student_id uuid, p_limit integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) IS 'OQ-30 (owner ruling 2026-10-02; Doc 04C §16.3): the caller''s scored full-length sessions, newest first (completed_at DESC, id DESC), capped by p_limit (1..100). Per row: session_id, test_form_name, completed_at, total/rw/math scaled from score_runs, and the disclosure bound to the run''s scoring_model_version (null when unbound — the server refuses it). No decomposition, item or answer data.';
 
 
 --
@@ -8736,6 +8850,121 @@ BEGIN
   END IF;
 
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_after_exam(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_session uuid;
+  v_id      bigint;
+BEGIN
+  SELECT aggregate_id INTO v_session FROM public.exam_runtime_outbox
+   WHERE id = p_seams_outbox_event_id
+     AND event_type = 'test_session_scored'
+     AND status = 'published';
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('outcome', 'seams_not_published');
+  END IF;
+
+  SELECT outbox_id INTO v_id FROM public.projection_refresh_outbox
+   WHERE test_session_id = v_session
+     AND processed_at IS NULL
+   FOR UPDATE SKIP LOCKED;
+  IF NOT FOUND THEN
+    -- a partial session (no row), an anonymised student (no row), or already refreshed
+    RETURN jsonb_build_object('outcome', 'nothing_pending');
+  END IF;
+
+  PERFORM public.projection_refresh_outbox_process(v_id);
+  RETURN jsonb_build_object('outcome', 'refreshed');
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_outbox_drain(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_outbox_drain(p_limit integer DEFAULT 50) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r        record;
+  v_done   integer := 0;
+  v_failed integer := 0;
+  v_state  text;
+BEGIN
+  IF p_limit IS NULL OR p_limit < 1 THEN
+    RAISE EXCEPTION 'PROJECTION_DRAIN_INVALID_LIMIT: %', p_limit;
+  END IF;
+
+  FOR r IN
+    SELECT o.outbox_id
+      FROM public.projection_refresh_outbox o
+     WHERE o.processed_at IS NULL
+     ORDER BY o.requested_at, o.outbox_id
+     LIMIT p_limit
+     FOR UPDATE SKIP LOCKED
+  LOOP
+    BEGIN
+      IF public.projection_refresh_outbox_process(r.outbox_id) THEN
+        v_done := v_done + 1;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      -- The row stays unprocessed for the next run; the others still drain. SQLSTATE only:
+      -- projection messages carry the student id.
+      GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE;
+      RAISE WARNING 'PROJECTION_REFRESH_FAILED: outbox_id % sqlstate %', r.outbox_id, v_state;
+      v_failed := v_failed + 1;
+    END;
+  END LOOP;
+
+  RETURN jsonb_build_object('processed', v_done, 'failed', v_failed);
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_outbox_process(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.projection_refresh_outbox%ROWTYPE;
+BEGIN
+  SELECT * INTO v_row FROM public.projection_refresh_outbox
+   WHERE outbox_id = p_outbox_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_row.processed_at IS NOT NULL THEN
+    RETURN false;   -- unknown or already processed: a replay writes nothing
+  END IF;
+
+  PERFORM public.compute_section_projection(v_row.student_id, 'M',  now());
+  PERFORM public.compute_section_projection(v_row.student_id, 'RW', now());
+
+  -- The refresh just happened, so the throttle counter restarts (§8.3 step 2, §8.4).
+  INSERT INTO public.student_projection_refresh_state (student_id, events_since_refresh, last_refresh_at)
+  VALUES (v_row.student_id, 0, now())
+  ON CONFLICT (student_id) DO UPDATE
+     SET events_since_refresh = 0,
+         last_refresh_at      = now();
+
+  UPDATE public.projection_refresh_outbox
+     SET processed_at = now()
+   WHERE outbox_id = p_outbox_id;
+  RETURN true;
 END;
 $$;
 
@@ -21802,6 +22031,14 @@ GRANT ALL ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor
 
 
 --
+-- Name: FUNCTION exam_scored_sessions(p_student_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) TO service_role;
+
+
+--
 -- Name: FUNCTION exam_section_state_json(p_session_id uuid, p_section text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -22144,6 +22381,30 @@ REVOKE ALL ON FUNCTION public.profiles_analytics_fields_set_once() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION public.profiles_lock_date_of_birth() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION projection_refresh_after_exam(p_seams_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION projection_refresh_outbox_drain(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_outbox_drain(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_outbox_drain(p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION projection_refresh_outbox_process(p_outbox_id bigint); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) TO service_role;
 
 
 --

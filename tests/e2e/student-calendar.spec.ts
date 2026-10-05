@@ -14,6 +14,17 @@
  * (owner decision 2026-10-01, item 10) with the guardian spec's `offCentre`.
  *
  * run: as `guardian-surfaces.spec.ts` (Vite up, E2E_BASE_URL, E2E_SHOT_DIR).
+ *
+ * UI-55 (2026-10-03): the student calendar moved onto the App shell (student-UI register UI-55,
+ * DESIGN.md §4): its own rail and the three-zone `.top` header (slots C1/C2/R1/R2) are the
+ * guardian's alone now, and the student page draws a Canvas-style header (`calendar-header`)
+ * with the goal card in the shell's right panel. So this spec waits for the student grid instead
+ * of `.main`, and its phone-centring checks keep every SHARED element (the day heading, the
+ * week strip, the block card) and measure the new header's two rows in place of the retired
+ * slots. The desktop byte comparison applies from this redesign on.
+ *
+ * SCL-211 (2026-10-05, OQ-56): the student calendar draws no facts strip, so the "facts footer"
+ * check is gone with it (the guardian spec keeps its own); the page is asserted to have none.
  */
 import { expect, test, type Route } from "@playwright/test";
 import { offCentre } from "./guardian-harness/centring";
@@ -83,9 +94,9 @@ for (const vp of [
     // The fixture week is cut on E2E_TODAY; the app's "today" must be the same day.
     await pinBrowserToday(page);
     await page.goto("/calendar");
-    // The rail is hidden on a phone; the day strip/week grid is in both layouts.
+    // The week grid (one day plus the strip on a phone) is in both layouts.
     await page
-      .locator(".lyceon-calendar .main")
+      .locator('[data-testid="calendar-week-grid"]')
       .first()
       .waitFor({ timeout: 15_000 });
     await page.waitForTimeout(500);
@@ -93,35 +104,29 @@ for (const vp of [
       path: path.join(SHOTS, `student-calendar-${vp.name}.png`),
       fullPage: true,
     });
-    expect(await page.locator(".lyceon-calendar").count()).toBe(1);
+    // One grid root and one overlay root (the sheets), both scoped by the student class.
+    expect(await page.locator(".lyceon-calendar.lyc-cal").count()).toBe(2);
+    expect(await page.locator(".lyceon-calendar .rail").count()).toBe(0);
+    // SCL-211: no facts strip and no streak line on the student calendar.
+    expect(await page.locator('[data-testid="calendar-facts"]').count()).toBe(
+      0,
+    );
+    expect(await page.locator('[data-item="streak"]').count()).toBe(0);
     // R11: the shared calendar centres on a student's phone exactly as on a guardian's
     // (owner decision 2026-10-01, item 10). Desktop is the byte comparison above.
     if (vp.name === "390") {
       expect(
         await offCentre(page, [
           {
-            what: "control row",
-            selector: ".lyceon-calendar .top .slot[data-slot=C1]",
+            what: "header range title",
+            selector: '[data-testid="calendar-range-title"]',
+            mode: "text",
+            within: "parent",
+          },
+          {
+            what: "header control row",
+            selector: '[data-testid="calendar-header-nav"]',
             mode: "lines",
-            within: "parent",
-          },
-          {
-            what: "streak line",
-            selector: ".lyceon-calendar .top .slot[data-slot=C2]",
-            mode: "text",
-            within: "parent",
-          },
-          {
-            what: "target line",
-            selector: ".lyceon-calendar .top .slot[data-slot=R1]",
-            mode: "text",
-            within: "parent",
-          },
-          {
-            what: "projected line",
-            selector: ".lyceon-calendar .top .slot[data-slot=R2]",
-            mode: "text",
-            within: "parent",
           },
           {
             what: "selected-day heading",
@@ -132,11 +137,6 @@ for (const vp of [
             what: "week-strip label",
             selector: ".lyceon-calendar .daychip",
             mode: "text",
-          },
-          {
-            what: "facts footer",
-            selector: ".lyceon-calendar .facts",
-            mode: "lines",
           },
           // Final round item 1: the block card's own content centres on a phone (R11).
           {

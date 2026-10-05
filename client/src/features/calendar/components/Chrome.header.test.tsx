@@ -138,7 +138,7 @@ describe("the header's target and countdown", () => {
 describe("the three zones, two rows each", () => {
   it("puts each element in the slot §17.1 names for it", () => {
     const { container } = (() => {
-      renderTopBar({ onEditSchedule: vi.fn(), onRefresh: vi.fn() });
+      renderTopBar();
       return { container: document.body };
     })();
 
@@ -149,8 +149,8 @@ describe("the three zones, two rows each", () => {
         ?.getAttribute("data-slot") ?? null;
 
     expect(slotOf("dashboard")).toBe("L1");
-    expect(slotOf("edit")).toBe("L2");
-    expect(slotOf("refresh")).toBe("L2");
+    // L2 held Edit schedule and Refresh plan, the student's; they moved to the student
+    // header with UI-55 (`StudentChrome.tsx`), so this header carries neither.
     expect(slotOf("nav")).toBe("C1");
     expect(slotOf("viewtoggle")).toBe("C1");
     expect(slotOf("streak")).toBe("C2");
@@ -160,8 +160,11 @@ describe("the three zones, two rows each", () => {
   });
 
   it("gives a guardian no write control — §16, and the slot simply empties", () => {
-    renderTopBar({ onEditSchedule: undefined, onRefresh: undefined });
+    renderTopBar({ viewer: "guardian", backHref: "/guardian" });
+    // Presence first: the header drew its readouts.
+    expect(screen.getByTestId("calendar-target")).toBeTruthy();
     expect(screen.queryByTestId("topbar-edit-schedule")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Refresh plan|Edit schedule/);
     expect(document.querySelector('[data-item="refresh"]')).toBeNull();
     // The zone itself survives, so the grid does not reflow into two columns.
     expect(document.querySelector('[data-slot="L2"]')).toBeTruthy();
