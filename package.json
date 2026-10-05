@@ -25,6 +25,8 @@
     "typecheck": "pnpm run check",
     "lint": "eslint .",
     "lint:shared": "eslint packages/shared",
+    "deadcode": "pnpm dlx knip@5.88.1 --config knip.json --no-progress --reporter compact",
+    "deadcode:production": "pnpm dlx knip@5.88.1 --config knip.json --no-progress --reporter compact --production --include files,exports,types",
     "lint:no-console": "eslint -c eslint.no-console.config.mjs --max-warnings 0 client/src",
     "check:shared": "tsc -p packages/shared/tsconfig.json",
     "test:shared": "vitest run packages/shared",
