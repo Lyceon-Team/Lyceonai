@@ -108,7 +108,9 @@ for (const vp of [
     expect(await page.locator(".lyceon-calendar.lyc-cal").count()).toBe(2);
     expect(await page.locator(".lyceon-calendar .rail").count()).toBe(0);
     // SCL-211: no facts strip and no streak line on the student calendar.
-    expect(await page.locator('[data-testid="calendar-facts"]').count()).toBe(0);
+    expect(await page.locator('[data-testid="calendar-facts"]').count()).toBe(
+      0,
+    );
     expect(await page.locator('[data-item="streak"]').count()).toBe(0);
     // R11: the shared calendar centres on a student's phone exactly as on a guardian's
     // (owner decision 2026-10-01, item 10). Desktop is the byte comparison above.

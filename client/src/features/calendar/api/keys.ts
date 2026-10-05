@@ -44,7 +44,6 @@ export const calendarKeys = {
    */
   profile: () => ["calendar", "profile"] as const,
 
-
   /** The prefix every guardian range read shares. */
   guardianRanges: () => ["calendar", "guardian"] as const,
 

@@ -81,6 +81,13 @@ export type Shot = {
   steps?: readonly Step[];
   /** UI-53: a fresh runner session per capture (see FreshSession). */
   freshSession?: FreshSession;
+  /**
+   * SCL-211 / OQ-56 (b): the persona's study profile is deleted from the harness database
+   * before every capture, so a first-save click path starts from "no profile" in each viewport
+   * and theme (the free form is read-only once a profile exists, so a second pass would find no
+   * form). Listed in the index next to the shot.
+   */
+  freshCalendarProfile?: true;
   /** UI-53: text the page must show after `steps` (e.g. "Question 2 of 10"); the capture fails otherwise. */
   expectText?: string;
   /** UI-56: a selector the page must show after `steps` (the capture fails otherwise). */

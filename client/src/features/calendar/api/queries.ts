@@ -152,7 +152,6 @@ export function usePrefetchAdjacentRange(
   }, [client, view, cursor, timezone, enabled]);
 }
 
-
 /**
  * GET /api/calendar/profile — the free calendar's read (OQ-25, UI-55). A free student's
  * `GET /api/calendar` answers 402 once a profile exists, so this is the only way the page can
