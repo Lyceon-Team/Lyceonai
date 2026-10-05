@@ -33,12 +33,11 @@ export interface SupabaseProfile {
   display_name: string | null;
   role: "student" | "admin" | "guardian";
   is_under_13: boolean;
-  // `/api/profile` sends none of these three (see `ProfileHydrationUser`), so they were always
+  // `/api/profile` sends neither of these two (see `ProfileHydrationUser`), so they were always
   // `undefined` at runtime while typed as present. Optional states what actually arrives; the
   // auth provider no longer maps fields the route never writes (UI-14, 2026-09-29).
   created_at?: string;
   updated_at?: string;
-  last_login_at?: string | null;
   // Onboarding and status flags
   profile_completed_at?: string | null;
   requiredProfileComplete?: boolean;

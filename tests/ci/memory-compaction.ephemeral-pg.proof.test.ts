@@ -11,7 +11,8 @@
  *   d) key_insights with 6 entries is REJECTED (bound is 5)
  *   e) Row is readable by student_id on a later query
  *   f) UPSERT on (student_id, summary_type) is idempotent
- *   g) HMAC: correctly-signed succeeds, unsigned rejected, wrong-secret rejected
+ *   g) (retired 2026-10-05, C-03: the HMAC service-auth code and service_auth_secrets were
+ *      removed; every internal route authenticates by OIDC)
  *   h) Conversation ownership lookup returns correct student_id
  *   i) Two students, two conversations, each summary under the correct student
  *   j) Non-existent conversation returns no row
@@ -24,14 +25,9 @@
  *   - Does NOT apply the full migration pipeline — uses a minimal DDL subset
  *     containing only the tables, triggers, and functions needed for proofs.
  *     The full-pipeline proof is in scripts/ci/genesis-fresh-apply.sh.
- *   - HMAC proof (g) tests the signing/verification functions directly with
- *     explicit secrets rather than loading from the DB — the DB path is
- *     tested by integration with service_auth_secrets in a separate gate.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import pg from "pg";
-import crypto from "node:crypto";
-import { signWithExplicitSecret } from "../../packages/shared/internal-auth/sign-request";
 
 // ── PG availability gate ─────────────────────────────────────────────
 
@@ -68,7 +64,7 @@ function makeValidContent(conversationId: string): Record<string, unknown> {
 // ── Minimal DDL ──────────────────────────────────────────────────────
 // Mirrors the FK targets and the tutor_memory_summaries table + trigger
 // from 20260805000000_ws_l0_3_tutor_runtime_schema.sql, trimmed to
-// proof-relevant columns. Also includes service_auth_secrets for proof (g).
+// proof-relevant columns.
 
 const DDL = `
 -- Stub auth schema (Supabase provides this in real environments)
@@ -211,21 +207,6 @@ REVOKE EXECUTE ON FUNCTION public.validate_memory_summary_schema() FROM PUBLIC;
 CREATE TRIGGER tutor_memory_summaries_validate_schema
   BEFORE INSERT OR UPDATE ON public.tutor_memory_summaries
   FOR EACH ROW EXECUTE FUNCTION public.validate_memory_summary_schema();
-
--- service_auth_secrets (from genesis, §64)
-CREATE TABLE public.service_auth_secrets (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  caller_service TEXT NOT NULL,
-  callee_service TEXT NOT NULL,
-  secret_material TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  active_until TIMESTAMPTZ NOT NULL,
-  revoked_at TIMESTAMPTZ,
-  UNIQUE (caller_service, callee_service, created_at)
-);
-
-CREATE INDEX idx_service_auth_active ON public.service_auth_secrets
-  (caller_service, callee_service) WHERE revoked_at IS NULL;
 
 -- tutor_conversations (minimal stub for ownership proofs)
 CREATE TABLE public.tutor_conversations (
@@ -478,132 +459,6 @@ describe.skipIf(!CAN_RUN)(
         "factoring",
         "vertex form",
       ]);
-    });
-
-    // ── Proof (g): HMAC auth ─────────────────────────────────────
-
-    describe("(g) HMAC service auth", () => {
-      // Test the HMAC signing/verification functions directly with
-      // explicit secrets. The DB secret-loading path is integration-tested
-      // separately; here we prove the cryptographic correctness.
-      const SECRET_BASE64 = crypto.randomBytes(32).toString("base64");
-      const BAD_SECRET_BASE64 = crypto.randomBytes(32).toString("base64");
-
-      it("correctly-signed request verifies: signature matches recomputed HMAC", () => {
-        const method = "POST";
-        const path = "/api/internal/memory/compact-writeback";
-        const timestamp = new Date().toISOString();
-        const body = JSON.stringify({
-          job_type: "compaction",
-          student_id: STUDENT_A,
-        });
-
-        // Sign the request
-        const signResult = signWithExplicitSecret(
-          method,
-          path,
-          timestamp,
-          body,
-          SECRET_BASE64,
-          "compaction-worker",
-        );
-
-        // Verify: recompute the expected signature and compare
-        const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
-        const signingString = `${method}\n${path}\n${timestamp}\n${bodyHash}`;
-        const secretBytes = Buffer.from(SECRET_BASE64, "base64");
-        const expectedSig = crypto
-          .createHmac("sha256", secretBytes)
-          .update(signingString)
-          .digest("hex");
-
-        expect(signResult.headers["X-Lyceon-Signature-V1"]).toBe(expectedSig);
-        expect(signResult.headers["X-Lyceon-Service-Id"]).toBe(
-          "compaction-worker",
-        );
-        expect(signResult.headers["X-Lyceon-Timestamp"]).toBe(timestamp);
-      });
-
-      it("unsigned request is detected: missing X-Lyceon-Signature-V1 header", () => {
-        // Verify that absence of the signature header is detectable
-        const unsigned = {
-          "X-Lyceon-Service-Id": "compaction-worker",
-          "X-Lyceon-Timestamp": new Date().toISOString(),
-          // X-Lyceon-Signature-V1 intentionally omitted
-        };
-        expect(unsigned).not.toHaveProperty("X-Lyceon-Signature-V1");
-      });
-
-      it("wrong-secret request is detected: signature does not match", () => {
-        const method = "POST";
-        const path = "/api/internal/memory/compact-writeback";
-        const timestamp = new Date().toISOString();
-        const body = JSON.stringify({
-          job_type: "compaction",
-          student_id: STUDENT_A,
-        });
-
-        // Sign with the WRONG secret
-        const signResult = signWithExplicitSecret(
-          method,
-          path,
-          timestamp,
-          body,
-          BAD_SECRET_BASE64,
-          "compaction-worker",
-        );
-
-        // Recompute with the CORRECT secret
-        const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
-        const signingString = `${method}\n${path}\n${timestamp}\n${bodyHash}`;
-        const correctSecretBytes = Buffer.from(SECRET_BASE64, "base64");
-        const correctSig = crypto
-          .createHmac("sha256", correctSecretBytes)
-          .update(signingString)
-          .digest("hex");
-
-        // The wrong-secret signature must NOT match the correct-secret signature
-        expect(signResult.headers["X-Lyceon-Signature-V1"]).not.toBe(
-          correctSig,
-        );
-
-        // Verify timing-safe comparison would reject it
-        const wrongSigBuf = Buffer.from(
-          signResult.headers["X-Lyceon-Signature-V1"],
-          "hex",
-        );
-        const correctSigBuf = Buffer.from(correctSig, "hex");
-        expect(
-          wrongSigBuf.length === correctSigBuf.length &&
-            crypto.timingSafeEqual(wrongSigBuf, correctSigBuf),
-        ).toBe(false);
-      });
-
-      it("service_auth_secrets table accepts and returns a provisioned secret", async () => {
-        // Proof that the table structure works — insert a secret and query it back
-        const secretMaterial = crypto.randomBytes(32).toString("base64");
-
-        await client.query(
-          `INSERT INTO service_auth_secrets
-             (caller_service, callee_service, secret_material, active_until)
-           VALUES ($1, $2, $3, now() + interval '180 days')`,
-          ["compaction-worker", "main-api", secretMaterial],
-        );
-
-        const result = await client.query(
-          `SELECT secret_material, active_until
-           FROM service_auth_secrets
-           WHERE caller_service = $1 AND callee_service = $2
-             AND revoked_at IS NULL
-             AND active_until > now()
-           ORDER BY created_at DESC
-           LIMIT 1`,
-          ["compaction-worker", "main-api"],
-        );
-
-        expect(result.rowCount).toBe(1);
-        expect(result.rows[0].secret_material).toBe(secretMaterial);
-      });
     });
 
     // ── Proof (h): conversation ownership lookup returns correct owner ──

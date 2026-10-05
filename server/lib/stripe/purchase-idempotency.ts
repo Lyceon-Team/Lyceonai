@@ -25,10 +25,9 @@
  *
  * THIS IS STRIPE'S IDEMPOTENCY, NOT OURS. It is a per-request header on the SDK
  * call (`RequestOptions.idempotencyKey`, verified in the pinned stripe types at
- * `types/lib.d.ts:135`). It touches neither `idempotency_records` nor
- * `idempotency_runtime_config` — both empty, and Doc 01A Part IV's
- * `IdempotencyService` over them still does not exist in TypeScript. That
- * remains a launch gate and is deliberately untouched here.
+ * `types/lib.d.ts:135`). Doc 01A Part IV's `idempotency_records` /
+ * `idempotency_runtime_config` and the `IdempotencyService` over them were never
+ * built; both tables were dropped by owner ruling 2026-10-05 (C-03).
  *
  * A DISABLED BUTTON IS UX, NEVER THE CONTROL. Nothing here depends on the
  * frontend declining to send a second request.

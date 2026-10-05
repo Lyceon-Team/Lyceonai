@@ -19,7 +19,8 @@
  *    (index.ts / package.json — stateless per §1.2) and no HMAC signing for the
  *    compaction-worker -> main-api write-back callback described in
  *    "Doc 03A — LISA Context & Memory Runtime.md" §7 (`loadActiveSecret(
- *    'compaction-worker', 'main-api')`, 01A Part VII). Steps 1/3/4 are therefore
+ *    'compaction-worker', 'main-api')`, 01A Part VII; that HMAC path was retired
+ *    2026-10-05, C-03 — the write-back route authenticates by OIDC). Steps 1/3/4 are therefore
  *    NOT implemented here — only step 2 (the Vertex call) is in scope for this
  *    file. The caller (main-api / BFF) is responsible for supplying
  *    `recent_messages` in the request and persisting the returned `summary`.

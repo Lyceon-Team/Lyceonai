@@ -13852,60 +13852,6 @@ CREATE TABLE public.guardian_consent_requests (
 
 
 --
--- Name: idempotency_records; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_records (
-    scope text NOT NULL,
-    client_key text NOT NULL,
-    content_hash text NOT NULL,
-    result jsonb,
-    status text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    completed_at timestamp with time zone,
-    expires_at timestamp with time zone NOT NULL,
-    CONSTRAINT idempotency_records_status_check CHECK ((status = ANY (ARRAY['completed'::text, 'in_progress'::text, 'failed'::text])))
-);
-
-
---
--- Name: idempotency_runtime_config; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_runtime_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT idempotency_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT idempotency_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: idempotency_runtime_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_runtime_config_history (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: internal_service_auth_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14539,7 +14485,6 @@ CREATE TABLE public.profiles (
     guardian_profile_id uuid,
     student_link_code text,
     student_link_code_issued_at timestamp with time zone,
-    last_login_at timestamp with time zone,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -15074,21 +15019,6 @@ CREATE VIEW public.servable_questions WITH (security_invoker='true') AS
     correct_variants
    FROM public.questions
   WHERE ((status = 'published'::text) AND ((issue_flags IS NULL) OR (array_length(issue_flags, 1) IS NULL)));
-
-
---
--- Name: service_auth_secrets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.service_auth_secrets (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    caller_service text NOT NULL,
-    callee_service text NOT NULL,
-    secret_material text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    active_until timestamp with time zone NOT NULL,
-    revoked_at timestamp with time zone
-);
 
 
 --
@@ -16322,30 +16252,6 @@ ALTER TABLE ONLY public.guardian_links
 
 
 --
--- Name: idempotency_records idempotency_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_records
-    ADD CONSTRAINT idempotency_records_pkey PRIMARY KEY (scope, client_key);
-
-
---
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_pkey PRIMARY KEY (key);
-
-
---
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16767,22 +16673,6 @@ ALTER TABLE ONLY public.scoring_model_versions
 
 ALTER TABLE ONLY public.sections
     ADD CONSTRAINT sections_pkey PRIMARY KEY (code);
-
-
---
--- Name: service_auth_secrets service_auth_secrets_caller_service_callee_service_created__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_auth_secrets
-    ADD CONSTRAINT service_auth_secrets_caller_service_callee_service_created__key UNIQUE (caller_service, callee_service, created_at);
-
-
---
--- Name: service_auth_secrets service_auth_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_auth_secrets
-    ADD CONSTRAINT service_auth_secrets_pkey PRIMARY KEY (id);
 
 
 --
@@ -17404,20 +17294,6 @@ CREATE INDEX idx_guardian_links_student ON public.guardian_links USING btree (st
 
 
 --
--- Name: idx_idempotency_expires; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_idempotency_expires ON public.idempotency_records USING btree (expires_at);
-
-
---
--- Name: idx_idempotency_scope_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_idempotency_scope_status ON public.idempotency_records USING btree (scope, status);
-
-
---
 -- Name: idx_legal_acceptance_outbox_unprocessed; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -17723,13 +17599,6 @@ CREATE INDEX idx_score_runs_form ON public.score_runs USING btree (test_form_id,
 --
 
 CREATE INDEX idx_score_runs_student ON public.score_runs USING btree (student_id, computed_at DESC);
-
-
---
--- Name: idx_service_auth_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_service_auth_active ON public.service_auth_secrets USING btree (caller_service, callee_service) WHERE (revoked_at IS NULL);
 
 
 --
@@ -18346,20 +18215,6 @@ CREATE TRIGGER entitlement_runtime_config_notify AFTER INSERT OR UPDATE ON publi
 --
 
 CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF status ON public.entitlements FOR EACH ROW EXECUTE FUNCTION public.sync_tutor_conversations_on_entitlement_change();
-
-
---
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER idempotency_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.idempotency_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER idempotency_runtime_config_notify AFTER INSERT OR UPDATE ON public.idempotency_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
 
 
 --
@@ -19078,22 +18933,6 @@ ALTER TABLE ONLY public.guardian_links
 
 ALTER TABLE ONLY public.guardian_links
     ADD CONSTRAINT guardian_links_student_profile_id_fkey FOREIGN KEY (student_profile_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
-
-
---
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -20231,24 +20070,6 @@ ALTER TABLE public.guardian_consent_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardian_links ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: idempotency_records; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_records ENABLE ROW LEVEL SECURITY;
-
---
--- Name: idempotency_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_runtime_config ENABLE ROW LEVEL SECURITY;
-
---
--- Name: idempotency_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_runtime_config_history ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: internal_service_auth_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -20676,12 +20497,6 @@ ALTER TABLE public.sections ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY sections_read ON public.sections FOR SELECT TO anon, authenticated USING (true);
 
-
---
--- Name: service_auth_secrets; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.service_auth_secrets ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: crisis_review_audit_log service_role_crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
@@ -23782,27 +23597,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_consent_requests TO s
 
 
 --
--- Name: TABLE idempotency_records; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_records TO service_role;
-
-
---
--- Name: TABLE idempotency_runtime_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_runtime_config TO service_role;
-
-
---
--- Name: TABLE idempotency_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_runtime_config_history TO service_role;
-
-
---
 -- Name: TABLE internal_service_auth_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -24626,13 +24420,6 @@ GRANT SELECT ON TABLE public.sections TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.servable_questions TO service_role;
-
-
---
--- Name: TABLE service_auth_secrets; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.service_auth_secrets TO service_role;
 
 
 --
