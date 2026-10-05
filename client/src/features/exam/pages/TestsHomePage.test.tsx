@@ -645,7 +645,9 @@ describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", 
   it("phone: the title and the ruling's notice with Continue anyway, in place of the home's body", async () => {
     await mount("paid", {}, "phone");
     // Presence first: the title and the notice are drawn.
-    expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Full-Length",
+    );
     const notice = screen.getByTestId("tests-phone-notice");
     expect(within(notice).getByText(PHONE_TEXT)).toBeTruthy();
     const button = within(notice).getByRole("button");
@@ -713,6 +715,10 @@ describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", 
 
   it("desktop (lg and up): no notice, the home as before", async () => {
     await mount("paid", {}, "desktop");
+    // Naming ruling (Karl, 2026-10-05): the page title is the section's name.
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Full-Length",
+    );
     expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
     expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
     expect(screen.queryByText(PHONE_TEXT)).toBeNull();

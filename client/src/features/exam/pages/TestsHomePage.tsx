@@ -20,6 +20,9 @@
  *        payload has no such field)]
  *       | @implemented [2026-10-03]
  *
+ * TITLE: the page title is the section's name, "Full-Length" (owner naming ruling, Karl,
+ * 2026-10-05: every student-facing "Tests" label becomes "Full-Length"), like Practice and Review.
+ *
  * plain English: one row per published form with its status ("Not started", "In progress:
  * Reading & Writing, Module 2", "Completed 26 September. Score 1120." with the score's
  * disclosure beside it) and its actions. Exactly one action is filled: Resume, otherwise Start
@@ -216,7 +219,7 @@ export default function TestsHomePage(): JSX.Element {
   return (
     <div className="flex flex-col gap-10" data-testid="tests-home">
       <PageHeader
-        title="Full-length practice tests"
+        title="Full-Length"
         description="Timed like test day: two modules per section, a break between sections, and a scored report at the end."
       />
 
