@@ -744,6 +744,73 @@ OK: retired endpoints — 3326 file(s) scanned, no caller remains for 14 retired
 
 ---
 
+## OQ-61 (h): `LISA_UPGRADE_PITCH.body` and the billing resolver's `pitch` option
+
+Owner ruling (Karl, 2026-10-05, register §9 OQ-61): "The remaining five points: your
+recommendations stand." The recommendation for (h) was to delete the unapproved W4-11 body,
+which no surface had rendered since OQ-57 (f), and the `pitch` option that carried it, if
+nothing but its own test used them.
+
+**Who used them, before the deletion.** `LISA_UPGRADE_PITCH.body`:
+`client/src/lib/billing-cta.pitch.test.ts` (the resolver's pitch test) and two absence
+assertions in `ScopedTutorPanel.contract.test.tsx`; plant OQ54-C1 drew it. No production
+reader. `resolveCtaCopy`'s `pitch` option and the `BillingCtaPitch` type: the same pitch test,
+plus `PremiumUpgradePrompt`'s `pitch` prop, which only forwarded it and which no caller set
+(`grep -rn 'pitch=' client/src` matched nothing but a comment).
+
+**Removed:**
+- `body` from `LISA_UPGRADE_PITCH` (`client/src/components/tutor/lisa-upgrade-pitch.ts`), now
+  an `as const` object with `title` and `actionLabel`;
+- `BillingCtaPitch` and the `pitch` option of `resolveCtaCopy` (`client/src/lib/billing-cta.ts`);
+  `student_unentitled` reads its fixed words;
+- `PremiumUpgradePrompt`'s `pitch` prop;
+- `client/src/lib/billing-cta.pitch.test.ts`. Its last case ("LISA's headline is Karl's,
+  verbatim") is already asserted in `client/src/pages/chat.ui56.test.tsx` ("free plan: the
+  shipped headline …", `toBe("A Tutor That Knows The SAT And Knows You")`);
+- the two `not.toContain(LISA_UPGRADE_PITCH.body)` assertions in
+  `ScopedTutorPanel.contract.test.tsx`. The cases still require the approved body, and the
+  second requires the card's exact text. Plant OQ54-C1 now draws a different unapproved body
+  (the resolver's own "Choose a plan to unlock LISA.") and both cases redden.
+
+**Kept, approved and used:** `LISA_UPGRADE_PITCH.title` (OQ-44's shipped headline: the upgrade
+modal's `tutor_access` title, the /chat locked card and the review runner's LISA card) and
+`.actionLabel` ("Unlock LISA", both LISA locked cards).
+
+```text
+$ grep -rnF -- 'LISA_UPGRADE_PITCH.body' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'BillingCtaPitch' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'billing-cta.pitch' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'options.pitch' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'LISA knows which skills' client/src packages server tests scripts
+(empty)
+$ grep -rnw -- 'pitch' client/src/lib/billing-cta.ts client/src/components/billing/PremiumUpgradePrompt.tsx
+client/src/lib/billing-cta.ts:93:   * The feature's OWN benefit, not a generic pitch. A lock on the calendar and
+client/src/components/billing/PremiumUpgradePrompt.tsx:85:   * tutor", "your full mastery breakdown". Not a generic pitch: a lock on the
+$ grep -rnwF -- 'LISA_UPGRADE_PITCH' client/src --exclude='*.test.ts' --exclude='*.test.tsx'
+client/src/components/billing/upgrade-modal.ts:14: *   - LISA headline: the shipped `LISA_UPGRADE_PITCH.title` ("A Tutor That Knows The SAT And Knows
+client/src/components/billing/upgrade-modal.ts:42:import { LISA_UPGRADE_PITCH } from "@/components/tutor/lisa-upgrade-pitch";
+client/src/components/billing/upgrade-modal.ts:91: * Title source: shipped `LISA_UPGRADE_PITCH.title` (imported). Body source: prototype
+client/src/components/billing/upgrade-modal.ts:95:  title: LISA_UPGRADE_PITCH.title,
+client/src/components/tutor/LisaUpgradeCard.tsx:37:import { LISA_UPGRADE_PITCH } from "@/components/tutor/lisa-upgrade-pitch";
+client/src/components/tutor/LisaUpgradeCard.tsx:39:export { LISA_UPGRADE_PITCH };
+client/src/components/tutor/LisaUpgradeCard.tsx:79:          {LISA_UPGRADE_PITCH.actionLabel}
+client/src/components/tutor/lisa-upgrade-pitch.ts:23:export const LISA_UPGRADE_PITCH = {
+client/src/pages/chat.tsx:10: *        `LISA_UPGRADE_PITCH.title`; no new wording), OQ-49 (this route comes off the light
+client/src/pages/chat.tsx:78:  LISA_UPGRADE_PITCH,
+client/src/pages/chat.tsx:180:            {LISA_UPGRADE_PITCH.actionLabel}
+```
+
+The two remaining `pitch` hits are comments about the feature-benefit phrase, not the option.
+Every remaining `LISA_UPGRADE_PITCH` reads `.title` or `.actionLabel`. Older records that name
+the body (the register's OQ-44 / OQ-57 / OQ-61 rows, `owner-questions-OQ51-60.md`,
+`evidence/step2-wave1.md`) are history and are not edited.
+
+---
+
 ## knip
 
 **Command** (run from the repo root; the config lives outside the repo, so package.json is

@@ -744,12 +744,14 @@ plant "OQ54-K7" "a thread turn label back to 12px legacy text" \
 assert s.count(a) == 1
 s = s.replace(a, "<span className=\"text-xs font-semibold text-lyc-muted\">\n        {isStudent", 1)'
 
-plant "OQ54-C1" "the LISA card shows the unapproved W4-11 body" \
+# OQ-61 (h): the W4-11 draft body is deleted, so this plant draws an unapproved body that still
+# exists — the billing resolver's generic sentence — in place of the approved one.
+plant "OQ54-C1" "the LISA card shows an unapproved body" \
   "$T54L" \
   "client/src/components/tutor/LisaUpgradeCard.tsx" \
   'a = "<p className=\"m-0 text-lyc-body text-lyc-ink\">{copy.body}</p>"
 assert s.count(a) == 1
-s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">{LISA_UPGRADE_PITCH.body}</p>", 1)'
+s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">Choose a plan to unlock LISA.</p>", 1)'
 
 plant "OQ54-C2" "Unlock LISA opens the wrong feature's modal" \
   "$T54L" \
