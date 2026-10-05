@@ -68,11 +68,15 @@ export default function BlogPage() {
                     </span>
                   ))}
                 </div>
+                {/* The link's text names the post, so a screen-reader link list (and Lighthouse's
+                    link-text audit) reads "Read more about <title>", not five identical
+                    "Read more"s. The title part is visually hidden; the arrow is decorative. */}
                 <Link
                   href={`/blog/${post.slug}`}
                   className="flex items-center gap-1 text-sm font-medium text-foreground hover:opacity-80"
                 >
-                  Read more <ArrowRight className="w-4 h-4" />
+                  Read more<span className="sr-only"> about {post.title}</span>
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
                 </Link>
               </div>
             </Card>
