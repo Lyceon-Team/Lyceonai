@@ -1,5 +1,5 @@
 /**
- * The free daily practice quota: Doc 02B §13 clock and basis, the read and the 402 agreeing.
+ * The free daily practice quota: Doc 02B §13 clock, the OQ-50 basis, the read and the 402 agreeing.
  *
  * @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02: a read-only
  *        `GET /api/practice/quota`, computed by the same function as the 402
@@ -9,22 +9,28 @@
  *        the quota read; tests at the day boundary and for served-but-unanswered questions";
  *        Doc 02B §13 "Quota Contract", "Reset Algorithm", "Quota Check Mechanism", "Pre-Cap at
  *        Session Creation", "Zero Quota Remaining", "What Counts Against Quota"; §12 Entitlement
- *        Matrix; Doc 01A §40 `getUsage`] | @implemented [2026-10-03]
+ *        Matrix; Doc 01A §40 `getUsage`; owner ruling (Karl) 2026-10-05 OQ-50: "skips count,
+ *        diagnostic doesn't, SCL against Doc 02B" (SCL-209, migration 20261024000000)]
+ *        | @implemented [2026-10-03; OQ-50 2026-10-05]
  *
  * plain English: the REAL practice router behind the REAL mount gates (`requireSupabaseAuth`,
  * `requireStudentOrAdmin`, as `server/index.ts` mounts it) and the REAL
  * `check_and_reserve_practice_quota` over real Postgres (genesis + every migration). Only the
  * session is injected, and CSRF is left out. Sessions are started, served and answered through
- * the real routes (`POST /sessions`, `GET /sessions/:id/next`, `POST /answer`, `POST /skip`), so
- * the rows the quota counts are the rows production writes:
+ * the real routes (`POST /sessions`, `GET /sessions/:id/next`, `POST /answer`, `POST /skip`, and
+ * the diagnostic's `POST /diagnostic/sessions`), so the rows the quota counts are the rows
+ * production writes:
  *   - a fresh free student: remaining = limit, resetAt = the next America/Chicago midnight
  *     (an oracle computed here with Intl, independent of the SQL);
- *   - served and skipped questions consume nothing; an answer consumes one, and its idempotent
- *     replay nothing more;
+ *   - a served question consumes nothing; a skip consumes one (OQ-50, Karl 2026-10-05; until
+ *     that ruling a skip consumed nothing and this file asserted so); an answer consumes one,
+ *     and its idempotent replay nothing more;
+ *   - the diagnostic: its answers and skips consume nothing, and its next question is still
+ *     served to a free student at the limit (OQ-50), while practice stays refused;
  *   - limit−1 and limit: the read, the `GET /next` 402 and the `POST /sessions` 402 carry the
  *     same limit, remaining and resetAt; the session-start pre-cap equals the read's remaining;
- *   - the day boundary and DST, through the SQL function's `p_now` over real answered rows
- *     whose `answered_at` is moved to the instant under test;
+ *   - the day boundary and DST, through the SQL function's `p_now` over real answered and
+ *     skipped rows whose `occurred_at` is moved to the instant under test;
  *   - a paid student: unlimited; reading twice writes nothing; 401, guardian 403, admin unlimited.
  * The limit is read from `practice_runtime_config.daily_quota_free`, never written here. The
  * answer route's own per-minute limiter (`answer_rate_limit_max`, a different control) is raised
@@ -56,6 +62,16 @@ const GUARDIAN = "f2100000-0000-4000-8000-000000000006";
 const ADMIN = "f2100000-0000-4000-8000-000000000007";
 const FREE_REPLAY = "f2100000-0000-4000-8000-000000000008";
 const FREE_CLOCK = "f2100000-0000-4000-8000-000000000009";
+/** The seven canonical domains besides Algebra, so the real diagnostic (8 × 5) can start. */
+const DIAGNOSTIC_DOMAINS: ReadonlyArray<readonly [string, string, string]> = [
+  ["M", "Advanced Math", "ADV.D01"],
+  ["M", "Problem Solving and Data Analysis", "PSD.D01"],
+  ["M", "Geometry and Trigonometry", "GEO.D01"],
+  ["RW", "Information and Ideas", "INI.D01"],
+  ["RW", "Craft and Structure", "CAS.D01"],
+  ["RW", "Expression of Ideas", "EOI.D01"],
+  ["RW", "Standard English Conventions", "SEC.D01"],
+];
 const CLIENT = "quota-ci";
 const QUESTION_COUNT = 60;
 
@@ -101,11 +117,20 @@ async function app(): Promise<express.Express> {
   if (cachedApp) return cachedApp;
   const { default: practiceRouter } =
     await import("../../server/routes/practice-canonical");
+  const { default: diagnosticRouter } =
+    await import("../../server/routes/diagnostic-routes");
   const { requireSupabaseAuth, requireStudentOrAdmin } =
     await import("../../server/middleware/supabase-auth");
   const a = express();
   a.use(express.json());
   a.use(injectSession);
+  // As server/index.ts mounts it: the diagnostic before the practice router (CSRF left out).
+  a.use(
+    "/api/practice/diagnostic",
+    requireSupabaseAuth,
+    requireStudentOrAdmin,
+    diagnosticRouter,
+  );
   a.use(
     "/api/practice",
     requireSupabaseAuth,
@@ -214,6 +239,31 @@ async function answerServed(studentId: string, sessionId: string) {
   const res = await answer(studentId, sessionId, item);
   expect(res.status).toBe(200);
   return item;
+}
+
+/** Skip a served item through the real route, expecting success. */
+async function skip(studentId: string, sessionId: string, itemId: string) {
+  as(studentId);
+  const res = await request(await app())
+    .post(`/api/practice/sessions/${sessionId}/skip`)
+    .send({
+      sessionItemId: itemId,
+      clientAttemptId: randomUUID(),
+      client_instance_id: CLIENT,
+    });
+  expect(res.status).toBe(200);
+  expect(res.body.skipped).toBe(true);
+  return res;
+}
+
+/** Answered plus skipped items of the student: the rows the free quota counts (OQ-50). */
+async function resolvedCount(studentId: string): Promise<number> {
+  const r = await pg.query(
+    `SELECT count(*)::int AS n FROM public.practice_session_items
+      WHERE user_id = $1 AND status IN ('answered', 'skipped')`,
+    [studentId],
+  );
+  return Number(r.rows[0]?.n);
 }
 
 async function answeredCount(studentId: string): Promise<number> {
@@ -334,6 +384,35 @@ describe.skipIf(!PG_AVAILABLE)(
           [id, `Stem ${id}`, `Expl ${id}`],
         );
       }
+      // Five questions in each of the other seven canonical domains, so the real diagnostic
+      // start finds its 8 × 5 (Algebra is covered by the pool above).
+      for (const [
+        d,
+        [section, domain, skill],
+      ] of DIAGNOSTIC_DOMAINS.entries()) {
+        for (let i = 1; i <= 5; i += 1) {
+          const id = `SAT${section}1D${d}${String(i).padStart(4, "0")}`;
+          await pg.query(
+            `INSERT INTO public.questions
+               (id, section, source_type, domain, skill_codes, difficulty, stem, options,
+                correct_answer, explanation, option_metadata, status, item_type, published_at)
+             VALUES ($1,$2,1,$3,$4,$5,$6,
+               '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
+               'B',$7,
+               '{"A":{"role":"distractor"},"B":{"role":"correct"},"C":{"role":"distractor"},"D":{"role":"distractor"}}'::jsonb,
+               'published','mcq', now())`,
+            [
+              id,
+              section,
+              domain,
+              [skill],
+              (i % 3) + 1,
+              `Stem ${id}`,
+              `Expl ${id}`,
+            ],
+          );
+        }
+      }
       await pg.query(
         `UPDATE public.practice_runtime_config SET value = '1000'::jsonb
           WHERE key = 'answer_rate_limit_max'`,
@@ -362,7 +441,7 @@ describe.skipIf(!PG_AVAILABLE)(
       );
     });
 
-    it("served and skipped questions consume nothing; a submitted answer consumes one", async () => {
+    it("a served question consumes nothing; a skip consumes one; a submitted answer consumes one", async () => {
       const started = await startSession(FREE_SERVED, 3);
       expect(started.status).toBe(200);
       const sessionId = String(started.body.sessionId);
@@ -371,33 +450,28 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(await ledgerRows(FREE_SERVED)).toBe(1);
       expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit);
 
-      // Re-requesting the served item, then skipping it ("served but not submitted").
+      // Re-requesting the served item, then skipping it. OQ-50 (Karl, 2026-10-05): a skip
+      // counts. Until that ruling this asserted `remaining = limit` here — the ruling changed,
+      // the test did not weaken.
       expect((await nextItem(FREE_SERVED, sessionId)).status).toBe(200);
-      as(FREE_SERVED);
-      const skipped = await request(await app())
-        .post(`/api/practice/sessions/${sessionId}/skip`)
-        .send({
-          sessionItemId: first.id,
-          clientAttemptId: randomUUID(),
-          client_instance_id: CLIENT,
-        });
-      expect(skipped.status).toBe(200);
+      await skip(FREE_SERVED, sessionId, first.id);
       const skippedRow = await pg.query(
-        `SELECT status, answered_at FROM public.practice_session_items WHERE id = $1`,
+        `SELECT status FROM public.practice_session_items WHERE id = $1`,
         [first.id],
       );
       expect(skippedRow.rows[0].status).toBe("skipped");
-      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit);
+      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit - 1);
 
-      // The next question served: still nothing consumed.
+      // The next question served: nothing more consumed.
       expect((await nextItem(FREE_SERVED, sessionId)).status).toBe(200);
       expect(await ledgerRows(FREE_SERVED)).toBe(2);
-      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit);
+      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit - 1);
 
-      // Submitted: one consumed.
+      // Submitted: one more consumed.
       await answerServed(FREE_SERVED, sessionId);
       expect(await answeredCount(FREE_SERVED)).toBe(1);
-      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit - 1);
+      expect(await resolvedCount(FREE_SERVED)).toBe(2);
+      expect((await readQuota(FREE_SERVED)).remaining).toBe(dailyLimit - 2);
     });
 
     it("an idempotent replay of the same answer counts once", async () => {
@@ -428,14 +502,17 @@ describe.skipIf(!PG_AVAILABLE)(
       const sessionA = String(a.body.sessionId);
       const sessionB = String(b.body.sessionId);
 
-      await answerServed(FREE_LIMIT, sessionB); // 1 submitted
+      // B's first question is SKIPPED, not answered: a skip uses quota (OQ-50), so the limit
+      // below is reached with limit − 1 answers and one skip.
+      await skip(FREE_LIMIT, sessionB, (await servedItem(sessionB)).id);
       for (let i = 1; i <= dailyLimit - 2; i += 1) {
         await answerServed(FREE_LIMIT, sessionA);
         const served = await nextItem(FREE_LIMIT, sessionA);
         expect(served.status).toBe(200);
       }
-      // limit − 1 submitted, one more question of A on screen.
-      expect(await answeredCount(FREE_LIMIT)).toBe(dailyLimit - 1);
+      // limit − 1 resolved (limit − 2 answers, one skip), one more question of A on screen.
+      expect(await answeredCount(FREE_LIMIT)).toBe(dailyLimit - 2);
+      expect(await resolvedCount(FREE_LIMIT)).toBe(dailyLimit - 1);
       const almost = await readQuota(FREE_LIMIT);
       expect(almost).toMatchObject({ unlimited: false, remaining: 1 });
       // The session-start pre-cap uses the same number: a request for 5 is capped to 1.
@@ -444,8 +521,8 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(capped.body.targetQuestionCount).toBe(almost.remaining);
       const sessionC = String(capped.body.sessionId);
 
-      await answerServed(FREE_LIMIT, sessionA); // limit submitted
-      expect(await answeredCount(FREE_LIMIT)).toBe(dailyLimit);
+      await answerServed(FREE_LIMIT, sessionA); // limit resolved
+      expect(await resolvedCount(FREE_LIMIT)).toBe(dailyLimit);
       const quota = await readQuota(FREE_LIMIT);
       expect(quota.unlimited).toBe(false);
       expect(quota.remaining).toBe(0);
@@ -478,10 +555,60 @@ describe.skipIf(!PG_AVAILABLE)(
       });
 
       // Doc 02B §13 refuses at session start and next question, not at submit: the question C
-      // put on screen at limit−1 can still be answered. The read then floors at 0.
+      // put on screen at limit−1 can still be answered (OQ-50 (b), not ruled; kept). The read
+      // then floors at 0.
       await answerServed(FREE_LIMIT, sessionC);
-      expect(await answeredCount(FREE_LIMIT)).toBe(dailyLimit + 1);
+      expect(await resolvedCount(FREE_LIMIT)).toBe(dailyLimit + 1);
       expect((await readQuota(FREE_LIMIT)).remaining).toBe(0);
+    });
+
+    it("the diagnostic: answers and skips consume nothing, and it is served past the limit (OQ-50)", async () => {
+      // FREE_LIMIT is past the limit (the test above): practice is refused, as the control.
+      const before = await dryRunAt(FREE_LIMIT, new Date().toISOString());
+      expect(before.current).toBe(dailyLimit + 1);
+      expect(before.allowed).toBe(false);
+
+      as(FREE_LIMIT);
+      const started = await request(await app())
+        .post("/api/practice/diagnostic/sessions")
+        .send({ client_instance_id: CLIENT, idempotency_key: randomUUID() });
+      expect(started.status).toBe(201);
+      const diagId = String(started.body.sessionId);
+      const mode = await pg.query(
+        `SELECT mode FROM public.practice_sessions WHERE id = $1`,
+        [diagId],
+      );
+      expect(mode.rows[0].mode).toBe("diagnostic");
+
+      // A diagnostic answer: one more answered row, nothing consumed.
+      await answerServed(FREE_LIMIT, diagId);
+      expect(await resolvedCount(FREE_LIMIT)).toBe(dailyLimit + 2);
+      expect(
+        (await dryRunAt(FREE_LIMIT, new Date().toISOString())).current,
+      ).toBe(dailyLimit + 1);
+
+      // The diagnostic's next question is served to a free student at the limit...
+      const nextDiag = await nextItem(FREE_LIMIT, diagId);
+      expect(nextDiag.status).toBe(200);
+      // ...while practice is still refused with the read's numbers.
+      const quota = await readQuota(FREE_LIMIT);
+      expect(quota.remaining).toBe(0);
+      const startPractice = await startSession(FREE_LIMIT, 5);
+      expect(startPractice.status).toBe(402);
+      expect(startPractice.body).toMatchObject({
+        code: "PRACTICE_FREE_DAILY_QUOTA_EXCEEDED",
+        limit: quota.limit,
+        remaining: quota.remaining,
+        resetAt: quota.resetAt,
+      });
+
+      // A diagnostic skip: one more skipped row, nothing consumed.
+      await skip(FREE_LIMIT, diagId, (await servedItem(diagId)).id);
+      expect(await resolvedCount(FREE_LIMIT)).toBe(dailyLimit + 3);
+      expect(
+        (await dryRunAt(FREE_LIMIT, new Date().toISOString())).current,
+      ).toBe(dailyLimit + 1);
+      expect((await nextItem(FREE_LIMIT, diagId)).status).toBe(200);
     });
 
     it("the day boundary: 23:59 Chicago counts toward that day, 00:00 Chicago resets, UTC days do not", async () => {
@@ -492,19 +619,31 @@ describe.skipIf(!PG_AVAILABLE)(
       for (let i = 0; i < 4; i += 1) {
         if (i > 0)
           expect((await nextItem(FREE_CLOCK, sessionId)).status).toBe(200);
-        ids.push((await answerServed(FREE_CLOCK, sessionId)).id);
+        if (i === 2) {
+          // The 23:59 row is a SKIP: it counts toward its Chicago day like an answer (OQ-50).
+          const item = await servedItem(sessionId);
+          await skip(FREE_CLOCK, sessionId, item.id);
+          ids.push(item.id);
+        } else {
+          ids.push((await answerServed(FREE_CLOCK, sessionId)).id);
+        }
       }
-      expect(await answeredCount(FREE_CLOCK)).toBe(4);
-      // Real answered rows, moved to the instants under test (CDT = UTC−5 on 2026-10-02/03).
+      expect(await answeredCount(FREE_CLOCK)).toBe(3);
+      expect(await resolvedCount(FREE_CLOCK)).toBe(4);
+      // Real resolved rows, their `occurred_at` moved to the instants under test (CDT = UTC−5 on
+      // 2026-10-02/03). `answered_at` is deliberately LEFT at the real resolution time: the
+      // window is on `occurred_at` (OQ-50 migration; CHECK psi_resolved_requires_occurred_at
+      // guarantees it, nothing guarantees `answered_at`), and a fixture that moved both could
+      // not tell the two columns apart.
       const moves: Array<[string, string]> = [
         [ids[0]!, "2026-10-02T23:00:00Z"], // 18:00 Chicago Oct 2, UTC Oct 2
         [ids[1]!, "2026-10-03T03:00:00Z"], // 22:00 Chicago Oct 2, UTC Oct 3
-        [ids[2]!, "2026-10-03T04:59:00Z"], // 23:59 Chicago Oct 2, UTC Oct 3
+        [ids[2]!, "2026-10-03T04:59:00Z"], // 23:59 Chicago Oct 2, UTC Oct 3 (the skip)
         [ids[3]!, "2026-11-02T05:30:00Z"], // 23:30 Chicago Nov 1 (CST), UTC Nov 2
       ];
       for (const [id, at] of moves) {
         await pg.query(
-          `UPDATE public.practice_session_items SET answered_at = $2::timestamptz WHERE id = $1`,
+          `UPDATE public.practice_session_items SET occurred_at = $2::timestamptz WHERE id = $1`,
           [id, at],
         );
       }
