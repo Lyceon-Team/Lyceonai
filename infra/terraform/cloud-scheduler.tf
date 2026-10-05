@@ -31,8 +31,8 @@
 # is entirely the two claims our own middleware checks
 # (`packages/shared/internal-auth/verify-oidc-middleware.ts`):
 #
-#   aud   — must equal RETENTION_SWEEP_OIDC_AUDIENCE (falling back to
-#           CLOUD_TASKS_OIDC_AUDIENCE). Set below, and emitted as the
+#   aud   — must equal RETENTION_SWEEP_OIDC_AUDIENCE exactly; unset is a
+#           500, never a fallback (RS-01, 2026-10-05). Set below, and emitted as the
 #           `retention_sweep_oidc_audience` output so the env var is
 #           copied from Terraform rather than retyped.
 #   email — must equal CLOUD_TASKS_SERVICE_ACCOUNT. That env var holds

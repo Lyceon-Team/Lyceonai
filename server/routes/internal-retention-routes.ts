@@ -74,12 +74,21 @@ const router = Router();
  * Doc 01A §3's fail-fast intent is preserved by the guard: an unset var
  * refuses THIS route with 500 rather than reaching token verification with
  * an empty audience.
+ *
+ * NO FALLBACK (owner ruling 2026-10-05, RS-01). This used to read
+ * `RETENTION_SWEEP_OIDC_AUDIENCE ?? CLOUD_TASKS_OIDC_AUDIENCE`. The second is
+ * the compact-writeback URL, so with the first unset every Cloud Scheduler
+ * token (aud = the sweep URL) was refused as "Wrong recipient" — and a token
+ * minted for compact-writeback was ADMITTED to the sweep. An unset audience
+ * is now a 500 naming RETENTION_SWEEP_OIDC_AUDIENCE, logged at ERROR. The
+ * comparison stays an exact match (google-auth-library `aud ===`): no
+ * second audience, no normalisation.
+ * Proof: tests/ci/retention-sweep-oidc.contract.test.ts (real RS256 tokens).
  */
 const readOidcConfig: OidcConfigReader = () => ({
-  expectedAudience:
-    process.env.RETENTION_SWEEP_OIDC_AUDIENCE ??
-    process.env.CLOUD_TASKS_OIDC_AUDIENCE,
+  expectedAudience: process.env.RETENTION_SWEEP_OIDC_AUDIENCE,
   expectedServiceAccount: process.env.CLOUD_TASKS_SERVICE_ACCOUNT,
+  audienceEnvName: "RETENTION_SWEEP_OIDC_AUDIENCE",
 });
 
 // ── Request schema ────────────────────────────────────────────────────

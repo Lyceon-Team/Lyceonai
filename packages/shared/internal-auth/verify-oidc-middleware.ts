@@ -147,6 +147,12 @@ const OIDC_NOT_CONFIGURED_RESPONSE = {
 export type OidcConfigReader = () => {
   expectedAudience: string | undefined;
   expectedServiceAccount: string | undefined;
+  /**
+   * The env var the audience was read from, named in the `oidc_config_missing` log line.
+   * Defaults to CLOUD_TASKS_OIDC_AUDIENCE. A route with its own audience variable names it
+   * here, so the log says which variable to set (RS-01: the retention sweep).
+   */
+  audienceEnvName?: string;
 };
 
 /**
@@ -206,10 +212,12 @@ export function oidcAuthMiddlewareWithConfigGuard(
     res: Response,
     next: NextFunction,
   ): Promise<void> => {
-    const { expectedAudience, expectedServiceAccount } = readConfig();
+    const { expectedAudience, expectedServiceAccount, audienceEnvName } =
+      readConfig();
 
     const missing: string[] = [];
-    if (!expectedAudience) missing.push("CLOUD_TASKS_OIDC_AUDIENCE");
+    if (!expectedAudience)
+      missing.push(audienceEnvName ?? "CLOUD_TASKS_OIDC_AUDIENCE");
     if (!expectedServiceAccount) missing.push("CLOUD_TASKS_SERVICE_ACCOUNT");
 
     if (!expectedAudience || !expectedServiceAccount) {
