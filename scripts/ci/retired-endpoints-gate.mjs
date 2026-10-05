@@ -28,6 +28,9 @@
  *     is not zero callers: a glob that stops matching reports "clean" forever.
  *   - empty the RETIRED table                                  → EXIT 1. A gate with nothing
  *     to check is a gate that cannot fail, which is not the same as a clean tree.
+ *   - a different retired path written into a file one row exempts → EXIT 1. A row's
+ *     `historicalRecords` exempt a file from THAT row only (added 2026-10-05, OQ-61 (a)).
+ *   - a row exempting a file that is not in the scan → EXIT 1, names the stale entry.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -136,7 +139,55 @@ const RETIRED = [
     replacement:
       "nothing. This entry USED to point at GET /api/guardian/students/:studentId/tests/:sessionId/report, which was itself deleted 2026-08-28 as outside the four-item guardian scope — so a replacement that named it would send the reader to a second dead route. A retired entry whose replacement is also retired is how a deletion chain goes stale",
   },
+  // --- Student UI follow-ups (owner ruling 2026-10-05, OQ-61 (a)) -----------
+  {
+    path: "/api/me/streak",
+    retiredIn:
+      "OQ-61 (a), SCL-212 (owner ruling 2026-10-05 — no student page and not the guardian calendar called it)",
+    replacement:
+      "the `streak` field of GET /api/calendar (student) or GET /api/students/:studentId/calendar (guardian), or `currentStreakDays` of GET /api/students/:studentId/kpi/overall — all read through server/services/activity-streak.ts",
+    // FROZEN RECORDS OF THIS ONE PATH, exempt for this row ONLY (see `historicalRecords`
+    // below). Each is a dated audit, a captured measurement, a closure log or a question as
+    // it was asked; each names the route as it stood on its date, and rewriting them to
+    // satisfy this gate would falsify the record. They stay scanned for every other row.
+    historicalRecords: [
+      // The OQ-61 question itself (register §9), verbatim as asked; the register is the lead's.
+      "docs/plans/student-ui/student-ui-vertical.md",
+      // The deletion proof for this retirement — its whole purpose is naming the path.
+      "docs/plans/student-ui/evidence/wave5/deletions.md",
+      // Dated student-UI audits (2026-09/10): a census of the routes as they were.
+      "docs/plans/student-ui/audit/pass1-A.md",
+      "docs/plans/student-ui/audit/pass1-B.md",
+      "docs/plans/student-ui/audit/pass2-A.md",
+      "docs/plans/student-ui/audit/pass2-B.md",
+      "docs/plans/student-ui/audit/student-ui-surface-audit.md",
+      // Captured Lighthouse runs and the baseline that reports them: the network log of a
+      // real page load on the day it was taken.
+      "docs/plans/student-ui/evidence/wave0/wave0-baseline.md",
+      "docs/plans/student-ui/evidence/wave0/lighthouse/practice-run1.json",
+      "docs/plans/student-ui/evidence/wave0/lighthouse/practice-run2.json",
+      "docs/plans/student-ui/evidence/wave0/lighthouse/practice-run3.json",
+      "docs/plans/student-ui/evidence/track-a-prod/lighthouse/practice-run1.json",
+      "docs/plans/student-ui/evidence/track-a-prod/lighthouse/practice-run2.json",
+      "docs/plans/student-ui/evidence/track-a-prod/lighthouse/practice-run3.json",
+      // Closed work logs: G-NEW-16's closure row and the Doc 05F Brief 3 plant table.
+      "docs/plans/Guardian_Closure_Plan.md",
+      "docs/plans/Doc_05F_Change_Record_Addendum.md",
+    ],
+  },
 ];
+
+/**
+ * PER-ROW EXEMPTIONS, NOT GLOBAL ONES. `SELF_REFERENTIAL` below removes a file from the scan
+ * for EVERY retired path, so each addition to it is a blind spot for all of them. A row's
+ * `historicalRecords` exempts a file only from THAT row's path: the file stays scanned for
+ * every other retired path, and a new row starts with no exemptions at all. A path listed
+ * there must be tracked — an exemption for a file that no longer exists is stale, and is
+ * refused rather than carried (see main).
+ */
+function isExempt(entry, file) {
+  return (entry.historicalRecords ?? []).includes(file);
+}
 
 /**
  * This file names every retired path, so it would match itself. So would a changelog entry
@@ -264,12 +315,28 @@ function main() {
     process.exit(1);
   }
 
+  // A per-row exemption naming a file that is not in the scan is stale: refused, not carried.
+  const scanned = new Set(files);
+  const stale = RETIRED.flatMap((entry) =>
+    (entry.historicalRecords ?? [])
+      .filter((file) => !scanned.has(file))
+      .map((file) => `${entry.path}: ${file}`),
+  );
+  if (stale.length > 0) {
+    console.error(
+      "FAIL: a retired row exempts a file that is not in the scan. A stale exemption hides",
+    );
+    console.error("      nothing today and anything tomorrow; remove it:");
+    for (const s of stale) console.error(`      ${s}`);
+    process.exit(1);
+  }
+
   const violations = [];
   for (const file of files) {
     const lines = readFileSync(resolve(REPO_ROOT, file), "utf8").split("\n");
     lines.forEach((line, index) => {
       for (const entry of RETIRED) {
-        if (line.includes(entry.path)) {
+        if (line.includes(entry.path) && !isExempt(entry, file)) {
           violations.push({
             file,
             line: index + 1,

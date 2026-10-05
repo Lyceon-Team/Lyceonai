@@ -744,12 +744,14 @@ plant "OQ54-K7" "a thread turn label back to 12px legacy text" \
 assert s.count(a) == 1
 s = s.replace(a, "<span className=\"text-xs font-semibold text-lyc-muted\">\n        {isStudent", 1)'
 
-plant "OQ54-C1" "the LISA card shows the unapproved W4-11 body" \
+# OQ-61 (h): the W4-11 draft body is deleted, so this plant draws an unapproved body that still
+# exists — the billing resolver's generic sentence — in place of the approved one.
+plant "OQ54-C1" "the LISA card shows an unapproved body" \
   "$T54L" \
   "client/src/components/tutor/LisaUpgradeCard.tsx" \
   'a = "<p className=\"m-0 text-lyc-body text-lyc-ink\">{copy.body}</p>"
 assert s.count(a) == 1
-s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">{LISA_UPGRADE_PITCH.body}</p>", 1)'
+s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">Choose a plan to unlock LISA.</p>", 1)'
 
 plant "OQ54-C2" "Unlock LISA opens the wrong feature's modal" \
   "$T54L" \
@@ -985,12 +987,15 @@ b = "          {title}\n        </h1>\n      </div>"
 assert s.count(b) == 1
 s = s.replace(b, "          {title}\n        </h1>\n        <StreakFact streak={{ current: 4, longest: 11, history_complete: false }} />\n      </div>", 1)'
 
-plant "UI55-NS2" "the student page reads the streak again" \
+# OQ-61 (a) / SCL-212: §15's standalone streak route is retired and the retired-endpoints gate
+# refuses its old path anywhere in the tree, so this plant reintroduces a streak read under a
+# NEW path — the one the gate cannot see and only the page test's `streakReads()` can.
+plant "UI55-NS2" "the student page reads a streak again, under a new path" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
   'a = "  // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).\n"
 assert s.count(a) == 1
-s = s.replace(a, "  void apiRequest(\"/api/me/streak\").catch(() => undefined);\n", 1)
+s = s.replace(a, "  void apiRequest(\"/api/calendar/streak\").catch(() => undefined);\n", 1)
 b = "import { toUserFacingMessage } from \"@/lib/api-error\";\n"
 assert s.count(b) == 1
 s = s.replace(b, b + "import { apiRequest } from \"@/lib/queryClient\";\n", 1)'
@@ -1481,6 +1486,22 @@ plant "UI58-B3" "Manage billing never asks the portal route" \
   'a = "          onClick={() => portal.open()}"
 assert s.count(a) == 1
 s = s.replace(a, "          onClick={() => undefined}", 1)'
+
+# OQ-61 (e): the free box shows the approved Help FAQ wording from `@/lib/plan-copy`. Each plant
+# puts one line back to the Settings prototype's variant, the drift the shared constants prevent.
+plant "UI58-B4" "the Billing free box's free line drifts from the approved wording" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {PLAN_FREE_INCLUDES}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        The diagnostic, your projected score, 40 practice questions a day and unlimited review.\n", 1)'
+
+plant "UI58-B5" "the Billing free box's paid line drifts from the approved wording" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {PLAN_PAID_ADDS}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        Paid plans add a study calendar, mastery for every domain and skill, full-length tests and LISA.\n", 1)'
 
 plant "UI58-G1" "the guardian sentence goes back to the pre-ruling words (OQ-38)" \
   "$T58 $H58" \

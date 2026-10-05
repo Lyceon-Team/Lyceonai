@@ -9,12 +9,13 @@
  *        | @implemented [2026-10-05]
  *
  * plain English: the Help FAQ's answer is these two sentences joined by a space, and the plans
- * page (`/upgrade`) shows the same two sentences. Both import them from here, so the two surfaces
- * cannot drift apart. Change the wording here only, and only with the owner's approval.
+ * page (`/upgrade`) and Settings → Billing's free box show the same two sentences (the free box
+ * since OQ-61 (e), owner ruling 2026-10-05: "your recommendations stand" — align it with the
+ * Help FAQ wording). All three import them from here, so the surfaces cannot drift apart. Change
+ * the wording here only, and only with the owner's approval.
  *
  * edge cases: "40 practice questions a day" states a configured value (OQ-59 (f)); if that value
- * changes, this sentence must change with it. Settings → Billing's free box keeps the Settings
- * prototype's own wording (a different approved source) and does not use these.
+ * changes, this sentence must change with it.
  */
 
 /** The free plan, as the Help FAQ states it. The projection is free. */

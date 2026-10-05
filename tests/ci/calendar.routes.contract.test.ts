@@ -8,12 +8,10 @@
  * (`calendar.{read,plan,profile}-service.test.ts`); here the services are stubbed and the
  * question is only which status each outcome produces and what travels with it.
  *
- * The two load-bearing cases:
- *   - every calendar route answers 402 with the SHARED CTA payload for a caller without
- *     `calendar_access`, and answers it before doing any work;
- *   - `GET /api/me/streak` answers 200 for that SAME caller, because INV-08-20 serves the
- *     streak to any tier. A test that only proved the 402s would pass just as well with the
- *     streak wrongly gated, which is the mistake this pair exists to catch.
+ * The load-bearing case: every calendar route answers 402 with the SHARED CTA payload for a
+ * caller without `calendar_access`, and answers it before doing any work. (§15's ungated
+ * streak route, whose 200 for that same caller used to be the other half of this pair, is
+ * retired: SCL-212, owner ruling 2026-10-05, OQ-61 (a).)
  */
 import express from "express";
 import request from "supertest";
@@ -37,7 +35,6 @@ const doItNowMock = vi.fn();
 const moveBlockMock = vi.fn();
 const acknowledgeMock = vi.fn();
 const launchBlockMock = vi.fn();
-const streakMock = vi.fn();
 const rateLimitCalls: string[] = [];
 
 vi.mock("../../server/services/entitlement-service", () => ({
@@ -89,10 +86,6 @@ vi.mock("../../server/services/calendar/launch-deps", () => ({
   liveLaunchDeps: {},
 }));
 
-vi.mock("../../server/services/activity-streak", () => ({
-  getStudentActivityStreak: streakMock,
-}));
-
 // The limiter has its own ledger tests; here it only has to prove it is WIRED, and to which
 // bucket. A real one would need the rate_limit ledger tables.
 vi.mock("../../server/middleware/rate-limit", () => ({
@@ -104,7 +97,7 @@ vi.mock("../../server/middleware/rate-limit", () => ({
   denyRateLimited: vi.fn(),
 }));
 
-const { calendarRouter, streakRouter } = await import(
+const { calendarRouter } = await import(
   "../../server/routes/calendar-routes"
 );
 
@@ -128,7 +121,6 @@ function buildApp(authenticated = true) {
     next();
   });
   app.use("/api/calendar", calendarRouter);
-  app.use("/api/me", streakRouter);
   return app;
 }
 
@@ -181,7 +173,6 @@ beforeEach(() => {
       resumed: false,
     },
   });
-  streakMock.mockResolvedValue({ current: 3, longest: null, history_complete: false });
 });
 
 /**
@@ -252,25 +243,6 @@ describe("§16 — every calendar route is gated on calendar_access", () => {
       }
     });
   }
-});
-
-describe("INV-08-20 — the streak carries NO calendar_access check", () => {
-  it("answers 200 for the very caller every calendar route refuses", async () => {
-    entitled = false;
-
-    const res = await request(buildApp()).get("/api/me/streak");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ current: 3, longest: null, history_complete: false });
-    expect(streakMock).toHaveBeenCalledWith(STUDENT, "req-test");
-  });
-
-  it("still requires an authenticated caller", async () => {
-    const res = await request(buildApp(false)).get("/api/me/streak");
-
-    expect(res.status).toBe(401);
-    expect(streakMock).not.toHaveBeenCalled();
-  });
 });
 
 describe("§8.1 — the caller is the session, never the body", () => {

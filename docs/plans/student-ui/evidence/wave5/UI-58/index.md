@@ -1,6 +1,6 @@
 # UI-58 Settings (each section; paid self-billing, free, guardian-managed), Help, Notifications and the plans page (both NOT PROTOTYPED); light and dark, 1440 and 390
 
-Generated 2026-10-05T06:48:56.015Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-58` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-05T09:38:51.803Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-58` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844.
@@ -56,7 +56,7 @@ Prototype: `Settings.dc.html` (Settings, plan = paid, Guardian clicked (the canv
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![settings-guardian-paid desktop light](settings-guardian-paid--desktop--light--built.png)<br>`/profile`, 95 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png), 79 KB |
+| desktop | light | ![settings-guardian-paid desktop light](settings-guardian-paid--desktop--light--built.png)<br>`/profile`, 96 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png), 79 KB |
 | desktop | dark | ![settings-guardian-paid desktop dark](settings-guardian-paid--desktop--dark--built.png)<br>`/profile`, 98 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--paid--dark--guardian.png), 80 KB |
 | mobile | light | ![settings-guardian-paid mobile light](settings-guardian-paid--mobile--light--built.png)<br>`/profile`, 101 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png)<br>desktop prototype (no phone layout), 79 KB |
 | mobile | dark | ![settings-guardian-paid mobile dark](settings-guardian-paid--mobile--dark--built.png)<br>`/profile`, 103 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--paid--dark--guardian.png)<br>desktop prototype (no phone layout), 80 KB |
@@ -69,7 +69,7 @@ Prototype: `Settings.dc.html` (Settings, plan = free, Guardian clicked); clicked
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![settings-guardian-free desktop light](settings-guardian-free--desktop--light--built.png)<br>`/profile`, 102 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--guardian.png), 80 KB |
+| desktop | light | ![settings-guardian-free desktop light](settings-guardian-free--desktop--light--built.png)<br>`/profile`, 101 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--guardian.png), 80 KB |
 | desktop | dark | ![settings-guardian-free desktop dark](settings-guardian-free--desktop--dark--built.png)<br>`/profile`, 104 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--guardian.png), 81 KB |
 | mobile | light | ![settings-guardian-free mobile light](settings-guardian-free--mobile--light--built.png)<br>`/profile`, 97 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--guardian.png)<br>desktop prototype (no phone layout), 80 KB |
 | mobile | dark | ![settings-guardian-free mobile dark](settings-guardian-free--mobile--dark--built.png)<br>`/profile`, 99 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--guardian.png)<br>desktop prototype (no phone layout), 81 KB |
@@ -95,10 +95,10 @@ Prototype: `Settings.dc.html` (Settings, plan = free, Billing clicked); clicked:
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![settings-billing-free desktop light](settings-billing-free--desktop--light--built.png)<br>`/profile`, 66 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--billing.png), 65 KB |
-| desktop | dark | ![settings-billing-free desktop dark](settings-billing-free--desktop--dark--built.png)<br>`/profile`, 67 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--billing.png), 66 KB |
-| mobile | light | ![settings-billing-free mobile light](settings-billing-free--mobile--light--built.png)<br>`/profile`, 53 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--billing.png)<br>desktop prototype (no phone layout), 65 KB |
-| mobile | dark | ![settings-billing-free mobile dark](settings-billing-free--mobile--dark--built.png)<br>`/profile`, 53 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--billing.png)<br>desktop prototype (no phone layout), 66 KB |
+| desktop | light | ![settings-billing-free desktop light](settings-billing-free--desktop--light--built.png)<br>`/profile`, 69 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--billing.png), 65 KB |
+| desktop | dark | ![settings-billing-free desktop dark](settings-billing-free--desktop--dark--built.png)<br>`/profile`, 70 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--billing.png), 66 KB |
+| mobile | light | ![settings-billing-free mobile light](settings-billing-free--mobile--light--built.png)<br>`/profile`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--billing.png)<br>desktop prototype (no phone layout), 65 KB |
+| mobile | dark | ![settings-billing-free mobile dark](settings-billing-free--mobile--dark--built.png)<br>`/profile`, 56 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--billing.png)<br>desktop prototype (no phone layout), 66 KB |
 
 ## Settings → Billing, guardian-managed (F-40): 'Managed by your guardian', no button
 
@@ -199,6 +199,6 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): built to the shell spec; these 
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"72ff444f-96a3-4163-a0a5-6348a0b7f396","openPracticeSessionId":"d8edb6e5-2d4d-4519-bea1-3ccd1d0bc1e4","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"e27ec041-868e-4752-ad0f-eb8ae7a48110","openPracticeSessionId":"bad9bfe8-3159-45f0-9363-02bb57159e19","openReviewSessionId":null,"diagnosticSessionId":"555a4636-abff-4ce9-8579-e14a8a8e4fba","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"90a1521a-30bb-461d-aa5d-85ef264db077","openPracticeSessionId":"57adade2-74bd-4798-b596-74d5821aaf56","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"0da9da5b-65ec-4cf8-a1c7-acbbcf6b9f50","openPracticeSessionId":"ef5c72c6-6b48-44cf-b7fb-dca87f2af63d","openReviewSessionId":null,"diagnosticSessionId":"7e330493-0a27-40d6-ac1a-8cc64298beb4","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: `fonts.googleapis.com`
