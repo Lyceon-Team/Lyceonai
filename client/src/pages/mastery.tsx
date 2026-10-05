@@ -251,7 +251,6 @@ export default function MasteryPage() {
         {!isLoading && !error && !selected && (
           <>
             <DomainGrid
-              viewer="student"
               domains={domains}
               onOpen={(target) => setSelected(target)}
             />

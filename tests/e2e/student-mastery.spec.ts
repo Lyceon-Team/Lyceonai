@@ -1,6 +1,7 @@
 /**
- * The STUDENT mastery page in a real browser — screenshots for the owner's review (R11: the
- * guardian Dashboard and this page render one `DomainGrid`, meter included).
+ * The STUDENT mastery page in a real browser — screenshots for the owner's review. It renders
+ * `DomainGrid`, meter included; since R13 the guardian Dashboard draws its own mastery card
+ * (G5-10 removed `DomainGrid`'s guardian branch).
  *
  * @spec [owner review 2026-10-01, final round ("refresh the review page's screenshots for the
  *       Dashboard, the Calendar and the student mastery page at both widths"); R12 (16px)]

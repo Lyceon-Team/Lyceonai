@@ -1,5 +1,12 @@
 import { BLOG_POSTS } from "../content/blog";
 import {
+  CB_CALCULATOR,
+  CB_MATH,
+  CB_READING_WRITING,
+  CB_STRUCTURE,
+  type Source,
+} from "./sources";
+import {
   BASE_URL,
   DEFAULT_OG_IMAGE,
   createArticleJsonLd,
@@ -17,6 +24,15 @@ export interface PublicMeta {
   jsonLd?: Record<string, unknown>[];
 }
 
+/**
+ * Head for the static 404 page (F2). No canonical: a not-found response names no URL as
+ * its own, and `noindex` keeps it out of every index whatever the status code says.
+ */
+export const NOT_FOUND_META = {
+  title: "Page not found | Lyceon",
+  description: "The page you were looking for does not exist.",
+} as const;
+
 export interface LegalMeta {
   title: string;
   description: string;
@@ -24,121 +40,145 @@ export interface LegalMeta {
   ogImage?: string;
 }
 
-const homeFaqs = [
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §5 F1 — "FAQ schema = visible FAQ"] |
+ * @implemented [2026-10-03] | plain English: each FAQ list below is the ONE copy of that FAQ.
+ * The page renders it and the FAQPage JSON-LD is built from it, so what search engines quote
+ * is exactly what a visitor reads. Before this, the homepage JSON-LD carried four questions
+ * the page never showed, and the Digital SAT page rendered a free-tier answer that the
+ * metadata had already corrected (owner ruling 2026-09-03, see "What is free vs paid?").
+ *
+ * An answer may hold several paragraphs, separated by a blank line ("\n\n"): the page renders
+ * one <p> per paragraph (`faqParagraphs`), and the JSON-LD joins them with a space.
+ *
+ * F1 carried the copy over unchanged except for the Digital SAT free-tier answer, which had
+ * drifted from the 2026-09-03 owner ruling; the copy was then rewritten under F6 (below).
+ */
+/*
+ * F6 (2026-10-03, owner-approved copy, Public Disclosure Doctrine §0): every answer below was
+ * rewritten to industry-standard wording. Paid features say so; nothing describes how
+ * practice is selected or how the tutor works; every statement about the SAT names its
+ * College Board source in `sources`, which the page renders under the answer (the JSON-LD
+ * carries the answer text only). The approved claim inventory is
+ * `docs/compliance/claim-inventory.md`; `tests/ci/public-copy-claims.contract.test.ts` keeps
+ * the removed phrasings out.
+ */
+export type FaqItem = { question: string; answer: string; sources?: readonly Source[] };
+
+export function faqParagraphs(answer: string): string[] {
+  return answer.split("\n\n");
+}
+
+export const HOME_FAQS: readonly FaqItem[] = [
   {
-    question: "Is this just ChatGPT with a different logo?",
+    question: "What does the AI tutor do?",
     answer:
-      "No. The tutor is grounded in SAT-style questions and explanations. It retrieves specific problems and walks you through them step by step instead of giving generic answers.",
+      "On paid plans, the AI tutor answers questions about SAT practice problems with step-by-step explanations.",
   },
   {
-    question: "Do I need a credit card to start?",
-    answer: "No. You can start a free SAT practice session without entering any payment details.",
+    question: "Do I need to add a credit card to start?",
+    answer: "No. The free tier is available without entering card details.",
   },
   {
-    question: "Can parents and tutors see progress?",
+    question: "What can parents and guardians see?",
     answer:
-      "Yes. You can share a read-only dashboard view with parents, tutors, or counselors to show progress and remaining weak spots.",
+      "Parents and guardians can link to a student's account and see a read-only progress summary while the student is on a paid plan.",
   },
   {
-    question: "Does this replace full-length practice tests?",
-    answer:
-      "No. Full-length tests are still essential. Tutor guidance makes your practice between those tests more targeted and efficient.",
+    question: "Do you include full-length practice tests and daily practice?",
+    answer: "Yes. Daily practice is free. Full-length timed practice tests are on paid plans.",
   },
 ];
 
-const digitalSatFaqs = [
+export const DIGITAL_SAT_FAQS: readonly FaqItem[] = [
   {
     question: "What is the Digital SAT?",
     answer:
-      "The Digital SAT is the computer-adaptive SAT format. It is about 2 hours long with two sections: Reading and Writing, and Math.",
+      "The Digital SAT has two sections, Reading and Writing, and Math, and takes 2 hours and 14 minutes. Each section has two modules; the second module is easier or harder depending on how you did on the first.",
+    sources: [CB_STRUCTURE],
   },
   {
     question: "How is the Digital SAT different from the paper SAT?",
-    answer:
-      "It is shorter, adaptive by module, calculator-allowed across all Math questions, and built for digital delivery.",
+    answer: "It is shorter, it is taken on a computer, and each section adapts at the module level.",
+    sources: [CB_STRUCTURE],
   },
   {
-    question: "Does Lyceon include full-length exams?",
-    answer:
-      "Yes. Lyceon includes full-length timed SAT exam sessions alongside daily adaptive practice and review.",
+    question: "Does Lyceon include full-length practice tests?",
+    answer: "Yes, on paid plans. Daily practice and review are free.",
   },
   {
-    question: "How does progress tracking work in Lyceon?",
-    answer:
-      "Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and progress over time.",
-  },
-  {
-    question: "How does Lisa work?",
-    answer:
-      "Lisa provides step-by-step guidance tied to SAT-style question context. Lisa is designed to support reasoning and review, not to bypass learning.",
+    question: "Can I track my progress?",
+    answer: "Yes. You can see your progress by section, with skill-level detail on paid plans.",
   },
   {
     /*
-      CORRECTED 2026-09-03 (owner ruling). The previous answer read "Free
-      includes daily limits (10 practice questions and 5 tutor messages)" — the
-      exact two claims corrected in `client/src/pages/home.tsx` in #713, left
-      behind here. It understated the practice allowance by a factor of four and
-      advertised a PREMIUM feature as free: `server/routes/tutor-runtime.ts:190`
-      denies every non-entitled profile with `entitlement_required`, so free
-      gets zero tutor messages, not five.
+      CORRECTED 2026-09-03 (owner ruling), REWORDED 2026-10-03 (F6, owner-approved). The
+      2026-09-03 ruling replaced "Free includes daily limits (10 practice questions and 5 tutor
+      messages)", which understated the practice allowance by a factor of four and advertised a
+      PREMIUM feature as free (`server/routes/tutor-runtime.ts` denies every non-entitled profile
+      with `entitlement_required`). F6 then named review (free for every tier, SCL-110), dropped
+      "expanded guardian visibility" (a guardian sees nothing unless the student is on a paid
+      plan) and names the free tier's score a "diagnostic score estimate" (wording confirmed by
+      Karl, 2026-10-03).
 
-      THIS COPY IS THE ONE SEARCH ENGINES QUOTE. It feeds the FAQ structured
-      data, so a wrong claim here outlives a wrong claim on the page itself.
-      Fixing the page and leaving this is how the divergence survived the first
-      pass; the two must be changed together.
-
-      The numbers must match the free card in `home.tsx`
-      (`FREE_DAILY_PRACTICE_QUESTIONS`, currently 40, from
-      `practice_runtime_config.daily_quota_free` per Doc 02B "Quota Contract").
-      `client/src/pages/home.seo-parity.test.ts` fails if they drift apart.
+      THIS COPY IS THE ONE SEARCH ENGINES QUOTE: it feeds the FAQ structured data. The number
+      must match the free card in `home.tsx` (`FREE_DAILY_PRACTICE_QUESTIONS`, from
+      `practice_runtime_config.daily_quota_free` per Doc 02B "Quota Contract");
+      `tests/ci/homepage-pricing.contract.test.ts` fails if they drift apart.
     */
     question: "What is free vs paid?",
     answer:
-      "Free includes 40 practice questions per day, a worked explanation after every question you answer, and the full diagnostic test with your overall score estimate. The interactive tutor, full-length SAT exams, the complete mastery breakdown and the study calendar are on paid plans, along with expanded guardian visibility.",
+      "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test and your diagnostic score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans.",
   },
 ];
 
-const digitalSatMathFaqs = [
+export const DIGITAL_SAT_MATH_FAQS: readonly FaqItem[] = [
   {
     question: "What math topics are on the Digital SAT?",
     answer:
-      "The Digital SAT Math section covers Algebra, Advanced Math, Problem-Solving and Data Analysis, and Geometry/Trigonometry.",
+      "The Digital SAT Math section covers Algebra, Advanced Math, Problem-Solving and Data Analysis, and Geometry and Trigonometry.",
+    sources: [CB_MATH],
   },
   {
     question: "Can I use a calculator on SAT Math?",
     answer:
-      "Yes. The Digital SAT allows calculator use for the entire Math section, including Bluebook Desmos support.",
+      "Yes. You can use a calculator at any point in the Math section, and a Desmos calculator is built into Bluebook, the College Board's testing app.\n\nLyceon practice includes a built-in Desmos calculator on every Math question.",
+    sources: [CB_CALCULATOR],
   },
   {
     question: "How many math questions are on the Digital SAT?",
-    answer: "There are 44 total Math questions split into two 22-question modules, with 70 minutes total.",
+    answer: "The Math section has 44 questions in two equal-length modules, with 70 minutes in total.",
+    sources: [CB_STRUCTURE],
   },
   {
     question: "What are common SAT Math mistakes?",
     answer:
-      "Common misses include solving for the wrong expression, sign errors, rushing word-problem setup, and skipping answer checks.",
+      "Common slips include solving for the wrong expression, sign errors, rushing word-problem setup, and skipping answer checks.",
   },
   {
     question: "How does Lyceon support math review?",
     answer:
-      "Lyceon provides adaptive practice plus step-by-step tutor guidance so students can identify patterns and correct repeat mistakes.",
+      "Every practice question comes with a worked explanation. On paid plans, the AI tutor can walk through a problem step by step.",
   },
 ];
 
-const digitalSatReadingFaqs = [
+export const DIGITAL_SAT_READING_WRITING_FAQS: readonly FaqItem[] = [
   {
     question: "What is tested on SAT Reading and Writing?",
     answer:
       "The section covers Craft and Structure, Information and Ideas, Standard English Conventions, and Expression of Ideas.",
+    sources: [CB_READING_WRITING],
   },
   {
     question: "How is Digital SAT Reading different from the paper test?",
-    answer:
-      "The Digital SAT uses shorter passages with one question per passage, creating faster transitions between topics.",
+    answer: "Each Reading and Writing question has its own short passage of 25 to 150 words.",
+    sources: [CB_READING_WRITING],
   },
   {
     question: "How many Reading and Writing questions are on the Digital SAT?",
-    answer: "There are 54 total questions split into two 27-question modules with 64 minutes total.",
+    answer:
+      "The Reading and Writing section has 54 questions in two equal-length modules, with 64 minutes in total.",
+    sources: [CB_STRUCTURE],
   },
   {
     question: "What vocabulary should I study for the SAT?",
@@ -188,6 +228,30 @@ export const LEGAL_META: Record<string, LegalMeta> = {
     canonical: `${BASE_URL}/legal/trust-and-safety`,
     ogImage: DEFAULT_OG_IMAGE,
   },
+  // F1 (2026-10-03): the three documents published in `legal/` that had no metadata.
+  // Descriptions are each document's own manifest description, unchanged.
+  // `tests/seo.prerender-output.test.ts` fails if a `legal/` manifest has no entry here.
+  "billing-terms": {
+    title: "Billing Terms",
+    description:
+      "What you agree to at checkout: what you are buying, the price and Billing Period, who may subscribe, and how to cancel.",
+    canonical: `${BASE_URL}/legal/billing-terms`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
+  "refund-policy": {
+    title: "Refund Policy",
+    description:
+      "Refund windows for first charges and for renewals, how to request one, and what happens after.",
+    canonical: `${BASE_URL}/legal/refund-policy`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
+  "subscription-auto-renewal-notice": {
+    title: "Subscription and Auto-Renewal Notice",
+    description:
+      "How automatic renewal works, the reminders we send before each charge, price changes, and how to cancel.",
+    canonical: `${BASE_URL}/legal/subscription-auto-renewal-notice`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
 };
 
 const blogPosts = BLOG_POSTS.map((post) => ({
@@ -197,21 +261,22 @@ const blogPosts = BLOG_POSTS.map((post) => ({
 
 export const PUBLIC_META: Record<string, PublicMeta> = {
   "/": {
-    title: "Lyceon | Study Smarter, Score Higher",
+    title: "Lyceon | SAT Prep",
     description:
-      "Digital SAT prep with adaptive practice, full-length exams, progress tracking, tutor guidance, and guardian visibility.",
-    canonical: BASE_URL,
+      "Digital SAT practice with worked explanations and progress tracking. Full-length practice tests, an AI tutor and a study plan on paid plans.",
+    // The root URL with its slash: the exact URL the sitemap lists and the browser requests.
+    canonical: `${BASE_URL}/`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
       organizationJsonLd,
       websiteJsonLd,
-      createFaqJsonLd(homeFaqs),
+      createFaqJsonLd(HOME_FAQS),
     ],
   },
   "/digital-sat": {
-    title: "Digital SAT Practice – Study Smarter, Score Higher | Lyceon",
+    title: "Digital SAT Prep | Lyceon",
     description:
-      "Master the Digital SAT with adaptive SAT-style practice, full-length exam readiness, and tutor explanations.",
+      "Prepare for the Digital SAT: how the test is structured, what each section covers, and SAT-style practice.",
     canonical: `${BASE_URL}/digital-sat`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
@@ -221,13 +286,13 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
         { name: "Home", url: BASE_URL },
         { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
       ]),
-      createFaqJsonLd(digitalSatFaqs),
+      createFaqJsonLd(DIGITAL_SAT_FAQS),
     ],
   },
   "/digital-sat/math": {
     title: "Digital SAT Math Prep - Algebra, Geometry & Data Analysis | Lyceon",
     description:
-      "Master Digital SAT Math with adaptive practice, step-by-step review, and focused error correction.",
+      "Prepare for Digital SAT Math: the four content areas, common mistakes, and practice with worked explanations.",
     canonical: `${BASE_URL}/digital-sat/math`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
@@ -236,13 +301,13 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
         { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
         { name: "Math", url: `${BASE_URL}/digital-sat/math` },
       ]),
-      createFaqJsonLd(digitalSatMathFaqs),
+      createFaqJsonLd(DIGITAL_SAT_MATH_FAQS),
     ],
   },
   "/digital-sat/reading-writing": {
     title: "Digital SAT Reading & Writing Prep - Vocabulary, Grammar & Comprehension | Lyceon",
     description:
-      "Master SAT Reading and Writing with adaptive practice, grammar review, and evidence-based reasoning strategies.",
+      "Prepare for Digital SAT Reading and Writing: the four content areas, grammar rules, and practice with worked explanations.",
     canonical: `${BASE_URL}/digital-sat/reading-writing`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
@@ -251,13 +316,13 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
         { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
         { name: "Reading & Writing", url: `${BASE_URL}/digital-sat/reading-writing` },
       ]),
-      createFaqJsonLd(digitalSatReadingFaqs),
+      createFaqJsonLd(DIGITAL_SAT_READING_WRITING_FAQS),
     ],
   },
   "/blog": {
     title: "SAT Prep Blog - Tips, Strategies & Study Guides",
     description:
-      "Expert SAT prep tips, study strategies, and guides for the Digital SAT. Learn how to improve your score with actionable advice.",
+      "SAT study tips and guides for the Digital SAT.",
     canonical: `${BASE_URL}/blog`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
@@ -274,13 +339,6 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     description:
       "Lyceon's Trust & Safety Hub: privacy protections, data security practices, and academic integrity policies.",
     canonical: `${BASE_URL}/trust`,
-    ogImage: DEFAULT_OG_IMAGE,
-  },
-  "/trust/evidence": {
-    title: "Trust Evidence | Lyceon",
-    description:
-      "Public technical evidence for Lyceon security and privacy controls, including auth enforcement, RLS usage, and logging safeguards.",
-    canonical: `${BASE_URL}/trust/evidence`,
     ogImage: DEFAULT_OG_IMAGE,
   },
   "/legal": {
@@ -303,6 +361,20 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     ogImage: DEFAULT_OG_IMAGE,
   },
 };
+
+// Every other published legal document gets the head the removed Express fallback gave it
+// (`${title} | Lyceon`, its own description, self-canonical). The two above keep their
+// existing titles.
+for (const [slug, meta] of Object.entries(LEGAL_META)) {
+  const path = `/legal/${slug}`;
+  if (PUBLIC_META[path]) continue;
+  PUBLIC_META[path] = {
+    title: `${meta.title} | Lyceon`,
+    description: meta.description,
+    canonical: meta.canonical,
+    ogImage: DEFAULT_OG_IMAGE,
+  };
+}
 
 for (const post of blogPosts) {
   PUBLIC_META[`/blog/${post.slug}`] = {
@@ -329,5 +401,6 @@ for (const post of blogPosts) {
 }
 
 export function getPublicMeta(path: string): PublicMeta | null {
-  return PUBLIC_META[path] || null;
+  // Own keys only: a bare index would resolve `constructor` & co. from Object.prototype.
+  return Object.prototype.hasOwnProperty.call(PUBLIC_META, path) ? (PUBLIC_META[path] ?? null) : null;
 }

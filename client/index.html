@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- Student UI fonts, self-hosted (register UI-12, UI-40; approved 2026-10-02). -->
-    <link rel="preload" href="/fonts/source-sans-3-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/fonts/source-serif-4-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+    <!-- Student UI fonts (Source Sans 3 / Source Serif 4, register UI-12, UI-40) are NOT preloaded
+         here: this head is every page's, and public pages never render them, so a preload made
+         each public page download ~50 KB it did not use. student-tokens.css declares them with
+         @font-face, so they download when the student shell (.lyc) first renders text in them
+         (font-display: swap). SEO follow-up, 2026-10-05, pending Karl's confirmation. -->
     <!-- Student UI theme before first paint (register UI-47): the same rule as
          client/src/lib/theme.ts (resolveTheme), kept in step by client/src/lib/theme.boot.test.ts.
          Writes <html data-theme>, which client/src/styles/student-tokens.css reads. -->
@@ -18,48 +20,31 @@
       })();
     </script>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-    <!-- SEO Meta Tags -->
+    <!-- Page head (F1). Every public page is prerendered at build by
+         scripts/build/prerender.mjs, which replaces everything between these markers with
+         that page's own title, description, self-canonical, Open Graph/Twitter tags and
+         JSON-LD from shared/seo/. What is left here is the head of the SPA shell (app.html),
+         which serves only signed-in and non-content routes: none of them is meant for an
+         index, so the shell says noindex and names no canonical. -->
+    <!-- seo:head:start -->
     <title>Lyceon – Digital SAT prep with tutor guidance</title>
-    <meta name="description" content="Lyceon offers SAT-style practice, full-length exams, progress tracking, and tutor guidance to help you study smarter and improve score readiness." />
-    <meta name="keywords" content="Lyceon, SAT, SAT prep, digital SAT practice, SAT-style questions, SAT math help, SAT reading help, SAT study app, tutor guidance" />
-    
-    <!-- Canonical URL -->
-    <link rel="canonical" href="https://lyceon.ai/" />
-    
+    <meta name="robots" content="noindex" />
+    <!-- seo:head:end -->
+
     <!-- Favicons -->
     <link rel="icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png" />
-    
-    <!-- Open Graph Tags -->
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Lyceon" />
-    <meta property="og:title" content="Lyceon – Digital SAT prep with tutor guidance" />
-    <meta property="og:description" content="Practice SAT-style questions with tutor guidance, full-length exams, and progress tracking." />
-    <meta property="og:url" content="https://lyceon.ai/" />
-    <meta property="og:image" content="https://lyceon.ai/og-image.jpg" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Lyceon – Digital SAT prep with tutor guidance" />
-    
-    <!-- Twitter Card Tags -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Lyceon – Digital SAT prep with tutor guidance" />
-    <meta name="twitter:description" content="SAT-style practice, full-length exams, and tutor guidance for Digital SAT readiness." />
-    <meta name="twitter:image" content="https://lyceon.ai/og-image.jpg" />
-    
-    <!-- JSON-LD is injected server-side for SSR public routes -->
-    
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Only the two families the app renders with: Poppins and Inter (index.css and tokens.css
-         font stacks, tailwind.config.ts, calendar.css). Poppins keeps the previous link's faces.
-         Inter is requested without the opsz axis because the removed index.css @import served
-         that face for weights 400-600 and, loading later, is what rendered them.
-         Student-ui register UI-12, 2026-09-29. -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
+
+    <!-- Web fonts are self-hosted (client/public/fonts/, declared in client/src/index.css), so
+         no page requests a Google domain. These preload the two faces the homepage renders above
+         the fold, Poppins 400 (body) and 700 (the h1); every other face loads on first use. Each
+         href equals its @font-face src exactly, and `crossorigin` is required for a font
+         preload to be reused. -->
+    <link rel="preload" href="/fonts/poppins-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/poppins-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   </head>
   <body>
     <div id="root"></div>

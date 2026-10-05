@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { legalContentPlugin } from "./vite-plugin-legal-content";
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, isSsrBuild }) => {
   const env = loadEnv(mode, process.cwd(), "");
   return {
   plugins: [
@@ -48,7 +48,25 @@ export default defineConfig(({ mode }) => {
       "!src/**/__tests__/**",
     ],
   },
-  build: {
+  // The prerender bundle carries its dependencies (Vite converts the CommonJS ones), so Node
+  // never has to resolve a CommonJS package's named exports at import time.
+  ssr: isSsrBuild ? { noExternal: true } : undefined,
+  // `vite build --ssr src/prerender/entry-server.tsx` (pnpm run build:prerender, F1) builds the
+  // build-time renderer into dist/prerender — never into dist/public, never with the public/
+  // assets — under a fixed entry name scripts/build/prerender.mjs can import. The client build
+  // below is unchanged.
+  build: isSsrBuild
+    ? {
+        outDir: path.resolve(import.meta.dirname, "dist/prerender"),
+        emptyOutDir: true,
+        copyPublicDir: false,
+        sourcemap: false,
+        minify: false,
+        rollupOptions: {
+          output: { entryFileNames: "[name].js", chunkFileNames: "chunks/[name]-[hash].js" },
+        },
+      }
+    : {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     sourcemap: false,
