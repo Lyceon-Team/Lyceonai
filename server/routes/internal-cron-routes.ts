@@ -28,6 +28,8 @@ import {
 import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
 import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
 import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
+import { runQotdSchedule } from "../services/qotd/schedule-job.js";
+import type { QotdDbClient } from "../services/qotd/qotd-service.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -607,6 +609,48 @@ router.get(
         err,
       );
       res.status(500).json({ error: "exam_score_renewal_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/qotd-schedule
+ * @spec [docs/plans/seo/seo-marketing-vertical.md Q1, R18; SCL-202 (anonymous ledger rows expire
+ *        with their window); owner Step 0 decisions 2026-10-05 (Vercel cron, then a daily deploy
+ *        hook rebuilds the archive pages)] | @implemented [2026-10-05]
+ *
+ * plain English: fills the Question of the Day schedule from today through a week ahead, sweeps
+ * expired anonymous rate-limit rows, then (when VERCEL_DEPLOY_HOOK_URL is set) triggers the
+ * production build that prerenders yesterday's archive page. Safe to rerun: a filled day is left
+ * alone (date primary key), and a question can be scheduled once ever (question_id UNIQUE).
+ *
+ * SCHEDULED AT 07:15 UTC: after America/Chicago midnight in both CST (06:00 UTC) and CDT
+ * (05:00 UTC), so the build it triggers sees the day that just ended as an archive day. Because
+ * the schedule is filled a week ahead, a missed run never leaves today without a question.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/qotd-schedule",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runQotdSchedule({
+        client: getSupabaseAdmin() as unknown as QotdDbClient,
+        deployHookUrl: process.env.VERCEL_DEPLOY_HOOK_URL,
+      });
+      res.json({ ok: true, job: "qotd_schedule", summary });
+    } catch (err) {
+      logger.error(
+        "QOTD",
+        "qotd_schedule_job_error",
+        "Scheduled Question of the Day fill failed",
+        err,
+      );
+      res.status(500).json({ error: "qotd_schedule_failed" });
     }
   },
 );
