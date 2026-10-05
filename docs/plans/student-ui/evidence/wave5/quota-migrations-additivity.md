@@ -36,3 +36,11 @@ select md5(replace(p.prosrc, E'\r', '')) as body_md5, pg_get_function_identity_a
 ```
 
 Expected when applied: one row, `body_md5 = 4b17c452171384c363d67ec8330da689`, `args = p_student_id uuid, p_limit integer`. No row → not applied (apply it before #1073 merges). A different md5 → a different body is live; stop and compare.
+
+## Production state (recorded 2026-10-05)
+
+Per the owner's report of 2026-10-05 (queries run against production by Claude at the owner's request):
+- `check_and_reserve_practice_quota`: body md5 `3280430166fd61987c6a77ed91f2ac88`, a single function, signature unchanged — `20261023000000` and then `20261024000000` applied by Karl. (Before: `981f5c39…`, the `20260630000000` body.)
+- `exam_scored_sessions`: body md5 `4b17c452171384c363d67ec8330da689`, args `p_student_id uuid, p_limit integer` — `20261020010000` is live.
+
+No migration in #1073 remains to be applied before it merges.
