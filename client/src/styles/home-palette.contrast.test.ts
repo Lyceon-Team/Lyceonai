@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { cssVarBlock, over, parse, ratio } from "./wcag-contrast";
 
 const css = readFileSync(path.resolve(__dirname, "../index.css"), "utf8");
-const set = cssVarBlock(css, ".home-palette {");
+const set = cssVarBlock(css, ".home-palette,");
 
 const PAIRS: readonly (readonly [string, string])[] = [
   ["foreground", "background"],

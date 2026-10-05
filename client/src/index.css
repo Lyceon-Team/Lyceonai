@@ -183,12 +183,27 @@
   --spacing: 0.25rem;
 }
 
+/* F-72 (student-UI register; owner brief 2026-10-05): the cookie banner and the GPC notice never
+   cover a sheet's or dialog's actions. While the calendar's sheet (its bottom sheet on a phone)
+   or any other dialog is open, the bar steps aside; it returns, still unanswered, when the sheet
+   closes. The consent settings dialog is itself a consent surface, so it does not count. The
+   offset above the phone tab bar is in CookieConsentRoot.tsx (lib/bottom-chrome.ts). */
+body:has(.lyceon-calendar .sheet.on) .consent-bottom-bar,
+body:has([role="dialog"][data-state="open"]:not(.consent-surface)) .consent-bottom-bar {
+  visibility: hidden;
+}
+
 /* The homepage palette (F13, owner-approved design 2026-10-05): cream #FBF6EC everywhere, cards
    #F6EFE1 with a #E2D5BB border, navy #11304B. Scoped to the homepage's root, so it redefines the
    app tokens for that subtree only (the way `.dark` on a consent surface does) and every other
    page keeps :root. Contrast is pinned by client/src/styles/home-palette.contrast.test.ts:
-   body copy 7.07 on a card, captions 5.14, the eyebrow 5.75, all at or above AA 4.5. */
-.home-palette {
+   body copy 7.07 on a card, captions 5.14, the eyebrow 5.75, all at or above AA 4.5.
+   The second selector: while the homepage is on screen, the cookie banner, GPC notice and
+   settings dialog (drawn at the app root and in a portal, outside the homepage's subtree) take
+   the same palette, so the banner matches the page (owner brief 2026-10-05). Never the dark
+   surface: public pages are light. */
+.home-palette,
+body:has(.home-palette) .consent-surface:not(.dark) {
   --background: #FBF6EC;
   --foreground: #11304B;
   --card: #F6EFE1;

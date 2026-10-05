@@ -29,6 +29,7 @@ import {
   type Page,
   type Route,
 } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { gunzipSync } from "node:zlib";
 import {
   HERO_COPY,
@@ -92,6 +93,8 @@ async function instrument(
     signedIn?: "under13" | "adult";
     /** The variant PostHog's flag response assigns for `homepage-hero` (F13). */
     heroVariant?: "control" | "test";
+    /** Extra same-origin API answers, by path (F-72: the student calendar's data). */
+    api?: Readonly<Record<string, unknown>>;
   } = {},
 ): Promise<Observed> {
   const seen: Observed = {
@@ -211,6 +214,8 @@ async function instrument(
         seen.consentPosts.push(route.request().postDataJSON());
         return route.fulfill({ status: 204, body: "" });
       }
+      const extra = opts.api?.[path];
+      if (extra !== undefined) return route.fulfill({ json: extra });
       return route.fulfill({ status: 404, json: { error: "not mocked" } });
     },
   );
@@ -515,5 +520,121 @@ test.describe("homepage-hero experiment", () => {
     ]);
     expect(await storedVariant(page)).toBeNull();
     await expect(heroTitle(page)).toHaveText(HERO_COPY.control.title);
+  });
+});
+
+/**
+ * F-72 (student-UI register; owner brief 2026-10-05): on a phone the cookie banner sat over the
+ * student shell's bottom tab bar and the calendar bottom sheet's buttons until answered. Now it
+ * sits above the tab bar (its measured height plus the safe-area inset) and steps aside while a
+ * sheet is open; the calendar's sheet is drawn above the tab bar. Checked by REAL clicks and by
+ * what is on top at each control's centre, at 390px, with the banner unanswered.
+ */
+test.describe("F-72: the banner never blocks the phone tab bar or a sheet's actions", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /** Each element's centre is the element itself (or inside it): nothing covers it. */
+  async function onTop(page: Page, selector: string): Promise<boolean[]> {
+    return page.locator(selector).evaluateAll((els) =>
+      els.map((el) => {
+        const b = el.getBoundingClientRect();
+        const top = document.elementFromPoint(
+          b.left + b.width / 2,
+          b.top + b.height / 2,
+        );
+        return top !== null && (el === top || el.contains(top));
+      }),
+    );
+  }
+
+  test("signed-in /dashboard: banner up, every tab is on top, and a tap navigates", async ({
+    context,
+    page,
+  }) => {
+    await instrument(context, page, { signedIn: "adult" });
+    await page.goto(`${BASE}/dashboard`);
+    const banner = page.getByTestId("cookie-banner");
+    const tabBar = page.getByTestId("app-tab-bar");
+    await expect(banner).toBeVisible();
+    await expect(tabBar).toBeVisible();
+    // Presence first: five tabs, then none of them covered.
+    const tabs = '[data-testid="app-tab-bar"] a';
+    expect(await page.locator(tabs).count()).toBe(5);
+    expect(await onTop(page, tabs)).toEqual([true, true, true, true, true]);
+    // The banner ends where the tab bar starts.
+    const b = await banner.boundingBox();
+    const t = await tabBar.boundingBox();
+    expect(b && t && Math.round(b.y + b.height)).toBe(t && Math.round(t.y));
+    // A real tap (Playwright refuses to click a covered element), with the banner still up.
+    await tabBar.getByRole("link", { name: /Practice/ }).click();
+    await page.waitForURL(/\/practice/);
+    await expect(banner).toBeVisible();
+  });
+
+  test("signed-in /calendar: with the bottom sheet open, its buttons are on top; closing it brings the banner back", async ({
+    context,
+    page,
+  }) => {
+    const fixtures = JSON.parse(
+      execFileSync(
+        "pnpm",
+        ["exec", "tsx", "tests/e2e/guardian-harness/fixtures.ts"],
+        {
+          encoding: "utf8",
+        },
+      ),
+    ) as { studentCalendar: unknown };
+    await instrument(context, page, {
+      signedIn: "adult",
+      api: { "/api/calendar": fixtures.studentCalendar },
+    });
+    await page.clock.setFixedTime(new Date("2026-09-30T12:00:00Z"));
+    await page.goto(`${BASE}/calendar`);
+    await page.locator('[data-testid="calendar-week-grid"]').first().waitFor();
+    const banner = page.getByTestId("cookie-banner");
+    await expect(banner).toBeVisible();
+    await page.getByRole("button", { name: "+ Add block" }).first().click();
+    const footer = ".lyceon-calendar .sheet.on footer button";
+    await page.locator(footer).first().waitFor();
+    expect(await page.locator(footer).count()).toBeGreaterThan(0);
+    await expect(banner).toBeHidden();
+    expect(await onTop(page, footer)).not.toContain(false);
+    await page
+      .locator(".lyceon-calendar .sheet.on footer")
+      .getByRole("button", { name: "Cancel" })
+      .click();
+    await expect(banner).toBeVisible();
+    expect(await onTop(page, '[data-testid="app-tab-bar"] a')).not.toContain(
+      false,
+    );
+  });
+});
+
+/** Owner brief 2026-10-05: on the homepage the banner's background matches the page (#FBF6EC). */
+test("homepage: the banner's background is the page's cream; other public pages keep theirs", async ({
+  context,
+  page,
+}) => {
+  await instrument(context, page);
+  const colours = async (): Promise<{ banner: string; page: string }> =>
+    page.evaluate(() => {
+      const banner = document.querySelector('[data-testid="cookie-banner"]');
+      const shell = document.querySelector("main")?.parentElement ?? null;
+      return {
+        banner: banner ? getComputedStyle(banner).backgroundColor : "",
+        page: shell ? getComputedStyle(shell).backgroundColor : "",
+      };
+    });
+  await page.goto(`${BASE}/`);
+  await expect(page.getByTestId("cookie-banner")).toBeVisible();
+  expect(await colours()).toEqual({
+    banner: "rgb(251, 246, 236)",
+    page: "rgb(251, 246, 236)",
+  });
+  await page.goto(`${BASE}/digital-sat`);
+  await expect(page.getByTestId("cookie-banner")).toBeVisible();
+  expect(await colours()).toEqual({
+    banner: "rgb(255, 250, 239)",
+    page: "rgb(255, 250, 239)",
   });
 });
