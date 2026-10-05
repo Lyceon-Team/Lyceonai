@@ -245,8 +245,11 @@ describe("F1 suite A — §9.1 schema conformance", () => {
     // indefinite by design, and the schema has no way to say so. A second
     // instance arriving within hours of the first is why SCL-107 finding (a)
     // asks for a schema value rather than a carve-out.
+    // Three, as of Privacy Policy v5 (SCL-219): RPOL-CONSENT-01, the guardian
+    // consent record, is now published as kept permanently (SCL-215).
     const EXPECTED_NULL_HORIZON_NO_TOKEN = [
       "RPOL-CONFIG-01",
+      "RPOL-CONSENT-01",
       "RPOL-SUPPRESS-01",
     ];
     const offenders: string[] = [];
