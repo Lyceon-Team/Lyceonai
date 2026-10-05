@@ -61,6 +61,11 @@ async function instrument(
   const seen: Observed = { posthog: [], consentPosts: [], profileReads: 0 };
   // The other half of PostHog's bot check: an automated browser reports navigator.webdriver.
   await context.addInitScript(() => {
+    // ...and Playwright's headless shell (what CI runs) names itself "HeadlessChrome" in
+    // navigator.userAgentData's brands as well as in the UA string.
+    Object.defineProperty(Navigator.prototype, "userAgentData", {
+      get: () => undefined,
+    });
     Object.defineProperty(Navigator.prototype, "webdriver", {
       get: () => false,
     });
