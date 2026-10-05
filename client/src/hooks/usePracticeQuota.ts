@@ -1,8 +1,9 @@
 /**
  * @spec [student-UI register OQ-21 (owner ruling, Karl, 2026-10-02: a read-only
- *        `GET /api/practice/quota`, the 402's own dry run), OQ-43 / F-61 (submitted answers,
- *        America/Chicago day); DESIGN.md §3 "Ruler progress" (free daily quota), §4 Home]
- *        | @implemented [2026-10-03]
+ *        `GET /api/practice/quota`, the 402's own dry run), OQ-43 / F-61 (America/Chicago
+ *        day), OQ-50 (Karl, 2026-10-05: answers and skips count, the diagnostic does not);
+ *        DESIGN.md §3 "Ruler progress" (free daily quota), §4 Home]
+ *        | @implemented [2026-10-03; OQ-50 2026-10-05]
  *
  * plain English: today's practice quota, parsed with the shared `practiceQuotaSchema`. A free
  * student gets `{unlimited: false, limit, remaining, resetAt}`; a paid student

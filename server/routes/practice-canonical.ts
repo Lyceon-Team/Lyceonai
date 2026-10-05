@@ -1124,11 +1124,14 @@ function sendClientConflict(
 
 /**
  * @spec [Doc-02B_V4 §13 "Quota Check Mechanism", "What Counts Against Quota"; owner ruling
- *        (Karl) 2026-10-03 OQ-43 / F-61] | @implemented [2026-10-03]
+ *        (Karl) 2026-10-03 OQ-43 / F-61; owner ruling (Karl) 2026-10-05 OQ-50, SCL-209]
+ *        | @implemented [2026-10-03; OQ-50 2026-10-05]
  * plain English: the serve-time gate (session start's first item, `GET /next`). It refuses
- * (402) when the free student has already SUBMITTED the daily limit in the current
- * America/Chicago day — the same SQL branch as the dry run behind `GET /quota`. Serving writes
- * the item's serve-log row (the paid per-session cap reads it) but consumes no free quota.
+ * (402) when the free student has already ANSWERED OR SKIPPED the daily limit of practice
+ * questions in the current America/Chicago day — the same SQL branch as the dry run behind
+ * `GET /quota`. Serving writes the item's serve-log row (the paid per-session cap reads it) but
+ * consumes no free quota. A diagnostic session's serve is never refused by the free cap (OQ-50:
+ * the diagnostic does not count); the SQL decides that from the session row, not from here.
  */
 async function reservePracticeQuestionQuota(args: {
   userId: string;

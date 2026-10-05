@@ -1521,11 +1521,14 @@ jobs:
             --file tests/ci/billing-managed-by.pg.ci.test.ts
 
       # @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02; owner ruling (Karl)
-      #        2026-10-03 OQ-43 / F-61, Doc 02B §13] | @implemented [2026-10-03]
+      #        2026-10-03 OQ-43 / F-61, Doc 02B §13; owner ruling (Karl) 2026-10-05 OQ-50,
+      #        SCL-209] | @implemented [2026-10-03; OQ-50 2026-10-05]
       # GET /api/practice/quota on the real practice router and the real
-      # check_and_reserve_practice_quota, over sessions served and answered through the real
-      # routes: fresh (resetAt = next America/Chicago midnight), served/skipped consume nothing,
-      # an answer consumes one and its idempotent replay nothing, limit−1 and limit (the read, the
+      # check_and_reserve_practice_quota, over sessions served, answered and skipped through the
+      # real routes: fresh (resetAt = next America/Chicago midnight), a serve consumes nothing, a
+      # skip consumes one (OQ-50), an answer consumes one and its idempotent replay nothing, the
+      # diagnostic's answers and skips consume nothing and it is served past the limit (OQ-50),
+      # limit−1 and limit (the read, the
       # GET /next 402 and the POST /sessions 402 agree; the pre-cap equals remaining), the Chicago
       # day boundary and DST via p_now, paid unlimited, reading consumes nothing, 401 and guardian
       # 403. Verdict read from vitest's JSON report: a PG-backed suite that skips is a vacuous pass.

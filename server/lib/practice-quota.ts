@@ -36,19 +36,25 @@
  * The rule (owner ruling OQ-43 / F-61, Karl, 2026-10-03: "follow Doc 02B. The quota counts
  * submitted answers and resets at Chicago midnight. One shared function for the 402 and the
  * quota read"; Doc 02B §13 "Quota Contract", "Reset Algorithm", "Quota Check Mechanism", "What
- * Counts Against Quota"; migration 20261023000000): the free count is today's ANSWERED
- * `practice_session_items` of the student, today being the local day of
- * `practice_runtime_config.quota_reset_timezone` (America/Chicago). Serving a question, or
- * skipping it, consumes nothing; an idempotent replay of an answer is the same row and counts
- * once. `resetAt` is the next local midnight as an absolute instant (DST-correct, computed in
- * SQL). Until that ruling this read reported the earlier enforced rule (UTC midnight, questions
- * served) — F-61 recorded the gap; the ruling closed it by changing the SQL function, and this
- * read followed without a TS change, which is the point of sharing the call.
+ * Counts Against Quota"; migration 20261023000000), as amended by the owner ruling OQ-50
+ * (Karl, 2026-10-05: "skips count, diagnostic doesn't, SCL against Doc 02B"; SCL-209; migration
+ * 20261024000000): the free count is today's ANSWERED or SKIPPED `practice_session_items` of
+ * the student outside diagnostic sessions, dated by `occurred_at`, today being the local day of
+ * `practice_runtime_config.quota_reset_timezone` (America/Chicago). Serving a question consumes
+ * nothing; a skip consumes one, as an answer does; an idempotent replay is the same row and
+ * counts once; a diagnostic answer or skip consumes nothing, and the diagnostic's own next
+ * question is served past the limit (the SQL exempts a serve whose session is the student's
+ * diagnostic; this dry run has no session, so it always reports the practice cap). `resetAt`
+ * is the next local midnight as an absolute instant (DST-correct, computed in SQL). Until
+ * OQ-43 this read reported the earlier enforced rule (UTC midnight, questions served) — F-61
+ * recorded the gap; both rulings changed only the SQL function, and this read followed without
+ * a TS change, which is the point of sharing the call.
  * trade-offs: the refusing sites are the ones Doc 02B §13 names — session start (this dry
  * run) and the next-question serve (`GET /sessions/:id/next`, the same SQL branch). An answer
- * to a question already on screen is never refused, so a student with an item served before
- * reaching the limit can still submit it: the count can exceed the limit by the questions
- * already served and unanswered at that moment (at most one per open session).
+ * or skip of a question already on screen is never refused, so a student with an item served
+ * before reaching the limit can still resolve it: the count can exceed the limit by the
+ * questions already served and unresolved at that moment (at most one per open session). OQ-50
+ * (b) asked Karl to accept this; it was not ruled on 2026-10-05, so it stays as built.
  */
 import {
   checkAndReservePracticeQuota,

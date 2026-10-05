@@ -3902,6 +3902,7 @@ DECLARE
   v_account uuid := NULL;
   v_entitled boolean := false;
   v_counts_toward_limit boolean := true;
+  v_diagnostic_session boolean := false;
   v_dedupe_key text := NULL;
   v_existing_id uuid := NULL;
   v_inserted_id uuid := NULL;
@@ -3961,19 +3962,36 @@ BEGIN
   v_entitled := public._rl_has_active_entitlement(p_student_user_id);
   v_counts_toward_limit := NOT v_entitled;
 
-  -- Today's submitted practice answers (Doc 02B §13 "Quota Check Mechanism"). One row per
-  -- answered item: an idempotent replay re-reads the same row, a served or skipped item
-  -- never reaches 'answered'.
+  -- A diagnostic serve is never refused by the free daily cap (OQ-50, Karl 2026-10-05). Read
+  -- from the student's own session row; an unknown or foreign session is not exempt.
+  IF p_session_id IS NOT NULL THEN
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.practice_sessions ps
+      WHERE ps.id = p_session_id
+        AND ps.user_id = p_student_user_id
+        AND ps.mode = 'diagnostic'
+    )
+    INTO v_diagnostic_session;
+  END IF;
+
+  -- Today's resolved practice questions (Doc 02B §13 as amended by SCL-209 / OQ-50): one row
+  -- per answered OR skipped item, dated by `occurred_at` (CHECK-guaranteed on both), outside
+  -- diagnostic sessions. An idempotent replay re-reads the same row; a served item that is
+  -- neither answered nor skipped counts zero.
   SELECT count(*)::integer
   INTO v_used
   FROM public.practice_session_items psi
+  JOIN public.practice_sessions ps ON ps.id = psi.session_id
   WHERE psi.user_id = p_student_user_id
-    AND psi.status = 'answered'
-    AND psi.answered_at >= v_today_start
-    AND psi.answered_at < v_tomorrow_start;
+    AND psi.status IN ('answered', 'skipped')
+    AND psi.occurred_at >= v_today_start
+    AND psi.occurred_at < v_tomorrow_start
+    AND ps.mode <> 'diagnostic';
 
-  -- Daily cap check (unpaid only) — the one branch the dry run and the serve share.
-  IF v_counts_toward_limit AND v_used >= v_daily_limit THEN
+  -- Daily cap check (unpaid only) — the one branch the dry run and the serve share; a
+  -- diagnostic serve passes it.
+  IF v_counts_toward_limit AND NOT v_diagnostic_session AND v_used >= v_daily_limit THEN
     RETURN jsonb_build_object(
       'allowed', false,
       'code', 'PRACTICE_FREE_DAILY_QUOTA_EXCEEDED',
