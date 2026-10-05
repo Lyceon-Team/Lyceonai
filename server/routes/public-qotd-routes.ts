@@ -41,7 +41,6 @@ import {
 } from "../../packages/shared/src/qotd-schema";
 import {
   gradeQotd,
-  qotdCorrectOptionId,
   qotdDayWindow,
   qotdToday,
   QotdUnavailableError,
@@ -102,8 +101,8 @@ router.get(
             ),
           );
       }
-      // Shared caches may hold it briefly: it carries no answer and no per-viewer content.
-      res.setHeader("Cache-Control", "public, max-age=60");
+      // Owner ruling 2026-10-05: every response carries its own shuffle, so nothing may cache it.
+      res.setHeader("Cache-Control", "private, no-store");
       return res.json({ data: toTodayResponse(row) });
     } catch (err: unknown) {
       return unavailable(
@@ -320,7 +319,8 @@ router.post("/today/answer", async (req: Request, res: Response) => {
     const response = qotdSubmitResponseSchema.parse({
       qotd_date: today,
       is_correct: graded.isCorrect,
-      correct_option_id: qotdCorrectOptionId(row),
+      // The correct option's TOKEN, so the browser marks it in the visitor's own order.
+      correct_option_id: graded.correctOptionId,
       correct_answer: row.item_type === "grid_in" ? row.correct_answer : null,
       explanation: row.explanation ?? "",
       stats: qotdStat(attempts, correct),

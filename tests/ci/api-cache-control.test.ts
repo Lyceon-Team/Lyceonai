@@ -84,7 +84,6 @@ describe("/api responses are private, no-store by default (F-27)", () => {
   it("the listed public route keeps its public header", async () => {
     expect(cacheableRoutes.map((r) => r.path)).toEqual([
       "/api/public/pricing",
-      "/api/public/qotd/today",
       "/api/public/qotd/archive",
       "/api/public/qotd/:date",
     ]);

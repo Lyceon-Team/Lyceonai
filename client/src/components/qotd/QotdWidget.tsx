@@ -11,6 +11,16 @@
  * submit sends the choice and a Turnstile token. The response carries correctness, the correct
  * choice and the explanation, and the success-rate stat only when the server shows it.
  *
+ * Owner ruling 2026-10-05 (QOTD follow-up, items 1-3) | updated [2026-10-05]:
+ *   * the options arrive shuffled, each identified by an opaque token; they are lettered A-D by
+ *     on-screen position (QuestionRenderer), and the reveal names the correct option by token, so
+ *     it is marked in this visitor's own order;
+ *   * ONE ANSWER PER VISIT: once a submit succeeds the widget locks — the choice can no longer
+ *     change and nothing can be submitted again on this page. Nothing is stored, so a reload can
+ *     answer again; the server counts only the first attempt per hashed IP per day anyway;
+ *   * Turnstile loads on interaction: its script is fetched only once the visitor first picks
+ *     an answer (or types one), never on page load.
+ *
  * Privacy: the question-and-answer area carries `ph-no-capture`, so no session recording or
  * autocapture records what a visitor picked (owner ruling). Nothing is written to browser
  * storage; a reload starts the question fresh. No randomness anywhere.
@@ -69,6 +79,8 @@ export function QotdWidget({
   // A Turnstile token is single-use: a new key remounts the widget for a fresh one.
   const [widgetKey, setWidgetKey] = useState(0);
   const [result, setResult] = useState<QotdSubmitResponse | null>(null);
+  // Set by the first pick or keystroke; mounts Turnstile (and so loads its script) from then on.
+  const [interacted, setInteracted] = useState(false);
 
   const submit = useMutation({
     mutationFn: submitQotdAnswer,
@@ -101,8 +113,29 @@ export function QotdWidget({
   const { qotd_date: date, question } = today.data;
   const isGrid = question.item_type === "grid_in";
   const answer = isGrid ? gridValue.trim() : (choice ?? "");
+  const locked = result !== null;
   const canSubmit =
-    !result && answer.length > 0 && token !== null && !submit.isPending;
+    !locked && answer.length > 0 && token !== null && !submit.isPending;
+
+  const pick = (key: string): void => {
+    if (locked || submit.isPending) return;
+    setChoice(key);
+    setInteracted(true);
+  };
+  const type = (value: string): void => {
+    if (locked || submit.isPending) return;
+    setGridValue(value);
+    setInteracted(true);
+  };
+  const send = (): void => {
+    // The lock, enforced here as well as by the disabled button: one answer per visit.
+    if (!canSubmit) return;
+    submit.mutate({
+      qotd_date: date,
+      answer,
+      turnstile_token: token ?? "",
+    });
+  };
 
   return (
     <div data-testid="qotd-widget" className="space-y-5">
@@ -113,7 +146,6 @@ export function QotdWidget({
       <div className="ph-no-capture" data-testid="qotd-question-area">
         <QuestionRenderer
           question={{
-            id: question.id,
             itemType: question.item_type,
             stem: question.stem,
             passage: question.passage,
@@ -122,27 +154,31 @@ export function QotdWidget({
             explanation: null,
           }}
           selectedAnswer={choice}
-          onSelectAnswer={setChoice}
+          onSelectAnswer={pick}
           freeResponseAnswer={gridValue}
-          onFreeResponseAnswerChange={setGridValue}
+          onFreeResponseAnswerChange={type}
           showResult={result !== null}
           isCorrect={result?.is_correct ?? null}
           correctOptionId={result?.correct_option_id ?? null}
           correctAnswer={result?.correct_answer ?? null}
           explanation={result?.explanation ?? null}
-          disabled={result !== null || submit.isPending}
+          disabled={locked || submit.isPending}
         />
       </div>
 
       {result ? (
-        <QotdStatLine stat={result.stats} />
+        <div data-testid="qotd-locked">
+          <QotdStatLine stat={result.stats} />
+        </div>
       ) : (
         <div className="space-y-3">
-          <TurnstileWidget
-            key={widgetKey}
-            onToken={setToken}
-            onUnavailable={() => setTurnstileDown(true)}
-          />
+          {interacted ? (
+            <TurnstileWidget
+              key={widgetKey}
+              onToken={setToken}
+              onUnavailable={() => setTurnstileDown(true)}
+            />
+          ) : null}
           {turnstileDown ? (
             <p className="text-sm text-muted-foreground">
               The security check could not load. Please reload the page to
@@ -153,13 +189,7 @@ export function QotdWidget({
             type="button"
             data-testid="qotd-submit"
             disabled={!canSubmit}
-            onClick={() =>
-              submit.mutate({
-                qotd_date: date,
-                answer,
-                turnstile_token: token ?? "",
-              })
-            }
+            onClick={send}
             className="px-5 py-2.5 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {submit.isPending ? "Checking…" : "Check my answer"}

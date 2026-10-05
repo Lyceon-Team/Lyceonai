@@ -22,7 +22,13 @@ import {
 } from "../../server/services/qotd/schedule-job";
 import type { QotdDbClient } from "../../server/services/qotd/qotd-service";
 
-type Q = { id: string; section: "M" | "RW"; domain: string; stem: string };
+type Q = {
+  id: string;
+  section: "M" | "RW";
+  domain: string;
+  stem: string;
+  explanation?: string;
+};
 
 function makePool(perDomain: number): Q[] {
   const pool: Q[] = [];
@@ -63,7 +69,7 @@ function makeDb(pool: Q[]) {
             stem: q.stem,
             passage: null,
             options: [{ key: "A", text: "x" }],
-            explanation: "e",
+            explanation: q.explanation ?? "e",
           }));
         return { data, error: null };
       }
@@ -181,6 +187,27 @@ describe("runQotdSchedule", () => {
     expect(summary.skippedBanned).toBe(1);
     expect(db.schedule.get("2026-10-05")).not.toBe(target.id);
     expect(db.schedule.get("2026-10-05")).toBeDefined();
+  });
+
+  it("skips an MCQ whose explanation names a choice letter (options are shuffled per request), and takes the next", async () => {
+    const pool = makePool(2);
+    const first = rotationFor("2026-10-05")[0];
+    const inDomain = pool
+      .filter((q) => q.section === first?.section && q.domain === first?.domain)
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    const [lettered, plain] = inDomain;
+    if (!lettered || !plain) throw new Error("no candidates");
+    lettered.explanation = "Choice B is correct because the slope is 3.";
+    // A capital letter that is not an answer choice must NOT be screened out.
+    plain.explanation = "Let B be the midpoint of segment AC; then AB = BC.";
+    const db = makeDb(pool);
+    const summary = await runQotdSchedule({
+      client: db.client,
+      now: NOW,
+      daysAhead: 0,
+    });
+    expect(summary.skippedLetterReference).toBe(1);
+    expect(db.schedule.get("2026-10-05")).toBe(plain.id);
   });
 
   it("moves to the next domain in the rotation when one has nothing left, and reports a day it cannot fill", async () => {
