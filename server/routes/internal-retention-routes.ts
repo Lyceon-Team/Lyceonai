@@ -19,10 +19,10 @@
  *    memory routes). Cloud Scheduler mints the OIDC token at delivery.
  *  - Tiers map to separate scheduler jobs so partial failure is isolated.
  *    A failing 180d sweep doesn't delay the 7d sweep.
- *  - 7d tier: deletes from tutor_conversations WHERE deleted_at expired.
- *    Cascade FKs handle tutor_messages and tutor_question_links. A
- *    separate delete handles tutor_memory_summaries (no FK cascade from
- *    tutor_conversations).
+ *  - 7d tier: `sweep_tutor_conversation_retention` (SQL, RS-00 2026-10-05)
+ *    deletes expired soft-deleted conversations EXCEPT crisis-flagged ones,
+ *    with their cascade rows, and memory summaries only for students left
+ *    with no live, recoverable or flagged conversation.
  *  - 90d/180d tiers delete outright. They used to archive every expired row
  *    to BigQuery first and decline when they could not; the owner ruling of
  *    2026-09-22 removed the archive (Doc 07B §5.4). Neither tier can decline
@@ -37,13 +37,6 @@
  *    don't match the WHERE clause.
  *  - Empty result: normal for tiers with no expired rows. Returns
  *    { ok: true, deleted_count: 0 }.
- *  - tutor_memory_summaries: the spec says "Cascade from account /
- *    entitlement" but tutor_memory_summaries has a student_id FK, not
- *    a conversation FK. The 7d sweep joins on student_id + entitlement
- *    status. However, the 7d tier here only hard-deletes conversations
- *    that were soft-deleted 7+ days ago — the memory summaries for
- *    those students were already soft-deleted alongside conversations
- *    and are cleaned up by the same student_id + deleted_at window.
  */
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";

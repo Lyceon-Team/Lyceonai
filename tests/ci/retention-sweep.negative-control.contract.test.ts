@@ -44,7 +44,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { stripComments } from "./lib/strip-comments";
 import {
-  sweep7d,
   sweep90d,
   sweep180d,
   sweep365d,
@@ -284,192 +283,11 @@ describe("retentionCutoff (pure boundary function)", () => {
 
 // ── 7-day tier ───────────────────────────────────────────────────────
 
-describe("7d tier — negative control", () => {
-  it("deletes expired row, preserves unexpired row", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-expired", student_id: "s1", deleted_at: daysAgo(8) },
-        { id: "conv-fresh", student_id: "s2", deleted_at: daysAgo(6) },
-      ],
-      tutor_memory_summaries: [],
-    });
-
-    const result = await sweep7d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(1);
-      expect(result.dry_run).toBe(false);
-    }
-
-    // Negative control: unexpired row survives
-    const remaining = client._store.tutor_conversations;
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0].id).toBe("conv-fresh");
-  });
-
-  it("does not delete conversations with null deleted_at (active)", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-active", student_id: "s1", deleted_at: null },
-        { id: "conv-expired", student_id: "s1", deleted_at: daysAgo(8) },
-      ],
-      tutor_memory_summaries: [],
-    });
-
-    const result = await sweep7d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(1);
-
-    // Active conversation (null deleted_at) must survive
-    const remaining = client._store.tutor_conversations;
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0].id).toBe("conv-active");
-  });
-
-  it("dry-run deletes nothing — both rows survive", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-expired", student_id: "s1", deleted_at: daysAgo(8) },
-        { id: "conv-fresh", student_id: "s2", deleted_at: daysAgo(6) },
-      ],
-      tutor_memory_summaries: [],
-    });
-
-    const result = await sweep7d(client, true, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(1); // count only
-      expect(result.dry_run).toBe(true);
-    }
-
-    // BOTH rows survive — dry-run performed no DELETE
-    expect(client._store.tutor_conversations).toHaveLength(2);
-  });
-
-  it("cross-student: another student's unexpired row survives", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-s1-expired", student_id: "s1", deleted_at: daysAgo(10) },
-        { id: "conv-s2-fresh", student_id: "s2", deleted_at: daysAgo(3) },
-        { id: "conv-s3-active", student_id: "s3", deleted_at: null },
-      ],
-      tutor_memory_summaries: [],
-    });
-
-    await sweep7d(client, false, { now: NOW });
-
-    const remaining = client._store.tutor_conversations;
-    expect(remaining).toHaveLength(2);
-    const ids = remaining.map((r: Row) => r.id);
-    expect(ids).toContain("conv-s2-fresh");
-    expect(ids).toContain("conv-s3-active");
-    expect(ids).not.toContain("conv-s1-expired");
-  });
-
-  it("purges memory summaries when student has zero remaining active conversations", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [
-        // s1 has only one conversation and it's expired — after sweep, s1 has zero active
-        { id: "conv-s1", student_id: "s1", deleted_at: daysAgo(8) },
-        // s2 has one expired, one active — s2 keeps memory summaries
-        { id: "conv-s2-expired", student_id: "s2", deleted_at: daysAgo(8) },
-        { id: "conv-s2-active", student_id: "s2", deleted_at: null },
-      ],
-      tutor_memory_summaries: [
-        { id: "mem-s1", student_id: "s1", summary_type: "weekly" },
-        { id: "mem-s2", student_id: "s2", summary_type: "weekly" },
-      ],
-    });
-
-    await sweep7d(client, false, { now: NOW });
-
-    // s1 memory summaries should be purged (zero remaining active conversations)
-    // s2 memory summaries should survive (still has an active conversation)
-    const memRows = client._store.tutor_memory_summaries;
-    expect(memRows).toHaveLength(1);
-    expect(memRows[0].student_id).toBe("s2");
-  });
-
-  it("memory summaries survive when student has soft-deleted conversations inside recovery window (BLOCKER 1)", async () => {
-    // LISA-GCP-001: student s1 has two soft-deleted conversations:
-    //   - conv-past-window: deleted 8 days ago (past 7-day recovery window, swept)
-    //   - conv-in-window:   deleted 3 days ago (inside 7-day recovery window, retained)
-    //
-    // After sweep, s1 has zero active conversations BUT one conversation still
-    // inside the recovery window. Memory summaries MUST survive because §14.2
-    // promises "LISA data is recovered with conversation history intact" during
-    // the 7-day window — summaries are per-student, not per-conversation.
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-past-window", student_id: "s1", deleted_at: daysAgo(8) },
-        { id: "conv-in-window", student_id: "s1", deleted_at: daysAgo(3) },
-      ],
-      tutor_memory_summaries: [
-        { id: "mem-s1", student_id: "s1", summary_type: "weekly" },
-      ],
-    });
-
-    await sweep7d(client, false, { now: NOW });
-
-    // The 8-day-old conversation is swept
-    expect(client._store.tutor_conversations).toHaveLength(1);
-    expect(client._store.tutor_conversations[0].id).toBe("conv-in-window");
-
-    // CRITICAL: memory summaries SURVIVE because conv-in-window is still
-    // within the 7-day recovery window. Without the BLOCKER 1 fix, this
-    // would be empty (summaries deleted prematurely).
-    expect(client._store.tutor_memory_summaries).toHaveLength(1);
-    expect(client._store.tutor_memory_summaries[0].id).toBe("mem-s1");
-  });
-
-  it("memory summaries purged when ALL soft-deleted conversations are past recovery window", async () => {
-    // Companion to the recovery window test above: when ALL of a student's
-    // conversations are past the 7-day window AND none are active, summaries
-    // are properly purged.
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-old-1", student_id: "s1", deleted_at: daysAgo(10) },
-        { id: "conv-old-2", student_id: "s1", deleted_at: daysAgo(8) },
-      ],
-      tutor_memory_summaries: [
-        { id: "mem-s1", student_id: "s1", summary_type: "weekly" },
-      ],
-    });
-
-    await sweep7d(client, false, { now: NOW });
-
-    // Both conversations swept (both past window)
-    expect(client._store.tutor_conversations).toHaveLength(0);
-
-    // Memory summaries purged — no active, no recoverable conversations
-    expect(client._store.tutor_memory_summaries).toHaveLength(0);
-  });
-
-  it("exact boundary: row at exactly 7 days is NOT expired (strictly less than)", async () => {
-    // The cutoff is now - 7d. A row with deleted_at exactly at the cutoff
-    // should NOT be deleted because the condition is lt (strictly less than).
-    const exactBoundary = retentionCutoff(NOW, 7);
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-exact", student_id: "s1", deleted_at: exactBoundary },
-      ],
-      tutor_memory_summaries: [],
-    });
-
-    const result = await sweep7d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(0);
-
-    // Row at exact boundary survives
-    expect(client._store.tutor_conversations).toHaveLength(1);
-  });
-});
-
-// ── 90-day tier ──────────────────────────────────────────────────────
+// 7d tier: moved to real Postgres (RS-00, 2026-10-05). The tier is one SQL function now
+// (`sweep_tutor_conversation_retention`), which a filtering mock cannot execute, so every 7d case
+// that lived here — expired vs unexpired, active rows, dry run, cross-student, the memory-summary
+// recovery rules, the boundary, isolation from the 90d/180d tables, the empty table — runs in
+// tests/ci/retention-sweep.pg.ci.test.ts against the real function.
 
 describe("90d tier — delete outright", () => {
   it("deletes expired rows, preserves unexpired rows", async () => {
@@ -814,53 +632,6 @@ describe("365d tier — structured no-op", () => {
 // ── Cross-table isolation ────────────────────────────────────────────
 
 describe("cross-table isolation", () => {
-  it("7d sweep does not touch 90d tables", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-expired", student_id: "s1", deleted_at: daysAgo(8) },
-      ],
-      tutor_memory_summaries: [],
-      tutor_instruction_assignments: [
-        { id: "assign-old", created_at: daysAgo(100) },
-      ],
-      tutor_instruction_exposures: [
-        { id: "expose-old", created_at: daysAgo(100) },
-      ],
-    });
-
-    await sweep7d(client, false, { now: NOW });
-
-    // 7d sweep deleted the conversation
-    expect(client._store.tutor_conversations).toHaveLength(0);
-
-    // 90d tables are untouched
-    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
-    expect(client._store.tutor_instruction_exposures).toHaveLength(1);
-  });
-
-  it("7d sweep does not touch 180d tables", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [
-        { id: "conv-expired", student_id: "s1", deleted_at: daysAgo(8) },
-      ],
-      tutor_memory_summaries: [],
-      crisis_review_cases: [
-        {
-          id: "crisis-old",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(200),
-        },
-      ],
-      tutor_injection_log: [{ id: "inj-old", detected_at: daysAgo(200) }],
-    });
-
-    await sweep7d(client, false, { now: NOW });
-
-    // 180d tables untouched
-    expect(client._store.crisis_review_cases).toHaveLength(1);
-    expect(client._store.tutor_injection_log).toHaveLength(1);
-  });
-
   it("90d sweep does not touch 7d or 180d tables", async () => {
     const client = filteringMockClient({
       tutor_instruction_assignments: [
@@ -897,21 +668,6 @@ describe("cross-table isolation", () => {
 // ── Empty tables ─────────────────────────────────────────────────────
 
 describe("empty tables — no rows to sweep", () => {
-  it("7d returns ok: true, deleted_count: 0 on empty table", async () => {
-    const client = filteringMockClient({
-      tutor_conversations: [],
-      tutor_memory_summaries: [],
-    });
-
-    const result = await sweep7d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(0);
-      expect(result.dry_run).toBe(false);
-    }
-  });
-
   it("90d returns ok: true, deleted_count: 0 on empty tables", async () => {
     const client = filteringMockClient({
       tutor_instruction_assignments: [],

@@ -1,6 +1,6 @@
 /**
- * @spec [Doc-03_V1.1 §14.2, INV-03-19]
- * @implemented 2026-08-21
+ * @spec [Doc-03_V1.1 §14.2, INV-03-19; owner ruling 2026-10-05 RS-00]
+ * @implemented 2026-08-21 (7d tier moved into SQL 2026-10-05)
  *
  * plain English: Retention sweep tier functions for LISA data. Each function
  * deletes only rows that have crossed the retention boundary for its tier,
@@ -17,7 +17,8 @@
  *
  * trade-offs:
  *  - Client injection is the same pattern as server/lib/stale-session-sweep.ts.
- *    The route handler passes supabaseServer; tests pass a filtering mock.
+ *    The route handler passes supabaseServer; the real-Postgres suite passes
+ *    the PG harness.
  *  - 90d/180d tiers delete outright. They used to export every expired row
  *    to BigQuery first and refuse to delete when they could not; the owner
  *    ruling of 2026-09-22 removed the archive (Doc 07B §5.4 — the exported
@@ -25,9 +26,13 @@
  *    minors). Nothing was ever archived, so nothing was migrated. Neither
  *    tier can decline any more.
  *  - 365d tier is a structured no-op until tables are provisioned.
- *  - 7d tier: memory summaries are only purged when a student has zero
- *    remaining active conversations (conservative — spec says "cascade
- *    from account / entitlement").
+ *  - 7d tier (RS-00, 2026-10-05): one SQL function,
+ *    `sweep_tutor_conversation_retention`. It never deletes a crisis-flagged
+ *    conversation (any crisis_review_cases / crisis_review_events row links to
+ *    it — Doc 03 §14.2 keeps those for manual purge), and purges a student's
+ *    memory summaries only when no live, recoverable or flagged conversation
+ *    remains. Tests run it against real Postgres
+ *    (tests/ci/retention-sweep.pg.ci.test.ts), not the filtering mock.
  *  - 180d crisis: only RESOLVED cases are swept. Open/in-review cases are
  *    retained regardless of age (safety review ongoing). Spec: "hard delete
  *    at 180 days or on closure, whichever is later." The crisis_review_cases
@@ -45,12 +50,24 @@
  *    is later" — both conditions must be met.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
+import { retentionSweepRowSchema } from "../../packages/shared/src/retention-schema";
 import { logger } from "../logger";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
+/** Rows per table a tier deleted (or, in a dry run, would delete). */
+export type SweepTableCount = { table: string; count: number };
+
 export type SweepResult =
-  | { ok: true; deleted_count: number; tier: string; dry_run: boolean }
+  | {
+      ok: true;
+      deleted_count: number;
+      tier: string;
+      dry_run: boolean;
+      /** Per-table counts, cascades included (RS-03). Absent only where a tier has none. */
+      per_table?: SweepTableCount[];
+    }
   | { ok: false; reason: string; tier: string };
 
 export type SweepOpts = {
@@ -97,118 +114,54 @@ export function retentionCutoff(now: Date, days: number): string {
 // ── 7-day tier ────────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03_V1.1 §14.2, INV-03-19]
+ * @spec [Doc-03_V1.1 §14.2, INV-03-19; owner ruling 2026-10-05 RS-00 (crisis-flagged
+ *       conversations are never swept: manual purge only)] | @implemented [2026-08-20;
+ *       crisis hold 2026-10-05]
  *
- * Hard-delete tutor_conversations where deleted_at expired (soft-deleted
- * 7+ days ago). FK cascade handles tutor_messages and tutor_question_links.
- * Separate cleanup for tutor_memory_summaries (linked by student_id, not
- * conversation FK).
+ * plain English: the 7d tier is ONE SQL function,
+ * `sweep_tutor_conversation_retention(p_dry_run)` (migration 20261025000000). It deletes
+ * conversations soft-deleted more than 7 days ago — except any a `crisis_review_cases` or
+ * `crisis_review_events` row links to — with their cascade rows, and the memory summaries of
+ * students left with no live, recoverable or flagged conversation. The check and the delete are
+ * one transaction, so a flag cannot land between them; PostgREST could not say that in one
+ * statement, which is why the rule moved out of this file.
  *
- * Measure: deleted_at column (set when entitlement lapses).
- * Condition: deleted_at IS NOT NULL AND deleted_at < now() − 7 days.
+ * Measure: `deleted_at` (set when entitlement lapses). The cutoff is the function's own `now()`,
+ * not `opts.now`: the database clock decides, as for every other SQL-owned sweep.
+ *
+ * edge cases: an RPC error or an unparsable answer is `ok: false` (the route logs it and answers
+ * 200 with the reason, as for every declined tier); nothing is deleted on a dry run.
  */
 export async function sweep7d(
   client: SupabaseClient,
   dryRun: boolean,
-  opts: SweepOpts,
+  _opts: SweepOpts,
 ): Promise<SweepResult> {
   const tier = "7d";
-  const cutoff = retentionCutoff(opts.now, 7);
-
-  if (dryRun) {
-    const { count, error } = await client
-      .from("tutor_conversations")
-      .select("id", { count: "exact", head: true })
-      .not("deleted_at", "is", null)
-      .lt("deleted_at", cutoff);
-
-    if (error) {
-      return { ok: false, reason: `count_failed: ${error.message}`, tier };
-    }
-    return { ok: true, deleted_count: count ?? 0, tier, dry_run: true };
+  const { data, error } = await client.rpc(
+    "sweep_tutor_conversation_retention",
+    { p_dry_run: dryRun },
+  );
+  if (error) {
+    return { ok: false, reason: `rpc_failed: ${error.message}`, tier };
   }
-
-  // Hard-delete expired soft-deleted conversations (FK cascades messages + question_links)
-  const { data: deletedConvos, error: deleteConvosError } = await client
-    .from("tutor_conversations")
-    .delete()
-    .not("deleted_at", "is", null)
-    .lt("deleted_at", cutoff)
-    .select("id, student_id");
-
-  if (deleteConvosError) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${deleteConvosError.message}`,
-      tier,
-    };
+  const parsed = z.array(retentionSweepRowSchema).safeParse(data);
+  if (!parsed.success || parsed.data.length === 0) {
+    return { ok: false, reason: "rpc_malformed", tier };
   }
-
-  const deletedCount = deletedConvos?.length ?? 0;
-
-  // Also clean up memory summaries for affected students.
-  // tutor_memory_summaries links by student_id, not conversation FK.
-  //
-  // Purge ONLY when a student has:
-  //   (a) zero active conversations (deleted_at IS NULL), AND
-  //   (b) zero soft-deleted conversations still inside the 7-day recovery
-  //       window (deleted_at >= cutoff).
-  //
-  // Without (b), a student with ALL conversations soft-deleted — some only
-  // 2 days old — would lose memory summaries even though the spec promises
-  // "LISA data is recovered with conversation history intact" during the
-  // 7-day window (§14.2, INV-03-19). The summaries are per-student, not
-  // per-conversation, so they must survive as long as ANY conversation is
-  // still recoverable.
-  if (deletedConvos && deletedConvos.length > 0) {
-    const studentIds = [
-      ...new Set(
-        deletedConvos.map((c) => (c as { student_id: string }).student_id),
-      ),
-    ];
-    for (const sid of studentIds) {
-      // (a) any active conversations?
-      const { count: activeConvos } = await client
-        .from("tutor_conversations")
-        .select("id", { count: "exact", head: true })
-        .eq("student_id", sid)
-        .is("deleted_at", null);
-
-      if ((activeConvos ?? 0) > 0) continue;
-
-      // (b) any soft-deleted conversations still within the recovery window?
-      // Those have deleted_at >= cutoff (i.e. deleted less than 7 days ago).
-      const { count: recoverableConvos } = await client
-        .from("tutor_conversations")
-        .select("id", { count: "exact", head: true })
-        .eq("student_id", sid)
-        .not("deleted_at", "is", null)
-        .gte("deleted_at", cutoff);
-
-      if ((recoverableConvos ?? 0) > 0) continue;
-
-      const { error: memError } = await client
-        .from("tutor_memory_summaries")
-        .delete()
-        .eq("student_id", sid);
-
-      if (memError) {
-        logger.error(
-          "RETENTION_SWEEP",
-          "memory_summary_delete_failed",
-          "Failed to delete memory summaries for student with no remaining conversations",
-          { studentId: sid, dbError: memError.message },
-        );
-        return {
-          ok: false,
-          reason: `memory_summary_delete_failed: student=${sid}, conversations_purged=${deletedCount}, error=${memError.message}`,
-          tier,
-        };
-      }
-    }
-  }
-
-  return { ok: true, deleted_count: deletedCount, tier, dry_run: false };
+  const per_table = parsed.data.map((r) => ({
+    table: r.swept_table,
+    count: r.deleted_count,
+  }));
+  const conversations =
+    per_table.find((r) => r.table === "tutor_conversations")?.count ?? 0;
+  return {
+    ok: true,
+    deleted_count: conversations,
+    tier,
+    dry_run: dryRun,
+    per_table,
+  };
 }
 
 // ── 90-day tier ───────────────────────────────────────────────────────
