@@ -1,6 +1,6 @@
 # UI-59 Bare-card pages (sign in, sign up, reset, profile completion, update password, account recovery, guardian required, 404, pending deletion, error screen), all NOT PROTOTYPED; light and dark, 1440 and 390
 
-Generated 2026-10-03T21:19:53.725Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-05T06:50:52.412Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844.
@@ -157,10 +157,10 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![not-found-home desktop light](not-found-home--desktop--light--built.png)<br>`/dashboard`, 135 KB, horizontal overflow 0px | none |
-| desktop | dark | ![not-found-home desktop dark](not-found-home--desktop--dark--built.png)<br>`/dashboard`, 135 KB, horizontal overflow 0px | none |
-| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
-| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
+| desktop | light | ![not-found-home desktop light](not-found-home--desktop--light--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
+| desktop | dark | ![not-found-home desktop dark](not-found-home--desktop--dark--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
+| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/dashboard`, 53 KB, horizontal overflow 0px | none |
+| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/dashboard`, 53 KB, horizontal overflow 0px | none |
 
 ## The pending-deletion screen: a student on whom the real request_account_deletion has run, opening /dashboard
 
@@ -191,6 +191,6 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"827e9e16-142f-4056-a479-44cef3ccb2fb","openPracticeSessionId":"665c6315-2fbd-4ff7-b62f-1bc9fa221a0d","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"eee323af-2ea1-4e15-be3f-b398b27210a9","openPracticeSessionId":"e4766e5e-1511-4957-af63-64630291aa3a","openReviewSessionId":null,"diagnosticSessionId":"c92b6c60-84aa-42e2-ad37-5eecc4b2af1d","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"5e3b1318-3187-4ba8-a8b6-458062ea31ec","openPracticeSessionId":"51ed2571-a860-4642-b41f-149385a5a11a","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"5625414b-7a45-4884-ad39-27202d60f4d1","openPracticeSessionId":"df80c48d-3065-48d3-85cd-ff375cc96e7d","openReviewSessionId":null,"diagnosticSessionId":"fad3598c-2252-405a-852d-40fa3555ce03","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: `fonts.googleapis.com`
