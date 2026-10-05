@@ -581,7 +581,7 @@ export function PlanUpdatedBanner({
  */
 const SUPPRESSION_COPY = {
   student:
-    "We couldn't fit your practice test — the days you picked are blocked.",
+    "We couldn't fit your full-length test — the days you picked are blocked.",
   guardian:
     "A practice test couldn't be scheduled — the days chosen are blocked.",
 } as const satisfies Record<"student" | "guardian", string>;

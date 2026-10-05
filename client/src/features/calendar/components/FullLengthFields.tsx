@@ -65,7 +65,9 @@ export function FullLengthFields({
   return (
     <>
       <div className="field" data-testid={`${idPrefix}-fl-form`}>
-        <label htmlFor={`${idPrefix}-fl-form-select`}>Which test?</label>
+        <label htmlFor={`${idPrefix}-fl-form-select`}>
+          Which full-length test?
+        </label>
         <select
           id={`${idPrefix}-fl-form-select`}
           disabled={disabled}
@@ -75,7 +77,7 @@ export function FullLengthFields({
             onChange({ ...scope, form_id: value === NEXT_TEST ? null : value });
           }}
         >
-          <option value={NEXT_TEST}>Next unused test</option>
+          <option value={NEXT_TEST}>Next unused full-length test</option>
           {selectable.map((form) => (
             <option key={form.test_form_id} value={form.test_form_id}>
               {form.name}
@@ -83,7 +85,7 @@ export function FullLengthFields({
           ))}
           {storedMissing && scope.form_id !== null ? (
             <option value={scope.form_id}>
-              A test that is no longer offered
+              A full-length test that is no longer offered
             </option>
           ) : null}
         </select>

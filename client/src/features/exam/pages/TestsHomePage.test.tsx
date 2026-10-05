@@ -219,6 +219,12 @@ type Scenario = {
   scored?: boolean;
   /** POST /api/tests/sessions answers 409 existing_active_session. */
   conflict?: boolean;
+  /** GET /api/tests/forms answers 500 (the list's load-error state). */
+  formsError?: boolean;
+  /** GET /api/tests/forms answers with no forms (the list's empty state). */
+  noForms?: boolean;
+  /** POST /api/tests/sessions answers 500 (Start's error line). */
+  startError?: boolean;
 };
 
 function forms(s: Scenario) {
@@ -330,7 +336,12 @@ const meta = { request_id: "r", served_at: "2026-10-03T00:00:00Z" };
 function install(s: Scenario): void {
   net.handler = (url, init) => {
     const method = init?.method ?? "GET";
-    if (method === "GET" && url === "/api/tests/forms") return json(forms(s));
+    if (method === "GET" && url === "/api/tests/forms") {
+      if (s.formsError === true)
+        return json({ error: { message: "boom" } }, 500);
+      if (s.noForms === true) return json({ ...forms(s), forms: [] });
+      return json(forms(s));
+    }
     if (method === "GET" && url === "/api/tests/sessions?state=scored")
       return json({
         data: { sessions: s.scored === false ? [] : [scoredRow()] },
@@ -341,6 +352,8 @@ function install(s: Scenario): void {
     if (method === "GET" && url === `/api/students/${STUDENT}/mastery/domains`)
       return json(mastery());
     if (method === "POST" && url === "/api/tests/sessions") {
+      if (s.startError === true)
+        return json({ error: { message: "boom" } }, 500);
       if (s.conflict === true)
         return json(
           {
@@ -459,7 +472,12 @@ async function mount(
     </QueryClientProvider>,
   );
   await screen.findByTestId("tests-home");
-  if (plan === "paid" && view !== "phone") {
+  if (
+    plan === "paid" &&
+    view !== "phone" &&
+    scenario.formsError !== true &&
+    scenario.noForms !== true
+  ) {
     await screen.findAllByTestId("tests-row");
   }
   return { history };
@@ -594,6 +612,56 @@ describe("paid: the test list (DESIGN.md §4)", () => {
   });
 });
 
+/**
+ * Owner ruling OQ-62 (b) (Karl, 2026-10-05): "'full-length test' wording". The list's heading and
+ * its two states name the sittings "full-length tests"; the bare "Your tests" / "the tests" are
+ * gone. (Form names such as "Practice Test 2" are database values, not copy, and stay.)
+ */
+describe("OQ-62 (b): the list names its sittings 'full-length tests'", () => {
+  it("the heading is 'Your full-length tests', never 'Your tests'", async () => {
+    await mount("paid");
+    const list = screen.getByTestId("tests-list");
+    // Presence first: the list is drawn with its rows.
+    expect(within(list).getAllByTestId("tests-row").length).toBeGreaterThan(0);
+    expect(within(list).getByRole("heading", { level: 2 }).textContent).toBe(
+      "Your full-length tests",
+    );
+    expect(document.body.textContent).not.toMatch(/\bYour tests\b/);
+  });
+
+  it("the load error says 'the full-length tests'", async () => {
+    await mount("paid", { formsError: true });
+    const error = await screen.findByTestId("tests-error");
+    expect(error.textContent).toContain(
+      "We couldn't load the full-length tests.",
+    );
+    expect(document.body.textContent).not.toMatch(/\bthe tests\b/);
+  });
+
+  it("the empty state says 'No full-length tests are available yet.'", async () => {
+    await mount("paid", { noForms: true });
+    expect(
+      await screen.findByText("No full-length tests are available yet."),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bNo tests\b/);
+  });
+
+  it("Start's failure line says 'the full-length test'", async () => {
+    await mount("paid", { startError: true });
+    fireEvent.click(
+      await within(row("Practice Test 3")).findByRole("button", {
+        name: "Start",
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "We couldn't start the full-length test. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bstart the test\b/);
+  });
+});
+
 describe("paid: the right panel", () => {
   it("OQ-30: score history from the scored-sessions endpoint, each row linking to its report, with the disclosure", async () => {
     await mount("paid");
@@ -630,7 +698,7 @@ describe("free plan (register §2: Full-Length is paid)", () => {
     const card = await screen.findByTestId("tests-upgrade-card");
     expect(card.textContent).toContain("Included with every paid plan");
     expect(card.textContent).toContain(
-      "Timed tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.",
+      "Timed full-length tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.",
     );
     expect(screen.getByTestId("locked-mastery-card")).toBeTruthy();
     // Give any stray query a chance to fire before the absence check.

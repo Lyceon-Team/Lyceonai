@@ -755,7 +755,10 @@ describe("Redo a past session (collapsed; grouped by date; 5, then Load more ove
     expect(rows[0]?.textContent).toContain(`Math · ${M_DOMAINS[0]}`);
     expect(rows[0]?.textContent).toContain("4 to review");
     expect(rows[1]?.textContent).toContain("Review, 3:10 PM");
-    expect(rows[2]?.textContent).toContain("Practice test, 9:05 AM");
+    expect(rows[2]?.textContent).toContain("Full-length test, 9:05 AM");
+    // OQ-62 (b): the source label is never "Practice test" (the form's own name, a database
+    // value, is "Practice Test 3" and is not the label).
+    expect(list.textContent).not.toMatch(/\bPractice test\b/);
     expect(rows[2]?.textContent).toContain("Practice Test 3");
     expect(rows[2]?.textContent).toContain("12 to review");
   });

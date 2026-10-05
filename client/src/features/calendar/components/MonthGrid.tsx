@@ -26,7 +26,7 @@ const TONE_CLASS: Readonly<Record<ViewBlock["tone"], string>> = {
 
 /** The chip's words are shorter than the card's, but the domain names are never abbreviated. */
 function chipLabel(block: ViewBlock): string {
-  if (block.tone === "exam") return "Practice test";
+  if (block.tone === "exam") return "Full-length test";
   if (block.tone === "review") return `Review ${block.target}`;
   return `${block.tone === "math" ? "Math" : "R&W"} ${block.target}`;
 }

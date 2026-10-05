@@ -86,7 +86,7 @@ describe("today's plan rows", () => {
       time: "About 10 min",
     });
     expect(planRowView(test, week.estimates)).toMatchObject({
-      title: "Full-length practice test",
+      title: "Full-length test",
       detail: null,
       time: null,
     });

@@ -87,8 +87,8 @@ export function fullLengthWeekInApp(
   _ctx: RenderContext,
 ): InAppRender {
   return {
-    title: "You have a practice test this week",
-    body: `It's on ${renderNoticeDate(payload.local_date)}. A full test takes about three hours, so it helps to know now.`,
+    title: "You have a full-length test this week",
+    body: `It's on ${renderNoticeDate(payload.local_date)}. A full-length test takes about three hours, so it helps to know now.`,
     href: CALENDAR_HREF,
   };
 }
@@ -98,7 +98,7 @@ export function fullLengthTomorrowInApp(
   _ctx: RenderContext,
 ): InAppRender {
   return {
-    title: "Your practice test is tomorrow",
+    title: "Your full-length test is tomorrow",
     body: `${renderNoticeDate(payload.local_date)}. Set aside about three hours and start when you're ready.`,
     href: CALENDAR_HREF,
   };
@@ -127,11 +127,11 @@ export function fullLengthWeekEmail(
   const safeWhen = escapeHtml(when);
   const siteUrl = ctx.siteUrl ? escapeHtml(ctx.siteUrl) : null;
   return {
-    subject: "You have a practice test this week",
+    subject: "You have a full-length test this week",
     text: [
-      `You have a full-length practice test this week, on ${when}.`,
+      `You have a full-length test this week, on ${when}.`,
       "",
-      "A full test takes about three hours, so it helps to know now.",
+      "A full-length test takes about three hours, so it helps to know now.",
       ctx.siteUrl ? `Open your calendar: ${ctx.siteUrl}${CALENDAR_HREF}` : "",
       "",
       "This is a reminder about your own study calendar on Lyceon.",
@@ -139,8 +139,8 @@ export function fullLengthWeekEmail(
       .filter((line, i, arr) => !(line === "" && arr[i - 1] === ""))
       .join("\n"),
     html: shell([
-      `<p>You have a full-length practice test this week, on <strong>${safeWhen}</strong>.</p>`,
-      "<p>A full test takes about three hours, so it helps to know now.</p>",
+      `<p>You have a full-length test this week, on <strong>${safeWhen}</strong>.</p>`,
+      "<p>A full-length test takes about three hours, so it helps to know now.</p>",
       siteUrl
         ? `<p><a href="${siteUrl}${CALENDAR_HREF}">Open your calendar</a></p>`
         : "",
@@ -156,9 +156,9 @@ export function fullLengthTomorrowEmail(
   const safeWhen = escapeHtml(when);
   const siteUrl = ctx.siteUrl ? escapeHtml(ctx.siteUrl) : null;
   return {
-    subject: "Your practice test is tomorrow",
+    subject: "Your full-length test is tomorrow",
     text: [
-      `Your full-length practice test is tomorrow, ${when}.`,
+      `Your full-length test is tomorrow, ${when}.`,
       "",
       "Set aside about three hours and start when you're ready.",
       ctx.siteUrl ? `Open your calendar: ${ctx.siteUrl}${CALENDAR_HREF}` : "",
@@ -168,7 +168,7 @@ export function fullLengthTomorrowEmail(
       .filter((line, i, arr) => !(line === "" && arr[i - 1] === ""))
       .join("\n"),
     html: shell([
-      `<p>Your full-length practice test is tomorrow, <strong>${safeWhen}</strong>.</p>`,
+      `<p>Your full-length test is tomorrow, <strong>${safeWhen}</strong>.</p>`,
       "<p>Set aside about three hours and start when you're ready.</p>",
       siteUrl
         ? `<p><a href="${siteUrl}${CALENDAR_HREF}">Open your calendar</a></p>`

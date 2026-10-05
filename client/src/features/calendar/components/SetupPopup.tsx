@@ -493,7 +493,7 @@ export function SetupPopup({
                 a day adopts the served default, and None on either clears both.
               */}
               <div className="field">
-                <label>Practice test day</label>
+                <label>Full-length test day</label>
                 <div className="chips" data-testid="calendar-setup-fl">
                   <Chip
                     active={pressedWeekday() === null}
@@ -523,7 +523,7 @@ export function SetupPopup({
                 </div>
               </div>
               <div className="field">
-                <label>Practice test frequency</label>
+                <label>Full-length test frequency</label>
                 <div
                   className="chips"
                   data-testid="calendar-setup-fl-frequency"

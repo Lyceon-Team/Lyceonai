@@ -24,6 +24,10 @@
  * pending a decision have been replaced by the owner's wording, and `weighted` was ruled to
  * have NO block-level copy at all — see the note beside it. The ruling is recorded in
  * `docs/plans/Doc_05F_Change_Record_Addendum.md` as item 16.
+ *
+ * WORDING (owner ruling OQ-62 (b), Karl, 2026-10-05: "'full-length test' wording"): every
+ * sentence below that names one sitting says "full-length test" — the [P] "practice test" /
+ * "test" and the [O] bare "full-length" were changed to it on that ruling's date.
  * ────────────────────────────────────────────────────────────────────────────
  *
  * trade-offs: the lookup is TOTAL over `string | null`, not an exhaustive switch over the
@@ -41,14 +45,14 @@
 const BLOCK_COPY: Readonly<Record<string, string>> = {
   /** [P] */ review_due: "Questions you missed earlier are due for a retry.",
   /** [P] */ exam_review_placeholder:
-    "Going over what you missed on your last practice test.",
+    "Going over what you missed on your last full-length test.",
   /** [P] */ exam_cadence:
-    "A full-length every two weeks keeps you test-ready.",
+    "A full-length test every two weeks keeps you test-ready.",
   /** [P] */ final_rehearsal: "Your last full rehearsal before test day.",
   /** [S] */ cold_start:
     "We're still learning where you stand — this balances the sections.",
   /** [O] */ exam_review:
-    "Going over what you missed on your last full-length.",
+    "Going over what you missed on your last full-length test.",
   /** [O] */ taper: "Test week: lighter days so you arrive rested.",
   /** [O] */ fallback:
     "A balanced session while we catch up on your progress data.",
@@ -66,7 +70,7 @@ const DOMAIN_COPY: Readonly<Record<string, string>> = {
   /** [P] */ balanced: "Keeping this one moving.",
   /** [P] */ strength: "You're strong here — a short set keeps it sharp.",
   /** [P] */ exploring: "We haven't seen enough of this yet.",
-  /** [P] */ post_exam: "Your last test pointed here.",
+  /** [P] */ post_exam: "Your last full-length test pointed here.",
 };
 
 /**

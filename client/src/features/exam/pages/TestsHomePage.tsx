@@ -249,14 +249,14 @@ export default function TestsHomePage(): JSX.Element {
                 data-testid="tests-list"
               >
                 <h2 id="tests-h" className={SECTION_H2}>
-                  Your tests
+                  Your full-length tests
                 </h2>
                 {forms.isPending ? (
                   <Skeleton variant="lyc" className="h-[180px] w-full" />
                 ) : forms.isError ? (
                   <Notice
                     tone="danger"
-                    title="We couldn't load the tests."
+                    title="We couldn't load the full-length tests."
                     actionLabel="Try again"
                     onAction={() => void forms.refetch()}
                     data-testid="tests-error"
@@ -535,7 +535,7 @@ function StartButton({
       }
       setPending(false);
       setError(
-        "We couldn't start the test. Check your connection and try again.",
+        "We couldn't start the full-length test. Check your connection and try again.",
       );
     }
   };

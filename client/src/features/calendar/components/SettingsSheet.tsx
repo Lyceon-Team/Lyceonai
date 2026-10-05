@@ -361,7 +361,7 @@ export function SettingsSheet({
             The schema is the backstop. This is the interaction.
           */}
           <Chips
-            label="Practice test day"
+            label="Full-length test day"
             testId="settings-full-length"
             // -1 stands for None. The wire value is null; the chip needs a number to key on.
             options={[
@@ -385,7 +385,7 @@ export function SettingsSheet({
           />
 
           <Chips
-            label="Practice test frequency"
+            label="Full-length test frequency"
             testId="settings-full-length-frequency"
             options={[
               { value: -1, label: "None" },

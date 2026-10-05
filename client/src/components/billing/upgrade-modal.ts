@@ -79,12 +79,15 @@ const CALENDAR_COPY = resolveCtaCopy(
 );
 
 /**
- * Source: prototype `LYC_COPY.full` (identical in every *.dc.html that defines it). The test
- * reads `LYC_COPY` out of the prototype file and asserts equality.
+ * Source: prototype `LYC_COPY.full` (identical in every *.dc.html that defines it), as changed
+ * by owner ruling OQ-62 (b) (Karl, 2026-10-05: "'full-length test' wording"): title "Full-length
+ * practice tests" became "Full-length tests" and the body's "Timed tests" became "Timed
+ * full-length tests". The test reads `LYC_COPY` out of the prototype file, applies exactly those
+ * two changes, and asserts equality.
  */
 const FULL_LENGTH_PLAN_COPY: UpgradeModalCopy = {
-  title: "Full-length practice tests",
-  body: "Timed tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.",
+  title: "Full-length tests",
+  body: "Timed full-length tests with two modules per section that adapt to how you do, like the real SAT. You get a scored report after each one.",
 };
 
 /**
