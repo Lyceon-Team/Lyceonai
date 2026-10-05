@@ -191,9 +191,12 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   Record<string, ShellExclusionReason>
 > = {
   "/": "public-marketing",
-  "/digital-sat": "public-marketing",
-  "/digital-sat/math": "public-marketing",
-  "/digital-sat/reading-writing": "public-marketing",
+  // SEO Wave 3 decision 3 (2026-10-05): 301s to the content pages, which are mounted from
+  // CONTENT_PAGE_PATHS (shared/content/pages/paths.ts) and excluded as a set, like the guardian
+  // routes: all public-marketing, in PublicLayout.
+  "/digital-sat": "redirect",
+  "/digital-sat/math": "redirect",
+  "/digital-sat/reading-writing": "redirect",
   "/blog": "public-marketing",
   "/blog/:slug": "public-marketing",
   "/sat-question-of-the-day": "public-marketing",

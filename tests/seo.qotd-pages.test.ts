@@ -175,7 +175,7 @@ describe("approved QOTD wording (Karl, 2026-10-05; claim inventory open item 4)"
     for (const path of paths) {
       const html = page(path).html;
       const head = html.slice(0, html.indexOf('<div id="root">'));
-      // The page's own content only: the site-wide nav and footer link to /digital-sat by name.
+      // The page's own content only, not the site-wide nav and footer around it.
       const main = html.slice(html.indexOf("<main>"), html.indexOf("</main>"));
       expect(main.length, path).toBeGreaterThan(0);
       expect(bodyText(main), path).not.toMatch(/\bDigital\b/);

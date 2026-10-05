@@ -55,7 +55,7 @@ Practise in the digital format so the test feels familiar on the day: work effic
 
 ## Next Steps
 
-Start practicing with digital-format questions. Explore our [Digital SAT prep guide](/digital-sat) for a complete overview, or jump directly into [SAT Math practice](/digital-sat/math) or [Reading & Writing practice](/digital-sat/reading-writing).`,
+Start practicing with digital-format questions. Explore our [Digital SAT prep guide](/online-sat-prep) for a complete overview, or jump directly into [SAT Math practice](/sat-practice-questions/math) or [Reading & Writing practice](/sat-practice-questions/reading-and-writing).`,
     sources: [CB_STRUCTURE, CB_READING_WRITING],
   },
   {
@@ -88,7 +88,7 @@ Each section is scored from 200 to 800, and your total score is the sum of the t
 - Review every mistake so you understand the reasoning
 - Use all the time you have; rushing leads to careless errors
 
-Ready to practice? Start with our [Digital SAT overview](/digital-sat) or dive into [SAT Math prep](/digital-sat/math).`,
+Ready to practice? Start with our [Digital SAT overview](/online-sat-prep) or dive into [SAT Math prep](/sat-practice-questions/math).`,
     sources: [CB_STRUCTURE, CB_SCORES],
   },
   {
@@ -127,7 +127,7 @@ This is the most important part. For every wrong answer, understand why you miss
 - Remove distractions—phone on airplane mode
 - Track your streaks to build momentum
 
-Every practice question comes with a worked explanation. Start with our [Digital SAT overview](/digital-sat), or focus on [Math](/digital-sat/math) or [Reading & Writing](/digital-sat/reading-writing) depending on your needs.`,
+Every practice question comes with a worked explanation. Start with our [Digital SAT overview](/online-sat-prep), or focus on [Math](/sat-practice-questions/math) or [Reading & Writing](/sat-practice-questions/reading-and-writing) depending on your needs.`,
     sources: [CEPEDA_2006],
   },
   {
@@ -175,7 +175,7 @@ Mix in harder questions as easier ones start to feel routine.
 
 A smaller number of questions with careful review beats a large number done in a rush. Build up gradually and prioritize understanding over volume.
 
-Ready to start? Explore our [Digital SAT prep resources](/digital-sat), including dedicated guides for [Math](/digital-sat/math) and [Reading & Writing](/digital-sat/reading-writing).`
+Ready to start? Explore our [Digital SAT prep resources](/online-sat-prep), including dedicated guides for [Math](/sat-practice-questions/math) and [Reading & Writing](/sat-practice-questions/reading-and-writing).`
   },
   {
     slug: "common-sat-math-algebra-mistakes",
@@ -225,7 +225,7 @@ Simple calculation mistakes when rushing: 7 × 8 = 54 instead of 56.
 
 ## Practice With Feedback
 
-Checking each answer as you go helps you catch these mistakes. Check out our [SAT Math prep guide](/digital-sat/math) for more tips and practice, or explore the full [Digital SAT overview](/digital-sat) to build a complete study plan.`,
+Checking each answer as you go helps you catch these mistakes. Check out our [SAT Math prep guide](/sat-practice-questions/math) for more tips and practice, or explore the full [Digital SAT overview](/online-sat-prep) to build a complete study plan.`,
     sources: [CB_MATH],
   },
 ];

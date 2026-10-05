@@ -8,7 +8,7 @@ export default function PublicNavBar() {
 
   const navLinks = [
     { label: "Home", href: "/" },
-    { label: "Digital SAT", href: "/digital-sat" },
+    { label: "SAT Practice", href: "/sat-practice-questions" },
     { label: "Blog", href: "/blog" },
   ];
 

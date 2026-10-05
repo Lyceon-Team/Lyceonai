@@ -189,19 +189,19 @@ export default function BlogPostPage() {
             </p>
             <div className="flex flex-wrap gap-3 justify-center">
               <Link
-                href="/digital-sat"
+                href="/online-sat-prep"
                 className="px-4 py-2 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90"
               >
-                Digital SAT Overview
+                Online SAT Prep
               </Link>
               <Link
-                href="/digital-sat/math"
+                href="/sat-practice-questions/math"
                 className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary"
               >
                 SAT Math
               </Link>
               <Link
-                href="/digital-sat/reading-writing"
+                href="/sat-practice-questions/reading-and-writing"
                 className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary"
               >
                 Reading & Writing

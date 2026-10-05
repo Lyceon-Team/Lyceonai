@@ -34,6 +34,11 @@
  *    payload is put in the query cache under the key the page itself queries, as the legal
  *    pages are. A day that is not strictly before the build's own America/Chicago date is
  *    dropped here as well, whatever the source says, so no build can emit an answer early.
+ *  - Content pages (SEO Wave 3, 2026-10-05): a page that shows past Questions of the Day gets the
+ *    archive list and exactly the days `qotdSampleDates` picks put in the cache, the same pure
+ *    choice the page makes in the browser. After every page is rendered, the publish gate
+ *    (shared/seo/content-gate.ts) checks each content page's data and its rendered HTML, and any
+ *    problem fails the build: an unapproved or unsourced page cannot deploy (plan row C3).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -75,8 +80,18 @@ import {
   parseRouteRegistry,
   type PrerenderContent,
   type PrerenderPage,
+  type RouteRegistryRow,
 } from "@shared/seo/route-registry";
 import { legalFetch } from "../../../vite-plugin-legal-content";
+import { CONTENT_PAGES, contentPageAt } from "@shared/content/pages";
+import { qotdSampleDates } from "@shared/content/qotd-samples";
+import type { ContentPage } from "../../../packages/shared/src/seo-content-schema";
+import {
+  claimIdsIn,
+  contentPageProblems,
+  renderedPageProblems,
+  type GateContext,
+} from "@shared/seo/content-gate";
 
 /** The path rendered for the 404 page. Matches no route, so the app's catch-all renders. */
 export const NOT_FOUND_RENDER_PATH = "/__lyceon-not-found__";
@@ -170,6 +185,32 @@ async function loadPageQueries(
     queryClient.setQueryData(qotdArchiveDayQueryOptions(date).queryKey, day);
     return;
   }
+  const content = contentPageAt(urlPath);
+  if (content) {
+    const blocks = [
+      ...content.intro,
+      ...content.sections.flatMap((section) => section.blocks),
+    ];
+    const samples = blocks.flatMap((b) => (b.type === "qotd" ? [b] : []));
+    if (samples.length > 0) {
+      const index = toArchiveIndex(
+        qotdDays.map((d) => ({
+          qotd_date: d.qotd_date,
+          section_code: d.question.section_code,
+          domain: d.question.domain,
+        })),
+      );
+      queryClient.setQueryData(qotdArchiveIndexQueryOptions().queryKey, index);
+      for (const block of samples) {
+        for (const date of qotdSampleDates(index.days, block.filter, block.limit)) {
+          const day = qotdDays.find((d) => d.qotd_date === date);
+          if (!day) throw new Error(`prerender: no archive payload for ${date}`);
+          queryClient.setQueryData(qotdArchiveDayQueryOptions(date).queryKey, day);
+        }
+      }
+    }
+    return;
+  }
   if (urlPath === "/legal") {
     await queryClient.fetchQuery(legalIndexQueryOptions());
     return;
@@ -193,6 +234,45 @@ async function loadPublishedLegal(): Promise<PrerenderContent["legal"]> {
       published.push({ slug: doc.slug, effectiveDate: doc.effectiveDate });
   }
   return published;
+}
+
+/**
+ * The publish gate over the built site (plan row C3). A link resolves when it names a page this
+ * build produced or a registry route the SPA answers (`/login`, …); a redirect row does not
+ * count, so a link left pointing at a 301 fails here. Throws with every problem at once.
+ */
+export function assertContentPagesPublishable(
+  contentPages: readonly ContentPage[],
+  pages: readonly { path: string; html: string }[],
+  registry: readonly RouteRegistryRow[],
+  claimInventory: string,
+): void {
+  const served = new Set<string>([
+    ...pages.map((p) => p.path),
+    ...registry
+      .filter((r) => !r.redirect_to && !r.path_pattern.includes(":"))
+      .map((r) => r.path_pattern),
+  ]);
+  const ctx: GateContext = {
+    resolves: (p) => served.has(p),
+    claimIds: claimIdsIn(claimInventory),
+    claimInventory,
+  };
+  const problems: string[] = [];
+  for (const content of contentPages) {
+    problems.push(...contentPageProblems(content, ctx));
+    const built = pages.find((p) => p.path === content.path);
+    if (!built) {
+      problems.push(`${content.path}: no prerendered page (is it in the registry?)`);
+      continue;
+    }
+    problems.push(...renderedPageProblems(content.path, built.html, ctx));
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `content publish gate failed (shared/seo/content-gate.ts):\n  ${problems.join("\n  ")}`,
+    );
+  }
 }
 
 export async function prerenderSite(options: {
@@ -240,6 +320,16 @@ export async function prerenderSite(options: {
         html: withBody(withHead(options.template, renderPageHead(meta)), body),
       });
     }
+
+    assertContentPagesPublishable(
+      CONTENT_PAGES,
+      pages,
+      registry,
+      fs.readFileSync(
+        path.join(options.repoRoot, "docs/compliance/claim-inventory.md"),
+        "utf8",
+      ),
+    );
 
     queryClient.clear();
     const notFoundBody = await renderAppHtml(NOT_FOUND_RENDER_PATH);

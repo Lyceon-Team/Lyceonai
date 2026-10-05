@@ -19,12 +19,24 @@ export default function Footer({ tone = "default" }: { tone?: FooterTone }) {
     : "text-muted-foreground";
 
   const footerLinks = {
+    // SEO Wave 3 (2026-10-05): the /digital-sat pages 301 to these; the footer links the pages
+    // themselves, so no public link rides a redirect.
     product: [
-      { label: "Digital SAT Prep", href: "/digital-sat" },
-      { label: "SAT Math", href: "/digital-sat/math" },
-      { label: "SAT Reading & Writing", href: "/digital-sat/reading-writing" },
+      { label: "Online SAT Prep", href: "/online-sat-prep" },
+      { label: "SAT Practice Questions", href: "/sat-practice-questions" },
+      { label: "SAT Math", href: "/sat-practice-questions/math" },
+      {
+        label: "SAT Reading & Writing",
+        href: "/sat-practice-questions/reading-and-writing",
+      },
     ],
-    resources: [{ label: "Blog", href: "/blog" }],
+    resources: [
+      { label: "What Is a Good SAT Score?", href: "/what-is-a-good-sat-score" },
+      { label: "Free SAT Practice Tests", href: "/free-sat-practice-test" },
+      { label: "How to Study for the SAT", href: "/how-to-study-for-the-sat" },
+      { label: "SAT Tutor Cost", href: "/sat-tutor-cost" },
+      { label: "Blog", href: "/blog" },
+    ],
     legal: [
       { label: "Trust & Safety", href: "/trust" },
       { label: "Legal Hub", href: "/legal" },

@@ -56,6 +56,14 @@ export function createFaqJsonLd(faqs: readonly { question: string; answer: strin
   };
 }
 
+/**
+ * Article markup for a blog post or a content page.
+ *
+ * @spec [owner decision 6 on SEO Wave 3 Step 0, 2026-10-05: 'Blog byline: "Lyceon Team" as
+ *       JSON-LD Organization'] | @implemented [2026-10-05] | plain English: the byline is the team,
+ * not a person, so the author is an Organization of that name (it was a Person named "Lyceon
+ * Team", which describes no real person). The publisher stays the Lyceon Organization.
+ */
 export function createArticleJsonLd(article: {
   title: string;
   description: string;
@@ -75,8 +83,9 @@ export function createArticleJsonLd(article: {
     datePublished: article.datePublished,
     dateModified: article.dateModified || article.datePublished,
     author: {
-      "@type": "Person",
+      "@type": "Organization",
       name: article.author,
+      url: BASE_URL,
     },
     publisher: {
       "@type": "Organization",
