@@ -1163,6 +1163,28 @@ plant "UI57-D3" "the wide pill track back to 132px (the unmeasured pill overlaps
 assert s.count(a) == 1
 s = s.replace(a, "      ? \"sm:grid-cols-[minmax(0,1fr)_176px_132px]\"", 1)'
 
+# OQ-58 (Karl, 2026-10-05): "Practise" → "Practice". Each plant brings the British form back.
+plant "UI57-SP1" "the grid call to action back to 'Start practising'" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "<Link href=\"/practice\">Start practicing</Link>"
+assert s.count(a) == 1
+s = s.replace(a, "<Link href=\"/practice\">Start practising</Link>", 1)'
+
+plant "UI57-SP2" "the opened domain's call to action back to 'Practise <domain>'" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "<Link href=\"/practice\">Practice {domain}</Link>"
+assert s.count(a) == 1
+s = s.replace(a, "<Link href=\"/practice\">Practise {domain}</Link>", 1)'
+
+plant "UI57-SP3" "the British form anywhere else on the page (the absence assertion)" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "Levels move as you answer more questions."
+assert s.count(a) == 1
+s = s.replace(a, "Levels move as you keep practising.", 1)'
+
 # ── UI-58: Settings, Help, Notifications, the plans page ──────────────────────────────────
 # @spec [student-UI register UI-58; OQ-20, OQ-27, OQ-28 / F-54, OQ-26 / OQ-41, UI-S4, UI-S7 /
 #        F-40, UI-S8, OQ-38, OQ-39, OQ-46, UI-44, UI-47, OQ-49] | @implemented [2026-10-03]
