@@ -204,6 +204,10 @@
       "dest": "/app.html"
     },
     {
+      "src": "^/help/?$",
+      "dest": "/app.html"
+    },
+    {
       "src": "^/guardian/?$",
       "dest": "/app.html"
     },
