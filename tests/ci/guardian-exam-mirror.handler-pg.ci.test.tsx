@@ -811,6 +811,46 @@ describe.skipIf(!PG_AVAILABLE)(
       },
     );
 
+    it("G5-12 partial: the guardian breakdown says the student's note for the section with no score", async () => {
+      const x = c("partial");
+      // The student's own note, from the real student route through the student's ReportBody.
+      const own = await get(x.student, `/api/tests/sessions/${x.sid}/report`);
+      expect(own.status).toBe(200);
+      const payload = examStudentReportPayloadSchema.parse(own.body.data);
+      if (payload.report_state !== "partial_scored") {
+        throw new Error(payload.report_state);
+      }
+      render(<ReportBody payload={payload} />);
+      fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+      const studentNotes = screen
+        .queryAllByTestId("exam-domain-omitted")
+        .map((n) => text(n));
+      cleanup();
+      // Presence first: the student has a note, naming the section with no score.
+      expect(payload.incomplete_sections.length).toBeGreaterThan(0);
+      expect(studentNotes.length).toBeGreaterThan(0);
+      // The guardian's, from the real guardian route through the guardian detail.
+      net.reset();
+      net.roster = roster(CASES.map((y) => ({ id: y.student, name: y.name })));
+      const body = (
+        await get(GUARDIAN, `/api/students/${x.student}/tests/${x.sid}/report`)
+      ).body as unknown;
+      guardianExamReportEnvelopeSchema.parse(body);
+      net.handlers.push((url) =>
+        url === `/api/students/${x.student}/tests/${x.sid}/report`
+          ? json(body)
+          : undefined,
+      );
+      mountApp(Router, `/guardian/${x.student}/exams/${x.sid}`);
+      await screen.findByTestId("guardian-exam-report");
+      fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+      const guardianNotes = screen
+        .queryAllByTestId("exam-domain-omitted")
+        .map((n) => text(n));
+      cleanup();
+      expect(guardianNotes).toEqual(studentNotes);
+    });
+
     it("G5-11: the real 3-of-14 domain fills 2 on both sides, where a whole percent (21%) would fill 1", async () => {
       const [row] = await q<{
         d: Array<{ domain: string; correct: number; total: number }>;

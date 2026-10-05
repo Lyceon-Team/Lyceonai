@@ -17,11 +17,13 @@ import {
   BO,
   CY,
   EXAM_SESSION,
+  PARTIAL_SESSION,
   billingStatus,
   boardScenario,
   examList,
   examReport,
   masteryDomains,
+  partialExamReport,
   roster,
 } from "../../../client/src/features/guardian/test-harness";
 import { billingPlansResponseSchema } from "../../../packages/shared/src/billing-schema";
@@ -56,7 +58,12 @@ const fixtures = {
   masteryDomains: masteryDomains(),
   examList: examList(),
   // G5-09: every report the Dashboard may read, by session id (scores only come from here).
-  examReports: { [EXAM_SESSION]: examReport() },
+  // G5-12: plus a partial-score attempt, for the detail page's breakdown note.
+  PARTIAL_SESSION,
+  examReports: {
+    [EXAM_SESSION]: examReport(),
+    [PARTIAL_SESSION]: partialExamReport(),
+  },
   // G5-06: the canvas boards' own values (owner brief 2026-10-02), for the review screenshots
   // that sit beside the boards. Same schemas and projections as the scenario above.
   board: boardScenario(E2E_TODAY),

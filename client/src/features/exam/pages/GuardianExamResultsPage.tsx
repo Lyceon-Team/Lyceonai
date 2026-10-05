@@ -56,6 +56,14 @@ import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoading } from "../components/ExamStatus";
 import { DomainSegments } from "../components/DomainSegments";
 import {
+  unscoredSectionOmissions,
+  type ExamOmittedDomain,
+} from "@lyceon/shared/exam-domain-segments";
+import {
+  examSectionSchema,
+  type ExamSection,
+} from "@lyceon/shared/exam-runtime-schema";
+import {
   Fact,
   Panel,
   ScoreTabs,
@@ -301,6 +309,24 @@ function Result({
   );
 }
 
+/**
+ * @spec [Guardian_Closure_Plan G5-12; Doc-04C §9.1; SCL-180 owner ruling 7] | @implemented
+ *       [2026-10-05]
+ * plain English: the omissions behind the student's "… wasn't completed, so its domains aren't
+ * shown." note, for every section a partial attempt did not score — derived from the payload's
+ * own `completed_sections` by the shared `unscoredSectionOmissions`, the function the student
+ * projection uses, so the note is the student's sentence from the student's component. No
+ * omitted list is sent (no payload change). A section scored but missing a domain's items
+ * (`no_items_served`) cannot be told from here; the SQL cannot produce one today.
+ */
+function unscoredOmissions(
+  completed: ReadonlyArray<ExamSection>,
+): ExamOmittedDomain[] {
+  return examSectionSchema.options
+    .filter((s) => !completed.includes(s))
+    .flatMap(unscoredSectionOmissions);
+}
+
 /** Domain-card content stays left-aligned on a phone (item 10), inside the centred detail. */
 function LeftAligned({ children }: { children: React.ReactNode }) {
   return <div className="text-left">{children}</div>;
@@ -470,10 +496,11 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             <ScoreTabs
               breakdown={
                 <LeftAligned>
-                  {/* G5-11: the student's own seven-segment rows (SCL-210). */}
+                  {/* G5-11: the student's own seven-segment rows (SCL-210); G5-12: the
+                      student's note for the section with no score. */}
                   <DomainSegments
                     segments={report.domain_breakdown}
-                    omitted={[]}
+                    omitted={unscoredOmissions(report.completed_sections)}
                   />
                 </LeftAligned>
               }

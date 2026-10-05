@@ -45,6 +45,18 @@ afterEach(cleanup);
 
 type Drawn = { domain: string; segments: number; filled: number };
 
+/** Renders `node`, opens Score breakdown, and reads its omission notes, in page order. */
+function notesOf(node: React.ReactElement): string[] {
+  const { hook } = memoryLocation({ path: "/x" });
+  const { unmount } = render(<Router hook={hook}>{node}</Router>);
+  fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+  const notes = screen
+    .queryAllByTestId("exam-domain-omitted")
+    .map((n) => n.textContent ?? "");
+  unmount();
+  return notes;
+}
+
 /** Renders `node`, opens Score breakdown, and reads each domain row in page order. */
 function breakdownOf(node: React.ReactElement): Drawn[] {
   const { hook } = memoryLocation({ path: "/x" });
@@ -100,5 +112,30 @@ describe("G5-11 the guardian breakdown is the student's, segment for segment", (
       "Standard English Conventions": 5,
       "Expression of Ideas": 1,
     });
+  });
+
+  it("G5-12 partial score: the same note the student sees, for the section with no score", () => {
+    const student = notesOf(
+      <ReportBody payload={toStudentExamReport(partialReport)} />,
+    );
+    const guardian = notesOf(
+      <GuardianReportBody report={toGuardianExamReport(partialReport)} />,
+    );
+    // Presence first: the student's note, word for word.
+    expect(student).toEqual([
+      "Math wasn't completed, so its domains aren't shown.",
+    ]);
+    expect(guardian).toEqual(student);
+  });
+
+  it("G5-12 scored: no note on either side", () => {
+    expect(
+      notesOf(
+        <GuardianReportBody report={toGuardianExamReport(scoredReport)} />,
+      ),
+    ).toEqual([]);
+    expect(
+      notesOf(<ReportBody payload={toStudentExamReport(scoredReport)} />),
+    ).toEqual([]);
   });
 });
