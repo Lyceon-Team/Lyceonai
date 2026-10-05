@@ -11,9 +11,13 @@
  * plain English: every QOTD payload is a STRICT object (an unknown key is a parse failure, so a
  * field added upstream cannot ride out to the browser), and the server parses its own response
  * against these schemas before sending it. Before submit, `correct_answer` and `explanation` are
- * the literal `null`. Options keep the authored order and carry the canonical key as their id
- * (A-D): the order is the same for every visitor on a day, and the answer is public once anyone
- * submits, so there is nothing a per-visitor token would protect.
+ * the literal `null`.
+ *
+ * Owner ruling 2026-10-05 (QOTD follow-up): today's options are shuffled on every request and
+ * each carries an opaque token (`qotdOptionTokenSchema`), never the canonical letter; the
+ * browser letters them A-D by position. The reveal names the correct option by its token. The
+ * archive keeps the canonical order and letters. No payload carries the canonical question id:
+ * a day is keyed by `qotd_date`.
  *
  * The success-rate stat is a discriminated union: below the threshold the payload says
  * `hidden` and carries no number at all, so a client cannot show what the server withheld.
@@ -34,25 +38,33 @@ export const qotdDateSchema = z
 
 export const qotdOptionKeySchema = z.enum(["A", "B", "C", "D"]);
 
+/** An opaque option token: 22 base64url characters (server/services/qotd/option-tokens.ts). */
+export const qotdOptionTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
+
+/** An archive option: canonical order, canonical letter. */
 export const qotdOptionSchema = z
   .object({ id: qotdOptionKeySchema, text: z.string() })
   .strict();
 
+/** Today's option: shuffled per request, identified only by its token. */
+export const qotdServedOptionSchema = z
+  .object({ id: qotdOptionTokenSchema, text: z.string() })
+  .strict();
+
 const qotdQuestionBaseShape = {
-  id: z.string().min(1),
   section_code: z.enum(["M", "RW"]),
   domain: z.string().min(1),
   item_type: z.enum(["mcq", "grid_in"]),
   stem: z.string(),
   passage: z.string().nullable(),
-  /** MCQ: four options in authored order. Grid-in: empty. */
-  options: z.array(qotdOptionSchema),
 };
 
-/** Before submit: no answer, no explanation. */
+/** Before submit: no answer, no explanation; options shuffled and tokenised. */
 export const qotdPreSubmitQuestionSchema = z
   .object({
     ...qotdQuestionBaseShape,
+    /** MCQ: four options in this request's shuffled order. Grid-in: empty. */
+    options: z.array(qotdServedOptionSchema),
     correct_answer: z.null(),
     explanation: z.null(),
   })
@@ -81,7 +93,7 @@ export const qotdTodayResponseSchema = z
 export const qotdSubmitRequestSchema = z
   .object({
     qotd_date: qotdDateSchema,
-    /** MCQ: the option id (A-D). Grid-in: the entered value. */
+    /** MCQ: the chosen option's token. Grid-in: the entered value. */
     answer: z.string().trim().min(1).max(32),
     turnstile_token: z.string().min(1).max(2048),
   })
@@ -90,9 +102,9 @@ export const qotdSubmitRequestSchema = z
 const qotdRevealShape = {
   qotd_date: qotdDateSchema,
   is_correct: z.boolean(),
-  /** MCQ: the correct option's id. Grid-in: null. */
-  correct_option_id: qotdOptionKeySchema.nullable(),
-  /** Grid-in: the keyed answer. MCQ: null (the option id names it). */
+  /** MCQ: the correct option's token, so the browser marks it in its own order. Grid-in: null. */
+  correct_option_id: qotdOptionTokenSchema.nullable(),
+  /** Grid-in: the keyed answer. MCQ: null (the token names it). */
   correct_answer: z.string().nullable(),
   explanation: z.string(),
   stats: qotdStatSchema,
@@ -104,6 +116,8 @@ export const qotdSubmitResponseSchema = z.object(qotdRevealShape).strict();
 export const qotdArchiveQuestionSchema = z
   .object({
     ...qotdQuestionBaseShape,
+    /** MCQ: four options in canonical order. Grid-in: empty. */
+    options: z.array(qotdOptionSchema),
     correct_option_id: qotdOptionKeySchema.nullable(),
     correct_answer: z.string().nullable(),
     explanation: z.string(),
@@ -135,6 +149,7 @@ export const qotdArchiveIndexResponseSchema = z
   .strict();
 
 export type QotdOption = z.infer<typeof qotdOptionSchema>;
+export type QotdServedOption = z.infer<typeof qotdServedOptionSchema>;
 export type QotdPreSubmitQuestion = z.infer<typeof qotdPreSubmitQuestionSchema>;
 export type QotdStat = z.infer<typeof qotdStatSchema>;
 export type QotdTodayResponse = z.infer<typeof qotdTodayResponseSchema>;

@@ -11,6 +11,7 @@ import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
 import { getSessionCookieHint } from "@/lib/session-hint";
+import { firstTouchSource } from "@/lib/analytics/first-touch";
 import {
   runtimeRoleSchema,
   ROLE_UNRECOGNIZED,
@@ -381,6 +382,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
             privacyPolicyAccepted: legalConsent.privacyPolicyAccepted,
             consentSource: legalConsent.consentSource ?? "email_signup_form",
           },
+          // SCL-201 IS 6: the in-memory first-touch channel (nothing stored on the device).
+          signupSource: firstTouchSource(),
         }),
       });
 
@@ -475,7 +478,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // Supabase dashboard — never in app code (HALT-3).
       const consentSource =
         legalConsent.consentSource ?? "google_continue_pre_oauth";
-      const callbackParams = new URLSearchParams({ consentSource });
+      const callbackParams = new URLSearchParams({
+        consentSource,
+        // SCL-201 IS 6: recorded by the callback only on a new, not-yet-onboarded account.
+        signupSource: firstTouchSource(),
+      });
       // @spec [AS-5; owner brief 2026-09-15 Part B] the login page's `?next=` (written by
       // RequireRole) rides along to the server callback, which re-sanitises it with the SAME
       // shared module before honouring it after the onboarding gate. Off-origin → dropped here.

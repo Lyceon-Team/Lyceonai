@@ -67,7 +67,6 @@ export function toArchiveResponse(row: QotdRow): QotdArchiveResponse {
   return qotdArchiveResponseSchema.parse({
     qotd_date: row.qotd_date,
     question: {
-      id: row.question_id,
       section_code: row.section,
       domain: row.domain,
       item_type: row.item_type,

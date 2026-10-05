@@ -141,6 +141,17 @@ vi.mock("../../server/services/entitlement-service", () => ({
   },
 }));
 
+// SEO F10 / Doc 07A §6.6: the wrapper is replaced by a recorder, so the walk can assert what the
+// REAL service passed it at each real SQL outcome — the wrapper itself is proved in
+// tests/ci/analytics-emit-event.contract.test.ts.
+const emitted = vi.hoisted(() => [] as { profileId: string; event: string; payload: Record<string, unknown> }[]);
+vi.mock("../../server/lib/analytics/emit-event", () => ({
+  emitEvent: async (profileId: string, event: string, payload: Record<string, unknown>) => {
+    emitted.push({ profileId, event, payload });
+    return { ok: true };
+  },
+}));
+
 const FORBIDDEN_ITEM_KEYS = [
   "domain",
   "difficulty",
@@ -293,6 +304,14 @@ describe.skipIf(!PG_AVAILABLE)("Exam runtime handlers → real PG", () => {
       const sid: string = created.body.session_id;
       assertNoRoutingPath(created.body);
 
+      // Creating again hands back the live session (200): not a start, so no second exam_started.
+      const again = await as(request(app).post("/api/tests/sessions")).send({
+        test_form_id: FORM,
+        mode: walk.mode,
+      });
+      expect(again.status).toBe(200);
+      expect(again.body.session_id).toBe(sid);
+
       for (const section of ["RW", "M"] as const) {
         for (const module of ["1", "2"] as const) {
           const started = await as(
@@ -433,6 +452,30 @@ describe.skipIf(!PG_AVAILABLE)("Exam runtime handlers → real PG", () => {
       expect(state.status).toBe(200);
       expect(state.body.state).toBe("completed");
       assertNoRoutingPath(state.body);
+
+      // Doc 07A §6.6: one exam_started (the 201), and one exam_section_submitted per module with
+      // the PHYSICAL module the SQL routed to (read from the score run, not assumed) and a
+      // non-negative integer duration.
+      const mine = emitted.filter((e) => e.profileId === walk.student);
+      expect(mine.filter((e) => e.event === "exam_started")).toEqual([
+        {
+          profileId: walk.student,
+          event: "exam_started",
+          payload: { test_session_id: sid, test_form_id: FORM },
+        },
+      ]);
+      const submits = mine.filter((e) => e.event === "exam_section_submitted");
+      expect(submits.map((e) => [e.payload.section, e.payload.module])).toEqual([
+        ["RW", "1"],
+        ["RW", `2${s.rw_module2_path}`],
+        ["M", "1"],
+        ["M", `2${s.math_module2_path}`],
+      ]);
+      for (const e of submits) {
+        expect(e.payload.test_session_id).toBe(sid);
+        expect(Number.isInteger(e.payload.section_duration_ms)).toBe(true);
+        expect(e.payload.section_duration_ms as number).toBeGreaterThanOrEqual(0);
+      }
 
       evidence.push(
         `outbox ${outbox.rows[0].event_type} (${outbox.rows[0].status}) -> score run RW ${s.rw_scaled} (path ${s.rw_module2_path}), Math ${s.math_scaled} (path ${s.math_module2_path}), total ${s.total_scaled}`,

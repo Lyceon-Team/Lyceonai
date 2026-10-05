@@ -33,6 +33,7 @@ FILES=(
   "server/services/qotd/qotd-service.ts"
   "packages/shared/src/qotd-schema.ts"
   "client/src/prerender/entry-server.tsx"
+  "client/src/components/qotd/QotdWidget.tsx"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -80,6 +81,7 @@ SQL
 ts_check() { pnpm exec vitest run "$@" 2>&1; }
 ROUTES=tests/ci/public-qotd-routes.contract.test.ts
 PAGES=tests/seo.qotd-pages.test.ts
+WIDGET=client/src/components/qotd/QotdWidget.test.tsx
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -100,8 +102,8 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(ts_check "$ROUTES" "$PAGES")"; RC=$?
-[ "$RC" = 0 ] && ok "route + page tests green" || { bad "route + page tests not green"; echo "$OUT" | tail -30; }
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET")"; RC=$?
+[ "$RC" = 0 ] && ok "route + page + widget tests green" || { bad "route + page + widget tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "QOTD MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 if [ "$HAVE_PG" = 1 ]; then
@@ -147,8 +149,44 @@ OUT="$(ts_check "$PAGES")"; RC=$?
 expect_red "M5 today prerendered" "builds one page per past day, and none for today" "$OUT" "$RC"
 restore
 
+# Owner ruling 2026-10-05 (QOTD follow-up): shuffled, tokenised options; one answer per visit.
+echo "=== (6) LEAK: today's options carry the canonical letter instead of the token ==="
+plant server/services/qotd/qotd-service.ts \
+  "    id: qotdOptionToken(row.qotd_date, o.key)," \
+  "    id: o.key," || { bad "M6 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M6 canonical letter served" "returns the question with correct_answer and explanation null" "$OUT" "$RC"
+restore
+
+echo "=== (7) the per-request shuffle is removed ==="
+plant server/services/qotd/qotd-service.ts \
+  "    : fisherYates(options);" \
+  "    : options;" || { bad "M7 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M7 no shuffle" "two requests (and more) return different option orders" "$OUT" "$RC"
+restore
+
+echo "=== (8) a bare canonical letter is accepted as an answer ==="
+plant server/services/qotd/qotd-service.ts \
+  "  if (tokenMap && !Object.prototype.hasOwnProperty.call(tokenMap, answer)) {" \
+  "  if (tokenMap && false) {" || { bad "M8 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M8 letter accepted" "a bare canonical letter is rejected" "$OUT" "$RC"
+restore
+
+echo "=== (9) the one-answer-per-visit lock is removed: the answer controls stay after the reveal ==="
+# The submit area is gated on the result; the renderer also disables choices once a result is
+# shown, so a plant on the \`locked\` flag alone is masked (measured: it stayed green). This one
+# removes the gate itself, which is what lets a visitor answer again.
+plant client/src/components/qotd/QotdWidget.tsx \
+  "      {result ? (" \
+  "      {false ? (" || { bad "M9 STALE"; exit 1; }
+OUT="$(ts_check "$WIDGET")"; RC=$?
+expect_red "M9 no lock" "one answer per visit" "$OUT" "$RC"
+restore
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$ROUTES" "$PAGES")"; RC=$?
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "QOTD MUTATIONS: $PASS passed, $FAIL failed"

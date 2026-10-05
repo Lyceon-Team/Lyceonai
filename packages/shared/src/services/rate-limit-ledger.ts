@@ -87,6 +87,30 @@ export class RateLimitUnavailableError extends Error {
  * limit, which has no spec-stated default and must deny instead.
  */
 const SOFT_WARNING_DEFAULT_PCT = 80;
+/** Doc 01A Appendix A.3: `soft_warning_threshold_pct` default 80, min 50, max 95. */
+const SOFT_WARNING_MIN_PCT = 50;
+const SOFT_WARNING_MAX_PCT = 95;
+
+/**
+ * @spec [Doc-01A_V1.0 §43, Appendix A.3] | @implemented [2026-10-05] | plain English: the
+ * configured threshold when it is a number within the spec's 50-95 range, otherwise the spec's
+ * default of 80. Before this, an ABSENT row read as `Number(null)` = 0, which is finite, so the
+ * threshold became 0% and every request — even the first of 120 — carried the soft warning.
+ * Production has no such row, so the default is what applies there.
+ */
+export function softWarningThresholdPct(raw: unknown): number {
+  const value =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string" && raw.trim() !== ""
+        ? Number(raw)
+        : Number.NaN;
+  return Number.isFinite(value) &&
+    value >= SOFT_WARNING_MIN_PCT &&
+    value <= SOFT_WARNING_MAX_PCT
+    ? value
+    : SOFT_WARNING_DEFAULT_PCT;
+}
 const CONFIG_TABLE = "rate_limit_runtime_config";
 const SOFT_WARNING_KEY = "soft_warning_threshold_pct";
 const BUCKET_DEFINITIONS_KEY = "bucket_definitions";
@@ -285,11 +309,9 @@ export async function checkAndIncrement(
   const remaining = Math.max(0, Number(row.remaining ?? 0));
   const allowed = row.allowed === true;
 
-  const rawPct = await readConfigValue(client, SOFT_WARNING_KEY);
-  const parsedPct = Number(rawPct);
-  const thresholdPct = Number.isFinite(parsedPct)
-    ? parsedPct
-    : SOFT_WARNING_DEFAULT_PCT;
+  const thresholdPct = softWarningThresholdPct(
+    await readConfigValue(client, SOFT_WARNING_KEY),
+  );
   const softWarning = limit > 0 && (used / limit) * 100 >= thresholdPct;
 
   const result: RateLimitResult = {
