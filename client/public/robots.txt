@@ -18,6 +18,7 @@ Disallow: /calendar
 Disallow: /chat
 Disallow: /dashboard
 Disallow: /guardian
+Disallow: /help
 Disallow: /login
 Disallow: /mastery
 Disallow: /notifications

@@ -8,13 +8,22 @@
  * `pages/chat.tsx` so the standalone chat and the in-review panel draw one
  * thread, not two that drift. Crisis content comes from the server response —
  * never hardcoded.
+ *
+ * @updated 2026-10-03 — UI-56 (student-UI register UI-56; DESIGN.md §1 tokens only, 14px floor,
+ * motion only for the LISA dots and never under `prefers-reduced-motion`; §3 Typing indicator;
+ * §4 LISA; prototype Lisa.dc.html): every part draws with the student tokens (`lyc-*`), so it
+ * follows the theme on /chat and stays light inside a shell pinned light. A bubble carries a
+ * "You" / "LISA" label above it (the prototype's), not an avatar. The typing indicator is a
+ * LISA-labelled bubble with the three `.lyc-dot`s (student-tokens.css owns their pulse and its
+ * reduced-motion rule) and no "thinking" sentence. The composer is the prototype's: a two-row
+ * textarea, a "Send" button that is disabled while LISA is thinking, and the disclaimer
+ * "LISA can make mistakes; your practice results are the source of truth." Nothing here logs:
+ * a tutor exchange is never written anywhere but the server's own tables.
  */
 
 import { useEffect, useRef } from "react";
 import {
   ArrowRight,
-  Send,
-  Loader2,
   Phone,
   MessageSquareText,
   RefreshCw,
@@ -25,8 +34,11 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MathRenderer } from "@/components/MathRenderer";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Button, LYC_FOCUS } from "@/components/ui/button";
+import {
+  buildLisaComposerKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 import type {
   TutorMessage,
   CrisisCategory,
@@ -66,13 +78,13 @@ const TUTOR_MARKDOWN_COMPONENTS = {
     const isBlock = className?.startsWith("language-");
     if (isBlock) {
       return (
-        <pre className="my-2 overflow-x-auto rounded bg-black/10 p-2 text-xs dark:bg-white/10">
+        <pre className="my-2 overflow-x-auto rounded bg-lyc-chip p-2 text-[0.9em]">
           <code>{children}</code>
         </pre>
       );
     }
     return (
-      <code className="rounded bg-black/10 px-1 py-0.5 text-xs dark:bg-white/10">
+      <code className="rounded bg-lyc-chip px-1 py-0.5 text-[0.9em]">
         {children}
       </code>
     );
@@ -105,10 +117,11 @@ export function TutorMessageContent({ text }: { text: string }) {
 // ---------------------------------------------------------------------------
 
 export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
-  const dim = size === "lg" ? "h-12 w-12 text-lg" : "h-8 w-8 text-sm";
+  const dim = size === "lg" ? "h-12 w-12 text-lg" : "h-8 w-8 text-lyc-meta";
   return (
     <div
-      className={`${dim} flex shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold`}
+      aria-hidden="true"
+      className={`${dim} flex shrink-0 items-center justify-center rounded-full bg-lyc-primary-bg font-lyc-serif font-semibold text-lyc-primary-ink`}
     >
       L
     </div>
@@ -129,19 +142,20 @@ export function MessageBubble({
   const isStudent = message.role === "student";
   return (
     <div
-      className={`flex gap-3 ${isStudent ? "justify-end" : "justify-start"}`}
+      className={`flex flex-col gap-1.5 ${isStudent ? "items-end" : "items-start"}`}
       data-testid={isStudent ? "student-bubble" : "tutor-bubble"}
       data-client-turn-id={message.client_turn_id ?? undefined}
       data-pending={pending ? "true" : undefined}
     >
-      {!isStudent && <LisaAvatar />}
+      <span className="text-lyc-meta font-semibold text-lyc-muted">
+        {isStudent ? "You" : "LISA"}
+      </span>
       <div
-        className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+        className={`max-w-[min(658px,100%)] break-words rounded-[10px] px-[18px] py-3.5 text-[18px] leading-[1.6] ${
           isStudent
-            ? "bg-primary text-primary-foreground"
-            : "bg-card border border-border text-foreground"
+            ? "bg-lyc-primary-bg text-lyc-primary-ink"
+            : "border border-lyc-rule bg-lyc-sheet text-lyc-ink"
         }`}
-        aria-label={isStudent ? "You said:" : "LISA said:"}
       >
         {isStudent ? (
           <span className="whitespace-pre-wrap">{message.message}</span>
@@ -154,28 +168,32 @@ export function MessageBubble({
 }
 
 // ---------------------------------------------------------------------------
-// ThinkingIndicator — matches mockup artboard 2
+// ThinkingIndicator — DESIGN.md §3 "Typing indicator"; prototype Lisa.dc.html
 // ---------------------------------------------------------------------------
 
+/**
+ * A LISA-labelled bubble with three pulsing dots. The pulse is `.lyc-dot` in
+ * student-tokens.css, the one animation DESIGN.md §1 allows, and its
+ * `prefers-reduced-motion: reduce` rule stops it. The status is named for
+ * assistive tech ("LISA is thinking"); nothing else is written.
+ */
 export function ThinkingIndicator() {
   return (
     <div
-      className="flex gap-3 justify-start"
+      className="flex flex-col items-start gap-1.5"
       role="status"
       aria-label="LISA is thinking"
+      data-testid="lisa-typing"
     >
-      <LisaAvatar />
-      <div className="flex items-center gap-2 rounded-2xl bg-card border border-border px-4 py-3">
-        <span className="flex gap-1">
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
-          <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
-        </span>
-        <span className="text-sm text-muted-foreground">
-          LISA is thinking...
-        </span>
-        <span className="sr-only">LISA is thinking</span>
-      </div>
+      <span className="text-lyc-meta font-semibold text-lyc-muted">LISA</span>
+      <span
+        aria-hidden="true"
+        className="flex items-center gap-1.5 rounded-[10px] border border-lyc-rule bg-lyc-sheet px-[18px] py-4"
+      >
+        <span className="lyc-dot" />
+        <span className="lyc-dot" />
+        <span className="lyc-dot" />
+      </span>
     </div>
   );
 }
@@ -186,16 +204,16 @@ export function ThinkingIndicator() {
 
 export function FailedTurnNotice({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex items-center justify-end gap-2 text-sm text-muted-foreground">
-      <AlertCircle className="h-4 w-4" />
+    <div className="flex flex-wrap items-center justify-end gap-2 text-lyc-meta-lg text-lyc-muted">
+      <AlertCircle aria-hidden="true" className="h-4 w-4" />
       <span>LISA couldn&apos;t respond to this message.</span>
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px] min-w-[44px] justify-center"
+        className={`${LYC_FOCUS} inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-md border border-lyc-ink-strong bg-transparent px-3 py-1.5 text-lyc-meta font-semibold text-lyc-ink-strong hover:bg-lyc-hover`}
         aria-label="Try again"
       >
-        <RefreshCw className="h-3.5 w-3.5" />
+        <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
         Try again
       </button>
     </div>
@@ -216,25 +234,30 @@ export function CrisisSupportCard({
 }) {
   const isCrisis = lane === "crisis";
 
-  const bgClass = isCrisis
-    ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800"
-    : "bg-purple-50 border-purple-200 dark:bg-purple-950/30 dark:border-purple-800";
-
-  const iconClass = isCrisis ? "text-emerald-600" : "text-purple-600";
+  // The two lanes keep their two colours (green for crisis, plum for
+  // safeguarding), now from token pairs that have a light and a dark value:
+  // the emerald of `--lv4-*` and the plum of `--cat-rw-*`.
+  const laneClass = isCrisis
+    ? "border-lyc-lv4-bd bg-lyc-lv4-bg text-lyc-lv4-ink"
+    : "border-lyc-cat-rw-bd bg-lyc-cat-rw-bg text-lyc-cat-rw-ink";
   const Icon = isCrisis ? Heart : Shield;
 
   const phoneNumbers = extractPhoneNumbers(content);
   const smsNumbers = extractSmsNumbers(content);
 
   return (
-    <div className={`rounded-2xl border p-5 ${bgClass}`}>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className={`h-5 w-5 ${iconClass}`} />
-        <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
+    <div
+      className={`rounded-lg border p-5 ${laneClass}`}
+      data-testid="crisis-support-card"
+      data-lane={lane}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <Icon aria-hidden="true" className="h-5 w-5" />
+        <span className="text-lyc-meta font-semibold uppercase tracking-wide">
           Support
         </span>
       </div>
-      <div className="text-sm leading-relaxed text-foreground mb-4 whitespace-pre-wrap">
+      <div className="mb-4 whitespace-pre-wrap text-lyc-body leading-relaxed text-lyc-ink">
         {content}
       </div>
       <div className="flex flex-wrap gap-2">
@@ -242,13 +265,9 @@ export function CrisisSupportCard({
           <a
             key={num}
             href={`tel:${num.replace(/[^0-9+]/g, "")}`}
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium min-h-[44px] transition-colors ${
-              isCrisis
-                ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                : "bg-purple-600 text-white hover:bg-purple-700"
-            }`}
+            className={`${LYC_FOCUS} inline-flex min-h-[44px] items-center gap-2 rounded-md bg-lyc-primary-bg px-4 py-2.5 text-lyc-body font-semibold text-lyc-primary-ink no-underline hover:brightness-110`}
           >
-            <Phone className="h-4 w-4" />
+            <Phone aria-hidden="true" className="h-4 w-4" />
             Call {num}
           </a>
         ))}
@@ -256,9 +275,9 @@ export function CrisisSupportCard({
           <a
             key={`sms-${num}`}
             href={`sms:${num.replace(/[^0-9+]/g, "")}`}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-secondary min-h-[44px] transition-colors"
+            className={`${LYC_FOCUS} inline-flex min-h-[44px] items-center gap-2 rounded-md border border-lyc-ink-strong bg-transparent px-4 py-2.5 text-lyc-body font-semibold text-lyc-ink-strong no-underline hover:bg-lyc-hover`}
           >
-            <MessageSquareText className="h-4 w-4" />
+            <MessageSquareText aria-hidden="true" className="h-4 w-4" />
             Text {num}
           </a>
         ))}
@@ -300,42 +319,46 @@ export function PausedBar({
   onContinue,
   endPending,
   resumePending,
+  inset = "page",
 }: {
   onEnd: () => void;
   onContinue: () => void;
   endPending: boolean;
   resumePending: boolean;
+  /** See `ThreadInset`. */
+  inset?: ThreadInset;
 }) {
   return (
-    <div className="border-t border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-4">
+    <div
+      className={`shrink-0 border-t border-lyc-rule bg-lyc-paper py-4 ${THREAD_INSET_X[inset]}`}
+    >
+      <div className="mx-auto flex max-w-[760px] flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-foreground">
+          <p className="m-0 text-lyc-body font-semibold text-lyc-ink-strong">
             Tutoring is paused
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="m-0 text-lyc-meta text-lyc-muted">
             Take whatever time you need. Pick up again whenever you&apos;re
             ready.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
           <Button
-            variant="outline"
-            size="sm"
+            type="button"
+            variant="lyc-outline"
+            size="lyc"
             onClick={onEnd}
             disabled={endPending || resumePending}
-            className="min-h-[44px] min-w-[44px]"
           >
-            {endPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
             End session
           </Button>
           <Button
-            size="sm"
+            type="button"
+            variant="lyc-primary"
+            size="lyc"
             onClick={onContinue}
             disabled={endPending || resumePending}
-            className="min-h-[44px] min-w-[44px]"
           >
-            {resumePending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
             Continue with LISA
           </Button>
         </div>
@@ -348,65 +371,90 @@ export function PausedBar({
 // Composer
 // ---------------------------------------------------------------------------
 
+/** DESIGN.md §4 LISA; prototype Lisa.dc.html, word for word. */
+export const LISA_DISCLAIMER =
+  "LISA can make mistakes; your practice results are the source of truth.";
+
+/**
+ * Where a thread's bottom bar (composer, paused bar) sits. "page": the /chat column, 16px sides
+ * and 40px from `lg` (Lisa.dc.html). "panel": the review runner's 360px LISA panel (UI-53,
+ * OQ-54 (a), ruling 2026-10-05), 16px sides at every width, so the textarea keeps its room.
+ */
+export type ThreadInset = "page" | "panel";
+
+const THREAD_INSET_X: Readonly<Record<ThreadInset, string>> = {
+  page: "px-4 lg:px-10",
+  panel: "px-4",
+};
+
 export function Composer({
   draft,
   onDraftChange,
   onSubmit,
   disabled,
   placeholder,
+  inset = "page",
 }: {
   draft: string;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
+  /** LISA is thinking (or the thread cannot take a message): Send is disabled. */
   disabled: boolean;
   placeholder: string;
+  /** See `ThreadInset`. */
+  inset?: ThreadInset;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (!disabled && draft.trim()) {
-        onSubmit();
-      }
-    }
-  };
+  // @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3] | @implemented [2026-10-03]
+  // plain English: Enter sends and Shift+Enter adds a new line, through the one shared hook
+  // listening on this textarea only. Enter that confirms an IME composition, Ctrl/Cmd/Alt+Enter
+  // and a held-down Enter's repeats do not send.
+  useKeyboardShortcuts(
+    buildLisaComposerKeymap({
+      canSend: !disabled && draft.trim().length > 0,
+      onSend: onSubmit,
+    }),
+    { target: textareaRef },
+  );
 
   return (
-    <div className="border-t border-border bg-background p-4">
+    <div
+      className={`shrink-0 border-t border-lyc-rule bg-lyc-paper pb-[22px] pt-[18px] ${THREAD_INSET_X[inset]}`}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit();
         }}
-        className="relative"
+        className="mx-auto flex max-w-[760px] flex-col gap-2"
         aria-label="Send a message to LISA"
       >
-        <Textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={1}
-          className="resize-none pr-12 min-h-[44px] rounded-xl"
-          aria-label="Message"
-          aria-busy={disabled}
-        />
-        <Button
-          type="submit"
-          size="icon"
-          disabled={disabled || !draft.trim()}
-          className="absolute right-2 bottom-2 rounded-full h-9 w-9 min-h-[44px] min-w-[44px]"
-          aria-label="Send message"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+        <div className="flex items-end gap-3">
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={2}
+            className="min-h-[44px] min-w-0 flex-1 resize-none rounded-lg border border-lyc-input-bd bg-lyc-sheet px-3.5 py-3 font-lyc-sans text-[17px] leading-normal text-lyc-ink placeholder:text-lyc-muted disabled:cursor-not-allowed"
+            aria-label="Message"
+            aria-busy={disabled}
+          />
+          <Button
+            type="submit"
+            variant="lyc-primary"
+            size="lyc"
+            disabled={disabled}
+            className="h-[50px] shrink-0 px-[22px] text-[17px] disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label="Send message"
+          >
+            Send
+          </Button>
+        </div>
+        <p className="m-0 text-lyc-meta text-lyc-muted">{LISA_DISCLAIMER}</p>
       </form>
-      <p className="mt-2 text-center text-xs text-muted-foreground">
-        LISA can make mistakes. Your practice results are the source of truth.
-      </p>
     </div>
   );
 }
@@ -420,7 +468,8 @@ export function useScrollToBottomOnChange(
   trigger: number,
 ): void {
   useEffect(() => {
-    anchorRef.current?.scrollIntoView({ behavior: "smooth" });
+    // "auto", not "smooth": DESIGN.md §1 allows no motion but the LISA dots.
+    anchorRef.current?.scrollIntoView({ behavior: "auto" });
   }, [trigger, anchorRef]);
 }
 
@@ -443,14 +492,14 @@ export function SuggestedActionLink({
 }) {
   if (action?.type !== "start_practice") return null;
   return (
-    <div className="flex justify-start pl-11">
+    <div className="flex justify-start">
       <a
         href={PRACTICE_HANDOFF_HREF}
-        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors min-h-[44px]"
+        className={`${LYC_FOCUS} inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-lyc-ink-strong bg-transparent px-4 py-2 text-lyc-body font-semibold text-lyc-ink-strong no-underline hover:bg-lyc-hover`}
         data-testid="tutor-start-practice"
       >
         {action.label ?? "Start a practice question"}
-        <ArrowRight className="h-4 w-4" />
+        <ArrowRight aria-hidden="true" className="h-4 w-4" />
       </a>
     </div>
   );

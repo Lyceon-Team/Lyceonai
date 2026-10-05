@@ -1,5 +1,9 @@
 /**
- * The §15 calendar API surface — the student's nine routes, and the streak.
+ * The §15 calendar API surface — the student's routes. Two carry no entitlement gate at
+ * all: the profile write (SCL-130) and the profile read (OQ-25, 2026-10-03); `GET /` serves
+ * only its pre-setup state before the gate. §15's streak route is retired (SCL-212, owner
+ * ruling 2026-10-05, OQ-61 (a)): no client called it; the streak is served inside the
+ * calendar payloads and `kpi/overall` instead.
  *
  * @spec [Doc-05F_V1.0 §15 (API surface), §15.1 (launch), §16 (entitlement),
  *        §18 (observability, failure modes), §12.1–§12.7;
@@ -18,11 +22,6 @@
  * `unknown` in — which is what §7.1 actually requires. Those services return
  * `{ kind: "invalid", details }` and the handler renders it as the same 400 it would have
  * written itself. Doing the reads here instead would put IO and workflow in the handler.
- *
- * TWO ROUTERS, AND WHY. `/api/me/streak` is served to any tier with NO `calendar_access`
- * check (INV-08-20, sheet item 11) — the streak is platform-wide and not calendar-owned. It
- * is a separate router so it cannot be mounted behind the calendar's entitlement middleware
- * by accident: the gate it must not have is absent by construction rather than by review.
  *
  * THE GUARDIAN CALENDAR IS NOT IN THIS FILE. Sheet item 14 routes it to
  * `GET /api/students/:studentId/calendar`, through the existing `resolveSubject` pattern in
@@ -45,6 +44,7 @@ import {
   dayParamsSchema,
   idempotentMutationBodySchema,
   launchBodySchema,
+  profileReadResponseSchema,
 } from "@lyceon/shared";
 import { logger } from "../logger";
 import { logRejectedRequest, routeOf } from "../lib/validation-log";
@@ -52,7 +52,6 @@ import { sendPaymentRequired } from "../lib/http-errors";
 import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { EntitlementService } from "../services/entitlement-service";
-import { getStudentActivityStreak } from "../services/activity-streak";
 import { loadCalendarConfig } from "../services/calendar/config";
 import {
   acknowledgeVersion,
@@ -80,7 +79,6 @@ import {
 import { liveLaunchDeps } from "../services/calendar/launch-deps";
 
 export const calendarRouter = Router();
-export const streakRouter = Router();
 
 /** §16: the one feature key this surface gates on. Never the entitlement predicate directly. */
 export const CALENDAR_FEATURE_KEY = "calendar_access" satisfies EntitlementFeatureKey;
@@ -559,6 +557,66 @@ calendarRouter.get("/", async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /api/calendar/profile ───────────────────────────────────────────────
+
+/**
+ * @spec [Doc-05F_V1.0 §15 (API surface), §16 (entitlement applies to the plan); SCL-130
+ *        (owner ruling 2026-09-24: setup renders before the entitlement gate); owner ruling
+ *        OQ-25 (Karl, 2026-10-02, clarified: "An ungated `GET /api/calendar/profile` returns
+ *        the study profile only ... never plan blocks"), docs/plans/student-ui/
+ *        student-ui-vertical.md §9; lyceon-coding-standards §8.1, §8.2]
+ * | @implemented [2026-10-03]
+ *
+ * plain English: the student's own study profile — test date, target score and schedule —
+ * read without `calendar_access`, so a free student who has saved their setup can see what
+ * they saved. Before this, once a profile existed the only read was `GET /api/calendar`,
+ * which answers a free student 402, so the setup form could not show the answers it had
+ * just collected (wiring-table §9, OQ-25).
+ *
+ * expected outcome: 200 `{ profile: StudyProfile | null, requestId }` for any tier. `null`
+ * is the pre-setup state. 401 without a session. A guardian never reaches this handler:
+ * the `/api/calendar` mount runs `requireStudentOrAdmin` (server/index.ts), which answers a
+ * guardian 403 — the same as `PUT /profile`. A guardian sees the exam date and target score
+ * through the guardian calendar (`GET /api/students/:studentId/calendar`), which carries the
+ * link-active AND entitlement-active derivation; opening this route to guardians would need
+ * that derivation here, so it is deliberately student-only.
+ *
+ * WHAT THIS DOES NOT OPEN. No plan: it never calls `readCalendar`, so it never runs
+ * `generateOnFirstOpen` (R-08-04) and never touches plan versions, blocks or facts. The
+ * body is built from `profileReadResponseSchema` (`.strict()` over the `.strict()`
+ * `studyProfileSchema`), and the value comes from `readStudyProfile`, which NAMES its nine
+ * columns — so a plan field cannot be spread in by a later edit; it would fail the parse
+ * and answer 500 rather than reach the wire.
+ *
+ * trade-offs: dream schools are not on this response — they are not a profile column, are
+ * served by `GET /api/profile/background`, and OQ-37 keeps them off the calendar for now.
+ *
+ * edge cases: the subject is `caller.studentId` from the verified session, never a param or
+ * a query value, so there is no way to point this read at another student.
+ */
+calendarRouter.get("/profile", async (req: Request, res: Response) => {
+  const caller = callerOf(req, res);
+  if (caller === null) return;
+
+  try {
+    const profile = await readStudyProfile(caller.studentId, req.requestId);
+    const body = profileReadResponseSchema.safeParse({ profile });
+    if (!body.success) {
+      // Unreachable while `readStudyProfile` parses through the same strict schema; if it
+      // ever is reached, a 500 beats serving a shape the contract does not name.
+      return sendServerError(
+        res,
+        "profile_read",
+        new Error("profile_read_response_shape_unexpected"),
+        req.requestId,
+      );
+    }
+    return res.status(200).json({ ...body.data, requestId: req.requestId });
+  } catch (error) {
+    return sendServerError(res, "profile_read", error, req.requestId);
+  }
+});
+
 // ── PUT /api/calendar/profile ───────────────────────────────────────────────
 
 // SETUP IS NOT GATED (owner ruling 2026-09-24, SCL-130). A free student who answers the
@@ -1025,29 +1083,5 @@ calendarRouter.post("/acknowledge", async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, requestId: req.requestId });
   } catch (error) {
     return sendServerError(res, "acknowledge", error, req.requestId);
-  }
-});
-
-// ── GET /api/me/streak (§15, INV-08-20) ─────────────────────────────────────
-
-/**
- * NO `calendar_access` CHECK. That is the point of this route existing on its own router:
- * §15 serves the streak to a student of ANY tier, and sheet item 11 makes it platform-wide
- * rather than calendar-owned. A free student sees their streak on the practice page.
- *
- * `plants` in Step 7 includes adding an entitlement check here and watching a test go red.
- */
-streakRouter.get("/streak", async (req: Request, res: Response) => {
-  const caller = callerOf(req, res);
-  if (caller === null) return;
-
-  try {
-    const streak = await getStudentActivityStreak(
-      caller.studentId,
-      req.requestId,
-    );
-    return res.status(200).json({ ...streak, requestId: req.requestId });
-  } catch (error) {
-    return sendServerError(res, "streak_read", error, req.requestId);
   }
 });

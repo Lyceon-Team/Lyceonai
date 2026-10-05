@@ -86,7 +86,7 @@ function Pill({ node }: { node: MasteryDomainNode }): JSX.Element {
 }
 
 function Meter({ node }: { node: MasteryDomainNode }): JSX.Element {
-  const filled = masteryMeterFill(node.level);
+  const filled = masteryMeterFill(node.levelKey);
   const ink = levelInk(node.levelKey);
   return (
     <span

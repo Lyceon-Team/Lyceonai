@@ -4,7 +4,9 @@
  * @spec [student-UI register §8 F-59, owner ruling (Karl) 2026-10-02: headers on all HTML pages
  *        via vercel.json; frame-ancestors, X-Frame-Options, nosniff, Referrer-Policy and
  *        Permissions-Policy enforced; the CSP report-only first, enforced once the preview flows
- *        report nothing; F-58 (the theme script by hash)] | @implemented [2026-10-02]
+ *        report nothing; F-58 (the theme script by hash). Owner ruling (Karl) 2026-10-03: allow
+ *        'unsafe-eval' (the Desmos calculator evals; it was the only flow reporting) and enforce
+ *        the CSP] | @implemented [2026-10-02; enforced 2026-10-03]
  *
  * plain English: Vercel serves index.html and the assets from its CDN, so the Express helmet
  * headers never reach a page. vercel.json carries them instead. This walks vercel.json's
@@ -16,8 +18,12 @@
  *      the assets) gets the headers too, not only the SPA fallback;
  *   3. /api and /auth/callback get none of them: Express sets its own there, and two CSP
  *      headers would both apply;
- *   4. the page CSP allows scripts from our origin, the theme script by its hash and the Desmos
- *      calculator, and nothing inline or eval'd.
+ *   4. the page CSP is enforced (no report-only header) and allows scripts from our origin, the
+ *      theme script by its hash, eval (Desmos only needs it; ruled 2026-10-03) and the Desmos
+ *      calculator, and nothing inline. 'unsafe-eval' applies to every page, not only the Math
+ *      runner: the SPA is one document, so a per-route CSP is not possible here. That scope is
+ *      a known gap in register §8, with isolating Desmos in a sandboxed cross-origin iframe
+ *      recorded in §7.
  * The built page is checked separately, after the build: scripts/ci/page-csp-built-hash-gate.mjs.
  */
 import { readFileSync } from "node:fs";
@@ -72,6 +78,9 @@ function headersFor(
  * tests/e2e/page-csp-flows.spec.ts against the built bundle, 2026-10-02):
  *   - script-src theme hash: every page (the theme boot in client/index.html, F-58).
  *   - script-src https://www.desmos.com: practice, review and exam Math runners (calculator.js).
+ *   - script-src 'unsafe-eval': the Desmos calculator evals (261 reports per session with the
+ *     policy report-only, 2026-10-02; blank calculator when enforced without it). Owner ruling
+ *     (Karl) 2026-10-03: allowed, page-wide (see 4. above).
  *   - script-src and frame-src https://challenges.cloudflare.com: the Question of the Day widget
  *     on the homepage and /sat-question-of-the-day (Cloudflare Turnstile loads api.js from that
  *     host and renders its challenge in an iframe from it; SCL-202 item 2, added 2026-10-05).
@@ -95,18 +104,18 @@ const PAGE_CSP = [
   "base-uri 'self'",
   "object-src 'none'",
   "form-action 'self'",
-  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
+  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data:",
   "connect-src 'self' https://us.i.posthog.com https://us-assets.i.posthog.com",
   "frame-src https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
+  "frame-ancestors 'none'",
 ].join("; ");
 
 const EXPECTED: Record<string, string> = {
-  "Content-Security-Policy": "frame-ancestors 'none'",
-  "Content-Security-Policy-Report-Only": PAGE_CSP,
+  "Content-Security-Policy": PAGE_CSP,
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -162,17 +171,28 @@ describe("F-59: page security headers (vercel.json)", () => {
     expect(ROUTES.slice(0, headerAt).every((r) => "handle" in r)).toBe(true);
   });
 
-  it("script-src is our origin, the theme script's hash, Desmos and Turnstile; nothing inline or eval'd", () => {
-    const csp = headersFor("/")["Content-Security-Policy-Report-Only"] ?? "";
+  it("the CSP is enforced: no report-only header on any page", () => {
+    for (const p of PAGE_PATHS) {
+      expect(headersFor(p)["Content-Security-Policy"]).toBe(PAGE_CSP);
+      expect(headersFor(p)).not.toHaveProperty(
+        "Content-Security-Policy-Report-Only",
+      );
+    }
+  });
+
+  it("script-src is our origin, the theme script's hash, eval (Desmos), Desmos, Turnstile and PostHog; nothing inline", () => {
+    const csp = headersFor("/")["Content-Security-Policy"] ?? "";
     const scriptSrc = csp
       .split(";")
       .map((d) => d.trim())
       .find((d) => d.startsWith("script-src "));
     expect(scriptSrc).toBe(
-      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
+      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
     );
-    expect(csp).not.toMatch(/unsafe-eval/);
+    // 'unsafe-eval' appears in script-src only (owner ruling 2026-10-03), never inline script.
+    expect(csp.match(/'unsafe-eval'/g)).toHaveLength(1);
     expect(scriptSrc).not.toMatch(/unsafe-inline/);
+    expect(csp).toMatch(/(^|; )frame-ancestors 'none'(;|$)/);
   });
 
   it("the walker stops at a non-continue route, and a route without continue adds its own headers", () => {

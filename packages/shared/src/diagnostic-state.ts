@@ -64,6 +64,20 @@ export const estimateStatusSchema = z.enum(ESTIMATE_STATUSES);
 export type EstimateStatus = z.infer<typeof estimateStatusSchema>;
 
 /**
+ * @spec [student-UI register OQ-36 (owner ruling 2026-10-02: Home reads the range from
+ *        `GET /api/students/:id/projections/sections`; `/api/progress/projection` is used only
+ *        for `estimateStatus` until it is retired), §8 F-51 (no confidence metric)]
+ *        | @implemented [2026-10-03]
+ *
+ * plain English: the one field Home reads from `/api/progress/projection`. Zod's default strip
+ * mode drops everything else at the parse, so the route's `confidenceBand`, its estimate and its
+ * baseline never reach the page's data, let alone its markup.
+ */
+export const estimateStatusReadSchema = z.object({
+  estimateStatus: estimateStatusSchema,
+});
+
+/**
  * The one sentence a student in baseline_pending sees. Owner-ruled copy (Q2) —
  * exported as a constant so the server explanation, the card, and the test that
  * proves the card renders it cannot drift into three near-identical sentences.

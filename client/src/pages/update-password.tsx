@@ -5,16 +5,9 @@ import {
   evaluatePassword,
 } from "@lyceon/shared/password-policy";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Lock } from "lucide-react";
+import { BareCardHeader } from "@/components/layout/BareCardShell";
+import { Notice } from "@/components/student-ui";
 import { useToast } from "@/hooks/use-toast";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import { PasswordField } from "@/components/auth/PasswordField";
@@ -29,6 +22,11 @@ import { PasswordField } from "@/components/auth/PasswordField";
  * catch routes through resolveAuthErrorMessage (human, recoverable, never a raw string); on success
  * it lands by role. Edge case: the `<form>` still guards on submit — the disabled button is UX,
  * the server's Zod parse is the enforcement.
+ *
+ * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card"] | @implemented [2026-10-03]
+ * UI-59: drawn with the student tokens only, inside the Bare card. Copy and behaviour unchanged.
+ * "Update Password" is the one filled action. The error is a danger Notice (role="alert", as the
+ * shadcn Alert it replaces was); the disabled reason keeps its polite live region.
  */
 export default function UpdatePassword() {
   const [, setLocation] = useLocation();
@@ -78,74 +76,61 @@ export default function UpdatePassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md mx-auto">
-        <CardHeader>
-          <CardTitle className="text-2xl flex items-center gap-2">
-            <Lock className="h-5 w-5" />
-            Update Password
-          </CardTitle>
-          <CardDescription>
-            Please enter your new password below.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <PasswordField
-              id="new-password"
-              testId="input-new-password"
-              label="New Password"
-              value={password}
-              onChange={setPassword}
-              autoComplete="new-password"
-              showRequirements
-              required
-            />
+    <div data-testid="update-password">
+      <BareCardHeader
+        title="Update Password"
+        description="Please enter your new password below."
+      />
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <PasswordField
+          id="new-password"
+          testId="input-new-password"
+          label="New Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          showRequirements
+          required
+        />
 
-            <PasswordField
-              id="confirm-password"
-              testId="input-confirm-password"
-              label="Confirm Password"
-              value={confirmPassword}
-              onChange={setConfirmPassword}
-              autoComplete="new-password"
-              showRequirements={false}
-              required
-            />
+        <PasswordField
+          id="confirm-password"
+          testId="input-confirm-password"
+          label="Confirm Password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          autoComplete="new-password"
+          showRequirements={false}
+          required
+        />
 
-            {error && (
-              <Alert className="border-amber-200 bg-amber-50">
-                <AlertCircle className="h-4 w-4 text-amber-700" />
-                <AlertDescription className="text-amber-800">
-                  {error}
-                </AlertDescription>
-              </Alert>
-            )}
+        {error && <Notice tone="danger" title={error} />}
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={!canSubmit}
-              data-testid="button-update-password"
-              aria-describedby={
-                disabledReason ? "update-password-submit-reason" : undefined
-              }
+        <div className="flex flex-col gap-2">
+          <Button
+            type="submit"
+            variant="lyc-primary"
+            className="w-full"
+            disabled={!canSubmit}
+            data-testid="button-update-password"
+            aria-describedby={
+              disabledReason ? "update-password-submit-reason" : undefined
+            }
+          >
+            {isLoading ? "Updating..." : "Update Password"}
+          </Button>
+          {disabledReason ? (
+            <p
+              id="update-password-submit-reason"
+              data-testid="update-password-submit-reason"
+              aria-live="polite"
+              className="m-0 text-lyc-meta-lg text-lyc-muted"
             >
-              {isLoading ? "Updating..." : "Update Password"}
-            </Button>
-            {disabledReason ? (
-              <p
-                id="update-password-submit-reason"
-                data-testid="update-password-submit-reason"
-                aria-live="polite"
-                className="text-sm text-muted-foreground"
-              >
-                {disabledReason}
-              </p>
-            ) : null}
-          </form>
-        </CardContent>
-      </Card>
+              {disabledReason}
+            </p>
+          ) : null}
+        </div>
+      </form>
     </div>
   );
 }

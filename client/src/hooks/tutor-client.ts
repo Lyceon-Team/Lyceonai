@@ -296,18 +296,20 @@ export function useItemConversation(
  * edge cases: invalidating `tutorConversationsQueryKey` refetches every loaded
  * page from the top, so a conversation that moved (new message) is not shown
  * twice.
+ *
+ * @updated 2026-10-03 — UI-56, OQ-39 (f) (owner ruling, Karl, 2026-10-02: "LISA
+ * history includes ended sessions"): no `status` filter, so the server returns
+ * active and ended conversations alike (its default is both). An ended one
+ * opens read-only: the page draws no composer for it.
  */
 export function useConversations(): UseInfiniteQueryResult<
   TutorConversationsList,
   HttpApiError
 > {
   return useInfiniteQuery({
-    queryKey: [...tutorConversationsQueryKey, "standalone-active"],
+    queryKey: [...tutorConversationsQueryKey, "standalone"],
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({
-        surface: "standalone",
-        status: "active",
-      });
+      const params = new URLSearchParams({ surface: "standalone" });
       if (pageParam) params.set("cursor", pageParam);
       return tutorRequest<TutorConversationsList>(
         `/conversations?${params.toString()}`,

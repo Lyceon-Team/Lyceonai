@@ -12,7 +12,19 @@ export type NumericEntryInputProps = {
   explanation?: string | null;
 };
 
-const ALLOWED_CHARS = /^[0-9./\-]*$/;
+/**
+ * UI-53 (2026-10-03): drawn on the student tokens (the practice and review runners follow the
+ * device theme; the timed exam module, the other user, is light only, where the tokens are the
+ * light set). The runner shows its own feedback panel and passes no `showResult`; the result
+ * block below remains for callers that do.
+ *
+ * The grid-in answer box's id. The shared keyboard hook (hooks/useKeyboardShortcuts) lets
+ * Enter through from this one text field — student-UI register §2 Keyboard: "for grid-in,
+ * Enter submits the typed answer". | @implemented [2026-10-03]
+ */
+export const GRID_IN_INPUT_ID = "grid-in-answer";
+
+const ALLOWED_CHARS = /^[0-9./-]*$/;
 const GRID_IN_PATTERN = /^-?(\d+(\.\d*)?|\d*\.\d+|\d+\/\d+)$/;
 
 export function isValidGridInFormat(value: string): boolean {
@@ -44,20 +56,20 @@ export function NumericEntryInput({
   const inputBorder = useMemo(() => {
     if (!showResult) return "";
     return isCorrect
-      ? "border-emerald-500 bg-emerald-50"
-      : "border-rose-500 bg-rose-50";
+      ? "border-2 border-lyc-lv4-fill bg-lyc-lv4-bg"
+      : "border-2 border-lyc-danger bg-lyc-danger-bg";
   }, [showResult, isCorrect]);
 
   return (
     <div className="space-y-3">
       <label
-        htmlFor="grid-in-answer"
-        className="text-sm font-medium text-slate-700"
+        htmlFor={GRID_IN_INPUT_ID}
+        className="text-lyc-meta-lg font-semibold text-lyc-ink"
       >
         Enter your answer:
       </label>
       <Input
-        id="grid-in-answer"
+        id={GRID_IN_INPUT_ID}
         aria-label="Enter your answer"
         type="text"
         inputMode="decimal"
@@ -66,35 +78,37 @@ export function NumericEntryInput({
         value={value}
         onChange={handleChange}
         disabled={disabled || showResult}
-        className={inputBorder}
+        className={`h-12 max-w-xs border-lyc-input-bd bg-lyc-sheet text-[19px] text-lyc-ink placeholder:text-lyc-muted ${inputBorder}`}
       />
       {showFormatHint && !showResult && (
-        <p className="text-xs text-amber-600">
+        <p className="text-lyc-meta text-lyc-danger">
           Enter a number, decimal, or fraction (e.g. 42, 0.2, 1/5, -4).
         </p>
       )}
 
       {showResult && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="font-semibold text-slate-900">
+        <div className="rounded-md border border-lyc-rule bg-lyc-sheet p-4 text-lyc-ink">
+          <div className="font-semibold text-lyc-ink-strong">
             {isCorrect ? "Correct" : "Incorrect"}
           </div>
 
-          <div className="mt-2 text-slate-800">
-            <span className="font-medium">Your answer:</span>{" "}
+          <div className="mt-2">
+            <span className="font-semibold">Your answer:</span>{" "}
             <MathRenderer content={trimmed || "(empty)"} />
           </div>
 
           {!isCorrect && correctAnswer && (
-            <div className="mt-2 text-slate-800">
-              <span className="font-medium">Correct answer:</span>{" "}
+            <div className="mt-2">
+              <span className="font-semibold">Correct answer:</span>{" "}
               <MathRenderer content={correctAnswer} />
             </div>
           )}
 
           {explanation && (
-            <div className="mt-3 text-slate-700">
-              <div className="font-medium text-slate-900 mb-1">Explanation</div>
+            <div className="mt-3">
+              <div className="mb-1 font-semibold text-lyc-ink-strong">
+                Explanation
+              </div>
               <div className="whitespace-pre-wrap leading-relaxed">
                 <MathRenderer content={explanation} />
               </div>

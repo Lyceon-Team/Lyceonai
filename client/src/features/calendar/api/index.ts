@@ -8,7 +8,7 @@ export {
   useCalendar,
   useGuardianCalendar,
   usePrefetchAdjacentRange,
-  useStreak,
+  useStudyProfile,
 } from "./queries";
 export {
   newIntent,

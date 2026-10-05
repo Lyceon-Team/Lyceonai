@@ -17,7 +17,10 @@
 --     S6 an anonymised student's score computes and no student-keyed row lands;
 --     S7 a seam failure never un-scores: the score stands, the seams event
 --        retries and dead-letters, and nothing of the failed attempt persists;
---     S8 grants.
+--     S8 grants;
+--     S9 an abandoned exam queues only its submitted section: a section left at
+--        `module1_submitted` queues nothing, though its Module 1 holds misses
+--        (SCL-205).
 --
 -- Answer pattern per module (pg_temp.answer_mixed), by ordinal % 4:
 --   0 correct · 1 wrong · 2 never answered (no row) · 3 explicit omit (NULL).
@@ -39,7 +42,8 @@ $f$;
 \ir lib/exam-seams-walk.sql
 
 -- The independent expectation for S1: served items of submitted modules whose
--- stored answer is not the fixture's correct one ('A' / '1'), by pattern.
+-- stored answer is not the fixture's correct one ('A' / '1'), by pattern. Since
+-- SCL-205 a module counts only when its whole SECTION is submitted.
 CREATE FUNCTION pg_temp.expected_review(p_session uuid)
 RETURNS TABLE (item uuid, outcome text) LANGUAGE sql AS $f$
   SELECT md5('full_length:' || i.test_session_id::text || ':' || i.section || ':' || i.module || ':' || i.ordinal::text)::uuid,
@@ -47,8 +51,7 @@ RETURNS TABLE (item uuid, outcome text) LANGUAGE sql AS $f$
     FROM public.test_session_items i
     JOIN public.test_session_sections sec ON sec.test_session_id = i.test_session_id AND sec.section = i.section
    WHERE i.test_session_id = p_session
-     AND ((i.module = '1' AND sec.state IN ('module1_submitted', 'module2_active', 'submitted'))
-       OR (i.module <> '1' AND sec.state = 'submitted'))
+     AND sec.state = 'submitted'   -- SCL-205: whole submitted sections only
      AND i.ordinal % 4 <> 0;
 $f$;
 
@@ -408,4 +411,34 @@ BEGIN
     RAISE EXCEPTION 'E9G FAIL [S8]: grants';
   END IF;
   PERFORM pg_temp.ok('S8', 'exam_apply_scored_seams + both views: service_role only; the E5 hook is gone');
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- S9 — SCL-205: a section that stopped after Module 1 queues nothing
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE s record; v_state text; v_m_state text; v_m1_misses int; v_m_rows int; v_rw_rows int; v_want int;
+BEGIN
+  SELECT * INTO s FROM _s WHERE who = 'PART';
+  SELECT state INTO v_state FROM public.test_sessions WHERE id = s.session;
+  SELECT state INTO v_m_state FROM public.test_session_sections WHERE test_session_id = s.session AND section = 'M';
+  -- the premise: Math Module 1 was served and holds misses/blanks
+  SELECT count(*) INTO v_m1_misses FROM public.test_session_items i
+    LEFT JOIN public.test_session_answers a ON a.test_session_id = i.test_session_id
+     AND a.section = i.section AND a.module = i.module AND a.ordinal = i.ordinal
+   WHERE i.test_session_id = s.session AND i.section = 'M' AND i.module = '1'
+     AND NOT public.is_answer_correct(a.answer, i.question_id);
+  SELECT count(*) INTO v_m_rows FROM public.review_schedule r
+    JOIN public.test_session_items i ON i.test_session_id = s.session AND i.question_id = r.question_id
+   WHERE r.source_engine = 'full_length' AND r.source_session_id = s.session AND i.section = 'M';
+  SELECT count(*) INTO v_rw_rows FROM public.review_schedule
+   WHERE source_engine = 'full_length' AND source_session_id = s.session;
+  SELECT count(*) INTO v_want FROM pg_temp.expected_review(s.session);
+  IF v_state <> 'partial_scored_abandoned' OR v_m_state <> 'module1_submitted' OR v_m1_misses = 0
+     OR v_m_rows <> 0 OR v_rw_rows <> v_want OR v_want = 0 THEN
+    RAISE EXCEPTION 'E9G FAIL [S9]: session %, Math %, Math M1 misses %, Math rows queued %, rows % (want %)',
+      v_state, v_m_state, v_m1_misses, v_m_rows, v_rw_rows, v_want;
+  END IF;
+  PERFORM pg_temp.ok('S9', format('PART (%s, Math %s): %s Math Module 1 misses/blanks, 0 queued; %s rows = the submitted RW section only',
+    v_state, v_m_state, v_m1_misses, v_rw_rows));
 END $$;

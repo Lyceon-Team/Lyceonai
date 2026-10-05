@@ -112,10 +112,13 @@ describe("registry parser", () => {
   });
 });
 
-/** The page security headers (register F-59), owned by the security workstream. */
+/**
+ * The page security headers (register F-59), owned by the security workstream. The CSP is
+ * enforced since F-59 (owner ruling 2026-10-03), so there is no report-only header to carry;
+ * tests/ci/page-security-headers.ci.test.ts asserts its absence.
+ */
 const SECURITY_HEADERS = [
   "Content-Security-Policy",
-  "Content-Security-Policy-Report-Only",
   "X-Frame-Options",
   "X-Content-Type-Options",
   "Referrer-Policy",

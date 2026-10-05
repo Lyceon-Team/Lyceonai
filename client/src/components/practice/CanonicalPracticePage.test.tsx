@@ -9,13 +9,8 @@ import {
   it,
   vi,
 } from "vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { renderRunner as render } from "@/test-support/runner.harness";
 import {
   PRACTICE_ENGINE_CONFIG,
   REVIEW_ENGINE_CONFIG,
@@ -65,7 +60,7 @@ function stubAllBCR(width: number): () => void {
   };
 }
 
-// APP_HORIZONTAL_PADDING = 32 (PracticeShell px-4 × 2 sides)
+// APP_HORIZONTAL_PADDING = 32 (the runner body's px-4 × 2 sides)
 const APP_HORIZONTAL_PADDING = 32;
 /** Container width at the split breakpoint (what the panel group sees). */
 const TEST_CONTAINER_AT_BP = SPLIT_BREAKPOINT - APP_HORIZONTAL_PADDING; // 1030
@@ -287,7 +282,6 @@ function buildHookState(
     submitAnswer: vi.fn(),
     nextQuestion: vi.fn(),
     handleMissingMcChoices: vi.fn(),
-    terminateSession: vi.fn(),
     calculatorState: null,
     persistCalculatorState: vi.fn(),
     submitBlocked: null,
@@ -326,13 +320,7 @@ describe("CanonicalPracticePage calculator UX", () => {
   it("shows calculator toggle on math practice question and keeps question UI usable when toggled", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
     expect(screen.getByTestId("practice-calculator-toggle")).not.toBeNull();
     expect(screen.getByText("What is 1 + 1?")).not.toBeNull();
@@ -348,13 +336,7 @@ describe("CanonicalPracticePage calculator UX", () => {
   it("hides calculator toggle on non-math practice question", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("RW"));
 
-    render(
-      <CanonicalPracticePage
-        title="RW Practice"
-        badgeLabel="RW"
-        section="RW"
-      />,
-    );
+    render(<CanonicalPracticePage title="RW Practice" section="RW" />);
 
     expect(screen.queryByTestId("practice-calculator-toggle")).toBeNull();
   });
@@ -364,11 +346,7 @@ describe("CanonicalPracticePage calculator UX", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
+      <CanonicalPracticePage title="Math Practice" section="M" />,
     );
 
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -384,11 +362,7 @@ describe("CanonicalPracticePage calculator UX", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
+      <CanonicalPracticePage title="Math Practice" section="M" />,
     );
 
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -404,11 +378,7 @@ describe("CanonicalPracticePage calculator UX", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
+      <CanonicalPracticePage title="Math Practice" section="M" />,
     );
 
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -436,13 +406,7 @@ describe("CanonicalPracticePage calculator UX", () => {
       buildHookState("M", { persistCalculatorState: persist }),
     );
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
     expect(screen.queryByTestId("practice-calculator-save-failed")).toBeNull();
 
@@ -476,13 +440,7 @@ describe("CanonicalPracticePage divider accessibility", () => {
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const handle = screen.getByTestId("practice-resize-handle");
@@ -497,13 +455,7 @@ describe("CanonicalPracticePage divider accessibility", () => {
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const handle = screen.getByTestId("practice-resize-handle");
@@ -556,13 +508,7 @@ describe("CanonicalPracticePage pixel-floor constraints", () => {
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const calcPanel = screen.getByTestId("practice-calc-panel");
@@ -575,11 +521,7 @@ describe("CanonicalPracticePage pixel-floor constraints", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
+      <CanonicalPracticePage title="Math Practice" section="M" />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
@@ -595,13 +537,7 @@ describe("CanonicalPracticePage pixel-floor constraints", () => {
     mockMatchMedia(false);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const stackedContainer = screen.getByTestId("stacked-calculator-container");
@@ -640,13 +576,7 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const handle = screen.getByTestId("practice-resize-handle");
@@ -676,13 +606,7 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const handle = screen.getByTestId("practice-resize-handle");
@@ -712,13 +636,7 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const handle = screen.getByTestId("practice-resize-handle");
@@ -749,13 +667,7 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const handle = screen.getByTestId("practice-resize-handle");
@@ -803,13 +715,7 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     mockMatchMedia(false);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     // No side panel at this viewport
@@ -852,11 +758,7 @@ describe("CanonicalPracticePage CSS pixel floor (single source of truth)", () =>
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
+      <CanonicalPracticePage title="Math Practice" section="M" />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
@@ -881,11 +783,7 @@ describe("CanonicalPracticePage CSS pixel floor (single source of truth)", () =>
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("M"));
 
     const { container } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
+      <CanonicalPracticePage title="Math Practice" section="M" />,
     );
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
@@ -987,19 +885,13 @@ describe("CanonicalPracticePage grid-in rendering", () => {
   it("renders numeric entry input for a grid_in question", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildGridInHookState());
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
     expect(screen.getByText("What is the value of x?")).not.toBeNull();
     expect(screen.getByLabelText("Enter your answer")).not.toBeNull();
   });
 
-  it("MCQ round-trip: select option, submit, correct option gets emerald highlight (non-regression)", () => {
+  it("MCQ round-trip: select option, submit, correct option gets the correct tone (non-regression)", () => {
     const setSelectedAnswer = vi.fn();
     const submitAnswer = vi.fn();
     hookMock.useCanonicalPractice.mockReturnValue(
@@ -1012,11 +904,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     );
 
     const { unmount } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
+      <CanonicalPracticePage title="Math Practice" section="M" />,
     );
 
     expect(screen.getByText("What is 1 + 1?")).not.toBeNull();
@@ -1027,7 +915,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     fireEvent.click(screen.getByText("2"));
     expect(setSelectedAnswer).toHaveBeenCalledWith("A");
 
-    fireEvent.click(screen.getByText("Check Answer"));
+    fireEvent.click(screen.getByText("Submit"));
     expect(submitAnswer).toHaveBeenCalledWith({ skipped: false });
 
     unmount();
@@ -1042,13 +930,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       }),
     );
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
     expect(screen.getAllByText("Correct").length).toBeGreaterThan(0);
     expect(screen.getByText("1 + 1 = 2.")).not.toBeNull();
@@ -1058,19 +940,19 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       .map((el) => el.closest("button"))
       .find((btn) => btn !== null)!;
     expect(correctBtn).not.toBeNull();
-    expect(correctBtn!.className).toContain("border-emerald-500");
-    expect(correctBtn!.className).toContain("bg-emerald-50");
+    expect(correctBtn!.className).toContain("border-lyc-lv4-fill");
+    expect(correctBtn!.className).toContain("bg-lyc-lv4-bg");
 
     const wrongBtn = screen
       .getAllByText("3")
       .map((el) => el.closest("button"))
       .find((btn) => btn !== null)!;
     expect(wrongBtn).not.toBeNull();
-    expect(wrongBtn!.className).not.toContain("border-emerald-500");
-    expect(wrongBtn!.className).not.toContain("border-rose-500");
+    expect(wrongBtn!.className).not.toContain("border-lyc-lv4-fill");
+    expect(wrongBtn!.className).not.toContain("border-lyc-danger");
   });
 
-  it("MCQ incorrect: wrong selected option gets rose highlight, correct gets emerald (non-regression)", () => {
+  it("MCQ incorrect: wrong selected option gets the danger tone, correct gets the correct tone (non-regression)", () => {
     hookMock.useCanonicalPractice.mockReturnValue(
       buildHookState("M", {
         selectedAnswer: "B",
@@ -1081,41 +963,29 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       }),
     );
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
     const correctBtn = screen
       .getAllByText("2")
       .map((el) => el.closest("button"))
       .find((btn) => btn !== null)!;
     expect(correctBtn).not.toBeNull();
-    expect(correctBtn!.className).toContain("border-emerald-500");
+    expect(correctBtn!.className).toContain("border-lyc-lv4-fill");
 
     const wrongBtn = screen
       .getAllByText("3")
       .map((el) => el.closest("button"))
       .find((btn) => btn !== null)!;
     expect(wrongBtn).not.toBeNull();
-    expect(wrongBtn!.className).toContain("border-rose-500");
-    expect(wrongBtn!.className).toContain("bg-rose-50");
+    expect(wrongBtn!.className).toContain("border-lyc-danger");
+    expect(wrongBtn!.className).toContain("bg-lyc-danger-bg");
   });
 
   it("does not auto-skip grid_in questions", () => {
     const state = buildGridInHookState();
     hookMock.useCanonicalPractice.mockReturnValue(state);
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
     expect(state.handleMissingMcChoices).not.toHaveBeenCalled();
   });
@@ -1140,35 +1010,23 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       }),
     );
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
-    expect(screen.getByText("Incorrect")).not.toBeNull();
+    expect(screen.getByText("Not quite")).not.toBeNull();
     expect(screen.getByText("Correct answer:")).not.toBeNull();
     expect(screen.getByText("Divide 1 by 5.")).not.toBeNull();
   });
 
-  it("disables Check Answer for malformed grid-in input (format gate)", () => {
+  it("disables Submit for malformed grid-in input (format gate)", () => {
     hookMock.useCanonicalPractice.mockReturnValue(buildGridInHookState());
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
-    const checkBtn = screen.getByText("Check Answer");
+    const checkBtn = screen.getByRole("button", { name: "Submit" });
     expect((checkBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("disables Check Answer when canSubmit is false for malformed values like 1/2/3", () => {
+  it("disables Submit when canSubmit is false for malformed values like 1/2/3", () => {
     hookMock.useCanonicalPractice.mockReturnValue(
       buildHookState("M", {
         question: {
@@ -1185,19 +1043,13 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       }),
     );
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
-    const checkBtn = screen.getByText("Check Answer");
+    const checkBtn = screen.getByRole("button", { name: "Submit" });
     expect((checkBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("enables Check Answer when canSubmit is true for valid grid-in value", () => {
+  it("enables Submit when canSubmit is true for valid grid-in value", () => {
     hookMock.useCanonicalPractice.mockReturnValue(
       buildHookState("M", {
         question: {
@@ -1214,15 +1066,9 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       }),
     );
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="M"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
 
-    const checkBtn = screen.getByText("Check Answer");
+    const checkBtn = screen.getByRole("button", { name: "Submit" });
     expect((checkBtn as HTMLButtonElement).disabled).toBe(false);
   });
 });
@@ -1251,7 +1097,6 @@ function renderReview(overrides: Record<string, unknown> = {}) {
   return render(
     <CanonicalPracticePage
       title="Review"
-      badgeLabel="Review"
       section="M"
       engine={REVIEW_ENGINE_CONFIG}
     />,
@@ -1269,7 +1114,7 @@ describe("W4-4 — LISA always open in review, three panels", () => {
     const panel = screen.getByTestId("scoped-tutor-panel-mock");
     expect(panel.getAttribute("data-surface")).toBe("review");
     expect(panel.getAttribute("data-item")).toBe("rev-item-7");
-    expect(panel.getAttribute("data-label")).toBe("Question 3 / 10");
+    expect(panel.getAttribute("data-label")).toBe("Question 3 of 10");
     expect(screen.getByTestId("practice-tutor-toggle").textContent).toContain(
       "Hide LISA",
     );
@@ -1376,7 +1221,6 @@ describe("W4-4 — LISA always open in review, three panels", () => {
     view.rerender(
       <CanonicalPracticePage
         title="Review"
-        badgeLabel="Review"
         section="M"
         engine={REVIEW_ENGINE_CONFIG}
       />,
@@ -1409,7 +1253,6 @@ describe("W4-4 — LISA always open in review, three panels", () => {
     render(
       <CanonicalPracticePage
         title="Math Practice"
-        badgeLabel="Math"
         section="M"
         engine={PRACTICE_ENGINE_CONFIG}
       />,

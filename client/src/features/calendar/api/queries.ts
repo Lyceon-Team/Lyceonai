@@ -24,10 +24,20 @@ import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import type {
   CalendarResponse,
   GuardianCalendarResponse,
-  StreakSummary,
+  ProfileReadResponse,
 } from "@lyceon/shared/calendar";
 import { calendarKeys } from "./keys";
-import { fetchCalendar, fetchGuardianCalendar, fetchStreak } from "./client";
+// @spec [student-UI register UI-44; §2 Free versus paid, Step 2 ruling 3; Doc 05F §15, §17.5]
+// | @implemented [2026-10-03] | plain English: every calendar read and write carries the inline
+// opt-out, so the app-wide upgrade modal stays closed on a calendar denial: the calendar page
+// renders its own upsell (ruling 3). Exam forms read inside the calendar sheets are the exam's
+// query, not the calendar's, and keep the modal.
+import { ENTITLEMENT_DENIAL_INLINE_META } from "@/components/billing/upgrade-modal";
+import {
+  fetchCalendar,
+  fetchGuardianCalendar,
+  fetchStudyProfile,
+} from "./client";
 import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
 
 /**
@@ -61,6 +71,7 @@ export function useCalendar(
 ): UseQueryResult<CalendarResponse, Error> {
   const timezone = deviceTimezone();
   return useQuery<CalendarResponse, Error>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     queryKey: calendarKeys.range(from, to, timezone),
     queryFn: () => fetchCalendar(from, to, timezone),
     enabled: options?.enabled ?? true,
@@ -117,6 +128,7 @@ export function usePrefetchAdjacentRange(
       for (const neighbour of neighbours) {
         const range = rangeForView(view, neighbour);
         void client.prefetchQuery({
+          meta: ENTITLEMENT_DENIAL_INLINE_META,
           queryKey: calendarKeys.range(range.from, range.to, timezone),
           queryFn: () => fetchCalendar(range.from, range.to, timezone),
           staleTime: QUERY_FRESHNESS.calendarRange.staleTime,
@@ -141,18 +153,21 @@ export function usePrefetchAdjacentRange(
 }
 
 /**
- * §15 GET /api/me/streak. INV-08-20: no `calendar_access` check, so this succeeds for a free
- * student whose calendar read is answering 402 — which is why it is a separate query and not
- * a field the page reads off the calendar payload when it renders the upgrade prompt.
+ * GET /api/calendar/profile — the free calendar's read (OQ-25, UI-55). A free student's
+ * `GET /api/calendar` answers 402 once a profile exists, so this is the only way the page can
+ * show the test date and target they saved. Same freshness as the range reads (§17.7: refetch
+ * on focus, so a change made in Settings shows on return). Carries the inline-denial meta like
+ * every calendar read (UI-44), although the route has no entitlement gate to deny with.
  */
-export function useStreak(options?: {
+export function useStudyProfile(options?: {
   enabled?: boolean;
-}): UseQueryResult<StreakSummary, Error> {
-  return useQuery<StreakSummary, Error>({
-    queryKey: calendarKeys.streak(),
-    queryFn: fetchStreak,
+}): UseQueryResult<ProfileReadResponse, Error> {
+  return useQuery<ProfileReadResponse, Error>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
+    queryKey: calendarKeys.profile(),
+    queryFn: fetchStudyProfile,
     enabled: options?.enabled ?? true,
-    ...QUERY_FRESHNESS.calendarStreak,
+    ...QUERY_FRESHNESS.calendarRange,
     retry: 1,
   });
 }
@@ -172,6 +187,7 @@ export function useGuardianCalendar(
   options?: { enabled?: boolean },
 ): UseQueryResult<GuardianCalendarResponse, Error> {
   return useQuery<GuardianCalendarResponse, Error>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     queryKey: calendarKeys.guardianRange(studentId, from, to),
     queryFn: () => fetchGuardianCalendar(studentId, from, to),
     enabled: (options?.enabled ?? true) && studentId.length > 0,

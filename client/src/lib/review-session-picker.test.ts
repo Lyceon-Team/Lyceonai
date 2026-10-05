@@ -68,17 +68,24 @@ describe("dayHeaderLabel", () => {
 });
 
 describe("sourceHeadline / sourceEngineLabel", () => {
-  it('formats "Practice · 2:40 PM"', () => {
-    expect(sourceHeadline("practice", "2:40 PM")).toBe("Practice · 2:40 PM");
+  it('formats "Practice, 2:40 PM" (UI-52, the prototype)', () => {
+    expect(sourceHeadline("practice", "2:40 PM")).toBe("Practice, 2:40 PM");
   });
 
-  it('labels a review-sourced row "Review · 3:10 PM"', () => {
-    expect(sourceHeadline("review", "3:10 PM")).toBe("Review · 3:10 PM");
+  it('labels a review-sourced row "Review, 3:10 PM"', () => {
+    expect(sourceHeadline("review", "3:10 PM")).toBe("Review, 3:10 PM");
     expect(sourceEngineLabel("review")).toBe("Review");
   });
 
   it("drops the separator when the server could not resolve a time", () => {
     expect(sourceHeadline("practice", null)).toBe("Practice");
+  });
+
+  it("a full-length test reads as a practice test, never as practice", () => {
+    expect(sourceEngineLabel("full_length")).toBe("Practice test");
+    expect(sourceHeadline("full_length", "9:15 AM")).toBe(
+      "Practice test, 9:15 AM",
+    );
   });
 });
 
@@ -104,6 +111,15 @@ describe("sourceFiltersLine", () => {
   it("degrades to Mixed rather than throwing on junk in the jsonb column", () => {
     expect(sourceFiltersLine(null, "not-an-object")).toBe("Mixed");
     expect(sourceFiltersLine(null, null)).toBe("Mixed");
+    // A full-length row's one fact is its form's name.
+    expect(sourceFiltersLine(null, { test_form_name: "Practice Test 1" })).toBe(
+      "Practice Test 1",
+    );
+    expect(sourceFiltersLine(null, { test_form_name: "" })).toBe("Mixed");
+    // A full-length row whose form name the server could not supply.
+    expect(sourceFiltersLine(null, null, "full_length")).toBe(
+      "Full-length test",
+    );
     expect(sourceFiltersLine(null, { sections: [1, 2, 3] })).toBe("Mixed");
   });
 });

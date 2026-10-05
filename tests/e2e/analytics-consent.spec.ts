@@ -344,9 +344,11 @@ test.describe("cookie consent → PostHog", () => {
     // Signed-in surface (RequireRole): the same kind of click carries no element text.
     const before = seen.events.length;
     await page.goto(`${BASE}/profile`);
-    const tab = page.getByRole("tab", { name: "Settings" });
-    await expect(tab).toBeVisible({ timeout: 15_000 });
-    await tab.click();
+    // /profile is the Settings page since UI-58: its section buttons are labelled controls whose
+    // text a public page would capture; here it must not be.
+    const section = page.getByRole("button", { name: "Account", exact: true });
+    await expect(section).toBeVisible({ timeout: 15_000 });
+    await section.click();
     await expect
       .poll(
         () =>
