@@ -131,6 +131,25 @@ RW domains are already on-target.
 
 ---
 
+## Shuffle-Invariant Reference (11) — Gate HARD-FAIL
+
+### 11. OPTION_LETTER_REF / OPTION_POSITION_REF — Letter or positional option references
+
+**Defect:** Stem or explanation references an answer option by letter (A/B/C/D) or by position (first/second/third/fourth/last option/choice/response). Options are Fisher-Yates shuffled at serve; these references point at the wrong choice once shuffled.
+
+**Rule:** Reference every option BY CONTENT ONLY — name the actual text, claim, or value. Never write "Option A", "Choice B", "(C)", "the second option", "the first choice", "the last response", etc.
+
+**Gate detectors (HARD-FAIL):**
+
+- Letter: `/(Option|Choice)\s+\(?[A-D][\s.),]/` — case-sensitive on A-D to avoid firing on the article "a". Does NOT flag bare capital letters (geometry vertex labels are legitimate).
+- Position: `/\b(?:the\s+)?(?:first|second|third|fourth|last)\s+(?:option|choice|response)\b/i`
+
+Both are checked on `stem` and `explanation`.
+
+**Codex check:** For every question, read the stem and explanation. Flag any reference to an option by letter or by ordinal position. A capital letter inside LaTeX (`$\sin A$`, `$\cos(B)$`, `triangle $ABC$`) or as a geometry vertex/point label is math, not an option reference — do not flag those. The test is whether the letter or positional phrase is being used to identify one of the four answer choices.
+
+---
+
 ## Lower-Priority Guidance (10) — Authoring Convention
 
 ### 10. Math Delimiter Standardization
