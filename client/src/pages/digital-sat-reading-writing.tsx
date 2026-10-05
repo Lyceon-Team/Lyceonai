@@ -2,82 +2,35 @@ import { Link } from "wouter";
 import { BookOpen, ArrowRight, CheckCircle2, Calculator } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import {
+  DIGITAL_SAT_READING_WRITING_FAQS,
+  faqParagraphs,
+} from "@shared/seo/public-meta";
+import { CB_READING_WRITING } from "@shared/seo/sources";
+import { SourceLinks } from "@/components/common/source-links";
+import {
   Container,
   Breadcrumb,
   Card,
   Section,
 } from "@/components/layout/primitives";
 
-const faqs = [
-  {
-    question: "What is tested on SAT Reading and Writing?",
-    answer:
-      "The section covers Craft and Structure, Information and Ideas, Standard English Conventions, and Expression of Ideas.",
-  },
-  {
-    question: "How is Digital SAT Reading different from the paper test?",
-    answer:
-      "The Digital SAT uses shorter passages with one question per passage, creating faster transitions between topics.",
-  },
-  {
-    question: "How many Reading and Writing questions are on the Digital SAT?",
-    answer:
-      "There are 54 total questions split into two 27-question modules with 64 minutes total.",
-  },
-  {
-    question: "What vocabulary should I study for the SAT?",
-    answer:
-      "Focus on academic vocabulary in context and how meaning changes with passage usage.",
-  },
-  {
-    question: "How can I improve SAT Reading speed?",
-    answer:
-      "Practice evidence-based elimination, transition-word awareness, and short-passage pacing drills.",
-  },
-];
+// One copy of this FAQ: the page renders it and its FAQPage JSON-LD is built from it (F1).
+const faqs = DIGITAL_SAT_READING_WRITING_FAQS;
 
-const questionTypes = [
-  {
-    type: "Words in Context",
-    description: "Choose the word that best fits the passage meaning",
-    frequency: "~8-10 questions",
-  },
-  {
-    type: "Central Ideas",
-    description: "Identify the main point or purpose of a passage",
-    frequency: "~6-8 questions",
-  },
-  {
-    type: "Command of Evidence",
-    description: "Select evidence that supports a claim",
-    frequency: "~6-8 questions",
-  },
-  {
-    type: "Inferences",
-    description: "Draw logical conclusions from passage details",
-    frequency: "~4-6 questions",
-  },
-  {
-    type: "Text Structure",
-    description: "Understand how ideas are organized",
-    frequency: "~4-5 questions",
-  },
-  {
-    type: "Grammar & Punctuation",
-    description: "Fix sentence structure, punctuation, verb tense",
-    frequency: "~11-13 questions",
-  },
-  {
-    type: "Transitions",
-    description: "Choose the best transition word or phrase",
-    frequency: "~4-6 questions",
-  },
-  {
-    type: "Rhetorical Synthesis",
-    description: "Combine ideas from multiple sources",
-    frequency: "~2-4 questions",
-  },
-];
+/**
+ * The four Reading and Writing content domains, as the College Board names them
+ * (CB_READING_WRITING).
+ *
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §0 rule 3, §5 F6] | @implemented [2026-10-03]
+ * | plain English: replaces a per-question-type table of estimated counts that the College
+ * Board does not publish (several were wrong). Names only, no counts.
+ */
+const READING_WRITING_DOMAINS = [
+  "Information and Ideas",
+  "Craft and Structure",
+  "Expression of Ideas",
+  "Standard English Conventions",
+] as const;
 
 export default function DigitalSATReadingWritingPage() {
   return (
@@ -101,43 +54,27 @@ export default function DigitalSATReadingWritingPage() {
           </h1>
         </div>
 
-        <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-3xl">
-          The Digital SAT Reading and Writing section combines reading
-          comprehension and grammar in short-passage format, requiring fast
-          interpretation and precise evidence-based answers.
-        </p>
+        <div className="mb-12 max-w-3xl">
+          <p className="text-xl text-muted-foreground leading-relaxed">
+            Each Reading and Writing question has its own short passage of 25 to
+            150 words, across four content areas.
+          </p>
+          <SourceLinks sources={[CB_READING_WRITING]} />
+        </div>
 
-        <Section title="Question Types on SAT Reading & Writing">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-3 px-4 font-semibold">
-                    Question Type
-                  </th>
-                  <th className="text-left py-3 px-4 font-semibold">
-                    What It Tests
-                  </th>
-                  <th className="text-left py-3 px-4 font-semibold">
-                    Frequency
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {questionTypes.map((item, index) => (
-                  <tr key={index} className="border-b border-border">
-                    <td className="py-3 px-4 font-medium">{item.type}</td>
-                    <td className="py-3 px-4 text-muted-foreground">
-                      {item.description}
-                    </td>
-                    <td className="py-3 px-4 text-muted-foreground">
-                      {item.frequency}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <Section title="What's Tested on SAT Reading & Writing">
+          <ul className="grid sm:grid-cols-2 gap-4">
+            {READING_WRITING_DOMAINS.map((domain) => (
+              <li
+                key={domain}
+                className="flex items-center gap-3 p-4 bg-secondary/50 rounded-xl"
+              >
+                <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0" />
+                <span>{domain}</span>
+              </li>
+            ))}
+          </ul>
+          <SourceLinks sources={[CB_READING_WRITING]} />
         </Section>
 
         <Section title="Strategies for SAT Reading Success">
@@ -182,7 +119,7 @@ export default function DigitalSATReadingWritingPage() {
           </div>
         </Section>
 
-        <Section title="Common Grammar Rules Tested">
+        <Section title="Grammar Rules Worth Reviewing">
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
               <h3 className="font-semibold mb-2">Subject-Verb Agreement</h3>
@@ -231,7 +168,12 @@ export default function DigitalSATReadingWritingPage() {
             {faqs.map((faq, index) => (
               <Card key={index}>
                 <h3 className="font-semibold mb-2">{faq.question}</h3>
-                <p className="text-muted-foreground">{faq.answer}</p>
+                <div className="text-muted-foreground space-y-2">
+                  {faqParagraphs(faq.answer).map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </div>
+                <SourceLinks sources={faq.sources} />
               </Card>
             ))}
           </div>
@@ -246,8 +188,8 @@ export default function DigitalSATReadingWritingPage() {
                   <h3 className="font-semibold">SAT Math</h3>
                 </div>
                 <p className="text-muted-foreground text-sm mb-3">
-                  Master algebra, geometry, and data analysis for the Math
-                  section.
+                  Algebra, Advanced Math, Problem-Solving and Data Analysis, and
+                  Geometry and Trigonometry.
                 </p>
                 <span className="inline-flex items-center text-sm font-medium">
                   Explore Math Prep <ArrowRight className="w-4 h-4 ml-1" />
@@ -257,7 +199,7 @@ export default function DigitalSATReadingWritingPage() {
             <Card className="text-center flex flex-col justify-center">
               <h3 className="font-semibold mb-3">Ready to Practice?</h3>
               <p className="text-muted-foreground text-sm mb-4">
-                Start focused reading and writing practice with guided review.
+                Start reading and writing practice with worked explanations.
               </p>
               <Link
                 href="/signup"

@@ -304,3 +304,25 @@ export async function loadLegalIndex(
     }),
   );
 }
+
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §5 F1] | @implemented [2026-10-03] |
+ * plain English: the query each legal page reads, in one place, so the build-time prerender
+ * can load exactly what the page will ask for (same key, same loader) and the static HTML
+ * carries the document body rather than "Loading document…".
+ */
+export function legalDocumentQueryOptions(slug: string) {
+  return {
+    queryKey: ["legal-document", slug] as const,
+    queryFn: () => loadLegalDocument(slug),
+    staleTime: 5 * 60 * 1000,
+  };
+}
+
+export function legalIndexQueryOptions() {
+  return {
+    queryKey: ["legal-index"] as const,
+    queryFn: async () => loadLegalIndex(await loadLegalSlugs()),
+    staleTime: 5 * 60 * 1000,
+  };
+}
