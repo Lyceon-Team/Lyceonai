@@ -131,4 +131,26 @@ export function storeHeroVariant(variant: HeroVariant): boolean {
  * against the built page by scripts/ci/page-csp-built-hash-gate.mjs), so it may only depend on
  * constants. Runs after the hero's subtitle is parsed and before first paint.
  */
-export const HERO_SWAP_SCRIPT = `(function(){try{var m=/(?:^|;\\s*)${CONSENT_COOKIE_NAME}=${COOKIE_BANNER_VERSION}\\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.a\\.(\\d+)(?:;|$)/.exec(document.cookie);if(!m)return;var a=Math.floor(Date.now()/1000)-Number(m[1]);if(a<0||a>=${CONSENT_MAX_AGE_SECONDS})return;if(window.localStorage.getItem(${JSON.stringify(HERO_VARIANT_STORAGE_KEY)})!=="test")return;var t=document.getElementById(${JSON.stringify(HERO_TITLE_ID)}),s=document.getElementById(${JSON.stringify(HERO_SUB_ID)});if(!t||!s)return;t.textContent=${JSON.stringify(HERO_COPY.test.title)};s.textContent=${JSON.stringify(HERO_COPY.test.sub)};}catch(e){}})();`;
+const INLINE_SCRIPT_UNSAFE_CHAR_MAP: Readonly<Record<string, string>> = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "/": "\\u002F",
+  "\\": "\\\\",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\0": "\\0",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
+
+function escapeInlineScriptString(value: string): string {
+  return value.replace(
+    /[<>\/\\\b\f\n\r\t\0\u2028\u2029]/g,
+    (ch) => INLINE_SCRIPT_UNSAFE_CHAR_MAP[ch] ?? ch,
+  );
+}
+
+export const HERO_SWAP_SCRIPT = `(function(){try{var m=/(?:^|;\\s*)${CONSENT_COOKIE_NAME}=${COOKIE_BANNER_VERSION}\\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.a\\.(\\d+)(?:;|$)/.exec(document.cookie);if(!m)return;var a=Math.floor(Date.now()/1000)-Number(m[1]);if(a<0||a>=${CONSENT_MAX_AGE_SECONDS})return;if(window.localStorage.getItem(${escapeInlineScriptString(JSON.stringify(HERO_VARIANT_STORAGE_KEY))})!=="test")return;var t=document.getElementById(${escapeInlineScriptString(JSON.stringify(HERO_TITLE_ID))}),s=document.getElementById(${escapeInlineScriptString(JSON.stringify(HERO_SUB_ID))});if(!t||!s)return;t.textContent=${escapeInlineScriptString(JSON.stringify(HERO_COPY.test.title))};s.textContent=${escapeInlineScriptString(JSON.stringify(HERO_COPY.test.sub))};}catch(e){}})();`;
