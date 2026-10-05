@@ -68,6 +68,7 @@ const PUBLIC_EXACT: readonly string[] = [
   "/digital-sat/math",
   "/digital-sat/reading-writing",
   "/blog",
+  "/sat-question-of-the-day",
   "/trust",
   "/legal",
   "/privacy",
@@ -79,7 +80,12 @@ const PUBLIC_EXACT: readonly string[] = [
  * a content slug — never where it could be an identifier belonging to a person
  * or a session.
  */
-const PUBLIC_PREFIXES: readonly string[] = ["/blog/", "/legal/"];
+const PUBLIC_PREFIXES: readonly string[] = [
+  "/blog/",
+  "/legal/",
+  // The tail is a calendar date (an archive day), never a person or session (SEO Wave 2, Q3).
+  "/sat-question-of-the-day/",
+];
 
 /** Normalises a path: strips a trailing slash, leaves "/" alone. */
 function normalisePath(pathname: string): string {

@@ -53,6 +53,7 @@ import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
+import publicQotdRoutes from "./routes/public-qotd-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
@@ -450,6 +451,13 @@ app.use(
 // still applies (1000/IP/15min), but that bounds one caller, not distributed
 // load; the module's 15-minute memo is what bounds calls to Stripe itself.
 app.use("/api/public", publicPricingRoutes);
+
+// Public Question of the Day (UNAUTHENTICATED BY DESIGN — SEO Wave 2, plan R16-R19, Q2).
+// No auth and no CSRF: nothing reads `req.user` and no ambient credential is used; the one write
+// (POST /today/answer) is gated by Cloudflare Turnstile and the SCL-202 hashed-IP ledger, and
+// the reads are hashed-IP limited too. See server/routes/public-qotd-routes.ts.
+// CSRF_EXEMPT_REASON: no ambient credential is read; the submit is Turnstile-gated (owner Step 0 decision, 2026-10-05).
+app.use("/api/public/qotd", publicQotdRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);

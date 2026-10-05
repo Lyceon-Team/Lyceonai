@@ -20,6 +20,7 @@ import {
   HOME_FAQS,
   LEGAL_META,
   getPublicMeta,
+  resolvePublicMeta,
   faqParagraphs,
   type FaqItem,
 } from "../shared/seo/public-meta";
@@ -103,7 +104,9 @@ describe("every prerendered page carries its own head and body (F1)", () => {
     );
     expect(new Set(titles).size).toBe(site.pages.length);
     for (const p of site.pages) {
-      const meta = getPublicMeta(p.path);
+      // Archive days are resolved from the build's archive content; everything else from the
+      // static table.
+      const meta = resolvePublicMeta(p.path, site.qotdArchive.days);
       expect(meta, p.path).not.toBeNull();
       const title = attr(p.html, /<title>([^<]+)<\/title>/)
         ?.replace(/&#39;/g, "'")

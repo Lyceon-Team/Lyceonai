@@ -462,3 +462,25 @@ retention_policies:
     out_of_scope: false
     out_of_scope_reason: null
     last_reviewed_at: 2026-09-22
+  # ── SCL-202 — anonymous rate-limit buckets (QOTD, SEO Wave 2) ────────
+  # rate_limit_ledger_anon.subject_hmac is HMAC-SHA256(server secret, client
+  # IP); the IP itself is never stored. SCL-202: "Rows expire with their
+  # window." The longest window is the QOTD stats bucket, one America/Chicago
+  # day (25 hours on the autumn DST change), so the horizon is 90000 s.
+  # public.sweep_rate_limit_ledger_anon() deletes every row whose window_end
+  # has passed; the daily QOTD cron (/api/internal/qotd-schedule) calls it,
+  # hence the one-day lag allowance.
+  - policy_id: RPOL-OPS-02
+    pii_surface_name: 'rate_limit_ledger_anon.subject_hmac'
+    canonical_owner_doc_and_section: 'docs/SpecAudit/SPEC_CHANGES_LOG.md SCL-202'
+    classification: operational
+    retention_horizon_months: null
+    calendar_month_semantics: null
+    retention_horizon_seconds: 90000          # 25 hours: the longest window (a Chicago day)
+    partial_provable_until: null
+    purge_substrate: scheduled_job
+    purge_lag_allowance_seconds: 86400
+    purge_alert_id: null
+    out_of_scope: false
+    out_of_scope_reason: null
+    last_reviewed_at: 2026-10-05

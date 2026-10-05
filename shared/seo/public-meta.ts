@@ -6,10 +6,12 @@ import {
   CB_STRUCTURE,
   type Source,
 } from "./sources";
+import type { QotdArchiveResponse } from "../../packages/shared/src/qotd-schema";
 import {
   BASE_URL,
   DEFAULT_OG_IMAGE,
   createArticleJsonLd,
+  createQuizJsonLd,
   createBreadcrumbJsonLd,
   createFaqJsonLd,
   organizationJsonLd,
@@ -334,6 +336,22 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
       ]),
     ],
   },
+  "/sat-question-of-the-day": {
+    title: "SAT Question of the Day - Free Daily Digital SAT Practice | Lyceon",
+    description:
+      "Answer a free Digital SAT practice question every day, no account needed, and see the answer with a worked explanation. Past questions stay in the archive.",
+    canonical: `${BASE_URL}/sat-question-of-the-day`,
+    ogImage: DEFAULT_OG_IMAGE,
+    jsonLd: [
+      createBreadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        {
+          name: "SAT Question of the Day",
+          url: `${BASE_URL}/sat-question-of-the-day`,
+        },
+      ]),
+    ],
+  },
   "/trust": {
     title: "Trust & Safety Hub | Lyceon",
     description:
@@ -398,6 +416,95 @@ for (const post of blogPosts) {
       }),
     ],
   };
+}
+
+const SECTION_NAME: Record<"M" | "RW", string> = {
+  M: "Math",
+  RW: "Reading and Writing",
+};
+
+/** "2026-10-04" -> "October 4, 2026" (UTC, so the label never shifts with the build machine's zone). */
+export function formatQotdDate(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+/** The section and domain line a past day is labelled with, e.g. "Math: Algebra". */
+export function qotdTopic(day: QotdArchiveResponse): string {
+  return `${SECTION_NAME[day.question.section_code]}: ${day.question.domain}`;
+}
+
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md Q3; owner Step 0 confirmation 2026-10-05]
+ * | @implemented [2026-10-05] | plain English: the head of one archive day — its own title,
+ * description and canonical, a BreadcrumbList, and Quiz markup built from the same payload the
+ * page renders. Doctrine §0.2: the copy names the date and the SAT section/domain only — nothing
+ * about how a day's question is chosen.
+ */
+export function qotdArchiveMeta(day: QotdArchiveResponse): PublicMeta {
+  const url = `${BASE_URL}/sat-question-of-the-day/${day.qotd_date}`;
+  const label = formatQotdDate(day.qotd_date);
+  const topic = qotdTopic(day);
+  const q = day.question;
+  const position = q.options.findIndex((o) => o.id === q.correct_option_id);
+  const acceptedText =
+    position >= 0
+      ? (q.options[position]?.text ?? "")
+      : (q.correct_answer ?? "");
+  return {
+    title: `SAT Question of the Day for ${label} (${topic}) | Lyceon`,
+    description: `A Digital SAT ${topic} practice question from ${label}, with the correct answer and a worked explanation.`,
+    canonical: url,
+    ogImage: DEFAULT_OG_IMAGE,
+    jsonLd: [
+      createBreadcrumbJsonLd([
+        { name: "Home", url: BASE_URL },
+        {
+          name: "SAT Question of the Day",
+          url: `${BASE_URL}/sat-question-of-the-day`,
+        },
+        { name: label, url },
+      ]),
+      createQuizJsonLd({
+        name: `SAT Question of the Day for ${label}`,
+        url,
+        about: `SAT ${topic}`,
+        datePublished: day.qotd_date,
+        question: {
+          text: [q.passage, q.stem]
+            .filter((t): t is string => !!t)
+            .join("\n\n"),
+          choices: q.options.map((o) => o.text),
+          acceptedAnswer:
+            position >= 0
+              ? { text: acceptedText, position }
+              : { text: acceptedText },
+          explanation: q.explanation,
+        },
+      }),
+    ],
+  };
+}
+
+/**
+ * The head for any prerendered path: the static table, then an archive day from the build's
+ * archive content. Null when neither knows the path (the prerender fails the build on null).
+ */
+export function resolvePublicMeta(
+  path: string,
+  qotdArchive: readonly QotdArchiveResponse[],
+): PublicMeta | null {
+  const fixed = getPublicMeta(path);
+  if (fixed) return fixed;
+  const day = /^\/sat-question-of-the-day\/(\d{4}-\d{2}-\d{2})$/.exec(
+    path,
+  )?.[1];
+  const entry = day ? qotdArchive.find((d) => d.qotd_date === day) : undefined;
+  return entry ? qotdArchiveMeta(entry) : null;
 }
 
 export function getPublicMeta(path: string): PublicMeta | null {

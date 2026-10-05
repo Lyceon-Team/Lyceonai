@@ -27,6 +27,7 @@ import {
   formatMonthlyPrice,
 } from "@/lib/public-pricing";
 import { ctaClickHandlers } from "@/lib/cta-click";
+import { QotdWidget } from "@/components/qotd/QotdWidget";
 
 /**
  * The free-tier daily practice allowance, as advertised.
@@ -227,6 +228,25 @@ export default function HomePage() {
           </div>
         </Container>
       </section>
+
+      {/* @spec [docs/plans/seo/seo-marketing-vertical.md R16, Q3] | @implemented [2026-10-05] |
+          plain English: today's question, answerable without an account. It is fetched in the
+          browser, so the prerendered homepage carries no question and no answer. */}
+      <Container size="narrow">
+        <Section id="question-of-the-day" className="py-16">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              SAT Question of the Day
+            </h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              One free practice question every day. No account needed.
+            </p>
+          </div>
+          <Card>
+            <QotdWidget />
+          </Card>
+        </Section>
+      </Container>
 
       <Container size="wide">
         <Section id="how-it-works" className="py-16">
