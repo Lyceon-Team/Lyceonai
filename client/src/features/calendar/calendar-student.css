@@ -395,17 +395,12 @@
 
 /* F-72 (student-UI register; owner brief 2026-10-05): the student shell's phone tab bar is fixed
    at z-index 40 (components/layout/app-shell.tsx), and the shared calendar draws its overlays at
-   8 (scrim), 9 (sheet) and 14 (setup popup), so on a phone the tab bar sat ON TOP of the bottom
-   sheet's footer and its actions could not be tapped. A modal sheet covers the page's chrome as
-   standard: on the student calendar the three layers keep their order and move above the tab
-   bar. Below the cookie banner's 50, which steps aside while a sheet is open (index.css). The
-   guardian calendar has no tab bar and keeps the shared values. */
-.lyceon-calendar.lyc-cal .scrim {
-  z-index: 45;
-}
-.lyceon-calendar.lyc-cal .sheet {
-  z-index: 46;
-}
+   8 (scrim), 9 (sheet) and 14 (setup popup), so on a phone the tab bar sat ON TOP of them and
+   their actions could not be tapped. The scrim and sheet are lifted by OQ-63's rules below (44,
+   45); this lifts the setup popup above them, keeping the order, and below the cookie banner's 50,
+   which steps aside while a sheet is open (index.css). One rule per layer: the main → seo merge
+   had kept both fixes' scrim and sheet rules, and only the later one ever applied. The guardian
+   calendar has no tab bar and keeps the shared values. */
 .lyceon-calendar.lyc-cal .modal {
   z-index: 47;
 }
