@@ -290,24 +290,19 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(report.score.total_scaled).toBe(
       report.score.rw_scaled + report.score.math_scaled,
     );
-    // SCL-199 WIRE (G5-04): every list item carries `total_scaled` — read on the RAW body, so a
-    // missing key fails here before the strict schema would — and the scored one is exactly
-    // its report's total, from real Postgres (`exam_list_forms` reads the same score run).
+    // SCL-199 (narrowed, G5-09) WIRE: every list item carries the lifecycle fields
+    // `session_state` and `abandoned_at` — read on the RAW body — and NO score field: scores
+    // reach a guardian only through the report route (owner brief 2026-10-03). Presence first:
+    // the item is real and scored, and its report above has the scores.
     for (const item of list.body.tests as Record<string, unknown>[]) {
-      for (const key of [
-        "total_scaled",
-        "rw_scaled",
-        "math_scaled",
-        "session_state",
-        "abandoned_at",
-      ]) {
+      for (const key of ["session_state", "abandoned_at"]) {
         expect(item, key).toHaveProperty(key);
       }
+      expect(Object.keys(item).filter((k) => /scaled|score/i.test(k))).toEqual(
+        [],
+      );
     }
-    expect(tests[0]!.total_scaled).toBe(report.score.total_scaled);
-    // G5-08: the section scores and session state too, from the same row.
-    expect(tests[0]!.rw_scaled).toBe(report.score.rw_scaled);
-    expect(tests[0]!.math_scaled).toBe(report.score.math_scaled);
+    expect(tests[0]!.report_state).toBe("scored");
     expect(tests[0]!.session_state).toBe("completed");
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
@@ -492,16 +487,16 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
       throw new Error(report.report_state);
     expect(report.score).not.toHaveProperty("total_scaled");
     expect(report.score.math_scaled).toBeNull();
-    // SCL-199: the list never shows a total the report does not have — partial is null.
+    // G5-09: the list item says the state and when it ended, and carries no score.
     const list = await get(GUARDIAN, `/api/students/${PART_STUDENT}/tests`);
     const item = (list.body.tests as Record<string, unknown>[]).find(
       (t) => t.session_id === partSid,
     );
     expect(item).toBeDefined();
-    expect(item).toHaveProperty("total_scaled", null);
-    // G5-08: the scored section as the report shows it, the other null; abandoned, not completed.
-    expect(item).toHaveProperty("rw_scaled", report.score.rw_scaled);
-    expect(item).toHaveProperty("math_scaled", null);
+    expect(Object.keys(item!).filter((k) => /scaled|score/i.test(k))).toEqual(
+      [],
+    );
+    // G5-08: abandoned, not completed.
     expect(item).toHaveProperty("session_state", "partial_scored_abandoned");
     expect(item).toHaveProperty("completed_at", null);
     expect(item?.abandoned_at).not.toBeNull();
@@ -520,7 +515,7 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(pending.body.report).not.toHaveProperty("score");
     expect(pending.body.report).not.toHaveProperty("domain_breakdown");
     expect(pending.body.report).not.toHaveProperty("disclosure");
-    // SCL-199: scoring_pending lists with a null total, never a number.
+    // G5-09: scoring_pending lists its state and no score field.
     const pendingList = await get(
       GUARDIAN,
       `/api/students/${PART_STUDENT}/tests`,
@@ -529,9 +524,9 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
       pendingList.body.tests as Record<string, unknown>[]
     ).find((t) => t.session_id === pendingSid);
     expect(pendingItem).toHaveProperty("report_state", "scoring_pending");
-    expect(pendingItem).toHaveProperty("total_scaled", null);
-    expect(pendingItem).toHaveProperty("rw_scaled", null);
-    expect(pendingItem).toHaveProperty("math_scaled", null);
+    expect(
+      Object.keys(pendingItem!).filter((k) => /scaled|score/i.test(k)),
+    ).toEqual([]);
     await drain();
 
     const r = await testPg!.query(
