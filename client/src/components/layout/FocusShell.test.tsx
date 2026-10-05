@@ -167,3 +167,26 @@ describe("the context slot", () => {
     expect(document.querySelector("aside")).toBeNull();
   });
 });
+
+/**
+ * F-69 (owner ruling 2026-10-05): `<main>` is the containing block of everything absolutely
+ * positioned inside the shell (the `sr-only` choice letters), so nothing escapes its scroll area
+ * and makes the document taller than the `100dvh` shell. jsdom has no layout, so this pins the
+ * class; the layout itself is measured in the browser by the student harness's
+ * `expectFitsViewport` (UI-53, UI-54) and recorded in evidence/wave5/F-69.md.
+ */
+describe("F-69: the scroll area contains its positioned descendants", () => {
+  it("<main> is the 100dvh shell's only scroller and a positioned containing block", () => {
+    renderFocus();
+    const main = screen.getByTestId("focus-shell-main");
+    expect(main.tagName).toBe("MAIN");
+    expect(main.id).toBe("main");
+    const classes = main.className.split(/\s+/);
+    expect(classes).toContain("relative");
+    expect(classes).toContain("overflow-y-auto");
+    expect(classes).toContain("min-h-0");
+    expect(
+      document.querySelector('[data-shell="focus"]')?.className.split(/\s+/),
+    ).toContain("h-[100dvh]");
+  });
+});

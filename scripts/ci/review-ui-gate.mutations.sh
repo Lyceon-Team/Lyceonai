@@ -89,6 +89,7 @@ FILES=(
   "client/src/components/layout/BareCardShell.tsx"
   "client/src/components/tutor/ScopedTutorPanel.tsx"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
+  "client/src/components/layout/FocusShell.tsx"
 )
 
 snapshot_all() {
@@ -1869,6 +1870,24 @@ plant "UI59-CL2" "the card leading at class specificity (it would override a met
   'a = "\"[:where(&)_p]:leading-[1.55]\""
 assert s.count(a) == 1
 s = s.replace(a, "\"[&_p]:leading-[1.55]\"", 1)'
+
+# ── F-69 — nothing positioned escapes the Focus shell's scroll area (2026-10-05) ─────────
+# Owner ruling (Karl, 2026-10-05): fix in the shared Focus shell. The browser measurement
+# (document vs viewport at 390x844) is the student harness's `expectFitsViewport`
+# (docs/plans/student-ui/evidence/wave5/F-69.md); these pin the two classes it depends on.
+plant "F69-S1" "the Focus shell's <main> is no longer a containing block" \
+  "client/src/components/layout/FocusShell.test.tsx" \
+  "client/src/components/layout/FocusShell.tsx" \
+  'a = "className=\"relative min-h-0 flex-1 overflow-y-auto\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"min-h-0 flex-1 overflow-y-auto\"", 1)'
+
+plant "F69-R1" "the choice's sr-only letter escapes its button" \
+  "client/src/components/question-renderer.display-letters.test.tsx" \
+  "client/src/components/question-renderer.tsx" \
+  'a = "\"relative flex w-full items-center gap-4 rounded-lg px-5"
+assert s.count(a) == 1
+s = s.replace(a, "\"flex w-full items-center gap-4 rounded-lg px-5", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
