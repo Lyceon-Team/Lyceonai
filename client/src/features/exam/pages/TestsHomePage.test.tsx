@@ -378,36 +378,40 @@ async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
 }
 
 /**
- * The viewport, as `matchMedia` reports it. "none" leaves `matchMedia` undefined, as jsdom does
- * by default (the page then takes the desktop path). The fake answers the App shell's `lg` query
- * and can be resized, firing `change` the way a browser does.
+ * The viewport, as `matchMedia` reports it. "default" keeps the test setup's own `matchMedia`
+ * (vitest.setup.ts: every query answers "no match", the desktop layout a test that never mentions
+ * viewports means); "absent" removes `matchMedia` altogether (a non-browser render). "phone" and
+ * "desktop" install a fake that answers the App shell's phone query (Tailwind's `max-lg`) and can
+ * be resized, firing `change` the way a browser does.
  */
-type Viewport = "none" | "phone" | "desktop";
+type Viewport = "default" | "absent" | "phone" | "desktop";
+const SETUP_MATCH_MEDIA = window.matchMedia;
 const viewport = {
-  wide: false,
+  phone: false,
   listeners: new Set<() => void>(),
-  resize(wide: boolean): void {
-    this.wide = wide;
+  resize(phone: boolean): void {
+    this.phone = phone;
     for (const l of this.listeners) l();
   },
 };
 function installViewport(v: Viewport): void {
-  if (v === "none") {
+  if (v === "default") return;
+  if (v === "absent") {
     Reflect.deleteProperty(window, "matchMedia");
     return;
   }
-  viewport.wide = v === "desktop";
+  viewport.phone = v === "phone";
   viewport.listeners.clear();
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     writable: true,
     value: (query: string) => {
-      if (query !== "(min-width: 1024px)") {
+      if (query !== "not all and (min-width: 1024px)") {
         throw new Error(`unexpected media query ${query}`);
       }
       return {
         get matches(): boolean {
-          return viewport.wide;
+          return viewport.phone;
         },
         media: query,
         addEventListener: (_: "change", l: () => void) =>
@@ -422,7 +426,7 @@ function installViewport(v: Viewport): void {
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario = {},
-  view: Viewport = "none",
+  view: Viewport = "default",
 ): Promise<{ history: string[] }> {
   install(scenario);
   installViewport(view);
@@ -485,7 +489,11 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  Reflect.deleteProperty(window, "matchMedia");
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: SETUP_MATCH_MEDIA,
+  });
 });
 
 // ── Paid ────────────────────────────────────────────────────────────────────────────────────
@@ -727,9 +735,21 @@ describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", 
   it("widening a phone past lg reveals the home with no tap", async () => {
     await mount("paid", {}, "phone");
     expect(screen.getByTestId("tests-phone-notice")).toBeTruthy();
-    React.act(() => viewport.resize(true));
+    React.act(() => viewport.resize(false));
     expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
     expect(await screen.findAllByTestId("tests-row")).not.toHaveLength(0);
+  });
+
+  it("no matchMedia at all (a non-browser render): the desktop path, no notice", async () => {
+    await mount("paid", {}, "absent");
+    expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
+    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
+  });
+
+  it("the test setup's default matchMedia (no query matches) is the desktop path", async () => {
+    await mount("paid");
+    expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
+    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
   });
 
   it("only the Full-Length home shows it: no exam session, module or report page imports the notice", () => {
@@ -747,7 +767,7 @@ describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", 
       ]),
     );
     const users = sources.filter((f) =>
-      /phone-notice|DESKTOP_LAYOUT_QUERY/.test(
+      /phone-notice|PHONE_LAYOUT_QUERY/.test(
         fs.readFileSync(path.join(pages, f), "utf8"),
       ),
     );

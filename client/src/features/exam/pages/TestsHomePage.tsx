@@ -42,7 +42,7 @@
  * Home or the calendar goes straight to the session. The notice's action is the Notice
  * primitive's outline button, not a filled primary: it dismisses a note, and the home's one
  * filled action stays Start or Resume once it is revealed. Where `matchMedia` is missing the
- * page takes the desktop path (no notice).
+ * page takes the desktop path (no notice): the query is written so "no match" means desktop.
  *
  * FREE PLAN: the feature-access map (OQ-29) says Full-Length is locked, so the page draws the
  * in-page upgrade card and asks for none of the gated reads (`/forms`, `/sessions`, `/state`):
@@ -74,7 +74,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
-import { DESKTOP_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
+import { PHONE_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { fetchMasteryDomains, type MasterySection } from "@/lib/masteryApi";
 import { cn } from "@/lib/utils";
@@ -198,9 +198,9 @@ export default function TestsHomePage(): JSX.Element {
   const [mode, setMode] = useState<ExamMode>("strict");
 
   // Owner ruling (Karl, 2026-10-05): the phone notice. Desktop when matchMedia is unavailable.
-  const desktop = useMediaQuery(DESKTOP_LAYOUT_QUERY, true);
+  const phone = useMediaQuery(PHONE_LAYOUT_QUERY, false);
   const [continued, setContinued] = useState<boolean>(readPhoneNoticeContinued);
-  const held = !desktop && !continued;
+  const held = phone && !continued;
   const body = useRef<HTMLDivElement>(null);
   const focusBodyOnReveal = useRef(false);
   // Focus is a side effect on the DOM the reveal creates (the notice's button is gone), not

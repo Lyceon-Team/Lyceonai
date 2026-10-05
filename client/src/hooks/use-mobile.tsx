@@ -19,12 +19,14 @@ export function useIsMobile() {
 }
 
 /**
- * Tailwind's `lg:` screen (min-width 1024px, the default in tailwind.config.ts): the width at
- * which the student App shell switches from the phone layout (top bar and tab bar) to the rail.
- * A component that must behave differently on the phone layout, not just look different, reads
- * this query so its breakpoint is the shell's own.
+ * Below Tailwind's `lg:` screen (min-width 1024px, the default in tailwind.config.ts): the
+ * widths at which the student App shell shows the phone layout (top bar and tab bar) instead of
+ * the rail. This is exactly Tailwind's `max-lg:` media query, so a component that must behave
+ * differently on the phone layout, not just look different, switches where the shell does.
+ * Written as the phone query (not "min-width 1024px") so that "no match" means desktop, the
+ * same convention as `useIsMobile` and the test setup's default `matchMedia`.
  */
-export const DESKTOP_LAYOUT_QUERY = "(min-width: 1024px)"
+export const PHONE_LAYOUT_QUERY = "not all and (min-width: 1024px)"
 
 /**
  * @spec [owner ruling (Karl, 2026-10-05): the Full-Length phone notice shows "on phone widths";
