@@ -19,31 +19,30 @@
  *    memory routes). Cloud Scheduler mints the OIDC token at delivery.
  *  - Tiers map to separate scheduler jobs so partial failure is isolated.
  *    A failing 180d sweep doesn't delay the 7d sweep.
- *  - 7d tier: deletes from tutor_conversations WHERE deleted_at expired.
- *    Cascade FKs handle tutor_messages and tutor_question_links. A
- *    separate delete handles tutor_memory_summaries (no FK cascade from
- *    tutor_conversations).
+ *  - 7d tier: `sweep_tutor_conversation_retention` (SQL, RS-00 2026-10-05)
+ *    deletes expired soft-deleted conversations EXCEPT crisis-flagged ones,
+ *    with their cascade rows, and memory summaries only for students left
+ *    with no live, recoverable or flagged conversation.
  *  - 90d/180d tiers delete outright. They used to archive every expired row
  *    to BigQuery first and decline when they could not; the owner ruling of
  *    2026-09-22 removed the archive (Doc 07B §5.4). Neither tier can decline
- *    any more, which is why both are scheduled for the first time.
+ *    any more, which is why both are scheduled for the first time. 90d
+ *    measures exposures by `shown_at` (RS-04); 180d deletes injection logs
+ *    only — crisis cases and their audit rows are manual purge (RS-05).
  *  - 365d tier: tables (cost telemetry, quota appeals) not yet provisioned.
  *    Returns { ok: false, reason: "365d_tables_not_provisioned" }.
- *  - Dry-run returns count only (SELECT COUNT, no DELETE). Used for
- *    negative-control validation before first production run.
+ *  - Dry-run (RS-03, 2026-10-05) returns `per_table`: for every tier that
+ *    runs, exactly the rows its live run would delete, cascades included
+ *    (7d and 90d are SQL functions that count and delete with one
+ *    predicate; 180d is one table). Nothing is deleted. Before the first
+ *    production run Karl runs the read-only backlog SQL in the PR and
+ *    approves the counts.
  *
  * edge cases:
  *  - Duplicate delivery: DELETE is idempotent — already-deleted rows
  *    don't match the WHERE clause.
  *  - Empty result: normal for tiers with no expired rows. Returns
  *    { ok: true, deleted_count: 0 }.
- *  - tutor_memory_summaries: the spec says "Cascade from account /
- *    entitlement" but tutor_memory_summaries has a student_id FK, not
- *    a conversation FK. The 7d sweep joins on student_id + entitlement
- *    status. However, the 7d tier here only hard-deletes conversations
- *    that were soft-deleted 7+ days ago — the memory summaries for
- *    those students were already soft-deleted alongside conversations
- *    and are cleaned up by the same student_id + deleted_at window.
  */
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -54,7 +53,10 @@ import {
   oidcAuthMiddlewareWithConfigGuard,
   type OidcConfigReader,
 } from "../../packages/shared/internal-auth/verify-oidc-middleware";
-import { TIER_HANDLERS } from "../services/retention-sweep";
+import {
+  recordSweepCompletion,
+  TIER_HANDLERS,
+} from "../services/retention-sweep";
 
 const router = Router();
 
@@ -79,12 +81,21 @@ const router = Router();
  * Doc 01A §3's fail-fast intent is preserved by the guard: an unset var
  * refuses THIS route with 500 rather than reaching token verification with
  * an empty audience.
+ *
+ * NO FALLBACK (owner ruling 2026-10-05, RS-01). This used to read
+ * `RETENTION_SWEEP_OIDC_AUDIENCE ?? CLOUD_TASKS_OIDC_AUDIENCE`. The second is
+ * the compact-writeback URL, so with the first unset every Cloud Scheduler
+ * token (aud = the sweep URL) was refused as "Wrong recipient" — and a token
+ * minted for compact-writeback was ADMITTED to the sweep. An unset audience
+ * is now a 500 naming RETENTION_SWEEP_OIDC_AUDIENCE, logged at ERROR. The
+ * comparison stays an exact match (google-auth-library `aud ===`): no
+ * second audience, no normalisation.
+ * Proof: tests/ci/retention-sweep-oidc.contract.test.ts (real RS256 tokens).
  */
 const readOidcConfig: OidcConfigReader = () => ({
-  expectedAudience:
-    process.env.RETENTION_SWEEP_OIDC_AUDIENCE ??
-    process.env.CLOUD_TASKS_OIDC_AUDIENCE,
+  expectedAudience: process.env.RETENTION_SWEEP_OIDC_AUDIENCE,
   expectedServiceAccount: process.env.CLOUD_TASKS_SERVICE_ACCOUNT,
+  audienceEnvName: "RETENTION_SWEEP_OIDC_AUDIENCE",
 });
 
 // ── Request schema ────────────────────────────────────────────────────
@@ -177,6 +188,11 @@ router.post(
           requestId: request_id,
         },
       );
+      // RS-02: the per-tier completion time lives in audit_logs. A failed insert is logged at
+      // ERROR inside; the sweep has already committed, so the answer stays 200.
+      if (!dry_run) {
+        await recordSweepCompletion(supabaseServer, result, request_id);
+      }
       res.status(200).json(result);
     } catch (err: unknown) {
       logger.error(

@@ -1494,6 +1494,22 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/crisis-flag-atomic.mutations.sh
 
+      # The tutor retention sweep on real Postgres (RS-00/RS-04/RS-05, 2026-10-05). The in-memory
+      # mock suite let a sweep on a column that does not exist pass for weeks; these run the real
+      # tier functions against the migrated schema. Verdict from vitest's JSON report.
+      - name: Tutor retention sweep (Doc 03 §14.2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/retention-sweep.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-retention-sweep.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-retention-sweep.json \
+            --file tests/ci/retention-sweep.pg.ci.test.ts
+
       - name: Notifications rebuild → real PG proof
         env:
           PGHOST: localhost
