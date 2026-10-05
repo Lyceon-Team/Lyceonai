@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { Check } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { HOME_FAQS, faqParagraphs } from "@shared/seo/public-meta";
+import { sectionDisplayLabel } from "@shared/section-display";
 import { loginPathWithReturn } from "@lyceon/shared/return-path";
 import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
 import PublicLayout from "@/components/layout/PublicLayout";
@@ -92,11 +93,13 @@ const HOW_IT_WORKS = [
 ] as const;
 
 /** The example parent view: the guardian card's two sections, drawn with its five-segment rule. */
-const EXAMPLE_PROGRESS: readonly { section: string; level: MasteryLevelKey }[] =
-  [
-    { section: "Reading and Writing", level: "L2" },
-    { section: "Math", level: "L1" },
-  ];
+const EXAMPLE_PROGRESS: readonly {
+  section: "RW" | "M";
+  level: MasteryLevelKey;
+}[] = [
+  { section: "RW", level: "L2" },
+  { section: "M", level: "L1" },
+];
 
 const EXAMPLE_DAY = [
   "Practice block · Linear equations in one variable",
@@ -321,7 +324,9 @@ export default function HomePage() {
               <figure className={`${INSET} flex flex-col gap-3 p-4`}>
                 {EXAMPLE_PROGRESS.map((row) => (
                   <div key={row.section} className="flex flex-col gap-2">
-                    <span className="text-sm font-semibold">{row.section}</span>
+                    <span className="text-sm font-semibold">
+                      {sectionDisplayLabel(row.section)}
+                    </span>
                     <ExampleMeter level={row.level} />
                   </div>
                 ))}

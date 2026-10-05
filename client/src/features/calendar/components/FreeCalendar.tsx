@@ -269,7 +269,7 @@ function SavedGoals({ profile }: { profile: StudyProfile }): JSX.Element {
         />
       </dl>
       <Link
-        href={EDIT_GOALS_HREF}
+        href="/profile?tab=account"
         className={`${LYC_FOCUS} self-start text-lyc-meta-lg font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline`}
         data-testid="calendar-free-edit-goals"
       >
