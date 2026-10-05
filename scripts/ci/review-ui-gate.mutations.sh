@@ -47,6 +47,8 @@ FILES=(
   "client/src/features/calendar/components/StudentChrome.tsx"
   "client/src/features/calendar/components/WeekGrid.tsx"
   "client/src/features/calendar/api/queries.ts"
+  "client/src/features/calendar/CalendarView.tsx"
+  "client/src/features/calendar/components/FreeCalendar.tsx"
   "client/src/pages/chat.tsx"
   "client/src/components/tutor/TutorThreadParts.tsx"
   "client/src/hooks/tutor-client.ts"
@@ -866,6 +868,78 @@ plant "UI55-F1" "a free first save drops the schedule the route requires on crea
   'a = "              ? { ...openingSchedule(setupDefaults), ...goal }"
 assert s.count(a) == 1
 s = s.replace(a, "              ? goal", 1)'
+
+# ── SCL-211 / OQ-56 (2026-10-05): no streak line, no facts strip; the free form is read-only
+# after the first save, with "Edit goals in Settings" ──
+
+plant "UI55-NF1" "the student calendar draws the facts strip again" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "      {viewer === \"guardian\" && model !== null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {model !== null ? (", 1)'
+
+plant "UI55-NS1" "the student header draws the streak line again" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "import { ABSENT_COPY, type ToneFilter } from \"./Chrome\";"
+assert s.count(a) == 1
+s = s.replace(a, "import { ABSENT_COPY, StreakFact, type ToneFilter } from \"./Chrome\";", 1)
+b = "          {title}\n        </h1>\n      </div>"
+assert s.count(b) == 1
+s = s.replace(b, "          {title}\n        </h1>\n        <StreakFact streak={{ current: 4, longest: 11, history_complete: false }} />\n      </div>", 1)'
+
+plant "UI55-NS2" "the student page reads the streak again" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "  // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).\n"
+assert s.count(a) == 1
+s = s.replace(a, "  void apiRequest(\"/api/me/streak\").catch(() => undefined);\n", 1)
+b = "import { toUserFacingMessage } from \"@/lib/api-error\";\n"
+assert s.count(b) == 1
+s = s.replace(b, b + "import { apiRequest } from \"@/lib/queryClient\";\n", 1)'
+
+plant "UI55-RO1" "the free form stays editable after the first save" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "        {profile === null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "        {true ? (", 1)'
+
+plant "UI55-RO2" "Edit goals in Settings goes somewhere the goal card's Edit goals does not" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "        href={EDIT_GOALS_HREF}"
+assert s.count(a) == 1
+s = s.replace(a, "        href=\"/profile?tab=account\"", 1)'
+
+plant "UI55-RO3" "the saved test date reads raw, not as the goal card's date" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "              : weekdayDayMonth(profile.target_exam_date)"
+assert s.count(a) == 1
+s = s.replace(a, "              : profile.target_exam_date", 1)'
+
+plant "UI55-RO4" "a saved profile with no test date reads blank" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "          absent={ABSENT_COPY.student.testDate}"
+assert s.count(a) == 1
+s = s.replace(a, "          absent=\"\"", 1)'
+
+plant "UI55-RO5" "a saved profile with no target reads blank" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "          absent={ABSENT_COPY.student.target}"
+assert s.count(a) == 1
+s = s.replace(a, "          absent=\"\"", 1)'
+
+plant "UI55-RO6" "the pre-save form reports itself as saved" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "      data-state=\"editing\""
+assert s.count(a) == 1
+s = s.replace(a, "      data-state=\"saved\"", 1)'
 
 # ── UI-56: LISA (client/src/pages/chat.ui56.test.tsx) ──────────────────────────────────
 

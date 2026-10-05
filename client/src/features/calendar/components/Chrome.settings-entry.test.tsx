@@ -35,7 +35,6 @@ function renderStudentChrome(over: { onEditSchedule?: () => void } = {}): void {
         onView={vi.fn()}
         onToday={vi.fn()}
         onStep={vi.fn()}
-        streak={undefined}
         {...(over.onEditSchedule === undefined
           ? {}
           : { onEditSchedule: over.onEditSchedule })}
