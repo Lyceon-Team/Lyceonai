@@ -205,10 +205,11 @@ export default function TestsHomePage(): JSX.Element {
   const focusBodyOnReveal = useRef(false);
   // Focus is a side effect on the DOM the reveal creates (the notice's button is gone), not
   // derived state: move it to the revealed body so a keyboard user is not dropped on <body>.
+  // Without scrolling: the home appears where the notice was, title still in view.
   useEffect(() => {
     if (held || !focusBodyOnReveal.current) return;
     focusBodyOnReveal.current = false;
-    body.current?.focus();
+    body.current?.focus({ preventScroll: true });
   }, [held]);
   const continueAnyway = (): void => {
     rememberPhoneNoticeContinued();
