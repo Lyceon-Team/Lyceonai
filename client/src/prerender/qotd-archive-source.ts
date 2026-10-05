@@ -14,8 +14,13 @@
  *
  * Without credentials (a local or CI build) the archive is empty and the result says so; a
  * Vercel PRODUCTION build without them fails, because shipping production without its archive
- * pages would silently drop them from the sitemap. A request or parse failure always fails the
- * build: a page that cannot be built must not deploy as a missing page.
+ * pages would silently drop them from the sitemap.
+ *
+ * A database that does not have qotd_archive() yet (PostgREST answers 404, PGRST202 — the QOTD
+ * migrations are applied out of band, after the code deploys) builds no archive pages and says
+ * so in the build log, rather than failing every deploy of every change until the migration
+ * lands. There are no archive days to lose in that state: the schedule lives in the same
+ * migration. Any other failure (auth, 5xx, an unexpected shape) fails the build.
  */
 import { z } from "zod";
 import { qotdRowSchema, toArchiveResponse } from "@shared/qotd/projection";
@@ -24,7 +29,8 @@ import type { QotdArchiveResponse } from "../../../packages/shared/src/qotd-sche
 export type QotdArchiveSource =
   | { source: "database"; days: QotdArchiveResponse[] }
   | { source: "fixture"; days: QotdArchiveResponse[] }
-  | { source: "skipped_no_credentials"; days: [] };
+  | { source: "skipped_no_credentials"; days: [] }
+  | { source: "skipped_function_missing"; days: [] };
 
 type BuildEnv = Readonly<Record<string, string | undefined>>;
 
@@ -54,6 +60,10 @@ export async function loadQotdArchiveForBuild(
       body: "{}",
     },
   );
+  if (res.status === 404) {
+    // PostgREST's "function not found" (PGRST202): the migration is not applied here yet.
+    return { source: "skipped_function_missing", days: [] };
+  }
   if (!res.ok) {
     // Status only: the response body could echo request details.
     throw new Error(`prerender: qotd_archive returned HTTP ${res.status}`);
