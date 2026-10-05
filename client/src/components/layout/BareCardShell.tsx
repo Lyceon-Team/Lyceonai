@@ -23,6 +23,17 @@ import type { ThemeLock } from "@/lib/route-shells";
 import { cn } from "@/lib/utils";
 import { usePublishThemeLock } from "./theme-lock";
 
+/**
+ * OQ-60 (f) (owner ruling 2026-10-05, accepted as recommended: "leave the global rule; tighten
+ * line-height inside the Bare card only"). The app-wide `p { line-height: 1.75 }` (index.css,
+ * base layer) loosens every card paragraph that sets no size of its own. Inside the card only,
+ * a paragraph takes the student body leading, 1.55 (`text-lyc-body` / `text-lyc-body-lg` in
+ * tailwind.config.ts, DESIGN.md §1 body 16–19px). Wrapped in `:where()` so the rule has the
+ * specificity of a bare `p`: it beats the base rule (the utilities layer comes later) and loses
+ * to any class on the paragraph itself, so a `text-lyc-meta` line keeps its own 1.45.
+ */
+export const BARE_CARD_PROSE_LEADING = "[:where(&)_p]:leading-[1.55]";
+
 export function BareCard({
   children,
   themeLock = null,
@@ -41,7 +52,10 @@ export function BareCard({
     >
       <main
         id="main"
-        className="w-full max-w-[480px] rounded-lg border border-lyc-rule bg-lyc-sheet p-6 sm:p-8"
+        className={cn(
+          "w-full max-w-[480px] rounded-lg border border-lyc-rule bg-lyc-sheet p-6 sm:p-8",
+          BARE_CARD_PROSE_LEADING,
+        )}
       >
         {children}
       </main>

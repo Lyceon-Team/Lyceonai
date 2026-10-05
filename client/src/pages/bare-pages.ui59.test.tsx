@@ -33,6 +33,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
+import { BARE_CARD_PROSE_LEADING } from "@/components/layout/BareCardShell";
 import type { StudentShellRoute } from "@/lib/route-shells";
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -494,6 +495,23 @@ describe("404", () => {
     expect(shell.textContent ?? "").not.toContain("router");
     expectNoOwnFrame(shell);
     expectStudentTokensOnly(shell);
+  });
+});
+
+describe("OQ-60 (f): card paragraphs take the body leading, inside the Bare card only", () => {
+  it("the card carries the scoped paragraph leading; the page around it does not", () => {
+    window.history.replaceState(null, "", "/account/recover");
+    renderRoute("/account/recover", <AccountRecover />);
+    const shell = bareShell();
+    // Presence: the card has paragraphs for the rule to reach.
+    expect(shell.querySelectorAll("main p").length).toBeGreaterThan(0);
+    const card = shell.querySelector("main");
+    expect(card?.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(true);
+    // Scoped to the card: the `.lyc` page frame and <body> do not carry it.
+    expect(shell.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(false);
+    expect(document.body.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(false);
+    // The 1.55 body leading (tailwind.config.ts `lyc-body`), at bare-`p` specificity.
+    expect(BARE_CARD_PROSE_LEADING).toBe("[:where(&)_p]:leading-[1.55]");
   });
 });
 

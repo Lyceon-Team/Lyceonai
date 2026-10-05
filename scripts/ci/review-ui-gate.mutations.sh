@@ -84,6 +84,7 @@ FILES=(
   "client/src/components/account-deletion/PendingDeletionScreen.tsx"
   "client/src/lib/plan-copy.ts"
   "client/src/components/auth/RequireRole.tsx"
+  "client/src/components/layout/BareCardShell.tsx"
 )
 
 snapshot_all() {
@@ -1686,6 +1687,21 @@ plant "UI59-L2" "the loader unlocks on every table route, not only the Bare ones
   'a = "  return spec?.shell === \"bare\" ? spec.themeLock : \"light\";"
 assert s.count(a) == 1
 s = s.replace(a, "  return spec !== undefined ? spec.themeLock : \"light\";", 1)'
+
+# OQ-60 (f) (Karl, 2026-10-05): tighter paragraph leading inside the Bare card only.
+plant "UI59-P1" "the card's paragraphs fall back to the global 1.75 leading" \
+  "$B59" \
+  "client/src/components/layout/BareCardShell.tsx" \
+  'a = "          BARE_CARD_PROSE_LEADING,\n"
+assert s.count(a) == 1
+s = s.replace(a, "          undefined,\n", 1)'
+
+plant "UI59-P2" "the card leading at class specificity (it would override a meta line's own)" \
+  "$B59" \
+  "client/src/components/layout/BareCardShell.tsx" \
+  'a = "\"[:where(&)_p]:leading-[1.55]\""
+assert s.count(a) == 1
+s = s.replace(a, "\"[&_p]:leading-[1.55]\"", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
