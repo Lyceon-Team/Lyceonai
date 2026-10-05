@@ -117,12 +117,9 @@ function AccountRecoverRoute() {
     </StudentRouteFrame>
   );
 }
+/** The SEO 404 (F6/F2), as the static 404.html renders it: no student shell (#1069 merge). */
 function NotFoundRoute() {
-  return (
-    <StudentRouteFrame route="*">
-      <NotFound />
-    </StudentRouteFrame>
-  );
+  return <NotFound />;
 }
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
@@ -543,13 +540,15 @@ export function DeletionGate({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   if (user?.pendingDeletion && location !== "/account/recover") {
     // UI-41: the pending-deletion screen is a Bare card (DESIGN.md §2). UI-59: on the student
-    // tokens only, so it follows the device theme. Lazy since SEO F8, hence the Suspense.
+    // tokens only, so it follows the device theme. The screen is lazy since SEO F8: the card
+    // draws at once and the screen fills it when its chunk arrives (no full-page loader inside
+    // a card).
     return (
-      <Suspense fallback={ROUTE_FALLBACK}>
-        <BareCard>
+      <BareCard>
+        <Suspense fallback={null}>
           <PendingDeletionScreen />
-        </BareCard>
-      </Suspense>
+        </Suspense>
+      </BareCard>
     );
   }
   return <>{children}</>;

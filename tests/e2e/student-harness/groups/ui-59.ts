@@ -1,5 +1,5 @@
 /**
- * UI-59: the bare-card pages (register UI-3A's list) and the 404's way home.
+ * UI-59: the bare-card pages (register UI-3A's list), and the 404 (the SEO page since #1069).
  *
  * @spec [student-UI register §6 Wave 5 UI-59, UI-3A; DESIGN.md §2 "Bare card", §4 "Not
  *        prototyped" (the bare-card pages; the pending-deletion screen — build to the shell spec
@@ -141,25 +141,24 @@ export const UI_59: PageGroup = {
       route: "/guardian-required",
       ready: '[data-testid="guardian-required"]',
     }),
+    // The 404 is the SEO page since the #1069 merge (main F6/F2; owner choice 2026-10-05): the
+    // same page as the static 404.html, unshelled, with a link to the homepage.
     bare({
       id: "not-found",
       title:
-        "404 (/no-such-page), signed in: the shipped heading and the way home",
+        '404 (/no-such-page), signed in: the SEO page ("Page not found") and its link home',
       persona: "paid",
       route: "/no-such-page",
-      ready: '[data-testid="not-found-home"]',
+      ready: 'a[href="/"]',
     }),
     {
       id: "not-found-home",
-      title: "Click path: 404 → Back to dashboard lands on /dashboard",
+      title: "Click path: 404 → Go to the homepage lands on /",
       persona: "paid",
       route: "/no-such-page",
-      waitFor: {
-        desktop: '[data-testid="not-found-home"]',
-        mobile: '[data-testid="not-found-home"]',
-      },
-      steps: [click('[data-testid="not-found-home"]')],
-      expectPath: "^/dashboard$",
+      waitFor: { desktop: 'a[href="/"]', mobile: 'a[href="/"]' },
+      steps: [click('a[href="/"]')],
+      expectPath: "^/$",
       prototype: { kind: "none", reason: NOT_PROTOTYPED },
     },
     bare({

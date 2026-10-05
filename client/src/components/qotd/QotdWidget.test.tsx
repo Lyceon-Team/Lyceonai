@@ -143,7 +143,8 @@ describe("QotdWidget", () => {
       ).toBe(false),
     );
     fireEvent.click(screen.getByTestId("qotd-submit"));
-    await screen.findByText("Incorrect");
+    // The shared renderer's miss heading (UI-53: "Correct" / "Not quite").
+    await screen.findByText("Not quite");
     expect(screen.queryByTestId("qotd-stat")).toBeNull();
   });
 

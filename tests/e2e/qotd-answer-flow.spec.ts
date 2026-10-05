@@ -215,7 +215,8 @@ test.describe("Question of the Day", () => {
     ).toHaveCount(1, {
       timeout: 20_000,
     });
-    await area.getByRole("button").first().click();
+    // Choices are radios in a radiogroup since the renderer moved to the student tokens (UI-53).
+    await area.getByRole("radio").first().click();
     const submit = page.getByTestId("qotd-submit");
     await expect(submit).toBeEnabled({ timeout: 20_000 });
     await page.screenshot({
@@ -225,10 +226,13 @@ test.describe("Question of the Day", () => {
     await submit.click();
 
     // 4. The reveal.
-    await expect(page.getByText(/^(Correct|Incorrect)$/)).toBeVisible({
+    await expect(page.getByText(/^(Correct|Not quite)$/)).toBeVisible({
       timeout: 20_000,
     });
-    await expect(area.getByText("Explanation", { exact: true })).toBeVisible();
+    // The explanation panel (the renderer's `runner-explanation` since UI-53; it has no
+    // "Explanation" label any more), holding the explanation's own text.
+    await expect(area.getByTestId("runner-explanation")).toBeVisible();
+    await expect(area.getByTestId("runner-explanation")).not.toHaveText("");
     await page.screenshot({
       path: path.join(SHOT_DIR, "qotd-after-submit.png"),
       fullPage: false,

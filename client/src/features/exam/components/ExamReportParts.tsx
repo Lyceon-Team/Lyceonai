@@ -151,7 +151,8 @@ export function SectionCard({
           <span className="font-serif text-[34px] font-semibold leading-none">
             {scaled}
           </span>
-          <span className="text-[12px] text-[var(--exam-muted)]">200–800</span>
+          {/* "/ 800", as the student's report states it (UI-54; G5-08 mirror). */}
+          <span className="text-[12px] text-[var(--exam-muted)]">/ 800</span>
         </>
       )}
     </div>

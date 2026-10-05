@@ -484,17 +484,18 @@ describe("/guardian-required", () => {
 });
 
 describe("404", () => {
-  it("the shipped heading and the way home: one filled link to /dashboard", () => {
-    renderRoute("*", <NotFound />);
-    const shell = bareShell();
-    expectOneH1(shell, "404 Page Not Found");
-    expectOnePrimary(shell, "Back to dashboard");
-    const home = screen.getByTestId("not-found-home");
-    expect(home.tagName).toBe("A");
-    expect(home.getAttribute("href")).toBe("/dashboard");
-    expect(shell.textContent ?? "").not.toContain("router");
-    expectNoOwnFrame(shell);
-    expectStudentTokensOnly(shell);
+  // The catch-all renders the SEO page (main, F6/F2; owner choice 2026-10-05 when #1069 merged
+  // main): the same page as the static 404.html, its own card, no student shell. Its words and
+  // link are pinned here and, prerendered, by tests/seo.prerender-output.test.ts.
+  it("the approved SEO copy and a link home, with no developer message", () => {
+    render(<NotFound />, { wrapper: ({ children }) => <>{children}</> });
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Page not found",
+    );
+    expect(screen.getByText("Sorry, we couldn't find that page.")).toBeTruthy();
+    const home = screen.getByRole("link", { name: "Go to the homepage" });
+    expect(home.getAttribute("href")).toBe("/");
+    expect(document.body.textContent ?? "").not.toContain("router");
   });
 });
 
@@ -509,14 +510,16 @@ describe("OQ-60 (f): card paragraphs take the body leading, inside the Bare card
     expect(card?.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(true);
     // Scoped to the card: the `.lyc` page frame and <body> do not carry it.
     expect(shell.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(false);
-    expect(document.body.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(false);
+    expect(document.body.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(
+      false,
+    );
     // The 1.55 body leading (tailwind.config.ts `lyc-body`), at bare-`p` specificity.
     expect(BARE_CARD_PROSE_LEADING).toBe("[:where(&)_p]:leading-[1.55]");
   });
 });
 
 describe("the pending-deletion screen (App's DeletionGate)", () => {
-  it("replaces the page with one bare card; Cancel deletion is the one filled action", () => {
+  it("replaces the page with one bare card; Cancel deletion is the one filled action", async () => {
     signedInStudent({
       pendingDeletion: { scheduledHardDeleteAt: "2026-10-10T12:00:00Z" },
     });
@@ -529,6 +532,8 @@ describe("the pending-deletion screen (App's DeletionGate)", () => {
       </QueryClientProvider>,
     );
     expect(screen.queryByTestId("behind-the-gate")).toBeNull();
+    // The screen is lazy (SEO F8); the card is there at once, its content when the chunk loads.
+    await screen.findByText("Your account is scheduled for deletion");
     const shell = bareShell();
     expectOneH1(shell, "Your account is scheduled for deletion");
     expectOnePrimary(shell, "Cancel deletion & restore my account");

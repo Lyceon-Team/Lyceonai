@@ -378,7 +378,6 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/update-password",
       "/account/recover",
       "/guardian-required",
-      NOT_FOUND_ROUTE,
     ]);
     // The topic explorer is not rebuilt (OQ-3 open): it stays pinned light.
     expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
@@ -479,13 +478,12 @@ describe("the table says what DESIGN.md §2 says", () => {
     });
   });
 
-  it("Bare: login, profile completion, update password, recovery, 404", () => {
+  it("Bare: login, profile completion, update password, recovery (the 404 is the SEO page, unshelled)", () => {
     for (const route of [
       "/login",
       "/profile/complete",
       "/update-password",
       "/account/recover",
-      NOT_FOUND_ROUTE,
     ] as const) {
       expect(shellOf(route), route).toBe("bare");
     }
@@ -498,7 +496,6 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/update-password",
       "/account/recover",
       "/guardian-required",
-      NOT_FOUND_ROUTE,
     ] as const) {
       expect(STUDENT_ROUTE_SHELLS[route], route).toEqual({
         shell: "bare",

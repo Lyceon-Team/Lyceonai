@@ -166,7 +166,6 @@ export const STUDENT_ROUTE_SHELLS = {
   "/update-password": BARE,
   "/account/recover": BARE,
   "/guardian-required": BARE,
-  [NOT_FOUND_ROUTE]: BARE,
 } as const satisfies Record<string, ShellSpec>;
 
 export type StudentShellRoute = keyof typeof STUDENT_ROUTE_SHELLS;
@@ -213,6 +212,9 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/reading-writing-practice": "redirect",
   "/admin/crisis-review/:id": "admin",
   "/admin/crisis-review": "admin",
+  // The 404 is the SEO page (main, F6/F2): the same page the static 404.html is, with its own
+  // card and a link home, so no shell wraps it (merge of #1069, owner choice 2026-10-05).
+  [NOT_FOUND_ROUTE]: "public-marketing",
 };
 
 /**

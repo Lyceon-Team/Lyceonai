@@ -128,7 +128,7 @@ export function MasteryMeterSegments({
  *   | @implemented [2026-10-01; level-ramp tokens and row sizes 2026-10-03]
  *
  * plain English: the level as a row of five segments — the ONE segment renderer. `MasteryRow`
- * draws it beside the pill; `DomainGrid` draws it across a domain card. Filled segments take the
+ * draws it beside the pill (the `fill` size stretches it across a container). Filled segments take the
  * level's `--lvN-fill` token (`levelFill`, beside the pill's tones — no second colour table, no
  * hex); empty ones `--seg-empty`. It is ONE image to assistive technology, labelled by
  * `masteryMeterLabel` with the server's level name verbatim, and its segments are hidden, so a
