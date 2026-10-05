@@ -95,6 +95,8 @@ FILES=(
   "client/src/components/tutor/LisaUpgradeCard.tsx"
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
+  "client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx"
+  "client/src/features/exam/pages/ExamSessionPage.tsx"
   "client/src/features/exam/components/ExamStatus.tsx"
 )
 
@@ -1928,7 +1930,8 @@ s = s.replace(a, "\"flex w-full items-center gap-4 rounded-lg px-5", 1)'
 # avatar menu Settings, Help, Sign out (admins add Crisis review); Full-Length on neither phone
 # surface, reached on a phone from a calendar block or Home's card; the desktop rail unchanged.
 # FU-M1–M4 re-pointed from #1108's `inTabBar` flags to `TAB_BAR_KEYS` and the menu's `items`.
-# The Full-Length home's phone notice with "Continue anyway" stays (FU-N1–N3); every
+# The phone notice with "Continue anyway" stays, now one shared pre-start check (FU-N1–N8, FU-C1–C2,
+# FU-H1–H3; OQ-63, below); every
 # student-facing "Tests" label is "Full-Length" (FU-T1–T3).
 T41_RAIL="client/src/components/layout/app-shell.rail.test.tsx"
 T50_HOME="client/src/pages/lyceon-dashboard.test.tsx"
@@ -2061,19 +2064,25 @@ plant "HC-8" "the card's line drifts from the approved Full-Length subtitle" \
 assert s.count(a) == 1
 s = s.replace(a, "and a score at the end.\";", 1)'
 
-plant "FU-N1" "no phone notice on the Full-Length home" \
-  "$T54_HOME" \
-  "client/src/features/exam/pages/TestsHomePage.tsx" \
-  'a = "  const held = phone && !continued;"
-assert s.count(a) == 1
-s = s.replace(a, "  const held = false;", 1)'
+# OQ-63 (owner ruling, Karl, 2026-10-05): "show it for every full-length start on a phone,
+# including calendar-launched starts. One shared pre-start check, same \"Continue anyway\"."
+# FU-N1/N2 re-pointed from the Full-Length home's page-gating notice (`held`, `setContinued`) to
+# the shared check, `useFullLengthPhonePrecheck.tsx`, which every full-length start now calls.
+PRECHECK="client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx"
 
-plant "FU-N2" "the phone notice blocks: Continue anyway reveals nothing" \
+plant "FU-N1" "the shared check never asks on a phone" \
   "$T54_HOME" \
-  "client/src/features/exam/pages/TestsHomePage.tsx" \
-  'a = "    setContinued(true);"
+  "$PRECHECK" \
+  'a = "    (): boolean => phone && !readPhoneNoticeContinued(),"
 assert s.count(a) == 1
-s = s.replace(a, "    setContinued(false);", 1)'
+s = s.replace(a, "    (): boolean => false,", 1)'
+
+plant "FU-N2" "the notice blocks: Continue anyway does not perform the start" \
+  "$T54_HOME" \
+  "$PRECHECK" \
+  'a = "    proceed?.();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
 
 plant "FU-N3" "the notice drifts from the ruling's words" \
   "$T54_HOME" \
@@ -2102,6 +2111,75 @@ plant "FU-T3" "the unscored attempt points back to Tests" \
   'a = "You can start a new attempt from Full-Length."
 assert s.count(a) == 1
 s = s.replace(a, "You can start a new attempt from Tests.", 1)'
+
+plant "FU-N4" "the Full-Length home's Start skips the shared check" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "        onClick={() => precheck.run(() => void start())}"
+assert s.count(a) == 1
+s = s.replace(a, "        onClick={() => void start()}", 1)'
+
+plant "FU-N5" "the Full-Length home's Resume skips the shared check" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "          onClick={precheck.onLinkClick(href)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "FU-N6" "closing the notice performs the start anyway" \
+  "$T54_HOME" \
+  "$PRECHECK" \
+  'a = "    if (next) return;\n    held.current = null;"
+assert s.count(a) == 1
+s = s.replace(a, "    if (next) return;\n    held.current?.();\n    held.current = null;", 1)'
+
+plant "FU-N7" "Continue anyway is not remembered for the tab" \
+  "$T54_HOME" \
+  "$PRECHECK" \
+  'a = "    rememberPhoneNoticeContinued();\n    const proceed"
+assert s.count(a) == 1
+s = s.replace(a, "    const proceed", 1)'
+
+plant "FU-N8" "the exam session page asks the check itself" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/ExamSessionPage.tsx" \
+  'i = s.index("\nimport ") + 1
+s = s[:i] + "import { useFullLengthPhonePrecheck } from \"../lib/useFullLengthPhonePrecheck\";\nvoid useFullLengthPhonePrecheck;\n" + s[i:]'
+
+plant "FU-C1" "a calendar full-length block launches without the check" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+assert s.count(a) == 1
+s = s.replace(a, "            false\n              ? precheck.run(", 1)'
+
+plant "FU-C2" "every calendar block asks the check (practice too)" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+assert s.count(a) == 1
+s = s.replace(a, "            true\n              ? precheck.run(", 1)'
+
+plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "    if (block.block_type === \"full_length\")\n"
+assert s.count(a) == 1
+s = s.replace(a, "    if (false)\n", 1)'
+
+plant "FU-H2" "Home's Pick up row for a sitting skips the check" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "                ? { onClick: onFullLengthClick(row.href) }"
+assert s.count(a) == 1
+s = s.replace(a, "                ? {}", 1)'
+
+plant "FU-H3" "Home's Today's plan asks the check for every block (review too)" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "    if (block.block_type === \"full_length\")\n"
+assert s.count(a) == 1
+s = s.replace(a, "    if (true)\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

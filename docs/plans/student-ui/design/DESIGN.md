@@ -65,7 +65,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - A top bar carries the logo, the bell and the account avatar. The avatar menu holds **Settings, Help, Sign out**, in that order. An admin keeps the avatar menu at every width, with Crisis review before Sign out.
 - The avatar menu follows the page theme: a light page has a light menu, a dark page a dark one, and a page pinned light a light one (register §8 F-70).
 - **Full-Length is on neither the tab bar nor the avatar menu.** On a phone it is reached only from a scheduled full-length block on the calendar or Home's "Start a full-length test" card (§4 Home). The official SAT (Bluebook) can't be taken on a phone; full-length tests belong on a laptop or tablet.
-- **Full-Length on a phone still works and is never blocked.** Its home shows the page title and the notice "Full-length tests are built for a laptop or tablet, like test day." with **Continue anyway**, which reveals the whole home (remembered for the visit). The notice's action is an outline button: Start or Resume stays the home's one filled action. The exam session, module and report pages never show it.
+- **Full-Length on a phone still works and is never blocked.** The notice "Full-length tests are built for a laptop or tablet, like test day." with **Continue anyway** is shown for every full-length start on a phone (Full-Length home, Home card, calendar block, Today's plan), one shared check (owner ruling, Karl, 2026-10-05, OQ-63). It opens as a student modal before the start goes ahead; Continue anyway performs the start and is remembered for the visit (this tab); closing it cancels the start and creates nothing. The notice's action is an outline button, never a filled primary. The exam session, module and report pages never show it.
 - Students still land on Home after sign-in.
 - The right panel's content stacks below the main content.
 - The Focus shell and the Bare card are unchanged on mobile.
@@ -116,7 +116,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - Free plan: an in-page upgrade card.
 - Page title "Full-Length" (owner naming ruling, Karl, 2026-10-05: every student-facing "Tests" label becomes "Full-Length"; the `/tests` route stays).
 - Reached from the desktop rail, from Home's "Start a full-length test" card and from a scheduled full-length block on the calendar; on a phone only from the Home card and the calendar block (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62).
-- On a phone: the laptop-or-tablet notice with Continue anyway first (§2 Mobile). It stays.
+- On a phone: the laptop-or-tablet notice with Continue anyway is shown for every full-length start on a phone (Full-Length home, Home card, calendar block, Today's plan), one shared check (owner ruling, Karl, 2026-10-05, OQ-63; §2 Mobile). The home itself is not held: Start and Resume ask.
 
 **Exam report** (Focus shell).
 - Total score out of 1600 and section scores out of 800.

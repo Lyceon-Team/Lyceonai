@@ -6,7 +6,9 @@
  *        evidence/wiring-table.md §3 Home (the endpoint behind each element); register §2 (free
  *        vs paid; mastery_level only; no raw accuracy; no bank counts; no confidence), OQ-21,
  *        OQ-22, OQ-23, OQ-29, OQ-36, OQ-39(c), §8 F-51; owner ruling (Karl, 2026-10-05) item 4,
- *        the "Start a full-length test" card] | @implemented [2026-10-03; card 2026-10-05]
+ *        the "Start a full-length test" card; owner ruling (Karl, 2026-10-05, OQ-63): the phone
+ *        notice for every full-length start, one shared pre-start check]
+ *        | @implemented [2026-10-03; card 2026-10-05; OQ-63 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (its right
  * panel is where the panel sections portal), the real upgrade modal and a scripted network
@@ -64,6 +66,7 @@ import type { EstimateResponse } from "@/lib/projectionApi";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
 import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
+import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
 import LyceonDashboard from "./lyceon-dashboard";
 import fs from "node:fs";
 import path from "node:path";
@@ -421,6 +424,10 @@ function quota(remaining: number | "unlimited") {
 /** The review block today's plan should launch first (the fixture's Thursday, slot 1). */
 const TODAY_REVIEW_BLOCK = "7c9e6679-7425-40de-944b-000000000031";
 const LAUNCHED_SESSION = "55555555-5555-4555-8555-555555555555";
+/** OQ-63: the fixture's Saturday, whose one block is the full-length sitting (day 5, slot 0). */
+const SATURDAY = "2026-10-03";
+const SATURDAY_FULL_LENGTH_BLOCK = "7c9e6679-7425-40de-944b-000000000050";
+const LAUNCHED_EXAM = "66666666-6666-4666-8666-666666666666";
 
 type Scenario = {
   calendar?: "ready" | "setup_required";
@@ -428,6 +435,8 @@ type Scenario = {
   projection?: "projected" | "none";
   diagnosticAnswered?: number;
   quota?: number | "unlimited";
+  /** OQ-63: today is the fixture's Saturday, its full-length block not started. */
+  fullLengthToday?: boolean;
 };
 
 function install(s: Scenario): void {
@@ -450,7 +459,9 @@ function install(s: Scenario): void {
           }),
           requestId: "r",
         }
-      : studentCalendarWeek(TODAY);
+      : s.fullLengthToday === true
+        ? studentCalendarWeek(SATURDAY, { openToday: true })
+        : studentCalendarWeek(TODAY);
   net.handlers = [
     (url, init) => {
       const path = url.split("?")[0];
@@ -484,6 +495,18 @@ function install(s: Scenario): void {
             engine: "review",
             session_id: LAUNCHED_SESSION,
             next: reviewAdapter.resumeHref(LAUNCHED_SESSION),
+            resumed: false,
+          }),
+        );
+      if (
+        method === "POST" &&
+        path === `/api/calendar/blocks/${SATURDAY_FULL_LENGTH_BLOCK}/launch`
+      )
+        return json(
+          launchResponseSchema.parse({
+            engine: "full_length",
+            session_id: LAUNCHED_EXAM,
+            next: fullLengthAdapter.resumeHref(LAUNCHED_EXAM),
             resumed: false,
           }),
         );
@@ -539,6 +562,35 @@ async function mount(
   return { container, history };
 }
 
+/**
+ * A phone width for the shared full-length pre-start check: the App shell's phone query
+ * (Tailwind's `max-lg`, `PHONE_LAYOUT_QUERY`) matches; every other query answers as the test
+ * setup's does.
+ */
+const SETUP_MATCH_MEDIA = window.matchMedia;
+function installPhone(): void {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({
+      matches: query === "not all and (min-width: 1024px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
+function launches(): string[] {
+  return net.log.filter(
+    (l) => l.startsWith("POST /api/calendar/blocks/") && l.endsWith("/launch"),
+  );
+}
+
 function gets(): string[] {
   return net.log
     .filter((l) => l.startsWith("GET "))
@@ -568,6 +620,12 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: SETUP_MATCH_MEDIA,
+  });
+  window.sessionStorage.clear();
 });
 
 // ── Paid ───────────────────────────────────────────────────────────────────────────────────
@@ -987,5 +1045,100 @@ describe("Home's 'Start a full-length test' card (owner ruling, Karl, 2026-10-05
       net.log.slice(before).filter((l) => /\/api\/(tests|exam)/.test(l)),
     ).toEqual([]);
     expect(gets().filter((p) => /^\/api\/(tests|exam)/.test(p))).toEqual([]);
+  });
+});
+
+// ── OQ-63: the shared full-length pre-start check on Home ───────────────────────────────
+
+describe("phone: Home's full-length starts ask the shared pre-start check first (OQ-63)", () => {
+  const PHONE_TEXT =
+    "Full-length tests are built for a laptop or tablet, like test day.";
+
+  it("Today's plan, a full-length block: the notice, no launch until Continue anyway, then the sitting", async () => {
+    vi.setSystemTime(new Date(2026, 9, 3, 15, 0, 0));
+    installPhone();
+    const { history } = await mount("paid", {
+      calendar: "ready",
+      fullLengthToday: true,
+    });
+    // Presence: today's one row is the full-length block, and Start today's plan launches it.
+    const plan = await screen.findByTestId("home-plan");
+    await waitFor(() =>
+      expect(within(plan).getAllByTestId("home-plan-row")).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByTestId("home-start-plan"));
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    expect(within(notice).getByRole("heading").textContent).toBe(PHONE_TEXT);
+    expect(launches()).toEqual([]);
+    expect(history.at(-1)).toBe("/dashboard");
+
+    await act(async () => {
+      fireEvent.click(within(notice).getByTestId("full-length-phone-continue"));
+    });
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${LAUNCHED_EXAM}`));
+    expect(launches()).toEqual([
+      `POST /api/calendar/blocks/${SATURDAY_FULL_LENGTH_BLOCK}/launch`,
+    ]);
+  });
+
+  it("Today's plan, a review block on a phone: launches at once, no notice", async () => {
+    installPhone();
+    const { history } = await mount("paid", { calendar: "ready" });
+    const start = await screen.findByTestId("home-start-plan");
+    await act(async () => {
+      fireEvent.click(start);
+    });
+    await waitFor(() =>
+      expect(history.at(-1)).toBe(`/review/session/${LAUNCHED_SESSION}`),
+    );
+    expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+
+  it("Pick up, the full-length sitting: the notice first; the practice and review rows go straight", async () => {
+    installPhone();
+    const { history } = await mount("paid", { calendar: "ready" });
+    const resume = await screen.findByTestId("home-resume");
+    await waitFor(() =>
+      expect(within(resume).getAllByTestId("home-resume-row")).toHaveLength(3),
+    );
+    const [practice, , exam] = within(resume).getAllByRole("link", {
+      name: "Continue",
+    });
+    if (practice === undefined || exam === undefined)
+      throw new Error("three Continue links");
+    fireEvent.click(exam);
+    expect(await screen.findByTestId("full-length-phone-notice")).toBeTruthy();
+    expect(history.at(-1)).toBe("/dashboard");
+    fireEvent.click(screen.getByTestId("full-length-phone-continue"));
+    expect(history.at(-1)).toBe(`/tests/${EXAM_SESSION_ID}`);
+
+    cleanup();
+    window.sessionStorage.clear();
+    installPhone();
+    const second = await mount("paid", { calendar: "ready" });
+    const rows = await screen.findByTestId("home-resume");
+    await waitFor(() =>
+      expect(within(rows).getAllByTestId("home-resume-row")).toHaveLength(3),
+    );
+    const [practiceAgain] = within(rows).getAllByRole("link", {
+      name: "Continue",
+    });
+    if (practiceAgain === undefined) throw new Error("a practice Continue");
+    fireEvent.click(practiceAgain);
+    expect(second.history.at(-1)).toBe(`/practice/session/${PRACTICE_ID}`);
+    expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+
+  it("desktop: the full-length Pick up row goes straight to the sitting", async () => {
+    const { history } = await mount("paid", { calendar: "ready" });
+    const resume = await screen.findByTestId("home-resume");
+    await waitFor(() =>
+      expect(within(resume).getAllByTestId("home-resume-row")).toHaveLength(3),
+    );
+    const exam = within(resume).getAllByRole("link", { name: "Continue" })[2];
+    if (exam === undefined) throw new Error("the exam Continue");
+    fireEvent.click(exam);
+    expect(history.at(-1)).toBe(`/tests/${EXAM_SESSION_ID}`);
+    expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
   });
 });
