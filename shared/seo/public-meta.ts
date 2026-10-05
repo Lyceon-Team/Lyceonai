@@ -266,24 +266,28 @@ for (const page of CONTENT_PAGES) {
   PUBLIC_META[page.path] = contentPageMeta(page);
 }
 
+// C4 (2026-10-05): each post's head comes from its content page: its own title, the original
+// publish date and the rewrite date, and the "Lyceon Team" Organization byline (decision 6).
 for (const post of blogPosts) {
-  PUBLIC_META[`/blog/${post.slug}`] = {
-    title: `${post.title} | Lyceon`,
-    description: post.description,
+  const page = post.page;
+  PUBLIC_META[page.path] = {
+    title: page.title,
+    description: page.description,
     canonical: post.canonical,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
       createBreadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
         { name: "Blog", url: `${BASE_URL}/blog` },
-        { name: post.title, url: post.canonical },
+        { name: page.h1, url: post.canonical },
       ]),
       createArticleJsonLd({
-        title: post.title,
-        description: post.description,
+        title: page.h1,
+        description: page.description,
         url: post.canonical,
         image: DEFAULT_OG_IMAGE,
-        datePublished: post.date,
+        datePublished: page.published,
+        dateModified: page.lastModified,
         author: post.author,
       }),
     ],

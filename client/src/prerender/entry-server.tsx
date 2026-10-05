@@ -38,7 +38,8 @@
  *    archive list and exactly the days `qotdSampleDates` picks put in the cache, the same pure
  *    choice the page makes in the browser. After every page is rendered, the publish gate
  *    (shared/seo/content-gate.ts) checks each content page's data and its rendered HTML, and any
- *    problem fails the build: an unapproved or unsourced page cannot deploy (plan row C3).
+ *    problem fails the build: an unapproved or unsourced page cannot deploy (plan row C3). The
+ *    five blog posts are content pages too since the C4 rewrite and are gated the same way.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -53,7 +54,7 @@ import {
   loadLegalDocument,
   loadLegalSlugs,
 } from "@/lib/legal-content";
-import { BLOG_POSTS } from "@shared/content/blog";
+import { BLOG_PAGES, BLOG_POSTS } from "@shared/content/blog";
 import { resolvePublicMeta } from "@shared/seo/public-meta";
 import { toArchiveIndex } from "@shared/qotd/projection";
 import { qotdToday } from "../../../server/services/qotd/qotd-service";
@@ -322,7 +323,7 @@ export async function prerenderSite(options: {
     }
 
     assertContentPagesPublishable(
-      CONTENT_PAGES,
+      [...CONTENT_PAGES, ...BLOG_PAGES],
       pages,
       registry,
       fs.readFileSync(

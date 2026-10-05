@@ -29,6 +29,7 @@ import {
   type PrerenderedSite,
 } from "../../client/src/prerender/entry-server";
 import { CONTENT_PAGES } from "../../shared/content/pages";
+import { BLOG_PAGES, BLOG_POSTS } from "../../shared/content/blog";
 import { CONTENT_PAGE_PATHS } from "../../shared/content/pages/paths";
 import {
   DOMAINS,
@@ -189,6 +190,56 @@ describe("crawl check, per page (acceptance)", () => {
       `${BASE_URL}/sat-practice-questions/math/algebra`,
     );
   });
+});
+
+describe("the C4 blog rewrites (approved by Karl 2026-10-05)", () => {
+  it("all five posts are approved content pages at their old URLs, dated at the rewrite", () => {
+    expect(BLOG_PAGES.map((p) => p.path).sort()).toEqual([
+      "/blog/common-sat-math-algebra-mistakes",
+      "/blog/digital-sat-scoring-explained",
+      "/blog/is-digital-sat-harder",
+      "/blog/quick-sat-study-routine",
+      "/blog/sat-question-bank-practice",
+    ]);
+    for (const page of BLOG_PAGES) {
+      expect(page.approved, page.path).toEqual({
+        by: "Karl",
+        date: "2026-10-05",
+      });
+      expect(page.lastModified, page.path).toBe("2026-10-05");
+      expect(page.published < page.lastModified, page.path).toBe(true);
+    }
+  });
+
+  it.each(BLOG_POSTS.map((p) => [p.page.path, p] as const))(
+    "%s: one H1, the byline and rewrite date shown, the standard CTA last, Organization author",
+    (path, post) => {
+      const html = built(path).html;
+      expect([...html.matchAll(/<h1[\s>]/g)]).toHaveLength(1);
+      const body = article(html);
+      expect(bodyText(body)).toContain("Lyceon Team");
+      expect(bodyText(body)).toContain("Updated October 5, 2026");
+      // The standard CTA ends the post: it is the article's last link.
+      const links = [...body.matchAll(/<a\b[^>]*href="([^"]*)"/g)].map(
+        (m) => m[1],
+      );
+      expect(links.at(-1)).toBe("/login?next=%2Fdashboard");
+      expect(body).toContain('data-testid="button-content-start-diagnostic"');
+      const ld = jsonLdBlocks(html).find((b) => b["@type"] === "Article");
+      expect(ld?.author).toEqual({
+        "@type": "Organization",
+        name: "Lyceon Team",
+        url: BASE_URL,
+      });
+      expect(ld?.datePublished).toBe(post.page.published);
+      expect(ld?.dateModified).toBe("2026-10-05");
+      expect(site.sitemapXml).toContain(
+        `<loc>${BASE_URL}${path}</loc>\n    <lastmod>2026-10-05</lastmod>`,
+      );
+      // "Practise at the right level" implied adaptive practice (R15): gone.
+      expect(bodyText(html)).not.toMatch(/practi[cs]e at the right level/i);
+    },
+  );
 });
 
 describe("the publish gate (C3)", () => {
