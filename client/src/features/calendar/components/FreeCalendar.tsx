@@ -8,27 +8,31 @@
  *        see their test date and target in the right panel; the plan grids stay premium);
  *        OQ-39(e) ("See plans" → Settings → Billing); OQ-29 (lock reason `age`); DESIGN.md §4
  *        Calendar ("Free plan: setup form (test date and target) plus the plan upsell card");
- *        prototype Calendar.dc.html plan = free; Doc 05F §15, §16, §17.5] | @implemented
- *        [2026-10-03]
+ *        prototype Calendar.dc.html plan = free; Doc 05F §15, §16, §17.5 as amended by SCL-211
+ *        (OQ-56 (b): the form is read-only after the first save; goals are edited in Settings,
+ *        OQ-25)] | @implemented [2026-10-03; read-only after the first save 2026-10-05]
  *
  * plain English: a free student states a test date and a target score and saves them through
  * `PUT /api/calendar/profile` (the page mints the idempotency key, as every profile save does).
- * The form shows what is saved: it opens on the profile the ungated read returned, so after a
- * save the student sees their own answers instead of an empty form (wiring table §9, the
- * PARTIAL row OQ-25 closed). Beside it, the upsell says what the paid plan is and links to
- * plans. No plan is read for this page: the grids are premium (OQ-25).
+ * Once a profile exists (the first save landed, or one was saved before), the card shows the
+ * saved test date and target READ-ONLY with "Edit goals in Settings", which goes where the goal
+ * card's "Edit goals" goes (`EDIT_GOALS_HREF`): OQ-25 has free students edit goals in Settings,
+ * and owner ruling 2026-10-05 on OQ-56 (b) accepted this. Before the first save the form is
+ * editable. Beside it, the upsell says what the paid plan is and links to plans. No plan is
+ * read for this page: the grids are premium (OQ-25).
  *
  * Replaces the old free path, the setup popup's third panel and `CalendarPremiumGate`. The
  * UI-41 audit found the popup ran off the right edge at 390px with Skip and Continue out of
  * view; an inline form has no such edge.
  *
- * edge cases: nothing is required (SCL-130). An empty date or score saves as null. The score
+ * edge cases: nothing is required (SCL-130). An empty date or score saves as null, and reads
+ * back as the shipped absence copy (`ABSENT_COPY.student`) once saved. The score
  * input carries the §8.1 bounds (400 to 1600 in steps of 10) as hints; the server's schema is
  * the authority, and a refusal shows its message under the form. An under-13 student (lock
  * reason `age`) gets no "See plans", as the upgrade modal gives them none.
  */
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import type { StudyProfile } from "@lyceon/shared/calendar";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
@@ -37,8 +41,19 @@ import {
   UPGRADE_MODAL_SHARED_COPY,
   UPGRADE_PLANS_DESTINATION,
 } from "@/components/billing/upgrade-modal";
-import { shiftMonths, startOfMonth, startOfWeek } from "../lib/dates";
-import { CalendarPanelColumn, GoalCard, MiniMonth } from "./StudentChrome";
+import {
+  shiftMonths,
+  startOfMonth,
+  startOfWeek,
+  weekdayDayMonth,
+} from "../lib/dates";
+import { ABSENT_COPY } from "./Chrome";
+import {
+  CalendarPanelColumn,
+  EDIT_GOALS_HREF,
+  GoalCard,
+  MiniMonth,
+} from "./StudentChrome";
 
 /** §8.1: 400..1600 in steps of 10, the setup popup's own bounds. */
 const SCORE_MIN = 400;
@@ -78,15 +93,16 @@ export function FreeCalendar({
       data-testid="calendar-free"
     >
       <div className="flex max-w-[720px] flex-col gap-7 px-4 py-6 lg:px-14 lg:py-12">
-        <SetupForm
-          // A new profile (a save landed, or Settings changed it) re-opens the form on it.
-          key={`${testDate ?? ""}|${profile?.target_score ?? ""}`}
-          profile={profile}
-          maxTestDate={maxTestDate}
-          onSave={onSave}
-          pending={pending}
-          error={error}
-        />
+        {profile === null ? (
+          <SetupForm
+            maxTestDate={maxTestDate}
+            onSave={onSave}
+            pending={pending}
+            error={error}
+          />
+        ) : (
+          <SavedGoals profile={profile} />
+        )}
         <PlanUpsellCard reason={reason} />
       </div>
       <AppShellPanel>
@@ -114,31 +130,13 @@ const FIELD_LABEL =
   "flex flex-col gap-2 text-[17px] font-semibold text-lyc-ink";
 const FIELD_INPUT = `${LYC_FOCUS} h-[46px] rounded-md border border-lyc-input-bd bg-lyc-sheet px-3.5 text-[17px] font-normal text-lyc-ink`;
 
-function SetupForm({
-  profile,
-  maxTestDate,
-  onSave,
-  pending,
-  error,
-}: {
-  profile: StudyProfile | null;
-  maxTestDate: string | null;
-  onSave: (goal: FreeGoal) => void;
-  pending: boolean;
-  error: string | null;
-}): JSX.Element {
-  const [date, setDate] = useState(profile?.target_exam_date ?? "");
-  const [score, setScore] = useState(
-    profile?.target_score === null || profile?.target_score === undefined
-      ? ""
-      : String(profile.target_score),
-  );
+const SETUP_CARD =
+  "flex flex-col gap-5 rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-7 sm:px-9 sm:py-8";
+
+/** The card's heading and sentence, the same before and after the first save. */
+function SetupHeading(): JSX.Element {
   return (
-    <section
-      aria-labelledby="calendar-setup-h"
-      className="flex flex-col gap-5 rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-7 sm:px-9 sm:py-8"
-      data-testid="calendar-free-setup"
-    >
+    <>
       <h1
         id="calendar-setup-h"
         className="m-0 font-lyc-serif text-[30px] font-semibold leading-tight text-lyc-ink-strong"
@@ -149,6 +147,32 @@ function SetupForm({
         Tell us when you&apos;re testing and what you&apos;re aiming for. Your
         plan is built around both.
       </p>
+    </>
+  );
+}
+
+/** Before the first save: the editable form. Nothing is prefilled, as no profile exists. */
+function SetupForm({
+  maxTestDate,
+  onSave,
+  pending,
+  error,
+}: {
+  maxTestDate: string | null;
+  onSave: (goal: FreeGoal) => void;
+  pending: boolean;
+  error: string | null;
+}): JSX.Element {
+  const [date, setDate] = useState("");
+  const [score, setScore] = useState("");
+  return (
+    <section
+      aria-labelledby="calendar-setup-h"
+      className={SETUP_CARD}
+      data-testid="calendar-free-setup"
+      data-state="editing"
+    >
+      <SetupHeading />
       <form
         className="flex flex-col gap-5"
         onSubmit={(event) => {
@@ -207,6 +231,75 @@ function SetupForm({
         </Button>
       </form>
     </section>
+  );
+}
+
+/**
+ * After the first save (OQ-56 (b), SCL-211): the saved test date and target, read-only, and
+ * "Edit goals in Settings". No input and no Save: a free student changes goals in Settings
+ * (OQ-25), so the calendar keeps one way in, not two that could disagree.
+ */
+function SavedGoals({ profile }: { profile: StudyProfile }): JSX.Element {
+  return (
+    <section
+      aria-labelledby="calendar-setup-h"
+      className={SETUP_CARD}
+      data-testid="calendar-free-setup"
+      data-state="saved"
+    >
+      <SetupHeading />
+      <dl className="m-0 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <SavedGoal
+          label="Test date"
+          testId="calendar-free-saved-date"
+          value={
+            profile.target_exam_date === null
+              ? null
+              : weekdayDayMonth(profile.target_exam_date)
+          }
+          absent={ABSENT_COPY.student.testDate}
+        />
+        <SavedGoal
+          label="Target score"
+          testId="calendar-free-saved-target"
+          value={
+            profile.target_score === null ? null : String(profile.target_score)
+          }
+          absent={ABSENT_COPY.student.target}
+        />
+      </dl>
+      <Link
+        href={EDIT_GOALS_HREF}
+        className={`${LYC_FOCUS} self-start text-lyc-meta-lg font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline`}
+        data-testid="calendar-free-edit-goals"
+      >
+        Edit goals in Settings
+      </Link>
+    </section>
+  );
+}
+
+function SavedGoal({
+  label,
+  testId,
+  value,
+  absent,
+}: {
+  label: string;
+  testId: string;
+  value: string | null;
+  absent: string;
+}): JSX.Element {
+  return (
+    <div className="flex flex-col gap-2">
+      <dt className="text-[17px] font-semibold text-lyc-ink">{label}</dt>
+      <dd
+        className={`m-0 text-[20px] ${value === null ? "text-lyc-muted" : "font-semibold text-lyc-ink-strong"}`}
+        data-testid={testId}
+      >
+        {value ?? absent}
+      </dd>
+    </div>
   );
 }
 

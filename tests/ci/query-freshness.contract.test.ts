@@ -108,7 +108,6 @@ describe("UI-14 — freshness values per data type", () => {
 
   it("the calendar refetches on window focus (Doc 05F §17.7)", () => {
     expect(QUERY_FRESHNESS.calendarRange.refetchOnWindowFocus).toBe(true);
-    expect(QUERY_FRESHNESS.calendarStreak.refetchOnWindowFocus).toBe(true);
   });
 });
 
@@ -185,7 +184,6 @@ describe("UI-14 — consumers take freshness from the config", () => {
       ),
     );
     expect(code).toContain("QUERY_FRESHNESS.calendarRange");
-    expect(code).toContain("QUERY_FRESHNESS.calendarStreak");
     expect(code).not.toMatch(/staleTime:\s*\d/);
   });
 });

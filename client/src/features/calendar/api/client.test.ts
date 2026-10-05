@@ -16,10 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalendarDay, DayEditBody, PlanBlock } from "@lyceon/shared";
 import {
   CALENDAR_ROOT,
-  STREAK_PATH,
   fetchCalendar,
   fetchGuardianCalendar,
-  fetchStreak,
   postAcknowledge,
   postLaunch,
   postMoveBlock,
@@ -199,15 +197,6 @@ describe("the URLs `client.ts` builds", () => {
     expect(url.searchParams.get("device_timezone")).toBe(TZ);
   });
 
-  it("GET /api/me/streak is a bare path — INV-08-20 serves it without a calendar_access check", async () => {
-    csrfFetchMock.mockResolvedValueOnce(jsonResponse(STREAK));
-
-    const result = await fetchStreak();
-
-    expect(String(csrfFetchMock.mock.calls[0]?.[0])).toBe(STREAK_PATH);
-    expect(result).toEqual(STREAK);
-  });
-
   it("the GUARDIAN read is /api/students/:id/calendar (formula sheet item 14), never an /api/guardian/ path", async () => {
     csrfFetchMock.mockResolvedValueOnce(jsonResponse(GUARDIAN_BODY));
 
@@ -300,14 +289,11 @@ describe("transport correlation is stripped, not tolerated", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it("strips `requestId` on the streak and guardian reads too", async () => {
-    csrfFetchMock
-      .mockResolvedValueOnce(jsonResponse({ ...STREAK, requestId: "abc" }))
-      .mockResolvedValueOnce(
-        jsonResponse({ ...GUARDIAN_BODY, requestId: "def" }),
-      );
+  it("strips `requestId` on the guardian read too", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      jsonResponse({ ...GUARDIAN_BODY, requestId: "def" }),
+    );
 
-    await expect(fetchStreak()).resolves.toEqual(STREAK);
     await expect(fetchGuardianCalendar(STUDENT_ID, FROM, TO)).resolves.toEqual(
       GUARDIAN_BODY,
     );

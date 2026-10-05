@@ -157,13 +157,8 @@ beforeEach(() => {
       if (method === "PUT" && url.includes("/api/calendar/profile")) {
         return jsonResponse({ ...SAVED_PROFILE, requestId: "req-write" });
       }
-      // The page also asks for the streak. Answering it keeps that query out of the way of
-      // what this file is about, rather than leaving an unhandled call to time out.
-      return jsonResponse({
-        current: 0,
-        longest: null,
-        history_complete: true,
-      });
+      // Nothing else is this file's business (the page reads no streak since SCL-211).
+      return jsonResponse({ error: "Not found" }, 404);
     },
   );
 });

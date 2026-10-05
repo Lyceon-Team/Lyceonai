@@ -23,7 +23,7 @@
  * weeks is not navigating.
  *
  * TWO CHROMES (UI-55, 2026-10-03; student-UI register §2, DESIGN.md §4 Calendar). The grid,
- * the banners, the facts strip and the sheets are one tree for both surfaces. The FRAME
+ * the banners and the sheets are one tree for both surfaces. The FRAME
  * differs by `viewer`: the student calendar sits in the App shell, with a Canvas-style header
  * (Week/Month, Today, arrows; the range centred; Edit schedule and Regenerate plan) and the
  * mini month, goal card, schedule summary and Show filters in the shell's right panel
@@ -31,6 +31,11 @@
  * unchanged. `viewer` already selects the absence copy; the frame is the same fact (whose
  * calendar, seen by whom), and every write control is still conditioned on `mutations`.
  * The student's test day is starred in the week, month and mini month (`testDate`).
+ *
+ * THE STREAK LINE AND THE FACTS STRIP ARE THE GUARDIAN'S ONLY (SCL-211, owner ruling
+ * 2026-10-05 on OQ-56: "Drop the streak line and the facts strip to match the design"). Doc
+ * 05F §17.1 as amended draws neither on the student calendar; the guardian surface keeps both
+ * (its `TopBar` and the strip under its grid), unchanged — that is the guardian vertical's.
  *
  * edge cases: switching Week↔Month inside the same month does NOT refetch — the month query
  * covers the week, TanStack serves the wider range from cache, and the grid slices it. That
@@ -187,7 +192,11 @@ export type CalendarViewProps = {
    * sums them (`lib/projection`); nothing on this path re-derives a projection.
    */
   projection?: readonly SectionProjectionDto[];
-  streak: StreakSummary | undefined;
+  /**
+   * The guardian `TopBar`'s streak readout. The student calendar draws no streak line
+   * (SCL-211), so the student page passes none and the student chrome never reads it.
+   */
+  streak?: StreakSummary;
   /**
    * Brief 14 Step 4 — `full_length_suppressions`, straight off the payload. Dates the
    * generator refused to place a practice test on because both the chosen weekday occurrence
@@ -489,8 +498,9 @@ export function CalendarView({
   };
 
   /**
-   * The grid area — banners, the week or month grid, the facts strip — the SAME tree on both
-   * surfaces. Only the chrome around it differs (below).
+   * The grid area — banners and the week or month grid — the SAME tree on both surfaces. Only
+   * the chrome around it differs (below), and the facts strip under the grid, which is the
+   * guardian's alone (SCL-211).
    */
   const gridArea = (
     <>
@@ -587,7 +597,9 @@ export function CalendarView({
         </div>
       </DndContext>
 
-      {model === null ? null : <FactsStrip facts={model.facts} />}
+      {viewer === "guardian" && model !== null ? (
+        <FactsStrip facts={model.facts} />
+      ) : null}
     </>
   );
 
@@ -691,7 +703,6 @@ export function CalendarView({
             onView={(next) => move(next, cursor)}
             onToday={() => move("week", startOfWeek(today))}
             onStep={step}
-            streak={streak}
             {...(schedule === undefined
               ? {}
               : { onEditSchedule: () => setSettingsOpen(true) })}

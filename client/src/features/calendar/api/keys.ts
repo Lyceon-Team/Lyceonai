@@ -18,10 +18,9 @@
  * pass an explicit `queryFn`. The default one would treat `["calendar","range",…]` as a
  * path and fetch `/calendar/range/...`, which is not a route.
  *
- * edge cases: `streak` is deliberately OUTSIDE the `range` prefix. A day edit changes the
- * plan and not the streak, and INV-08-20 serves the streak without an entitlement check —
- * folding it under the same prefix would make every edit refetch a resource it cannot
- * change, on a route with different auth.
+ * edge cases: the student client reads no streak (SCL-211: the student calendar draws no
+ * streak line, and no other student surface renders one), so there is no streak key. The
+ * guardian reads the streak off its own calendar payload.
  */
 export const calendarKeys = {
   /** Everything calendar. Used only by a full reset (sign-out, student switch). */
@@ -39,14 +38,12 @@ export const calendarKeys = {
     ["calendar", "range", from, to, deviceTimezone] as const,
 
   /**
-   * GET /api/calendar/profile (OQ-25, UI-55). Outside the `range` prefix like the streak: it
+   * GET /api/calendar/profile (OQ-25, UI-55). Outside the `range` prefix: it
    * is ungated, so a free student reads it while every range read answers 402, and a day edit
    * does not change it. A profile save invalidates it explicitly.
    */
   profile: () => ["calendar", "profile"] as const,
 
-  /** §15 GET /api/me/streak. Its own key — see the module note above. */
-  streak: () => ["calendar", "streak"] as const,
 
   /** The prefix every guardian range read shares. */
   guardianRanges: () => ["calendar", "guardian"] as const,
