@@ -143,14 +143,17 @@ describe("guardian exam result", () => {
       .getAllByTestId("exam-domain-row")
       .map((r) => r.textContent);
     expect(rows).toHaveLength(8);
-    // G3-02 (R4, SCL-189): the domain and its bar; no "N of M correct" anywhere.
+    // G3-02 (R4, SCL-189) / G5-11 (SCL-210): the domain and the student's seven segments; no
+    // "N of M correct" anywhere.
     expect(rows).toContain("Algebra");
     for (const text of rows) expect(text).not.toMatch(/\d|correct/);
     const algebra = screen
       .getAllByTestId("exam-domain-row")
       .find((r) => r.textContent === "Algebra");
-    const bar = algebra?.querySelector<HTMLElement>("[style]");
-    expect(bar?.style.width).toBe(`${Math.round((11 / 13) * 100)}%`);
+    // 11 of 13 → round half up of 11 × 7 / 13 = 5.92 → 6 of 7 filled, the student's rule.
+    const segs = within(algebra!).getAllByTestId("exam-domain-segment");
+    expect(segs).toHaveLength(7);
+    expect(segs.filter((x) => x.dataset.filled === "true")).toHaveLength(6);
     expectNoControls();
   });
 

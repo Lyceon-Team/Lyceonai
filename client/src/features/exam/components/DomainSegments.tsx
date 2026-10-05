@@ -10,8 +10,8 @@
  * seven segments, `segments_filled` of them filled. The accessible name is "N of 7
  * segments filled"; no question count is drawn or announced, because the payload carries
  * none. Domains the server omitted are named in a short note with the reason in words.
- * Guardians do not use this component: their view draws a bar per domain with no counts
- * (`DomainBreakdown`, SCL-189).
+ * The guardian detail renders this same component (G5-11, SCL-210): its payload carries the
+ * student's own `segments_filled` rows, so both sides fill the same segments.
  */
 import type {
   DomainOmissionReason,
