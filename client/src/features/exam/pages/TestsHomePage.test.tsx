@@ -9,7 +9,9 @@
  *        the completed test's score; supersedes E7b ruling 2), OQ-32 (owner ruling 2026-10-02:
  *        "section, module" from the in-progress session's `/state`)]
  *       [Doc-04C §15.1: a scaled score always ships with its disclosure]
- * @implemented [2026-10-03]
+ *       [owner ruling (Karl, 2026-10-05): on phone widths the home shows "Full-length tests are
+ *        built for a laptop or tablet, like test day." with "Continue anyway"; never blocked]
+ * @implemented [2026-10-03; phone notice 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (the right
  * panel portals into it) and the real upgrade modal, over a scripted network standing in for
@@ -25,6 +27,9 @@
  * beside it.
  */
 import React from "react";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -372,11 +377,55 @@ async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
   return map;
 }
 
+/**
+ * The viewport, as `matchMedia` reports it. "none" leaves `matchMedia` undefined, as jsdom does
+ * by default (the page then takes the desktop path). The fake answers the App shell's `lg` query
+ * and can be resized, firing `change` the way a browser does.
+ */
+type Viewport = "none" | "phone" | "desktop";
+const viewport = {
+  wide: false,
+  listeners: new Set<() => void>(),
+  resize(wide: boolean): void {
+    this.wide = wide;
+    for (const l of this.listeners) l();
+  },
+};
+function installViewport(v: Viewport): void {
+  if (v === "none") {
+    Reflect.deleteProperty(window, "matchMedia");
+    return;
+  }
+  viewport.wide = v === "desktop";
+  viewport.listeners.clear();
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (query: string) => {
+      if (query !== "(min-width: 1024px)") {
+        throw new Error(`unexpected media query ${query}`);
+      }
+      return {
+        get matches(): boolean {
+          return viewport.wide;
+        },
+        media: query,
+        addEventListener: (_: "change", l: () => void) =>
+          viewport.listeners.add(l),
+        removeEventListener: (_: "change", l: () => void) =>
+          viewport.listeners.delete(l),
+      };
+    },
+  });
+}
+
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario = {},
+  view: Viewport = "none",
 ): Promise<{ history: string[] }> {
   install(scenario);
+  installViewport(view);
   const map = await accessMap(plan === "paid");
   const { hook, history } = memoryLocation({ path: "/tests", record: true });
   const client = new QueryClient({
@@ -406,7 +455,9 @@ async function mount(
     </QueryClientProvider>,
   );
   await screen.findByTestId("tests-home");
-  if (plan === "paid") await screen.findAllByTestId("tests-row");
+  if (plan === "paid" && view !== "phone") {
+    await screen.findAllByTestId("tests-row");
+  }
   return { history };
 }
 
@@ -429,9 +480,13 @@ beforeEach(() => {
   net.log.length = 0;
   net.bodies.length = 0;
   net.handler = null;
+  window.sessionStorage.clear();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  Reflect.deleteProperty(window, "matchMedia");
+});
 
 // ── Paid ────────────────────────────────────────────────────────────────────────────────────
 
@@ -578,5 +633,118 @@ describe("free plan (register §2: Full-Length is paid)", () => {
     expect(screen.queryByTestId("tests-history")).toBeNull();
     fireEvent.click(screen.getByTestId("tests-see-plans"));
     expect(history.at(-1)).toBe("/profile?tab=billing");
+  });
+});
+
+// ── Phone widths (owner ruling, Karl, 2026-10-05) ────────────────────────────────────────────
+
+const PHONE_TEXT =
+  "Full-length tests are built for a laptop or tablet, like test day.";
+
+describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", () => {
+  it("phone: the title and the ruling's notice with Continue anyway, in place of the home's body", async () => {
+    await mount("paid", {}, "phone");
+    // Presence first: the title and the notice are drawn.
+    expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+    const notice = screen.getByTestId("tests-phone-notice");
+    expect(within(notice).getByText(PHONE_TEXT)).toBeTruthy();
+    const button = within(notice).getByRole("button");
+    expect(button.textContent).toBe("Continue anyway");
+    // Exactly the ruling's words: the title line and the button, nothing else.
+    expect(notice.textContent).toBe(PHONE_TEXT + "Continue anyway");
+    // The notice's action is an outline (it dismisses a note); no filled primary while held.
+    expect(button.className).toContain("border-lyc-ink-strong");
+    expect(filledActions()).toEqual([]);
+    expect(screen.queryByTestId("tests-home-body")).toBeNull();
+    expect(screen.queryByTestId("tests-list")).toBeNull();
+    expect(screen.queryByTestId("tests-panel")).toBeNull();
+  });
+
+  it("Continue anyway reveals the whole home: Resume and Start are reachable, the panel too", async () => {
+    await mount("paid", {}, "phone");
+    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
+    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
+    const body = screen.getByTestId("tests-home-body");
+    // Focus moves to the revealed body, not to <body>.
+    expect(document.activeElement).toBe(body);
+    const resume = await within(row("Practice Test 2")).findByRole("link", {
+      name: "Resume",
+    });
+    expect(resume.getAttribute("href")).toBe(`/tests/${OPEN_SESSION}`);
+    expect(
+      within(row("Practice Test 3")).getByRole("button", { name: "Start" }),
+    ).toBeTruthy();
+    expect(filledActions()).toEqual([resume]);
+    expect(await screen.findByTestId("tests-history")).toBeTruthy();
+  });
+
+  it("nothing is blocked: after Continue anyway, Start creates the session and lands on it", async () => {
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "phone",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
+    fireEvent.click(
+      await within(row("Practice Test 1")).findByRole("button", {
+        name: "Start",
+      }),
+    );
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+  });
+
+  it("Continue anyway is remembered for the visit (this tab)", async () => {
+    await mount("paid", {}, "phone");
+    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
+    await screen.findAllByTestId("tests-row");
+    cleanup();
+    await mount("paid", {}, "phone");
+    expect(await screen.findAllByTestId("tests-row")).not.toHaveLength(0);
+    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
+  });
+
+  it("free plan on a phone: Continue anyway reveals the upgrade card", async () => {
+    await mount("free", {}, "phone");
+    expect(screen.getByTestId("tests-phone-notice")).toBeTruthy();
+    expect(screen.queryByTestId("tests-upgrade-card")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
+    expect(await screen.findByTestId("tests-upgrade-card")).toBeTruthy();
+  });
+
+  it("desktop (lg and up): no notice, the home as before", async () => {
+    await mount("paid", {}, "desktop");
+    expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
+    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
+    expect(screen.queryByText(PHONE_TEXT)).toBeNull();
+  });
+
+  it("widening a phone past lg reveals the home with no tap", async () => {
+    await mount("paid", {}, "phone");
+    expect(screen.getByTestId("tests-phone-notice")).toBeTruthy();
+    React.act(() => viewport.resize(true));
+    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
+    expect(await screen.findAllByTestId("tests-row")).not.toHaveLength(0);
+  });
+
+  it("only the Full-Length home shows it: no exam session, module or report page imports the notice", () => {
+    const pages = path.dirname(fileURLToPath(import.meta.url));
+    const sources = fs
+      .readdirSync(pages)
+      .filter((f) => f.endsWith(".tsx") && !f.endsWith(".test.tsx"));
+    // Presence: the pages directory holds the session, module and report pages.
+    expect(sources).toEqual(
+      expect.arrayContaining([
+        "ExamSessionPage.tsx",
+        "ExamModulePage.tsx",
+        "ExamReportPage.tsx",
+        "TestsHomePage.tsx",
+      ]),
+    );
+    const users = sources.filter((f) =>
+      /phone-notice|DESKTOP_LAYOUT_QUERY/.test(
+        fs.readFileSync(path.join(pages, f), "utf8"),
+      ),
+    );
+    expect(users).toEqual(["TestsHomePage.tsx"]);
   });
 });

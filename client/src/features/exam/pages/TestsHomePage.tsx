@@ -11,7 +11,9 @@
  *        card shows the completed test's score; this SUPERSEDES E7b ruling 2, "state words on
  *        the card, never a score"), OQ-32 (owner ruling 2026-10-02: "section, module" from the
  *        in-progress session's `/state`), OQ-44 (approved prototype copy), OQ-49 (this route
- *        comes off the light lock: route-shells.ts), OQ-51 ("Reading & Writing")]
+ *        comes off the light lock: route-shells.ts), OQ-51 ("Reading & Writing"); owner ruling
+ *        (Karl, 2026-10-05): on phone widths the home shows "Full-length tests are built for a
+ *        laptop or tablet, like test day." with "Continue anyway", never blocked]
  *       [Doc-04A_V2.2 §7.3 (create: test_form_id + mode, lenient default §8.6), §16 as amended
  *        by SCL-147 (GET /api/tests/forms); Doc-04C §15.1 (a scaled score is never drawn
  *        without its disclosure beside it); E7b owner ruling 3 (no break checkbox: the create
@@ -28,6 +30,17 @@
  * to it instead. The right panel lists every scored test, newest first, each a link to its
  * report, and the mastery rows (or the locked card).
  *
+ * PHONE NOTICE (owner ruling, Karl, 2026-10-05). Below the App shell's `lg` breakpoint (the width
+ * at which the tab bar replaces the rail) the home shows the page title and the ruling's notice
+ * in place of its body, because the official SAT (Bluebook) is not taken on a phone. "Continue
+ * anyway" reveals the whole home, list, start/resume, timing and the right panel, and is
+ * remembered for the tab (`phone-notice.ts`). Nothing is blocked: the notice is one tap, the
+ * exam routes themselves (`/tests/:sessionId` and below) never show it, and a resume link from
+ * Home or the calendar goes straight to the session. The notice's action is the Notice
+ * primitive's outline button, not a filled primary: it dismisses a note, and the home's one
+ * filled action stays Start or Resume once it is revealed. Where `matchMedia` is missing the
+ * page takes the desktop path (no notice).
+ *
  * FREE PLAN: the feature-access map (OQ-29) says Full-Length is locked, so the page draws the
  * in-page upgrade card and asks for none of the gated reads (`/forms`, `/sessions`, `/state`):
  * every exam query is disabled. The server refuses them regardless.
@@ -37,7 +50,7 @@
  * start panel that opened under the cards ("Before you start {form}", "Begin Reading and
  * Writing").
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import type { ExamMode } from "@lyceon/shared/exam-runtime-schema";
@@ -58,6 +71,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
+import { DESKTOP_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { fetchMasteryDomains, type MasterySection } from "@/lib/masteryApi";
 import { cn } from "@/lib/utils";
@@ -80,6 +94,12 @@ import {
   type FormRow,
   type RowAction,
 } from "../lib/tests-home-model";
+import {
+  PHONE_NOTICE_CONTINUE,
+  PHONE_NOTICE_TEXT,
+  readPhoneNoticeContinued,
+  rememberPhoneNoticeContinued,
+} from "../lib/phone-notice";
 import { DisclosureNote } from "../components/DisclosedScore";
 
 const SECTION_H2 =
@@ -174,6 +194,25 @@ export default function TestsHomePage(): JSX.Element {
   const primaryId = primaryFormId(rows);
   const [mode, setMode] = useState<ExamMode>("strict");
 
+  // Owner ruling (Karl, 2026-10-05): the phone notice. Desktop when matchMedia is unavailable.
+  const desktop = useMediaQuery(DESKTOP_LAYOUT_QUERY, true);
+  const [continued, setContinued] = useState<boolean>(readPhoneNoticeContinued);
+  const held = !desktop && !continued;
+  const body = useRef<HTMLDivElement>(null);
+  const focusBodyOnReveal = useRef(false);
+  // Focus is a side effect on the DOM the reveal creates (the notice's button is gone), not
+  // derived state: move it to the revealed body so a keyboard user is not dropped on <body>.
+  useEffect(() => {
+    if (held || !focusBodyOnReveal.current) return;
+    focusBodyOnReveal.current = false;
+    body.current?.focus();
+  }, [held]);
+  const continueAnyway = (): void => {
+    rememberPhoneNoticeContinued();
+    focusBodyOnReveal.current = true;
+    setContinued(true);
+  };
+
   return (
     <div className="flex flex-col gap-10" data-testid="tests-home">
       <PageHeader
@@ -181,100 +220,117 @@ export default function TestsHomePage(): JSX.Element {
         description="Timed like test day: two modules per section, a break between sections, and a scored report at the end."
       />
 
-      {examLocked !== null ? (
-        <FreeUpgradeCard reason={examLocked.reason} />
-      ) : examGranted ? (
-        <>
-          <section
-            aria-labelledby="tests-h"
-            className="flex flex-col gap-3.5"
-            data-testid="tests-list"
-          >
-            <h2 id="tests-h" className={SECTION_H2}>
-              Your tests
-            </h2>
-            {forms.isPending ? (
-              <Skeleton variant="lyc" className="h-[180px] w-full" />
-            ) : forms.isError ? (
-              <Notice
-                tone="danger"
-                title="We couldn't load the tests."
-                actionLabel="Try again"
-                onAction={() => void forms.refetch()}
-                data-testid="tests-error"
-              />
-            ) : rows.length === 0 ? (
-              <p className="m-0 text-lyc-body-lg text-lyc-muted">
-                No full-length tests are available yet.
-              </p>
-            ) : (
-              <ul className="m-0 list-none border-t border-lyc-rule p-0">
-                {rows.map((row) => (
-                  <li key={row.form.test_form_id}>
-                    <TestRow
-                      row={row}
-                      primary={row.form.test_form_id === primaryId}
-                      mode={mode}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <BeforeYouStart mode={mode} onModeChange={setMode} />
-        </>
-      ) : null}
-
-      <AppShellPanel>
-        <div className="flex flex-col gap-9" data-testid="tests-panel">
-          {examGranted && (scored.data?.length ?? 0) > 0 ? (
-            <ScoreHistory rows={scored.data ?? []} />
-          ) : null}
-          <section
-            aria-labelledby="tests-mastery-h"
-            className="flex flex-col gap-4"
-            data-testid="tests-mastery"
-          >
-            <h2 id="tests-mastery-h" className={PANEL_H2}>
-              Mastery
-            </h2>
-            {masteryGranted && mastery.data !== undefined ? (
-              <>
-                {MASTERY_SECTIONS.map((s) => (
-                  <div key={s} className="flex flex-col">
-                    <h3 className="m-0 mb-1 text-[15px] font-semibold text-lyc-muted">
-                      {sectionDisplayLabel(s)}
-                    </h3>
-                    {canonicalDomainNodes(mastery.data.domains, [s]).map(
-                      (node) => (
-                        <MasteryRow
-                          key={`${node.section}:${node.domain}`}
-                          label={node.domain}
-                          levelKey={node.levelKey}
-                          displayName={node.displayName}
-                          variant="compact"
-                          href="/mastery"
+      {held ? (
+        <Notice
+          tone="info"
+          title={PHONE_NOTICE_TEXT}
+          actionLabel={PHONE_NOTICE_CONTINUE}
+          onAction={continueAnyway}
+          data-testid="tests-phone-notice"
+        />
+      ) : (
+        <div
+          ref={body}
+          tabIndex={-1}
+          className="flex flex-col gap-10 outline-none"
+          data-testid="tests-home-body"
+        >
+          {examLocked !== null ? (
+            <FreeUpgradeCard reason={examLocked.reason} />
+          ) : examGranted ? (
+            <>
+              <section
+                aria-labelledby="tests-h"
+                className="flex flex-col gap-3.5"
+                data-testid="tests-list"
+              >
+                <h2 id="tests-h" className={SECTION_H2}>
+                  Your tests
+                </h2>
+                {forms.isPending ? (
+                  <Skeleton variant="lyc" className="h-[180px] w-full" />
+                ) : forms.isError ? (
+                  <Notice
+                    tone="danger"
+                    title="We couldn't load the tests."
+                    actionLabel="Try again"
+                    onAction={() => void forms.refetch()}
+                    data-testid="tests-error"
+                  />
+                ) : rows.length === 0 ? (
+                  <p className="m-0 text-lyc-body-lg text-lyc-muted">
+                    No full-length tests are available yet.
+                  </p>
+                ) : (
+                  <ul className="m-0 list-none border-t border-lyc-rule p-0">
+                    {rows.map((row) => (
+                      <li key={row.form.test_form_id}>
+                        <TestRow
+                          row={row}
+                          primary={row.form.test_form_id === primaryId}
+                          mode={mode}
                         />
-                      ),
-                    )}
-                  </div>
-                ))}
-                <Link href="/mastery" className={TEXT_LINK}>
-                  See every skill
-                </Link>
-              </>
-            ) : masteryAccess?.access === "locked" ? (
-              <LockedMasteryCard
-                headingLevel={3}
-                onSeeWhatsIncluded={() =>
-                  upgrade.open("mastery_detail", masteryAccess.reason)
-                }
-              />
-            ) : null}
-          </section>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <BeforeYouStart mode={mode} onModeChange={setMode} />
+            </>
+          ) : null}
+
+          <AppShellPanel>
+            <div className="flex flex-col gap-9" data-testid="tests-panel">
+              {examGranted && (scored.data?.length ?? 0) > 0 ? (
+                <ScoreHistory rows={scored.data ?? []} />
+              ) : null}
+              <section
+                aria-labelledby="tests-mastery-h"
+                className="flex flex-col gap-4"
+                data-testid="tests-mastery"
+              >
+                <h2 id="tests-mastery-h" className={PANEL_H2}>
+                  Mastery
+                </h2>
+                {masteryGranted && mastery.data !== undefined ? (
+                  <>
+                    {MASTERY_SECTIONS.map((s) => (
+                      <div key={s} className="flex flex-col">
+                        <h3 className="m-0 mb-1 text-[15px] font-semibold text-lyc-muted">
+                          {sectionDisplayLabel(s)}
+                        </h3>
+                        {canonicalDomainNodes(mastery.data.domains, [s]).map(
+                          (node) => (
+                            <MasteryRow
+                              key={`${node.section}:${node.domain}`}
+                              label={node.domain}
+                              levelKey={node.levelKey}
+                              displayName={node.displayName}
+                              variant="compact"
+                              href="/mastery"
+                            />
+                          ),
+                        )}
+                      </div>
+                    ))}
+                    <Link href="/mastery" className={TEXT_LINK}>
+                      See every skill
+                    </Link>
+                  </>
+                ) : masteryAccess?.access === "locked" ? (
+                  <LockedMasteryCard
+                    headingLevel={3}
+                    onSeeWhatsIncluded={() =>
+                      upgrade.open("mastery_detail", masteryAccess.reason)
+                    }
+                  />
+                ) : null}
+              </section>
+            </div>
+          </AppShellPanel>
         </div>
-      </AppShellPanel>
+      )}
     </div>
   );
 }
