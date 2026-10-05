@@ -1,20 +1,22 @@
 /**
  * Cookie banner, Cookie settings dialog, GPC notice — and the switch that starts or stops PostHog.
  *
- * @spec [Doc 10 §9.11; docs/compliance/legal-drafts/cookie-banner-text.md Version 1 (every visible
+ * @spec [Doc 10 §9.11; docs/compliance/legal-drafts/cookie-banner-text.md Version 2 (every visible
  *       string below is that text); docs/compliance/legal-drafts/README.md banner requirements
  *       (accept and reject equally prominent, no pre-ticked boxes, GPC = reject with the notice in
  *       place of the banner, 6 months, withdrawal as easy as consent, under-13 never loads
  *       analytics, reject = zero analytics requests); SCL-201 IS 1; SCL-204; owner Step 0
- *       decisions 2026-10-05] | @implemented [2026-10-05]
+ *       decisions 2026-10-05; owner ruling 2026-10-05 (industry-standard wording and layout:
+ *       Version 2)] | @implemented [2026-10-05]
  *
  * plain English: mounted once, inside the auth provider, on every route. Nothing renders and
  * nothing is read until the first effect runs, so the prerendered HTML carries no banner.
- *   - No valid choice and no GPC → the banner, with "Reject analytics" and "Accept analytics" as
- *     identical buttons, plus "Choose settings" and the Cookie Policy link.
- *   - GPC and no choice → the GPC notice instead (analytics is already off).
- *   - "Choose settings", the footer's "Cookie settings" and the Settings page open the dialog,
- *     whose Analytics box starts unticked unless the visitor already accepted.
+ *   - No valid choice and no GPC → the banner: "We use cookies", the body with its Cookie Policy
+ *     link, and three buttons of one size and style — "Reject all", "Accept all", "Cookie
+ *     settings" (which opens the dialog).
+ *   - GPC and no choice → the GPC notice instead (analytics is already off), with "OK".
+ *   - The banner's "Cookie settings", the footer's and the Settings page's open the dialog,
+ *     whose Analytics switch starts off unless the visitor already accepted.
  *   - PostHog starts only when the choice is "accepted" AND the account is not excluded: a
  *     signed-in account must be known to be 13 or over (`is_under_13 === false`). An excluded
  *     account sees no banner (there is nothing to ask), and if PostHog was already running in the
@@ -25,7 +27,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { readDocumentTheme, subscribeDocumentTheme } from "@/lib/theme";
 import {
   closeCookieSettings,
   getConsentSnapshot,
@@ -73,6 +75,20 @@ function dismissGpcNotice(): void {
   } catch {
     // Not persisted: the notice shows again on the next page load, which is harmless.
   }
+}
+
+/**
+ * The consent surfaces follow the app's one theme setting (<html data-theme>) with the app's own
+ * dark tokens: `dark` on the surface scopes index.css's `.dark` values to it alone. Owner ruling
+ * 2026-10-05: banner and dialog in light and dark. Prerender reads "light".
+ */
+function useSurfaceThemeClass(): string {
+  const theme = useSyncExternalStore(
+    subscribeDocumentTheme,
+    readDocumentTheme,
+    () => "light" as const,
+  );
+  return theme === "dark" ? "consent-surface dark" : "consent-surface";
 }
 
 export function useConsentSnapshot(): ReturnType<typeof getConsentSnapshot> {
@@ -141,54 +157,59 @@ export function CookieConsentRoot(): JSX.Element | null {
   );
 }
 
+/** One size and one style for every choice, so Reject is exactly as prominent as Accept. */
+const CHOICE_BUTTON = "w-full sm:w-auto sm:min-w-[9rem]";
+
 function CookieBanner(): JSX.Element {
+  const themeClass = useSurfaceThemeClass();
   return (
     <section
-      aria-label="Cookies on LYCEON"
+      aria-labelledby="cookie-banner-heading"
       data-testid="cookie-banner"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4 shadow-lg"
+      className={`${themeClass} fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4 text-foreground shadow-lg sm:p-6`}
     >
-      <div className="mx-auto flex max-w-5xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-sm font-semibold">Cookies on LYCEON</h2>
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-2 md:max-w-2xl">
+          <h2 id="cookie-banner-heading" className="text-base font-semibold">
+            We use cookies
+          </h2>
           <p className="text-sm text-muted-foreground">
-            We use cookies that are necessary for LYCEON to work. With your
-            permission, we would also like to use analytics cookies to
-            understand how the service is used and improve it. We do not use
-            advertising cookies.
-          </p>
-          <p className="text-sm">
-            <button
-              type="button"
-              className="underline underline-offset-2"
-              onClick={openCookieSettings}
-            >
-              Choose settings
-            </button>
-            {" · "}
+            We use necessary cookies to make LYCEON work. With your permission,
+            we&apos;d also like to use analytics cookies to understand how
+            people use the site and improve it. We don&apos;t use advertising
+            cookies.{" "}
             <Link
               href={COOKIE_POLICY_HREF}
-              className="underline underline-offset-2"
+              className="font-medium text-foreground underline underline-offset-2"
             >
               Cookie Policy
             </Link>
           </p>
         </div>
-        {/* Equal prominence: the same component, variant and size for both choices. */}
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
           <Button
             variant="outline"
+            className={CHOICE_BUTTON}
             data-testid="cookie-reject"
             onClick={() => recordConsentChoice(false, "banner")}
           >
-            Reject analytics
+            Reject all
           </Button>
           <Button
             variant="outline"
+            className={CHOICE_BUTTON}
             data-testid="cookie-accept"
             onClick={() => recordConsentChoice(true, "banner")}
           >
-            Accept analytics
+            Accept all
+          </Button>
+          <Button
+            variant="outline"
+            className={CHOICE_BUTTON}
+            data-testid="cookie-open-settings"
+            onClick={openCookieSettings}
+          >
+            Cookie settings
           </Button>
         </div>
       </div>
@@ -197,26 +218,19 @@ function CookieBanner(): JSX.Element {
 }
 
 function GpcNotice({ onClose }: { onClose: () => void }): JSX.Element {
+  const themeClass = useSurfaceThemeClass();
   return (
     <section
       aria-label="Global Privacy Control"
       data-testid="gpc-notice"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4 shadow-lg"
+      className={`${themeClass} fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4 text-foreground shadow-lg sm:p-6`}
     >
-      <div className="mx-auto flex max-w-5xl flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm">
-          <strong>Your browser has asked us not to use analytics.</strong>{" "}
-          Analytics cookies are off. You can change this in{" "}
-          <button
-            type="button"
-            className="underline underline-offset-2"
-            onClick={openCookieSettings}
-          >
-            Cookie settings
-          </button>
-          .
+          Your browser sent a Global Privacy Control signal, so analytics
+          cookies are off.
         </p>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" className={CHOICE_BUTTON} onClick={onClose}>
           OK
         </Button>
       </div>
@@ -233,6 +247,7 @@ function CookieSettingsDialog({
   excluded: boolean;
   accepted: boolean;
 }): JSX.Element {
+  const themeClass = useSurfaceThemeClass();
   return (
     <Dialog
       open={open}
@@ -240,8 +255,11 @@ function CookieSettingsDialog({
         next ? openCookieSettings() : closeCookieSettings()
       }
     >
-      <DialogContent data-testid="cookie-settings">
-        {/* Mounted only while open, so the box restarts from the stored choice each time. */}
+      <DialogContent
+        data-testid="cookie-settings"
+        className={`${themeClass} max-w-lg bg-background text-foreground`}
+      >
+        {/* Mounted only while open, so the toggle restarts from the stored choice each time. */}
         {open && <CookieSettingsBody excluded={excluded} accepted={accepted} />}
       </DialogContent>
     </Dialog>
@@ -259,42 +277,68 @@ function CookieSettingsBody({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Your cookie settings</DialogTitle>
+        <DialogTitle>Cookie settings</DialogTitle>
         <DialogDescription className="sr-only">
           Choose which cookies LYCEON may use.
         </DialogDescription>
       </DialogHeader>
-      <div className="space-y-4 text-sm">
-        <div>
-          <p className="font-semibold">Strictly necessary — Always on</p>
-          <p className="text-muted-foreground">
-            Keep you signed in, protect your account and remember your settings.
-          </p>
+      <div className="divide-y divide-border text-sm">
+        <div className="flex items-start justify-between gap-4 py-3">
+          <div>
+            <p className="font-semibold">Strictly necessary</p>
+            <p className="text-muted-foreground">
+              Keep you signed in, protect your account and remember your
+              settings.
+            </p>
+          </div>
+          <span className="shrink-0 text-xs font-medium text-muted-foreground">
+            Always on
+          </span>
         </div>
-        <div className="flex items-start gap-3">
-          <Checkbox
-            id="cookie-analytics"
-            data-testid="cookie-analytics-toggle"
-            checked={analytics}
-            disabled={excluded}
-            onCheckedChange={(value) => setAnalytics(value === true)}
-          />
-          <label htmlFor="cookie-analytics">
-            <span className="font-semibold">
-              Analytics — {analytics ? "On" : "Off"}
-            </span>
-            <span className="block text-muted-foreground">
+        <div className="flex items-start justify-between gap-4 py-3">
+          <div>
+            <p id="cookie-analytics-label" className="font-semibold">
+              Analytics
+            </p>
+            <p className="text-muted-foreground">
               Help us understand how LYCEON is used, including recordings of how
               pages are used. Provided by PostHog.
-            </span>
-          </label>
+            </p>
+          </div>
+          {/* A standard on/off switch; off unless the visitor already accepted (no pre-ticking). */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={analytics}
+            aria-labelledby="cookie-analytics-label"
+            data-testid="cookie-analytics-toggle"
+            disabled={excluded}
+            onClick={() => setAnalytics((on) => !on)}
+            // Off: outlined track, muted knob. On: filled track, contrasting knob. Distinct in
+            // both themes without relying on colour alone (the knob also moves).
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+              analytics
+                ? "border-primary bg-primary"
+                : "border-muted-foreground bg-transparent"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`inline-block h-4 w-4 rounded-full transition-transform ${
+                analytics
+                  ? "translate-x-[1.375rem] bg-primary-foreground"
+                  : "translate-x-[0.125rem] bg-muted-foreground"
+              }`}
+            />
+          </button>
         </div>
       </div>
-      <DialogFooter className="gap-2 sm:gap-2">
-        {/* An excluded account (under 13 or age unknown) never loads analytics, so it has no
-            choice to record: every control is disabled rather than logging a meaningless one. */}
+      {/* An excluded account (under 13 or age unknown) never loads analytics, so it has no
+          choice to record: every control is disabled rather than logging a meaningless one. */}
+      <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-2">
         <Button
           variant="outline"
+          className={CHOICE_BUTTON}
           disabled={excluded}
           onClick={() => recordConsentChoice(false, "settings")}
         >
@@ -302,14 +346,16 @@ function CookieSettingsBody({
         </Button>
         <Button
           variant="outline"
+          className={CHOICE_BUTTON}
           data-testid="cookie-save"
           disabled={excluded}
           onClick={() => recordConsentChoice(analytics, "settings")}
         >
-          Save my choices
+          Save choices
         </Button>
         <Button
           variant="outline"
+          className={CHOICE_BUTTON}
           disabled={excluded}
           onClick={() => recordConsentChoice(true, "settings")}
         >

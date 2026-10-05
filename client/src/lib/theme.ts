@@ -85,3 +85,23 @@ export function systemPrefersDark(
   if (win === null || typeof win.matchMedia !== "function") return false;
   return win.matchMedia("(prefers-color-scheme: dark)").matches;
 }
+
+/** The theme currently applied to <html data-theme> ("light" until the boot script runs). */
+export function readDocumentTheme(): ResolvedTheme {
+  return document.documentElement.getAttribute("data-theme") === "dark"
+    ? "dark"
+    : "light";
+}
+
+/**
+ * Follows <html data-theme>, so a surface outside the student UI's token root (the cookie banner
+ * and its dialog, which mount at the app root) can theme with the same setting.
+ */
+export function subscribeDocumentTheme(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => observer.disconnect();
+}

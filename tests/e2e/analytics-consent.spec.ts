@@ -195,7 +195,7 @@ async function setAcceptedCookie(context: BrowserContext): Promise<void> {
   await context.addCookies([
     {
       name: "lyceon_consent",
-      value: `1.0d3c2b1a-9f8e-4d7c-8b6a-5f4e3d2c1b0a.a.${Math.floor(Date.now() / 1000)}`,
+      value: `2.0d3c2b1a-9f8e-4d7c-8b6a-5f4e3d2c1b0a.a.${Math.floor(Date.now() / 1000)}`,
       url: BASE,
     },
   ]);
@@ -206,7 +206,14 @@ test.describe("cookie consent → PostHog", () => {
     const seen = await instrument(context, page);
     await page.goto(`${BASE}/`);
     await expect(page.getByTestId("cookie-banner")).toBeVisible();
-    await page.getByTestId("cookie-reject").click();
+    // Version 2 (owner ruling 2026-10-05): three equal buttons, in this order.
+    const banner = page.getByTestId("cookie-banner");
+    await expect(banner.getByRole("button")).toHaveText([
+      "Reject all",
+      "Accept all",
+      "Cookie settings",
+    ]);
+    await banner.getByRole("button", { name: "Reject all" }).click();
     await expect(page.getByTestId("cookie-banner")).toBeHidden();
     await expect.poll(() => seen.consentPosts.length).toBe(1);
     expect(seen.consentPosts[0]).toMatchObject({
@@ -226,7 +233,10 @@ test.describe("cookie consent → PostHog", () => {
     await expect(page.getByTestId("cookie-banner")).toBeVisible();
     await page.waitForTimeout(1500);
     expect(seen.posthog).toEqual([]);
-    await page.getByTestId("cookie-accept").click();
+    await page
+      .getByTestId("cookie-banner")
+      .getByRole("button", { name: "Accept all" })
+      .click();
     await expect
       .poll(
         () =>
@@ -290,10 +300,10 @@ test.describe("cookie consent → PostHog", () => {
       .poll(() => seen.posthog.length, { timeout: 15_000 })
       .toBeGreaterThan(0);
     await page.getByRole("button", { name: "Cookie settings" }).click();
-    await page.getByTestId("cookie-analytics-toggle").click();
+    await page.getByRole("switch", { name: "Analytics" }).click();
     await Promise.all([
       page.waitForEvent("load"),
-      page.getByTestId("cookie-save").click(),
+      page.getByRole("button", { name: "Save choices" }).click(),
     ]);
     const before = seen.posthog.length;
     await page.waitForTimeout(3000);
