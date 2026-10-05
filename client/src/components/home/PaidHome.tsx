@@ -9,7 +9,8 @@
  *
  * plain English: the main column is the greeting and date line, today's plan from the calendar
  * with "Start today's plan" as the ONE primary action (it launches the first block of the day
- * that is not done; each row has its own outline Start), Mastery as wide rows, and "Pick up
+ * that is not done; each row has its own outline Start), the "Start a full-length test" card
+ * (owner ruling, Karl, 2026-10-05; FullLengthCard.tsx), Mastery as wide rows, and "Pick up
  * where you left off" (open practice, review and full-length sessions; the diagnostic is
  * dropped, wiring table §3). The right panel is the projected score with the target, this week's
  * seven days, and recent sessions.
@@ -23,11 +24,18 @@
  * Settings wording) as the primary, linking to /calendar; a rest day says "Rest day" (the
  * calendar's own words); a day with every block done offers no primary; empty "Pick up" and
  * failed reads render nothing invented (the page shows one recovery notice).
+ *
+ * PHONE NOTICE (owner ruling, Karl, 2026-10-05, OQ-63: "show it for every full-length start on a
+ * phone, including calendar-launched starts. One shared pre-start check"). A Today's plan start
+ * whose block is a full-length one, and the "Pick up" row of a full-length sitting in progress,
+ * go through `useFullLengthPhonePrecheck` BEFORE the launch request: on a phone the notice asks
+ * first, and a cancelled start launches nothing. Practice and review starts never ask.
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import type { CalendarReadyResponse } from "@lyceon/shared/calendar";
+import { displayFormName } from "@lyceon/shared/exam-form-display";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
@@ -40,11 +48,16 @@ import { addDays, startOfWeek } from "@/features/calendar/lib/dates";
 import { fetchExamForms } from "@/features/exam/api/exam-api";
 import { examKeys } from "@/features/exam/api/keys";
 import { isExamInProgress } from "@/features/exam/lib/tests-home-model";
+import {
+  useFullLengthPhonePrecheck,
+  type FullLengthPhonePrecheck,
+} from "@/features/exam/lib/useFullLengthPhonePrecheck";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { useActiveReviewSessions, useReviewPool } from "@/hooks/useReview";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
+import { FullLengthCard } from "./FullLengthCard";
 import {
   ProjectionSection,
   RecentSessionsSection,
@@ -100,6 +113,7 @@ export function PaidHome({
   const projection = useHomeProjection(studentId);
   const { launch, pendingBlockId } = useLaunchBlock(navigate);
   const [launchFailed, setLaunchFailed] = useState(false);
+  const precheck = useFullLengthPhonePrecheck();
 
   const ready: CalendarReadyResponse | null =
     calendar.data?.status === "ready" ? calendar.data : null;
@@ -119,6 +133,12 @@ export function PaidHome({
     setLaunchFailed(false);
     const outcome = await launch(block.block_id, block.block_type);
     if (outcome.kind === "failed") setLaunchFailed(true);
+  };
+  // OQ-63: a full-length block asks the shared phone pre-start check before the launch.
+  const startChecked = (block: Block): void => {
+    if (block.block_type === "full_length")
+      precheck.run(() => void start(block));
+    else void start(block);
   };
 
   const failed =
@@ -149,6 +169,7 @@ export function PaidHome({
           title: sessionTitle("practice", s.criteria, s.section),
           progress: { answered: s.answered_items, total: s.total_items },
           href: `/practice/session/${s.id}`,
+          fullLength: false,
         }),
       ),
     ...review.sessions.map(
@@ -157,6 +178,7 @@ export function PaidHome({
         title: sessionTitle("review", s.criteria, s.section),
         progress: { answered: s.answered_items, total: s.total_items },
         href: `/review/session/${s.id}`,
+        fullLength: false,
       }),
     ),
     ...(exams.data?.forms ?? []).flatMap((f): ResumeRow[] =>
@@ -164,9 +186,10 @@ export function PaidHome({
         ? [
             {
               key: `exam:${f.latest_session.session_id}`,
-              title: f.name,
+              title: displayFormName(f.name),
               progress: null,
               href: `/tests/${f.latest_session.session_id}`,
+              fullLength: true,
             },
           ]
         : [],
@@ -195,9 +218,12 @@ export function PaidHome({
           plan={plan}
           pendingBlockId={pendingBlockId}
           launchFailed={launchFailed}
-          onStart={(block) => void start(block)}
+          onStart={startChecked}
         />
       ) : null}
+
+      {/* Owner ruling (Karl, 2026-10-05) item 4: the full-length card, after today's plan. */}
+      <FullLengthCard />
 
       {mastery.data !== undefined ? (
         <section
@@ -237,7 +263,10 @@ export function PaidHome({
         </section>
       ) : null}
 
-      {resumeRows.length > 0 ? <PickUp rows={resumeRows} /> : null}
+      {resumeRows.length > 0 ? (
+        <PickUp rows={resumeRows} onFullLengthClick={precheck.onLinkClick} />
+      ) : null}
+      {precheck.dialog}
 
       <AppShellPanel>
         <div className="flex flex-col gap-10" data-testid="home-panel">
@@ -397,9 +426,17 @@ type ResumeRow = {
   title: string;
   progress: { answered: number; total: number } | null;
   href: string;
+  /** A full-length sitting: its Continue goes through the phone pre-start check (OQ-63). */
+  fullLength: boolean;
 };
 
-function PickUp({ rows }: { rows: readonly ResumeRow[] }): JSX.Element {
+function PickUp({
+  rows,
+  onFullLengthClick,
+}: {
+  rows: readonly ResumeRow[];
+  onFullLengthClick: FullLengthPhonePrecheck["onLinkClick"];
+}): JSX.Element {
   return (
     <section
       aria-labelledby="home-resume-h"
@@ -439,7 +476,13 @@ function PickUp({ rows }: { rows: readonly ResumeRow[] }): JSX.Element {
                 </>
               ) : null}
             </div>
-            <Link href={row.href} className={TEXT_LINK}>
+            <Link
+              href={row.href}
+              className={TEXT_LINK}
+              {...(row.fullLength
+                ? { onClick: onFullLengthClick(row.href) }
+                : {})}
+            >
               Continue
             </Link>
           </li>

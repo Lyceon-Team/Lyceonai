@@ -35,6 +35,10 @@ FILES=(
   "client/src/hooks/useCanonicalPractice.ts"
   "client/src/hooks/useKeyboardShortcuts.ts"
   "client/src/components/layout/app-shell.tsx"
+  "client/src/components/layout/HeaderUserMenu.tsx"
+  "client/src/components/home/FullLengthCard.tsx"
+  "client/src/components/home/PaidHome.tsx"
+  "client/src/components/home/FreeHome.tsx"
   "packages/shared/src/return-path.ts"
   "client/src/features/exam/lib/tests-home-model.ts"
   "client/src/features/exam/pages/TestsHomePage.tsx"
@@ -91,7 +95,12 @@ FILES=(
   "client/src/components/tutor/LisaUpgradeCard.tsx"
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
+  "client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx"
+  "client/src/features/exam/pages/ExamSessionPage.tsx"
+  "client/src/features/calendar/calendar-student.css"
   "client/src/features/exam/components/ExamStatus.tsx"
+  "client/src/features/calendar/components/FullLengthFields.tsx"
+  "packages/shared/src/exam-form-display.ts"
 )
 
 snapshot_all() {
@@ -255,11 +264,12 @@ s = s.replace(a, "  if (false) {", 1)'
 
 # ── U8 — review is reachable from the global nav ─────────────────────────────────────
 # Re-pointed 2026-10-03 (student UI UI-41): the top-nav `navItems` array became the rail's
-# `RAIL_ITEMS`, so the plant removes the whole Review rail entry.
+# `RAIL_ITEMS`, so the plant removes the whole Review rail entry. Re-anchored 2026-10-05: the
+# rail item lost #1108's `inTabBar` flag (the tab bar has its own `TAB_BAR_KEYS`).
 plant "U8" "remove the Review entry from the live global nav" \
   "client/src/review-entry-points.test.ts" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "  {\n    key: \"review\",\n    label: \"Review\",\n    href: \"/review\",\n    icon: RotateCcw,\n    lock: null,\n    inTabBar: true,\n  },\n"
+  'a = "  {\n    key: \"review\",\n    label: \"Review\",\n    href: \"/review\",\n    icon: RotateCcw,\n    lock: null,\n  },\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
@@ -868,12 +878,14 @@ plant "UI54-R4" "OQ-34: the lapsed report does not open the upgrade modal" \
 assert s.count(a) == 1
 s = s.replace(a, "    opened.current = true;", 1)'
 
+# Re-pointed 2026-10-05 (form names, owner ruling): the title now renders
+# `displayFormName(payload.test_form_name)`; same plant, drops " report".
 plant "UI54-R5" "the report top bar drops 'report'" \
   "$T54_REPORT" \
   "client/src/features/exam/pages/ExamReportPage.tsx" \
-  'a = "            {payload.test_form_name} report"
+  'a = "            {displayFormName(payload.test_form_name)} report"
 assert s.count(a) == 1
-s = s.replace(a, "            {payload.test_form_name}", 1)'
+s = s.replace(a, "            {displayFormName(payload.test_form_name)}", 1)'
 
 plant "UI54-K1" "ruling 7: segments drawn in a mastery colour" \
   "$T54_REPORT" \
@@ -1918,52 +1930,164 @@ assert s.count(a) == 1
 s = s.replace(a, "\"flex w-full items-center gap-4 rounded-lg px-5", 1)'
 
 # ── Owner rulings (Karl, 2026-10-05): mobile tab bar, avatar menu, Full-Length naming ─────
-# Tabs Home, Practice, Review, Calendar, LISA; avatar menu Full-Length, Settings, Help, Sign out
-# (supersedes OQ-4's tab bar and OQ-48's menu order); the Full-Length home's phone notice with
-# "Continue anyway", never blocked; every student-facing "Tests" label becomes "Full-Length".
+# The later 2026-10-05 ruling (supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62, and the
+# earlier same-day ruling built in #1108): phone tabs Home, Review, Practice, Calendar, LISA; the
+# avatar menu Settings, Help, Sign out (admins add Crisis review); Full-Length on neither phone
+# surface, reached on a phone from a calendar block or Home's card; the desktop rail unchanged.
+# FU-M1–M4 re-pointed from #1108's `inTabBar` flags to `TAB_BAR_KEYS` and the menu's `items`.
+# The phone notice with "Continue anyway" stays, now one shared pre-start check (FU-N1–N8, FU-C1–C2,
+# FU-H1–H3; OQ-63, below); every
+# student-facing "Tests" label is "Full-Length" (FU-T1–T3).
 T41_RAIL="client/src/components/layout/app-shell.rail.test.tsx"
+T50_HOME="client/src/pages/lyceon-dashboard.test.tsx"
 
 plant "FU-M1" "Full-Length back on the phone tab bar" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: false,"
+  'a = "  \"calendar\",\n  \"lisa\",\n] as const;"
 assert s.count(a) == 1
-s = s.replace(a, "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: true,", 1)'
+s = s.replace(a, "  \"calendar\",\n  \"full-length\",\n  \"lisa\",\n] as const;", 1)'
 
-plant "FU-M2" "Calendar off the phone tab bar (the OQ-4 bar)" \
+plant "FU-M2" "the tab bar goes back to #1108's order (Practice before Review)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: true,"
+  'a = "  \"review\",\n  \"practice\",\n"
 assert s.count(a) == 1
-s = s.replace(a, "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: false,", 1)'
+s = s.replace(a, "  \"practice\",\n  \"review\",\n", 1)'
 
-plant "FU-M3" "the avatar menu leads with Calendar (the OQ-48 order)" \
+plant "FU-M3" "Full-Length back in the avatar menu (#1108's menu)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      leadingItems={RAIL_ITEMS.filter((item) => !item.inTabBar).map((item) => ("
+  'a = "      items={<MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" />}"
 assert s.count(a) == 1
-s = s.replace(a, "      leadingItems={RAIL_ITEMS.filter((item) => item.key === \"calendar\").map((item) => (", 1)'
+s = s.replace(a, "      items={<><MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" /><MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" /></>}", 1)'
 
-plant "FU-M4" "a locked Full-Length menu entry navigates instead of opening the modal" \
+plant "FU-M4" "Calendar off the phone tab bar" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "if (reason !== null && lock !== null && lock.behaviour === \"modal\") {"
+  'a = "  \"practice\",\n  \"calendar\",\n"
 assert s.count(a) == 1
-s = s.replace(a, "if (reason !== null && lock !== null && lock.behaviour === \"navigate\") {", 1)'
+s = s.replace(a, "  \"practice\",\n", 1)'
 
-plant "FU-N1" "no phone notice on the Full-Length home" \
+plant "FU-M5" "the tab bar takes the rail's order instead of its own" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "TAB_BAR_KEYS.map(railItem);"
+assert s.count(a) == 1
+s = s.replace(a, "RAIL_ITEMS.filter((i) => (TAB_BAR_KEYS as readonly string[]).includes(i.key));", 1)'
+
+plant "FU-M6" "the admin menu loses Help" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "        {items}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {isAdmin ? null : items}\n", 1)'
+
+# F-70: the avatar dropdown follows the page theme (student tokens, the shell's theme lock).
+plant "F70-1" "the App shell's menu back on the app-wide tone (outside any .lyc root)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      tone=\"student\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "F70-2" "the menu ignores the shell's light lock" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "portalThemeLock: themeLock }"
+assert s.count(a) == 1
+s = s.replace(a, "portalThemeLock: null }", 1)'
+
+plant "F70-3" "the student menu panel drawn with the app-wide light tokens" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "    content: \"w-56 border-lyc-rule bg-lyc-sheet text-lyc-ink\","
+assert s.count(a) == 1
+s = s.replace(a, "    content: \"w-56 bg-background border-border\",", 1)'
+
+plant "F70-4" "student menu items take the app-wide accent on focus" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "  \"text-lyc-ink focus:bg-lyc-hover focus:text-lyc-ink-strong\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"text-lyc-ink focus:bg-accent focus:text-lyc-ink-strong\";", 1)'
+
+# Home's "Start a full-length test" card (the ruling's item 4).
+plant "HC-1" "no full-length card on the paid Home" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "      <FullLengthCard />\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "HC-2" "no full-length card on the free Home" \
+  "$T50_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "      <FullLengthCard />\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "HC-3" "a locked card navigates instead of opening the modal" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "        {reason === null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "        {true ? (", 1)'
+
+plant "HC-4" "the locked card opens the modal for the wrong feature" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "open(\"exam_full_length\", reason)"
+assert s.count(a) == 1
+s = s.replace(a, "open(\"tutor_access\", reason)", 1)'
+
+plant "HC-5" "the card links somewhere other than the Full-Length page" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "const FULL_LENGTH_HREF = \"/tests\";"
+assert s.count(a) == 1
+s = s.replace(a, "const FULL_LENGTH_HREF = \"/practice\";", 1)'
+
+plant "HC-6" "the card's link becomes a second filled primary" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "<Button asChild variant=\"lyc-outline\" size=\"lyc\">"
+assert s.count(a) == 1
+s = s.replace(a, "<Button asChild variant=\"lyc-primary\" size=\"lyc\">", 1)'
+
+plant "HC-7" "the card is hidden on a phone" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "className=\"flex flex-col gap-4 rounded-lg border"
+assert s.count(a) == 1
+s = s.replace(a, "className=\"hidden lg:flex flex-col gap-4 rounded-lg border", 1)'
+
+plant "HC-8" "the card's line drifts from the approved Full-Length subtitle" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "and a scored report at the end.\";"
+assert s.count(a) == 1
+s = s.replace(a, "and a score at the end.\";", 1)'
+
+# OQ-63 (owner ruling, Karl, 2026-10-05): "show it for every full-length start on a phone,
+# including calendar-launched starts. One shared pre-start check, same \"Continue anyway\"."
+# FU-N1/N2 re-pointed from the Full-Length home's page-gating notice (`held`, `setContinued`) to
+# the shared check, `useFullLengthPhonePrecheck.tsx`, which every full-length start now calls.
+PRECHECK="client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx"
+
+plant "FU-N1" "the shared check never asks on a phone" \
   "$T54_HOME" \
-  "client/src/features/exam/pages/TestsHomePage.tsx" \
-  'a = "  const held = phone && !continued;"
+  "$PRECHECK" \
+  'a = "    (): boolean => phone && !readPhoneNoticeContinued(),"
 assert s.count(a) == 1
-s = s.replace(a, "  const held = false;", 1)'
+s = s.replace(a, "    (): boolean => false,", 1)'
 
-plant "FU-N2" "the phone notice blocks: Continue anyway reveals nothing" \
+plant "FU-N2" "the notice blocks: Continue anyway does not perform the start" \
   "$T54_HOME" \
-  "client/src/features/exam/pages/TestsHomePage.tsx" \
-  'a = "    setContinued(true);"
+  "$PRECHECK" \
+  'a = "    proceed?.();\n"
 assert s.count(a) == 1
-s = s.replace(a, "    setContinued(false);", 1)'
+s = s.replace(a, "", 1)'
 
 plant "FU-N3" "the notice drifts from the ruling's words" \
   "$T54_HOME" \
@@ -1992,6 +2116,135 @@ plant "FU-T3" "the unscored attempt points back to Tests" \
   'a = "You can start a new attempt from Full-Length."
 assert s.count(a) == 1
 s = s.replace(a, "You can start a new attempt from Tests.", 1)'
+
+# ── Form names (owner ruling, Karl, 2026-10-05) ──────────────────────────────────────
+# "Form names: display \"Full-Length Test 1/2/3\" in student UI as a display mapping only. Do
+# not rename test_forms rows (forms are immutable)." Each plant drops `displayFormName` at one
+# student surface, so the stored "Practice Test N" reaches the page again.
+plant "FN-1" "the Full-Length home's rows show the stored form name" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const name = displayFormName(row.form.name);"
+assert s.count(a) == 1
+s = s.replace(a, "  const name = row.form.name;", 1)'
+
+plant "FN-2" "the Full-Length home's score history shows the stored form name" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "                  {displayFormName(row.test_form_name)}"
+assert s.count(a) == 1
+s = s.replace(a, "                  {row.test_form_name}", 1)'
+
+plant "FN-3" "the report top bar shows the stored form name" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "            {displayFormName(payload.test_form_name)} report"
+assert s.count(a) == 1
+s = s.replace(a, "            {payload.test_form_name} report", 1)'
+
+plant "FN-4" "the review picker's full-length row shows the stored form name" \
+  "client/src/pages/review.test.tsx client/src/lib/review-session-picker.test.ts" \
+  "client/src/lib/review-session-picker.ts" \
+  'a = "    return displayFormName(bag.test_form_name);"
+assert s.count(a) == 1
+s = s.replace(a, "    return bag.test_form_name;", 1)'
+
+plant "FN-5" "Home's in-progress test row shows the stored form name" \
+  "client/src/pages/lyceon-dashboard.test.tsx" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "              title: displayFormName(f.name),"
+assert s.count(a) == 1
+s = s.replace(a, "              title: f.name,", 1)'
+
+plant "FN-6" "the calendar's form picker shows the stored form name" \
+  "client/src/features/calendar/components/FullLengthFields.wording.test.tsx" \
+  "client/src/features/calendar/components/FullLengthFields.tsx" \
+  'a = "              {displayFormName(form.name)}"
+assert s.count(a) == 1
+s = s.replace(a, "              {form.name}", 1)'
+
+plant "FN-7" "the mapping forgets the seed's 'Full-Length Practice Test N' shape" \
+  "packages/shared/src/__tests__/exam-form-display.test.ts $T54_HOME" \
+  "packages/shared/src/exam-form-display.ts" \
+  'a = "const STORED_FORM_NAME = /^(?:Full-Length )?Practice Test ([0-9]+)$/;"
+assert s.count(a) == 1
+s = s.replace(a, "const STORED_FORM_NAME = /^Practice Test ([0-9]+)$/;", 1)'
+
+plant "FU-N4" "the Full-Length home's Start skips the shared check" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "        onClick={() => precheck.run(() => void start())}"
+assert s.count(a) == 1
+s = s.replace(a, "        onClick={() => void start()}", 1)'
+
+plant "FU-N5" "the Full-Length home's Resume skips the shared check" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "          onClick={precheck.onLinkClick(href)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "FU-N6" "closing the notice performs the start anyway" \
+  "$T54_HOME" \
+  "$PRECHECK" \
+  'a = "    if (next) return;\n    held.current = null;"
+assert s.count(a) == 1
+s = s.replace(a, "    if (next) return;\n    held.current?.();\n    held.current = null;", 1)'
+
+plant "FU-N7" "Continue anyway is not remembered for the tab" \
+  "$T54_HOME" \
+  "$PRECHECK" \
+  'a = "    rememberPhoneNoticeContinued();\n    const proceed"
+assert s.count(a) == 1
+s = s.replace(a, "    const proceed", 1)'
+
+plant "FU-N8" "the exam session page asks the check itself" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/ExamSessionPage.tsx" \
+  'i = s.index("\nimport ") + 1
+s = s[:i] + "import { useFullLengthPhonePrecheck } from \"../lib/useFullLengthPhonePrecheck\";\nvoid useFullLengthPhonePrecheck;\n" + s[i:]'
+
+plant "FU-C1" "a calendar full-length block launches without the check" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+assert s.count(a) == 1
+s = s.replace(a, "            false\n              ? precheck.run(", 1)'
+
+plant "FU-C2" "every calendar block asks the check (practice too)" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+assert s.count(a) == 1
+s = s.replace(a, "            true\n              ? precheck.run(", 1)'
+
+plant "FU-C3" "the block sheet falls back under the phone tab bar (Start untappable at 390)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyceon-calendar.lyc-cal .sheet {\n  z-index: 45;"
+assert s.count(a) == 1
+s = s.replace(a, ".lyceon-calendar.lyc-cal .sheet {\n  z-index: 9;", 1)'
+
+plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "    if (block.block_type === \"full_length\")\n"
+assert s.count(a) == 1
+s = s.replace(a, "    if (false)\n", 1)'
+
+plant "FU-H2" "Home's Pick up row for a sitting skips the check" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "                ? { onClick: onFullLengthClick(row.href) }"
+assert s.count(a) == 1
+s = s.replace(a, "                ? {}", 1)'
+
+plant "FU-H3" "Home's Today's plan asks the check for every block (review too)" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "    if (block.block_type === \"full_length\")\n"
+assert s.count(a) == 1
+s = s.replace(a, "    if (true)\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

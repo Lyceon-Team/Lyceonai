@@ -89,6 +89,23 @@ function renderSheet(
 const chip = (group: string, label: string): HTMLElement =>
   within(screen.getByTestId(group)).getByRole("button", { name: label });
 
+describe("OQ-62 (b) (Karl, 2026-10-05): the two exam rows say 'Full-length test'", () => {
+  it("labels the day and frequency rows 'Full-length test …', never 'Practice test …'", () => {
+    renderSheet();
+    // Presence: both groups are drawn and carry the ruled wording as their names.
+    expect(screen.getByTestId("settings-full-length")).toHaveAttribute(
+      "aria-label",
+      "Full-length test day",
+    );
+    expect(
+      screen.getByTestId("settings-full-length-frequency"),
+    ).toHaveAttribute("aria-label", "Full-length test frequency");
+    expect(screen.getByText("Full-length test day")).toBeTruthy();
+    expect(screen.getByText("Full-length test frequency")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bpractice tests?\b/i);
+  });
+});
+
 describe("the sheet opens on the student's CURRENT schedule", () => {
   it("pre-selects the stored days, minutes and test day", () => {
     renderSheet();
@@ -151,12 +168,12 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
   it("is derived, and moves when a chip moves", () => {
     renderSheet();
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 35 questions a day · about 3 practice tests before 7 November, on Saturdays",
+      "6 study days a week · about 35 questions a day · about 3 full-length tests before 7 November, on Saturdays",
     );
 
     fireEvent.click(chip("settings-minutes", "2 hr"));
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 80 questions a day · about 3 practice tests before 7 November, on Saturdays",
+      "6 study days a week · about 80 questions a day · about 3 full-length tests before 7 November, on Saturdays",
     );
   });
 
@@ -164,7 +181,7 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
     renderSheet();
     fireEvent.click(chip("settings-full-length", "None"));
     expect(screen.getByTestId("settings-summary").textContent).toContain(
-      "no automatic practice tests",
+      "no automatic full-length tests",
     );
   });
 
@@ -441,7 +458,7 @@ describe("practice test frequency (§8.1)", () => {
   it("states the RATE, not a count, when there is no target date to count toward", () => {
     renderSheet({ profile: { ...PROFILE, target_exam_date: null } });
     expect(screen.getByTestId("settings-summary").textContent).toContain(
-      "a practice test every 2 weeks, on Saturdays",
+      "a full-length test every 2 weeks, on Saturdays",
     );
   });
 });

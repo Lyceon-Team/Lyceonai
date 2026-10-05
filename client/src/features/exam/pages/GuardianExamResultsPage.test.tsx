@@ -201,7 +201,7 @@ describe("guardian exam result", () => {
   it("pending: the student's 'Scoring your test', naming the student; no number, no disclosure, no tabs", () => {
     show(toGuardianExamReport(pendingReport));
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "Scoring your student's test",
+      "Scoring your student's full-length test",
     );
     // The student's "This page updates on its own." is dropped: this page does not poll.
     expect(screen.getByRole("status").textContent).toBe(
@@ -227,10 +227,10 @@ describe("guardian exam result", () => {
     expectNoControls();
   });
 
-  it("not_completed: the student's 'This test isn't finished'; no resume control", () => {
+  it("not_completed: the student's 'This full-length test isn't finished'; no resume control", () => {
     show(toGuardianExamReport(inProgressReport));
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "This test isn't finished",
+      "This full-length test isn't finished",
     );
     expectNoControls();
   });

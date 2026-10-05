@@ -2,8 +2,10 @@
  * UI-41: the three shells (App shell with rail lock states, Focus shell, Bare card).
  *
  * @spec [student-UI register §6 Wave 4 UI-41; design/DESIGN.md §2 (shells, free plan locks,
- *        mobile OQ-4; tab bar and avatar menu per the owner ruling, Karl, 2026-10-05: tabs Home,
- *        Practice, Review, Calendar, LISA; menu Full-Length, Settings, Help, Sign out)]
+ *        mobile; tab bar and avatar menu per the owner ruling, Karl, 2026-10-05, superseding
+ *        OQ-4, OQ-48 and the Full-Length part of OQ-62: tabs Home, Review, Practice, Calendar,
+ *        LISA; menu Settings, Help, Sign out; Full-Length on a phone from Home's card or a
+ *        calendar block; register §8 F-70, the avatar menu follows the page theme)]
  *        | @implemented [2026-10-03; avatar menu shots 2026-10-05]
  *
  * plain English: one shot per shell state UI-41 owns, each paired with the closest signed-off
@@ -124,7 +126,7 @@ export const UI_41: PageGroup = {
     {
       id: "app-avatar-menu-paid",
       title:
-        "App shell, /dashboard, paid: the avatar menu opened (390: Full-Length, Settings, Help, Sign out; desktop: the rail, unchanged)",
+        "App shell, /dashboard, paid: the avatar menu opened (390: Settings, Help, Sign out, in the page's theme; desktop: the rail, unchanged)",
       persona: "paid",
       route: "/dashboard",
       waitFor: {
@@ -145,7 +147,7 @@ export const UI_41: PageGroup = {
     {
       id: "app-avatar-menu-free",
       title:
-        "App shell, /dashboard, free: the avatar menu opened (390: Full-Length first, with its lock; desktop: the rail, unchanged)",
+        "App shell, /dashboard, free: the avatar menu opened (390: Settings, Help, Sign out, no Full-Length; desktop: the rail, unchanged)",
       persona: "free",
       route: "/dashboard",
       sessionStorage: DIAGNOSTIC_PROMPT_DISMISSED,
@@ -165,9 +167,30 @@ export const UI_41: PageGroup = {
       },
     },
     {
+      id: "app-avatar-menu-light-locked",
+      title:
+        "App shell, /practice/topics (a page still pinned light, OQ-49), paid: the avatar menu opened (390: a light menu in both themes, F-70)",
+      persona: "paid",
+      route: "/practice/topics",
+      waitFor: {
+        desktop: '[data-testid="app-rail"]',
+        mobile: '[data-testid="app-tab-bar"]',
+      },
+      steps: [
+        {
+          click: { desktop: null, mobile: '[data-testid="button-user-menu"]' },
+        },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototypes have no phone layout (fixed 1440x900 canvas); the menu's theme is register §8 F-70.",
+      },
+    },
+    {
       id: "app-upgrade-modal-fulllength-free",
       title:
-        "Upgrade modal opened from the locked Full-Length entry (390: in the avatar menu; desktop: on the rail), free, on /dashboard",
+        "Upgrade modal opened from the locked Full-Length entry (390: Home's full-length card; desktop: the rail), free, on /dashboard",
       persona: "free",
       route: "/dashboard",
       sessionStorage: DIAGNOSTIC_PROMPT_DISMISSED,
@@ -179,11 +202,8 @@ export const UI_41: PageGroup = {
         {
           click: {
             desktop: '[data-testid="rail-full-length"]',
-            mobile: '[data-testid="button-user-menu"]',
+            mobile: '[data-testid="home-full-length-start"]',
           },
-        },
-        {
-          click: { desktop: null, mobile: '[data-testid="menu-full-length"]' },
         },
       ],
       expectVisible: '[data-testid="upgrade-modal"]',

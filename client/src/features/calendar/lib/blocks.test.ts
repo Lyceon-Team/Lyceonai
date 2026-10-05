@@ -165,7 +165,7 @@ describe("toneOf (§17.1 colour families)", () => {
       math: "Math practice",
       rw: "Reading & Writing",
       review: "Review",
-      exam: "Practice test",
+      exam: "Full-length test",
     });
   });
 });
@@ -198,7 +198,7 @@ describe("titleOf (§17.1 row title)", () => {
   it("gives a full-length block a count-free title — its target_count is a literal 1", () => {
     const block = fullLengthBlock();
     expect(block.target_count).toBe(1);
-    expect(titleOf(block)).toBe("Full-length practice test");
+    expect(titleOf(block)).toBe("Full-length test");
   });
 });
 
