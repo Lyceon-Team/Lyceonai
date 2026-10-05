@@ -633,6 +633,11 @@ test("homepage: the banner's background is the page's cream; other public pages 
   });
   await page.goto(`${BASE}/online-sat-prep`);
   await expect(page.getByTestId("cookie-banner")).toBeVisible();
+  // The page's own chunk loads after the shell: wait for its heading, so the colour read is of
+  // the page and not the route's loading fallback.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Online SAT prep" }),
+  ).toBeVisible();
   expect(await colours()).toEqual({
     banner: "rgb(255, 250, 239)",
     page: "rgb(255, 250, 239)",
