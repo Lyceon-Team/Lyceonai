@@ -99,7 +99,10 @@ const freePracticeTest: ContentPageInput = {
         {
           type: "links",
           items: [
-            { label: "SAT practice questions by topic", href: PRACTICE_HUB_PATH },
+            {
+              label: "SAT practice questions by topic",
+              href: PRACTICE_HUB_PATH,
+            },
             {
               label: "Today's SAT Question of the Day",
               href: "/sat-question-of-the-day",
@@ -161,7 +164,8 @@ export const ONLINE_SAT_PREP_FAQS: readonly ContentFaqItem[] = [
   },
   {
     question: "What is free vs paid?",
-    answer: "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test and your diagnostic score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans.",
+    answer:
+      "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test and your diagnostic score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans.",
     claims: ["W1", "W2"],
   },
 ];
@@ -320,7 +324,10 @@ const howToStudy: ContentPageInput = {
               label: post.title,
               href: `/blog/${post.slug}`,
             })),
-            { label: "SAT practice questions by topic", href: PRACTICE_HUB_PATH },
+            {
+              label: "SAT practice questions by topic",
+              href: PRACTICE_HUB_PATH,
+            },
             { label: "Free SAT practice tests", href: FREE_PRACTICE_TEST_PATH },
           ],
         },

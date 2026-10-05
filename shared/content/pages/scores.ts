@@ -61,7 +61,8 @@ export const SCORE_PAGE_SCORES = [1100, 1200, 1300, 1400, 1500] as const;
 /** "93" -> "93rd". Only a last digit of 1, 2 or 3 (outside 11–13) takes st/nd/rd. */
 function ordinal(n: string): string {
   const v = Number(n);
-  if (!Number.isInteger(v)) throw new Error(`scores: ${n} is not a whole percentile`);
+  if (!Number.isInteger(v))
+    throw new Error(`scores: ${n} is not a whole percentile`);
   const tens = v % 100;
   if (tens >= 11 && tens <= 13) return `${n}th`;
   return `${n}${["th", "st", "nd", "rd"][v % 10] ?? "th"}`;
@@ -69,7 +70,8 @@ function ordinal(n: string): string {
 
 function percentilesOf(score: number): { nr: string; user: string } {
   const row = PERCENTILES.find(([s]) => s === score);
-  if (!row) throw new Error(`scores: no College Board percentile row for ${score}`);
+  if (!row)
+    throw new Error(`scores: no College Board percentile row for ${score}`);
   return { nr: row[1], user: row[2] };
 }
 
@@ -100,7 +102,9 @@ const percentileTable: ContentBlock = {
   sources: [CB_PERCENTILES],
 };
 
-function scorePage(score: (typeof SCORE_PAGE_SCORES)[number]): ContentPageInput {
+function scorePage(
+  score: (typeof SCORE_PAGE_SCORES)[number],
+): ContentPageInput {
   const { nr, user } = percentilesOf(score);
   const index = SCORE_PAGE_SCORES.indexOf(score);
   const lower = SCORE_PAGE_SCORES[index - 1];

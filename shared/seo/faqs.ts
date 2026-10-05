@@ -23,7 +23,11 @@ import type { Source } from "./sources";
  * `docs/compliance/claim-inventory.md`; `tests/ci/public-copy-claims.contract.test.ts` keeps
  * the removed phrasings out.
  */
-export type FaqItem = { question: string; answer: string; sources?: readonly Source[] };
+export type FaqItem = {
+  question: string;
+  answer: string;
+  sources?: readonly Source[];
+};
 
 export function faqParagraphs(answer: string): string[] {
   return answer.split("\n\n");
@@ -46,6 +50,7 @@ export const HOME_FAQS: readonly FaqItem[] = [
   },
   {
     question: "Do you include full-length practice tests and daily practice?",
-    answer: "Yes. Daily practice is free. Full-length timed practice tests are on paid plans.",
+    answer:
+      "Yes. Daily practice is free. Full-length timed practice tests are on paid plans.",
   },
 ];

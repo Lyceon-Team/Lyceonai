@@ -95,7 +95,9 @@ const linksBlockSchema = z
     type: z.literal("links"),
     items: z
       .array(
-        z.object({ label: z.string().min(1), href: z.string().min(1) }).strict(),
+        z
+          .object({ label: z.string().min(1), href: z.string().min(1) })
+          .strict(),
       )
       .min(1),
   })

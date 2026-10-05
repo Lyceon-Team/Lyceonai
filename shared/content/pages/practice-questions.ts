@@ -593,7 +593,8 @@ const readingWriting: ContentPageInput = {
       sources: [CB_READING_WRITING],
     },
     {
-      question: "How many Reading and Writing questions are on the Digital SAT?",
+      question:
+        "How many Reading and Writing questions are on the Digital SAT?",
       answer:
         "The Reading and Writing section has 54 questions in two equal-length modules, with 64 minutes in total.",
       sources: [CB_STRUCTURE],

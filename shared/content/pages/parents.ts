@@ -255,7 +255,7 @@ const worthIt: ContentPageInput = {
       blocks: [
         {
           type: "p",
-          text: "A 2009 review for NACAC by Derek Briggs found that average gains from coaching were \"more in the neighborhood of 30 points,\" not the 100 or more often claimed. It found larger effects in math than in reading. Those studies are of the older SAT, and few cover tests after 2000.",
+          text: 'A 2009 review for NACAC by Derek Briggs found that average gains from coaching were "more in the neighborhood of 30 points," not the 100 or more often claimed. It found larger effects in math than in reading. Those studies are of the older SAT, and few cover tests after 2000.',
           sources: [BRIGGS_2009],
         },
         {

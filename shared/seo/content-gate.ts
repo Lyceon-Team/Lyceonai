@@ -204,7 +204,7 @@ export function contentPageProblems(
 
   // Karl's approval gate (Doctrine rule 5).
   if (!page.approved) {
-    problems.push(at("not approved (no `approved: { by: \"Karl\", date }`)"));
+    problems.push(at('not approved (no `approved: { by: "Karl", date }`)'));
   } else if (page.approved.date < page.lastModified) {
     problems.push(
       at(
@@ -247,13 +247,17 @@ export function contentPageProblems(
       unit.claims.length === 0
     ) {
       problems.push(
-        at(`${unit.where} states something with no source and no claim-inventory row`),
+        at(
+          `${unit.where} states something with no source and no claim-inventory row`,
+        ),
       );
     }
     for (const claim of unit.claims) {
       if (!ctx.claimIds.has(claim)) {
         problems.push(
-          at(`${unit.where} cites claim ${claim}, which is not in the claim inventory`),
+          at(
+            `${unit.where} cites claim ${claim}, which is not in the claim inventory`,
+          ),
         );
       }
     }
@@ -283,11 +287,15 @@ export function contentPageProblems(
   for (const text of everything) {
     const banned = firstBannedPhrase(text);
     if (banned)
-      problems.push(at(`banned phrase ${banned.pattern} (${banned.why}) in "${text}"`));
+      problems.push(
+        at(`banned phrase ${banned.pattern} (${banned.why}) in "${text}"`),
+      );
     const outcome = firstUnapprovedOutcome(text);
     if (outcome)
       problems.push(
-        at(`unapproved outcome claim ${outcome.pattern} (${outcome.why}) in "${text}"`),
+        at(
+          `unapproved outcome claim ${outcome.pattern} (${outcome.why}) in "${text}"`,
+        ),
       );
   }
 
@@ -328,7 +336,9 @@ export function renderedPageProblems(
     Number(m[1]),
   );
   if (levels[0] !== 1) {
-    problems.push(at(`the article's first heading is h${levels[0] ?? "none"}, not h1`));
+    problems.push(
+      at(`the article's first heading is h${levels[0] ?? "none"}, not h1`),
+    );
   }
   levels.forEach((level, i) => {
     const previous = levels[i - 1];

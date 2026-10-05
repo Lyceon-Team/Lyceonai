@@ -7,12 +7,16 @@
  * plain English: the newest `limit` archive days in one section or one canonical domain. One
  * pure function, used by the page in the browser and by the prerender to preload exactly those
  * days, so the static HTML and the live page pick the same questions. Deterministic: the archive
- * list's own order (newest first) decides, never chance.
+ * newest date first decides, never chance.
  */
 export type QotdSampleFilter = { section: "M" | "RW" } | { domain: string };
 
 export function qotdSampleDates(
-  days: readonly { qotd_date: string; section_code: "M" | "RW"; domain: string }[],
+  days: readonly {
+    qotd_date: string;
+    section_code: "M" | "RW";
+    domain: string;
+  }[],
   filter: QotdSampleFilter,
   limit: number,
 ): string[] {
@@ -22,7 +26,9 @@ export function qotdSampleDates(
         ? d.section_code === filter.section
         : d.domain === filter.domain,
     )
-    .sort((a, b) => (a.qotd_date < b.qotd_date ? 1 : a.qotd_date > b.qotd_date ? -1 : 0))
+    .sort((a, b) =>
+      a.qotd_date < b.qotd_date ? 1 : a.qotd_date > b.qotd_date ? -1 : 0,
+    )
     .slice(0, limit)
     .map((d) => d.qotd_date);
 }

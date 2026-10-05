@@ -166,7 +166,10 @@ function Block({ block }: { block: ContentBlock }): JSX.Element {
                           <Cell cell={cell} />
                         </th>
                       ) : (
-                        <td key={c} className="border-b border-border px-4 py-2">
+                        <td
+                          key={c}
+                          className="border-b border-border px-4 py-2"
+                        >
                           <Cell cell={cell} />
                         </td>
                       ),
@@ -216,11 +219,7 @@ function Block({ block }: { block: ContentBlock }): JSX.Element {
   }
 }
 
-function Blocks({
-  blocks,
-}: {
-  blocks: readonly ContentBlock[];
-}): JSX.Element {
+function Blocks({ blocks }: { blocks: readonly ContentBlock[] }): JSX.Element {
   return (
     <div className="space-y-5">
       {blocks.map((block, i) => (
@@ -240,7 +239,9 @@ function formatDay(date: string): string {
   });
 }
 
-function breadcrumbItems(page: ContentPage): { label: string; href?: string }[] {
+function breadcrumbItems(
+  page: ContentPage,
+): { label: string; href?: string }[] {
   const trail: { label: string; href?: string }[] = [{ label: page.crumb }];
   let parentPath = page.parent;
   while (parentPath !== undefined) {

@@ -30,7 +30,10 @@ import {
 } from "../../client/src/prerender/entry-server";
 import { CONTENT_PAGES } from "../../shared/content/pages";
 import { CONTENT_PAGE_PATHS } from "../../shared/content/pages/paths";
-import { DOMAINS, domainPath } from "../../shared/content/pages/practice-questions";
+import {
+  DOMAINS,
+  domainPath,
+} from "../../shared/content/pages/practice-questions";
 import type { ContentPage } from "../../packages/shared/src/seo-content-schema";
 import { BASE_URL } from "../../shared/seo/structured-data";
 import type { VercelRoute } from "../../shared/seo/route-registry";
@@ -77,10 +80,7 @@ function realPage(path: string): ContentPage {
 }
 
 /** Runs the gate exactly as the build does, with one page swapped for `planted`. */
-function gate(
-  planted: ContentPage,
-  html?: string,
-): () => void {
+function gate(planted: ContentPage, html?: string): () => void {
   return () =>
     assertContentPagesPublishable(
       [planted],
@@ -99,7 +99,10 @@ describe("content pages: presence (C1, C2)", () => {
       CONTENT_PAGES.map((p) => p.path).sort(),
     );
     for (const page of CONTENT_PAGES) {
-      expect(page.approved, page.path).toEqual({ by: "Karl", date: "2026-10-05" });
+      expect(page.approved, page.path).toEqual({
+        by: "Karl",
+        date: "2026-10-05",
+      });
       built(page.path);
     }
   });
@@ -140,7 +143,9 @@ describe("crawl check, per page (acceptance)", () => {
     "%s: self-canonical, its own title, JSON-LD, one H1 and its body text",
     (path, page) => {
       const html = built(path).html;
-      expect(html).toContain(`<link rel="canonical" href="${BASE_URL}${path}" />`);
+      expect(html).toContain(
+        `<link rel="canonical" href="${BASE_URL}${path}" />`,
+      );
       expect(html).toContain(
         `<title>${page.title.replace(/&/g, "&amp;").replace(/'/g, "&#39;")}</title>`,
       );
@@ -148,7 +153,9 @@ describe("crawl check, per page (acceptance)", () => {
       expect(types).toContain("Article");
       expect(types).toContain("BreadcrumbList");
       expect(types.includes("FAQPage")).toBe(page.faq.length > 0);
-      const articleLd = jsonLdBlocks(html).find((b) => b["@type"] === "Article");
+      const articleLd = jsonLdBlocks(html).find(
+        (b) => b["@type"] === "Article",
+      );
       expect(articleLd?.author).toEqual({
         "@type": "Organization",
         name: "Lyceon Team",
@@ -165,22 +172,34 @@ describe("crawl check, per page (acceptance)", () => {
 
   it("the breadcrumb JSON-LD follows the parent chain from Home", () => {
     const html = built("/sat-practice-questions/math/algebra").html;
-    const crumbs = jsonLdBlocks(html).find((b) => b["@type"] === "BreadcrumbList");
-    const items = (crumbs?.itemListElement ?? []) as { name: string; item: string }[];
+    const crumbs = jsonLdBlocks(html).find(
+      (b) => b["@type"] === "BreadcrumbList",
+    );
+    const items = (crumbs?.itemListElement ?? []) as {
+      name: string;
+      item: string;
+    }[];
     expect(items.map((i) => i.name)).toEqual([
       "Home",
       "SAT practice questions",
       "Math",
       "Algebra",
     ]);
-    expect(items.at(-1)?.item).toBe(`${BASE_URL}/sat-practice-questions/math/algebra`);
+    expect(items.at(-1)?.item).toBe(
+      `${BASE_URL}/sat-practice-questions/math/algebra`,
+    );
   });
 });
 
 describe("the publish gate (C3)", () => {
   it("passes on every real page (the build ran it: presence before the plants)", () => {
     expect(() =>
-      assertContentPagesPublishable(CONTENT_PAGES, site.pages, registry, inventory),
+      assertContentPagesPublishable(
+        CONTENT_PAGES,
+        site.pages,
+        registry,
+        inventory,
+      ),
     ).not.toThrow();
   });
 
@@ -193,9 +212,12 @@ describe("the publish gate (C3)", () => {
   it("FAILS on a planted unsourced claim", () => {
     const page = clone(realPage(BASE));
     const block = page.intro[0];
-    if (block?.type !== "p") throw new Error("expected a paragraph to plant on");
+    if (block?.type !== "p")
+      throw new Error("expected a paragraph to plant on");
     page.intro[0] = { type: "p", text: block.text };
-    expect(gate(page)).toThrow(/intro\[0\] \(p\) states something with no source and no claim-inventory row/);
+    expect(gate(page)).toThrow(
+      /intro\[0\] \(p\) states something with no source and no claim-inventory row/,
+    );
   });
 
   it("FAILS on a planted unapproved page", () => {
@@ -215,7 +237,9 @@ describe("the publish gate (C3)", () => {
     const block = page.intro[0];
     if (block?.type !== "p") throw new Error("expected a paragraph");
     page.intro[0] = { ...block, claims: ["W999"] };
-    expect(gate(page)).toThrow(/cites claim W999, which is not in the claim inventory/);
+    expect(gate(page)).toThrow(
+      /cites claim W999, which is not in the claim inventory/,
+    );
   });
 
   it("FAILS on a source the claim inventory does not record", () => {
@@ -226,7 +250,9 @@ describe("the publish gate (C3)", () => {
       ...block,
       sources: [{ label: "Somewhere", url: "https://example.com/unrecorded" }],
     };
-    expect(gate(page)).toThrow(/which the claim inventory's Sources table does not record/);
+    expect(gate(page)).toThrow(
+      /which the claim inventory's Sources table does not record/,
+    );
   });
 
   it("FAILS on a banned phrase and on an unapproved outcome claim", () => {
@@ -256,13 +282,15 @@ describe("the publish gate (C3)", () => {
       type: "links",
       items: [{ label: "Old page", href: "/digital-sat/math" }],
     });
-    expect(gate(page)).toThrow(/internal link \/digital-sat\/math does not resolve/);
+    expect(gate(page)).toThrow(
+      /internal link \/digital-sat\/math does not resolve/,
+    );
   });
 
   it("FAILS on two <h1>s and on a skipped heading level in the rendered page", () => {
     const page = clone(realPage(BASE));
     const html = built(BASE).html;
-    const twoH1 = html.replace("<h2", "<h1 class=\"x\">Another</h1><h2");
+    const twoH1 = html.replace("<h2", '<h1 class="x">Another</h1><h2');
     expect(gate(page, twoH1)).toThrow(/has 2 <h1> elements/);
     const skipped = html.replace("<h2", "<h4>Skipped</h4><h2");
     expect(gate(page, skipped)).toThrow(/heading order skips from h1 to h4/);
@@ -277,7 +305,10 @@ describe("owner rulings, on the built site", () => {
     const redirects: [string, string][] = [
       ["^/digital-sat/?$", "/online-sat-prep"],
       ["^/digital-sat/math/?$", "/sat-practice-questions/math"],
-      ["^/digital-sat/reading-writing/?$", "/sat-practice-questions/reading-and-writing"],
+      [
+        "^/digital-sat/reading-writing/?$",
+        "/sat-practice-questions/reading-and-writing",
+      ],
     ];
     for (const [src, location] of redirects) {
       const route = vercel.routes.find((r) => r.src === src);
@@ -285,7 +316,9 @@ describe("owner rulings, on the built site", () => {
       expect(route?.headers?.Location, src).toBe(location);
     }
     // (The blog post /blog/is-digital-sat-harder keeps its URL; only the three pages leave.)
-    expect(site.sitemapXml).not.toMatch(/<loc>[^<]*\.ai\/digital-sat(\/[a-z-]+)?<\/loc>/);
+    expect(site.sitemapXml).not.toMatch(
+      /<loc>[^<]*\.ai\/digital-sat(\/[a-z-]+)?<\/loc>/,
+    );
     expect(site.sitemapXml).toContain("/blog/is-digital-sat-harder</loc>");
     for (const p of site.pages)
       expect(p.html, p.path).not.toMatch(/href="\/digital-sat(\/[a-z-]+)?"/);
@@ -329,7 +362,8 @@ describe("owner rulings, on the built site", () => {
   it("the comparison page carries no price in its HTML: the cost cell is the live price (decision 4)", () => {
     const html = article(built("/lyceon-vs-sat-tutor").html);
     expect(html).toContain('data-testid="live-price"');
-    const cell = /data-testid="live-price">([\s\S]*?)<\/span>/.exec(html)?.[1] ?? "";
+    const cell =
+      /data-testid="live-price">([\s\S]*?)<\/span>/.exec(html)?.[1] ?? "";
     expect(cell).toContain("Monthly subscription for Pro");
     expect(cell).not.toMatch(/\$\d/);
     // The tutor side's figures are there, with their sources.

@@ -42,7 +42,10 @@ function parseAll(): readonly ContentPage[] {
     seen.add(page.path);
   }
   const declared = [...CONTENT_PAGE_PATHS].sort().join("\n");
-  const actual = pages.map((p) => p.path).sort().join("\n");
+  const actual = pages
+    .map((p) => p.path)
+    .sort()
+    .join("\n");
   if (declared !== actual) {
     throw new Error(
       "shared/content/pages/paths.ts does not list exactly the content pages' paths",
