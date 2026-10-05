@@ -30,7 +30,6 @@ import {
   examFormsResponseSchema,
   examReportPayloadSchema,
   type ExamReportPayload,
-  type ExamReportState,
 } from "@lyceon/shared/exam-report-schema";
 import {
   FIXTURE_SESSION_ID,
@@ -231,8 +230,9 @@ export function masteryDomains(): Record<string, unknown> {
 }
 
 /**
- * A report's own instants and scores, as `exam_list_forms` reads them from the same session
- * and score run (SCL-192, SCL-199) — so a list built from them agrees with the report.
+ * A report's own instants, as `exam_list_forms` reads them from the same session (SCL-192,
+ * SCL-199) — so a list built from them agrees with the report. No score: the list carries none
+ * (G5-09).
  */
 export function listFactsOf(
   report: ExamReportPayload,
@@ -241,23 +241,53 @@ export function listFactsOf(
     key in report
       ? ((report as Record<string, unknown>)[key] as string | null)
       : null;
-  const score =
-    report.report_state === "scored" || report.report_state === "partial_scored"
-      ? report.score
-      : null;
   return {
     completed_at: at("completed_at"),
     abandoned_at: at("abandoned_at"),
-    total_scaled: score?.total_scaled ?? null,
-    rw_scaled: score?.rw_scaled ?? null,
-    math_scaled: score?.math_scaled ?? null,
   };
 }
 
 /**
- * The guardian exam list, through the real projection (SCL-192 `completed_at`; SCL-199
- * scores, the scored report's own so the list and the report agree).
+ * A scored report for another session, built from the fixture's scored report through the
+ * report schema: its own id, name, completion and section scores (the total is their sum).
  */
+export function scoredReportFor(o: {
+  session_id: string;
+  name: string;
+  completed_at: string;
+  rw: number;
+  math: number;
+}): ExamReportPayload {
+  if (scoredReport.report_state !== "scored") throw new Error("fixture drift");
+  return examReportPayloadSchema.parse({
+    ...scoredReport,
+    session_id: o.session_id,
+    test_form_name: o.name,
+    completed_at: o.completed_at,
+    score: {
+      ...scoredReport.score,
+      total_scaled: o.rw + o.math,
+      rw_scaled: o.rw,
+      math_scaled: o.math,
+    },
+    sections: [
+      {
+        section: "RW",
+        section_state: "submitted",
+        scaled: o.rw,
+        scoreable: true,
+      },
+      {
+        section: "M",
+        section_state: "submitted",
+        scaled: o.math,
+        scoreable: true,
+      },
+    ],
+  });
+}
+
+/** The guardian exam list, through the real projection (SCL-192 `completed_at`). */
 export function examList(): Record<string, unknown> {
   return {
     ok: true,
@@ -280,25 +310,34 @@ export function calendarSetupRequired(): Record<string, unknown> {
   };
 }
 
-/** A test the student sat on another form, for `examListWith`. */
+/**
+ * A test the student sat on another form, for `examListWith`: its report (the one place its
+ * scores live, G5-09) and, where the report alone does not say it, the session state.
+ */
 export type OtherExam = {
-  session_id: string;
-  name: string;
-  report_state: ExamReportState;
+  report: ExamReportPayload;
   /** Defaults from the report state: partial → abandoned with a score, else completed. */
   session_state?: ExamSessionState;
-  completed_at: string | null;
-  abandoned_at?: string | null;
-  total_scaled: number | null;
-  rw_scaled?: number | null;
-  math_scaled?: number | null;
 };
 
+/** The listing's session state for a report: what `exam_list_forms` reads for that state. */
+function sessionStateOf(
+  report: ExamReportPayload,
+  over?: ExamSessionState,
+): ExamSessionState {
+  if (over !== undefined) return over;
+  if (report.report_state === "partial_scored")
+    return "partial_scored_abandoned";
+  if (report.report_state === "not_completed") return report.session_state;
+  return "completed";
+}
+
 /**
- * The guardian exam list holding `latest` (a scored report; the fixture's by default — its own
- * name, completion and total) plus `others`, each the latest attempt on a form of its own —
- * built as a forms listing and put through the real projection (SCL-192 `completed_at`,
- * SCL-199 `total_scaled`), never as hand-written list items.
+ * The guardian exam list holding `latest` (a report; the fixture's scored one by default) plus
+ * `others`, each the latest attempt on a form of its own — built as a forms listing from each
+ * report's own name, state and instants and put through the real projection (SCL-192, SCL-199),
+ * never as hand-written list items. No score reaches the list (G5-09); `serveReports` answers
+ * each session's report.
  */
 export function examListWith(
   others: readonly OtherExam[],
@@ -316,29 +355,20 @@ export function examListWith(
         latest_session: {
           ...sat.latest_session,
           session_id: latest.session_id,
-          state:
-            latest.report_state === "partial_scored"
-              ? "partial_scored_abandoned"
-              : latest.report_state === "not_completed"
-                ? latest.session_state
-                : "completed",
+          state: sessionStateOf(latest),
           report_state: latest.report_state,
         },
       },
       ...others.map((o, index) => ({
         ...sat,
         test_form_id: `f0f00000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
-        name: o.name,
+        name: o.report.test_form_name,
         latest_session: {
-          session_id: o.session_id,
-          state:
-            o.session_state ??
-            (o.report_state === "partial_scored"
-              ? "partial_scored_abandoned"
-              : "completed"),
+          session_id: o.report.session_id,
+          state: sessionStateOf(o.report, o.session_state),
           mode: "strict",
           attempt_number_for_form: 1,
-          report_state: o.report_state,
+          report_state: o.report.report_state,
         },
       })),
     ],
@@ -347,18 +377,34 @@ export function examListWith(
     [latest.session_id]: listFactsOf(latest),
   };
   for (const o of others) {
-    sessions[o.session_id] = {
-      completed_at: o.completed_at,
-      abandoned_at: o.abandoned_at ?? null,
-      total_scaled: o.total_scaled,
-      rw_scaled: o.rw_scaled ?? null,
-      math_scaled: o.math_scaled ?? null,
-    };
+    sessions[o.report.session_id] = listFactsOf(o.report);
   }
   return {
     ok: true,
     ...toGuardianExamList(forms, sessions),
     requestId: "r",
+  };
+}
+
+/**
+ * Answers `GET /api/students/:studentId/tests/:sessionId/report` for each report, through the
+ * real guardian projection — the route the card reads every score from (G5-09).
+ */
+export function serveReports(
+  studentId: string,
+  reports: readonly ExamReportPayload[],
+): Handler {
+  return (url) => {
+    for (const r of reports) {
+      if (url === `/api/students/${studentId}/tests/${r.session_id}/report`) {
+        return json({
+          ok: true,
+          report: toGuardianExamReport(r),
+          requestId: "r",
+        });
+      }
+    }
+    return undefined;
   };
 }
 
@@ -373,7 +419,7 @@ export function boardScenario(today: string = browserLocalToday()): {
   calendarWeek: Record<string, unknown>;
   masteryDomains: Record<string, unknown>;
   examList: Record<string, unknown>;
-  examReport: Record<string, unknown>;
+  examReports: Record<string, Record<string, unknown>>;
 } {
   const { ok, requestId, ...week } = calendarWeek({
     today,
@@ -428,54 +474,31 @@ export function boardScenario(today: string = browserLocalToday()): {
       level("M", "Geometry and Trigonometry", "L1"),
     ],
   });
-  if (scoredReport.report_state !== "scored") throw new Error("fixture drift");
-  const latest = examReportPayloadSchema.parse({
-    ...scoredReport,
-    test_form_name: "Full-Length Practice Test 2",
+  const latest = scoredReportFor({
+    session_id: scoredReport.session_id,
+    name: "Full-Length Practice Test 2",
     completed_at: `${addDays(today, -2)}T16:00:00Z`,
-    score: {
-      ...scoredReport.score,
-      total_scaled: 460,
-      rw_scaled: 220,
-      math_scaled: 240,
-    },
-    sections: [
-      {
-        section: "RW",
-        section_state: "submitted",
-        scaled: 220,
-        scoreable: true,
-      },
-      {
-        section: "M",
-        section_state: "submitted",
-        scaled: 240,
-        scoreable: true,
-      },
-    ],
+    rw: 220,
+    math: 240,
+  });
+  const previous = scoredReportFor({
+    session_id: "5e551011-0000-4000-8000-0000000001b1",
+    name: "Full-Length Practice Test 1",
+    completed_at: `${addDays(today, -16)}T16:00:00Z`,
+    rw: 240,
+    math: 260,
   });
   return {
     calendarWeek: calendar,
     masteryDomains: mastery,
-    examList: examListWith(
-      [
-        {
-          session_id: "5e551011-0000-4000-8000-0000000001b1",
-          name: "Full-Length Practice Test 1",
-          report_state: "scored",
-          completed_at: `${addDays(today, -16)}T16:00:00Z`,
-          total_scaled: 500,
-          rw_scaled: 240,
-          math_scaled: 260,
-        },
-      ],
-      latest,
+    examList: examListWith([{ report: previous }], latest),
+    // G5-09: every score on the card comes from these, by session id — at most two reads.
+    examReports: Object.fromEntries(
+      [latest, previous].map((r) => [
+        r.session_id,
+        { ok: true, report: toGuardianExamReport(r), requestId: "r" },
+      ]),
     ),
-    examReport: {
-      ok: true,
-      report: toGuardianExamReport(latest),
-      requestId: "r",
-    },
   };
 }
 

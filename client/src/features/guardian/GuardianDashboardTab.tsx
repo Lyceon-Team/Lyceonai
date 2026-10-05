@@ -5,7 +5,8 @@
  *       (Karl, 2026-10-02: this tab is guardian-only and follows the design, superseding R11 for
  *       the Dashboard only; the Calendar tab keeps R11); the canvas boards "Wave 5 — BUILD
  *       TARGET"; endpoint map as updated by the owner 2026-09-30 (the header reads the calendar
- *       route; no kpi/overall call); SCL-188/189/192/199; G-NEW-16]
+ *       route; no kpi/overall call) and 2026-10-03 (G5-09: the card reads at most two report
+ *       calls; scores only through the report route); SCL-188/189/192/199; G-NEW-16]
  *       | @implemented [2026-09-30; redesigned 2026-10-02]
  *
  * plain English: the student's week at a glance, as the design draws it — four blocks in a
@@ -15,12 +16,14 @@
  *   - mastery by domain: `GET …/mastery/domains`, rendered by the guardian-only
  *     `GuardianMasteryCard` (G5-03, R13) — two columns by section, all eight domains, the live
  *     `levelTone`, no skills (SCL-194);
- *   - the latest full-length test: `GET …/tests` (the newest to end, else one in progress —
- *     `pickCardExam`, G5-08), then its
- *     report, rendered by the guardian-only `GuardianLatestTestCard` (G5-04, R13): total, the
- *     change since the previous test from the list's `total_scaled` (SCL-199), section scores,
- *     the disclosure and "See full report →" to the detail page, which holds the full report
- *     (G5-05 removed the embedded copy and the calendar's flat `HeaderFacts` strip).
+ *   - the latest full-length test: `GET …/tests`, which carries no score (G5-09), to choose the
+ *     tests — the newest to end, else one in progress (`pickCardExam`, G5-08), and the previous
+ *     scored one (`pickPreviousExam`) — then AT MOST TWO report calls, `GET …/tests/:id/report`
+ *     for each, through the guardian report schema. Rendered by the guardian-only
+ *     `GuardianLatestTestCard` (G5-04, R13): total, the change since the previous test computed
+ *     from the two reports (`changeBetween`; no chip if the second read fails or is withheld),
+ *     section scores, the disclosure and "See full report →" to the detail page, which holds the
+ *     full report (G5-05 removed the embedded copy and the calendar's flat `HeaderFacts` strip).
  * Removed by ruling, and absent by construction: the 7-day question and accuracy tiles (R3,
  * the server no longer sends them), skills, x/y counts (R4), answers, LISA, any act control.
  *
@@ -43,10 +46,11 @@ import {
 } from "@/features/exam/api/exam-api";
 import { examKeys } from "@/features/exam/api/keys";
 import {
-  changeSinceLast,
+  changeBetween,
   GuardianLatestTestCard,
   LatestTestShell,
   pickCardExam,
+  pickPreviousExam,
 } from "./GuardianLatestTestCard";
 import { GuardianMasteryCard } from "./GuardianMasteryCard";
 import { GuardianScoreStrip } from "./GuardianScoreStrip";
@@ -141,6 +145,19 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
     queryFn: () => fetchGuardianExamReport(studentId, latest?.session_id ?? ""),
     enabled: latest !== null,
   });
+  // The chip's other side: chosen from list fields, its scores read from its own report. Its
+  // failure is not the card's — the chip is simply left out (G5-09).
+  const previous =
+    list.data === undefined || latest === null
+      ? ({ kind: "none" } as const)
+      : pickPreviousExam(list.data, latest);
+  const previousId =
+    previous.kind === "previous" ? previous.item.session_id : "";
+  const before = useQuery({
+    queryKey: examKeys.guardianReport(studentId, previousId),
+    queryFn: () => fetchGuardianExamReport(studentId, previousId),
+    enabled: previousId !== "",
+  });
   const failure = useGuardianReadFailure(studentId, list.error ?? report.error);
 
   if (list.isLoading || (latest !== null && report.isLoading)) {
@@ -170,13 +187,14 @@ function LatestExamWidget({ studentId }: { studentId: string }): JSX.Element {
       </LatestTestShell>
     );
   }
-  // G5-04 (R13): the compact card; the change comes from the list (SCL-199). The full report
-  // is on the detail page, one link away (G5-05).
+  // G5-04 (R13): the compact card; the change comes from the two reports (G5-09). The full
+  // report is on the detail page, one link away (G5-05).
   return (
     <GuardianLatestTestCard
       report={report.data}
       endedAt={latest.completed_at ?? latest.abandoned_at}
-      change={changeSinceLast(list.data, latest)}
+      change={changeBetween(report.data, previous, before.data)}
+      changeSettled={previousId === "" || !before.isPending}
       studentName={name}
       href={guardianPaths.exam(studentId, latest.session_id)}
     />
