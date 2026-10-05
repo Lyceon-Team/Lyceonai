@@ -36,7 +36,6 @@ import fs from "fs";
 import path from "path";
 import {
   gradeQotd,
-  qotdCorrectOptionId,
   toArchiveIndexResponse,
   toTodayResponse,
 } from "../../server/services/qotd/qotd-service";
@@ -47,6 +46,8 @@ import {
 } from "../../packages/shared/src/qotd-schema";
 import { QOTD_ARCHIVE_ROWS, qotdTodayRow } from "../lib/qotd-fixture";
 
+// Mocked mode builds payloads with the server's token code, which keys off this secret.
+process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??= "e2e-mock-secret-not-real";
 const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:5175";
 const LIVE = process.env.E2E_QOTD_LIVE_API === "1";
 const STUB_TURNSTILE = process.env.E2E_TURNSTILE_STUB === "1";
@@ -150,7 +151,7 @@ function mockApi(page: Page, posted: unknown[]): Promise<void> {
             data: qotdSubmitResponseSchema.parse({
               qotd_date: row.qotd_date,
               is_correct: graded.isCorrect,
-              correct_option_id: qotdCorrectOptionId(row),
+              correct_option_id: graded.correctOptionId,
               correct_answer: null,
               explanation: row.explanation ?? "",
               stats: qotdStat(6, 4),
@@ -202,20 +203,31 @@ test.describe("Question of the Day", () => {
       }
     }
 
-    // 2. The widget renders today's question inside ph-no-capture.
+    // 2. The widget renders today's question inside ph-no-capture. Turnstile is requested only
+    //    on interaction (owner ruling 2026-10-05), so count its requests from page load.
+    const turnstileRequests: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("challenges.cloudflare.com"))
+        turnstileRequests.push(r.url());
+    });
     await page.goto("/");
     const area = page.getByTestId("qotd-question-area");
     await expect(area).toBeVisible({ timeout: 20_000 });
     await expect(area).toHaveClass(/ph-no-capture/);
     await expect(area.getByText("Explanation", { exact: true })).toHaveCount(0);
 
-    // 3. Turnstile issues a token (test key), then submit becomes possible once a choice is made.
+    // 3. No Turnstile before a pick; picking loads it, it issues a token (test key) and submit
+    //    becomes possible. The options are shuffled server-side; the first on-screen one is "A".
+    expect(turnstileRequests).toEqual([]);
+    await expect(
+      page.locator('iframe[src*="challenges.cloudflare.com"]'),
+    ).toHaveCount(0);
+    await area.getByRole("button").first().click();
     await expect(
       page.locator('iframe[src*="challenges.cloudflare.com"]'),
     ).toHaveCount(1, {
       timeout: 20_000,
     });
-    await area.getByRole("button").first().click();
     const submit = page.getByTestId("qotd-submit");
     await expect(submit).toBeEnabled({ timeout: 20_000 });
     await page.screenshot({
@@ -229,6 +241,13 @@ test.describe("Question of the Day", () => {
       timeout: 20_000,
     });
     await expect(area.getByText("Explanation", { exact: true })).toBeVisible();
+    // One answer per visit: the widget is locked — no submit control, every choice disabled.
+    await expect(page.getByTestId("qotd-locked")).toBeVisible();
+    await expect(page.getByTestId("qotd-submit")).toHaveCount(0);
+    const choices = area.getByRole("button");
+    for (let i = 0; i < (await choices.count()); i += 1) {
+      await expect(choices.nth(i)).toBeDisabled();
+    }
     await page.screenshot({
       path: path.join(SHOT_DIR, "qotd-after-submit.png"),
       fullPage: false,
@@ -236,7 +255,8 @@ test.describe("Question of the Day", () => {
     if (!LIVE) {
       expect(posted).toHaveLength(1);
       const sent = posted[0] as { answer: string; turnstile_token: string };
-      expect(sent.answer).toBe("A");
+      // The first on-screen choice is sent as its opaque token, never a letter.
+      expect(sent.answer).toMatch(/^[A-Za-z0-9_-]{22}$/);
       expect(sent.turnstile_token.length).toBeGreaterThan(10);
       await expect(page.getByTestId("qotd-stat")).toHaveText(
         "67% of students got this right.",

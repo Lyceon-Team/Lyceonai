@@ -51,11 +51,18 @@ function hmacSecret(): string | null {
   return secret && secret.length > 0 ? secret : null;
 }
 
-/** HMAC-SHA256(server secret, ip), 64 lowercase hex characters. Throws if the secret is unset. */
-export function subjectHmacHex(ip: string): string {
+/** The public-endpoint server secret. Throws if it is unset (callers fail closed). */
+export function requirePublicHmacSecret(): string {
   const secret = hmacSecret();
   if (!secret) throw new PublicIpSecretMissingError();
-  return createHmac("sha256", secret).update(ip).digest("hex");
+  return secret;
+}
+
+/** HMAC-SHA256(server secret, ip), 64 lowercase hex characters. Throws if the secret is unset. */
+export function subjectHmacHex(ip: string): string {
+  return createHmac("sha256", requirePublicHmacSecret())
+    .update(ip)
+    .digest("hex");
 }
 
 export function isPublicApiRequest(req: IpRequest): boolean {
