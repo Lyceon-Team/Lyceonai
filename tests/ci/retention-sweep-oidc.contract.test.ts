@@ -46,9 +46,38 @@ const { mockLogger } = vi.hoisted(() => ({
 }));
 vi.mock("../../server/logger", () => ({ logger: mockLogger }));
 
-// The 365d tier never touches the client; nothing else is reached in this file.
+// A recording stand-in for the service client: the 7d tier's RPC answers with rows in the shape
+// the real function returns, and every insert is captured (RS-02's completion record).
+const { db } = vi.hoisted(() => ({
+  db: {
+    inserts: [] as { table: string; row: unknown }[],
+    insertError: null as { message: string } | null,
+  },
+}));
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
-  supabaseServer: {},
+  supabaseServer: {
+    rpc: async () => ({
+      data: [
+        {
+          swept_table: "tutor_conversations",
+          deleted_count: 2,
+          cutoff: "2026-09-28T05:30:00+00:00",
+        },
+        {
+          swept_table: "tutor_messages",
+          deleted_count: 9,
+          cutoff: "2026-09-28T05:30:00+00:00",
+        },
+      ],
+      error: null,
+    }),
+    from: (table: string) => ({
+      insert: async (row: unknown) => {
+        db.inserts.push({ table, row });
+        return { error: db.insertError };
+      },
+    }),
+  },
 }));
 
 const SWEEP_URL = "https://lyceon.ai/api/internal/retention/sweep";
@@ -132,6 +161,8 @@ describe("RS-01: retention sweep audience — real RS256 tokens", () => {
     mockLogger.warn.mockClear();
     mockLogger.error.mockClear();
     mockLogger.info.mockClear();
+    db.inserts.length = 0;
+    db.insertError = null;
     process.env.CLOUD_TASKS_SERVICE_ACCOUNT = SERVICE_ACCOUNT;
     process.env.CLOUD_TASKS_OIDC_AUDIENCE = COMPACT_URL;
     delete process.env.RETENTION_SWEEP_OIDC_AUDIENCE;
@@ -202,9 +233,9 @@ describe("RS-01: retention sweep audience — real RS256 tokens", () => {
         message: "OIDC authentication failed",
       },
     });
-    expect([...events("warn"), ...events("error")]).toContain(
-      "oidc_auth_rejected",
-    );
+    // RS-02: a refused job is an incident, not noise — ERROR, never WARNING.
+    expect(events("error")).toContain("oidc_auth_rejected");
+    expect(events("warn")).not.toContain("oidc_auth_rejected");
   });
 
   it("the right audience from the wrong service account is 401", async () => {
@@ -219,5 +250,67 @@ describe("RS-01: retention sweep audience — real RS256 tokens", () => {
     process.env.RETENTION_SWEEP_OIDC_AUDIENCE = SWEEP_URL;
     const res = await post(null);
     expect(res.status).toBe(401);
+  });
+
+  describe("RS-02: each successful live sweep records its completion in audit_logs", () => {
+    const tier7d = (dry_run: boolean) =>
+      request(app)
+        .post("/api/internal/retention/sweep")
+        .set("Authorization", `Bearer ${token(SWEEP_URL)}`)
+        .send({ ...BODY, retention_tier: "7d", dry_run });
+
+    beforeEach(() => {
+      process.env.RETENTION_SWEEP_OIDC_AUDIENCE = SWEEP_URL;
+    });
+
+    it("a live sweep writes one retention_sweep_completed row with tier, counts and request id", async () => {
+      const res = await tier7d(false);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        ok: true,
+        tier: "7d",
+        deleted_count: 2,
+      });
+      expect(db.inserts).toEqual([
+        {
+          table: "audit_logs",
+          row: {
+            actor_profile_id: null,
+            target_profile_id: null,
+            action: "retention_sweep_completed",
+            context: {
+              tier: "7d",
+              deleted_count: 2,
+              per_table: [
+                { table: "tutor_conversations", count: 2 },
+                { table: "tutor_messages", count: 9 },
+              ],
+              request_id: BODY.request_id,
+            },
+          },
+        },
+      ]);
+    });
+
+    it("a dry run records nothing", async () => {
+      const res = await tier7d(true);
+      expect(res.status).toBe(200);
+      expect(db.inserts).toEqual([]);
+    });
+
+    it("a tier that did not run records nothing", async () => {
+      const res = await post(token(SWEEP_URL));
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ ok: false });
+      expect(db.inserts).toEqual([]);
+    });
+
+    it("a failed completion insert is logged at ERROR; the sweep's answer stands", async () => {
+      db.insertError = { message: "planted: insert refused" };
+      const res = await tier7d(false);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ ok: true });
+      expect(events("error")).toContain("sweep_completion_record_failed");
+    });
   });
 });

@@ -628,4 +628,49 @@ describe.skipIf(!PG_AVAILABLE)("tutor retention sweep → real PG", () => {
       expect(await sweep("180d")).toMatchObject({ ok: true, deleted_count: 0 });
     });
   });
+
+  describe("RS-02: the completion record on the real audit_logs table", () => {
+    it("a live 7d sweep's completion row is what the owner's query reads back", async () => {
+      const { recordSweepCompletion } =
+        await import("../../server/services/retention-sweep");
+      await q(`DELETE FROM public.crisis_review_audit_log`);
+      await q(`DELETE FROM public.crisis_review_cases`);
+      await q(`DELETE FROM public.tutor_conversations`);
+      await conversation("0d7d7d7d-0000-4000-8000-0000000000c9", ANA, 10);
+      const result = await sweep("7d");
+      expect(result).toMatchObject({ ok: true, deleted_count: 1 });
+      if (!result.ok) return;
+      const requestId = "6f1c2a7e-0d3b-4f5a-9b8c-1d2e3f4a5b6c";
+      const written = await recordSweepCompletion(
+        makePgSupabase(pg) as unknown as Parameters<
+          typeof recordSweepCompletion
+        >[0],
+        result,
+        requestId,
+      );
+      expect(written).toBe(true);
+      const rows = await q<{
+        tier: string;
+        last: Date;
+        ctx: Record<string, unknown>;
+      }>(
+        `SELECT context->>'tier' AS tier, max(created_at) AS last, (array_agg(context))[1] AS ctx
+           FROM public.audit_logs
+          WHERE action = 'retention_sweep_completed'
+          GROUP BY 1`,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.tier).toBe("7d");
+      expect(rows[0]!.last).toBeInstanceOf(Date);
+      expect(rows[0]!.ctx).toMatchObject({
+        tier: "7d",
+        deleted_count: 1,
+        request_id: requestId,
+      });
+      expect(rows[0]!.ctx.per_table).toContainEqual({
+        table: "tutor_messages",
+        count: 3,
+      });
+    });
+  });
 });

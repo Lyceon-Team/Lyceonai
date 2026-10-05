@@ -49,7 +49,10 @@ import {
   oidcAuthMiddlewareWithConfigGuard,
   type OidcConfigReader,
 } from "../../packages/shared/internal-auth/verify-oidc-middleware";
-import { TIER_HANDLERS } from "../services/retention-sweep";
+import {
+  recordSweepCompletion,
+  TIER_HANDLERS,
+} from "../services/retention-sweep";
 
 const router = Router();
 
@@ -181,6 +184,11 @@ router.post(
           requestId: request_id,
         },
       );
+      // RS-02: the per-tier completion time lives in audit_logs. A failed insert is logged at
+      // ERROR inside; the sweep has already committed, so the answer stays 200.
+      if (!dry_run) {
+        await recordSweepCompletion(supabaseServer, result, request_id);
+      }
       res.status(200).json(result);
     } catch (err: unknown) {
       logger.error(

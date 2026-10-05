@@ -14,7 +14,7 @@
  * expected outcome: Correctly-signed Cloud Tasks requests with valid OIDC
  * tokens pass through. All failure modes return 401 with a minimal body
  * matching the §67 convention (no diagnostic info leaks). Failure reasons
- * are logged at WARN.
+ * are logged at ERROR (RS-02, 2026-10-05; was WARN).
  *
  * trade-offs:
  *  - `google-auth-library` (already a root dependency) handles signature
@@ -114,10 +114,14 @@ export function oidcAuthMiddleware(
       const reason =
         err instanceof Error ? err.message : "unknown OIDC verification error";
 
-      logger.warn(
+      // ERROR, not WARN (owner ruling 2026-10-05, RS-02). Every caller of this middleware is a
+      // scheduled or queued job; a refused delivery means work did not happen. The retention
+      // sweep was refused at every attempt for weeks at WARNING and nobody was told.
+      logger.error(
         "OIDC_AUTH",
         "oidc_auth_rejected",
         "OIDC token verification failed on Cloud Tasks delivery",
+        undefined,
         {
           reason,
           path: req.path,

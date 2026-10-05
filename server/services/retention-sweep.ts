@@ -353,6 +353,59 @@ export async function sweep365d(
   };
 }
 
+// ── Completion record ─────────────────────────────────────────────────
+
+/** `audit_logs.action` for a finished live sweep. One row per tier per successful run. */
+export const SWEEP_COMPLETED_ACTION = "retention_sweep_completed" as const;
+
+/**
+ * @spec [Doc-03_V1.1 §14.2; owner ruling 2026-10-05 RS-02 (record each successful sweep's
+ *       completion time per tier in an existing ledger)] | @implemented [2026-10-05]
+ *
+ * plain English: after a live sweep succeeds, write one `audit_logs` row — action
+ * `retention_sweep_completed`, no actor, no target, context `{tier, deleted_count, per_table,
+ * request_id}`. `created_at` is the completion time. "When did the 7d tier last succeed?" is then
+ * one query instead of a log search:
+ *   SELECT context->>'tier' AS tier, max(created_at) FROM audit_logs
+ *    WHERE action = 'retention_sweep_completed' GROUP BY 1;
+ *
+ * trade-offs: `audit_logs` (append-only; existing) rather than a new table — the brief asked for
+ * an existing ledger. Counts only: no ids, no student data. A dry run, or a tier that declined,
+ * records nothing, so the row means "rows past the window were actually removed".
+ *
+ * edge cases: an insert failure returns false and is logged at ERROR
+ * (`sweep_completion_record_failed`); it does not undo or fail the sweep, which has already
+ * committed.
+ */
+export async function recordSweepCompletion(
+  client: SupabaseClient,
+  result: Extract<SweepResult, { ok: true }>,
+  requestId: string,
+): Promise<boolean> {
+  const { error } = await client.from("audit_logs").insert({
+    actor_profile_id: null,
+    target_profile_id: null,
+    action: SWEEP_COMPLETED_ACTION,
+    context: {
+      tier: result.tier,
+      deleted_count: result.deleted_count,
+      per_table: result.per_table ?? null,
+      request_id: requestId,
+    },
+  });
+  if (error) {
+    logger.error(
+      "RETENTION_SWEEP",
+      "sweep_completion_record_failed",
+      "Retention sweep succeeded but its completion row was not written",
+      undefined,
+      { tier: result.tier, requestId, error: error.message },
+    );
+    return false;
+  }
+  return true;
+}
+
 // ── Tier dispatch ─────────────────────────────────────────────────────
 
 export const TIER_HANDLERS: Record<string, TierHandler> = {
