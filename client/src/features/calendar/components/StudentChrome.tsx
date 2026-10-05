@@ -5,8 +5,9 @@
  *        mini month, schedule summary, show filters — moves into the right panel); DESIGN.md
  *        §4 Calendar; prototype design/prototype/Calendar.dc.html; OQ-25 (the free goal card
  *        reads the ungated profile); OQ-37 (no "Training for" until UI-S8 closes); Doc 05F
- *        §14 (the streak is rendered on the calendar), §17.1, §17.3; Doc 05C (the projected
- *        band is read 1:1, `lib/projection`)] | @implemented [2026-10-03]
+ *        §17.1 and §17.5 as amended by SCL-211 (OQ-56: DESIGN.md's layout; no streak line, no
+ *        facts strip), §17.3; Doc 05C (the projected band is read 1:1, `lib/projection`)]
+ *        | @implemented [2026-10-03; SCL-211 2026-10-05]
  *
  * plain English: what replaced the calendar's own dark rail and three-zone top bar for the
  * STUDENT. The header carries Week/Month, Today and the arrows on the left, the visible range
@@ -17,7 +18,11 @@
  * guardian calendar keeps `LeftRail` and `TopBar` (`Chrome.tsx`) unchanged.
  *
  * Everything here draws with the student tokens (`lyc-*`, `--cat-*`), so it follows the
- * device theme. Copy is the prototype's or already shipped (`ABSENT_COPY`, `StreakFact`).
+ * device theme. Copy is the prototype's or already shipped (`ABSENT_COPY`).
+ *
+ * NO STREAK LINE (SCL-211, owner ruling 2026-10-05 on OQ-56: "Drop the streak line and the
+ * facts strip to match the design"). The header is the prototype's: nothing under the range
+ * title. The guardian calendar's `TopBar` still renders `StreakFact` (guardian vertical).
  *
  * edge cases: every number can be absent and absence has the shipped student copy, never a
  * blank or a zero (SCL-130: nothing in setup is required). A test date already past counts as
@@ -27,7 +32,6 @@
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import type { SectionProjectionDto } from "@lyceon/shared";
-import type { StreakSummary } from "@lyceon/shared/calendar";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import type { BlockTone } from "../lib/blocks";
 import {
@@ -40,7 +44,7 @@ import {
   weekdayDayMonth,
 } from "../lib/dates";
 import { projectedRange } from "../lib/projection";
-import { ABSENT_COPY, StreakFact, type ToneFilter } from "./Chrome";
+import { ABSENT_COPY, type ToneFilter } from "./Chrome";
 
 // ── Header ───────────────────────────────────────────────────────────────────
 
@@ -59,7 +63,6 @@ export function StudentCalendarHeader({
   onView,
   onToday,
   onStep,
-  streak,
   onEditSchedule,
   regenerate,
 }: {
@@ -69,7 +72,6 @@ export function StudentCalendarHeader({
   onView: (next: "week" | "month") => void;
   onToday: () => void;
   onStep: (delta: number) => void;
-  streak: StreakSummary | undefined;
   /** §17.3's single entry point. Absent before setup (there is no profile to edit). */
   onEditSchedule?: () => void;
   /** `POST /api/calendar/plan/regenerate`. Absent before setup (there is no plan). */
@@ -141,11 +143,6 @@ export function StudentCalendarHeader({
         >
           {title}
         </h1>
-        {/* Doc 05F §14: the streak is rendered on the calendar. The prototype's header has no
-            streak; the shipped line is kept under the title (UI-55 report, owner question). */}
-        <div className="text-lyc-meta text-lyc-muted [&_b]:font-semibold [&_b]:text-lyc-ink-strong">
-          <StreakFact streak={streak} />
-        </div>
       </div>
 
       {onEditSchedule === undefined && regenerate === undefined ? (

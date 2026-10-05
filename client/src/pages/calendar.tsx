@@ -50,7 +50,6 @@ import {
   useRegenerateDay,
   useRegeneratePlan,
   useResetDay,
-  useStreak,
   useStudyProfile,
   useStudyProfileMutation,
   type StudyProfileFields,
@@ -134,8 +133,7 @@ export default function CalendarPage(): JSX.Element {
   usePrefetchAdjacentRange(view, cursor, {
     enabled: calendar.isSuccess && calendar.data.status === "ready",
   });
-  // Doc 05F §14: the streak is rendered on the calendar (INV-08-20: ungated).
-  const streak = useStreak({ enabled: decided && !lockedByMap && !denied });
+  // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).
 
   const editDay = useEditDay();
   const moveBlock = useMoveBlock();
@@ -199,10 +197,13 @@ export default function CalendarPage(): JSX.Element {
     profile.error === null ? null : toUserFacingMessage(profile.error).message;
 
   /**
-   * The free page (DESIGN.md §4): the inline form saves through the one save path. Before the
-   * first save the profile route needs the schedule half too (`REQUIRED_ON_CREATE`), so the
-   * form's two answers travel with the opening schedule the setup popup would have saved
-   * (`lib/setup`); once a profile exists, the two answers alone.
+   * The free page (DESIGN.md §4): the inline form saves through the one save path. The form
+   * is only editable before the first save (SCL-211, OQ-56 (b): read-only after it, goals
+   * edited in Settings), and the profile route needs the schedule half on create
+   * (`REQUIRED_ON_CREATE`), so the form's two answers travel with the opening schedule the
+   * setup popup would have saved (`lib/setup`). Without the served defaults (the page learned
+   * "free" from a 402, not from `setup_required`) the two answers go alone and the route's
+   * refusal is shown under the form.
    */
   const renderFree = (
     freeProfile: Parameters<typeof FreeCalendar>[0]["profile"],
@@ -324,7 +325,6 @@ export default function CalendarPage(): JSX.Element {
         // Pre-setup: there is no profile yet, so there is no target. The goal card says
         // "Set a target" rather than showing a slot the student cannot explain.
         targetScore={null}
-        streak={streak.data}
         // Pre-setup there is no plan, so nothing can have been suppressed. Empty rather than
         // omitted: the prop is required, which is what stops a page forgetting it.
         fullLengthSuppressions={[]}
@@ -350,7 +350,6 @@ export default function CalendarPage(): JSX.Element {
       // Doc 05C's rows, straight off the response. The goal card sums them; nothing here
       // touches them.
       projection={response.projection}
-      streak={streak.data ?? response.streak}
       // Brief 14 Step 4 — the dates the generator refused to place a test on, straight off
       // the payload. The notice names them; nothing here re-derives which days are blocked.
       fullLengthSuppressions={response.full_length_suppressions}

@@ -25,7 +25,6 @@ import type {
   CalendarResponse,
   GuardianCalendarResponse,
   ProfileReadResponse,
-  StreakSummary,
 } from "@lyceon/shared/calendar";
 import { calendarKeys } from "./keys";
 // @spec [student-UI register UI-44; §2 Free versus paid, Step 2 ruling 3; Doc 05F §15, §17.5]
@@ -37,7 +36,6 @@ import { ENTITLEMENT_DENIAL_INLINE_META } from "@/components/billing/upgrade-mod
 import {
   fetchCalendar,
   fetchGuardianCalendar,
-  fetchStreak,
   fetchStudyProfile,
 } from "./client";
 import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
@@ -152,24 +150,6 @@ export function usePrefetchAdjacentRange(
       clearTimeout(handle);
     };
   }, [client, view, cursor, timezone, enabled]);
-}
-
-/**
- * §15 GET /api/me/streak. INV-08-20: no `calendar_access` check, so this succeeds for a free
- * student whose calendar read is answering 402 — which is why it is a separate query and not
- * a field the page reads off the calendar payload when it renders the upgrade prompt.
- */
-export function useStreak(options?: {
-  enabled?: boolean;
-}): UseQueryResult<StreakSummary, Error> {
-  return useQuery<StreakSummary, Error>({
-    meta: ENTITLEMENT_DENIAL_INLINE_META,
-    queryKey: calendarKeys.streak(),
-    queryFn: fetchStreak,
-    enabled: options?.enabled ?? true,
-    ...QUERY_FRESHNESS.calendarStreak,
-    retry: 1,
-  });
 }
 
 /**

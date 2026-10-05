@@ -335,18 +335,6 @@
   font-size: 14px;
 }
 
-/* ── Facts strip ─────────────────────────────────────────────────────────── */
-
-.lyceon-calendar.lyc-cal .facts {
-  background: var(--margin);
-  border-top: 1px solid var(--rule);
-  font-size: 15px;
-}
-.lyceon-calendar.lyc-cal .facts b {
-  font-family: var(--lyc-serif);
-  color: var(--ink-strong);
-}
-
 /* ── Day menu and the blocked-out day ────────────────────────────────────── */
 
 .lyceon-calendar.lyc-cal .dmenu:hover {

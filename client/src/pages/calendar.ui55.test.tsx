@@ -7,8 +7,10 @@
  *        SCL-185), OQ-25 (free reads `GET /api/calendar/profile`; plan grids stay premium),
  *        OQ-37 (no "Training for" until UI-S8 closes), UI-44 (the upgrade modal never auto-
  *        opens on a calendar 402); DESIGN.md §4 Calendar; prototype Calendar.dc.html;
- *        evidence/wiring-table.md §9; Doc 05F §15, §17.5, §7.8 idempotency]
- * @implemented [2026-10-03]
+ *        evidence/wiring-table.md §9; Doc 05F §15, §17.5, §7.8 idempotency; Doc 05F §17.1 and
+ *        §17.5 as amended by SCL-211 (OQ-56: no streak line, no facts strip; the free form is
+ *        read-only after the first save)]
+ * @implemented [2026-10-03; SCL-211 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (the right
  * panel portals into it) and the real upgrade modal with auto-open ON, over a scripted network
@@ -255,6 +257,8 @@ function install(scenario: Scenario): void {
         requestId: "r",
       });
     }
+    // The server still serves the streak (INV-08-20); answered here so that a page which
+    // asked for it again would draw it, and the SCL-211 absence test below would see it.
     if (method === "GET" && url === "/api/me/streak") {
       return json({
         ...streakSummarySchema.parse({
@@ -429,6 +433,28 @@ describe("paid: the Canvas-style header (DESIGN.md §4)", () => {
   });
 });
 
+describe("paid: no streak line and no facts strip (SCL-211, OQ-56)", () => {
+  it("the week draws; neither the streak line nor the facts strip does, and no streak is read", async () => {
+    await mount("paid");
+    // Presence first: the grid, the header and the payload's own streak and facts are real.
+    const grid = await screen.findByTestId("calendar-week-grid");
+    expect(grid.textContent?.length).toBeGreaterThan(0);
+    expect(screen.getByTestId("calendar-header")).toBeTruthy();
+    const week = paidWeek() as {
+      streak: { current: number | null };
+      facts: { blocks_total: number };
+    };
+    expect(week.streak.current).not.toBeNull();
+    expect(week.facts.blocks_total).toBeGreaterThan(0);
+    // Absence.
+    expect(screen.queryByTestId("calendar-facts")).toBeNull();
+    expect(document.querySelector('[data-item="streak"]')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/day streak/);
+    expect(document.body.textContent).not.toMatch(/blocks complete/);
+    expect(gets()).not.toContain("/api/me/streak");
+  });
+});
+
 describe("paid: the test day is starred (DESIGN.md §4)", () => {
   it("in the week, the month and the mini month — and on no other day", async () => {
     await mount("paid");
@@ -591,6 +617,8 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
   it("the inline setup form and the plan upsell card; no plan grid, no setup popup", async () => {
     await mount("free", { calendar: freeSetupRequired, profile: null });
     const form = await screen.findByTestId("calendar-free-setup");
+    // Editable until the first save (OQ-56 (b)).
+    expect(form.getAttribute("data-state")).toBe("editing");
     expect(within(form).getByLabelText("Test date")).toBeTruthy();
     expect(within(form).getByLabelText("Target score")).toBeTruthy();
     expect(within(form).getByRole("button", { name: "Save" })).toBeTruthy();
@@ -662,9 +690,22 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     expect(
       within(card).getByTestId("calendar-test-date-pill").textContent,
     ).toBe("★ Saturday, 5 December");
+    // OQ-56 (b), SCL-211: the form is now read-only — the saved answers, "Edit goals in
+    // Settings", and no input or Save left to press.
+    const saved = screen.getByTestId("calendar-free-setup");
+    expect(saved.getAttribute("data-state")).toBe("saved");
     expect(
-      (screen.getByLabelText("Target score") as HTMLInputElement).value,
+      within(saved).getByTestId("calendar-free-saved-target").textContent,
     ).toBe("1400");
+    expect(
+      within(saved).getByTestId("calendar-free-saved-date").textContent,
+    ).toBe("Saturday, 5 December");
+    expect(
+      within(saved).getByRole("link", { name: "Edit goals in Settings" }),
+    ).toBeTruthy();
+    expect(within(saved).queryByLabelText("Target score")).toBeNull();
+    expect(within(saved).queryByLabelText("Test date")).toBeNull();
+    expect(within(saved).queryByRole("button", { name: "Save" })).toBeNull();
     expect(
       gets().filter((u) => u === "/api/calendar/profile").length,
     ).toBeGreaterThanOrEqual(2);
@@ -673,14 +714,15 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
 });
 
 describe("free: with a profile saved (OQ-25)", () => {
-  it("reads GET /api/calendar/profile and no plan; the form and the goal card show the saved goal", async () => {
+  it("reads GET /api/calendar/profile and no plan; the card (read-only) and the goal card show the saved goal", async () => {
     await mount("free", { calendar: null, profile: savedProfile() });
     const form = await screen.findByTestId("calendar-free-setup");
+    expect(form.getAttribute("data-state")).toBe("saved");
     expect(
-      (within(form).getByLabelText("Test date") as HTMLInputElement).value,
-    ).toBe(PROFILE_ROW.target_exam_date);
+      within(form).getByTestId("calendar-free-saved-date").textContent,
+    ).toBe("Saturday, 5 December");
     expect(
-      (within(form).getByLabelText("Target score") as HTMLInputElement).value,
+      within(form).getByTestId("calendar-free-saved-target").textContent,
     ).toBe(String(PROFILE_ROW.target_score));
     const card = screen.getByTestId("calendar-goal-card");
     expect(within(card).getByTestId("calendar-target").textContent).toBe(
@@ -706,26 +748,50 @@ describe("free: with a profile saved (OQ-25)", () => {
     expect(screen.queryByTestId("upgrade-modal")).toBeNull();
   });
 
-  it("a second save sends the two answers alone", async () => {
-    await mount("free", { calendar: null, profile: savedProfile() });
-    const form = await screen.findByTestId("calendar-free-setup");
-    fireEvent.change(within(form).getByLabelText("Target score"), {
-      target: { value: "1450" },
+  it("is read-only (OQ-56 (b), SCL-211): no input, no Save, and Edit goals in Settings goes where the goal card's Edit goals goes", async () => {
+    const { history } = await mount("free", {
+      calendar: null,
+      profile: savedProfile(),
     });
-    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(sent("PUT", "/api/calendar/profile")).toHaveLength(1),
+    const form = await screen.findByTestId("calendar-free-setup");
+    // Presence first: the saved answers are drawn.
+    expect(
+      within(form).getByTestId("calendar-free-saved-target").textContent,
+    ).toBe(String(PROFILE_ROW.target_score));
+    expect(within(form).queryByRole("textbox")).toBeNull();
+    expect(within(form).queryByRole("spinbutton")).toBeNull();
+    expect(form.querySelector("input")).toBeNull();
+    expect(within(form).queryByRole("button")).toBeNull();
+    const cardLink = within(screen.getByTestId("calendar-goal-card")).getByRole(
+      "link",
+      { name: "Edit goals" },
     );
-    const body = sent("PUT", "/api/calendar/profile")[0] as Record<
-      string,
-      unknown
-    >;
-    expect(Object.keys(body).sort()).toEqual([
-      "idempotency_key",
-      "target_exam_date",
-      "target_score",
-    ]);
-    expect(body.target_score).toBe(1450);
+    const link = within(form).getByRole("link", {
+      name: "Edit goals in Settings",
+    });
+    expect(link.getAttribute("href")).toBe(cardLink.getAttribute("href"));
+    fireEvent.click(link);
+    expect(history.at(-1)).toBe("/profile");
+    expect(sent("PUT", "/api/calendar/profile")).toEqual([]);
+  });
+
+  it("a saved profile with no date or target reads the shipped absence copy", async () => {
+    await mount("free", {
+      calendar: null,
+      profile: {
+        ...savedProfile(),
+        target_exam_date: null,
+        target_score: null,
+      },
+    });
+    const form = await screen.findByTestId("calendar-free-setup");
+    expect(form.getAttribute("data-state")).toBe("saved");
+    expect(
+      within(form).getByTestId("calendar-free-saved-date").textContent,
+    ).toBe("Add your test date");
+    expect(
+      within(form).getByTestId("calendar-free-saved-target").textContent,
+    ).toBe("Set a target");
   });
 });
 

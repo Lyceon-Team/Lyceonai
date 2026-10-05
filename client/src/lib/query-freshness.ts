@@ -74,9 +74,6 @@ export const QUERY_FRESHNESS = {
    */
   calendarRange: { staleTime: 30 * SECOND_MS, refetchOnWindowFocus: true },
 
-  /** `GET /api/me/streak`. Same §17.7 rule; the streak moves at most once a day. */
-  calendarStreak: { staleTime: MINUTE_MS, refetchOnWindowFocus: true },
-
   /**
    * `GET /api/practice/quota` (OQ-21; UI-50). The count moves with every practice question the
    * student answers or skips (OQ-50), which happens on another page of this tab, so a page
