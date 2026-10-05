@@ -1,6 +1,6 @@
 # Quota migrations: additivity check (before #1073 merges)
 
-Owner ruling (Karl, standing; restated 2026-10-05): "quota migration 20261023000000 checked for additivity and applied by Karl right before #1073 merges if it isn't". #1073 now carries two migrations that replace `public.check_and_reserve_practice_quota`; both are checked here. Production deployment state is **unverified from here** (this session never reads production; the `schema_migrations` ledger is not evidence, see CLAUDE.md).
+Owner ruling (Karl, standing; restated 2026-10-05): "quota migration 20261023000000 checked for additivity and applied by Karl right before #1073 merges if it isn't". #1073 now carries two migrations that replace `public.check_and_reserve_practice_quota`; both are checked here. Production deployment state, **per the owner's report of 2026-10-05**: the live body md5 is `981f5c39…`, so neither quota migration is applied; Karl applies `20261023000000` then `20261024000000` right before #1073 merges. (This session never reads production; the `schema_migrations` ledger is not evidence, see CLAUDE.md.)
 
 | Migration | Purpose | Top-level statements | Signature / return / security / ACL vs previous body | Schema or data change | Body md5 (CR-normalised `prosrc`) |
 |---|---|---|---|---|---|
@@ -26,3 +26,13 @@ where n.nspname = 'public' and p.proname = 'check_and_reserve_practice_quota';
 - exactly one row is expected; more than one means an overload exists and needs a look before applying anything.
 
 Apply right before #1073 merges (the client and server in #1073 expect the `20261024000000` rules: skips count, diagnostic exempt).
+
+## Score history: `20261020010000_exam_scored_sessions.sql` (OQ-30, SCL-207)
+
+One object: `public.exam_scored_sessions(uuid, int) RETURNS jsonb` (plain `CREATE FUNCTION`, so it errors rather than silently replaces if run twice), plus a `COMMENT`, `REVOKE ALL … FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE … TO service_role`. Additive: a new function, no table, column, constraint or data change. Owner-run, one line:
+
+```sql
+select md5(replace(p.prosrc, E'\r', '')) as body_md5, pg_get_function_identity_arguments(p.oid) as args from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'exam_scored_sessions';
+```
+
+Expected when applied: one row, `body_md5 = 4b17c452171384c363d67ec8330da689`, `args = p_student_id uuid, p_limit integer`. No row → not applied (apply it before #1073 merges). A different md5 → a different body is live; stop and compare.
