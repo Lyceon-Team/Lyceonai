@@ -6,7 +6,9 @@
  *        prototype ... and the page's main click path exercised"); design/DESIGN.md §2 (the
  *        timed module keeps its Bluebook layout, light only), §4 "Full-Length home", "Exam
  *        report"; design/prototype/FullLength.dc.html, Report.dc.html; OQ-4 (390px, light and
- *        dark)] | @implemented [2026-10-03]
+ *        dark); owner ruling (Karl, 2026-10-05): on phone widths the Full-Length home shows
+ *        the laptop-or-tablet notice with "Continue anyway"] | @implemented [2026-10-03; phone
+ *        notice 2026-10-05]
  *
  * plain English: the group asks for the "exam-history" seed (seed.ts, db.ts): through the real
  * exam routes the paid student has Practice Test 1 scored, Practice Test 2 left in Reading and
@@ -16,12 +18,24 @@
  * light) and has no prototype (none was drawn; DESIGN.md §2 keeps the shipped Bluebook layout).
  * The click path: Resume on `/tests` lands on the exam session route, which sends the student
  * on to the module the server says is active.
+ *
+ * PHONE NOTICE (2026-10-05). At 390 the home first shows the notice ("tests-phone-notice", its own
+ * shot); every other /tests shot taps "Continue anyway" at 390 (a step skipped on desktop, where
+ * there is no notice), so its 390 rows are the home after the tap.
  */
 import type { PageGroup } from "./types";
 
 const TESTS_PAID = {
   desktop: '[data-testid="tests-history"]',
-  mobile: '[data-testid="tests-history"]',
+  mobile: '[data-testid="tests-phone-notice"]',
+} as const;
+
+/** 390 only: the Full-Length home's "Continue anyway" (owner ruling, Karl, 2026-10-05). */
+const CONTINUE_ANYWAY = {
+  click: {
+    desktop: null,
+    mobile: '[data-testid="tests-phone-notice"] button',
+  },
 } as const;
 
 const REPORT = {
@@ -38,13 +52,15 @@ export const UI_54: PageGroup = {
     {
       id: "tests-free",
       title:
-        "Full-Length, free: the in-page upgrade card; panel: the locked mastery card. No gated request",
+        "Full-Length, free: the in-page upgrade card; panel: the locked mastery card. No gated request (390: after Continue anyway)",
       persona: "free",
       route: "/tests",
       waitFor: {
         desktop: '[data-testid="tests-upgrade-card"]',
-        mobile: '[data-testid="tests-upgrade-card"]',
+        mobile: '[data-testid="tests-phone-notice"]',
       },
+      steps: [CONTINUE_ANYWAY],
+      expectVisible: '[data-testid="tests-upgrade-card"]',
       prototype: {
         kind: "screen",
         file: "FullLength.dc.html",
@@ -55,10 +71,11 @@ export const UI_54: PageGroup = {
     {
       id: "tests-paid",
       title:
-        "Full-Length, paid: Practice Test 1 scored (score + disclosure), Practice Test 2 in progress (Resume, the one primary), Practice Test 3 not started; Before you start; panel: score history and mastery",
+        "Full-Length, paid: Practice Test 1 scored (score + disclosure), Practice Test 2 in progress (Resume, the one primary), Practice Test 3 not started; Before you start; panel: score history and mastery (390: after Continue anyway)",
       persona: "paid",
       route: "/tests",
       waitFor: TESTS_PAID,
+      steps: [CONTINUE_ANYWAY],
       expectText: "In progress: Reading & Writing, Module 2",
       prototype: {
         kind: "screen",
@@ -70,10 +87,11 @@ export const UI_54: PageGroup = {
     {
       id: "tests-paid-full",
       title:
-        "Full-Length, paid, full page (on a phone the right panel stacks under the main column; the footer ends the column)",
+        "Full-Length, paid, full page (on a phone, after Continue anyway, the right panel stacks under the main column; the footer ends the column)",
       persona: "paid",
       route: "/tests",
       waitFor: TESTS_PAID,
+      steps: [CONTINUE_ANYWAY],
       expectText: "In progress: Reading & Writing, Module 2",
       fullPage: true,
       prototype: {
@@ -81,6 +99,20 @@ export const UI_54: PageGroup = {
         file: "FullLength.dc.html",
         plan: "paid",
         note: "Full-Length, plan = paid (the canvas is a fixed 1440x900)",
+      },
+    },
+    {
+      id: "tests-phone-notice",
+      title:
+        'Full-Length on a phone (owner ruling 2026-10-05): the title and "Full-length tests are built for a laptop or tablet, like test day." with Continue anyway. Desktop: no notice (control)',
+      persona: "paid",
+      route: "/tests",
+      waitFor: TESTS_PAID,
+      expectVisible: '[data-testid="tests-home"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototypes have no phone layout; the notice is the owner ruling of 2026-10-05 (DESIGN.md §2 Mobile).",
       },
     },
     {
@@ -135,9 +167,10 @@ export const UI_54: PageGroup = {
       route: "/tests",
       waitFor: {
         desktop: '[data-testid="tests-resume"]',
-        mobile: '[data-testid="tests-resume"]',
+        mobile: '[data-testid="tests-phone-notice"]',
       },
       steps: [
+        CONTINUE_ANYWAY,
         {
           click: {
             desktop: '[data-testid="tests-resume"]',
