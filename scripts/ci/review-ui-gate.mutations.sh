@@ -82,6 +82,7 @@ FILES=(
   "client/src/pages/account-recover.tsx"
   "client/src/pages/guardian-required.tsx"
   "client/src/components/account-deletion/PendingDeletionScreen.tsx"
+  "client/src/lib/plan-copy.ts"
 )
 
 snapshot_all() {
@@ -1426,6 +1427,43 @@ plant "UI58-U2" "every plan button is filled (DESIGN.md §1 one primary)" \
   'a = "                variant={isBestValue ? \"lyc-primary\" : \"lyc-outline\"}"
 assert s.count(a) == 1
 s = s.replace(a, "                variant=\"lyc-primary\"", 1)'
+
+# OQ-59 (h) (Karl, 2026-10-05): /upgrade's plan copy is the Help FAQ's free/paid wording, from one
+# source (client/src/lib/plan-copy.ts); the projection reads as free.
+plant "UI58-U3" "the shipped 'One secure checkout flow' description comes back" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        description={PLAN_PAID_ADDS}"
+assert s.count(a) == 1
+s = s.replace(a, "        description=\"One secure checkout flow for monthly, quarterly, and yearly subscriptions.\"", 1)'
+
+plant "UI58-U4" "the free line replaced by the shipped 'projection access' bullet" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        {PLAN_FREE_INCLUDES}"
+assert s.count(a) == 1
+s = s.replace(a, "        Full KPI + mastery + projection access", 1)'
+
+plant "UI58-U5" "a card lists the projection as paid again" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "                {plan.intervalLabel}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + projection access\n", 1)'
+
+plant "UI58-U6" "the shared free sentence drops the projection" \
+  "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
+  "client/src/lib/plan-copy.ts" \
+  'a = "the diagnostic, your projected score, 40 practice"
+assert s.count(a) == 1
+s = s.replace(a, "the diagnostic, 40 practice", 1)'
+
+plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/help.tsx" \
+  'a = "    a: `${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`,"
+assert s.count(a) == 1
+s = s.replace(a, "    a: `${PLAN_FREE_INCLUDES} Paid plans add more.`,", 1)'
 
 plant "UI58-N1" "a notification's time drops to 12px" \
   "client/src/pages/notifications.test.tsx" \

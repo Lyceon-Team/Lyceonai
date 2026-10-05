@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import UpgradePage from "./upgrade";
+import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
+import { HELP_FAQS } from "./help";
 
 const getBillingPlansMock = vi.fn();
 const startSubscriptionCheckoutMock = vi.fn();
@@ -178,5 +180,42 @@ describe("Upgrade page", () => {
     expect(filled.map((b) => b.getAttribute("data-testid"))).toEqual([
       "upgrade-choose-yearly",
     ]);
+  });
+
+  /**
+   * OQ-59 (h) (owner ruling 2026-10-05): the plan copy is the Help FAQ's approved free/paid
+   * wording, and the projection reads as FREE. Presence first: the cards are on screen and the
+   * two sentences render; then the shipped wording that listed the projection as paid is gone.
+   */
+  it("OQ-59 (h): the Help FAQ's free/paid sentences, and no 'projection access' as a paid feature", async () => {
+    getBillingPlansMock.mockResolvedValueOnce([
+      {
+        plan: "monthly",
+        label: "Monthly",
+        amountCents: 9999,
+        currency: "usd",
+        intervalLabel: "per month",
+        interval: "month",
+        intervalCount: 1,
+        stripePriceIdConfigured: true,
+      },
+    ]);
+    render(<UpgradePage />, { wrapper: createWrapper() });
+    await waitFor(() => {
+      expect(screen.getByTestId("upgrade-plan-monthly")).toBeTruthy();
+    });
+    // The two sentences ARE the FAQ answer (one source, so they cannot drift).
+    expect(HELP_FAQS[0]?.a).toBe(`${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`);
+    expect(screen.getByTestId("page-header-description").textContent).toBe(
+      PLAN_PAID_ADDS,
+    );
+    const free = screen.getByTestId("upgrade-free-includes").textContent ?? "";
+    expect(free).toBe(PLAN_FREE_INCLUDES);
+    expect(free).toContain("your projected score");
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/projection access/i);
+    expect(text).not.toMatch(/Full KPI/i);
+    expect(text).not.toMatch(/full-test analytics/i);
+    expect(text).not.toMatch(/One secure checkout flow/i);
   });
 });

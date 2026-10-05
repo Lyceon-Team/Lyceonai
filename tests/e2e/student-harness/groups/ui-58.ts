@@ -303,7 +303,7 @@ export const UI_58: PageGroup = {
     {
       id: "upgrade",
       title:
-        "The plans page /upgrade (NOT PROTOTYPED): three plans, the best value filled; no in-body back link",
+        "The plans page /upgrade (NOT PROTOTYPED): the Help FAQ's free/paid sentences (OQ-59 (h)), three plans, the best value filled; no in-body back link",
       persona: "free",
       route: "/upgrade",
       waitFor: {
