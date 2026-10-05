@@ -437,6 +437,27 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
 });
 
 /**
+ * @spec [Doc-03C_V3 §9.3 (internal routes authenticate by OIDC); owner brief 2026-10-05 "Silence the
+ *       session warning on internal routes"] | @implemented [2026-10-05]
+ * plain English: `/api/internal` and everything under it. Those routes are called by Cloud Scheduler,
+ * Cloud Tasks and Vercel Cron, never by a signed-in user, and each authenticates itself (OIDC or the
+ * cron secret). `supabaseAuthMiddleware` skips them: the session lookup there only produced a
+ * WARNING `jwt_validation` (AuthSessionMissingError) on every scheduled call, before the route's
+ * own check admitted it.
+ *
+ * trade-offs: none of the internal handlers, the OIDC guard, `cronAuthorized` or the deletion lock
+ * reads `req.user` on these paths (established 2026-10-05), so nothing they rely on is lost.
+ * edge cases: Express matches routes case-insensitively (`/API/Internal/...` reaches the internal
+ * routers), so the prefix is compared case-insensitively; `/api/internalx` is not internal.
+ */
+const INTERNAL_API_PREFIX = "/api/internal";
+
+export function isInternalApiPath(path: string): boolean {
+  const p = path.toLowerCase();
+  return p === INTERNAL_API_PREFIX || p.startsWith(`${INTERNAL_API_PREFIX}/`);
+}
+
+/**
  * @spec [Doc-01_V8 Identity/Access; Coding Standards §6.1 server-authoritative auth | AUTH-001]
  * @implemented 2026-06-15
  * plain English: Middleware that validates the Supabase session, attaches req.user from the canonical
@@ -462,6 +483,8 @@ export async function supabaseAuthMiddleware(
   res: Response,
   next: NextFunction,
 ) {
+  // Internal routes carry no user session and authenticate themselves (isInternalApiPath).
+  if (isInternalApiPath(req.path)) return next();
   try {
     // Build the request-scoped @supabase/ssr server client. Its cookie adapter reads the session from
     // the request cookies and writes any refreshed session back onto the response automatically.
