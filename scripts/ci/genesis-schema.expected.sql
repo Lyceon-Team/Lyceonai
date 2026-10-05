@@ -240,10 +240,14 @@ BEGIN
 
   v_cutoff := now() - make_interval(days => public.audit_logs_retention_days());
 
+  -- Guardian-link consent rows are never purged by age (D01:222; owner ruling 2026-10-05 C-02).
+  -- The three actions are exactly those guardian_link_audit writes; strip_identity still severs
+  -- their actor/target at account deletion.
   DELETE FROM public.audit_logs a
    WHERE a.id IN (
      SELECT b.id FROM public.audit_logs b
       WHERE b.created_at < v_cutoff
+        AND b.action NOT IN ('guardian_link_initiated', 'guardian_link_accepted', 'guardian_link_revoked')
       ORDER BY b.created_at
       LIMIT p_batch_size
    );
