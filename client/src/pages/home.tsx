@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
 import {
   Brain,
@@ -27,6 +26,7 @@ import {
   formatMonthlyPrice,
 } from "@/lib/public-pricing";
 import { ctaClickHandlers } from "@/lib/cta-click";
+import { QotdWidget } from "@/components/qotd/QotdWidget";
 
 /**
  * The free-tier daily practice allowance, as advertised.
@@ -113,11 +113,11 @@ export default function HomePage() {
           {/* F6 (owner answer 11, 2026-10-03): the scripted tutor demo that sat beside the hero
               is removed; the hero is one column until the F13 homepage rebuild. */}
           <div className="max-w-3xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-            >
+            {/* @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: the hero's
+                entrance is a CSS slide only, with no fade, so the prerendered headline is
+                visible from first paint without JavaScript (it was `opacity:0` until hydration)
+                and the entry bundle no longer carries framer-motion. Reduced motion: none. */}
+            <div className="animate-in slide-in-from-bottom-5 duration-700 motion-reduce:animate-none">
               <span className="text-xs uppercase tracking-widest text-muted-foreground mb-4 block">
                 Study smarter for the SAT
               </span>
@@ -202,7 +202,7 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         </section>
       </Container>
@@ -227,6 +227,25 @@ export default function HomePage() {
           </div>
         </Container>
       </section>
+
+      {/* @spec [docs/plans/seo/seo-marketing-vertical.md R16, Q3] | @implemented [2026-10-05] |
+          plain English: today's question, answerable without an account. It is fetched in the
+          browser, so the prerendered homepage carries no question and no answer. */}
+      <Container size="narrow">
+        <Section id="question-of-the-day" className="py-16">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              SAT Question of the Day
+            </h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              A free SAT practice question every day — no account needed.
+            </p>
+          </div>
+          <Card>
+            <QotdWidget />
+          </Card>
+        </Section>
+      </Container>
 
       <Container size="wide">
         <Section id="how-it-works" className="py-16">

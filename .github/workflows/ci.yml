@@ -859,6 +859,28 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-rls-gates.sql
 
+      # QOTD (SEO Wave 2, plan Q1) and the SCL-202 anonymous ledger. Runs here because this
+      # job already holds a database with the full migration pipeline applied; the gate
+      # writes only inside one transaction and rolls back, so it cannot disturb the calendar
+      # gates around it.
+      - name: QOTD + anonymous ledger schema gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/qotd-schema-gates.sql
+
+      # Plants a repeat schedule, a readable future day, two pre-submit answer leaks and an early
+      # archive page; each must turn its guarding check red on a named assertion (plan Q1-Q3).
+      - name: QOTD mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/qotd.mutations.sh
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost

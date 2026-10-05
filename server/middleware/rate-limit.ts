@@ -24,6 +24,11 @@ import type { NextFunction, Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import {
+  clientIp,
+  PublicIpSecretMissingError,
+  subjectHmacHex,
+} from "../lib/client-ip";
+import {
   checkAndIncrement,
   rateLimitDenialBody,
   rateLimitDenialHeaders,
@@ -110,6 +115,78 @@ export function singleBucketRateLimit(
       res.status(unavailable ? 503 : 500).json({
         error:
           "Rate limit check failed. Please contact support if this persists.",
+        requestId,
+      });
+    }
+  };
+}
+
+/**
+ * One bucket, keyed on a keyed hash of the caller's IP, for a public endpoint with no
+ * authenticated caller.
+ *
+ * @spec [SCL-202 (anonymous buckets: HMAC-SHA256(server secret, client IP), raw IP never stored
+ *       or logged; §44 response unchanged); plan R19, Q2] | @implemented [2026-10-05]
+ *
+ * plain English: the same check-and-increment, headers and 429 as `singleBucketRateLimit`, with
+ * the subject computed by `server/lib/client-ip.ts` and the row in `rate_limit_ledger_anon`.
+ * Fails closed: no IP, no HMAC secret, an unseeded bucket or an unreadable ledger is a 503.
+ */
+export async function checkAnonymousBucket(
+  req: Pick<Request, "headers" | "ip" | "socket">,
+  bucketKey: string,
+  window?: { start: Date; end: Date },
+): Promise<RateLimitResult> {
+  const ip = clientIp(req);
+  if (!ip) throw new RateLimitUnavailableError("no client IP to key the bucket on");
+  let subjectHmac: string;
+  try {
+    subjectHmac = subjectHmacHex(ip);
+  } catch (err: unknown) {
+    if (err instanceof PublicIpSecretMissingError) {
+      throw new RateLimitUnavailableError(err.message);
+    }
+    throw err;
+  }
+  const client = supabaseServer as unknown as LedgerClient;
+  return checkAndIncrement(client, {
+    subjectHmac,
+    bucketKey,
+    ...(window ? { window } : {}),
+  });
+}
+
+export function anonymousBucketRateLimit(
+  bucketKey: string,
+  component: string,
+): (req: Request, res: Response, next: NextFunction) => Promise<void> {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const requestId = req.requestId;
+    try {
+      const result = await checkAnonymousBucket(req, bucketKey);
+      applyRateLimitHeaders(res, result);
+      if (!result.allowed) {
+        denyRateLimited(res, bucketKey, result, requestId);
+        return;
+      }
+      next();
+    } catch (err: unknown) {
+      const unavailable = err instanceof RateLimitUnavailableError;
+      logger.error(
+        "RATE_LIMIT",
+        component,
+        "Anonymous rate limit check failed — blocking request",
+        {
+          requestId,
+          bucket: bucketKey,
+          reason: unavailable ? "unavailable" : "error",
+        },
+      );
+      res.status(unavailable ? 503 : 500).json({
+        error: {
+          code: "rate_limit_unavailable",
+          message: "This is temporarily unavailable. Please try again shortly.",
+        },
         requestId,
       });
     }

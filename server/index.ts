@@ -28,7 +28,9 @@ import {
   requireStudentOrAdmin,
   requireStudentOnly,
   requireStudentAccount,
+  hasSsrSessionCookie,
 } from "./middleware/supabase-auth";
+import { csrfTokenResponseSchema } from "../packages/shared/src/csrf-token-schema";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import {
@@ -53,6 +55,7 @@ import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
+import publicQotdRoutes from "./routes/public-qotd-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
@@ -198,9 +201,17 @@ app.use(globalRateLimiter);
 
 // CSRF token bootstrap endpoint (stateless double-submit cookie).
 // CSRF_EXEMPT_REASON: GET-only endpoint to issue a CSRF token + cookie.
+// @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: the response also says whether
+// a session cookie came with the request, so a visitor with no session never sends the profile
+// read that would answer 401. A hint only: `hasSsrSessionCookie` checks presence, not validity.
 app.get("/api/csrf-token", (req: Request, res: Response) => {
   const csrfToken = generateToken(req, res);
-  return res.json({ csrfToken });
+  return res.json(
+    csrfTokenResponseSchema.parse({
+      csrfToken,
+      sessionCookiePresent: hasSsrSessionCookie(req),
+    }),
+  );
 });
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
@@ -450,6 +461,13 @@ app.use(
 // still applies (1000/IP/15min), but that bounds one caller, not distributed
 // load; the module's 15-minute memo is what bounds calls to Stripe itself.
 app.use("/api/public", publicPricingRoutes);
+
+// Public Question of the Day (UNAUTHENTICATED BY DESIGN — SEO Wave 2, plan R16-R19, Q2).
+// No auth and no CSRF: nothing reads `req.user` and no ambient credential is used; the one write
+// (POST /today/answer) is gated by Cloudflare Turnstile and the SCL-202 hashed-IP ledger, and
+// the reads are hashed-IP limited too. See server/routes/public-qotd-routes.ts.
+// CSRF_EXEMPT_REASON: no ambient credential is read; the submit is Turnstile-gated (owner Step 0 decision, 2026-10-05).
+app.use("/api/public/qotd", publicQotdRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);

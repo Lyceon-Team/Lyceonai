@@ -653,7 +653,9 @@ plant M85 "$ANASURF" "s.replace('  if (typeof pathname !== \"string\" || !pathna
 expect_red M85 "E1.3 — an unknown path is denied (defaults to deny, per Doc 06A §5.3)"
 
 echo "==> (M86) prefix matching loses its segment boundary"
-plant M86 "$ANASURF" "s.replace('const PUBLIC_PREFIXES: readonly string[] = [\"/blog/\", \"/legal/\"];', 'const PUBLIC_PREFIXES: readonly string[] = [\"/blog\", \"/legal\"];', 1)"
+# Re-pointed 2026-10-05 (SEO Wave 2, #1099): the list gained "/sat-question-of-the-day/" and is
+# now one entry per line, so the one-line anchor no longer matched and M86 had gone dead.
+plant M86 "$ANASURF" "s.replace('const PUBLIC_PREFIXES: readonly string[] = [\n  \"/blog/\",\n  \"/legal/\",', 'const PUBLIC_PREFIXES: readonly string[] = [\n  \"/blog\",\n  \"/legal\",', 1)"
 expect_red M86 "E1.6 — a prefix matches at a segment boundary, not as a substring"
 
 echo "==> (M87) the verdict is taken from the whole URL instead of its path"

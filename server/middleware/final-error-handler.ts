@@ -17,6 +17,7 @@
  * without booting the whole app. `err` is `unknown` at this boundary and narrowed here.
  */
 import type { NextFunction, Request, Response } from "express";
+import { loggableIp } from "../lib/client-ip";
 import { logger } from "../logger";
 
 type ErrorFields = {
@@ -55,7 +56,7 @@ export function finalErrorHandler(
       "token_rejected",
       "Request blocked: CSRF token did not verify",
       { code: CSRF_BLOCKED, method: req.method, path: req.path },
-      { requestId, userId: req.user?.id, ip: req.ip },
+      { requestId, userId: req.user?.id, ip: loggableIp(req) },
     );
     res.status(403).json({
       error: {
@@ -87,7 +88,7 @@ export function finalErrorHandler(
     {
       requestId,
       userId: req.user?.id,
-      ip: req.ip,
+      ip: loggableIp(req),
     },
   );
 

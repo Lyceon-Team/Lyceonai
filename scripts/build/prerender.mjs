@@ -60,5 +60,8 @@ fs.writeFileSync(path.join(publicDir, "sitemap.xml"), site.sitemapXml);
 fs.rmSync(ssrDir, { recursive: true, force: true });
 
 console.log(
+  `QOTD archive: ${site.qotdArchive.days.length} past day(s) (source: ${site.qotdArchive.source})`,
+);
+console.log(
   `PRERENDERED ${site.pages.length} pages (${site.pages.filter((p) => p.indexable).length} in sitemap.xml) + 404.html + app.html`,
 );
