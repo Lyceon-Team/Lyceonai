@@ -173,6 +173,23 @@ export function returnPathForRole(
   return roles !== undefined && roles.includes(role) ? safe : null;
 }
 
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md F13; owner ruling 2026-10-05, Step 0 decision 4
+ * ("?intent=guardian: approved, as a default only, with server validation unchanged")]
+ * | @implemented [2026-10-05] | plain English: true when the return path is one only a guardian
+ * may open (today `/guardian`). The homepage's "I'm a parent or guardian" button signs up with
+ * `next=/guardian`, and the onboarding form reads this to make Guardian its DEFAULT role. The
+ * intent rides the existing `next` channel, which already survives Google sign-in (the OAuth
+ * callback) and onboarding; a separate parameter would need its own path through both. It only
+ * pre-selects a field the user can change; the server validates the submitted role as before.
+ */
+export function returnPathPrefersGuardian(raw: unknown): boolean {
+  return (
+    returnPathForRole(raw, "guardian") !== null &&
+    returnPathForRole(raw, "student") === null
+  );
+}
+
 /** Where a role lands when no return path is honoured (the AS-3 landing matrix). */
 export function defaultPathForRole(role: ReturnPathRole): string {
   return role === "guardian" ? "/guardian" : "/dashboard";

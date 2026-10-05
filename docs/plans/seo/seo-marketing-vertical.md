@@ -48,7 +48,7 @@
 | R12 | Marketing data hub = PostHog (see §3). Supermetrics not kept beyond its trial. PostHog and BigQuery connectors added. |
 | R12a | PostHog project settings: IP anonymization on, console-log capture off, cookieless mode on (stateful), timezone America/Chicago, session recording off. Applied 2026-10-02. |
 | R12b | Search Console bulk export lands in BigQuery `replit-cop`, location us-central1 (same as existing dataset). |
-| R13 | Homepage hero A/B test removed; A/B testing returns later via PostHog experiments once traffic supports it. |
+| R13 | Homepage hero A/B test removed; A/B testing returns later via PostHog experiments once traffic supports it. **Superseded for the homepage hero by Karl's ruling, 2026-10-05 (F13 Step 0 decision 6):** the PostHog experiment `homepage-hero` runs now, consent-gated, Variant A prerendered (SCL-213 IS 7). |
 | R14 | Cookie banner and the missing legal artifacts are built **in this vertical**; legal text = industry-standard drafts for counsel. |
 | R15 | Practice adaptivity happens via the study calendar (premium); the homepage claim is scoped to the paid plan. |
 
@@ -220,7 +220,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | ID | Item | Proof |
 |---|---|---|
 | P1 | ~$100 test on low-cost informational terms, parent targeting only; spend synced into PostHog | SHOT/READ campaign settings + spend |
-| P2 | PostHog experiments when traffic supports a readable result | SHOT experiment config + result |
+| P2 | PostHog experiments when traffic supports a readable result. **The homepage hero experiment started early by Karl's ruling, 2026-10-05 (F13 decision 6; SCL-213 IS 7); further experiments stay here.** | SHOT experiment config + result |
 
 ### Post-launch (parked)
 Average score improvement (R31) · owned subreddit + Reddit API approval · LISA public presence · AI agents on social · competitor comparison pages · SAT prep app page · on-camera video.

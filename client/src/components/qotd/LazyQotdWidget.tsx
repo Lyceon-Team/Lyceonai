@@ -13,7 +13,14 @@
  *
  * edge cases: without IntersectionObserver (very old browsers) the widget mounts straight away.
  */
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { QotdLoading } from "./QotdLoading";
 
 const QotdWidget = lazy(() =>
@@ -23,7 +30,13 @@ const QotdWidget = lazy(() =>
 /** Start loading a little before the slot is on screen, so it is usually ready on arrival. */
 const NEAR_VIEWPORT = "400px 0px";
 
-export function LazyQotdWidget(): JSX.Element {
+export function LazyQotdWidget({
+  showArchiveLink = true,
+  afterReveal = null,
+}: {
+  showArchiveLink?: boolean;
+  afterReveal?: ReactNode;
+} = {}): JSX.Element {
   const slot = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
 
@@ -51,7 +64,10 @@ export function LazyQotdWidget(): JSX.Element {
     <div ref={slot} data-testid="qotd-lazy-slot">
       {near ? (
         <Suspense fallback={<QotdLoading />}>
-          <QotdWidget />
+          <QotdWidget
+            showArchiveLink={showArchiveLink}
+            afterReveal={afterReveal}
+          />
         </Suspense>
       ) : (
         <QotdLoading />

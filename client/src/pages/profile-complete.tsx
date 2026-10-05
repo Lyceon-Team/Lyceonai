@@ -24,8 +24,10 @@ import {
 } from "@/hooks/useProfileQuery";
 import { resolveOnboardingErrorMessage } from "@/lib/api-error";
 import {
+  RETURN_PATH_PARAM,
   postAuthDestination,
   returnPathFromSearch,
+  returnPathPrefersGuardian,
 } from "@lyceon/shared/return-path";
 import {
   MARKETING_CONSENT_LABEL,
@@ -126,7 +128,16 @@ export default function ProfileComplete() {
     }
 
     setDisplayName(profile.display_name ?? "");
-    setRole(profile.role === "guardian" ? "guardian" : "student");
+    // F13 (owner ruling 2026-10-05): arriving from "I'm a parent or guardian" (`next=/guardian`)
+    // makes Guardian the default. A default only: the server validates the submitted role.
+    const prefersGuardian =
+      typeof window !== "undefined" &&
+      returnPathPrefersGuardian(
+        new URLSearchParams(window.location.search).get(RETURN_PATH_PARAM),
+      );
+    setRole(
+      profile.role === "guardian" || prefersGuardian ? "guardian" : "student",
+    );
 
     // @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] | @implemented [2026-06-17] | plain English: DOB picker
     // defaults to current_date − 13y (dynamically computed at render time, never hardcoded —

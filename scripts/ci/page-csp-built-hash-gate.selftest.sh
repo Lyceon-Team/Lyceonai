@@ -57,4 +57,10 @@ sed 's#</head>#<script type="application/json">{"a":1}</script></head>#' "$BUILT
 node "$GATE" "$tmp/c7.html" vercel.json >/dev/null || { echo "FAIL: a non-executable data block turned the gate red"; exit 1; }
 echo "ok: a non-executable data block stays green"
 
+# 8. F13: the homepage's hero swap script changes (one byte): its hash leaves the allowed set.
+grep -q 'ph_lyceon_homepage_hero' "$BUILT"
+sed 's/ph_lyceon_homepage_hero/ph_lyceon_homepage_herX/' "$BUILT" > "$tmp/m8.html"
+grep -q ph_lyceon_homepage_herX "$tmp/m8.html"
+expect_red "hero swap script changed" "$tmp/m8.html" vercel.json
+
 echo "page-csp-built-hash-gate selftest: all mutations red"

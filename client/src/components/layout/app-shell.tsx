@@ -53,6 +53,7 @@
 import {
   createContext,
   useContext,
+  useRef,
   useState,
   type ReactNode,
   type CSSProperties,
@@ -83,6 +84,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { LYC_FOCUS } from "@/components/ui/button";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
+import { useReportBottomChrome } from "@/lib/bottom-chrome";
 import type {
   AppContentLayout,
   RightPanelWidth,
@@ -307,6 +309,10 @@ export function AppShell({
   const [panelEl, setPanelEl] = useState<HTMLElement | null>(null);
   // F-65: portalled overlays (the upgrade modal) take this shell's lock.
   usePublishThemeLock(themeLock);
+  // F-72: the phone tab bar reports its height, so the cookie banner sits above it (0 from lg up,
+  // where the bar is hidden).
+  const tabBarRef = useRef<HTMLElement>(null);
+  useReportBottomChrome(tabBarRef);
 
   const accountMenu = (
     <HeaderUserMenu
@@ -452,6 +458,7 @@ export function AppShell({
       </PanelSlot.Provider>
 
       <nav
+        ref={tabBarRef}
         aria-label="Main"
         data-testid="app-tab-bar"
         className="fixed inset-x-0 bottom-0 z-40 flex border-t border-lyc-rule bg-lyc-rail px-1 lg:hidden"

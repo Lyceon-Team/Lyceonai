@@ -26,11 +26,16 @@
  *      recorded in §7.
  * The built page is checked separately, after the build: scripts/ci/page-csp-built-hash-gate.mjs.
  */
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { THEME_BOOT_SCRIPT_HASH } from "../../server/middleware/security-headers";
+import { HERO_SWAP_SCRIPT } from "../../client/src/lib/analytics/hero-experiment";
+
+/** The homepage hero's swap script (F13), hashed from its one source. */
+const HERO_SWAP_SCRIPT_HASH = `sha256-${createHash("sha256").update(HERO_SWAP_SCRIPT).digest("base64")}`;
 
 const routeSchema = z.union([
   z.object({ handle: z.string() }).strict(),
@@ -77,6 +82,8 @@ function headersFor(
  * Each source beyond 'self', with the flow that needs it (observed with
  * tests/e2e/page-csp-flows.spec.ts against the built bundle, 2026-10-02):
  *   - script-src theme hash: every page (the theme boot in client/index.html, F-58).
+ *   - script-src hero swap hash: the homepage (F13, owner ruling 2026-10-05, decision 5): shows a
+ *     stored homepage-hero variant before first paint, only after analytics consent.
  *   - script-src https://www.desmos.com: practice, review and exam Math runners (calculator.js).
  *   - script-src 'unsafe-eval': the Desmos calculator evals (261 reports per session with the
  *     policy report-only, 2026-10-02; blank calculator when enforced without it). Owner ruling
@@ -104,7 +111,7 @@ const PAGE_CSP = [
   "base-uri 'self'",
   "object-src 'none'",
   "form-action 'self'",
-  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
+  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' '${HERO_SWAP_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data:",
@@ -180,14 +187,14 @@ describe("F-59: page security headers (vercel.json)", () => {
     }
   });
 
-  it("script-src is our origin, the theme script's hash, eval (Desmos), Desmos, Turnstile and PostHog; nothing inline", () => {
+  it("script-src is our origin, the theme and hero script hashes, eval (Desmos), Desmos, Turnstile and PostHog; nothing inline", () => {
     const csp = headersFor("/")["Content-Security-Policy"] ?? "";
     const scriptSrc = csp
       .split(";")
       .map((d) => d.trim())
       .find((d) => d.startsWith("script-src "));
     expect(scriptSrc).toBe(
-      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
+      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' '${HERO_SWAP_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
     );
     // 'unsafe-eval' appears in script-src only (owner ruling 2026-10-03), never inline script.
     expect(csp.match(/'unsafe-eval'/g)).toHaveLength(1);

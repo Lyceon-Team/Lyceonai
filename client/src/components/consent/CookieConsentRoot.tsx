@@ -24,7 +24,12 @@
  *
  * edge cases: while the session is still resolving nothing starts; an unknown age is excluded.
  */
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +46,7 @@ import {
   subscribeSignedInSurface,
 } from "@/lib/signed-in-surface";
 import { readPaintedTheme, subscribePaintedTheme } from "@/lib/theme";
+import { useBottomChromeHeight } from "@/lib/bottom-chrome";
 import {
   closeCookieSettings,
   getConsentSnapshot,
@@ -173,13 +179,39 @@ export function CookieConsentRoot(): JSX.Element | null {
 /** One size and one style for every choice, so Reject is exactly as prominent as Accept. */
 const CHOICE_BUTTON = "w-full sm:w-auto sm:min-w-[9rem]";
 
+/**
+ * The banner and the GPC notice: one bar pinned to the bottom of the screen.
+ *
+ * @spec [student-UI register F-72; owner brief 2026-10-05: "on signed-in pages, the banner sits
+ *       above the tab bar, offset by the tab-bar height plus env(safe-area-inset-bottom), and
+ *       never covers the bottom sheet's actions. Public pages are unchanged."]
+ *       | @implemented [2026-10-05]
+ *
+ * plain English: where the student shell's phone tab bar is on screen it reports its height
+ * (lib/bottom-chrome.ts) and the bar sits that far up, plus the device's safe-area inset, so
+ * every tab stays tappable. Everywhere else (public pages; desktop, where the tab bar is hidden)
+ * the height is 0 and the bar sits at the bottom edge as before. `consent-bottom-bar` lets
+ * index.css step it aside while a sheet or dialog is open, so it never covers their actions.
+ */
+const BOTTOM_BAR_CLASS =
+  "consent-bottom-bar fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4 text-foreground shadow-lg sm:p-6";
+
+function useBottomBarStyle(): CSSProperties | undefined {
+  const chrome = useBottomChromeHeight();
+  return chrome > 0
+    ? { bottom: `calc(${chrome}px + env(safe-area-inset-bottom, 0px))` }
+    : undefined;
+}
+
 function CookieBanner(): JSX.Element {
   const themeClass = useSurfaceThemeClass();
+  const bottomBarStyle = useBottomBarStyle();
   return (
     <section
       aria-labelledby="cookie-banner-heading"
       data-testid="cookie-banner"
-      className={`${themeClass} fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4 text-foreground shadow-lg sm:p-6`}
+      className={`${themeClass} ${BOTTOM_BAR_CLASS}`}
+      style={bottomBarStyle}
     >
       <div className="mx-auto flex max-w-5xl flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2 md:max-w-2xl">
@@ -232,11 +264,13 @@ function CookieBanner(): JSX.Element {
 
 function GpcNotice({ onClose }: { onClose: () => void }): JSX.Element {
   const themeClass = useSurfaceThemeClass();
+  const bottomBarStyle = useBottomBarStyle();
   return (
     <section
       aria-label="Global Privacy Control"
       data-testid="gpc-notice"
-      className={`${themeClass} fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background p-4 text-foreground shadow-lg sm:p-6`}
+      className={`${themeClass} ${BOTTOM_BAR_CLASS}`}
+      style={bottomBarStyle}
     >
       <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm">

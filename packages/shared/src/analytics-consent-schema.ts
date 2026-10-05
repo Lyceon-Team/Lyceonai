@@ -78,6 +78,19 @@ export function parseConsentCookieValue(value: string): StoredConsent | null {
   };
 }
 
+/**
+ * Whether a stored choice still counts at `nowSeconds`: made no later than now and less than
+ * 6 months ago (Doc 10 §9.11's do-not-re-ask period). A choice dated in the future (a wrong clock)
+ * does not count. The ONE rule: the consent store and the homepage hero experiment both use it.
+ */
+export function consentIsCurrent(
+  decidedAtSeconds: number,
+  nowSeconds: number,
+): boolean {
+  const age = Math.floor(nowSeconds) - decidedAtSeconds;
+  return age >= 0 && age < CONSENT_MAX_AGE_SECONDS;
+}
+
 export function formatConsentCookieValue(consent: StoredConsent): string {
   return `${consent.bannerVersion}.${consent.consentId}.${consent.analytics ? "a" : "r"}.${consent.decidedAtSeconds}`;
 }

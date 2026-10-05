@@ -321,3 +321,66 @@ describe("theme (owner ruling 2026-10-05: never a dark banner over a light page)
     expect(bannerIsDark()).toBe(false);
   });
 });
+
+describe("F-72: above the student shell's phone tab bar (owner brief 2026-10-05)", () => {
+  async function mountTabBar(height: number): Promise<() => void> {
+    const { useReportBottomChrome } = await import("@/lib/bottom-chrome");
+    function FakeTabBar(): JSX.Element {
+      const ref = React.useRef<HTMLElement>(null);
+      useReportBottomChrome(ref);
+      return <nav ref={ref} data-testid="fake-tab-bar" />;
+    }
+    // jsdom does no layout: the bar's measured height is supplied here.
+    const proto = HTMLElement.prototype;
+    const original = proto.getBoundingClientRect;
+    proto.getBoundingClientRect = function rect(this: HTMLElement) {
+      return this.dataset.testid === "fake-tab-bar"
+        ? ({ height } as DOMRect)
+        : original.call(this);
+    };
+    const view = render(<FakeTabBar />);
+    return () => {
+      view.unmount();
+      proto.getBoundingClientRect = original;
+    };
+  }
+
+  it("public page (no tab bar): the banner sits at the bottom edge, unchanged", async () => {
+    await mountFresh();
+    const banner = screen.getByTestId("cookie-banner");
+    expect(banner.className).toContain("bottom-0");
+    expect(banner.getAttribute("style") ?? "").not.toContain("calc(");
+  });
+
+  it("with the tab bar on screen: the banner sits its height plus the safe-area inset higher, and returns when it goes", async () => {
+    await mountFresh();
+    let unmount = (): void => undefined;
+    await act(async () => {
+      unmount = await mountTabBar(65);
+    });
+    expect(screen.getByTestId("cookie-banner").getAttribute("style")).toMatch(
+      // jsdom reorders env()'s arguments when it serialises the style; the parts are the claim.
+      /bottom: calc\(65px \+ env\(.*safe-area-inset-bottom/,
+    );
+    await act(async () => {
+      unmount();
+    });
+    expect(
+      screen.getByTestId("cookie-banner").getAttribute("style") ?? "",
+    ).not.toContain("calc(");
+  });
+
+  it("the GPC notice takes the same offset", async () => {
+    setGpc(true);
+    await mountFresh();
+    let unmount = (): void => undefined;
+    await act(async () => {
+      unmount = await mountTabBar(65);
+    });
+    expect(screen.getByTestId("gpc-notice").getAttribute("style")).toMatch(
+      // jsdom reorders env()'s arguments when it serialises the style; the parts are the claim.
+      /bottom: calc\(65px \+ env\(.*safe-area-inset-bottom/,
+    );
+    unmount();
+  });
+});
