@@ -238,7 +238,7 @@ export default function HomePage() {
               SAT Question of the Day
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              One free practice question every day. No account needed.
+              A free SAT practice question every day — no account needed.
             </p>
           </div>
           <Card>

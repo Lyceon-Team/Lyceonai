@@ -337,9 +337,9 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     ],
   },
   "/sat-question-of-the-day": {
-    title: "SAT Question of the Day - Free Daily Digital SAT Practice | Lyceon",
+    title: "SAT Question of the Day – Free Daily SAT Practice | Lyceon",
     description:
-      "Answer a free Digital SAT practice question every day, no account needed, and see the answer with a worked explanation. Past questions stay in the archive.",
+      "Answer a free SAT practice question every day, no account needed, and see the answer with a worked explanation. Past questions stay in the archive.",
     canonical: `${BASE_URL}/sat-question-of-the-day`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
@@ -457,7 +457,7 @@ export function qotdArchiveMeta(day: QotdArchiveResponse): PublicMeta {
       : (q.correct_answer ?? "");
   return {
     title: `SAT Question of the Day for ${label} (${topic}) | Lyceon`,
-    description: `A Digital SAT ${topic} practice question from ${label}, with the correct answer and a worked explanation.`,
+    description: `An SAT ${topic} practice question from ${label}, with the correct answer and a worked explanation.`,
     canonical: url,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [

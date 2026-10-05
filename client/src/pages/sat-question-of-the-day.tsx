@@ -78,8 +78,8 @@ export default function SatQuestionOfTheDayPage(): JSX.Element {
             SAT Question of the Day
           </h1>
           <p className="text-xl text-muted-foreground leading-relaxed">
-            A free Digital SAT practice question every day. Answer it without an
-            account, then see the correct answer and a worked explanation.
+            A free SAT practice question every day — no account needed. Answer
+            it, then see the correct answer and a worked explanation.
           </p>
         </header>
 
@@ -107,10 +107,10 @@ export default function SatQuestionOfTheDayPage(): JSX.Element {
           </div>
         </Section>
 
-        <Section title="About the Digital SAT">
+        <Section title="About the SAT">
           <div className="space-y-4 leading-relaxed">
             <p>
-              The Digital SAT is shorter, it is taken on a computer, and each
+              The SAT is shorter, it is taken on a computer, and each
               section adapts at the module level.
             </p>
             <SourceLinks sources={[CB_STRUCTURE]} />
