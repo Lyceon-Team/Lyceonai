@@ -10,6 +10,7 @@ import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
 import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
+import { getSessionCookieHint } from "@/lib/session-hint";
 import {
   runtimeRoleSchema,
   ROLE_UNRECOGNIZED,
@@ -224,6 +225,17 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
         // Bail out early if unmounted (StrictMode cleanup)
         if (abortController.signal.aborted) return;
+
+        // @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: when the CSRF
+        // bootstrap says no session cookie came with the request, there is no session to read,
+        // so boot proceeds signed out without the profile read that would only answer 401 (on
+        // every public page, for every visitor). An unknown hint (`null`) reads the profile as
+        // before. The server stays authoritative: protected routes still read the profile
+        // through the route guard, and a later sign-in reads it directly.
+        if (getSessionCookieHint() === false) {
+          clearAuthState();
+          return;
+        }
 
         // Add a safety timeout to profile fetch to prevent boot-hangs if Supabase/API is slow.
         const profileFetchPromise = fetchUserFromBackend();

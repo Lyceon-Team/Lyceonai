@@ -28,7 +28,9 @@ import {
   requireStudentOrAdmin,
   requireStudentOnly,
   requireStudentAccount,
+  hasSsrSessionCookie,
 } from "./middleware/supabase-auth";
+import { csrfTokenResponseSchema } from "../packages/shared/src/csrf-token-schema";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import {
@@ -198,9 +200,17 @@ app.use(globalRateLimiter);
 
 // CSRF token bootstrap endpoint (stateless double-submit cookie).
 // CSRF_EXEMPT_REASON: GET-only endpoint to issue a CSRF token + cookie.
+// @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: the response also says whether
+// a session cookie came with the request, so a visitor with no session never sends the profile
+// read that would answer 401. A hint only: `hasSsrSessionCookie` checks presence, not validity.
 app.get("/api/csrf-token", (req: Request, res: Response) => {
   const csrfToken = generateToken(req, res);
-  return res.json({ csrfToken });
+  return res.json(
+    csrfTokenResponseSchema.parse({
+      csrfToken,
+      sessionCookiePresent: hasSsrSessionCookie(req),
+    }),
+  );
 });
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
