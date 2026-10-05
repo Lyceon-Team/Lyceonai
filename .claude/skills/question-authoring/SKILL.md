@@ -45,6 +45,10 @@ One object per line. No trailing commas, no comments, no prose around it.
 - Exactly one correct option. `option_metadata[correct_option].role = "correct"` with `error_taxonomy: null`.
 - The other three: `role: "distractor"`, each with an `error_taxonomy` label drawn from **this section's** `distractor_taxonomy` set in taxonomy.json, and the explanation names the specific error each represents.
 
+### RW option-length constraint (hard rule)
+
+For every Reading & Writing MCQ, the correct answer MUST NOT be the strictly longest option. At least one distractor must be as long as or longer than the key; ideally the key sits mid-pack in length. A correct option that is strictly longest is the single most exploitable SAT tell — option shuffling does not hide a length signal. Fix direction: lengthen distractors to match or exceed the key, never trim the key. The assembly gate fails the batch above 35% (`RW_LONGEST_ANSWER_TELL`), but every individual RW MCQ must satisfy this constraint — do not rely on batch-level averaging.
+
 ## 4. Grid-in rules
 
 - No options. `correct_answer` is the value a student would enter.
