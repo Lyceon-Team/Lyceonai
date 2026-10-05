@@ -1,6 +1,6 @@
 # UI-55 Calendar (/calendar): paid week and month, Regenerate plan, free setup before and after a save; light and dark, 1440 and 390
 
-Generated 2026-10-05T13:30:12.815Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-55` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-05T14:15:05.705Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-55` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -16,9 +16,9 @@ Prototype: `Calendar.dc.html` (Calendar, plan = paid, week).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-week desktop light](paid-week--desktop--light--built.png)<br>`/calendar`, 193 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light.png), 175 KB |
-| desktop | dark | ![paid-week desktop dark](paid-week--desktop--dark--built.png)<br>`/calendar`, 196 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark.png), 182 KB |
-| mobile | light | ![paid-week mobile light](paid-week--mobile--light--built.png)<br>`/calendar`, 47 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light.png)<br>desktop prototype (no phone layout), 175 KB |
+| desktop | light | ![paid-week desktop light](paid-week--desktop--light--built.png)<br>`/calendar`, 189 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light.png), 175 KB |
+| desktop | dark | ![paid-week desktop dark](paid-week--desktop--dark--built.png)<br>`/calendar`, 192 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark.png), 182 KB |
+| mobile | light | ![paid-week mobile light](paid-week--mobile--light--built.png)<br>`/calendar`, 46 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light.png)<br>desktop prototype (no phone layout), 175 KB |
 | mobile | dark | ![paid-week mobile dark](paid-week--mobile--dark--built.png)<br>`/calendar`, 47 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark.png)<br>desktop prototype (no phone layout), 182 KB |
 
 ## Calendar, paid, week, full page (on a phone the right panel stacks under the main column)
@@ -29,8 +29,8 @@ Prototype: `Calendar.dc.html` (Calendar, plan = paid (the canvas is a fixed 1440
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-week-full desktop light](paid-week-full--desktop--light--built.png)<br>`/calendar`, 193 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light.png), 175 KB |
-| desktop | dark | ![paid-week-full desktop dark](paid-week-full--desktop--dark--built.png)<br>`/calendar`, 196 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark.png), 182 KB |
+| desktop | light | ![paid-week-full desktop light](paid-week-full--desktop--light--built.png)<br>`/calendar`, 189 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light.png), 175 KB |
+| desktop | dark | ![paid-week-full desktop dark](paid-week-full--desktop--dark--built.png)<br>`/calendar`, 192 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark.png), 182 KB |
 | mobile | light | ![paid-week-full mobile light](paid-week-full--mobile--light--built.png)<br>`/calendar`, 95 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light.png)<br>desktop prototype (no phone layout), 175 KB |
 | mobile | dark | ![paid-week-full mobile dark](paid-week-full--mobile--dark--built.png)<br>`/calendar`, 96 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark.png)<br>desktop prototype (no phone layout), 182 KB |
 
@@ -56,9 +56,9 @@ Prototype: `Calendar.dc.html` (Calendar, plan = paid, Regenerate plan clicked); 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-regenerate desktop light](paid-regenerate--desktop--light--built.png)<br>`/calendar`, 193 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light--regenerated.png), 175 KB |
-| desktop | dark | ![paid-regenerate desktop dark](paid-regenerate--desktop--dark--built.png)<br>`/calendar`, 196 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark--regenerated.png), 181 KB |
-| mobile | light | ![paid-regenerate mobile light](paid-regenerate--mobile--light--built.png)<br>`/calendar`, 47 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light--regenerated.png)<br>desktop prototype (no phone layout), 175 KB |
+| desktop | light | ![paid-regenerate desktop light](paid-regenerate--desktop--light--built.png)<br>`/calendar`, 190 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light--regenerated.png), 175 KB |
+| desktop | dark | ![paid-regenerate desktop dark](paid-regenerate--desktop--dark--built.png)<br>`/calendar`, 192 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark--regenerated.png), 181 KB |
+| mobile | light | ![paid-regenerate mobile light](paid-regenerate--mobile--light--built.png)<br>`/calendar`, 46 KB, horizontal overflow 0px | ![prototype light](proto--Calendar--paid--light--regenerated.png)<br>desktop prototype (no phone layout), 175 KB |
 | mobile | dark | ![paid-regenerate mobile dark](paid-regenerate--mobile--dark--built.png)<br>`/calendar`, 47 KB, horizontal overflow 0px | ![prototype dark](proto--Calendar--paid--dark--regenerated.png)<br>desktop prototype (no phone layout), 181 KB |
 
 ## Phone pre-start check (OQ-63), 390: today's scheduled full-length block, Start: "Full-length tests are built for a laptop or tablet, like test day." over the block sheet, with the outline Continue anyway and Close; nothing launched. Desktop (control): the block's sheet, whose Start launches at once
@@ -71,8 +71,8 @@ Prototype: none. The prototypes have no phone layout and no pre-start check; the
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-full-length-notice desktop light](paid-full-length-notice--desktop--light--built.png)<br>`/calendar`, 167 KB, horizontal overflow 0px | none |
-| desktop | dark | ![paid-full-length-notice desktop dark](paid-full-length-notice--desktop--dark--built.png)<br>`/calendar`, 163 KB, horizontal overflow 0px | none |
+| desktop | light | ![paid-full-length-notice desktop light](paid-full-length-notice--desktop--light--built.png)<br>`/calendar`, 164 KB, horizontal overflow 0px | none |
+| desktop | dark | ![paid-full-length-notice desktop dark](paid-full-length-notice--desktop--dark--built.png)<br>`/calendar`, 159 KB, horizontal overflow 0px | none |
 | mobile | light | ![paid-full-length-notice mobile light](paid-full-length-notice--mobile--light--built.png)<br>`/calendar`, 48 KB, horizontal overflow 0px | none |
 | mobile | dark | ![paid-full-length-notice mobile dark](paid-full-length-notice--mobile--dark--built.png)<br>`/calendar`, 46 KB, horizontal overflow 0px | none |
 
@@ -87,10 +87,10 @@ Prototype: none. A click path; its proof is the landing path (the prototype's bl
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-full-length-continue desktop light](paid-full-length-continue--desktop--light--built.png)<br>`/tests/59f67516-5a46-4b24-92ab-61f2d4edf235`, 33 KB, horizontal overflow 0px | none |
-| desktop | dark | ![paid-full-length-continue desktop dark](paid-full-length-continue--desktop--dark--built.png)<br>`/tests/59f67516-5a46-4b24-92ab-61f2d4edf235`, 33 KB, horizontal overflow 0px | none |
-| mobile | light | ![paid-full-length-continue mobile light](paid-full-length-continue--mobile--light--built.png)<br>`/tests/59f67516-5a46-4b24-92ab-61f2d4edf235`, 29 KB, horizontal overflow 0px | none |
-| mobile | dark | ![paid-full-length-continue mobile dark](paid-full-length-continue--mobile--dark--built.png)<br>`/tests/59f67516-5a46-4b24-92ab-61f2d4edf235`, 29 KB, horizontal overflow 0px | none |
+| desktop | light | ![paid-full-length-continue desktop light](paid-full-length-continue--desktop--light--built.png)<br>`/tests/f2f8ed55-fd54-4c6b-bfed-a81876ed740e`, 33 KB, horizontal overflow 0px | none |
+| desktop | dark | ![paid-full-length-continue desktop dark](paid-full-length-continue--desktop--dark--built.png)<br>`/tests/f2f8ed55-fd54-4c6b-bfed-a81876ed740e`, 33 KB, horizontal overflow 0px | none |
+| mobile | light | ![paid-full-length-continue mobile light](paid-full-length-continue--mobile--light--built.png)<br>`/tests/f2f8ed55-fd54-4c6b-bfed-a81876ed740e`, 29 KB, horizontal overflow 0px | none |
+| mobile | dark | ![paid-full-length-continue mobile dark](paid-full-length-continue--mobile--dark--built.png)<br>`/tests/f2f8ed55-fd54-4c6b-bfed-a81876ed740e`, 29 KB, horizontal overflow 0px | none |
 
 ## Calendar, free, no profile: the inline setup form (test date, target score, Save) and the plan upsell card; panel: mini month and the Target-only goal card, all absent
 
@@ -138,6 +138,6 @@ Prototype: `Calendar.dc.html` (Calendar, plan = free (the canvas shows its own s
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"6ccc3801-e2dc-4e47-b28c-024c11494668","openPracticeSessionId":"5efb53ba-85bd-4356-8ee6-a389ef2a4b1f","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"6c6eb940-f8b6-4fa5-8d18-729a4c537682","openPracticeSessionId":"b78ad31f-f94d-4a97-b5d5-df6f66aeda52","openReviewSessionId":null,"diagnosticSessionId":"2daa242d-2de4-4947-92aa-000764f9862d","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"3b7f130d-5bfc-4ae8-afd4-5b4590abe7b8","openPracticeSessionId":"9392bf2e-9691-4428-9680-1eb4d14cb2bf","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"cd7ff521-7810-4ab1-b55a-3208b2dc7a48","openPracticeSessionId":"225eed39-2b21-452d-abe0-05f5cccfbe5a","openReviewSessionId":null,"diagnosticSessionId":"65825f18-1cb0-45f9-866a-a57e873e80a5","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none

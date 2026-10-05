@@ -72,7 +72,7 @@ export const UI_54: PageGroup = {
     {
       id: "tests-paid",
       title:
-        "Full-Length, paid: Practice Test 1 scored (score + disclosure), Practice Test 2 in progress (Resume, the one primary), Practice Test 3 not started; Before you start; panel: score history and mastery",
+        "Full-Length, paid: Full-Length Test 1 scored (score + disclosure), Full-Length Test 2 in progress (Resume, the one primary), Full-Length Test 3 not started; Before you start; panel: score history and mastery",
       persona: "paid",
       route: "/tests",
       waitFor: TESTS_PAID,
@@ -122,7 +122,7 @@ export const UI_54: PageGroup = {
     {
       id: "report-scored",
       title:
-        "Exam report (Focus shell), the scored Practice Test 1: total out of 1600, sections out of 800, the disclosure; Knowledge and skills, seven segments per domain",
+        "Exam report (Focus shell), the scored Full-Length Test 1: total out of 1600, sections out of 800, the disclosure; Knowledge and skills, seven segments per domain",
       persona: "paid",
       route: "/tests/{paid.scoredExamSessionId}/report",
       waitFor: REPORT,
@@ -149,7 +149,7 @@ export const UI_54: PageGroup = {
     {
       id: "timed-module",
       title:
-        "The timed module (Practice Test 2, Reading and Writing Module 2): Bluebook layout kept, no back arrow, light only; type on the student tokens",
+        "The timed module (Full-Length Test 2, Reading and Writing Module 2): Bluebook layout kept, no back arrow, light only; type on the student tokens",
       persona: "paid",
       route: "/tests/{paid.inProgressExamSessionId}/RW/2",
       waitFor: {

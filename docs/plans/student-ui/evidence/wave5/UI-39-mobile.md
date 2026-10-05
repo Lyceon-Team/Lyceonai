@@ -7,7 +7,7 @@ Register row UI-39 ("Mobile: bottom tab bar and one page per shell"; proof: Karl
 - **Overflow:** every group's `index.md` records 0px horizontal overflow on every phone capture (UI-41 to UI-59).
 - **Prototypes:** the prototypes are a fixed 1440x900 canvas with no phone layout, so no phone prototype exists to compare against; these are built-only.
 
-**195 phone captures** across 11 page groups.
+**199 phone captures** across 11 page groups.
 
 ## UI-41: Shells: App shell (rail, mobile tab bar, avatar menu), Focus shell, Bare card
 
@@ -113,6 +113,8 @@ Full index with conditions: [`UI-55/index.md`](UI-55/index.md).
 | `free-save` | ![free-save light](UI-55/free-save--mobile--light--built.png) | ![free-save dark](UI-55/free-save--mobile--dark--built.png) |
 | `free-saved` | ![free-saved light](UI-55/free-saved--mobile--light--built.png) | ![free-saved dark](UI-55/free-saved--mobile--dark--built.png) |
 | `free-setup` | ![free-setup light](UI-55/free-setup--mobile--light--built.png) | ![free-setup dark](UI-55/free-setup--mobile--dark--built.png) |
+| `paid-full-length-continue` | ![paid-full-length-continue light](UI-55/paid-full-length-continue--mobile--light--built.png) | ![paid-full-length-continue dark](UI-55/paid-full-length-continue--mobile--dark--built.png) |
+| `paid-full-length-notice` | ![paid-full-length-notice light](UI-55/paid-full-length-notice--mobile--light--built.png) | ![paid-full-length-notice dark](UI-55/paid-full-length-notice--mobile--dark--built.png) |
 | `paid-month` | ![paid-month light](UI-55/paid-month--mobile--light--built.png) | ![paid-month dark](UI-55/paid-month--mobile--dark--built.png) |
 | `paid-regenerate` | ![paid-regenerate light](UI-55/paid-regenerate--mobile--light--built.png) | ![paid-regenerate dark](UI-55/paid-regenerate--mobile--dark--built.png) |
 | `paid-week` | ![paid-week light](UI-55/paid-week--mobile--light--built.png) | ![paid-week dark](UI-55/paid-week--mobile--dark--built.png) |

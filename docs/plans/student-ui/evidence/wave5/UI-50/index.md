@@ -1,6 +1,6 @@
 # UI-50 Home (/dashboard): free and paid, light and dark, 1440 and 390
 
-Generated 2026-10-05T12:16:50.530Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-50` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-05T14:13:04.522Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-50` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -28,9 +28,9 @@ Prototype: `Main.dc.html` (Home, plan = paid).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-paid desktop light](home-paid--desktop--light--built.png)<br>`/dashboard`, 131 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
+| desktop | light | ![home-paid desktop light](home-paid--desktop--light--built.png)<br>`/dashboard`, 130 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
 | desktop | dark | ![home-paid desktop dark](home-paid--desktop--dark--built.png)<br>`/dashboard`, 131 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
-| mobile | light | ![home-paid mobile light](home-paid--mobile--light--built.png)<br>`/dashboard`, 51 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
+| mobile | light | ![home-paid mobile light](home-paid--mobile--light--built.png)<br>`/dashboard`, 50 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
 | mobile | dark | ![home-paid mobile dark](home-paid--mobile--dark--built.png)<br>`/dashboard`, 51 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
 
 ## Home, paid, full page (on a phone the right panel stacks under the main column; the footer ends the column)
@@ -41,10 +41,10 @@ Prototype: `Main.dc.html` (Home, plan = paid (the canvas is a fixed 1440x900)).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-paid-full desktop light](home-paid-full--desktop--light--built.png)<br>`/dashboard`, 131 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
+| desktop | light | ![home-paid-full desktop light](home-paid-full--desktop--light--built.png)<br>`/dashboard`, 130 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
 | desktop | dark | ![home-paid-full desktop dark](home-paid-full--desktop--dark--built.png)<br>`/dashboard`, 131 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
-| mobile | light | ![home-paid-full mobile light](home-paid-full--mobile--light--built.png)<br>`/dashboard`, 188 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
-| mobile | dark | ![home-paid-full mobile dark](home-paid-full--mobile--dark--built.png)<br>`/dashboard`, 193 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
+| mobile | light | ![home-paid-full mobile light](home-paid-full--mobile--light--built.png)<br>`/dashboard`, 186 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
+| mobile | dark | ![home-paid-full mobile dark](home-paid-full--mobile--dark--built.png)<br>`/dashboard`, 190 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
 
 ## Home, free, full page (on a phone the right panel stacks under the main column; the footer ends the column)
 
@@ -81,10 +81,10 @@ Prototype: none. A click path: the screenshot is where the click landed (the run
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-start-plan desktop light](click-paid-start-plan--desktop--light--built.png)<br>`/review/session/3982ee19-9ecd-49bd-ab38-a8cbcd2b95c8`, 62 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-paid-start-plan desktop dark](click-paid-start-plan--desktop--dark--built.png)<br>`/review/session/3982ee19-9ecd-49bd-ab38-a8cbcd2b95c8`, 20 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-start-plan mobile light](click-paid-start-plan--mobile--light--built.png)<br>`/review/session/3982ee19-9ecd-49bd-ab38-a8cbcd2b95c8`, 13 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-paid-start-plan mobile dark](click-paid-start-plan--mobile--dark--built.png)<br>`/review/session/3982ee19-9ecd-49bd-ab38-a8cbcd2b95c8`, 13 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-start-plan desktop light](click-paid-start-plan--desktop--light--built.png)<br>`/review/session/a130478b-ba15-4755-b5d9-87e6e5f56e43`, 62 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-start-plan desktop dark](click-paid-start-plan--desktop--dark--built.png)<br>`/review/session/a130478b-ba15-4755-b5d9-87e6e5f56e43`, 20 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-start-plan mobile light](click-paid-start-plan--mobile--light--built.png)<br>`/review/session/a130478b-ba15-4755-b5d9-87e6e5f56e43`, 13 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-start-plan mobile dark](click-paid-start-plan--mobile--dark--built.png)<br>`/review/session/a130478b-ba15-4755-b5d9-87e6e5f56e43`, 13 KB, horizontal overflow 0px | none |
 
 ## Click path (paid): Home's 'Start a full-length test' card lands on the Full-Length page (owner ruling, Karl, 2026-10-05)
 
@@ -96,9 +96,9 @@ Prototype: none. A click path: the screenshot is where the click landed (the Ful
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
 | desktop | light | ![click-paid-full-length-card desktop light](click-paid-full-length-card--desktop--light--built.png)<br>`/tests`, 142 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-paid-full-length-card desktop dark](click-paid-full-length-card--desktop--dark--built.png)<br>`/tests`, 144 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-full-length-card mobile light](click-paid-full-length-card--mobile--light--built.png)<br>`/tests`, 41 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-paid-full-length-card mobile dark](click-paid-full-length-card--mobile--dark--built.png)<br>`/tests`, 40 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-full-length-card desktop dark](click-paid-full-length-card--desktop--dark--built.png)<br>`/tests`, 145 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-full-length-card mobile light](click-paid-full-length-card--mobile--light--built.png)<br>`/tests`, 54 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-full-length-card mobile dark](click-paid-full-length-card--mobile--dark--built.png)<br>`/tests`, 54 KB, horizontal overflow 0px | none |
 
 ## Home, free: the locked 'Start a full-length test' card opens the upgrade modal in place (exam_full_length)
 
@@ -124,13 +124,13 @@ Prototype: none. A click path: the screenshot is where the click landed (the dia
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-free-start-diagnostic desktop light](click-free-start-diagnostic--desktop--light--built.png)<br>`/practice/session/34a9269b-6f29-4ff0-9ce5-fdc4f6a4a713`, 33 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-free-start-diagnostic desktop dark](click-free-start-diagnostic--desktop--dark--built.png)<br>`/practice/session/34a9269b-6f29-4ff0-9ce5-fdc4f6a4a713`, 21 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-free-start-diagnostic mobile light](click-free-start-diagnostic--mobile--light--built.png)<br>`/practice/session/34a9269b-6f29-4ff0-9ce5-fdc4f6a4a713`, 13 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-free-start-diagnostic mobile dark](click-free-start-diagnostic--mobile--dark--built.png)<br>`/practice/session/34a9269b-6f29-4ff0-9ce5-fdc4f6a4a713`, 13 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-free-start-diagnostic desktop light](click-free-start-diagnostic--desktop--light--built.png)<br>`/practice/session/1b932de0-11f3-42fc-9454-90fde0b9662a`, 34 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-free-start-diagnostic desktop dark](click-free-start-diagnostic--desktop--dark--built.png)<br>`/practice/session/1b932de0-11f3-42fc-9454-90fde0b9662a`, 21 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-free-start-diagnostic mobile light](click-free-start-diagnostic--mobile--light--built.png)<br>`/practice/session/1b932de0-11f3-42fc-9454-90fde0b9662a`, 13 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-free-start-diagnostic mobile dark](click-free-start-diagnostic--mobile--dark--built.png)<br>`/practice/session/1b932de0-11f3-42fc-9454-90fde0b9662a`, 13 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"5723a656-157b-4a41-8be7-418cfec9d27c","openPracticeSessionId":"a4b6bfd7-b2b3-4445-87ff-c48483d36d85","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"53a4dbb8-04a6-4c11-a3b0-52b5ee767356","openPracticeSessionId":"f077c723-b398-4839-b85c-47e7c83f16c5","openReviewSessionId":null,"diagnosticSessionId":"bc73324b-378e-4c1d-8ba4-ab7485d080fd","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"65ed2987-5b4f-4d66-b9fc-15318aa5c2ff","openPracticeSessionId":"6adab8be-d73f-4f1e-8405-e88ac97896f8","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"cc599e00-fb62-44f2-a610-5235e6264fd2","openPracticeSessionId":"ad66ae78-fbde-4233-96e5-888d64c26f43","openReviewSessionId":null,"diagnosticSessionId":"ba7788d6-6550-44ba-9538-207830a43ede","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
-- External hosts blocked: `fonts.googleapis.com`
+- External hosts blocked: none
