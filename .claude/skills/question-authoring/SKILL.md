@@ -76,9 +76,9 @@ Calibrate to taxonomy.json: 1 = single-step/direct; 2 = two-to-three steps or on
 
 RW items are self-contained: answerable from the passage alone, no outside knowledge. Math items have no passage (`passage: null`).
 
-## 9. No letter references in explanations (hard rule)
+## 9. No letter or positional references (hard rule — shuffle-invariant)
 
-Explanations reference answer content, never position. Never name an option by letter (A/B/C/D) or say "the correct answer is \<letter\>." Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy. Options are shuffled at serve and letters are never shown to the student.
+Explanations and stems must reference answer options BY CONTENT ONLY — name the actual text, claim, or value. Never reference by letter (A/B/C/D) or by position (first/second/third/fourth/last option/choice/response). Options are Fisher-Yates shuffled at serve; letter and positional references point at the wrong choice once shuffled. The assembly gate hard-fails any record matching these patterns in stem or explanation. Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy.
 
 ## 10. Output discipline
 

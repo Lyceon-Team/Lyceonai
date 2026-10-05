@@ -450,7 +450,7 @@ Every question must have an explanation that:
 
 **Tone:** CB-instructional — clear, direct, educational. Second person ("you") is acceptable but not required.
 
-**No letter references (hard rule):** Explanations reference answer content, never position. Never name an option by letter (A/B/C/D) or say "the correct answer is \<letter\>." Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy. Options are shuffled at serve and letters are never shown to the student; a letter reference is gibberish in context. _(Added 2026-08-14 for Feature-8 option_order shuffle compatibility.)_
+**No letter or positional references (hard rule — shuffle-invariant):** Explanations and stems must reference answer options BY CONTENT ONLY — name the actual text, claim, or value of the choice. Never reference by letter (A/B/C/D) or by position (first/second/third/fourth/last option/choice/response). Options are Fisher-Yates shuffled at serve; letter and positional references point at the wrong choice once shuffled. This is a hard stop equal in severity to anti-leak checks. The assembly gate hard-fails any record matching `/(Option|Choice)\s+\(?[A-D][\s.),]/` (letter) or `/\b(the\s+)?(first|second|third|fourth|last)\s+(option|choice|response)\b/i` (position) in stem or explanation. _(Elevated from letter-only to letter+position hard-fail 2026-10-05; prod scan found 11 violations, almost all RW positional phrasing.)_
 
 **Prohibited patterns:**
 - Condescending language ("This is a simple problem", "Obviously...")
@@ -460,6 +460,7 @@ Every question must have an explanation that:
 - Emotional language ("Great question!", "Don't worry about...")
 - Revealing meta-information about question design or distractor intent
 - **Option letter references** ("Option A", "the correct answer is B", "(C)", "D is wrong") — refer to options by content only
+- **Option positional references** ("the second option", "the first choice", "the last response") — refer to options by content only
 
 **Example (Math, Easy):**
 ```

@@ -559,17 +559,38 @@ function validateRecord(
     );
   }
 
-  // Tripwire: flag explanations that MAY reference options by letter (A/B/C/D).
-  // Options are shuffled at serve (Feature-8 option_order); letter refs are gibberish.
-  // This regex is a detection aid — it flags for human/LLM review, not auto-reject,
-  // because capital A–D also appear as math variables, geometric labels, and articles.
-  // The auditor performs the binding comprehension check; the gate only warns.
-  const letterRefTripwire =
-    /(?:Option|option|Choice|choice|Answer|answer)\s+[A-D]\b|\([A-D]\)|answer is [A-D]\b/;
-  if (letterRefTripwire.test(rec.explanation)) {
-    console.warn(
-      `[REVIEW] ${file}:${line} (record ${index}): possible letter-reference in explanation — verify by reading`,
-    );
+  // OPTION_LETTER_REF / OPTION_POSITION_REF — HARD-FAIL
+  // Options are Fisher-Yates shuffled at serve (Feature-8 option_order); letter
+  // and positional references point at the wrong choice once shuffled.
+  // Letter: "Option A", "Choice B", "Option (C)" — case-sensitive on A-D to
+  //   avoid firing on the article "a" in "answers a different question".
+  //   Does NOT flag bare capital letters (geometry vertex labels are legitimate).
+  // Position: "the first option", "second choice", "last response" — case-insensitive.
+  const optionLetterRefRe = /(Option|Choice)\s+\(?[A-D][\s.),]/;
+  const optionPositionRefRe =
+    /\b(?:the\s+)?(?:first|second|third|fourth|last)\s+(?:option|choice|response)\b/i;
+
+  for (const { name: fieldName, value: fieldValue } of [
+    { name: "stem", value: rec.stem },
+    { name: "explanation", value: rec.explanation },
+  ]) {
+    if (typeof fieldValue !== "string") continue;
+
+    const letterMatch = fieldValue.match(optionLetterRefRe);
+    if (letterMatch) {
+      v(
+        fieldName,
+        `OPTION_LETTER_REF: references an option by letter ("${letterMatch[0].trim()}"). Options are shuffled at serve; reference by content only.`,
+      );
+    }
+
+    const posMatch = fieldValue.match(optionPositionRefRe);
+    if (posMatch) {
+      v(
+        fieldName,
+        `OPTION_POSITION_REF: references an option by position ("${posMatch[0].trim()}"). Options are shuffled at serve; reference by content only.`,
+      );
+    }
   }
 
   if (
