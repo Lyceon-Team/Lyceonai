@@ -183,6 +183,29 @@
   --spacing: 0.25rem;
 }
 
+/* The homepage palette (F13, owner-approved design 2026-10-05): cream #FBF6EC everywhere, cards
+   #F6EFE1 with a #E2D5BB border, navy #11304B. Scoped to the homepage's root, so it redefines the
+   app tokens for that subtree only (the way `.dark` on a consent surface does) and every other
+   page keeps :root. Contrast is pinned by client/src/styles/home-palette.contrast.test.ts:
+   body copy 7.07 on a card, captions 5.14, the eyebrow 5.75, all at or above AA 4.5. */
+.home-palette {
+  --background: #FBF6EC;
+  --foreground: #11304B;
+  --card: #F6EFE1;
+  --card-foreground: #11304B;
+  --secondary: #F6EFE1;
+  --secondary-foreground: #11304B;
+  --primary: #11304B;
+  --primary-foreground: #FBF6EC;
+  --muted-foreground: #3D5266;
+  --border: #E2D5BB;
+  --home-rule: #E7DCC6;
+  --home-caption: #55667A;
+  --home-eyebrow: #6B5B3E;
+  --home-footer-text: #E9EEF3;
+  --home-footer-muted: #B9C6D2;
+}
+
 .dark {
   --background: #0F2E48;
   --foreground: #FFFAEF;

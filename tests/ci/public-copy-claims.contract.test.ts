@@ -39,7 +39,12 @@ import {
   loadRouteRegistry,
 } from "../lib/prerendered-site";
 import { stripComments } from "./lib/strip-comments";
-import { BANNED } from "../../shared/seo/banned-phrases";
+import {
+  APPROVED_OUTCOME_PHRASES,
+  BANNED,
+  OUTCOME_PATTERNS,
+  firstUnapprovedOutcome,
+} from "../../shared/seo/banned-phrases";
 
 /** Entities decoded, so `don&#x27;t` and `don't` read the same. */
 function decode(html: string): string {
@@ -68,6 +73,18 @@ function violations(label: string, html: string): string[] {
     if (isKnownException(label, pattern)) continue;
     if (haystacks(html).some((text) => pattern.test(text))) {
       found.push(`${label}: ${pattern} — ${why}`);
+    }
+  }
+  // Outcome claims (owner ruling 2026-10-05, F13 decision 3): only the approved sentences pass.
+  // Not on /legal/*: published legal text is counsel's (Doctrine rule 6) and carries disclaimers
+  // ("does not guarantee…") that deny an outcome rather than claim one; the BANNED list above
+  // still scans it.
+  if (label.startsWith("/legal/")) return found;
+  for (const text of haystacks(html)) {
+    const hit = firstUnapprovedOutcome(text);
+    if (hit !== null) {
+      found.push(`${label}: ${hit.pattern} — ${hit.why}`);
+      break;
     }
   }
   return found;
@@ -123,7 +140,7 @@ describe("public copy: the claims F6 removed stay removed", () => {
     const home = site.pages.find((page) => page.path === "/");
     expect(home).toBeDefined();
     expect(haystacks(home?.html ?? "")[1]).toContain(
-      "Read-only progress view for a linked parent or guardian",
+      "Skill-level progress, plus a read-only view for a linked parent or guardian",
     );
     // and in the head and the JSON-LD, not only the body
     expect(home?.html).toContain("<title>Lyceon | SAT Prep</title>");
@@ -151,12 +168,10 @@ describe("public copy: the claims F6 removed stay removed", () => {
     // Each pattern must match at least one known example of the phrase it bans, so a typo in
     // a pattern cannot leave a guard that matches nothing.
     const examples = [
-      "Study Smarter, Score Higher",
       "SAT Tutor at your Finger Tips.",
       "Unlimited practice questions",
       "Unlock everything",
       "Priority feature access as plans roll out",
-      "Digital SAT prep built for real progress",
       "Expert SAT prep tips",
       "Master the Digital SAT",
       "our comprehensive guides",
@@ -206,6 +221,60 @@ describe("public copy: the claims F6 removed stay removed", () => {
         `${path} still carries ${pattern}`,
       ).toBe(true);
     }
+  });
+});
+
+describe("outcome claims: only the sentences Karl approved (F13, 2026-10-05)", () => {
+  it("every approved outcome sentence is on a public page (no dead approval)", async () => {
+    const site = await getPrerenderedSite();
+    const text = site.pages.flatMap((page) => haystacks(page.html)).join("\n");
+    for (const phrase of APPROVED_OUTCOME_PHRASES) {
+      expect(text, phrase).toContain(phrase);
+    }
+  });
+
+  it("the approved sentences pass, and each outcome pattern catches a known unapproved example", () => {
+    for (const phrase of APPROVED_OUTCOME_PHRASES) {
+      expect(firstUnapprovedOutcome(phrase), phrase).toBeNull();
+    }
+    const examples = [
+      "Practice smarter. Score higher.",
+      "Students get higher SAT scores",
+      "Boost your SAT score fast",
+      "Digital SAT prep built for real progress",
+      "Score gains guaranteed",
+      "A proven method",
+      "Students see 150 points higher on test day",
+    ];
+    for (const { pattern } of OUTCOME_PATTERNS) {
+      expect(
+        examples.some((e) => pattern.test(e)),
+        `${pattern} matches a known example`,
+      ).toBe(true);
+    }
+    for (const e of examples) {
+      expect(firstUnapprovedOutcome(e), e).not.toBeNull();
+    }
+  });
+
+  it("a planted unapproved claim on the real homepage turns the scan red (presence before absence)", async () => {
+    const site = await getPrerenderedSite();
+    const home = site.pages.find((page) => page.path === "/");
+    expect(home).toBeDefined();
+    const html = home?.html ?? "";
+    expect(violations("/", html)).toEqual([]);
+    const planted = html.replace(
+      "SAT prep for families",
+      "SAT prep for families. Raise your score by 200 points.",
+    );
+    expect(planted).not.toBe(html);
+    expect(violations("/", planted).length).toBeGreaterThan(0);
+    // An approved sentence moved into another sentence is no longer the approved sentence.
+    const reworded = html.replace(
+      "SAT prep for families",
+      "Real progress, guaranteed",
+    );
+    expect(violations("/", reworded).length).toBeGreaterThan(0);
   });
 });
 

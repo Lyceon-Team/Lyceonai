@@ -16,8 +16,8 @@
 export type BannedPhrase = { readonly pattern: RegExp; readonly why: string };
 
 export const BANNED: readonly BannedPhrase[] = [
-  // Taglines and absolutes.
-  { pattern: /score higher/i, why: "(e) implied outcome: the old tagline" },
+  // Taglines and absolutes. ("Score Higher" and "real progress" moved to OUTCOME_PATTERNS below:
+  // Karl approved specific uses of each on 2026-10-05, F13; every other use still fails.)
   {
     pattern: /\bfinger ?tips\b/i,
     why: "(b) the tutor is paid: old OG image text",
@@ -28,7 +28,6 @@ export const BANNED: readonly BannedPhrase[] = [
   },
   { pattern: /\bunlock everything\b/i, why: "(e) absolute" },
   { pattern: /priority feature access/i, why: "(b) no such entitlement" },
-  { pattern: /\breal progress\b/i, why: "(e) outcome claim" },
   { pattern: /\bexpert sat prep\b/i, why: "(e) unapproved claim" },
   {
     pattern: /\bmaster (the |digital |sat )/i,
@@ -94,6 +93,62 @@ export const BANNED: readonly BannedPhrase[] = [
   },
   { pattern: /module 1 matters most/i, why: "(d) unsourced" },
 ];
+
+/**
+ * Outcome claims: wording that promises or implies a result (a higher score, progress, a gain).
+ *
+ * @spec [Doctrine rule 5 (outcome/performance claims need Karl's written approval); owner ruling
+ *       2026-10-05, F13 Step 0 decision 3 ("remove 'score higher' and 'real progress' from the
+ *       banned list, recorded in the claim inventory as approved by Karl 2026-10-05. Keep the guard
+ *       failing on any other new outcome phrase")] | @implemented [2026-10-05]
+ *
+ * plain English: public copy may carry an outcome phrase only as one of the exact approved
+ * sentences in APPROVED_OUTCOME_PHRASES (claim inventory X1, H34, H38, H40). Each approved
+ * sentence is removed from the text first; anything an outcome pattern still matches is an
+ * unapproved claim and fails tests/ci/public-copy-claims.contract.test.ts. Adding an approved
+ * sentence here is the code half of a written approval; the inventory row is the other half.
+ *
+ * trade-off: Question of the Day candidates are screened with it too (schedule-job.ts), because a
+ * scheduled question becomes a public archive page; an SAT passage that mentions scores rising is
+ * skipped for another candidate, which costs nothing.
+ */
+export const APPROVED_OUTCOME_PHRASES: readonly string[] = [
+  // X1: the slogan, visible copy only (title stays "Lyceon | SAT Prep").
+  "Study Smarter, Score Higher",
+  // H34: homepage-hero Variant B headline.
+  "See real SAT progress before test day",
+  // H38: "How it works" card 4 heading.
+  "See real progress",
+  // H40: the example parent view's label.
+  "Real progress comes from the student's account",
+];
+
+export const OUTCOME_PATTERNS: readonly BannedPhrase[] = [
+  { pattern: /\bscores? higher\b/i, why: "(e) outcome claim: a higher score" },
+  {
+    pattern: /\bhigher (sat )?scores?\b/i,
+    why: "(e) outcome claim: a higher score",
+  },
+  {
+    pattern: /\b(raise|boost|improve|increase|lift)s?\b[^.]{0,20}\bscores?\b/i,
+    why: "(e) outcome claim: a score gain",
+  },
+  { pattern: /\breal (sat )?progress\b/i, why: "(e) outcome claim: progress" },
+  { pattern: /\bguarantee/i, why: "(e) outcome claim: a guarantee" },
+  { pattern: /\bproven\b/i, why: "(e) outcome claim: proof" },
+  {
+    pattern: /\b\d+\+? ?points? (higher|more|increase|gain|improvement)/i,
+    why: "(e) outcome claim: a points gain",
+  },
+];
+
+/** The first outcome pattern `text` matches once every approved sentence is set aside, or null. */
+export function firstUnapprovedOutcome(text: string): BannedPhrase | null {
+  let rest = text;
+  for (const phrase of APPROVED_OUTCOME_PHRASES)
+    rest = rest.split(phrase).join(" ");
+  return OUTCOME_PATTERNS.find((o) => o.pattern.test(rest)) ?? null;
+}
 
 /** The first banned phrase `text` matches, or null. Patterns carry no `g` flag (no lastIndex state). */
 export function firstBannedPhrase(text: string): BannedPhrase | null {

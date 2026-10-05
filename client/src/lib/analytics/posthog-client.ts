@@ -27,6 +27,12 @@ import {
   onSignedInSurface,
   subscribeSignedInSurface,
 } from "@/lib/signed-in-surface";
+import {
+  HERO_FLAG_KEY,
+  type HeroVariant,
+  isHeroVariant,
+  storeHeroVariant,
+} from "./hero-experiment";
 import { scrubProperties } from "./url-scrub";
 
 /** PostHog's dated defaults snapshot ("standard defaults", R32). */
@@ -79,8 +85,40 @@ export function startAnalytics(): Promise<void> {
           : { ...event, properties: scrubProperties(event.properties) },
     });
     instance = posthog;
+    // homepage-hero (owner ruling 2026-10-05, F13 decision 5): keep the assigned variant for the
+    // NEXT homepage view. `send_event: false` — reading the flag is not an exposure; the hero
+    // sends that itself, only on a view that shows the stored variant.
+    posthog.onFeatureFlags(() => {
+      const variant = posthog.getFeatureFlag(HERO_FLAG_KEY, {
+        send_event: false,
+      });
+      if (isHeroVariant(variant)) storeHeroVariant(variant);
+    });
+    if (pendingHeroExposure !== null) {
+      sendHeroExposure(posthog, pendingHeroExposure);
+      pendingHeroExposure = null;
+    }
   });
   return starting;
+}
+
+let pendingHeroExposure: HeroVariant | null = null;
+
+function sendHeroExposure(posthog: PostHog, variant: HeroVariant): void {
+  // PostHog's experiment exposure event, in the SDK's own shape.
+  posthog.capture("$feature_flag_called", {
+    $feature_flag: HERO_FLAG_KEY,
+    $feature_flag_response: variant,
+  });
+}
+
+/**
+ * The homepage shows `variant` (the stored assignment) on this view. Sent once PostHog runs;
+ * if it never does (no consent, an excluded account), nothing is ever sent.
+ */
+export function recordHeroExposure(variant: HeroVariant): void {
+  if (instance !== null) sendHeroExposure(instance, variant);
+  else pendingHeroExposure = variant;
 }
 
 const PH_STORAGE_KEY = /^(ph_|__ph)/;
