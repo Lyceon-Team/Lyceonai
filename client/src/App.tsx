@@ -7,7 +7,6 @@ import {
   SupabaseAuthProvider,
   useSupabaseAuth,
 } from "@/contexts/SupabaseAuthContext";
-import { PendingDeletionScreen } from "@/components/account-deletion/PendingDeletionScreen";
 import { UIProvider } from "@/components/providers/ui-provider";
 import { Analytics } from "@vercel/analytics/react";
 
@@ -19,7 +18,6 @@ import "@/styles/accessibility.css";
 import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
-import { RequireRole } from "@/components/auth/RequireRole";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
@@ -27,6 +25,19 @@ import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 // eager, because they are the landing surfaces whose first paint should not wait on a second
 // chunk request. Every other page, including these two, is lazy and loads under the Router's
 // Suspense fallback.
+// @spec [SEO plan F8; Coding Standards §11] | @implemented [2026-10-05] | plain English: the
+// role guard (with its re-consent modal) and the pending-deletion screen are signed-in surfaces,
+// so they load on demand instead of in the entry bundle every public page downloads. The guard
+// renders inside the router's Suspense boundary, as the pages it wraps do. `/login` stays eager:
+// it is a landing page (student-ui register UI-11).
+const RequireRole = lazy(() =>
+  import("@/components/auth/RequireRole").then((m) => ({ default: m.RequireRole })),
+);
+const PendingDeletionScreen = lazy(() =>
+  import("@/components/account-deletion/PendingDeletionScreen").then((m) => ({
+    default: m.PendingDeletionScreen,
+  })),
+);
 const UpdatePassword = lazy(() => import("@/pages/update-password"));
 const NotificationsPage = lazy(() => import("@/pages/notifications"));
 
@@ -90,6 +101,10 @@ const DigitalSATReadingWriting = lazy(
 );
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
+const SatQuestionOfTheDay = lazy(() => import("@/pages/sat-question-of-the-day"));
+const SatQuestionOfTheDayArchive = lazy(
+  () => import("@/pages/sat-question-of-the-day-day"),
+);
 const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
@@ -135,6 +150,14 @@ export function Router() {
         />
         <Route path="/blog" component={Blog} />
         <Route path="/blog/:slug" component={BlogPost} />
+        <Route
+          path="/sat-question-of-the-day"
+          component={SatQuestionOfTheDay}
+        />
+        <Route
+          path="/sat-question-of-the-day/:date"
+          component={SatQuestionOfTheDayArchive}
+        />
 
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
@@ -410,7 +433,11 @@ function DeletionGate({ children }: { children: ReactNode }) {
   const { user } = useSupabaseAuth();
   const [location] = useLocation();
   if (user?.pendingDeletion && location !== "/account/recover") {
-    return <PendingDeletionScreen />;
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <PendingDeletionScreen />
+      </Suspense>
+    );
   }
   return <>{children}</>;
 }

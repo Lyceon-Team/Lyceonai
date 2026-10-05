@@ -1,0 +1,137 @@
+{
+  "generated_on": "2026-10-05",
+  "archive": [
+    {
+      "qotd_date": "2026-10-02",
+      "question_id": "SATM1FXQ001",
+      "section": "M",
+      "domain": "Algebra",
+      "skill_codes": [
+        "FX"
+      ],
+      "difficulty": 1,
+      "item_type": "mcq",
+      "stem": "If $3x + 5 = 20$, what is the value of $x$?",
+      "passage": null,
+      "options": [
+        {
+          "key": "A",
+          "text": "3"
+        },
+        {
+          "key": "B",
+          "text": "5"
+        },
+        {
+          "key": "C",
+          "text": "15"
+        },
+        {
+          "key": "D",
+          "text": "25"
+        }
+      ],
+      "correct_answer": "B",
+      "correct_variants": null,
+      "explanation": "Subtract 5 from both sides to get $3x = 15$, then divide both sides by 3 to get $x = 5$.",
+      "attempts": 0,
+      "correct": 0
+    },
+    {
+      "qotd_date": "2026-10-03",
+      "question_id": "SATRW1FXQ002",
+      "section": "RW",
+      "domain": "Standard English Conventions",
+      "skill_codes": [
+        "FX"
+      ],
+      "difficulty": 1,
+      "item_type": "mcq",
+      "stem": "Which choice completes the text so that it conforms to the conventions of Standard English?",
+      "passage": "The museum's new exhibit, which opened last spring, ______ more than ten thousand visitors in its first month.",
+      "options": [
+        {
+          "key": "A",
+          "text": "attract"
+        },
+        {
+          "key": "B",
+          "text": "attracting"
+        },
+        {
+          "key": "C",
+          "text": "attracted"
+        },
+        {
+          "key": "D",
+          "text": "to attract"
+        }
+      ],
+      "correct_answer": "C",
+      "correct_variants": null,
+      "explanation": "The subject is the singular noun \"exhibit\", and the sentence describes a completed event, so it needs a finite past-tense verb. \"Attracted\" is the only choice that supplies one.",
+      "attempts": 0,
+      "correct": 0
+    },
+    {
+      "qotd_date": "2026-10-04",
+      "question_id": "SATM1FXQ003",
+      "section": "M",
+      "domain": "Advanced Math",
+      "skill_codes": [
+        "FX"
+      ],
+      "difficulty": 1,
+      "item_type": "grid_in",
+      "stem": "If $x^2 = 49$ and $x > 0$, what is the value of $x$?",
+      "passage": null,
+      "options": [],
+      "correct_answer": "7",
+      "correct_variants": [
+        "7",
+        "7.0"
+      ],
+      "explanation": "Both 7 and -7 square to 49. Since $x > 0$, $x = 7$.",
+      "attempts": 0,
+      "correct": 0
+    }
+  ],
+  "today": [
+    {
+      "qotd_date": "2026-10-05",
+      "question_id": "SATM1FXQ004",
+      "section": "M",
+      "domain": "Geometry and Trigonometry",
+      "skill_codes": [
+        "FX"
+      ],
+      "difficulty": 1,
+      "item_type": "mcq",
+      "stem": "A rectangle has a length of 8 and a width of 3. What is its area?",
+      "passage": null,
+      "options": [
+        {
+          "key": "A",
+          "text": "11"
+        },
+        {
+          "key": "B",
+          "text": "22"
+        },
+        {
+          "key": "C",
+          "text": "24"
+        },
+        {
+          "key": "D",
+          "text": "48"
+        }
+      ],
+      "correct_answer": "C",
+      "correct_variants": null,
+      "explanation": "The area of a rectangle is length times width: $8 \\times 3 = 24$.",
+      "attempts": 0,
+      "correct": 0
+    }
+  ]
+}

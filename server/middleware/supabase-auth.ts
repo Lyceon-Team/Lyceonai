@@ -23,12 +23,30 @@ import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
  * for CSRF binding and diagnostics — never as the authorization seam. Authorization always runs
  * through the SSR client's server-side `getUser()` validation (see supabaseAuthMiddleware).
  */
+function ssrSessionCookieNames(req: Request): string[] {
+  const cookies = (req.cookies ?? {}) as Record<string, string>;
+  return Object.keys(cookies)
+    .filter((name) => /^sb-.*-auth-token(\.\d+)?$/.test(name))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+/**
+ * @spec [SEO plan F8; Coding Standards §6.1] | @implemented [2026-10-05]
+ *
+ * plain English: whether the request carries the `@supabase/ssr` session cookie at all. Used only
+ * by the CSRF bootstrap response so the browser can skip the profile read when there is no
+ * session to read. It validates nothing and authorizes nothing: a present cookie may still be
+ * expired (the profile read then answers 401, as before), and every protected route still runs
+ * `supabaseAuthMiddleware`'s server-side `getUser()`.
+ */
+export function hasSsrSessionCookie(req: Request): boolean {
+  return ssrSessionCookieNames(req).length > 0;
+}
+
 function extractSsrAccessToken(req: Request): string | null {
   const cookies = (req.cookies ?? {}) as Record<string, string>;
 
-  const authCookieEntries = Object.keys(cookies)
-    .filter((name) => /^sb-.*-auth-token(\.\d+)?$/.test(name))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const authCookieEntries = ssrSessionCookieNames(req);
 
   if (authCookieEntries.length === 0) {
     return null;

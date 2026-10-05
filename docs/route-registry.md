@@ -32,6 +32,8 @@ This document records, for those routes:
 | `/digital-sat/reading-writing` | public | free | DigitalSATReadingWriting | N/A (static SEO) | ACTIVE |
 | `/blog` | public | free | Blog | N/A (static) | ACTIVE |
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
+| `/sat-question-of-the-day` | public | free | QotdHub | `/api/public/qotd/today`, `/api/public/qotd/today/answer` | ACTIVE |
+| `/sat-question-of-the-day/:date` | public | free | QotdArchiveDay | `/api/public/qotd/:date` | ACTIVE |
 | `/trust` | public | free | TrustHub | N/A (static SEO) | ACTIVE |
 | `/tutor` | public | free | TutorPage | N/A (static SEO) | ACTIVE |
 | `/legal` | public | free | LegalHub | N/A (static content) | ACTIVE |
@@ -87,6 +89,8 @@ This document records, for those routes:
 - `/digital-sat/reading-writing`
 - `/blog`
 - `/blog/:slug` (currently: `is-digital-sat-harder`, `digital-sat-scoring-explained`, `quick-sat-study-routine`, `sat-question-bank-practice`, `common-sat-math-algebra-mistakes`)
+- `/sat-question-of-the-day`
+- `/sat-question-of-the-day/:date` (every past day, prerendered at build time)
 - `/trust`
 - `/legal`
 - `/legal/:slug` (currently: `privacy-policy`, `student-terms`, `honor-code`, `community-guidelines`, `parent-guardian-terms`, `trust-and-safety`)

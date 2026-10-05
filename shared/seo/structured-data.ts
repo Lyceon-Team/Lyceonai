@@ -88,3 +88,67 @@ export function createArticleJsonLd(article: {
     },
   };
 }
+
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md Q3; owner Step 0 confirmation 2026-10-05 ("Quiz
+ *   JSON-LD on archive pages only")] | @implemented [2026-10-05] | plain English: schema.org Quiz
+ * markup for one past Question of the Day — the question, its choices, the accepted answer and
+ * the explanation, which are exactly what the archive page shows (structured data = visible
+ * content, as for the FAQ). Never used for today's question: its answer is not public.
+ * A multiple-choice question names each choice as a suggestedAnswer; a student-produced-response
+ * question carries only the accepted answer.
+ */
+export function createQuizJsonLd(quiz: {
+  name: string;
+  url: string;
+  about: string;
+  datePublished: string;
+  question: {
+    text: string;
+    choices: readonly string[];
+    acceptedAnswer: { text: string; position?: number };
+    explanation: string;
+  };
+}) {
+  const multipleChoice = quiz.question.choices.length > 0;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Quiz",
+    name: quiz.name,
+    url: quiz.url,
+    datePublished: quiz.datePublished,
+    about: { "@type": "Thing", name: quiz.about },
+    educationalAlignment: {
+      "@type": "AlignmentObject",
+      alignmentType: "educationalSubject",
+      targetName: quiz.about,
+    },
+    hasPart: [
+      {
+        "@type": "Question",
+        ...(multipleChoice ? { eduQuestionType: "Multiple choice" } : {}),
+        text: quiz.question.text,
+        ...(multipleChoice
+          ? {
+              suggestedAnswer: quiz.question.choices.map((text, index) => ({
+                "@type": "Answer",
+                position: index,
+                text,
+              })),
+            }
+          : {}),
+        acceptedAnswer: {
+          "@type": "Answer",
+          ...(quiz.question.acceptedAnswer.position === undefined
+            ? {}
+            : { position: quiz.question.acceptedAnswer.position }),
+          text: quiz.question.acceptedAnswer.text,
+          answerExplanation: {
+            "@type": "Comment",
+            text: quiz.question.explanation,
+          },
+        },
+      },
+    ],
+  };
+}

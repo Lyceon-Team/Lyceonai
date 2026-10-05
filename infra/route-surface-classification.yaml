@@ -17,7 +17,8 @@
 #                  redirects) stays unauth_marketing with prerender/indexable false.
 #   last_modified  sitemap lastmod for a static page (YYYY-MM-DD) — the date its content last
 #                  changed. Required when prerender is true and content_source is absent.
-#   content_source blog | legal — a parameterised page expanded from that content source.
+#   content_source blog | legal | qotd — a parameterised page expanded from that content source
+#                  (qotd: the past Question of the Day dates, read at build time).
 #   redirect_to    a permanent (301) redirect served by vercel.json.
 #
 # Format: a strict YAML subset parsed by shared/seo/route-registry.ts — one `key: value` per
@@ -35,7 +36,7 @@ routes:
     requires_hmac: false
     prerender: true
     indexable: true
-    last_modified: 2026-10-03
+    last_modified: 2026-10-05
   - path_pattern: /digital-sat
     surface_class: unauth_marketing
     clarity_allowed: false
@@ -97,6 +98,33 @@ routes:
     prerender: true
     indexable: true
     content_source: blog
+  # Question of the Day hub (SEO Wave 2, plan Q3): static copy; today's question loads in the
+  # browser, so the HTML carries no answer. lastmod = the latest archive day.
+  - path_pattern: /sat-question-of-the-day
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  # expanded from the qotd_archive() days at build time (strictly past days); lastmod = the day
+  - path_pattern: /sat-question-of-the-day/:date
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    content_source: qotd
   - path_pattern: /trust
     surface_class: unauth_marketing
     clarity_allowed: false

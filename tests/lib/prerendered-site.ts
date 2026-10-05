@@ -3,7 +3,8 @@
  *
  * plain English: the ONE prerendered-site fixture for tests. It runs the real build-time renderer
  * (`prerenderSite` in client/src/prerender/entry-server.tsx) over the real registry, content and
- * `client/index.html`, once per test process, so every SEO test asserts on what the build emits —
+ * `client/index.html`, once per test process (the Question of the Day archive comes from
+ * tests/lib/qotd-fixture.ts, itself real SQL output), so every SEO test asserts on what the build emits —
  * never on a hand-written page (CLAUDE.md, "derive the fixture from real output").
  */
 import { readFileSync } from "node:fs";
@@ -16,6 +17,12 @@ import {
   parseRouteRegistry,
   type RouteRegistryRow,
 } from "../../shared/seo/route-registry";
+import { toArchiveResponse } from "../../shared/qotd/projection";
+import {
+  QOTD_FIXTURE_NOW,
+  qotdArchiveDays,
+  qotdTodayRow,
+} from "./qotd-fixture";
 
 export const REPO_ROOT = resolve(__dirname, "../..");
 
@@ -25,6 +32,11 @@ export function getPrerenderedSite(): Promise<PrerenderedSite> {
   site ??= prerenderSite({
     repoRoot: REPO_ROOT,
     template: readFileSync(resolve(REPO_ROOT, "client/index.html"), "utf8"),
+    // The Question of the Day archive from the shared fixture (real SQL output), plus TODAY's
+    // row projected as if it were an archive day: the prerender must drop it, which
+    // tests/seo.qotd-pages.test.ts asserts.
+    qotdArchive: [...qotdArchiveDays(), toArchiveResponse(qotdTodayRow())],
+    now: QOTD_FIXTURE_NOW,
   });
   return site;
 }

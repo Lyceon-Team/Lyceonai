@@ -53,7 +53,7 @@ export const routeRegistryRowSchema = z
     prerender: bool,
     indexable: bool,
     last_modified: isoDate.optional(),
-    content_source: z.enum(["blog", "legal"]).optional(),
+    content_source: z.enum(["blog", "legal", "qotd"]).optional(),
     redirect_to: z
       .string()
       .regex(/^\/[A-Za-z0-9\-/]*$/)
@@ -186,7 +186,12 @@ export function routePatternToVercelSource(pattern: string): string {
 export type PrerenderContent = {
   blog: readonly { slug: string; date: string }[];
   legal: readonly { slug: string; effectiveDate: string }[];
+  /** Past Question of the Day dates (the archive), YYYY-MM-DD. Never today or later. */
+  qotd: readonly { date: string }[];
 };
+
+/** The Question of the Day hub; each archive day is `${QOTD_HUB_PATH}/${date}`. */
+export const QOTD_HUB_PATH = "/sat-question-of-the-day";
 
 export type PrerenderPage = {
   /** URL path, e.g. `/blog/is-digital-sat-harder`. */
@@ -212,9 +217,10 @@ export function expandPrerenderPages(
   content: PrerenderContent,
 ): PrerenderPage[] {
   const pages: PrerenderPage[] = [];
-  const childDates: Record<"blog" | "legal", string[]> = {
+  const childDates: Record<"blog" | "legal" | "qotd", string[]> = {
     blog: content.blog.map((post) => post.date),
     legal: content.legal.map((doc) => doc.effectiveDate),
+    qotd: content.qotd.map((day) => day.date),
   };
   for (const row of rows) {
     if (!row.prerender) continue;
@@ -240,6 +246,17 @@ export function expandPrerenderPages(
       }
       continue;
     }
+    if (row.content_source === "qotd") {
+      for (const day of content.qotd) {
+        pages.push({
+          path: `${QOTD_HUB_PATH}/${day.date}`,
+          pattern: row.path_pattern,
+          indexable: row.indexable,
+          lastmod: day.date,
+        });
+      }
+      continue;
+    }
     const own = row.last_modified;
     if (!own)
       throw new Error(`${row.path_pattern}: prerendered without last_modified`);
@@ -248,7 +265,9 @@ export function expandPrerenderPages(
         ? childDates.blog
         : row.path_pattern === "/legal"
           ? childDates.legal
-          : [];
+          : row.path_pattern === QOTD_HUB_PATH
+            ? childDates.qotd
+            : [];
     pages.push({
       path: row.path_pattern,
       pattern: row.path_pattern,
