@@ -1599,19 +1599,6 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-runner.json \
             --file tests/ci/practice-runner.pg.ci.test.ts
 
-      # The G2-04 assertions are worth what their plants prove. One product-source mutation per
-      # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
-      # per student — the stored-flag design; a learning read and checkout ungated; the gate
-      # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
-      # its assertion red, each reverted byte-identically in a trap.
-      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
-        env:
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: bash scripts/ci/under-13-link-gate.mutations.sh
-
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
       # migrations on the throwaway Postgres above, with no mocked table anywhere — the
@@ -1643,17 +1630,6 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-crisis-flag-atomic.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-crisis-flag-atomic.json \
             --file tests/ci/crisis-flag-atomic.pg.ci.test.ts
-
-      # A gate is worth its red proof. Nine mutations, one per assertion; M1 re-plants the
-      # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
-      # requires D1.3 to notice.
-      - name: Crisis flag atomicity self-test (proves each mutation turns it red)
-        env:
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: bash scripts/ci/crisis-flag-atomic.mutations.sh
 
       # The tutor retention sweep on real Postgres (RS-00/RS-04/RS-05, 2026-10-05). The in-memory
       # mock suite let a sweep on a column that does not exist pass for weeks; these run the real
@@ -1947,14 +1923,6 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-lapse.json \
             --file tests/ci/tutor-lapse-severance.pg.ci.test.ts
 
-      - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
-        env:
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: bash scripts/ci/deletion-evidence-gate.mutations.sh
-
       - name: Guardian schema-truth conversions → real PG proof
         env:
           PGHOST: localhost
@@ -2180,10 +2148,83 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam-mirror.json \
             --file tests/ci/guardian-exam-mirror.handler-pg.ci.test.tsx
 
-      # The fourteen assertions above are worth exactly as much as their plants. This
-      # mutates product source once per assertion and fails the build unless that
-      # assertion goes red. It patches the working tree and restores it in a trap, so
-      # it runs after everything that reads those files.
+  practice-integration-mutations:
+    runs-on: ubuntu-latest
+    # The planted-violation self-tests for the proofs in practice-integration, split out of
+    # that job so the two run side by side instead of end to end (the job had reached
+    # ~15m of a 20m budget). Each script asserts its own baseline green before planting,
+    # patches the working tree and restores it in a trap, so none of them depends on a
+    # step of the other job. They stay sequential HERE because they patch shared files.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The G2-04 assertions are worth what their plants prove. One product-source mutation per
+      # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
+      # per student — the stored-flag design; a learning read and checkout ungated; the gate
+      # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
+      # its assertion red, each reverted byte-identically in a trap.
+      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/under-13-link-gate.mutations.sh
+
+      # A gate is worth its red proof. Nine mutations, one per assertion; M1 re-plants the
+      # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
+      # requires D1.3 to notice.
+      - name: Crisis flag atomicity self-test (proves each mutation turns it red)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/crisis-flag-atomic.mutations.sh
+
+      - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/deletion-evidence-gate.mutations.sh
+
+      # The fourteen review-route assertions (practice-integration, "Review API + queue end-to-end")
+      # are worth exactly as much as their plants. This mutates product source once per
+      # assertion and fails the build unless that assertion goes red. It patches the working
+      # tree and restores it in a trap.
       - name: Review route assertions proven by planted violations (A1-A14)
         env:
           PGHOST: localhost
@@ -2196,8 +2237,9 @@ jobs:
       # scripts/ci/review-queue-gates.sql landed with the R2 migration and was named in
       # no workflow, so nothing ran it. It is the only cover for the review reveal
       # matrix, the cross-student RLS policies and the EXECUTE grants on the two queue
-      # functions — none of which the vitest suites above can see, because they connect
-      # as the superuser.
+      # functions — none of which the vitest suites in practice-integration can see, because
+      # they connect as the superuser. It runs the gates on correct code first, then plants
+      # each; the migrated database is built once and cloned per gate (TEMPLATE).
       - name: Review queue DB gates (reveal matrix, RLS, EXECUTE grants)
         env:
           PGHOST: localhost
