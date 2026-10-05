@@ -35,6 +35,7 @@ import {
   submitQotdAnswer,
 } from "@/lib/qotd";
 import { TurnstileWidget } from "./turnstile";
+import { QotdLoading } from "./QotdLoading";
 import type {
   QotdStat,
   QotdSubmitResponse,
@@ -92,11 +93,7 @@ export function QotdWidget({
   });
 
   if (today.isPending) {
-    return (
-      <p className="text-muted-foreground" data-testid="qotd-loading">
-        Loading today&apos;s question…
-      </p>
-    );
+    return <QotdLoading />;
   }
   if (today.isError) {
     const notYet =

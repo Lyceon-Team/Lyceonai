@@ -210,7 +210,19 @@ test.describe("Question of the Day", () => {
       if (r.url().includes("challenges.cloudflare.com"))
         turnstileRequests.push(r.url());
     });
+    // The homepage widget is lazy (owner request 2026-10-05): its chunk and KaTeX load only when
+    // the slot nears the viewport, so record those requests and scroll to the slot first.
+    const lazyChunks: string[] = [];
+    page.on("request", (r) => {
+      if (/\/assets\/(QotdWidget|MathRenderer)-/.test(r.url()))
+        lazyChunks.push(r.url());
+    });
     await page.goto("/");
+    const entryHtml = (await (await page.request.get("/")).text()) ?? "";
+    expect(entryHtml).not.toMatch(
+      /modulepreload[^>]*(QotdWidget|MathRenderer)/,
+    );
+    await page.getByTestId("qotd-lazy-slot").scrollIntoViewIfNeeded();
     const area = page.getByTestId("qotd-question-area");
     await expect(area).toBeVisible({ timeout: 20_000 });
     await expect(area).toHaveClass(/ph-no-capture/);
@@ -274,6 +286,67 @@ test.describe("Question of the Day", () => {
       JSON.stringify(csp, null, 2),
     );
     expect(csp).toEqual([]);
+  });
+
+  test("homepage at mobile size: the widget chunk and KaTeX load only once the slot nears the viewport", async ({
+    browser,
+  }) => {
+    const page = await browser.newPage({
+      viewport: { width: 412, height: 823 },
+    });
+    const posted: unknown[] = [];
+    await bypass(page);
+    if (!LIVE) await mockApi(page, posted);
+    const lazyChunks: string[] = [];
+    page.on("request", (r) => {
+      if (/\/assets\/(QotdWidget|MathRenderer)-/.test(r.url()))
+        lazyChunks.push(r.url());
+    });
+    await page.goto("/", { waitUntil: "networkidle" });
+    // Presence first: the slot is on the page, below the fold.
+    await expect(page.getByTestId("qotd-lazy-slot")).toHaveCount(1);
+    expect(lazyChunks).toEqual([]);
+    await page.getByTestId("qotd-lazy-slot").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("qotd-question-area")).toBeVisible({
+      timeout: 20_000,
+    });
+    expect(lazyChunks.some((u) => u.includes("/QotdWidget-"))).toBe(true);
+    expect(lazyChunks.some((u) => u.includes("/MathRenderer-"))).toBe(true);
+    await page.close();
+  });
+
+  test("the hub's widget (not lazy) answers end to end too", async ({
+    page,
+  }) => {
+    const posted: unknown[] = [];
+    await bypass(page);
+    if (!LIVE) await mockApi(page, posted);
+    if (STUB_TURNSTILE) {
+      await page.route(/challenges\.cloudflare\.com\/turnstile\//, (route) =>
+        route.fulfill({
+          contentType: "text/javascript",
+          body: TURNSTILE_STUB_JS,
+        }),
+      );
+      await page.route(/challenges\.cloudflare\.com\/stub/, (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: "<!doctype html><p>stub</p>",
+        }),
+      );
+    }
+    await page.goto("/sat-question-of-the-day");
+    const area = page.getByTestId("qotd-question-area");
+    await expect(area).toBeVisible({ timeout: 20_000 });
+    await area.getByRole("button").first().click();
+    const submit = page.getByTestId("qotd-submit");
+    await expect(submit).toBeEnabled({ timeout: 20_000 });
+    await submit.click();
+    await expect(page.getByText(/^(Correct|Incorrect)$/)).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("qotd-locked")).toBeVisible();
+    if (!LIVE) expect(posted).toHaveLength(1);
   });
 
   test("an archive page has its own head, Quiz JSON-LD and a sitemap entry (live only)", async ({
