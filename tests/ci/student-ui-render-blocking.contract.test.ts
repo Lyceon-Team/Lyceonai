@@ -147,12 +147,10 @@ describe("UI-12 fonts are self-hosted, only the used families and faces", () => 
       "/fonts/poppins-latin-400-normal.woff2",
       "/fonts/poppins-latin-700-normal.woff2",
     ]);
-    // The other two are the student UI's own faces (register UI-12/UI-40, approved 2026-10-02),
-    // pinned here so no further preload is added unnoticed.
-    expect(all.filter((href) => !webFont.includes(href))).toEqual([
-      "/fonts/source-sans-3-latin-variable.woff2",
-      "/fonts/source-serif-4-latin-variable.woff2",
-    ]);
+    // Nothing else is preloaded: the student UI's Source Sans/Serif load from their @font-face in
+    // student-tokens.css when the student shell renders, never on a public page (2026-10-05).
+    expect(all.filter((href) => !webFont.includes(href))).toEqual([]);
+    expect(INDEX_HTML).not.toMatch(/source-(sans|serif)-[^"]*\.woff2/);
     for (const tag of preloads) {
       // Without crossorigin the browser cannot reuse a font preload and fetches it twice.
       expect(tag).toMatch(/\scrossorigin\b/);

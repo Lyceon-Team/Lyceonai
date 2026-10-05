@@ -26,6 +26,7 @@ import {
 import { BASE_URL, LOGO_URL } from "../shared/seo/structured-data";
 import { HEAD_END_MARKER, HEAD_START_MARKER } from "../shared/seo/head";
 import { stripComments } from "./ci/lib/strip-comments";
+import { BLOG_POSTS } from "../shared/content/blog";
 import {
   REPO_ROOT,
   bodyText,
@@ -363,5 +364,50 @@ describe("homepage hero is static (F7, taken into this change)", () => {
     expect(source).not.toMatch(/Math\.random/);
     expect(source).not.toMatch(/localStorage|sessionStorage/);
     expect(source).not.toContain("landing_hero_variant");
+  });
+});
+
+describe("link text names its destination (SEO follow-up 2026-10-05, Lighthouse link-text)", () => {
+  /** Every <a> in the page body, with its text as a screen reader and Lighthouse read it. */
+  function anchors(html: string): { href: string; text: string }[] {
+    const start = html.indexOf('<div id="root">');
+    return [...html.slice(start).matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(
+      (m) => ({
+        href: m[1]?.match(/href="([^"]*)"/)?.[1] ?? "",
+        text: (m[2] ?? "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&#x27;|&#39;/g, "'")
+          .replace(/&amp;/g, "&")
+          .replace(/\s+/g, " ")
+          .trim(),
+      }),
+    );
+  }
+
+  it('each /blog post card\'s link reads "Read more about <post title>"', () => {
+    const links = anchors(page("/blog").html);
+    // Presence first: one card link per post, each naming that post's title.
+    const posts = BLOG_POSTS.map((post) => post.slug);
+    expect(posts.length).toBeGreaterThan(0);
+    for (const post of BLOG_POSTS) {
+      const card = links.filter(
+        (l) =>
+          l.href === `/blog/${post.slug}` && l.text.startsWith("Read more"),
+      );
+      expect(
+        card.map((l) => l.text),
+        post.slug,
+      ).toEqual([`Read more about ${post.title}`]);
+    }
+  });
+
+  it("no public page has a link whose whole text is generic", () => {
+    const GENERIC = /^(read more|more|click here|here|learn more)$/i;
+    const offenders = site.pages.flatMap((p) =>
+      anchors(p.html)
+        .filter((l) => GENERIC.test(l.text))
+        .map((l) => `${p.path} → ${l.href}: "${l.text}"`),
+    );
+    expect(offenders).toEqual([]);
   });
 });

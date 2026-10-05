@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- Student UI fonts, self-hosted (register UI-12, UI-40; approved 2026-10-02). -->
-    <link rel="preload" href="/fonts/source-sans-3-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="/fonts/source-serif-4-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+    <!-- Student UI fonts (Source Sans 3 / Source Serif 4, register UI-12, UI-40) are NOT preloaded
+         here: this head is every page's, and public pages never render them, so a preload made
+         each public page download ~50 KB it did not use. student-tokens.css declares them with
+         @font-face, so they download when the student shell (.lyc) first renders text in them
+         (font-display: swap). SEO follow-up, 2026-10-05, pending Karl's confirmation. -->
     <!-- Student UI theme before first paint (register UI-47): the same rule as
          client/src/lib/theme.ts (resolveTheme), kept in step by client/src/lib/theme.boot.test.ts.
          Writes <html data-theme>, which client/src/styles/student-tokens.css reads. -->
