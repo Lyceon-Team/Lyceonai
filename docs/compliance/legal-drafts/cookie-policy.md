@@ -1,75 +1,70 @@
 > **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
->
-> Document: LYCEON Cookie Policy, proposed version 1 (new; Doc 10 §9.10).
-> Status: awaiting counsel. Prepared 2026-10-03 for plan row G7. Not built, not served, not linked from the product.
-> The **[Effective when F10/F11 ship]** rows describe PostHog and the cookie banner, which are not live. They must be removed or confirmed before publication.
 
 # **LYCEON Cookie Policy**
 
-This Cookie Policy explains the cookies and similar technologies LYCEON uses, why we use them, and how you control them. It supplements the **LYCEON Privacy Policy**.
+**Version 1** · **Effective date:** [●]
+
+This Cookie Policy explains the cookies and similar technologies LYCEON uses, why we use them, and how you can control them. It supplements the **LYCEON Privacy Policy**.
 
 ---
 
 ## **1. What Cookies Are**
 
-Cookies are small text files a website stores in your browser. "Similar technologies" include your browser's local storage, which works in a similar way. In this policy, "cookies" covers both.
+Cookies are small text files that a website stores in your browser. Similar technologies include your browser's local storage and session storage. In this policy, "cookies" covers all of them.
 
 ---
 
-## **2. The Categories We Use**
+## **2. Categories of Cookies**
 
 ### **2.1 Strictly Necessary**
 
-These make the service work: keeping you signed in, protecting your account against forged requests, and remembering choices you make. They are always on and do not need your consent.
+These cookies are required for the service to work. They keep you signed in, protect your account and the website against misuse, and remember your settings. They do not require your consent.
 
-### **2.2 Analytics** **[Effective when F10/F11 ship]**
+### **2.2 Analytics**
 
-These help us understand how the service is used, so we can fix what is confusing or broken. They are set by PostHog, our analytics provider, **only if you accept analytics cookies**. Under-13 accounts are never included.
+These cookies help us understand how the service is used so that we can improve it. They are set by PostHog **only if you accept analytics cookies**. Accounts of users under 13 are excluded.
 
-### **2.3 What We Do Not Use**
+### **2.3 Cookies We Do Not Use**
 
-* **No advertising cookies.**
-* **No cross-site tracking cookies.**
-* **No cookies that sell or share your information** for advertising.
+We do not use advertising cookies, cross-site tracking cookies, or cookies that sell or share your information for advertising.
 
 ---
 
-## **3. The Cookies**
+## **3. Cookies We Use**
 
-| Name | Category | Set by | Purpose | Lasts |
+| Name | Category | Provider | Purpose | Duration |
 |---|---|---|---|---|
-| `sb-<project>-auth-token` (may be split into numbered parts) | Strictly necessary | LYCEON (first party) | Keeps you signed in | **[TO CONFIRM — session settings]** |
-| `__Host-csrf` | Strictly necessary | LYCEON (first party) | Protects your account against forged requests | **[TO CONFIRM]** |
-| Sign-in verifier (Supabase PKCE) | Strictly necessary | LYCEON (first party) | Completes "Sign in with Google" securely | Until sign-in completes **[TO CONFIRM]** |
-| `lyceon-theme` (local storage) | Strictly necessary (preference) | LYCEON (first party) | Remembers light or dark mode | Until you clear it |
-| Device identifier (local storage) | Strictly necessary | LYCEON (first party) | Remembers a device identifier the service needs to work correctly | Until you clear it |
-| Dismissed-notice flag (session storage) | Strictly necessary (preference) | LYCEON (first party) | Remembers that you dismissed a notice | Until you close the tab |
-| Cookie choice record | Strictly necessary | LYCEON (first party) | Remembers your cookie choice so we don't ask again **[Effective when F11 ships]** | 6 months |
-| `ph_<project>_posthog` | Analytics | PostHog (first party) | Recognises your browser across visits for analytics **[Effective when F10/F11 ship — confirm name]** | **[TO CONFIRM]** |
-
-The public pages of our website also use Vercel Analytics, which does not use cookies. **[Remove this sentence when F10 retires Vercel Analytics.]**
+| `sb-<project>-auth-token` | Strictly necessary | LYCEON | Keeps you signed in | [●] |
+| `__Host-csrf` | Strictly necessary | LYCEON | Protects your account against forged requests | [●] |
+| Sign-in verifier | Strictly necessary | LYCEON | Completes "Sign in with Google" securely | Until sign-in completes |
+| `lyceon-theme` (local storage) | Strictly necessary | LYCEON | Remembers your display preference | Until you clear it |
+| Device identifier (local storage) | Strictly necessary | LYCEON | Supports the operation of the service on your device | Until you clear it |
+| Notice preference (session storage) | Strictly necessary | LYCEON | Remembers that you dismissed a notice | Until you close the tab |
+| Cookie consent record | Strictly necessary | LYCEON | Remembers your cookie choice | 6 months |
+| Security check | Strictly necessary | Cloudflare (Turnstile) | Protects forms against automated abuse | [●] |
+| `ph_<project>_posthog` | Analytics | PostHog | Distinguishes visits for analytics | [●] |
 
 ---
 
 ## **4. Your Choices**
 
-* **Cookie banner** **[Effective when F11 ships].** When you first visit, we ask whether you accept analytics cookies. "Accept" and "Reject" are equally prominent, and you can choose by category.
-* **Changing your mind.** Use the **Cookie settings** link at the bottom of any page, or in your account settings, at any time. Withdrawing consent is as easy as giving it.
+* **Cookie banner.** When you first visit, we ask whether you accept analytics cookies. "Accept" and "Reject" are equally prominent, and you can choose by category.
+* **Changing your choice.** Use the **Cookie settings** link at the bottom of any page, or your account settings, at any time.
 * **Global Privacy Control.** If your browser sends a Global Privacy Control signal, we treat it as a refusal of analytics cookies.
-* **Do Not Track.** There is no agreed standard for Do Not Track. We do not respond to it separately; we honour Global Privacy Control instead.
-* **Your browser.** You can also block or delete cookies in your browser settings. If you block strictly necessary cookies, you will not be able to sign in.
+* **Do Not Track.** We do not respond to Do Not Track signals. We honor Global Privacy Control.
+* **Browser settings.** You can block or delete cookies in your browser settings. If you block strictly necessary cookies, some parts of the service will not work.
 
 ---
 
 ## **5. Third-Party Content**
 
-On math questions, we load the Desmos graphing calculator from desmos.com. When it loads, Desmos receives technical information from your browser, such as your IP address. **[TO CONFIRM — whether Desmos sets cookies or uses storage.]**
+Math questions include the Desmos graphing calculator, which is loaded from desmos.com. When it loads, Desmos receives technical information from your browser, such as your IP address.
 
 ---
 
 ## **6. Changes**
 
-We will update this policy when the cookies we use change, and note the date.
+We will update this policy when the cookies we use change, and update the effective date.
 
 ---
 
@@ -81,18 +76,17 @@ We will update this policy when the cookies we use change, and note the date.
 
 ## Standard sources followed
 
-* Directive 2002/58/EC (ePrivacy) Article 5(3) — https://eur-lex.europa.eu/eli/dir/2002/58/oj
-* EDPB Guidelines 05/2020 on consent under Regulation 2016/679 — https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines/guidelines-052020-consent-under-regulation-2016679_en
+* Directive 2002/58/EC (ePrivacy Directive), Article 5(3) — https://eur-lex.europa.eu/eli/dir/2002/58/oj
+* EDPB Guidelines 05/2020 on consent — https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines/guidelines-052020-consent-under-regulation-2016679_en
 * UK ICO, *Guidance on the use of storage and access technologies* — https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-the-use-of-storage-and-access-technologies/
-* CNIL, cookies and other trackers guidance (structure of the cookie list) — https://www.cnil.fr/en/cookies-and-other-tracking-devices
+* CNIL, cookies and other tracking devices — https://www.cnil.fr/en/cookies-and-other-tracking-devices
 * California CCPA regulations, 11 CCR §7025 (opt-out preference signals) — https://cppa.ca.gov/regulations/
 * Global Privacy Control specification — https://globalprivacycontrol.org/
 
 ## Counsel checklist
 
-1. **Lifetimes.** Confirm each **[TO CONFIRM]** lifetime from the Supabase auth settings, the CSRF middleware (`server/middleware/csrf-double-submit.ts`) and the PostHog configuration.
-2. **Preference storage.** The theme key, the device-identifier key (`client/src/lib/client-instance.ts`) and the dismissed-notice flag (`client/src/components/legal/reconsent-dismissal.ts`, session storage) are classed as strictly necessary. Confirm that classification under ePrivacy Article 5(3) and the ICO guidance.
-3. **Pre-consent analytics.** Plan R11 says "cookieless until consent". Confirm whether any PostHog measurement may run before a choice, or whether it must wait for acceptance. This draft assumes it waits.
-4. **Desmos.** Confirm whether the Desmos script sets cookies or uses storage. If it does, decide whether it needs consent or a strictly necessary justification, since it powers the calculator the user opened.
-5. **Six-month re-ask.** Doc 10 §9.11 directs a 6-month do-not-re-ask period. Confirm it against current EU/UK guidance and the EU Digital Omnibus status.
-6. **Do Not Track.** Confirm that the statement satisfies California's disclosure requirement (Cal. Bus. & Prof. Code §22575(b)(5)).
+1. Complete each duration marked [●].
+2. Confirm the strictly necessary classification of each local storage and session storage item.
+3. Confirm whether Desmos, Cloudflare Turnstile or any Trustpilot content on the website stores information in the browser, and whether any of it requires consent.
+4. Confirm the 6-month duration of the cookie consent record.
+5. Confirm that the Do Not Track statement meets Cal. Bus. & Prof. Code §22575(b)(5).

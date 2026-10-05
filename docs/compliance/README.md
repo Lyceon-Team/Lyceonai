@@ -41,6 +41,8 @@ Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not pu
 
 Spec departures in these drafts are recorded in SCL-208. Open owner actions:
 - Google Fonts: self-hosted on `seo` by #1088 (SEO-1); must be live in production before Privacy Policy v5 publishes;
-- postal address and telephone, for the children's notice and marketing emails: Karl will supply them; placeholders stay flagged in both counsel checklists until then.
+- postal address and telephone, for the Privacy Policy, the children's notice and marketing emails: Karl will supply them; placeholders stay flagged in the counsel checklists until then.
+
+The drafts describe the service at launch (owner ruling, 2026-10-05), including PostHog, Cloudflare Turnstile and Trustpilot.
 
 Resolved: error monitoring is not configured on Vercel, verified 2026-10-03 (Karl), so it is omitted from Privacy Policy v5 and the Sub-Processor List.
