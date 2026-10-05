@@ -15,7 +15,7 @@ import {
   dismissReconsent,
   isReconsentDismissed,
 } from "@/components/legal/reconsent-dismissal";
-import { enterSignedInSurface } from "@/lib/analytics/posthog-client";
+import { enterSignedInSurface } from "@/lib/signed-in-surface";
 
 type UserRole = "student" | "guardian" | "admin";
 

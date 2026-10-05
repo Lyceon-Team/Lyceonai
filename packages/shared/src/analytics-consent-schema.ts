@@ -22,8 +22,12 @@
  */
 import { z } from "zod";
 
-/** The banner text version in `cookie-banner-text.md`. Bump with the text. */
-export const COOKIE_BANNER_VERSION = 1;
+/**
+ * The banner text version in `cookie-banner-text.md`. Bump with the text: a stored choice made on
+ * another version no longer counts, so the banner asks again, and each consent-log row names the
+ * text its choice was made on. Version 2: owner ruling 2026-10-05 (industry-standard wording).
+ */
+export const COOKIE_BANNER_VERSION = 2;
 
 /** Strictly necessary; listed in the Cookie Policy §3 as "Cookie consent record", 6 months. */
 export const CONSENT_COOKIE_NAME = "lyceon_consent";
