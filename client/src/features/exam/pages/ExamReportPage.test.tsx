@@ -503,7 +503,10 @@ describe("the page in the Focus shell", () => {
       </QueryClientProvider>,
     );
     const title = await screen.findByTestId("exam-report-title");
-    expect(title.textContent).toBe("Practice Test 1 report");
+    // Owner ruling 2026-10-05: the real serializer's payload keeps the stored "Practice Test 1";
+    // the top bar shows it as "Full-Length Test 1" (`displayFormName`).
+    expect(scored.test_form_name).toBe("Practice Test 1");
+    expect(title.textContent).toBe("Full-Length Test 1 report");
     const bar = screen.getByTestId("focus-context");
     expect(bar.contains(title)).toBe(true);
     expect(bar.textContent).toContain("26 September 2026");

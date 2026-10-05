@@ -542,3 +542,94 @@ automatic full-length tests") and `UI-58` (Help's first answer, Billing's paid l
 read "full-length tests"); every shot 0px horizontal overflow. UI-41, UI-50 and UI-54 are
 re-captured by the lead after the parallel navigation change merges. UI-52 and UI-53 have no
 full-length source or label in their seeded data and were not re-captured.
+
+## 2026-10-05: form names (display mapping)
+
+Owner ruling (Karl, 2026-10-05), verbatim: "Form names: display \"Full-Length Test 1/2/3\" in
+student UI as a display mapping only. Do not rename test_forms rows (forms are immutable)."
+
+This answers "Left for Karl" item 1 of the section above. Branch `claude/nav-form-names`.
+
+### The stored values
+
+`test_forms.name` holds two shapes in this repository, so the mapping matches both, exactly and
+case-sensitively over the whole string:
+
+| source | stored name |
+|---|---|
+| `scripts/exam-forms/form_001_003.sql:699-701` (the E5 seed, owner-run; the three real forms) | `Full-Length Practice Test 1/2/3` |
+| `scripts/ci/exam-shell-server-gates.sql:35`, `scripts/ci/calendar-full-length-gates.sql:85,87`, client fixtures | `Practice Test 1/2/3` |
+
+Production's live values were not read from here (CLAUDE.md: owner-run). Both shapes map to
+"Full-Length Test N"; anything else (another name, other casing, padding whitespace, a suffix)
+passes through unchanged.
+
+### What changed
+
+One shared function, `displayFormName(storedName)` in `packages/shared/src/exam-form-display.ts`
+(pure, total; regex `/^(?:Full-Length )?Practice Test ([0-9]+)$/`), applied at render time at
+every student surface that prints a form name. No stored value, API payload, DB row, key, sort
+order or identifier changed (the review pool still sends `filters.test_form_name` as stored; the
+report payload's `test_form_name` is unchanged; option values in the calendar picker stay form
+ids).
+
+| surface | call site |
+|---|---|
+| Full-Length home: row title, row `aria-label`, "View report, …" label | `client/src/features/exam/pages/TestsHomePage.tsx:409` (used at :412, :418, :438) |
+| Full-Length home: score history rows | `client/src/features/exam/pages/TestsHomePage.tsx:675` |
+| Exam report top bar ("… report") | `client/src/features/exam/pages/ExamReportPage.tsx:151` |
+| Review picker, full-length rows (F-52 `filters.test_form_name`) | `client/src/lib/review-session-picker.ts:149` |
+| Home "Pick up" row for an in-progress test | `client/src/components/home/PaidHome.tsx:170` |
+| Calendar full-length block form picker | `client/src/features/calendar/components/FullLengthFields.tsx:84` |
+
+Not a form-name surface (checked): the exam session shell (`ExamSessionPage.tsx`,
+`ExamHeader.tsx` — reads forms only for section timings, prints no name), the calendar blocks and
+BlockSheet (title "Full-length test", never a form name), notification templates
+(`server/lib/notifications/templates/full-length.ts` carries no form name; the event payload has
+no form id), the tutor (no form data).
+
+### Grep
+
+```
+git grep -nE "test_form_name|testFormName|form_name|formName|Practice Test|form\.name|f\.name" \
+  -- client/src server packages/shared/src ':!*.test.ts' ':!*.test.tsx'
+```
+
+47 hits, classified:
+
+| hits | class |
+|---|---|
+| `PaidHome.tsx:170`, `FullLengthFields.tsx:84`, `ExamReportPage.tsx:151`, `TestsHomePage.tsx:409,438,451,457,482,675`, `review-session-picker.ts:149` | **mapped** (`:438`–`:482` carry the already-mapped `name` into the report link's label) |
+| `ExamReportPage.tsx:23`, `review-session-picker.ts:127,132` | comment (updated to name the mapping) |
+| `review-session-picker.ts:148` | type narrowing of the wire value (identifier) |
+| `GuardianExamResultsPage.tsx:235,243,452,506,552`, `GuardianLatestTestCard.tsx:329,330` | **not student-facing** — guardian; out of scope (the guardian vertical adopts the ruling later) |
+| `guardian/test-harness.tsx:266,355,366,480,487`, `exam/test-fixtures/report-fixtures.ts:35,210,225` | test fixtures (stored values, deliberately unchanged) |
+| `packages/shared/src/exam-guardian-report-schema.ts:79,195,285,336`, `exam-report-schema.ts:138`, `exam-scored-sessions-schema.ts:17,52`, `review-schema.ts:308,324` | wire schemas / projections (payload values; unchanged) |
+| `server/services/exam-report-service.ts:64,122`, `exam-runtime-service.ts:852`, `review-pool.ts:738,742,748,760,764` | server logic carrying the stored value (unchanged); `review-pool.ts` comment at :661 updated |
+| `client/src/pages/digital-sat.tsx:92` | public marketing page ("Full-Length Practice Tests (paid plans)", product copy, not a form name; SEO vertical) |
+
+### Tests and plants
+
+Every plant below was applied at the stated line, observed red, and reverted (scratch runner
+replacing exactly one occurrence on that line):
+
+| plant (file:line, mapping removed) | reddened |
+|---|---|
+| `PaidHome.tsx:170` `f.name` | `lyceon-dashboard.test.tsx` "renders the paid Home …" (resume row "Full-Length Test 1Continue") |
+| `TestsHomePage.tsx:409` `row.form.name` | `TestsHomePage.test.tsx` 10 tests incl. new "row titles, row names and View report labels map the stored names" |
+| `TestsHomePage.tsx:412` aria-label back to `row.form.name` | same 10 |
+| `TestsHomePage.tsx:418` h3 back to `row.form.name` | new "row titles, row names …" |
+| `TestsHomePage.tsx:438` `formName={row.form.name}` | new "row titles, row names …" (View report label) |
+| `TestsHomePage.tsx:675` `row.test_form_name` | new "score history rows map the stored name", OQ-30 history row, "row titles …" (no "Practice Test" on the page) |
+| `ExamReportPage.tsx:151` `payload.test_form_name` | `ExamReportPage.test.tsx` "names the report and its date in the top bar" (payload from the real `serializeStudentReport`) |
+| `FullLengthFields.tsx:84` `form.name` | new `FullLengthFields.wording.test.tsx` "each offered form's option reads 'Full-Length Test N'" |
+| `review-session-picker.ts:149` `bag.test_form_name` | `review-session-picker.test.ts` "degrades to Mixed …", `review.test.tsx` "opens to five rows …" |
+| `exam-form-display.ts:28` drop `(?:Full-Length )?` | 11 tests: table test (3 seed-shape rows), `review-session-picker.test.ts` (seed-shape case), `TestsHomePage.test.tsx` (fixture form 3 is the seed shape) |
+| `exam-form-display.ts:28` `$/` → `/i` (no end anchor, case-insensitive) | table test: 6 near-miss rows |
+| `exam-form-display.ts:28` drop `^` | table test: 3 prefix rows |
+| `exam-form-display.ts:28` `[0-9]+` → `[0-9]` | table test: 3 N ≥ 10 rows |
+
+Gate plants added to `scripts/ci/review-ui-gate.mutations.sh` (FILES list extended with
+`FullLengthFields.tsx` and `exam-form-display.ts`): FN-1 (home rows), FN-2 (score history), FN-3
+(report top bar), FN-4 (review picker), FN-5 (Home resume row), FN-6 (calendar picker), FN-7
+(seed shape). UI54-R5 anchored on the report title line and was re-pointed to the mapped line.

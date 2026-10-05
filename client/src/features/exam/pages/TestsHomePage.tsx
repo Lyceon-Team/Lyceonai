@@ -57,6 +57,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import type { ExamMode } from "@lyceon/shared/exam-runtime-schema";
+import { displayFormName } from "@lyceon/shared/exam-form-display";
 import type { ExamScoredSessionRow } from "@lyceon/shared/exam-scored-sessions-schema";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
@@ -404,15 +405,17 @@ function TestRow({
   mode: ExamMode;
 }): JSX.Element {
   const primaryKind = primary ? primaryKindOf(row) : null;
+  // Owner ruling 2026-10-05: the stored form name is shown as "Full-Length Test N".
+  const name = displayFormName(row.form.name);
   return (
     <article
-      aria-label={row.form.name}
+      aria-label={name}
       className="grid grid-cols-1 gap-4 border-b border-lyc-rule py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6"
       data-testid="tests-row"
     >
       <div className="flex min-w-0 flex-col gap-1">
         <h3 className="m-0 font-lyc-serif text-[21px] font-semibold text-lyc-ink-strong">
-          {row.form.name}
+          {name}
         </h3>
         <p
           className="m-0 text-[17px] text-lyc-muted"
@@ -432,7 +435,7 @@ function TestRow({
             action={action}
             filled={action.kind === primaryKind}
             formId={row.form.test_form_id}
-            formName={row.form.name}
+            formName={name}
             mode={mode}
           />
         ))}
@@ -669,7 +672,7 @@ function ScoreHistory({
             >
               <span className="flex items-baseline justify-between gap-3">
                 <span className="text-lyc-body font-semibold">
-                  {row.test_form_name}
+                  {displayFormName(row.test_form_name)}
                 </span>
                 <span
                   className="font-lyc-serif text-[24px] font-semibold text-lyc-ink-strong"

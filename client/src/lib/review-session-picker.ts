@@ -31,6 +31,8 @@
  *     nested them under `session_spec`, so every practice row read "Mixed").
  */
 
+import { displayFormName } from "@lyceon/shared/exam-form-display";
+
 /** `YYYY-MM-DD` in the given IANA zone. `en-CA` is the locale that formats that way. */
 export function localDateKey(date: Date, timeZone: string | null): string {
   try {
@@ -122,8 +124,9 @@ const SECTION_LABELS: Readonly<Record<string, string>> = {
 /**
  * The second line of a picker row: the source session's mode and filters, e.g.
  * "Math · Algebra", "Reading & Writing · Mixed", "Diagnostic", or — for a full-length
- * test — the form's name, "Practice Test 1" ("Full-length test" when the server sent
- * none, e.g. a form no longer published).
+ * test — the form's display name, "Full-Length Test 1" for a stored "Practice Test 1" (owner
+ * ruling 2026-10-05, `displayFormName`; "Full-length test" when the server sent none, e.g. a
+ * form no longer published).
  *
  * `filters` is the row's criteria (`{sections, domains, skills, difficulties}`, F-52) or a
  * full-length row's `{test_form_name}`; it is still read as `unknown` and narrowed field by
@@ -143,7 +146,7 @@ export function sourceFiltersLine(
 
   // A full-length test row carries exactly one fact, its form's name (review-pool.ts).
   if (typeof bag.test_form_name === "string" && bag.test_form_name.length > 0) {
-    return bag.test_form_name;
+    return displayFormName(bag.test_form_name);
   }
   if (engine === "full_length") return "Full-length test";
 

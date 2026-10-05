@@ -29,6 +29,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import type { CalendarReadyResponse } from "@lyceon/shared/calendar";
+import { displayFormName } from "@lyceon/shared/exam-form-display";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
@@ -166,7 +167,7 @@ export function PaidHome({
         ? [
             {
               key: `exam:${f.latest_session.session_id}`,
-              title: f.name,
+              title: displayFormName(f.name),
               progress: null,
               href: `/tests/${f.latest_session.session_id}`,
             },

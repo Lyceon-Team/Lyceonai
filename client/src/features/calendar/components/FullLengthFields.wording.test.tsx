@@ -16,6 +16,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DndContext } from "@dnd-kit/core";
 import { examKeys } from "../../exam/api/keys";
+import { formsListing } from "../../exam/test-fixtures/report-fixtures";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
 import { CreateBlockSheet } from "./CreateBlockSheet";
 import { FullLengthFields } from "./FullLengthFields";
@@ -40,6 +41,48 @@ function onlyFullLengthTests(text: string): void {
     text.match(/\bfull-length tests?\b/gi)?.length ?? 0,
   );
 }
+
+/**
+ * Owner ruling (Karl, 2026-10-05): "Form names: display \"Full-Length Test 1/2/3\" in student UI
+ * as a display mapping only." The picker's form options show `displayFormName` of each stored
+ * name; the option values stay the form ids.
+ */
+describe("owner ruling 2026-10-05: the form picker shows 'Full-Length Test N'", () => {
+  it("each offered form's option reads 'Full-Length Test N' for a stored 'Practice Test N'", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    client.setQueryData(examKeys.forms(), formsListing);
+    render(
+      <QueryClientProvider client={client}>
+        <FullLengthFields
+          scope={{ form_id: null, exam_mode: "strict" }}
+          disabled={false}
+          onChange={vi.fn()}
+          idPrefix="t"
+        />
+      </QueryClientProvider>,
+    );
+    // The shared fixture serves the stored names.
+    expect(formsListing.forms.map((f) => f.name)).toEqual([
+      "Practice Test 2",
+      "Practice Test 3",
+    ]);
+    const options = Array.from(
+      document.querySelectorAll<HTMLOptionElement>("#t-fl-form-select option"),
+    );
+    // Presence first: the "next" option and both forms.
+    expect(options.map((o) => o.textContent)).toEqual([
+      "Next unused full-length test",
+      "Full-Length Test 2",
+      "Full-Length Test 3",
+    ]);
+    expect(options.map((o) => o.value)).toEqual([
+      "next",
+      ...formsListing.forms.map((f) => f.test_form_id),
+    ]);
+  });
+});
 
 describe("OQ-62 (b): the calendar's full-length controls", () => {
   it("the form picker's label and both fallback options say 'full-length test'", () => {

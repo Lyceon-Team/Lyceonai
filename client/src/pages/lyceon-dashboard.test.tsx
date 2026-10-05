@@ -622,11 +622,14 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     const resumeText = within(resume)
       .getAllByTestId("home-resume-row")
       .map((r) => r.textContent);
+    // The in-progress test's stored form name "Practice Test 1" (FORMS) is shown as
+    // "Full-Length Test 1" (owner ruling 2026-10-05, `displayFormName`).
     expect(resumeText).toEqual([
       "Algebra7 of 26 answeredContinue",
       "Review session0 of 17 answeredContinue",
-      "Practice Test 1Continue",
+      "Full-Length Test 1Continue",
     ]);
+    expect(FORMS.forms[0]?.name).toBe("Practice Test 1");
     expect(
       within(resume)
         .getAllByRole("link", { name: "Continue" })
