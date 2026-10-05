@@ -7,9 +7,11 @@
  *        lock as a hint and navigates); OQ-29 (map on GET /api/profile, reason plan | age; under
  *        13 gets the age message); OQ-4 (five tabs); OQ-47 (bell in the rail above Help, ruled
  *        2026-10-03); OQ-48 (the admin exception); owner ruling (Karl, 2026-10-05; supersedes
- *        OQ-4's tab bar and OQ-48's menu order: tabs Home, Practice, Review, Calendar, LISA;
- *        avatar menu Full-Length, Settings, Help, Sign out); DESIGN.md §1 (3px focus ring,
- *        nothing below 14px), §2; issue #829 (one anchor per nav item, with its href)]
+ *        OQ-4, OQ-48 and the Full-Length part of OQ-62: tabs Home, Review, Practice, Calendar,
+ *        LISA; avatar menu Settings, Help, Sign out, admins add Crisis review; Full-Length on
+ *        neither phone surface; desktop rail unchanged); register §8 F-70 (the avatar dropdown
+ *        follows the page theme); DESIGN.md §1 (3px focus ring, nothing below 14px), §2; issue
+ *        #829 (one anchor per nav item, with its href)]
  *        | @implemented [2026-10-03; mobile tab bar and menu 2026-10-05]
  *
  * THE MAP IS THE SERVER'S. Every fixture below is the output of `resolveFeatureAccess`, the
@@ -41,6 +43,8 @@ import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import { AppShell, AppShellPanel, RAIL_ITEMS } from "./app-shell";
 import { GuardianShell } from "./GuardianShell";
 import { HELP_PATH } from "./LegalFooter";
+import { ActiveThemeLockProvider } from "./theme-lock";
+import type { ThemeLock } from "@/lib/route-shells";
 import { resolveFeatureAccess } from "../../../../server/lib/feature-access";
 
 type TestUser = {
@@ -342,7 +346,7 @@ describe("no map (a non-student, or not loaded)", () => {
   });
 });
 
-describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4's tab bar and OQ-48's order)", () => {
+describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62)", () => {
   /** The tab bar's entries, in the order they render (lock glyphs excluded). */
   function tabLabels(bar: HTMLElement): (string | null)[] {
     return Array.from(bar.querySelectorAll('[data-testid^="tab-"]'))
@@ -360,18 +364,16 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4's tab bar and 
       .map((el) => el.getAttribute("data-testid") ?? "");
   }
 
-  it("the bottom bar has exactly Home, Practice, Review, Calendar, LISA, and no Full-Length", async () => {
+  it("the tab bar is exactly Home, Review, Practice, Calendar, LISA (Practice in the middle); the rail keeps its six", async () => {
     renderShell(await serverMap({ paid: true, under13: false }));
     const bar = screen.getByTestId("app-tab-bar");
     expect(tabLabels(bar)).toEqual([
       "Home",
-      "Practice",
       "Review",
+      "Practice",
       "Calendar",
       "LISA",
     ]);
-    expect(within(bar).queryByTestId("tab-full-length")).toBeNull();
-    expect(bar.textContent).not.toContain("Full-Length");
     // The bar shows below lg only; the rail is hidden below lg and keeps all six (unchanged).
     expect(bar.className).toMatch(/(^|\s)lg:hidden(\s|$)/);
     const rail = screen.getByTestId("app-rail");
@@ -390,12 +392,26 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4's tab bar and 
     ]);
   });
 
-  it("free plan: Calendar on the bar keeps its lock as a hint and navigates; LISA opens the modal", async () => {
+  it("each tab is its rail item: the same href, and it navigates", async () => {
+    const map = await serverMap({ paid: true, under13: false });
+    for (const key of ["home", "review", "practice", "calendar", "lisa"]) {
+      const { history } = renderShell(map, { path: "/profile" });
+      const tab = within(screen.getByTestId("app-tab-bar")).getByTestId(
+        `tab-${key}`,
+      );
+      expect(tab.tagName).toBe("A");
+      expect(tab.getAttribute("href")).toBe(byKey(key).href);
+      fireEvent.click(tab);
+      expect(history.at(-1)).toBe(byKey(key).href);
+      cleanup();
+    }
+  });
+
+  it("free plan: Calendar on the bar keeps its lock as a hint and navigates", async () => {
     const { history } = renderShell(
       await serverMap({ paid: false, under13: false }),
     );
     const bar = screen.getByTestId("app-tab-bar");
-    expect(within(bar).getByTestId("tab-lisa").tagName).toBe("BUTTON");
     const calendar = within(bar).getByTestId("tab-calendar");
     expect(within(bar).getByTestId("tab-calendar-lock")).toBeTruthy();
     expect(calendar.tagName).toBe("A");
@@ -405,69 +421,69 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4's tab bar and 
     expect(screen.queryByTestId("upgrade-modal")).toBeNull();
   });
 
-  it("every rail item is on the tab bar or in the avatar menu: never both, never neither", async () => {
-    renderShell(await serverMap({ paid: true, under13: false }));
-    const bar = screen.getByTestId("app-tab-bar");
-    const menu = openMenuItemIds();
-    for (const item of RAIL_ITEMS) {
-      const onBar = within(bar).queryByTestId(`tab-${item.key}`) !== null;
-      const inMenu = menu.includes(`menu-${item.key}`);
-      expect([item.key, onBar !== inMenu]).toEqual([item.key, true]);
-    }
-  });
-
-  it("the avatar menu reads Full-Length, Settings, Help, Sign out, in that order", async () => {
-    renderShell(await serverMap({ paid: true, under13: false }));
-    expect(openMenuItemIds()).toEqual([
-      "menu-full-length",
-      "menu-profile",
-      "menu-help",
-      "menu-logout",
-    ]);
-    expect(screen.getByTestId("menu-full-length").textContent).toBe(
-      "Full-Length",
-    );
-    expect(screen.getByTestId("menu-profile").textContent).toContain(
-      "Settings",
-    );
-    expect(screen.getByTestId("menu-help").textContent).toBe("Help");
-    expect(screen.getByTestId("menu-logout").textContent).toContain("Sign Out");
-    expect(screen.queryByTestId("menu-calendar")).toBeNull();
-  });
-
-  it("paid: Full-Length in the menu has no lock and navigates to /tests", async () => {
-    const { history } = renderShell(
-      await serverMap({ paid: true, under13: false }),
-    );
-    openMenuItemIds();
-    const entry = screen.getByTestId("menu-full-length");
-    expect(screen.queryByTestId("menu-full-length-lock")).toBeNull();
-    expect(entry.getAttribute("aria-label")).toBe("Full-Length");
-    fireEvent.click(entry);
-    expect(history.at(-1)).toBe("/tests");
-    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
-  });
-
-  it("free plan: Full-Length in the menu shows the lock and opens the upgrade modal in place, with no navigation and no gated request", async () => {
+  it("free plan: LISA on the bar opens the upgrade modal in place, with no navigation and no gated request", async () => {
     const { history } = renderShell(
       await serverMap({ paid: false, under13: false }),
     );
-    openMenuItemIds();
-    const entry = screen.getByTestId("menu-full-length");
-    expect(screen.getByTestId("menu-full-length-lock")).toBeTruthy();
-    expect(entry.getAttribute("aria-label")).toBe(
-      "Full-Length, included with a paid plan",
-    );
-    fireEvent.click(entry);
+    const bar = screen.getByTestId("app-tab-bar");
+    const lisa = within(bar).getByTestId("tab-lisa");
+    expect(within(bar).getByTestId("tab-lisa-lock")).toBeTruthy();
+    expect(lisa.tagName).toBe("BUTTON");
+    fireEvent.click(lisa);
     const modal = await screen.findByTestId("upgrade-modal");
     expect(modal.textContent).toContain(
-      UPGRADE_MODAL_COPY.exam_full_length.plan.title,
+      UPGRADE_MODAL_COPY.tutor_access.plan.title,
     );
     expect(history).toEqual(["/dashboard"]);
     expect(fetched.filter((u) => GATED_URL.test(u))).toEqual([]);
   });
 
-  it("an admin keeps the menu at every width, same order, Crisis review before Sign out (OQ-48)", async () => {
+  it.each(["student", "admin"] as const)(
+    "%s: Full-Length is on neither phone surface (not the tab bar, not the avatar menu), and is still on the rail",
+    async (role) => {
+      authState = signedIn(role);
+      renderShell(await serverMap({ paid: true, under13: false }));
+      // Presence first: the rail carries it, the bar and the menu are populated.
+      expect(screen.getByTestId("rail-full-length").textContent).toBe(
+        "Full-Length",
+      );
+      const bar = screen.getByTestId("app-tab-bar");
+      expect(tabLabels(bar).length).toBe(5);
+      expect(within(bar).queryByTestId("tab-full-length")).toBeNull();
+      expect(bar.textContent).not.toContain("Full-Length");
+      const menu = openMenuItemIds();
+      expect(menu).toContain("menu-profile");
+      expect(menu).not.toContain("menu-full-length");
+      expect(screen.getByTestId("user-menu").textContent).not.toMatch(
+        /full-length/i,
+      );
+    },
+  );
+
+  it("the avatar menu is exactly Settings, Help, Sign out", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    expect(openMenuItemIds()).toEqual([
+      "menu-profile",
+      "menu-help",
+      "menu-logout",
+    ]);
+    expect(screen.getByTestId("menu-profile").textContent).toContain(
+      "Settings",
+    );
+    expect(screen.getByTestId("menu-help").textContent).toBe("Help");
+    expect(screen.getByTestId("menu-logout").textContent).toContain("Sign Out");
+  });
+
+  it("Help in the avatar menu goes to the help destination", async () => {
+    const { history } = renderShell(
+      await serverMap({ paid: true, under13: false }),
+    );
+    openMenuItemIds();
+    fireEvent.click(screen.getByTestId("menu-help"));
+    expect(history.at(-1)).toBe(HELP_PATH);
+  });
+
+  it("an admin keeps the menu at every width: Settings, Help, Crisis review, Sign out (OQ-48)", async () => {
     authState = signedIn("admin");
     renderShell(null);
     // The admin's menu is not wrapped in lg:hidden (W2-7), and no avatar link replaces it.
@@ -476,12 +492,85 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4's tab bar and 
     ).toBeNull();
     expect(screen.queryByTestId("rail-account")).toBeNull();
     expect(openMenuItemIds()).toEqual([
-      "menu-full-length",
       "menu-profile",
       "menu-help",
       "menu-crisis-review",
       "menu-logout",
     ]);
+  });
+});
+
+describe("F-70: the avatar dropdown follows the page theme", () => {
+  function renderLocked(lock: ThemeLock, role: TestUser["role"] = "student") {
+    authState = signedIn(role);
+    const node =
+      role === "guardian" ? (
+        <GuardianShell>
+          <div />
+        </GuardianShell>
+      ) : (
+        <AppShell themeLock={lock}>
+          <div data-testid="page-body" />
+        </AppShell>
+      );
+    return renderShell(null, {
+      node: <ActiveThemeLockProvider>{node}</ActiveThemeLockProvider>,
+    });
+  }
+
+  /** Open the menu and return it (presence first: it rendered, with its entries). */
+  function openMenu(): HTMLElement {
+    const trigger = screen.getByTestId("button-user-menu");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    const menu = screen.getByTestId("user-menu");
+    expect(within(menu).getByTestId("menu-profile")).toBeTruthy();
+    return menu;
+  }
+
+  it("over an unlocked page the open menu sits in its own .lyc root with no lock, so it takes the page's theme (dark page, dark menu)", () => {
+    renderLocked(null);
+    const menu = openMenu();
+    const root = menu.closest<HTMLElement>(".lyc");
+    expect(root).not.toBeNull();
+    // Portalled onto <body>: its own token root, not the shell's.
+    expect(root?.closest("[data-shell]")).toBeNull();
+    expect(root?.hasAttribute("data-theme-lock")).toBe(false);
+  });
+
+  it("over a page pinned light the open menu is pinned light", () => {
+    renderLocked("light");
+    const root = openMenu().closest<HTMLElement>(".lyc");
+    expect(root).not.toBeNull();
+    expect(root?.getAttribute("data-theme-lock")).toBe("light");
+  });
+
+  it("draws with the student tokens, not the app-wide light set, and nothing below 14px", () => {
+    renderLocked(null);
+    const menu = openMenu();
+    const classes = menu.className.split(/\s+/);
+    expect(classes).toContain("bg-lyc-sheet");
+    expect(classes).toContain("border-lyc-rule");
+    expect(classes).not.toContain("bg-background");
+    expect(classes).not.toContain("bg-popover");
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.length).toBe(3);
+    for (const item of items) {
+      const c = item.className.split(/\s+/);
+      expect([item.dataset.testid, c.includes("focus:bg-lyc-hover")]).toEqual([
+        item.dataset.testid,
+        true,
+      ]);
+      expect(c).not.toContain("focus:bg-accent");
+    }
+    expect(menu.innerHTML).not.toMatch(/\btext-xs\b/);
+  });
+
+  it("the guardian shell's menu keeps the app-wide tokens (control)", () => {
+    renderLocked(null, "guardian");
+    const menu = openMenu();
+    expect(menu.closest(".lyc")).toBeNull();
+    expect(menu.className.split(/\s+/)).toContain("bg-background");
   });
 });
 

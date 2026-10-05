@@ -510,6 +510,23 @@ function renderedCopy(): SourceCopy {
   };
 }
 
+/**
+ * Owner ruling OQ-62 (b) (Karl, 2026-10-05): "'full-length test' wording". It changes the
+ * prototype's approved Full-Length line in exactly two places and nowhere else: the title
+ * "Full-length practice tests" becomes "Full-length tests", and the body's bare "Timed tests"
+ * becomes "Timed full-length tests". Applied to the prototype's own text, so any OTHER drift
+ * from the prototype still fails; and each old phrase must be in the prototype, so this cannot
+ * turn into a silent no-op if the prototype is reworded.
+ */
+function oq62bFullLength(proto: SourceCopy): SourceCopy {
+  expect(proto.title).toBe("Full-length practice tests");
+  expect(proto.body.startsWith("Timed tests ")).toBe(true);
+  return {
+    title: "Full-length tests",
+    body: proto.body.replace(/^Timed tests /, "Timed full-length tests "),
+  };
+}
+
 async function approvedSources(): Promise<{
   plan: Record<LockableFeatureKey, SourceCopy>;
   ageBody: string;
@@ -524,7 +541,7 @@ async function approvedSources(): Promise<{
   );
   return {
     plan: {
-      exam_full_length: full,
+      exam_full_length: oq62bFullLength(full),
       tutor_access: { title: LISA_UPGRADE_PITCH.title, body: lisa.body },
       calendar_access: { title: calendar.title, body: calendar.body },
       mastery_detail: mastery,
@@ -559,6 +576,25 @@ describe("OQ-44: every rendered line traces to an approved source", () => {
     expect(shown.title).toBe(src.plan[feature].title);
     expect(shown.body).toBe(
       reason === "plan" ? src.plan[feature].body : src.ageBody,
+    );
+  });
+
+  it("OQ-62 (b): the Full-Length modal never says 'practice test' or a bare 'tests'", () => {
+    render(
+      <Harness>
+        <Opener feature="exam_full_length" reason="plan" />
+      </Harness>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Locked item" }));
+    const shown = renderedCopy();
+    const text = `${shown.title} ${shown.body}`;
+    // Presence before absence: the modal is up and names the sitting the ruled way.
+    expect(shown.title).toBe("Full-length tests");
+    expect(text).toMatch(/\bTimed full-length tests\b/);
+    expect(text).not.toMatch(/\bpractice tests?\b/i);
+    // Every "test(s)" in the modal is preceded by "full-length".
+    expect(text.match(/\btests?\b/gi)?.length).toBe(
+      text.match(/\bfull-length tests?\b/gi)?.length,
     );
   });
 

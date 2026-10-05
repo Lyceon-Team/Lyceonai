@@ -674,6 +674,25 @@ describe("Chat Compaction Service (WS-L4)", () => {
       expect(__mocks.mockUpsert).not.toHaveBeenCalled();
     });
 
+    // C-01 (2026-10-05): a crisis-flagged conversation survives account deletion with
+    // student_id NULL. There is no student to write a summary for — refuse, never cast.
+    it("rejects a conversation whose student was deleted (crisis hold, student_id NULL)", async () => {
+      __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
+        data: { student_id: null },
+        error: null,
+      });
+
+      const result = await executeCompaction(CONVERSATION_ID, REQUEST_ID);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("conversation_owner_deleted");
+      }
+
+      expect(compactConversation).not.toHaveBeenCalled();
+      expect(__mocks.mockUpsert).not.toHaveBeenCalled();
+    });
+
     it("rejects when conversation ownership lookup fails (fail closed)", async () => {
       __mocks.mockConvMaybeSingle.mockResolvedValueOnce({
         data: null,

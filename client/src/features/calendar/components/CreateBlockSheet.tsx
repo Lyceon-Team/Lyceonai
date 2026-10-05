@@ -58,7 +58,7 @@ const ENGINE_LABEL: Readonly<Record<CalendarBlockType, string>> = {
 const ENGINE_BLURB: Readonly<Record<CalendarBlockType, string>> = {
   practice: "Questions in the domains you choose.",
   review: "Work back through what you have already seen.",
-  full_length: "A timed test, start to finish.",
+  full_length: "A timed full-length test, start to finish.",
 };
 
 /** The opening mix: one domain, one granularity step. The student changes it or doesn't. */

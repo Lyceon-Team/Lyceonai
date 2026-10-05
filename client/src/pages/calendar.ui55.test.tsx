@@ -10,7 +10,10 @@
  *        evidence/wiring-table.md §9; Doc 05F §15, §17.5, §7.8 idempotency; Doc 05F §17.1 and
  *        §17.5 as amended by SCL-211 (OQ-56: no streak line, no facts strip; the free form is
  *        read-only after the first save)]
- * @implemented [2026-10-03; SCL-211 2026-10-05]
+ *       [owner ruling (Karl, 2026-10-05, OQ-63): "Phone notice: show it for every full-length
+ *        start on a phone, including calendar-launched starts. One shared pre-start check, same
+ *        \"Continue anyway\". Test it from a calendar block at 390px."]
+ * @implemented [2026-10-03; SCL-211 2026-10-05; OQ-63 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (the right
  * panel portals into it) and the real upgrade modal with auto-open ON, over a scripted network
@@ -30,6 +33,9 @@
  * beside it.
  */
 import React from "react";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -48,6 +54,7 @@ import {
 } from "@lyceon/shared/feature-access";
 import {
   calendarResponseSchema,
+  launchResponseSchema,
   makeStudyProfileUpsertSchema,
   profileReadResponseSchema,
   profileUpsertResponseSchema,
@@ -63,6 +70,8 @@ import { getQueryFn } from "@/lib/queryClient";
 import { studentCalendarWeek } from "@/features/calendar/calendar-week.fixture";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
 import { sendPaymentRequired } from "../../../server/lib/http-errors";
+import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
+import { practiceAdapter } from "../../../server/services/calendar/adapters/practice";
 import {
   CONFIG_ROWS,
   PROFILE_ROW,
@@ -141,6 +150,12 @@ const TODAY = "2026-10-01";
 /** The SAT date, moved inside the week so the grid can star it. */
 const TEST_DATE = "2026-10-03";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The fixture week's Saturday full-length block (day 5, slot 0), scheduled after today. */
+const FULL_LENGTH_BLOCK = "7c9e6679-7425-40de-944b-000000000050";
+/** The fixture week's Friday practice block (day 4, slot 0), scheduled after today. */
+const PRACTICE_BLOCK = "7c9e6679-7425-40de-944b-000000000040";
+const LAUNCHED_EXAM = "5e551011-0000-4000-8000-000000000055";
+const LAUNCHED_PRACTICE = "5e551011-0000-4000-8000-000000000056";
 
 /** The paid student's `GET /api/calendar`, from the real read model. */
 function paidWeek(): unknown {
@@ -249,6 +264,36 @@ function install(scenario: Scenario): void {
         requestId: "r",
       });
     }
+    // §15.1 launch, answered with the engine adapters' own `resumeHref` (create and resume
+    // cannot disagree on where the student lands).
+    if (
+      method === "POST" &&
+      url === `/api/calendar/blocks/${FULL_LENGTH_BLOCK}/launch`
+    ) {
+      return json({
+        ...launchResponseSchema.parse({
+          engine: "full_length",
+          session_id: LAUNCHED_EXAM,
+          next: fullLengthAdapter.resumeHref(LAUNCHED_EXAM),
+          resumed: false,
+        }),
+        requestId: "r",
+      });
+    }
+    if (
+      method === "POST" &&
+      url === `/api/calendar/blocks/${PRACTICE_BLOCK}/launch`
+    ) {
+      return json({
+        ...launchResponseSchema.parse({
+          engine: "practice",
+          session_id: LAUNCHED_PRACTICE,
+          next: practiceAdapter.resumeHref(LAUNCHED_PRACTICE),
+          resumed: false,
+        }),
+        requestId: "r",
+      });
+    }
     if (method === "POST" && url === "/api/calendar/plan/regenerate") {
       version += 1;
       return json({
@@ -284,9 +329,10 @@ async function accessMap(
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario = {},
-  options: { ageLock?: boolean } = {},
+  options: { ageLock?: boolean; phone?: boolean } = {},
 ): Promise<{ history: string[] }> {
   install(scenario);
+  if (options.phone === true) installPhone();
   const map = await accessMap(plan, options.ageLock ?? false);
   const { hook, history } = memoryLocation({ path: "/calendar", record: true });
   const client = new QueryClient({
@@ -316,6 +362,43 @@ async function mount(
     </QueryClientProvider>,
   );
   return { history };
+}
+
+/**
+ * A phone width for the shared full-length pre-start check: the App shell's phone query
+ * (Tailwind's `max-lg`, `PHONE_LAYOUT_QUERY`) matches; every other query answers as the test
+ * setup's does. The grid's own phone layout is `mobile-390.test.tsx`'s subject, and the real
+ * 390px page is the UI-55 capture's; this file asserts the start's behaviour.
+ */
+const SETUP_MATCH_MEDIA = window.matchMedia;
+function installPhone(): void {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({
+      matches: query === "not all and (min-width: 1024px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
+function launches(): string[] {
+  return net.log.filter(
+    (l) => l.startsWith("POST /api/calendar/blocks/") && l.endsWith("/launch"),
+  );
+}
+
+/** Open a block's sheet from the week grid and press its Start. */
+async function startBlock(blockId: string): Promise<void> {
+  fireEvent.click(await screen.findByTestId(`calendar-block-${blockId}`));
+  const sheet = await screen.findByTestId("calendar-block-sheet");
+  fireEvent.click(within(sheet).getByRole("button", { name: "Start" }));
 }
 
 function gets(): string[] {
@@ -356,6 +439,12 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: SETUP_MATCH_MEDIA,
+  });
+  window.sessionStorage.clear();
 });
 
 // ── Paid ────────────────────────────────────────────────────────────────────────────────────
@@ -565,7 +654,10 @@ describe("paid: the Show filters (DESIGN.md §4)", () => {
       within(filters)
         .getAllByRole("checkbox")
         .map((c) => c.closest("label")?.textContent),
-    ).toEqual(["Math", "Reading & Writing", "Review", "Practice test"]);
+    ).toEqual(["Math", "Reading & Writing", "Review", "Full-length test"]);
+    // OQ-62 (b) (Karl, 2026-10-05): a sitting is a "full-length test" everywhere the student
+    // sees the calendar; "practice test" is gone from the whole page.
+    expect(document.body.textContent).not.toMatch(/\bpractice tests?\b/i);
   });
 });
 
@@ -814,5 +906,111 @@ describe("free: the plan upsell card", () => {
     expect(
       within(upsell).queryByRole("button", { name: "See plans" }),
     ).toBeNull();
+  });
+});
+
+// ── OQ-63: the shared full-length pre-start check from a calendar block ──────────────────
+
+describe("phone: a full-length block's Start asks the shared pre-start check first (OQ-63)", () => {
+  const PHONE_TEXT =
+    "Full-length tests are built for a laptop or tablet, like test day.";
+
+  it("the notice opens over the sheet and nothing is launched until Continue anyway; then it launches and lands on the sitting", async () => {
+    const { history } = await mount("paid", {}, { phone: true });
+    await startBlock(FULL_LENGTH_BLOCK);
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    expect(within(notice).getByRole("heading").textContent).toBe(PHONE_TEXT);
+    const button = within(notice).getByTestId("full-length-phone-continue");
+    expect(button.textContent).toBe("Continue anyway");
+    expect(button.className).toContain("border-lyc-ink-strong");
+    // BEFORE the launch: no request, no navigation.
+    expect(launches()).toEqual([]);
+    expect(history.at(-1)).toBe("/calendar");
+
+    fireEvent.click(button);
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${LAUNCHED_EXAM}`));
+    expect(launches()).toEqual([
+      `POST /api/calendar/blocks/${FULL_LENGTH_BLOCK}/launch`,
+    ]);
+  });
+
+  it("cancel: closing the notice launches nothing and leaves the student on the calendar", async () => {
+    const { history } = await mount("paid", {}, { phone: true });
+    await startBlock(FULL_LENGTH_BLOCK);
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    fireEvent.click(within(notice).getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("full-length-phone-notice")).toBeNull(),
+    );
+    expect(launches()).toEqual([]);
+    expect(history.at(-1)).toBe("/calendar");
+  });
+
+  it("Continue anyway is remembered for the tab: the next full-length start launches at once", async () => {
+    await mount("paid", {}, { phone: true });
+    await startBlock(FULL_LENGTH_BLOCK);
+    fireEvent.click(await screen.findByTestId("full-length-phone-continue"));
+    await waitFor(() => expect(launches()).toHaveLength(1));
+    cleanup();
+    net.log.length = 0;
+    const { history } = await mount("paid", {}, { phone: true });
+    await startBlock(FULL_LENGTH_BLOCK);
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${LAUNCHED_EXAM}`));
+    expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+
+  it("a practice block is unaffected on a phone: Start launches at once", async () => {
+    const { history } = await mount("paid", {}, { phone: true });
+    await startBlock(PRACTICE_BLOCK);
+    await waitFor(() =>
+      expect(history.at(-1)).toBe(
+        practiceAdapter.resumeHref(LAUNCHED_PRACTICE),
+      ),
+    );
+    expect(launches()).toEqual([
+      `POST /api/calendar/blocks/${PRACTICE_BLOCK}/launch`,
+    ]);
+    expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+
+  it("at 390 the block sheet (and its Start) sits above the phone tab bar, and below the notice", async () => {
+    await mount("paid", {}, { phone: true });
+    // The tab bar's layer, read off the rendered App shell (Tailwind `z-N`).
+    const bar = await screen.findByTestId("app-tab-bar");
+    const barZ = /(?:^|\s)z-(\d+)(?:\s|$)/.exec(bar.className)?.[1];
+    expect(barZ).toBe("40");
+    // The student sheet's and scrim's layers (calendar-student.css; the shared calendar.css
+    // puts them at 9 and 8, under the bar, which then took the tap on Start).
+    const css = fs.readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../features/calendar/calendar-student.css",
+      ),
+      "utf8",
+    );
+    const layer = (selector: string): number => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at).toBeGreaterThan(-1);
+      const rule = css.slice(at, css.indexOf("}", at));
+      const z = /z-index:\s*(\d+);/.exec(rule)?.[1];
+      return z === undefined ? Number.NaN : Number(z);
+    };
+    const sheet = layer(".lyceon-calendar.lyc-cal .sheet");
+    const scrim = layer(".lyceon-calendar.lyc-cal .scrim");
+    expect(sheet).toBeGreaterThan(Number(barZ));
+    expect(scrim).toBeGreaterThan(Number(barZ));
+    expect(sheet).toBeGreaterThan(scrim);
+    // Below the student Modal (Radix Dialog, z-50), so the pre-start check opens over the sheet.
+    expect(sheet).toBeLessThan(50);
+  });
+
+  it("desktop: a full-length block's Start launches at once, no notice", async () => {
+    const { history } = await mount("paid");
+    await startBlock(FULL_LENGTH_BLOCK);
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${LAUNCHED_EXAM}`));
+    expect(launches()).toEqual([
+      `POST /api/calendar/blocks/${FULL_LENGTH_BLOCK}/launch`,
+    ]);
+    expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
   });
 });

@@ -400,7 +400,9 @@ export function guardianOutcomeCopy(
       // guardian page does not poll (SCL-181). §12.2 keeps `estimated_ready_at` off the wire.
       return {
         line: "Test submitted",
-        title: `Scoring ${their} test`,
+        // Mirrors the student's report title (G5-08), which names the sitting a "full-length
+        // test" since OQ-62 (b) (owner ruling, Karl, 2026-10-05).
+        title: `Scoring ${their} full-length test`,
         body: "Scoring usually takes a few minutes.",
       };
     case "failed_requires_review":
@@ -429,7 +431,7 @@ export function guardianOutcomeCopy(
           }
         : {
             line: "Report",
-            title: "This test isn't finished",
+            title: "This full-length test isn't finished",
             body: `${their} score appears here once both sections are submitted.`,
           };
   }

@@ -91,8 +91,9 @@ and the reseed lands with ids intact.
 
 ## C — Platform primitives (Doc 01A)
 
-- **C.1 (idempotency)** `idempotency_records` exists with PK `(scope, client_key)`
-  (Doc 01A §31; closes GAP-OP-04). Proof: `STRUCT`.
+- **C.1 (idempotency)** RETIRED 2026-10-05 (owner ruling C-03): `idempotency_records` and
+  `idempotency_runtime_config` were dropped (`20261027000002`) — no writer ever existed.
+  Idempotency lives in domain columns and `stripe_webhook_events`.
 - **C.2 (rate-limit ledger + RPC)** `rate_limit_ledger` and the atomic
   `rate_limit_check_and_increment` RPC exist (Doc 01A §41). Proof: `STRUCT`.
 - **C.3 (abuse scoring)** `abuse_score_incidents` (append-only) and `abuse_scores`
@@ -103,8 +104,8 @@ and the reseed lands with ids intact.
   closes GAP-OP-02). Constants live in these tables, **not** as literals. Proof:
   `STRUCT`.
 - **C.5 (service-internal deny-all)** The Doc 01A primitive tables
-  (`idempotency_records`, `rate_limit_ledger`, `abuse_score_incidents`,
-  `abuse_scores`, `service_auth_secrets`, `*_runtime_config*`) are **RLS-enabled
+  (`rate_limit_ledger`, `abuse_score_incidents`, `abuse_scores`, `*_runtime_config*`;
+  `idempotency_records` and `service_auth_secrets` were dropped 2026-10-05, C-03) are **RLS-enabled
   with no policies and no `anon`/`authenticated` grants** — deny-all to every
   non-service-role. They are exempt from the user-scoped SELECT *policy* (no self-row
   read like `profiles`), **NOT** from RLS itself. This satisfies Doc 01A's access

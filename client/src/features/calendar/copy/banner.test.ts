@@ -24,7 +24,7 @@ const STUDENT_TRIGGERS: readonly PlanTrigger[] = [
 /** The three §17.4 sentences, keyed by the only trigger mapping that fits. */
 const NON_STUDENT_COPY: Readonly<Record<string, string>> = {
   weekly: "Your plan was refreshed for the week.",
-  post_exam: "Your plan was updated after your practice test.",
+  post_exam: "Your plan was updated after your full-length test.",
   rollback: "Your plan was restored by support.",
 };
 
@@ -35,7 +35,7 @@ describe("bannerCopy (§17.4)", () => {
 
   it("gives the after-the-exam sentence for `post_exam`", () => {
     expect(bannerCopy("post_exam")).toBe(
-      "Your plan was updated after your practice test.",
+      "Your plan was updated after your full-length test.",
     );
   });
 

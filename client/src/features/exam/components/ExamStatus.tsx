@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { examErrorStatus } from "../api/exam-api";
 
 export function ExamLoading({
-  label = "Loading your test…",
+  label = "Loading your full-length test…",
 }: {
   label?: string;
 }) {
@@ -40,10 +40,10 @@ export function ExamLoadError({
   const status = examErrorStatus(error);
   const message =
     status === 403
-      ? "This test isn't available to your account."
+      ? "This full-length test isn't available to your account."
       : status === 404
-        ? "We couldn't find this test."
-        : "We couldn't load your test. Check your connection and try again.";
+        ? "We couldn't find this full-length test."
+        : "We couldn't load your full-length test. Check your connection and try again.";
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-16">
       <div

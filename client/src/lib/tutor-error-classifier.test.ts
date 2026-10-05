@@ -119,8 +119,8 @@ describe("classifyTutorError — 500: idempotency_lookup_failed", () => {
 describe("classifyTutorError — 403: tutor_unavailable_during_live_exam", () => {
   it("maps to informational", () => {
     expectNotice(tutorError(403, "tutor_unavailable_during_live_exam"), {
-      title: "LISA is paused during your exam",
-      message: "You can use LISA again after you finish your current exam.",
+      title: "LISA is paused during your full-length test",
+      message: "You can use LISA again after you finish your full-length test.",
       action: "informational",
     });
   });

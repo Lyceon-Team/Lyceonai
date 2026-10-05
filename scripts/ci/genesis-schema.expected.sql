@@ -240,10 +240,14 @@ BEGIN
 
   v_cutoff := now() - make_interval(days => public.audit_logs_retention_days());
 
+  -- Guardian-link consent rows are never purged by age (D01:222; owner ruling 2026-10-05 C-02).
+  -- The three actions are exactly those guardian_link_audit writes; strip_identity still severs
+  -- their actor/target at account deletion.
   DELETE FROM public.audit_logs a
    WHERE a.id IN (
      SELECT b.id FROM public.audit_logs b
       WHERE b.created_at < v_cutoff
+        AND b.action NOT IN ('guardian_link_initiated', 'guardian_link_accepted', 'guardian_link_revoked')
       ORDER BY b.created_at
       LIMIT p_batch_size
    );
@@ -7859,6 +7863,34 @@ BEGIN
   END IF;
 
   -- ========================================================================
+  -- CRISIS HOLD (C-01, owner ruling 2026-10-05; both modes)
+  -- ========================================================================
+  -- A crisis-flagged conversation survives the deletion de-linked from the student, with
+  -- every message, until the safety owner purges it by hand (Doc 03 §14.2, D03:1255).
+  -- "Flagged" is the RS-00 definition, the same predicate the 7d retention sweep holds by:
+  -- any crisis_review_cases or crisis_review_events row names the conversation. NULLing
+  -- student_id here, before the profile DELETE below, is what keeps the profile FK CASCADE
+  -- off these rows. crisis_flagged is set on the way so the table's CHECK
+  -- (tutor_conversations_null_student_only_flagged) can see why the row has no student.
+  -- De-linked, not anonymous: the transcript is the student's own words.
+  UPDATE public.tutor_conversations c
+     SET student_id = NULL,
+         crisis_flagged = true
+   WHERE c.student_id = p_profile_id
+     AND (EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = c.id)
+       OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = c.id));
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('tutor_conversations_crisis_held', v_count);
+
+  UPDATE public.tutor_messages m
+     SET student_id = NULL
+   WHERE m.student_id = p_profile_id
+     AND EXISTS (SELECT 1 FROM public.tutor_conversations c
+                  WHERE c.id = m.conversation_id AND c.student_id IS NULL AND c.crisis_flagged);
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('tutor_messages_crisis_held', v_count);
+
+  -- ========================================================================
   -- PROFILE + AUTH DELETE (shared — both modes destroy the profile row)
   -- ========================================================================
   -- §3 Rule 4: "Linkage destroyed at anonymization." The profile row
@@ -12035,6 +12067,26 @@ COMMENT ON FUNCTION public.tutor_conversation_retention_days() IS 'Doc 03 §14.2
 
 
 --
+-- Name: tutor_messages_null_student_only_flagged(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tutor_messages_null_student_only_flagged() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.student_id IS NULL AND NOT EXISTS (
+       SELECT 1 FROM public.tutor_conversations c
+        WHERE c.id = NEW.conversation_id AND c.student_id IS NULL AND c.crisis_flagged) THEN
+    RAISE EXCEPTION 'tutor_messages_null_student_only_flagged: a message may lose its student only inside a de-linked crisis-flagged conversation'
+      USING ERRCODE = '23514', CONSTRAINT = 'tutor_messages_null_student_only_flagged';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -13800,60 +13852,6 @@ CREATE TABLE public.guardian_consent_requests (
 
 
 --
--- Name: idempotency_records; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_records (
-    scope text NOT NULL,
-    client_key text NOT NULL,
-    content_hash text NOT NULL,
-    result jsonb,
-    status text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    completed_at timestamp with time zone,
-    expires_at timestamp with time zone NOT NULL,
-    CONSTRAINT idempotency_records_status_check CHECK ((status = ANY (ARRAY['completed'::text, 'in_progress'::text, 'failed'::text])))
-);
-
-
---
--- Name: idempotency_runtime_config; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_runtime_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT idempotency_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT idempotency_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: idempotency_runtime_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_runtime_config_history (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: internal_service_auth_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14487,7 +14485,6 @@ CREATE TABLE public.profiles (
     guardian_profile_id uuid,
     student_link_code text,
     student_link_code_issued_at timestamp with time zone,
-    last_login_at timestamp with time zone,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -15025,21 +15022,6 @@ CREATE VIEW public.servable_questions WITH (security_invoker='true') AS
 
 
 --
--- Name: service_auth_secrets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.service_auth_secrets (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    caller_service text NOT NULL,
-    callee_service text NOT NULL,
-    secret_material text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    active_until timestamp with time zone NOT NULL,
-    revoked_at timestamp with time zone
-);
-
-
---
 -- Name: source_types; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -15501,7 +15483,7 @@ CREATE TABLE public.tutor_context_runtime_config_history (
 
 CREATE TABLE public.tutor_conversations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     entry_mode text NOT NULL,
     source_surface text NOT NULL,
     source_session_id uuid,
@@ -15528,6 +15510,7 @@ CREATE TABLE public.tutor_conversations (
     ended_at timestamp with time zone,
     CONSTRAINT tutor_conversations_assignment_mode_check CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text]))),
     CONSTRAINT tutor_conversations_entry_mode_check CHECK ((entry_mode = ANY (ARRAY['scoped_question'::text, 'scoped_session'::text, 'general'::text]))),
+    CONSTRAINT tutor_conversations_null_student_only_flagged CHECK (((student_id IS NOT NULL) OR crisis_flagged)),
     CONSTRAINT tutor_conversations_policy_variant_check CHECK ((policy_variant = ANY (ARRAY['concise'::text, 'scaffolded'::text, 'socratic'::text, 'strategy_first'::text]))),
     CONSTRAINT tutor_conversations_source_surface_check CHECK ((source_surface = ANY (ARRAY['practice'::text, 'review'::text, 'test_review'::text, 'dashboard'::text]))),
     CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text, 'ended'::text]))),
@@ -15694,7 +15677,7 @@ COMMENT ON TABLE public.tutor_memory_summaries IS 'Durable compact summaries wit
 CREATE TABLE public.tutor_messages (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     conversation_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     role text NOT NULL,
     content_kind text DEFAULT 'message'::text NOT NULL,
     message text NOT NULL,
@@ -16269,30 +16252,6 @@ ALTER TABLE ONLY public.guardian_links
 
 
 --
--- Name: idempotency_records idempotency_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_records
-    ADD CONSTRAINT idempotency_records_pkey PRIMARY KEY (scope, client_key);
-
-
---
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_pkey PRIMARY KEY (key);
-
-
---
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16714,22 +16673,6 @@ ALTER TABLE ONLY public.scoring_model_versions
 
 ALTER TABLE ONLY public.sections
     ADD CONSTRAINT sections_pkey PRIMARY KEY (code);
-
-
---
--- Name: service_auth_secrets service_auth_secrets_caller_service_callee_service_created__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_auth_secrets
-    ADD CONSTRAINT service_auth_secrets_caller_service_callee_service_created__key UNIQUE (caller_service, callee_service, created_at);
-
-
---
--- Name: service_auth_secrets service_auth_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_auth_secrets
-    ADD CONSTRAINT service_auth_secrets_pkey PRIMARY KEY (id);
 
 
 --
@@ -17351,20 +17294,6 @@ CREATE INDEX idx_guardian_links_student ON public.guardian_links USING btree (st
 
 
 --
--- Name: idx_idempotency_expires; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_idempotency_expires ON public.idempotency_records USING btree (expires_at);
-
-
---
--- Name: idx_idempotency_scope_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_idempotency_scope_status ON public.idempotency_records USING btree (scope, status);
-
-
---
 -- Name: idx_legal_acceptance_outbox_unprocessed; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -17670,13 +17599,6 @@ CREATE INDEX idx_score_runs_form ON public.score_runs USING btree (test_form_id,
 --
 
 CREATE INDEX idx_score_runs_student ON public.score_runs USING btree (student_id, computed_at DESC);
-
-
---
--- Name: idx_service_auth_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_service_auth_active ON public.service_auth_secrets USING btree (caller_service, callee_service) WHERE (revoked_at IS NULL);
 
 
 --
@@ -18296,20 +18218,6 @@ CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF s
 
 
 --
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER idempotency_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.idempotency_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER idempotency_runtime_config_notify AFTER INSERT OR UPDATE ON public.idempotency_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -18554,6 +18462,13 @@ CREATE TRIGGER tutor_memory_summaries_updated_at BEFORE UPDATE ON public.tutor_m
 --
 
 CREATE TRIGGER tutor_memory_summaries_validate_schema BEFORE INSERT OR UPDATE ON public.tutor_memory_summaries FOR EACH ROW EXECUTE FUNCTION public.validate_memory_summary_schema();
+
+
+--
+-- Name: tutor_messages tutor_messages_null_student_only_flagged; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER tutor_messages_null_student_only_flagged AFTER INSERT OR UPDATE OF student_id ON public.tutor_messages NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION public.tutor_messages_null_student_only_flagged();
 
 
 --
@@ -19018,22 +18933,6 @@ ALTER TABLE ONLY public.guardian_links
 
 ALTER TABLE ONLY public.guardian_links
     ADD CONSTRAINT guardian_links_student_profile_id_fkey FOREIGN KEY (student_profile_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
-
-
---
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -20171,24 +20070,6 @@ ALTER TABLE public.guardian_consent_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardian_links ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: idempotency_records; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_records ENABLE ROW LEVEL SECURITY;
-
---
--- Name: idempotency_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_runtime_config ENABLE ROW LEVEL SECURITY;
-
---
--- Name: idempotency_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_runtime_config_history ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: internal_service_auth_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -20616,12 +20497,6 @@ ALTER TABLE public.sections ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY sections_read ON public.sections FOR SELECT TO anon, authenticated USING (true);
 
-
---
--- Name: service_auth_secrets; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.service_auth_secrets ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: crisis_review_audit_log service_role_crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
@@ -22868,6 +22743,13 @@ GRANT ALL ON FUNCTION public.tutor_conversation_retention_days() TO service_role
 
 
 --
+-- Name: FUNCTION tutor_messages_null_student_only_flagged(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tutor_messages_null_student_only_flagged() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION update_updated_at_column(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -23715,27 +23597,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_consent_requests TO s
 
 
 --
--- Name: TABLE idempotency_records; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_records TO service_role;
-
-
---
--- Name: TABLE idempotency_runtime_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_runtime_config TO service_role;
-
-
---
--- Name: TABLE idempotency_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_runtime_config_history TO service_role;
-
-
---
 -- Name: TABLE internal_service_auth_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -24559,13 +24420,6 @@ GRANT SELECT ON TABLE public.sections TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.servable_questions TO service_role;
-
-
---
--- Name: TABLE service_auth_secrets; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.service_auth_secrets TO service_role;
 
 
 --

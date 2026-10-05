@@ -1,9 +1,9 @@
 # UI-52 Review (/review): free and paid, past sessions opened, light and dark, 1440 and 390
 
-Generated 2026-10-03T13:58:01.212Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-52` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-05T14:14:38.695Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-52` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
-- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844.
+- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
 - The prototypes are a fixed 1440x900 canvas with no phone layout; phone rows show the desktop prototype.
 - Dark is requested through the app's own per-device setting; the theme column records what the page rendered.
 - No external requests: the built app's Google Fonts (Inter, Poppins) are blocked, so legacy page bodies fall back to system faces; Source Sans 3 / Source Serif 4 are self-hosted and load for both sides.
@@ -30,7 +30,7 @@ Prototype: `Review.dc.html` (Review, plan = paid).
 |---|---|---|---|
 | desktop | light | ![review-paid desktop light](review-paid--desktop--light--built.png)<br>`/review`, 139 KB, horizontal overflow 0px | ![prototype light](proto--Review--paid--light.png), 141 KB |
 | desktop | dark | ![review-paid desktop dark](review-paid--desktop--dark--built.png)<br>`/review`, 142 KB, horizontal overflow 0px | ![prototype dark](proto--Review--paid--dark.png), 143 KB |
-| mobile | light | ![review-paid mobile light](review-paid--mobile--light--built.png)<br>`/review`, 58 KB, horizontal overflow 0px | ![prototype light](proto--Review--paid--light.png)<br>desktop prototype (no phone layout), 141 KB |
+| mobile | light | ![review-paid mobile light](review-paid--mobile--light--built.png)<br>`/review`, 57 KB, horizontal overflow 0px | ![prototype light](proto--Review--paid--light.png)<br>desktop prototype (no phone layout), 141 KB |
 | mobile | dark | ![review-paid mobile dark](review-paid--mobile--dark--built.png)<br>`/review`, 58 KB, horizontal overflow 0px | ![prototype dark](proto--Review--paid--dark.png)<br>desktop prototype (no phone layout), 143 KB |
 
 ## Review, paid, full page (on a phone the right panel stacks under the main column; the footer ends the column)
@@ -57,14 +57,14 @@ Prototype: `Review.dc.html` (Review, plan = free (the canvas is a fixed 1440x900
 | desktop | light | ![review-free-full desktop light](review-free-full--desktop--light--built.png)<br>`/review`, 130 KB, horizontal overflow 0px | ![prototype light](proto--Review--free--light.png), 127 KB |
 | desktop | dark | ![review-free-full desktop dark](review-free-full--desktop--dark--built.png)<br>`/review`, 132 KB, horizontal overflow 0px | ![prototype dark](proto--Review--free--dark.png), 129 KB |
 | mobile | light | ![review-free-full mobile light](review-free-full--mobile--light--built.png)<br>`/review`, 131 KB, horizontal overflow 0px | ![prototype light](proto--Review--free--light.png)<br>desktop prototype (no phone layout), 127 KB |
-| mobile | dark | ![review-free-full mobile dark](review-free-full--mobile--dark--built.png)<br>`/review`, 133 KB, horizontal overflow 0px | ![prototype dark](proto--Review--free--dark.png)<br>desktop prototype (no phone layout), 129 KB |
+| mobile | dark | ![review-free-full mobile dark](review-free-full--mobile--dark--built.png)<br>`/review`, 132 KB, horizontal overflow 0px | ![prototype dark](proto--Review--free--dark.png)<br>desktop prototype (no phone layout), 129 KB |
 
 ## Review, paid, 'Past sessions' opened: grouped by day, five rows, then Load more (no count, OQ-24); full page
 
 Persona: `paid`. Route: `/review`.
 Step: click `{"desktop":"[data-testid=\"review-past-toggle\"]","mobile":"[data-testid=\"review-past-toggle\"]"}`.
 Full page: the whole document, not just the viewport.
-Prototype: `Review.dc.html` (Review, plan = paid, 'Past sessions' clicked open on the canvas).
+Prototype: `Review.dc.html` (Review, plan = paid, 'Past sessions' clicked open on the canvas); clicked: `button[aria-controls="past-list"]`.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
@@ -78,14 +78,14 @@ Prototype: `Review.dc.html` (Review, plan = paid, 'Past sessions' clicked open o
 Persona: `free`. Route: `/review`.
 Step: click `{"desktop":"[data-testid=\"review-past-toggle\"]","mobile":"[data-testid=\"review-past-toggle\"]"}`.
 Full page: the whole document, not just the viewport.
-Prototype: `Review.dc.html` (Review, plan = free, 'Past sessions' clicked open on the canvas).
+Prototype: `Review.dc.html` (Review, plan = free, 'Past sessions' clicked open on the canvas); clicked: `button[aria-controls="past-list"]`.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![review-free-past-open desktop light](review-free-past-open--desktop--light--built.png)<br>`/review`, 125 KB, horizontal overflow 0px | ![prototype light](proto--Review--free--light--clicked.png), 127 KB |
-| desktop | dark | ![review-free-past-open desktop dark](review-free-past-open--desktop--dark--built.png)<br>`/review`, 127 KB, horizontal overflow 0px | ![prototype dark](proto--Review--free--dark--clicked.png), 129 KB |
-| mobile | light | ![review-free-past-open mobile light](review-free-past-open--mobile--light--built.png)<br>`/review`, 169 KB, horizontal overflow 0px | ![prototype light](proto--Review--free--light--clicked.png)<br>desktop prototype (no phone layout), 127 KB |
-| mobile | dark | ![review-free-past-open mobile dark](review-free-past-open--mobile--dark--built.png)<br>`/review`, 171 KB, horizontal overflow 0px | ![prototype dark](proto--Review--free--dark--clicked.png)<br>desktop prototype (no phone layout), 129 KB |
+| desktop | light | ![review-free-past-open desktop light](review-free-past-open--desktop--light--built.png)<br>`/review`, 126 KB, horizontal overflow 0px | ![prototype light](proto--Review--free--light--clicked.png), 127 KB |
+| desktop | dark | ![review-free-past-open desktop dark](review-free-past-open--desktop--dark--built.png)<br>`/review`, 128 KB, horizontal overflow 0px | ![prototype dark](proto--Review--free--dark--clicked.png), 129 KB |
+| mobile | light | ![review-free-past-open mobile light](review-free-past-open--mobile--light--built.png)<br>`/review`, 170 KB, horizontal overflow 0px | ![prototype light](proto--Review--free--light--clicked.png)<br>desktop prototype (no phone layout), 127 KB |
+| mobile | dark | ![review-free-past-open mobile dark](review-free-past-open--mobile--dark--built.png)<br>`/review`, 172 KB, horizontal overflow 0px | ![prototype dark](proto--Review--free--dark--clicked.png)<br>desktop prototype (no phone layout), 129 KB |
 
 ## Click path (paid): Start reviewing lands in the review runner
 
@@ -96,13 +96,13 @@ Prototype: none. A click path: the screenshot is where the click landed (the run
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-start desktop light](click-paid-start--desktop--light--built.png)<br>`/review/session/359ef1bf-38ba-4852-ae03-4a2a30a7b121`, 75 KB, horizontal overflow 0px | none |
-| desktop | dark requested; page pinned light (`data-theme-lock=light`, OQ-49) | ![click-paid-start desktop dark](click-paid-start--desktop--dark--built.png)<br>`/review/session/82962173-1f97-4ab4-8773-2572dd802031`, 75 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-start mobile light](click-paid-start--mobile--light--built.png)<br>`/review/session/0c6baf4f-1920-400d-8be7-bc7bae1049e7`, 36 KB, horizontal overflow 0px | none |
-| mobile | dark requested; page pinned light (`data-theme-lock=light`, OQ-49) | ![click-paid-start mobile dark](click-paid-start--mobile--dark--built.png)<br>`/review/session/1687acd9-cdb7-487c-b80e-2959fdc1b815`, 36 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-start desktop light](click-paid-start--desktop--light--built.png)<br>`/review/session/212b0954-58f7-4da1-8b12-51f4e0f5440a`, 59 KB, horizontal overflow 59px | none |
+| desktop | dark | ![click-paid-start desktop dark](click-paid-start--desktop--dark--built.png)<br>`/review/session/74df366e-871e-40e0-975e-c76d425590ea`, 59 KB, horizontal overflow 59px | none |
+| mobile | light | ![click-paid-start mobile light](click-paid-start--mobile--light--built.png)<br>`/review/session/75d914f6-1daf-49bb-8ae8-4dbaa622c19c`, 39 KB, horizontal overflow 26px | none |
+| mobile | dark | ![click-paid-start mobile dark](click-paid-start--mobile--dark--built.png)<br>`/review/session/3e4d92ce-14e7-406d-b133-49665c74ce1e`, 39 KB, horizontal overflow 26px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"4e8c0994-08cd-4e98-9ff4-18a7713728f4","openPracticeSessionId":"6abfcc43-a935-4fa8-988b-e8646d5614db","openReviewSessionId":"6b3effb6-0ab2-4133-9e20-ebf327c6dbaa","diagnosticSessionId":null,"answered":39},"paid":{"completedPracticeSessionId":"d6d9966f-45d3-4bd5-b776-548a1cc69fa5","openPracticeSessionId":"32b47439-a1b1-46aa-853e-d806606e9cd1","openReviewSessionId":"e46c7c01-7cc7-4d4c-8a47-d15b8df6d66e","diagnosticSessionId":"2e55ce09-5415-4bc3-b50c-8d64a8b73d6a","answered":79}}`
-- Endpoints the pages asked for that the harness does not serve (answered 404): `GET /tutor/conversations`
-- External hosts blocked: `fonts.googleapis.com`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"3d932e01-3298-4a85-bfe6-86413c96db6c","openPracticeSessionId":"17bf9b4f-ca11-498d-9b53-63380a03e1d9","openReviewSessionId":"5d113e1b-7a0c-433b-ae12-8853e9a9db09","diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":39},"paid":{"completedPracticeSessionId":"f0666cbe-c997-4dce-9bd3-49fdf5ccd5e0","openPracticeSessionId":"346aaea2-2976-44f1-b143-5fd837097c43","openReviewSessionId":"c90ee1f3-fbca-479c-9541-f6da0f20bfad","diagnosticSessionId":"eaf74fd7-608e-4889-80bb-0d190dd57455","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":79}}`
+- Endpoints the pages asked for that the harness does not serve (answered 404): none
+- External hosts blocked: none

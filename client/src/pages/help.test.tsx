@@ -68,11 +68,15 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: () => undefined }),
 }));
 
-/** Help.dc.html's LYC_FAQS, verbatim, except the guardian answer (OQ-38, ruled 2026-10-02). */
+/**
+ * Help.dc.html's LYC_FAQS, verbatim, except the guardian answer (OQ-38, ruled 2026-10-02) and the
+ * first answer's "full-length tests" (the prototype says "full-length practice tests"; owner
+ * ruling OQ-62 (b), Karl, 2026-10-05: "'full-length test' wording").
+ */
 const PROTOTYPE_FAQS: readonly [string, string][] = [
   [
     "What is free, and what needs a paid plan?",
-    "Free: the diagnostic, your projected score, 40 practice questions a day and unlimited review. Paid plans add your study calendar, mastery for every domain and skill, full-length practice tests and LISA, your tutor.",
+    "Free: the diagnostic, your projected score, 40 practice questions a day and unlimited review. Paid plans add your study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.",
   ],
   [
     "How is my projected score worked out?",
@@ -167,6 +171,15 @@ describe("the Help page (DESIGN.md §4 Help)", () => {
         );
       expect(open).toHaveLength(1);
     }
+  });
+
+  it("OQ-62 (b): the plans answer says 'full-length tests', never 'full-length practice tests'", async () => {
+    mount("/help");
+    const faqs = await screen.findAllByTestId("help-faq");
+    // Presence first: the plans answer (open by default) names the sittings the ruled way.
+    expect(faqs[0]?.textContent).toMatch(/\bfull-length tests and LISA\b/);
+    expect(document.body.textContent).not.toMatch(/\bfull-length practice\b/i);
+    expect(document.body.textContent).not.toMatch(/\bpractice tests?\b/i);
   });
 
   it("Contact support writes to the one support address", async () => {
