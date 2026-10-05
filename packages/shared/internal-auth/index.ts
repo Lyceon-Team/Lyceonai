@@ -1,34 +1,18 @@
 /**
- * @spec [Doc-01A_V1 Part VII §61–§71; Doc-03C_V3 §9.3]
+ * @spec [Doc-03C_V3 §9.3; owner ruling 2026-10-05 C-03 (HMAC service auth retired)]
  *
- * Internal service auth — canonical utilities for signing, verifying, and
- * loading secrets for service-to-service calls.
+ * Internal service auth — OIDC verification for service-to-service calls.
  *
- * Two auth mechanisms coexist per the spec:
- *  - HMAC-SHA256 (01A Part VII): for service pairs where the caller controls
- *    timing (BFF→worker, scheduler→enqueue, etc.)
- *  - OIDC (03C §9.3): for Cloud Tasks delivery, where the token is minted at
- *    delivery time (not enqueue time) and retries get fresh credentials.
+ * Every internal route authenticates by OIDC (03C §9.3): the token is minted at delivery time,
+ * so retries get fresh credentials. The HMAC-SHA256 path (Doc 01A Part VII) and its
+ * `service_auth_secrets` table were retired on 2026-10-05 (C-03): no route used them.
  *
- * This module lives at `packages/shared/internal-auth/` per §70 reference
- * implementation. It is NOT re-exported from `packages/shared/src/index.ts`
- * because it has server-side-only dependencies (supabase-server, logger,
- * node:crypto, google-auth-library) that frontend code must never import.
+ * This module lives at `packages/shared/internal-auth/`. It is NOT re-exported from
+ * `packages/shared/src/index.ts` because it has server-side-only dependencies (logger,
+ * google-auth-library) that frontend code must never import.
  *
- * Import directly: `import { signInternalRequest } from "@lyceon/shared/internal-auth"`
- * or from the individual files.
+ * Import directly from `./verify-oidc-middleware` (as every route does) or from here.
  */
-export { loadActiveSecret, loadServiceSecrets } from "./load-secrets";
-export {
-  signInternalRequest,
-  signWithExplicitSecret,
-  type SignedHeaders,
-  type SignResult,
-} from "./sign-request";
-export {
-  internalAuthMiddleware,
-  type InternalAuthMiddlewareOptions,
-} from "./verify-middleware";
 export {
   oidcAuthMiddleware,
   oidcAuthMiddlewareWithConfigGuard,

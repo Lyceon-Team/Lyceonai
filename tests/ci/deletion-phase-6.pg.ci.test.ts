@@ -429,5 +429,150 @@ describe.skipIf(!PG_AVAILABLE)(
       // turned out to join to 41 retained actor_id rows.
       expect(holders).toEqual([]);
     });
+
+    // ══ C-01 — crisis-flagged transcripts survive account deletion, de-linked ═══════════════
+    // @spec [Doc 03 §14.2 D03:1255 (flagged LISA content: 180 days, manual purge); RS-00 owner
+    //       ruling 2026-10-05 (crisis-flagged = any linked crisis_review_cases or
+    //       crisis_review_events row); owner ruling 2026-10-05 C-01 (a flagged conversation
+    //       survives account deletion de-linked from the student until the safety owner purges it
+    //       by hand; de-linked, not anonymous)] | @implemented [2026-10-05]
+    // plain English: the cascade, before it deletes the profile, NULLs student_id on that
+    // student's flagged conversations and their messages, so the profile FK CASCADE skips them.
+    // Unflagged conversations still go. Three conversations: C1 flagged by its own flag and a
+    // case, C3 flagged ONLY by a crisis_review_events row (the RS-00 definition — the column
+    // alone would miss it), C2 not flagged.
+    const C1 = "c6c6c6c6-0000-4000-8000-0000000000c1";
+    const C2 = "c6c6c6c6-0000-4000-8000-0000000000c2";
+    const C3 = "c6c6c6c6-0000-4000-8000-0000000000c3";
+    const HOLD_CASE = "d6d6d6d6-0000-4000-8000-0000000000d1";
+
+    async function seedHoldStudent(): Promise<void> {
+      await seedProfile(SUBJECT, "hold@p6.test");
+      for (const [id, flagged] of [
+        [C1, true],
+        [C2, false],
+        [C3, false],
+      ] as const) {
+        await pg.query(
+          `INSERT INTO public.tutor_conversations
+             (id, student_id, entry_mode, source_surface, status, crisis_flagged)
+           VALUES ($1, $2, 'general', 'dashboard', 'active', $3)`,
+          [id, SUBJECT, flagged],
+        );
+        await pg.query(
+          `INSERT INTO public.tutor_messages (conversation_id, student_id, role, message)
+           VALUES ($1, $2, 'student', 'm1'), ($1, $2, 'tutor', 'm2')`,
+          [id, SUBJECT],
+        );
+      }
+      await pg.query(
+        `INSERT INTO public.crisis_review_cases
+           (id, conversation_id, student_id, source, status, sla_deadline)
+         VALUES ($1, $2, $3, 'signature', 'open', now() + interval '48 hours')`,
+        [HOLD_CASE, C1, SUBJECT],
+      );
+      await pg.query(
+        `INSERT INTO public.crisis_review_events
+           (case_id, conversation_id, student_id, event_type)
+         VALUES ($1, $2, $3, 'signal_received')`,
+        [HOLD_CASE, C3, SUBJECT],
+      );
+      await pg.query(
+        `INSERT INTO public.account_deletion_requests
+           (profile_id, scheduled_hard_delete_at, actor_profile_id, status,
+            stripe_cancellation_status, completion_at)
+         VALUES ($1, now() - interval '1 day', $1, 'completed', 'completed', now())`,
+        [SUBJECT],
+      );
+    }
+
+    async function conversationsAndMessages(): Promise<
+      { id: string; student_id: string | null; crisis_flagged: boolean; messages: number }[]
+    > {
+      const r = await pg.query(
+        `SELECT c.id, c.student_id, c.crisis_flagged,
+                (SELECT count(*)::int FROM public.tutor_messages m
+                  WHERE m.conversation_id = c.id) AS messages
+           FROM public.tutor_conversations c ORDER BY c.id`,
+      );
+      return r.rows;
+    }
+
+    it.each(["hard_delete", "anonymize"] as const)(
+      "P6.8 (%s) flagged conversations and their messages survive de-linked; the unflagged one goes",
+      async (mode) => {
+        await pg.query(`DELETE FROM public.crisis_review_events`);
+        await pg.query(`DELETE FROM public.account_deletion_requests`);
+        await seedHoldStudent();
+        // Presence first: three conversations, two messages each, all the student's.
+        expect(await conversationsAndMessages()).toEqual([
+          { id: C1, student_id: SUBJECT, crisis_flagged: true, messages: 2 },
+          { id: C2, student_id: SUBJECT, crisis_flagged: false, messages: 2 },
+          { id: C3, student_id: SUBJECT, crisis_flagged: false, messages: 2 },
+        ]);
+
+        const res = await pg.query(
+          `SELECT public.execute_account_deletion_cascade($1, $2) AS r`,
+          [SUBJECT, mode],
+        );
+        expect((res.rows[0]?.r as { status: string }).status).toBe("completed");
+
+        // C2 and its messages are gone; C1 and C3 survive with every message, de-linked.
+        // C3 is marked crisis_flagged on the way, so the CHECK can see why it has no student.
+        expect(await conversationsAndMessages()).toEqual([
+          { id: C1, student_id: null, crisis_flagged: true, messages: 2 },
+          { id: C3, student_id: null, crisis_flagged: true, messages: 2 },
+        ]);
+        const msgOwners = await pg.query(
+          `SELECT count(*)::int AS n FROM public.tutor_messages WHERE student_id IS NOT NULL`,
+        );
+        expect(msgOwners.rows[0]?.n).toBe(0);
+        // The crisis case still points at the surviving conversation; its student link is gone.
+        const kase = await pg.query(
+          `SELECT conversation_id, student_id FROM public.crisis_review_cases WHERE id = $1`,
+          [HOLD_CASE],
+        );
+        expect(kase.rows[0]).toEqual({ conversation_id: C1, student_id: null });
+        const profile = await pg.query(
+          `SELECT count(*)::int AS n FROM public.profiles WHERE id = $1`,
+          [SUBJECT],
+        );
+        expect(profile.rows[0]?.n).toBe(0);
+        await pg.query(`DELETE FROM public.crisis_review_events`);
+        await pg.query(`DELETE FROM public.crisis_review_cases`);
+        await pg.query(`DELETE FROM public.tutor_messages`);
+        await pg.query(`DELETE FROM public.tutor_conversations`);
+      },
+    );
+
+    it("P6.9 a NULL student_id is refused on an unflagged conversation", async () => {
+      await seedProfile(SUBJECT, "check@p6.test");
+      await pg.query(
+        `INSERT INTO public.tutor_conversations
+           (id, student_id, entry_mode, source_surface, status, crisis_flagged)
+         VALUES ($1, $2, 'general', 'dashboard', 'active', false)`,
+        [C2, SUBJECT],
+      );
+      await expect(
+        pg.query(`UPDATE public.tutor_conversations SET student_id = NULL WHERE id = $1`, [C2]),
+      ).rejects.toThrow(/tutor_conversations_null_student_only_flagged/);
+    });
+
+    it("P6.10 a NULL student_id is refused on a message of an unflagged conversation", async () => {
+      await seedProfile(SUBJECT, "check@p6.test");
+      await pg.query(
+        `INSERT INTO public.tutor_conversations
+           (id, student_id, entry_mode, source_surface, status, crisis_flagged)
+         VALUES ($1, $2, 'general', 'dashboard', 'active', false)`,
+        [C2, SUBJECT],
+      );
+      await expect(
+        pg.query(
+          `INSERT INTO public.tutor_messages (conversation_id, student_id, role, message)
+           VALUES ($1, NULL, 'student', 'x')`,
+          [C2],
+        ),
+      ).rejects.toThrow(/tutor_messages_null_student_only_flagged/);
+    });
   },
 );

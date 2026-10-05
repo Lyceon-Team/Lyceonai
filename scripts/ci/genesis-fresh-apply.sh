@@ -136,8 +136,10 @@ for r in anon authenticated; do
 done
 echo "    OK denied (hard gate holds)"
 
+# idempotency_records and service_auth_secrets were dropped 2026-10-05 (C-03); the remaining
+# 01A primitives keep the check.
 echo "==> C.5 01A primitive tables have NO anon/authenticated grant"
-PRIM_GRANTS=$(psql_db "$DB1" -tAc "select count(*) from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated') and table_name in ('idempotency_records','rate_limit_ledger','abuse_score_incidents','abuse_scores','service_auth_secrets');")
+PRIM_GRANTS=$(psql_db "$DB1" -tAc "select count(*) from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated') and table_name in ('rate_limit_ledger','abuse_score_incidents','abuse_scores');")
 [ "$PRIM_GRANTS" = "0" ] || { echo "FAIL: $PRIM_GRANTS anon/auth grant(s) on 01A primitive tables"; exit 1; }
 echo "    OK service-internal"
 

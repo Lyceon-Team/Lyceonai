@@ -659,6 +659,48 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     expect((audit[0]?.data as { cutoff: string }).cutoff).toBeTruthy();
   });
 
+  // @spec [Doc-01 V8 §5.1 D01:222 "Guardian consent events | Permanent (anonymized after 1 year) |
+  //       COPPA compliance evidence"; owner ruling 2026-10-05 C-02: the guardian_link_* audit rows
+  //       are the consent records, kept permanently; D01:222 governs over D01:251] |
+  //       @implemented [2026-10-05]
+  // plain English: the yearly purge deletes every audit row past the window EXCEPT the three
+  // actions guardian_link_audit writes. Identity is still stripped from them at account deletion
+  // (strip_identity is unchanged); only the age-based delete skips them.
+  it("P5.7 the audit purge keeps every guardian-link consent row, however old", async () => {
+    const consentActions = [
+      "guardian_link_initiated",
+      "guardian_link_accepted",
+      "guardian_link_revoked",
+    ];
+    for (const action of consentActions) {
+      await pg.query(
+        `INSERT INTO public.audit_logs (action, created_at)
+         VALUES ($1, now() - interval '2 years')`,
+        [action],
+      );
+    }
+    await pg.query(
+      `INSERT INTO public.audit_logs (action, created_at)
+       VALUES ('profile_soft_deleted', now() - interval '2 years')`,
+    );
+    // Presence first: four rows, all past the 365-day window.
+    const before = await pg.query(
+      `SELECT count(*)::int AS n FROM public.audit_logs
+        WHERE created_at < now() - make_interval(days => public.audit_logs_retention_days())`,
+    );
+    expect(before.rows[0]?.n).toBe(4);
+
+    const purged = await pg.query(
+      `SELECT public.apply_audit_logs_retention('purge_expired') AS r`,
+    );
+    expect((purged.rows[0]?.r as { rows: number }).rows).toBe(1);
+
+    const remaining = await pg.query(
+      `SELECT action FROM public.audit_logs ORDER BY action`,
+    );
+    expect(remaining.rows.map((r) => r.action)).toEqual([...consentActions].sort());
+  });
+
   it("P5.5 the audit purge runs only through the exempt function, and takes the configured window", async () => {
     await pg.query(
       `INSERT INTO public.audit_logs (action, created_at)
