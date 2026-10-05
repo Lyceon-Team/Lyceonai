@@ -167,11 +167,16 @@ export async function sweep7d(
 // ── 90-day tier ───────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03_V1.1 §14.2; owner ruling 2026-09-22 (Doc 07B §5.4)]
- * @implemented [2026-09-22]
+ * @spec [Doc-03_V1.1 §14.2 ("90 days from creation" for both tables); owner ruling 2026-09-22
+ *       (Doc 07B §5.4); owner ruling 2026-10-05 RS-04 (exposures measured by shown_at)]
+ * @implemented [2026-09-22; shown_at 2026-10-05]
  *
  * Delete tutor_instruction_assignments and tutor_instruction_exposures older
- * than 90 days from creation.
+ * than 90 days from creation. Creation is `created_at` for assignments and
+ * `shown_at` for exposures, which have no `created_at` column: until RS-04
+ * every run, dry or live, failed with "column does not exist" and the mock
+ * tests could not see it (tests/ci/retention-sweep.pg.ci.test.ts now runs
+ * this tier against real Postgres).
  *
  * plain English: the rows go. Nothing is copied anywhere first.
  *
@@ -212,10 +217,11 @@ export async function sweep90d(
       .select("id", { count: "exact", head: true })
       .lt("created_at", cutoff);
 
+    // RS-04: exposures have no created_at; shown_at is their creation time.
     const { count: exposureCount, error: e2 } = await client
       .from("tutor_instruction_exposures")
       .select("id", { count: "exact", head: true })
-      .lt("created_at", cutoff);
+      .lt("shown_at", cutoff);
 
     if (e1 || e2) {
       return {
@@ -234,6 +240,23 @@ export async function sweep90d(
 
   let totalDeleted = 0;
 
+  // Exposures first: deleting an assignment cascades its exposures, and a row removed by the
+  // cascade would go uncounted. RS-04: measured by shown_at (the table has no created_at).
+  const { data: deletedExpose, error: delExposeErr } = await client
+    .from("tutor_instruction_exposures")
+    .delete()
+    .lt("shown_at", cutoff)
+    .select("id");
+
+  if (delExposeErr) {
+    return {
+      ok: false,
+      reason: `delete_failed: ${delExposeErr.message}`,
+      tier,
+    };
+  }
+  totalDeleted += deletedExpose?.length ?? 0;
+
   const { data: deletedAssign, error: delAssignErr } = await client
     .from("tutor_instruction_assignments")
     .delete()
@@ -248,21 +271,6 @@ export async function sweep90d(
     };
   }
   totalDeleted += deletedAssign?.length ?? 0;
-
-  const { data: deletedExpose, error: delExposeErr } = await client
-    .from("tutor_instruction_exposures")
-    .delete()
-    .lt("created_at", cutoff)
-    .select("id");
-
-  if (delExposeErr) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${delExposeErr.message}`,
-      tier,
-    };
-  }
-  totalDeleted += deletedExpose?.length ?? 0;
 
   logger.info(
     "RETENTION_SWEEP",

@@ -36,7 +36,7 @@
  *    CHECK constraint), never hardcoded — LISA-GCP-002.
  *  - 7d memory summaries: only purged when a student has zero remaining active
  *    conversations (conservative — spec says "cascade from account/entitlement").
- *  - Cross-table isolation: 7d sweep must not touch 90d/180d tables.
+ *  - 7d and 90d tiers run against real Postgres (tests/ci/retention-sweep.pg.ci.test.ts).
  *  - Cross-student: a sweep must not delete another student's unexpired rows.
  */
 import { describe, it, expect, vi } from "vitest";
@@ -44,7 +44,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { stripComments } from "./lib/strip-comments";
 import {
-  sweep90d,
   sweep180d,
   sweep365d,
   retentionCutoff,
@@ -289,127 +288,11 @@ describe("retentionCutoff (pure boundary function)", () => {
 // recovery rules, the boundary, isolation from the 90d/180d tables, the empty table — runs in
 // tests/ci/retention-sweep.pg.ci.test.ts against the real function.
 
-describe("90d tier — delete outright", () => {
-  it("deletes expired rows, preserves unexpired rows", async () => {
-    const client = filteringMockClient({
-      tutor_instruction_assignments: [
-        { id: "assign-expired", created_at: daysAgo(91) },
-        { id: "assign-fresh", created_at: daysAgo(89) },
-      ],
-      tutor_instruction_exposures: [
-        { id: "expose-expired", created_at: daysAgo(100) },
-        { id: "expose-fresh", created_at: daysAgo(30) },
-      ],
-    });
-
-    const result = await sweep90d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(2);
-      expect(result.dry_run).toBe(false);
-    }
-
-    // Negative control: unexpired rows survive
-    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
-    expect(client._store.tutor_instruction_assignments[0].id).toBe(
-      "assign-fresh",
-    );
-    expect(client._store.tutor_instruction_exposures).toHaveLength(1);
-    expect(client._store.tutor_instruction_exposures[0].id).toBe(
-      "expose-fresh",
-    );
-  });
-
-  it("deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)", async () => {
-    // This is the assertion the reversal turns on. Before the 2026-09-22
-    // ruling this exact call returned ok: false / archive_client_not_configured
-    // and deleted nothing, which is why the tier could never be scheduled.
-    // Unset the env var the retired archive client used to read, so a
-    // reintroduced env-gated path cannot make this pass by accident.
-    const saved = process.env.BIGQUERY_ARCHIVE_DATASET;
-    delete process.env.BIGQUERY_ARCHIVE_DATASET;
-    try {
-      const client = filteringMockClient({
-        tutor_instruction_assignments: [
-          { id: "assign-expired", created_at: daysAgo(91) },
-          { id: "assign-fresh", created_at: daysAgo(89) },
-        ],
-        tutor_instruction_exposures: [],
-      });
-
-      const result = await sweep90d(client, false, { now: NOW });
-
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.deleted_count).toBe(1);
-
-      // Expired row is gone; the unexpired one is the negative control.
-      expect(client._store.tutor_instruction_assignments).toHaveLength(1);
-      expect(client._store.tutor_instruction_assignments[0].id).toBe(
-        "assign-fresh",
-      );
-    } finally {
-      if (saved === undefined) delete process.env.BIGQUERY_ARCHIVE_DATASET;
-      else process.env.BIGQUERY_ARCHIVE_DATASET = saved;
-    }
-  });
-
-  it("dry-run still counts expired rows (monitoring path preserved)", async () => {
-    const client = filteringMockClient({
-      tutor_instruction_assignments: [
-        { id: "assign-expired", created_at: daysAgo(91) },
-        { id: "assign-fresh", created_at: daysAgo(89) },
-      ],
-      tutor_instruction_exposures: [
-        { id: "expose-expired", created_at: daysAgo(100) },
-      ],
-    });
-
-    const result = await sweep90d(client, true, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(2);
-      expect(result.dry_run).toBe(true);
-    }
-
-    // Both survive — no DELETE was issued
-    expect(client._store.tutor_instruction_assignments).toHaveLength(2);
-    expect(client._store.tutor_instruction_exposures).toHaveLength(1);
-  });
-
-  it("exact boundary: dry-run at exactly 90 days reports 0 expired", async () => {
-    const exactBoundary = retentionCutoff(NOW, 90);
-    const client = filteringMockClient({
-      tutor_instruction_assignments: [
-        { id: "assign-exact", created_at: exactBoundary },
-      ],
-      tutor_instruction_exposures: [],
-    });
-
-    const result = await sweep90d(client, true, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(0);
-
-    expect(client._store.tutor_instruction_assignments).toHaveLength(1);
-  });
-
-  it("empty tables: returns ok: true, deleted_count: 0", async () => {
-    const client = filteringMockClient({
-      tutor_instruction_assignments: [],
-      tutor_instruction_exposures: [],
-    });
-
-    const result = await sweep90d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(0);
-      expect(result.dry_run).toBe(false);
-    }
-  });
-});
+// 90d tier: moved to real Postgres (RS-04, 2026-10-05). The mock here seeded exposures with a
+// `created_at` the real table does not have, so it agreed with the bug and every 90d run failed in
+// production while this file stayed green. Every 90d case — expired vs unexpired, no archive
+// configuration, dry run, the boundary, isolation from the 7d/180d tables, the empty table — runs
+// in tests/ci/retention-sweep.pg.ci.test.ts against the real schema.
 
 // ── 180-day tier ─────────────────────────────────────────────────────
 
@@ -629,60 +512,9 @@ describe("365d tier — structured no-op", () => {
   });
 });
 
-// ── Cross-table isolation ────────────────────────────────────────────
-
-describe("cross-table isolation", () => {
-  it("90d sweep does not touch 7d or 180d tables", async () => {
-    const client = filteringMockClient({
-      tutor_instruction_assignments: [
-        { id: "assign-expired", created_at: daysAgo(91) },
-      ],
-      tutor_instruction_exposures: [],
-      tutor_conversations: [
-        { id: "conv-expired", student_id: "s1", deleted_at: daysAgo(8) },
-      ],
-      crisis_review_cases: [
-        {
-          id: "crisis-old",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(200),
-        },
-      ],
-      tutor_injection_log: [],
-    });
-
-    const result = await sweep90d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(1);
-
-    // 90d table: expired row swept
-    expect(client._store.tutor_instruction_assignments).toHaveLength(0);
-
-    // 7d and 180d tables untouched
-    expect(client._store.tutor_conversations).toHaveLength(1);
-    expect(client._store.crisis_review_cases).toHaveLength(1);
-  });
-});
-
 // ── Empty tables ─────────────────────────────────────────────────────
 
 describe("empty tables — no rows to sweep", () => {
-  it("90d returns ok: true, deleted_count: 0 on empty tables", async () => {
-    const client = filteringMockClient({
-      tutor_instruction_assignments: [],
-      tutor_instruction_exposures: [],
-    });
-
-    const result = await sweep90d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(0);
-      expect(result.dry_run).toBe(false);
-    }
-  });
-
   it("180d returns ok: true, deleted_count: 0 on empty tables", async () => {
     const client = filteringMockClient({
       crisis_review_cases: [],

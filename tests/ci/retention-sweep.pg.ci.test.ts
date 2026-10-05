@@ -373,4 +373,149 @@ describe.skipIf(!PG_AVAILABLE)("tutor retention sweep → real PG", () => {
       }
     });
   });
+
+  describe("RS-04: the 90d tier measures exposures by shown_at", () => {
+    const DORA = ANA;
+    const D_LIVE = "0d7d7d7d-0000-4000-8000-0000000000d1";
+    const A_OLD = "0d7d7d7d-0000-4000-8000-0000000000e1";
+    const A_NEW = "0d7d7d7d-0000-4000-8000-0000000000e2";
+
+    async function assignment(id: string, daysAgo: number): Promise<void> {
+      await q(
+        `INSERT INTO public.tutor_instruction_assignments
+           (id, conversation_id, student_id, policy_variant, policy_version,
+            assignment_mode, reason_snapshot, created_at)
+         VALUES ($1, $2, $3, 'concise', 'fixture', 'deterministic', '{}'::jsonb,
+                 now() - make_interval(days => $4))`,
+        [id, D_LIVE, DORA, daysAgo],
+      );
+    }
+    async function exposure(
+      assignmentId: string,
+      daysAgo: number,
+    ): Promise<void> {
+      await q(
+        `INSERT INTO public.tutor_instruction_exposures
+           (assignment_id, conversation_id, student_id, exposure_type, sequence_ordinal, shown_at)
+         VALUES ($1, $2, $3, 'hint', 1, now() - make_interval(days => $4))`,
+        [assignmentId, D_LIVE, DORA, daysAgo],
+      );
+    }
+    const assignments = (): Promise<number> =>
+      count(
+        `SELECT count(*) AS n FROM public.tutor_instruction_assignments`,
+        [],
+      );
+    const exposures = (): Promise<number> =>
+      count(`SELECT count(*) AS n FROM public.tutor_instruction_exposures`, []);
+
+    beforeEach(async () => {
+      await q(`DELETE FROM public.crisis_review_cases`);
+      await q(`DELETE FROM public.tutor_memory_summaries`);
+      await q(`DELETE FROM public.tutor_conversations`);
+      await conversation(D_LIVE, DORA, null, 1);
+      await assignment(A_OLD, 100);
+      await exposure(A_OLD, 100);
+      await assignment(A_NEW, 10);
+      await exposure(A_NEW, 10);
+      // An exposure shown past 90 days on an assignment inside the window: only shown_at
+      // can select it.
+      await exposure(A_NEW, 95);
+    });
+
+    it("presence first: two assignments, three exposures", async () => {
+      expect(await assignments()).toBe(2);
+      expect(await exposures()).toBe(3);
+    });
+
+    it("dry run counts the expired assignment and both expired exposures, deletes nothing", async () => {
+      const result = await sweep("90d", true);
+      expect(result).toMatchObject({
+        ok: true,
+        dry_run: true,
+        deleted_count: 3,
+      });
+      expect(await assignments()).toBe(2);
+      expect(await exposures()).toBe(3);
+    });
+
+    it("live run deletes rows past 90 days and keeps the rest", async () => {
+      const result = await sweep("90d");
+      expect(result).toMatchObject({
+        ok: true,
+        dry_run: false,
+        deleted_count: 3,
+      });
+      expect(
+        await count(
+          `SELECT count(*) AS n FROM public.tutor_instruction_assignments WHERE id = $1`,
+          [A_NEW],
+        ),
+      ).toBe(1);
+      expect(await assignments()).toBe(1);
+      expect(await exposures()).toBe(1);
+      expect(
+        await count(
+          `SELECT count(*) AS n FROM public.tutor_instruction_exposures
+            WHERE shown_at > now() - interval '90 days'`,
+          [],
+        ),
+      ).toBe(1);
+      // The conversation itself is not the 90d tier's to touch.
+      expect(await conversationExists(D_LIVE)).toBe(1);
+    });
+
+    it("deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)", async () => {
+      const saved = process.env.BIGQUERY_ARCHIVE_DATASET;
+      delete process.env.BIGQUERY_ARCHIVE_DATASET;
+      try {
+        expect(await sweep("90d")).toMatchObject({
+          ok: true,
+          deleted_count: 3,
+        });
+      } finally {
+        if (saved !== undefined) process.env.BIGQUERY_ARCHIVE_DATASET = saved;
+      }
+    });
+
+    it("the boundary: 89 days is kept, 91 days is not", async () => {
+      await q(`DELETE FROM public.tutor_instruction_assignments`);
+      await assignment(A_OLD, 91);
+      await exposure(A_OLD, 91);
+      await assignment(A_NEW, 89);
+      await exposure(A_NEW, 89);
+      expect(await sweep("90d", true)).toMatchObject({
+        ok: true,
+        deleted_count: 2,
+      });
+      expect(await sweep("90d")).toMatchObject({ ok: true, deleted_count: 2 });
+      expect(await assignments()).toBe(1);
+      expect(await exposures()).toBe(1);
+    });
+
+    it("the 90d tier does not touch the 7d or 180d tiers' rows", async () => {
+      const D_GONE = "0d7d7d7d-0000-4000-8000-0000000000d2";
+      await conversation(D_GONE, DORA, 30, 1);
+      await q(
+        `INSERT INTO public.tutor_injection_log
+           (conversation_id, student_id, detection_layer, action_taken, detected_at)
+         VALUES ($1, $2, 'fixture', 'fixture', now() - interval '200 days')`,
+        [D_LIVE, DORA],
+      );
+      await flag(D_LIVE, DORA);
+      await sweep("90d");
+      expect(await conversationExists(D_GONE)).toBe(1);
+      expect(
+        await count(`SELECT count(*) AS n FROM public.tutor_injection_log`, []),
+      ).toBe(1);
+      expect(
+        await count(`SELECT count(*) AS n FROM public.crisis_review_cases`, []),
+      ).toBe(1);
+    });
+
+    it("empty tables: ok, deleted_count 0", async () => {
+      await q(`DELETE FROM public.tutor_instruction_assignments`);
+      expect(await sweep("90d")).toMatchObject({ ok: true, deleted_count: 0 });
+    });
+  });
 });
