@@ -10,8 +10,9 @@
  *
  * plain English: a guardian sees the headline of each exam — total, the two section
  * scores, when it was finished, lenient or strict, which attempt it was, whether the form
- * was new to the student, the disclosure — and, per domain, the BAR the student sees on their
- * Score breakdown tab, without the "N of M correct" counts beside it (R4, SCL-189). Nothing else.
+ * was new to the student, the disclosure — and, per domain, the SEVEN SEGMENTS the student
+ * sees on their Score breakdown tab: the student's own `segments_filled`, never a count or a
+ * percentage (R4, SCL-189 as amended by SCL-210, G5-11). Nothing else.
  *
  * HOW. Every guardian state has its OWN `.strict()` schema, written out field by field
  * rather than derived by `.omit()` from the student's. A field added to the student report
@@ -34,6 +35,7 @@ import {
   examModeSchema,
   examSectionSchema,
   examSessionStateSchema,
+  type ExamSection,
 } from "./exam-runtime-schema";
 import {
   examDisclosureSchema,
@@ -42,50 +44,33 @@ import {
   type ExamFormsResponse,
   type ExamReportPayload,
 } from "./exam-report-schema";
-import { canonicalDomainSchema, sectionOfDomain } from "./calendar/scope";
+import {
+  examDomainSegmentsSchema,
+  toDomainSegments,
+  type ExamDomainSegmentRow,
+} from "./exam-domain-segments";
 
 /**
- * @spec [Doc 04 Parent Q9 as amended by SCL-180 and SCL-189; Guardian_Closure_Plan G3-02,
- *   owner ruling R4] | @implemented [2026-09-30]
+ * @spec [Doc 04 Parent Q9 as amended by SCL-180, SCL-189 and SCL-210; Guardian_Closure_Plan
+ *   G3-02, G5-11; owner ruling R4; owner decision 2026-10-05 (option 1)]
+ *   | @implemented [2026-09-30; segments 2026-10-05]
  *
- * plain English: one guardian row per (scored section, domain) — the domain and the length of
- * its bar, as a whole percent 0–100, and nothing else. R4 keeps the bar and removes the
- * "N of M correct" counts, so `correct` and `total` are not on the guardian wire at all:
- * `.strict()` refuses either key, and the row is built from named fields by
- * `toGuardianDomainBars`, never spread from the student's row.
+ * plain English: the guardian's per-domain rows are EXACTLY the student's — `{section, domain,
+ * segments_filled}`, computed by the student's own rule (`toDomainSegments`, round half up of
+ * correct × 7 / total) for the student's own scored sections, in the student's canonical
+ * order. The shared `examDomainSegmentsSchema` is the guardian row schema too, so the two
+ * cannot drift; it is `.strict()`, so `bar_pct`, `correct` and `total` fail the parse. The
+ * segment count is the shared `DOMAIN_SEGMENT_COUNT`, never sent.
  *
- * edge cases: `total` is positive by the student schema, so the division is defined; the
- * percent is rounded half-up, so 0 and 100 are reachable only by 0-of-N and N-of-N.
+ * WHY NOT A PERCENT (SCL-210): a whole percent cannot be turned back into the student's fill —
+ * 3 of 14 and 4 of 19 both round to 21% but fill 2 and 1 segments — so the guardian carries the
+ * student's figure itself, which says less than the percent did (8 values, not 101).
  */
-export const guardianDomainBarRowSchema = z
-  .object({
-    section: examSectionSchema,
-    domain: canonicalDomainSchema,
-    bar_pct: z.number().int().min(0).max(100),
-  })
-  .strict()
-  .refine((r) => sectionOfDomain(r.domain) === r.section, {
-    message: "domain does not belong to section",
-  });
-export type GuardianDomainBarRow = z.infer<typeof guardianDomainBarRowSchema>;
-
-const guardianDomainBarsSchema = z
-  .array(guardianDomainBarRowSchema)
-  .refine(
-    (rows) =>
-      new Set(rows.map((r) => `${r.section}|${r.domain}`)).size === rows.length,
-    { message: "duplicate (section, domain) row" },
-  );
-
-/** The student's rows in, the guardian's bars out: field by named field. Pure. */
-export function toGuardianDomainBars(
+function guardianDomainSegments(
   rows: ReadonlyArray<ExamDomainBreakdownRow>,
-): GuardianDomainBarRow[] {
-  return rows.map((r) => ({
-    section: r.section,
-    domain: r.domain,
-    bar_pct: Math.round((r.correct / r.total) * 100),
-  }));
+  scoredSections: ReadonlyArray<ExamSection>,
+): ExamDomainSegmentRow[] {
+  return toDomainSegments(rows, scoredSections).domain_segments;
 }
 
 const guardianBase = {
@@ -133,7 +118,7 @@ const guardianExamScoredSchema = z
         math_scaled: sectionScaled,
       })
       .strict(),
-    domain_breakdown: guardianDomainBarsSchema,
+    domain_breakdown: examDomainSegmentsSchema,
     disclosure: examDisclosureSchema,
   })
   .strict();
@@ -155,7 +140,7 @@ const guardianExamPartialSchema = z
       .strict(),
     completed_sections: z.array(examSectionSchema),
     incomplete_sections: z.array(examSectionSchema),
-    domain_breakdown: guardianDomainBarsSchema,
+    domain_breakdown: examDomainSegmentsSchema,
     disclosure: examDisclosureSchema,
     partial_disclosure: z.object({ summary: z.string().min(1) }).strict(),
   })
@@ -236,7 +221,10 @@ export function toGuardianExamReport(
           rw_scaled: report.score.rw_scaled,
           math_scaled: report.score.math_scaled,
         },
-        domain_breakdown: toGuardianDomainBars(report.domain_breakdown),
+        domain_breakdown: guardianDomainSegments(report.domain_breakdown, [
+          "RW",
+          "M",
+        ]),
         disclosure: report.disclosure,
       });
     case "partial_scored":
@@ -253,7 +241,10 @@ export function toGuardianExamReport(
         },
         completed_sections: report.completed_sections,
         incomplete_sections: report.incomplete_sections,
-        domain_breakdown: toGuardianDomainBars(report.domain_breakdown),
+        domain_breakdown: guardianDomainSegments(
+          report.domain_breakdown,
+          report.completed_sections,
+        ),
         disclosure: report.disclosure,
         partial_disclosure: report.partial_disclosure,
       });

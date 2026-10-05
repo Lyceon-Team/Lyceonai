@@ -95,6 +95,28 @@ export const scoredReport: ExamReportPayload = examReportPayloadSchema.parse({
   review_unlocked: true,
 });
 
+/**
+ * G5-11: the scored report with Reading and Writing counts a whole percent cannot separate —
+ * 1/14 (7%: 1 segment), 3/14 (21%: 2), 9/14 (64%: 5) and 4/19 (21%: 1). The guardian and the
+ * student must fill the same segments for these.
+ */
+export const ambiguousScoredReport: ExamReportPayload =
+  examReportPayloadSchema.parse({
+    ...scoredReport,
+    domain_breakdown: [
+      { section: "RW", domain: "Craft and Structure", correct: 1, total: 14 },
+      { section: "RW", domain: "Expression of Ideas", correct: 4, total: 19 },
+      { section: "RW", domain: "Information and Ideas", correct: 3, total: 14 },
+      {
+        section: "RW",
+        domain: "Standard English Conventions",
+        correct: 9,
+        total: 14,
+      },
+      ...FIXTURE_BREAKDOWN.filter((r) => r.section === "M"),
+    ],
+  });
+
 export const partialReport: ExamReportPayload = examReportPayloadSchema.parse({
   report_state: "partial_scored",
   ...base,

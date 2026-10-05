@@ -1,29 +1,31 @@
 /**
- * G3-02 — the guardian per-domain breakdown is a bar, never a count.
+ * G3-02 / G5-11 — the guardian per-domain breakdown is the student's seven segments, never a
+ * count and never a percentage.
  *
- * @spec [Doc 04 Parent Q9 as amended by SCL-180 and SCL-189; Guardian_Closure_Plan G3-02,
- *   owner ruling R4] | @implemented [2026-09-30]
+ * @spec [Doc 04 Parent Q9 as amended by SCL-180, SCL-189 and SCL-210; Guardian_Closure_Plan
+ *   G3-02, G5-11; owner ruling R4; owner decision 2026-10-05 (option 1: the guardian row
+ *   carries the student's own `segments_filled`)] | @implemented [2026-09-30; segments
+ *   2026-10-05]
  *
- * plain English: the named proof — a strict-schema test that fails if `correct` or `total`
- * appear. The guardian rows are derived from a REAL student report run through the real
- * projection (`toGuardianExamReport`), so the assertions are on what the wire carries, not on
- * a hand-written guardian shape. Presence first: the rows exist and carry a non-trivial bar.
+ * plain English: the named proof — a strict-schema test that fails if `bar_pct`, `correct` or
+ * `total` appear. The guardian rows are derived from a REAL student report run through the
+ * real projection (`toGuardianExamReport`) and held to the student's own projection
+ * (`toStudentExamReport`) for the same report: same domains, same order, same filled count —
+ * including the counts a whole percent cannot tell apart (3 of 14 and 4 of 19 both round to
+ * 21%, but fill 2 and 1 segments). Presence first: the rows exist and some are filled.
  */
 import { describe, expect, it } from "vitest";
 import {
-  guardianDomainBarRowSchema,
   guardianExamReportSchema,
-  toGuardianDomainBars,
   toGuardianExamReport,
 } from "@lyceon/shared/exam-guardian-report-schema";
+import { toStudentExamReport } from "@lyceon/shared/exam-student-report-schema";
+import type { ExamDomainSegmentRow } from "@lyceon/shared/exam-domain-segments";
+import { examReportPayloadSchema } from "@lyceon/shared/exam-report-schema";
 import {
-  examReportPayloadSchema,
-  type ExamReportPayload,
-} from "@lyceon/shared/exam-report-schema";
-import {
-  FIXTURE_BREAKDOWN,
-  scoredReport,
+  ambiguousScoredReport,
   partialReport,
+  scoredReport,
 } from "./test-fixtures/report-fixtures";
 
 function keysAtAnyDepth(value: unknown, out: string[] = []): string[] {
@@ -36,51 +38,101 @@ function keysAtAnyDepth(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
-describe("G3-02 guardian domain bars", () => {
+/** `section|domain|filled` per row, in the order given. */
+const rowsOf = (rows: ReadonlyArray<ExamDomainSegmentRow>): string[] =>
+  rows.map((r) => `${r.section}|${r.domain}|${r.segments_filled}`);
+
+describe("G5-11 guardian domain rows are the student's segments", () => {
+  for (const [name, report] of [
+    ["scored", scoredReport],
+    ["partial_scored", partialReport],
+    ["scored, counts a percent cannot separate", ambiguousScoredReport],
+  ] as const) {
+    it(`${name}: same domains, order and filled count as the student's own report`, () => {
+      const student = toStudentExamReport(
+        examReportPayloadSchema.parse(report),
+      );
+      const guardian = toGuardianExamReport(
+        examReportPayloadSchema.parse(report),
+      );
+      if (
+        !("domain_segments" in student) ||
+        !("domain_breakdown" in guardian)
+      ) {
+        throw new Error(guardian.report_state);
+      }
+      // Presence first: rows exist, and some are filled.
+      expect(student.domain_segments.length).toBeGreaterThan(0);
+      expect(student.domain_segments.some((r) => r.segments_filled > 0)).toBe(
+        true,
+      );
+      expect(rowsOf(guardian.domain_breakdown)).toEqual(
+        rowsOf(student.domain_segments),
+      );
+    });
+  }
+
+  it("the cases a whole percent cannot tell apart fill as the student's do", () => {
+    const guardian = toGuardianExamReport(ambiguousScoredReport);
+    if (!("domain_breakdown" in guardian))
+      throw new Error(guardian.report_state);
+    const filled = Object.fromEntries(
+      guardian.domain_breakdown.map((r) => [r.domain, r.segments_filled]),
+    );
+    expect(filled).toMatchObject({
+      "Craft and Structure": 1,
+      "Information and Ideas": 2,
+      "Standard English Conventions": 5,
+      "Expression of Ideas": 1,
+    });
+  });
+
   for (const [name, report] of [
     ["scored", scoredReport],
     ["partial_scored", partialReport],
   ] as const) {
-    it(`${name}: rows present, and no correct or total key anywhere in the guardian report`, () => {
-      const student: ExamReportPayload = examReportPayloadSchema.parse(report);
-      const guardian = toGuardianExamReport(student);
+    it(`${name}: each row is exactly {section, domain, segments_filled}; no bar_pct, correct or total anywhere`, () => {
+      const guardian = toGuardianExamReport(
+        examReportPayloadSchema.parse(report),
+      );
       if (!("domain_breakdown" in guardian))
         throw new Error(guardian.report_state);
-      // Presence before absence.
       expect(guardian.domain_breakdown.length).toBeGreaterThan(0);
-      expect(guardian.domain_breakdown.some((r) => r.bar_pct > 0)).toBe(true);
+      for (const row of guardian.domain_breakdown) {
+        expect(Object.keys(row).sort()).toEqual([
+          "domain",
+          "section",
+          "segments_filled",
+        ]);
+      }
       const keys = keysAtAnyDepth(JSON.parse(JSON.stringify(guardian)));
-      expect(keys).not.toContain("correct");
-      expect(keys).not.toContain("total");
+      for (const k of ["bar_pct", "correct", "total"]) {
+        expect(keys).not.toContain(k);
+      }
     });
   }
 
-  it("the bar is the student's fraction, as a whole percent", () => {
-    const bars = toGuardianDomainBars(FIXTURE_BREAKDOWN);
-    // Same rows, same order, and each bar is the student's own fraction.
-    expect(bars.map((b) => `${b.section}|${b.domain}`)).toEqual(
-      FIXTURE_BREAKDOWN.map((r) => `${r.section}|${r.domain}`),
+  it("STRICT: a guardian report with bar_pct, correct or total on a row fails to parse", () => {
+    const guardian = toGuardianExamReport(
+      examReportPayloadSchema.parse(scoredReport),
     );
-    expect(bars.map((b) => b.bar_pct)).toEqual(
-      FIXTURE_BREAKDOWN.map((r) => Math.round((r.correct / r.total) * 100)),
-    );
-    for (const bar of bars) {
-      expect(Object.keys(bar).sort()).toEqual(["bar_pct", "domain", "section"]);
+    if (guardian.report_state !== "scored") throw new Error("fixture drift");
+    expect(guardianExamReportSchema.safeParse(guardian).success).toBe(true);
+    const [first, ...rest] = guardian.domain_breakdown;
+    if (first === undefined) throw new Error("no rows");
+    for (const extra of [{ bar_pct: 50 }, { correct: 3 }, { total: 14 }]) {
+      const planted = {
+        ...guardian,
+        domain_breakdown: [{ ...first, ...extra }, ...rest],
+      };
+      expect(
+        guardianExamReportSchema.safeParse(planted).success,
+        Object.keys(extra)[0],
+      ).toBe(false);
     }
   });
 
-  it("STRICT: a row with correct or total fails the guardian schema", () => {
-    const [row] = toGuardianDomainBars(FIXTURE_BREAKDOWN);
-    expect(guardianDomainBarRowSchema.safeParse(row).success).toBe(true);
-    expect(
-      guardianDomainBarRowSchema.safeParse({ ...row, correct: 11 }).success,
-    ).toBe(false);
-    expect(
-      guardianDomainBarRowSchema.safeParse({ ...row, total: 13 }).success,
-    ).toBe(false);
-  });
-
-  it("STRICT: a whole guardian report carrying the student's rows fails to parse", () => {
+  it("STRICT: a whole guardian report carrying the student's count rows fails to parse", () => {
     const student = examReportPayloadSchema.parse(scoredReport);
     const guardian = toGuardianExamReport(student);
     if (student.report_state !== "scored")

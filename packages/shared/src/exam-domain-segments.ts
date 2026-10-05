@@ -116,6 +116,23 @@ export type StudentDomainSegments = {
 const SECTION_ORDER: ReadonlyArray<ExamSection> = ["RW", "M"];
 
 /**
+ * @spec [Doc-04C §9.1; SCL-180 (amended 2026-09-29), owner ruling 7; Guardian_Closure_Plan
+ *   G5-12] | @implemented [2026-10-05]
+ * plain English: a section with no score omits all of its canonical domains, each as
+ * `section_not_scored` — the entries behind the student's note "Math wasn't completed, so its
+ * domains aren't shown." Pure; it needs only the section, so the guardian detail derives the
+ * same entries from the `completed_sections` its payload already carries, without the omitted
+ * list being sent (G5-12). The one source for both the student projection and the guardian.
+ */
+export function unscoredSectionOmissions(
+  section: ExamSection,
+): ExamOmittedDomain[] {
+  return CANONICAL_DOMAINS.filter((d) => sectionOfDomain(d) === section).map(
+    (domain) => ({ section, domain, reason: "section_not_scored" }),
+  );
+}
+
+/**
  * @spec [Doc-04C §8.1/§9.1; SCL-180 (amended 2026-09-29), owner ruling 7]
  *   | @implemented [2026-09-29]
  * plain English: every canonical domain of both sections lands in exactly one of the two
@@ -135,16 +152,12 @@ export function toDomainSegments(
     omitted_domains: [],
   };
   for (const section of SECTION_ORDER) {
+    if (!scored.has(section)) {
+      out.omitted_domains.push(...unscoredSectionOmissions(section));
+      continue;
+    }
     for (const domain of CANONICAL_DOMAINS) {
       if (sectionOfDomain(domain) !== section) continue;
-      if (!scored.has(section)) {
-        out.omitted_domains.push({
-          section,
-          domain,
-          reason: "section_not_scored",
-        });
-        continue;
-      }
       const row = byDomain.get(domain);
       if (row === undefined || row.total === 0) {
         out.omitted_domains.push({

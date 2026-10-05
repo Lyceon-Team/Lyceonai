@@ -73,14 +73,17 @@ describe("G4-05 exam results inside the shell", () => {
     expectNoCounts();
   });
 
-  it("the detail: the total and a bar per domain, no counts", async () => {
+  it("the detail: the total and seven segments per domain, no counts", async () => {
     mountApp(Router, `/guardian/${ADA}/exams/${EXAM_SESSION}`);
     expect(await screen.findByTestId("exam-total-score")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
     const rows = screen.getAllByTestId("exam-domain-row");
     expect(rows.length).toBeGreaterThan(0);
+    // G5-11 (SCL-210): the student's seven segments per domain.
     for (const row of rows) {
-      expect(row.querySelector("[style]")).not.toBeNull();
+      expect(
+        row.querySelectorAll('[data-testid="exam-domain-segment"]'),
+      ).toHaveLength(7);
     }
     expectOneShellHeader();
     expectNoCounts();

@@ -34,6 +34,7 @@ import {
 import {
   FIXTURE_SESSION_ID,
   formsListing,
+  partialReport,
   scoredReport,
 } from "@/features/exam/test-fixtures/report-fixtures";
 
@@ -516,6 +517,23 @@ export function examReport(): Record<string, unknown> {
   return {
     ok: true,
     report: toGuardianExamReport(scoredReport),
+    requestId: "r",
+  };
+}
+
+/** G5-12: a partial-score attempt on its own session, for the detail page's screenshots. */
+export const PARTIAL_SESSION = "5e551011-0000-4000-8000-0000000001c1";
+
+/** That partial attempt's guardian report, through the real projection. */
+export function partialExamReport(): Record<string, unknown> {
+  return {
+    ok: true,
+    report: toGuardianExamReport(
+      examReportPayloadSchema.parse({
+        ...partialReport,
+        session_id: PARTIAL_SESSION,
+      }),
+    ),
     requestId: "r",
   };
 }
