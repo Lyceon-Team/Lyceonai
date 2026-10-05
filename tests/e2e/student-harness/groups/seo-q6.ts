@@ -42,8 +42,16 @@ export const SEO_Q6: PageGroup = {
       route: REPORT,
       freshReviewPrompt: true,
       waitFor: PROMPT,
-      // The report scrolls the document, so a full-page shot shows the prompt under the report.
-      fullPage: true,
+      // The report scrolls inside the Focus shell, not the document, so a full-page shot stops at
+      // the fold; focusing "Not now" (the card's last control) scrolls the whole card into view.
+      steps: [
+        {
+          focus: {
+            desktop: '[data-testid="review-prompt-not-now"]',
+            mobile: '[data-testid="review-prompt-not-now"]',
+          },
+        },
+      ],
       themes: ["light"],
       prototype: NO_PROTOTYPE,
     },
@@ -76,8 +84,13 @@ export const SEO_Q6: PageGroup = {
           },
           value: "The practice tests feel like the real thing.",
         },
+        {
+          focus: {
+            desktop: '[data-testid="review-submit"]',
+            mobile: '[data-testid="review-submit"]',
+          },
+        },
       ],
-      fullPage: true,
       expectVisible: '[data-testid="review-quote-permission"]',
       themes: ["light"],
       prototype: NO_PROTOTYPE,
@@ -145,12 +158,12 @@ export const SEO_Q6: PageGroup = {
         mobile: '[data-testid="marketing-email-card"]',
       },
       // Settings scrolls inside the App shell, not the document, so a full-page shot stops at the
-      // fold; focusing the toggle scrolls it into view (its focus ring shows).
+      // fold; focusing the Feedback row's button (below the toggle) scrolls both into view.
       steps: [
         {
           focus: {
-            desktop: '[data-testid="settings-marketing-opt-in"]',
-            mobile: '[data-testid="settings-marketing-opt-in"]',
+            desktop: '[data-testid="feedback-open-settings"]',
+            mobile: '[data-testid="feedback-open-settings"]',
           },
         },
       ],

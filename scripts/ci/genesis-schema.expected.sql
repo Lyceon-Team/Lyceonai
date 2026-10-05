@@ -8895,6 +8895,23 @@ $$;
 
 
 --
+-- Name: product_review_prompt_state_for(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+           'last_shown_at', s.last_shown_at,
+           'dismiss_count', s.dismiss_count,
+           'reviewed_at',   s.reviewed_at)
+    FROM public.product_review_prompt_state s
+   WHERE s.profile_id = p_profile_id;
+$$;
+
+
+--
 -- Name: product_review_submit(uuid, text, smallint, text, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -22904,6 +22921,14 @@ GRANT ALL ON FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_ex
 
 REVOKE ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_state_for(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) TO service_role;
 
 
 --

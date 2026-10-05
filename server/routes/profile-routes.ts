@@ -3,6 +3,7 @@ import { resolveFeatureAccess } from "../lib/feature-access";
 import { z } from "zod";
 import {
   getSupabaseAdmin,
+  requireGuardianLinkForUnder13,
   requireRequestUser,
   requireStudentAccount,
 } from "../middleware/supabase-auth";
@@ -685,55 +686,77 @@ router.patch("/", async (req: Request, res: Response) => {
  * compares first). A database refusal after the route's own check (a birthday race) is the same
  * coded 400.
  */
-router.put("/marketing-consent", async (req: Request, res: Response) => {
-  const user = requireRequestUser(req, res);
-  if (!user) return;
+// G2-04: not in the owner-approved allowed set, so an unlinked under-13 student is refused by the
+// live link gate (they can never be opted in, so there is nothing for them to revoke here).
+router.put(
+  "/marketing-consent",
+  requireGuardianLinkForUnder13,
+  async (req: Request, res: Response) => {
+    const user = requireRequestUser(req, res);
+    if (!user) return;
 
-  const parsed = marketingConsentRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: {
-        code: "INVALID_REQUEST",
-        message: "Invalid input",
-        details: parsed.error.flatten(),
-      },
-    });
-  }
-
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data: row, error: readError } = await supabase
-      .from("profiles")
-      .select("role, date_of_birth")
-      .eq("id", user.id)
-      .single();
-    if (readError || !row) {
-      logger.error(
-        "PROFILE",
-        "marketing_consent_profile_read_failed",
-        "Could not load the profile for a marketing consent change",
-        { requestId: req.requestId },
-      );
-      return res.status(500).json({
-        error: { code: "INTERNAL", message: "Something went wrong." },
+    const parsed = marketingConsentRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_REQUEST",
+          message: "Invalid input",
+          details: parsed.error.flatten(),
+        },
       });
     }
-    const role = String((row as { role: unknown }).role);
-    const dateOfBirth = toIsoDate(
-      (row as { date_of_birth: string | null }).date_of_birth,
-    );
 
-    if (parsed.data.granted) {
-      const eligible =
-        (role === "student" || role === "guardian") &&
-        marketingOptInEligible(dateOfBirth, new Date());
-      if (!eligible) {
-        logger.warn(
+    try {
+      const supabase = getSupabaseAdmin();
+      const { data: row, error: readError } = await supabase
+        .from("profiles")
+        .select("role, date_of_birth")
+        .eq("id", user.id)
+        .single();
+      if (readError || !row) {
+        logger.error(
           "PROFILE",
-          "marketing_opt_in_refused",
-          "Marketing opt-in refused: role, under 13 or no date of birth",
-          { code: MARKETING_OPT_IN_INELIGIBLE, requestId: req.requestId },
+          "marketing_consent_profile_read_failed",
+          "Could not load the profile for a marketing consent change",
+          { requestId: req.requestId },
         );
+        return res.status(500).json({
+          error: { code: "INTERNAL", message: "Something went wrong." },
+        });
+      }
+      const role = String((row as { role: unknown }).role);
+      const dateOfBirth = toIsoDate(
+        (row as { date_of_birth: string | null }).date_of_birth,
+      );
+
+      if (parsed.data.granted) {
+        const eligible =
+          (role === "student" || role === "guardian") &&
+          marketingOptInEligible(dateOfBirth, new Date());
+        if (!eligible) {
+          logger.warn(
+            "PROFILE",
+            "marketing_opt_in_refused",
+            "Marketing opt-in refused: role, under 13 or no date of birth",
+            { code: MARKETING_OPT_IN_INELIGIBLE, requestId: req.requestId },
+          );
+          return res.status(400).json({
+            error: {
+              code: MARKETING_OPT_IN_INELIGIBLE,
+              message: "Product update emails are for ages 13 and over.",
+            },
+          });
+        }
+      }
+
+      const write = await setMarketingConsent(
+        supabase,
+        user.id,
+        parsed.data.granted,
+        "settings",
+        req.requestId,
+      );
+      if (!write.ok) {
         return res.status(400).json({
           error: {
             code: MARKETING_OPT_IN_INELIGIBLE,
@@ -741,45 +764,31 @@ router.put("/marketing-consent", async (req: Request, res: Response) => {
           },
         });
       }
-    }
+      await emitMarketingConsentCaptured(emitEvent, user.id, write);
 
-    const write = await setMarketingConsent(
-      supabase,
-      user.id,
-      parsed.data.granted,
-      "settings",
-      req.requestId,
-    );
-    if (!write.ok) {
-      return res.status(400).json({
-        error: {
-          code: MARKETING_OPT_IN_INELIGIBLE,
-          message: "Product update emails are for ages 13 and over.",
+      return res
+        .status(200)
+        .json(
+          marketingConsentResponseSchema.parse({
+            marketingOptIn: write.granted,
+          }),
+        );
+    } catch (error: unknown) {
+      logger.error(
+        "PROFILE",
+        "marketing_consent_failed",
+        "Marketing consent change failed",
+        {
+          requestId: req.requestId,
+          reason: error instanceof Error ? error.message : "unknown",
         },
+      );
+      return res.status(500).json({
+        error: { code: "INTERNAL", message: "Something went wrong." },
       });
     }
-    await emitMarketingConsentCaptured(emitEvent, user.id, write);
-
-    return res
-      .status(200)
-      .json(
-        marketingConsentResponseSchema.parse({ marketingOptIn: write.granted }),
-      );
-  } catch (error: unknown) {
-    logger.error(
-      "PROFILE",
-      "marketing_consent_failed",
-      "Marketing consent change failed",
-      {
-        requestId: req.requestId,
-        reason: error instanceof Error ? error.message : "unknown",
-      },
-    );
-    return res.status(500).json({
-      error: { code: "INTERNAL", message: "Something went wrong." },
-    });
-  }
-});
+  },
+);
 
 /**
  * PATCH /api/profile/name — Settings → Profile: change your display name, and nothing else.

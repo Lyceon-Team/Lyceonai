@@ -28,6 +28,7 @@ import {
   requireStudentOrAdmin,
   requireStudentOnly,
   requireStudentAccount,
+  requireGuardianLinkForUnder13,
   hasSsrSessionCookie,
 } from "./middleware/supabase-auth";
 import { csrfTokenResponseSchema } from "../packages/shared/src/csrf-token-schema";
@@ -338,10 +339,13 @@ app.use(
 
 // SEO Wave 2, plan Q6 (R28-R30). The review prompt, in-app reviews and private feedback, for
 // students and guardians alike (each route reads the caller's role and age from their profile).
+// G2-04: not in the owner-approved allowed set, so an under-13 student with no active guardian
+// link is refused here like on every other student surface; guardians and 13+ pass.
 app.use(
   "/api/feedback",
   requireSupabaseAuth,
   doubleCsrfProtection,
+  requireGuardianLinkForUnder13,
   productFeedbackRoutes,
 );
 
