@@ -393,6 +393,24 @@ echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
 plant M32 "$MIGAUDITRET" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
 expect_red M32 "P6.6 the deleted profile's uuid survives NOWHERE"
 
+# C-01: the crisis hold on account deletion. MIGCASCADE resolves to its last definition
+# (20261027000001), which also carries the CHECK and the message trigger.
+echo "==> (M99) the cascade holds no flagged conversation"
+plant M99 "$MIGCASCADE" 's.replace("   WHERE c.student_id = p_profile_id\n     AND (EXISTS", "   WHERE false AND c.student_id = p_profile_id\n     AND (EXISTS", 1)'
+expect_red M99 "P6.8 (hard_delete)"
+
+echo "==> (M100) the hold forgets a conversation flagged only by a crisis_review_events row"
+plant M100 "$MIGCASCADE" 's.replace("\n       OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = c.id));", ");", 1)'
+expect_red M100 "P6.8 (hard_delete)"
+
+echo "==> (M101) the conversation CHECK admits a NULL student on an unflagged row"
+plant M101 "$MIGCASCADE" 's.replace("CHECK (student_id IS NOT NULL OR crisis_flagged);", "CHECK (true);", 1)'
+expect_red M101 "P6.9 a NULL student_id is refused on an unflagged conversation"
+
+echo "==> (M102) the message trigger admits a NULL student outside a held conversation"
+plant M102 "$MIGCASCADE" 's.replace("  IF NEW.student_id IS NULL AND NOT EXISTS (", "  IF false AND NOT EXISTS (", 1)'
+expect_red M102 "P6.10 a NULL student_id is refused on a message"
+
 # =============================================================================
 # Operational-log retention (v3 §6.7 / SCL-101) — B1
 # =============================================================================

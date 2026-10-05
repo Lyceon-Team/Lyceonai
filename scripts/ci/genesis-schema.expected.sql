@@ -7863,6 +7863,34 @@ BEGIN
   END IF;
 
   -- ========================================================================
+  -- CRISIS HOLD (C-01, owner ruling 2026-10-05; both modes)
+  -- ========================================================================
+  -- A crisis-flagged conversation survives the deletion de-linked from the student, with
+  -- every message, until the safety owner purges it by hand (Doc 03 §14.2, D03:1255).
+  -- "Flagged" is the RS-00 definition, the same predicate the 7d retention sweep holds by:
+  -- any crisis_review_cases or crisis_review_events row names the conversation. NULLing
+  -- student_id here, before the profile DELETE below, is what keeps the profile FK CASCADE
+  -- off these rows. crisis_flagged is set on the way so the table's CHECK
+  -- (tutor_conversations_null_student_only_flagged) can see why the row has no student.
+  -- De-linked, not anonymous: the transcript is the student's own words.
+  UPDATE public.tutor_conversations c
+     SET student_id = NULL,
+         crisis_flagged = true
+   WHERE c.student_id = p_profile_id
+     AND (EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = c.id)
+       OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = c.id));
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('tutor_conversations_crisis_held', v_count);
+
+  UPDATE public.tutor_messages m
+     SET student_id = NULL
+   WHERE m.student_id = p_profile_id
+     AND EXISTS (SELECT 1 FROM public.tutor_conversations c
+                  WHERE c.id = m.conversation_id AND c.student_id IS NULL AND c.crisis_flagged);
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('tutor_messages_crisis_held', v_count);
+
+  -- ========================================================================
   -- PROFILE + AUTH DELETE (shared — both modes destroy the profile row)
   -- ========================================================================
   -- §3 Rule 4: "Linkage destroyed at anonymization." The profile row
@@ -12039,6 +12067,26 @@ COMMENT ON FUNCTION public.tutor_conversation_retention_days() IS 'Doc 03 §14.2
 
 
 --
+-- Name: tutor_messages_null_student_only_flagged(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tutor_messages_null_student_only_flagged() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.student_id IS NULL AND NOT EXISTS (
+       SELECT 1 FROM public.tutor_conversations c
+        WHERE c.id = NEW.conversation_id AND c.student_id IS NULL AND c.crisis_flagged) THEN
+    RAISE EXCEPTION 'tutor_messages_null_student_only_flagged: a message may lose its student only inside a de-linked crisis-flagged conversation'
+      USING ERRCODE = '23514', CONSTRAINT = 'tutor_messages_null_student_only_flagged';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -15505,7 +15553,7 @@ CREATE TABLE public.tutor_context_runtime_config_history (
 
 CREATE TABLE public.tutor_conversations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     entry_mode text NOT NULL,
     source_surface text NOT NULL,
     source_session_id uuid,
@@ -15532,6 +15580,7 @@ CREATE TABLE public.tutor_conversations (
     ended_at timestamp with time zone,
     CONSTRAINT tutor_conversations_assignment_mode_check CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text]))),
     CONSTRAINT tutor_conversations_entry_mode_check CHECK ((entry_mode = ANY (ARRAY['scoped_question'::text, 'scoped_session'::text, 'general'::text]))),
+    CONSTRAINT tutor_conversations_null_student_only_flagged CHECK (((student_id IS NOT NULL) OR crisis_flagged)),
     CONSTRAINT tutor_conversations_policy_variant_check CHECK ((policy_variant = ANY (ARRAY['concise'::text, 'scaffolded'::text, 'socratic'::text, 'strategy_first'::text]))),
     CONSTRAINT tutor_conversations_source_surface_check CHECK ((source_surface = ANY (ARRAY['practice'::text, 'review'::text, 'test_review'::text, 'dashboard'::text]))),
     CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text, 'ended'::text]))),
@@ -15698,7 +15747,7 @@ COMMENT ON TABLE public.tutor_memory_summaries IS 'Durable compact summaries wit
 CREATE TABLE public.tutor_messages (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     conversation_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     role text NOT NULL,
     content_kind text DEFAULT 'message'::text NOT NULL,
     message text NOT NULL,
@@ -18558,6 +18607,13 @@ CREATE TRIGGER tutor_memory_summaries_updated_at BEFORE UPDATE ON public.tutor_m
 --
 
 CREATE TRIGGER tutor_memory_summaries_validate_schema BEFORE INSERT OR UPDATE ON public.tutor_memory_summaries FOR EACH ROW EXECUTE FUNCTION public.validate_memory_summary_schema();
+
+
+--
+-- Name: tutor_messages tutor_messages_null_student_only_flagged; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER tutor_messages_null_student_only_flagged AFTER INSERT OR UPDATE OF student_id ON public.tutor_messages NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION public.tutor_messages_null_student_only_flagged();
 
 
 --
@@ -22869,6 +22925,13 @@ REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() F
 
 REVOKE ALL ON FUNCTION public.tutor_conversation_retention_days() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.tutor_conversation_retention_days() TO service_role;
+
+
+--
+-- Name: FUNCTION tutor_messages_null_student_only_flagged(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tutor_messages_null_student_only_flagged() FROM PUBLIC;
 
 
 --
