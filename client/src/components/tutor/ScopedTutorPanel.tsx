@@ -171,8 +171,9 @@ export function ScopedTutorPanel({
     : null;
 
   return (
+    // SCL-204 / R32: `ph-no-capture` — the LISA conversation is never recorded (Coding Standards §12).
     <section
-      className="flex h-full min-h-[480px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card"
+      className="ph-no-capture flex h-full min-h-[480px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card"
       aria-label="LISA"
       data-testid="scoped-tutor-panel"
     >

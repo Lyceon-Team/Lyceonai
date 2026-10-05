@@ -489,7 +489,9 @@ export default function ChatPage() {
 
   if (!conversationId) {
     return (
-      <div className="flex h-screen">
+      // SCL-204 / R32: the whole LISA page (log, composer, conversation titles) is `ph-no-capture`
+      // — tutor content is never recorded (Coding Standards §12).
+      <div className="ph-no-capture flex h-screen">
         {/* Desktop sidebar */}
         <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-border bg-card">
           {sidebarContent}
@@ -531,7 +533,8 @@ export default function ChatPage() {
   // ── Chat view ─────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen">
+    // SCL-204 / R32: `ph-no-capture` — tutor content is never recorded (Coding Standards §12).
+    <div className="ph-no-capture flex h-screen">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-border bg-card">
         {sidebarContent}

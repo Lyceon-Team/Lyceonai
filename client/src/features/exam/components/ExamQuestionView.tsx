@@ -94,11 +94,13 @@ export function ExamQuestionView(props: Props) {
   );
 
   if (item.passage === null) {
-    return <div className="mx-auto w-full max-w-[760px] px-6 py-7 md:px-10">{answerArea}</div>;
+    // SCL-204 / R32: `ph-no-capture` on the exam question/answer area (Coding Standards §12).
+    return <div className="ph-no-capture mx-auto w-full max-w-[760px] px-6 py-7 md:px-10">{answerArea}</div>;
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+    // SCL-204 / R32: `ph-no-capture` on the exam question/answer area (Coding Standards §12).
+    <div className="ph-no-capture flex min-h-0 flex-1 flex-col md:flex-row">
       <div className="min-h-0 flex-1 overflow-y-auto border-b border-[var(--exam-line)] px-6 py-7 md:border-b-0 md:border-r md:px-10">
         <PassageView
           passage={item.passage}

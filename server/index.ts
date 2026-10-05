@@ -56,6 +56,7 @@ import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
 import publicQotdRoutes from "./routes/public-qotd-routes";
+import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
@@ -468,6 +469,12 @@ app.use("/api/public", publicPricingRoutes);
 // the reads are hashed-IP limited too. See server/routes/public-qotd-routes.ts.
 // CSRF_EXEMPT_REASON: no ambient credential is read; the submit is Turnstile-gated (owner Step 0 decision, 2026-10-05).
 app.use("/api/public/qotd", publicQotdRoutes);
+
+// Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
+// Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no
+// CSRF: it reads no cookie or session; the SCL-202 hashed-IP ledger bounds it.
+// CSRF_EXEMPT_REASON: no ambient credential is read; rate-limited on the anonymous ledger (owner Step 0 decision, 2026-10-05).
+app.use("/api/public/cookie-consent", cookieConsentRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);

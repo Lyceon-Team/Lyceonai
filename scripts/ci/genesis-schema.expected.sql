@@ -8685,6 +8685,30 @@ $$;
 
 
 --
+-- Name: profiles_analytics_fields_set_once(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_analytics_fields_set_once() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.analytics_user_id IS NOT NULL
+     AND NEW.analytics_user_id IS DISTINCT FROM OLD.analytics_user_id THEN
+    RAISE EXCEPTION 'profiles.analytics_user_id is immutable once set (Doc 07A §7.1)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.signup_source IS NOT NULL
+     AND NEW.signup_source IS DISTINCT FROM OLD.signup_source THEN
+    RAISE EXCEPTION 'profiles.signup_source is immutable once set (SCL-201 IS 6)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: profiles_lock_date_of_birth(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -12612,6 +12636,43 @@ CREATE TABLE public.consent_runtime_config_history (
 
 
 --
+-- Name: cookie_consent_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cookie_consent_log (
+    id bigint NOT NULL,
+    consent_id uuid NOT NULL,
+    analytics boolean NOT NULL,
+    banner_version text NOT NULL,
+    source text NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cookie_consent_log_banner_version_check CHECK ((banner_version ~ '^[0-9]+$'::text)),
+    CONSTRAINT cookie_consent_log_source_check CHECK ((source = ANY (ARRAY['banner'::text, 'settings'::text])))
+);
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.cookie_consent_log IS 'Doc 10 §9.11: cookie consent log (timestamp + category + banner version). consent_id is the random id in the visitor''s consent cookie; no user id and no IP are stored.';
+
+
+--
+-- Name: cookie_consent_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.cookie_consent_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: crisis_review_audit_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14029,7 +14090,10 @@ CREATE TABLE public.profiles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     profile_completed_at timestamp with time zone,
     marketing_opt_in boolean DEFAULT false NOT NULL,
-    actor_id uuid DEFAULT gen_random_uuid() NOT NULL
+    actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    analytics_user_id uuid,
+    signup_source text,
+    CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
 
@@ -14038,6 +14102,20 @@ CREATE TABLE public.profiles (
 --
 
 COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
+
+
+--
+-- Name: COLUMN profiles.analytics_user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA256(ANALYTICS_SALT, profile id), UUID-shaped. Written once by the server at onboarding completion; immutable (profiles_analytics_fields_set_once).';
+
+
+--
+-- Name: COLUMN profiles.signup_source; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
 
 
 --
@@ -15604,6 +15682,14 @@ ALTER TABLE ONLY public.consent_runtime_config
 
 
 --
+-- Name: cookie_consent_log cookie_consent_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cookie_consent_log
+    ADD CONSTRAINT cookie_consent_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: crisis_review_audit_log crisis_review_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16009,6 +16095,14 @@ ALTER TABLE ONLY public.practice_session_items
 
 ALTER TABLE ONLY public.practice_sessions
     ADD CONSTRAINT practice_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: profiles profiles_analytics_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_analytics_user_id_key UNIQUE (analytics_user_id);
 
 
 --
@@ -16732,6 +16826,13 @@ CREATE INDEX idx_calendar_block_launches_block_student ON public.calendar_block_
 --
 
 CREATE INDEX idx_calendar_block_launches_student ON public.calendar_block_launches USING btree (student_id);
+
+
+--
+-- Name: idx_cookie_consent_log_consent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cookie_consent_log_consent_id ON public.cookie_consent_log USING btree (consent_id, recorded_at);
 
 
 --
@@ -17873,6 +17974,13 @@ CREATE TRIGGER practice_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE
 --
 
 CREATE TRIGGER practice_runtime_config_notify AFTER INSERT OR UPDATE ON public.practice_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: profiles profiles_analytics_fields_set_once; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_analytics_fields_set_once BEFORE UPDATE OF analytics_user_id, signup_source ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_analytics_fields_set_once();
 
 
 --
@@ -19462,6 +19570,12 @@ ALTER TABLE public.consent_runtime_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.consent_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cookie_consent_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: crisis_review_audit_log crisis_review_admin insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
@@ -21845,6 +21959,13 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 
 
 --
+-- Name: FUNCTION profiles_analytics_fields_set_once(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_analytics_fields_set_once() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION profiles_lock_date_of_birth(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -22637,6 +22758,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config TO serv
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.cookie_consent_log TO service_role;
 
 
 --

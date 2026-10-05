@@ -42,6 +42,9 @@ Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not pu
 Spec departures in these drafts are recorded in SCL-208. Open owner actions:
 - Google Fonts: self-hosted on `seo` by #1088 (SEO-1); must be live in production before Privacy Policy v5 publishes;
 - postal address and telephone, for the Privacy Policy, the children's notice and marketing emails: Karl will supply them; placeholders stay flagged in the counsel checklists until then.
+- cookie consent record (`cookie_consent_log`, SEO F11): its retention period is the counsel item in the Cookie Banner Text checklist (item 5); no retention-registry row or sweep until counsel sets it;
+- Cookie Policy publication: the banner's "Cookie Policy" link opens the Privacy Policy until then — on publication, `COOKIE_POLICY_HREF` in `client/src/components/consent/CookieConsentRoot.tsx` becomes `/legal/cookie-policy`;
+- session replay (F15): the PostHog project keeps recording off until F15's evidence is taken; it is then enabled through the PostHog connector (owner decision 4, 2026-10-05).
 
 The drafts describe the service at launch (owner ruling, 2026-10-05), including PostHog, Cloudflare Turnstile and Trustpilot.
 
