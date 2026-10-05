@@ -1380,10 +1380,10 @@ s = s.replace(a, "export const HELP_PATH = \"/legal\";", 1)'
 
 plant "UI58-H2" "an approved answer is reworded" \
   "$H58" \
-  "client/src/pages/help.tsx" \
-  'a = "40 practice questions a day and unlimited review. Paid plans add your study calendar"
+  "client/src/lib/plan-copy.ts" \
+  'a = "40 practice questions a day and unlimited review."
 assert s.count(a) == 1
-s = s.replace(a, "40 questions a day and unlimited review. Paid plans add your study calendar", 1)'
+s = s.replace(a, "40 questions a day and unlimited review.", 1)'
 
 plant "UI58-H3" "a question is dropped (six, not seven)" \
   "$H58" \
@@ -1674,14 +1674,14 @@ s = s.replace(a, "<h2>Your account is scheduled for deletion</h2>", 1)'
 # OQ-60 (e) (Karl, 2026-10-05): RequireRole's loader follows the device theme on Bare routes.
 L60="client/src/components/auth/RequireRole.loader-theme.test.tsx"
 
-plant "UI59-L1" "the route guard's loader pinned light on every route again" \
+plant "UI59-RL1" "the route guard's loader pinned light on every route again" \
   "$L60" \
   "client/src/components/auth/RequireRole.tsx" \
   'a = "    return requireRoleLoaderThemeLock(location) === \"light\" ? ("
 assert s.count(a) == 1
 s = s.replace(a, "    return true ? (", 1)'
 
-plant "UI59-L2" "the loader unlocks on every table route, not only the Bare ones" \
+plant "UI59-RL2" "the loader unlocks on every table route, not only the Bare ones" \
   "$L60" \
   "client/src/lib/route-shells.ts" \
   'a = "  return spec?.shell === \"bare\" ? spec.themeLock : \"light\";"
@@ -1689,14 +1689,14 @@ assert s.count(a) == 1
 s = s.replace(a, "  return spec !== undefined ? spec.themeLock : \"light\";", 1)'
 
 # OQ-60 (f) (Karl, 2026-10-05): tighter paragraph leading inside the Bare card only.
-plant "UI59-P1" "the card's paragraphs fall back to the global 1.75 leading" \
+plant "UI59-CL1" "the card's paragraphs fall back to the global 1.75 leading" \
   "$B59" \
   "client/src/components/layout/BareCardShell.tsx" \
   'a = "          BARE_CARD_PROSE_LEADING,\n"
 assert s.count(a) == 1
 s = s.replace(a, "          undefined,\n", 1)'
 
-plant "UI59-P2" "the card leading at class specificity (it would override a meta line's own)" \
+plant "UI59-CL2" "the card leading at class specificity (it would override a meta line's own)" \
   "$B59" \
   "client/src/components/layout/BareCardShell.tsx" \
   'a = "\"[:where(&)_p]:leading-[1.55]\""
