@@ -97,6 +97,7 @@ FILES=(
   "client/src/features/exam/lib/phone-notice.ts"
   "client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx"
   "client/src/features/exam/pages/ExamSessionPage.tsx"
+  "client/src/features/calendar/calendar-student.css"
   "client/src/features/exam/components/ExamStatus.tsx"
 )
 
@@ -2159,6 +2160,13 @@ plant "FU-C2" "every calendar block asks the check (practice too)" \
   'a = "            blockType === \"full_length\"\n              ? precheck.run("
 assert s.count(a) == 1
 s = s.replace(a, "            true\n              ? precheck.run(", 1)'
+
+plant "FU-C3" "the block sheet falls back under the phone tab bar (Start untappable at 390)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyceon-calendar.lyc-cal .sheet {\n  z-index: 45;"
+assert s.count(a) == 1
+s = s.replace(a, ".lyceon-calendar.lyc-cal .sheet {\n  z-index: 9;", 1)'
 
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \

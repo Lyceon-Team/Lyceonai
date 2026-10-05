@@ -7,8 +7,11 @@
  *        right panel is 340px, no slim footer), §4 Calendar; design/prototype/Calendar.dc.html
  *        (plan paid and free, its Week/Month toggle and its Regenerate plan); OQ-4 (390px,
  *        light and dark); OQ-25 (free reads the ungated profile); SCL-211 / OQ-56 (no streak
- *        line, no facts strip; the free form read-only after the first save)]
- *        | @implemented [2026-10-03; SCL-211 2026-10-05]
+ *        line, no facts strip; the free form read-only after the first save); owner ruling
+ *        (Karl, 2026-10-05, OQ-63): "Phone notice: show it for every full-length start on a
+ *        phone, including calendar-launched starts. One shared pre-start check, same \"Continue
+ *        anyway\". Test it from a calendar block at 390px."]
+ *        | @implemented [2026-10-03; SCL-211 2026-10-05; OQ-63 2026-10-05]
  *
  * plain English: the group asks for the "calendar-goal" seed (seed.ts): through the real
  * `PUT /api/calendar/profile` the paid student's SAT date is this week's Sunday, so the week,
@@ -18,6 +21,15 @@
  * the inline form and saves it through the real route, after which the card turns read-only
  * (OQ-56 (b)); the shot after it reloads the page with that profile saved. Shot order matters
  * and is kept: setup, save, saved.
+ *
+ * OQ-63. The seed also puts a scheduled full-length block on today (seed.ts), the day the 390px
+ * calendar shows. "paid-full-length-notice" opens it and, at 390, presses Start: the shared
+ * pre-start check's notice opens over the block sheet, and nothing is launched. On desktop the
+ * same shot stops at the open sheet (a control: at lg and up Start launches at once, so pressing
+ * it would leave the page). "paid-full-length-continue" presses Start and, at 390, Continue
+ * anyway: the launch runs and the student lands in the sitting (`/tests/<session>`). The first
+ * capture to launch creates the session; later captures find the block started and resume it,
+ * so the notice is asked for a Resume as for a Start.
  */
 import type { PageGroup } from "./types";
 
@@ -35,6 +47,16 @@ const MONTH_BUTTON = {
   desktop: '[data-testid="calendar-view-month"]',
   mobile: '[data-testid="calendar-view-month"]',
 } as const;
+
+/** OQ-63: today's scheduled full-length block (BlockCard's `exam` tone class). */
+const FULL_LENGTH_BLOCK = 'button[data-testid^="calendar-block-"].exam';
+const FULL_LENGTH_BLOCK_AT = {
+  desktop: FULL_LENGTH_BLOCK,
+  mobile: FULL_LENGTH_BLOCK,
+} as const;
+/** The block sheet's Start (or Resume, once started): its one primary button. */
+const SHEET_START =
+  '[data-testid="calendar-block-sheet"] footer button.primary';
 
 /** The prototype's Week/Month group: its second button is Month. */
 const PROTO_MONTH =
@@ -115,6 +137,52 @@ export const UI_55: PageGroup = {
         steps: ['button:has-text("Regenerate plan")'],
         state: "regenerated",
         note: "Calendar, plan = paid, Regenerate plan clicked",
+      },
+    },
+    {
+      id: "paid-full-length-notice",
+      title:
+        "Phone pre-start check (OQ-63), 390: today's scheduled full-length block, Start: \"Full-length tests are built for a laptop or tablet, like test day.\" over the block sheet, with the outline Continue anyway and Close; nothing launched. Desktop (control): the block's sheet, whose Start launches at once",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: FULL_LENGTH_BLOCK_AT,
+      steps: [
+        // Once a capture has launched it the block is started, and dnd-kit marks a block it
+        // will not drag aria-disabled; it still opens its sheet on a tap.
+        { click: FULL_LENGTH_BLOCK_AT, ariaDisabledOk: true },
+        { click: { desktop: null, mobile: SHEET_START } },
+      ],
+      expectVisible: '[data-testid="calendar-block-sheet"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototypes have no phone layout and no pre-start check; the notice is the owner rulings of 2026-10-05 (OQ-63; DESIGN.md §2 Mobile).",
+      },
+    },
+    {
+      id: "paid-full-length-continue",
+      title:
+        "Click path (OQ-63): today's full-length block, Start, and at 390 Continue anyway: the calendar launch runs (POST /api/calendar/blocks/:id/launch) and the student lands in the sitting. Desktop: Start lands there directly",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: FULL_LENGTH_BLOCK_AT,
+      steps: [
+        // Once a capture has launched it the block is started, and dnd-kit marks a block it
+        // will not drag aria-disabled; it still opens its sheet on a tap.
+        { click: FULL_LENGTH_BLOCK_AT, ariaDisabledOk: true },
+        { click: { desktop: SHEET_START, mobile: SHEET_START } },
+        {
+          click: {
+            desktop: null,
+            mobile: '[data-testid="full-length-phone-continue"]',
+          },
+        },
+      ],
+      expectPath: "^/tests/[0-9a-f-]{36}(/.*)?$",
+      prototype: {
+        kind: "none",
+        reason:
+          "A click path; its proof is the landing path (the prototype's blocks are not wired).",
       },
     },
     {

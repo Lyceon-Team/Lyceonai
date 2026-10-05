@@ -33,6 +33,9 @@
  * beside it.
  */
 import React from "react";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -968,6 +971,37 @@ describe("phone: a full-length block's Start asks the shared pre-start check fir
       `POST /api/calendar/blocks/${PRACTICE_BLOCK}/launch`,
     ]);
     expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+
+  it("at 390 the block sheet (and its Start) sits above the phone tab bar, and below the notice", async () => {
+    await mount("paid", {}, { phone: true });
+    // The tab bar's layer, read off the rendered App shell (Tailwind `z-N`).
+    const bar = await screen.findByTestId("app-tab-bar");
+    const barZ = /(?:^|\s)z-(\d+)(?:\s|$)/.exec(bar.className)?.[1];
+    expect(barZ).toBe("40");
+    // The student sheet's and scrim's layers (calendar-student.css; the shared calendar.css
+    // puts them at 9 and 8, under the bar, which then took the tap on Start).
+    const css = fs.readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../features/calendar/calendar-student.css",
+      ),
+      "utf8",
+    );
+    const layer = (selector: string): number => {
+      const at = css.indexOf(`${selector} {`);
+      expect(at).toBeGreaterThan(-1);
+      const rule = css.slice(at, css.indexOf("}", at));
+      const z = /z-index:\s*(\d+);/.exec(rule)?.[1];
+      return z === undefined ? Number.NaN : Number(z);
+    };
+    const sheet = layer(".lyceon-calendar.lyc-cal .sheet");
+    const scrim = layer(".lyceon-calendar.lyc-cal .scrim");
+    expect(sheet).toBeGreaterThan(Number(barZ));
+    expect(scrim).toBeGreaterThan(Number(barZ));
+    expect(sheet).toBeGreaterThan(scrim);
+    // Below the student Modal (Radix Dialog, z-50), so the pre-start check opens over the sheet.
+    expect(sheet).toBeLessThan(50);
   });
 
   it("desktop: a full-length block's Start launches at once, no notice", async () => {
