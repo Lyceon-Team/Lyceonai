@@ -376,7 +376,11 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4's tab bar and 
     expect(bar.className).toMatch(/(^|\s)lg:hidden(\s|$)/);
     const rail = screen.getByTestId("app-rail");
     expect(rail.className).toMatch(/(^|\s)hidden(\s|$)/);
-    expect(within(rail).getAllByRole("link").map((el) => el.textContent)).toEqual([
+    expect(
+      within(rail)
+        .getAllByRole("link")
+        .map((el) => el.textContent),
+    ).toEqual([
       "Home",
       "Practice",
       "Review",

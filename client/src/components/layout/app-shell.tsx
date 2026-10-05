@@ -316,11 +316,9 @@ export function AppShell({
       // Owner ruling (Karl, 2026-10-05; supersedes OQ-48's order): Full-Length, Settings, Help,
       // Sign out. The leading entries are the rail items off the tab bar. Settings and Sign out
       // are the shared menu's own; an admin's Crisis review sits between Help and Sign out.
-      leadingItems={RAIL_ITEMS.filter((item) => !item.inTabBar).map(
-        (item) => (
-          <MenuRailEntry key={item.key} item={item} access={access} />
-        ),
-      )}
+      leadingItems={RAIL_ITEMS.filter((item) => !item.inTabBar).map((item) => (
+        <MenuRailEntry key={item.key} item={item} access={access} />
+      ))}
       items={<MenuLink href={HELP_PATH} label="Help" testId="menu-help" />}
     />
   );
