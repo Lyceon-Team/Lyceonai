@@ -1,15 +1,8 @@
 > **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
->
-> Document: LYCEON Billing Terms, proposed version 3 (replaces published v2, `legal/billing-terms/v2/en.md`, effective 2026-09-11).
-> Status: awaiting counsel. Prepared 2026-10-03 for plan row G7. Not built, not served, not linked from the product.
-> **The only change from v2 is Section 1, paragraph 2** (v2 line 29), approved by Karl on 2026-10-03:
-> * "unlimited practice" becomes "practice beyond the free plan's daily limit". Paid practice has a per-session cap (`max_session_count_premium`), so "unlimited" was not true.
-> * "expanded guardian visibility for anyone linked to that student" becomes "lets a linked parent or guardian see the student's progress". This matches the rule that guardian visibility depends on the student's active entitlement.
-> * Feature names follow the approved public wording (`docs/compliance/claim-inventory.md` H27; Codex audit of `seo`, 2026-10-05): the paid features are named "full-length practice tests with score reports", "skill-level progress" and "a study plan", replacing v2's exam, breakdown and calendar names.
->
-> Everything else is v2 verbatim.
 
 # **LYCEON Billing Terms**
+
+**Version 3** · **Effective date:** [●]
 
 These Billing Terms are the Auto-Renewal Offer Terms for LYCEON subscriptions. They are presented before you complete checkout, and you are asked to agree to them separately from the LYCEON Terms of Use.
 
@@ -161,7 +154,7 @@ LYCEON AI
 
 ## Counsel checklist
 
-1. **"Practice beyond the free plan's daily limit".** Confirm this fairly describes a plan with no daily cap but a per-session cap, and whether the per-session cap must itself be disclosed.
-2. **Guardian visibility.** Confirm "lets a linked parent or guardian see the student's progress" is accurate and sufficient. Some guardian views are available without a subscription (Privacy Policy v5 §5.1).
-3. **Re-consent.** Decide whether this wording change is material enough to require existing subscribers to re-consent, or only notice under Section 9.
-4. **Consistency.** The Subscription and Auto-Renewal Notice and the homepage pricing copy must say the same thing. Homepage copy is plan row F6.
+1. Confirm that "practice beyond the free plan's daily limit" accurately describes the paid plan, and whether any per-session limit must be disclosed.
+2. Confirm the description of parent and guardian access in Section 1.
+3. Confirm whether the changes from version 2 require existing subscribers to consent again, or notice under Section 9.
+4. Confirm consistency with the Subscription and Auto-Renewal Notice.
