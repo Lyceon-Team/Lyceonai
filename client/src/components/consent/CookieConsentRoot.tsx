@@ -36,7 +36,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { readDocumentTheme, subscribeDocumentTheme } from "@/lib/theme";
+import {
+  onSignedInSurface,
+  subscribeSignedInSurface,
+} from "@/lib/signed-in-surface";
+import { readPaintedTheme, subscribePaintedTheme } from "@/lib/theme";
 import {
   closeCookieSettings,
   getConsentSnapshot,
@@ -78,17 +82,26 @@ function dismissGpcNotice(): void {
 }
 
 /**
- * The consent surfaces follow the app's one theme setting (<html data-theme>) with the app's own
- * dark tokens: `dark` on the surface scopes index.css's `.dark` values to it alone. Owner ruling
- * 2026-10-05: banner and dialog in light and dark. Prerender reads "light".
+ * Owner ruling 2026-10-05: the banner, the GPC notice and the dialog follow the page's theme —
+ * light on public pages; on signed-in pages, the app's theme; never a dark banner over a light
+ * page. So the surface goes dark only when a signed-in surface is mounted AND the page is painted
+ * dark (`readPaintedTheme`, which checks the token root, not just the setting). `dark` on the
+ * surface scopes index.css's `.dark` tokens to it alone. Prerender reads light.
  */
 function useSurfaceThemeClass(): string {
-  const theme = useSyncExternalStore(
-    subscribeDocumentTheme,
-    readDocumentTheme,
+  const signedIn = useSyncExternalStore(
+    subscribeSignedInSurface,
+    onSignedInSurface,
+    () => false,
+  );
+  const painted = useSyncExternalStore(
+    subscribePaintedTheme,
+    readPaintedTheme,
     () => "light" as const,
   );
-  return theme === "dark" ? "consent-surface dark" : "consent-surface";
+  return signedIn && painted === "dark"
+    ? "consent-surface dark"
+    : "consent-surface";
 }
 
 export function useConsentSnapshot(): ReturnType<typeof getConsentSnapshot> {

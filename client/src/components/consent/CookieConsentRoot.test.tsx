@@ -240,3 +240,84 @@ describe("under-13 exclusion", () => {
     expect(loader.start).not.toHaveBeenCalled();
   });
 });
+
+describe("theme (owner ruling 2026-10-05: never a dark banner over a light page)", () => {
+  let lycRoot: HTMLElement | null = null;
+
+  function paintPage(theme: "light" | "dark", tokenRoot: boolean): void {
+    document.documentElement.setAttribute("data-theme", theme);
+    if (tokenRoot && lycRoot === null) {
+      lycRoot = document.createElement("div");
+      lycRoot.className = "lyc";
+      document.body.appendChild(lycRoot);
+    }
+  }
+
+  afterEach(() => {
+    lycRoot?.remove();
+    lycRoot = null;
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  const bannerIsDark = (): boolean =>
+    screen.getByTestId("cookie-banner").classList.contains("dark");
+
+  it("signed-in page painted dark: the banner and the dialog are dark (presence first)", async () => {
+    paintPage("dark", true);
+    await mountFresh();
+    const { enterSignedInSurface } = await import("@/lib/signed-in-surface");
+    let leave = (): void => undefined;
+    await act(async () => {
+      leave = enterSignedInSurface();
+    });
+    expect(bannerIsDark()).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cookie-open-settings"));
+    });
+    expect(
+      screen.getByTestId("cookie-settings").classList.contains("dark"),
+    ).toBe(true);
+    // Leaving the signed-in surface (back to a public page): light again.
+    await act(async () => {
+      leave();
+    });
+    expect(bannerIsDark()).toBe(false);
+  });
+
+  it("public page, dark setting: light", async () => {
+    paintPage("dark", true);
+    await mountFresh();
+    expect(bannerIsDark()).toBe(false);
+  });
+
+  it("signed-in page whose dark setting does not reach the page (no token root): light", async () => {
+    paintPage("dark", false);
+    await mountFresh();
+    const { enterSignedInSurface } = await import("@/lib/signed-in-surface");
+    await act(async () => {
+      enterSignedInSurface();
+    });
+    expect(bannerIsDark()).toBe(false);
+  });
+
+  it("signed-in page locked to light (timed exam): light", async () => {
+    paintPage("dark", true);
+    lycRoot?.setAttribute("data-theme-lock", "light");
+    await mountFresh();
+    const { enterSignedInSurface } = await import("@/lib/signed-in-surface");
+    await act(async () => {
+      enterSignedInSurface();
+    });
+    expect(bannerIsDark()).toBe(false);
+  });
+
+  it("signed-in page, light setting: light", async () => {
+    paintPage("light", true);
+    await mountFresh();
+    const { enterSignedInSurface } = await import("@/lib/signed-in-surface");
+    await act(async () => {
+      enterSignedInSurface();
+    });
+    expect(bannerIsDark()).toBe(false);
+  });
+});
