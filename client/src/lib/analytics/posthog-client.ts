@@ -15,6 +15,8 @@
  *   - `person_profiles: "identified_only"` with no `identify` anywhere, so browser events stay
  *     anonymous and are never joined to the server's analytics_user_id;
  *   - `before_send` scrubbing credential-shaped URL parameters (url-scrub.ts).
+ *   - `mask_all_text` while a signed-in surface is mounted (owner ruling 2026-10-05, SCL-213 IS 6):
+ *     autocapture records no element text there; public pages keep the default.
  * Session recording follows the PROJECT setting, which stays off until F15 ships (decision 4).
  *
  * `stopAnalytics()` (withdrawal, or an excluded account signing in) opts out, stops recording,
@@ -42,6 +44,29 @@ function config(): { key: string; host: string } | null {
   };
 }
 
+/**
+ * Owner ruling 2026-10-05 (recorded in SCL-213 IS 6): on SIGNED-IN surfaces autocapture records no
+ * element text (`mask_all_text: true`) — a clicked button or link there can carry a student's
+ * name. Public pages keep PostHog's default. "Signed-in surface" is every page rendered through
+ * `RequireRole`, which registers itself here while it is mounted; a counter, because a surface can
+ * hand over to another (route change) before the first unmounts.
+ */
+let signedInSurfaces = 0;
+
+function applyTextMasking(): void {
+  instance?.set_config({ mask_all_text: signedInSurfaces > 0 });
+}
+
+/** Called by RequireRole on mount; the returned function is its unmount. */
+export function enterSignedInSurface(): () => void {
+  signedInSurfaces += 1;
+  applyTextMasking();
+  return () => {
+    signedInSurfaces -= 1;
+    applyTextMasking();
+  };
+}
+
 export function analyticsConfigured(): boolean {
   return config() !== null;
 }
@@ -54,6 +79,7 @@ export function startAnalytics(): Promise<void> {
       api_host: cfg.host,
       defaults: POSTHOG_DEFAULTS,
       person_profiles: "identified_only",
+      mask_all_text: signedInSurfaces > 0,
       before_send: (event) =>
         event === null
           ? null
