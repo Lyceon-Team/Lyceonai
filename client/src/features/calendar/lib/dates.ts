@@ -20,6 +20,8 @@
  * `Date.getUTCDay()` gives (it puts Sunday at 0) — hence the `(dow + 6) % 7` shift.
  */
 
+import { startOfLocalWeek } from "@lyceon/shared/calendar/time";
+
 /** UTC midnight for a local date string. Never exported: see the module note. */
 function parse(date: string): Date {
   const [year, month, day] = date.split("-").map(Number);
@@ -41,9 +43,13 @@ export function dayOfWeek(date: string): number {
   return parse(date).getUTCDay();
 }
 
-/** R-08-30: the local ISO week starts on MONDAY. */
+/**
+ * R-08-30: the local ISO week starts on MONDAY. The rule lives once, in the shared calendar time
+ * module, so the server (the review prompt's study-week moment) and this grid cannot disagree on
+ * which week a date is in.
+ */
 export function startOfWeek(date: string): string {
-  return addDays(date, -((dayOfWeek(date) + 6) % 7));
+  return startOfLocalWeek(date);
 }
 
 /** The first of the month `date` falls in. */

@@ -417,6 +417,68 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
         "turn_count": "not_pii"
       },
       "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "consent_captured",
+      "schema_tier": "strict",
+      "canonical_event_class": "system",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "Emitted when a user captures a consent event (COPPA / FERPA / general TOS acknowledgment). Does NOT include the consent body itself — only consent_type + consent_version metadata for analytics correlation.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "consent_type",
+          "consent_version"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "consent_captured"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "consent_type": {
+            "type": "string",
+            "enum": [
+              "coppa_parental",
+              "ferpa_acknowledgment",
+              "tos",
+              "privacy_policy",
+              "marketing_optin"
+            ]
+          },
+          "consent_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "consent_type": "not_pii",
+        "consent_version": "not_pii"
+      },
+      "retention_class": "standard_analytics"
     }
   ],
   "person_properties": [

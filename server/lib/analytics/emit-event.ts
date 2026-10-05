@@ -29,6 +29,12 @@
  * Never throws: every outcome is a returned reason, logged without payload. Analytics failing must
  * not fail the request that triggered it, so callers `await` it and carry on.
  *
+ * EVERY NON-EMISSION IS LOGGED (owner report 2026-10-05: a production signup emitted nothing and
+ * left no trace, because `analytics_not_configured` and the policy exclusions returned silently).
+ * A missing or malformed variable is an ERROR naming the variable and the Zod issue code — never
+ * its value; policy outcomes (under-13, not onboarded, not the first identity) are INFO lines
+ * carrying only the reason, so "nothing was sent" can always be told from "it was never tried".
+ *
  * trade-offs: §9.2 step 11 (person-property updates) is not built — only the cohort-class events
  * use it, and SCL-213 defers them. `bucket` redaction has no bucket table at V1 (§8.1.1: "Currently
  * unused"), so an entry declaring it is refused rather than guessed at.
@@ -102,6 +108,23 @@ export type EmitDeps = {
 };
 
 /** The registry, parsed once with the shared schema; a malformed registry fails at module load. */
+/**
+ * What is wrong with the analytics environment, by variable name and Zod issue code. Empty when
+ * the wrapper can emit. Never carries a value.
+ */
+export function analyticsConfigProblems(env: unknown): string[] {
+  const parsed = analyticsEnvSchema.safeParse(env);
+  if (!parsed.success) {
+    return parsed.error.issues.map(
+      (issue) => `${issue.path.join(".") || "(env)"}:${issue.code}`,
+    );
+  }
+  const problems: string[] = [];
+  if (!parsed.data.POSTHOG_API_KEY) problems.push("POSTHOG_API_KEY:missing");
+  if (!parsed.data.ANALYTICS_SALT) problems.push("ANALYTICS_SALT:missing");
+  return problems;
+}
+
 export const EVENT_REGISTRY: EventRegistry = eventRegistrySchema.parse(
   GENERATED_EVENT_REGISTRY,
 );
@@ -147,16 +170,42 @@ function redact(
   return out;
 }
 
+/** Outcomes that are the policy working, not a fault: logged at INFO, reason only. */
+const EXPECTED_REFUSALS: ReadonlySet<EmitRefusal> = new Set<EmitRefusal>([
+  "excluded_under_13_or_age_unknown",
+  "account_not_onboarded",
+  "not_first_identity",
+]);
+
 function refuse(
   eventName: string,
   reason: EmitRefusal,
   details?: string[],
 ): EmitResult {
-  logger.warn("ANALYTICS", "emit_refused", "Analytics event not emitted", {
-    event: eventName,
-    reason,
-    ...(details ? { details } : {}),
-  });
+  const data = { event: eventName, reason, ...(details ? { details } : {}) };
+  if (reason === "analytics_not_configured") {
+    logger.error(
+      "ANALYTICS",
+      "emit_not_configured",
+      "Analytics is not configured: event NOT sent (see details for the variable)",
+      undefined,
+      data,
+    );
+  } else if (EXPECTED_REFUSALS.has(reason)) {
+    logger.info(
+      "ANALYTICS",
+      "emit_skipped",
+      "Analytics event not sent (policy)",
+      data,
+    );
+  } else {
+    logger.warn(
+      "ANALYTICS",
+      "emit_refused",
+      "Analytics event not emitted",
+      data,
+    );
+  }
   return details ? { ok: false, reason, details } : { ok: false, reason };
 }
 
@@ -180,7 +229,11 @@ export async function emitEventWith(
 ): Promise<EmitResult> {
   const env = analyticsEnvSchema.safeParse(deps.env);
   if (!env.success || !env.data.POSTHOG_API_KEY || !env.data.ANALYTICS_SALT) {
-    return { ok: false, reason: "analytics_not_configured" };
+    return refuse(
+      eventName,
+      "analytics_not_configured",
+      analyticsConfigProblems(deps.env),
+    );
   }
   const salt = env.data.ANALYTICS_SALT;
 
@@ -215,12 +268,12 @@ export async function emitEventWith(
 
   // SCL-201 IS 1: under-13, and an age not yet known, are excluded before anything is derived.
   if (profile.isUnder13 !== false) {
-    // Not logged: excluding a minor is the policy working, not a fault.
-    return { ok: false, reason: "excluded_under_13_or_age_unknown" };
+    // The policy working, not a fault: an INFO line with the reason only (no id, no age).
+    return refuse(eventName, "excluded_under_13_or_age_unknown");
   }
   // Only user_signed_up may precede onboarding completion (its own call site is the completion).
   if (options.requireFirstIdentity !== true && !profile.onboarded) {
-    return { ok: false, reason: "account_not_onboarded" };
+    return refuse(eventName, "account_not_onboarded");
   }
 
   // Step 3 (continued): the immutable id, derived and written once if it was never written.
@@ -246,8 +299,8 @@ export async function emitEventWith(
     }
   }
   if (options.requireFirstIdentity === true && !wroteIdentityNow) {
-    // Expected on a repeat completion or a pre-existing account: not a fault, not logged.
-    return { ok: false, reason: "not_first_identity" };
+    // Expected on a repeat completion or a pre-existing account: an INFO line, not a fault.
+    return refuse(eventName, "not_first_identity");
   }
 
   // Steps 6–7.

@@ -53,6 +53,7 @@ import { dayMonthYear } from "../lib/tests-home-model";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
 import { DomainSegments } from "../components/DomainSegments";
+import { ReviewPrompt } from "@/components/product-feedback/ReviewPrompt";
 
 const POLL_MS = 4_000;
 
@@ -109,7 +110,7 @@ export default function ExamReportPage(): JSX.Element {
         onRetry={() => void report.refetch()}
       />
     );
-  return <ReportLayout payload={report.data} />;
+  return <ReportLayout payload={report.data} sessionId={sessionId} />;
 }
 
 /** The date the top bar shows: when the test ended, if the payload says. */
@@ -130,9 +131,17 @@ function reportDate(payload: ExamStudentReportPayload): string | null {
 
 function ReportLayout({
   payload,
+  sessionId,
 }: {
   payload: ExamStudentReportPayload;
+  sessionId: string;
 }): JSX.Element {
+  // Plan R30 / Q6 (owner Step 0, 2026-10-05): a finished full-length report is a success moment.
+  // Asked only once the report is scored; the server re-checks the session is this student's
+  // and scored, then applies the cadence.
+  const scored =
+    payload.report_state === "scored" ||
+    payload.report_state === "partial_scored";
   const date = reportDate(payload);
   return (
     <>
@@ -162,6 +171,14 @@ function ReportLayout({
           data-report-state={payload.report_state}
         >
           <ReportBody payload={payload} />
+          {scored ? (
+            <div className="mt-10">
+              <ReviewPrompt
+                query={{ moment: "exam_report", session_id: sessionId }}
+                variant="lyc"
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </>

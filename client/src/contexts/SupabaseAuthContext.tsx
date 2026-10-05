@@ -382,7 +382,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
             privacyPolicyAccepted: legalConsent.privacyPolicyAccepted,
             consentSource: legalConsent.consentSource ?? "email_signup_form",
           },
-          // SCL-201 IS 6: the in-memory first-touch channel (nothing stored on the device).
+          // SCL-201 IS 6: the first-touch channel (kept for the tab session only with analytics
+          // consent; see lib/analytics/first-touch.ts).
           signupSource: firstTouchSource(),
         }),
       });

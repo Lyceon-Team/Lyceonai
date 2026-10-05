@@ -82,6 +82,10 @@ async function main(): Promise<void> {
   const auth = await import("../../../server/middleware/supabase-auth");
   const { default: profileRoutes } =
     await import("../../../server/routes/profile-routes");
+  // SEO Wave 2, plan Q6: the review prompt, reviews and feedback (server/index.ts mounts it
+  // with the same auth guard).
+  const { default: productFeedbackRoutes } =
+    await import("../../../server/routes/product-feedback-routes");
   const { default: practiceRouter } =
     await import("../../../server/routes/practice-canonical");
   const { default: reviewRouter } =
@@ -178,6 +182,7 @@ async function main(): Promise<void> {
   // Mounted in server/index.ts's order and with its guard chains (the guards are the stub's).
   app.use("/api/legal", auth.requireSupabaseAuth, legalRouter);
   app.use("/api/profile", auth.requireSupabaseAuth, profileRoutes);
+  app.use("/api/feedback", auth.requireSupabaseAuth, productFeedbackRoutes);
   app.use(
     NOTIFICATION_API_MOUNT,
     auth.requireSupabaseAuth,
