@@ -30,6 +30,8 @@ Help us understand how LYCEON is used, including recordings of how pages are use
 
 **Your browser has asked us not to use analytics.** Analytics cookies are off. You can change this in **Cookie settings**.
 
+**[ OK ]**
+
 ## **Footer link**
 
 **Cookie settings**
@@ -37,6 +39,12 @@ Help us understand how LYCEON is used, including recordings of how pages are use
 ## **Account settings**
 
 **Cookies and analytics**
+
+## **Screen-reader labels**
+
+Cookie settings dialog: **Choose which cookies LYCEON may use.**
+
+Global Privacy Control notice: **Global Privacy Control**
 
 ---
 

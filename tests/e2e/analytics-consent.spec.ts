@@ -29,6 +29,7 @@ import {
   type Page,
   type Route,
 } from "@playwright/test";
+import { gunzipSync } from "node:zlib";
 
 if (process.env.E2E_CHROMIUM) {
   test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
@@ -47,18 +48,48 @@ const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:5175";
 const POSTHOG_HOST = /^https:\/\/[a-z0-9.-]*posthog\.com\//;
 const STUDENT = "5c5c5c5c-1111-4222-8333-444444444444";
 
+type CapturedEvent = { event: string; properties: Record<string, unknown> };
+
 type Observed = {
   posthog: string[];
+  events: CapturedEvent[];
   consentPosts: unknown[];
   profileReads: number;
 };
 
+/** Decodes a PostHog capture body: gzip (detected by its magic bytes) or plain JSON. */
+function decodeCapture(body: Buffer | null): CapturedEvent[] {
+  if (body === null || body.length === 0) return [];
+  const raw =
+    body[0] === 0x1f && body[1] === 0x8b
+      ? gunzipSync(body).toString("utf-8")
+      : body.toString("utf-8");
+  const parsed: unknown = JSON.parse(raw);
+  // posthog-js sends `{ api_key, batch: [...] }`; a bare event or array is accepted too.
+  const batch =
+    typeof parsed === "object" && parsed !== null && "batch" in parsed
+      ? (parsed as { batch: unknown }).batch
+      : parsed;
+  const list = Array.isArray(batch) ? batch : [batch];
+  return list.filter(
+    (e): e is CapturedEvent =>
+      typeof e === "object" &&
+      e !== null &&
+      typeof (e as CapturedEvent).event === "string",
+  );
+}
+
 async function instrument(
   context: BrowserContext,
   page: Page,
-  opts: { signedInUnder13?: boolean } = {},
+  opts: { signedIn?: "under13" | "adult" } = {},
 ): Promise<Observed> {
-  const seen: Observed = { posthog: [], consentPosts: [], profileReads: 0 };
+  const seen: Observed = {
+    posthog: [],
+    events: [],
+    consentPosts: [],
+    profileReads: 0,
+  };
   // The other half of PostHog's bot check: an automated browser reports navigator.webdriver.
   await context.addInitScript(() => {
     // ...and Playwright's headless shell (what CI runs) names itself "HeadlessChrome" in
@@ -88,14 +119,31 @@ async function instrument(
     } else if (url.pathname.endsWith("/config")) {
       await route.fulfill({
         status: 200,
-        json: { supportedCompression: ["gzip-js"], hasFeatureFlags: false },
+        // As a real project answers: autocapture on (the project setting), replay off (R12a).
+        json: {
+          supportedCompression: ["gzip-js"],
+          hasFeatureFlags: false,
+          autocapture_opt_out: false,
+          sessionRecording: false,
+        },
       });
     } else if (url.pathname.startsWith("/flags")) {
       await route.fulfill({
         status: 200,
-        json: { flags: {}, errorsWhileComputingFlags: false },
+        json: {
+          flags: {},
+          errorsWhileComputingFlags: false,
+          autocapture_opt_out: false,
+          sessionRecording: false,
+        },
       });
     } else {
+      if (
+        url.hostname === "us.i.posthog.com" &&
+        /^\/(e|i\/v0\/e|batch)\b/.test(url.pathname)
+      ) {
+        seen.events.push(...decodeCapture(route.request().postDataBuffer()));
+      }
       await route.fulfill({ status: 200, json: { status: 1 } });
     }
   });
@@ -108,22 +156,22 @@ async function instrument(
         return route.fulfill({
           json: {
             csrfToken: "t",
-            sessionCookiePresent: opts.signedInUnder13 === true,
+            sessionCookiePresent: opts.signedIn !== undefined,
           },
         });
       }
       if (path === "/api/profile") {
         seen.profileReads += 1;
-        if (opts.signedInUnder13) {
+        if (opts.signedIn) {
           return route.fulfill({
             json: {
               authenticated: true,
               user: {
                 id: STUDENT,
-                email: "kid@example.test",
-                display_name: "Kid",
+                email: "student@example.test",
+                display_name: "Casey Student",
                 role: "student",
-                is_under_13: true,
+                is_under_13: opts.signedIn === "under13",
                 profileCompletedAt: "2026-09-01T00:00:00.000Z",
                 requiredProfileComplete: true,
                 guardianConsentRequired: false,
@@ -224,7 +272,7 @@ test.describe("cookie consent → PostHog", () => {
     page,
   }) => {
     await setAcceptedCookie(context);
-    const seen = await instrument(context, page, { signedInUnder13: true });
+    const seen = await instrument(context, page, { signedIn: "under13" });
     await page.goto(`${BASE}/`);
     await expect.poll(() => seen.profileReads).toBeGreaterThan(0);
     await page.waitForTimeout(3000);
@@ -262,5 +310,59 @@ test.describe("cookie consent → PostHog", () => {
       analytics: false,
       source: "settings",
     });
+  });
+
+  test("signed-in surface: autocapture records no element text (public pages keep it)", async ({
+    context,
+    page,
+  }) => {
+    await setAcceptedCookie(context);
+    const seen = await instrument(context, page, { signedIn: "adult" });
+
+    // Control (presence before absence): on a public page the clicked element's text is captured.
+    await page.goto(`${BASE}/digital-sat`);
+    await expect
+      .poll(() => seen.events.length, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Cookie settings" }).click();
+    await expect
+      .poll(
+        () => seen.events.filter((e) => e.event === "$autocapture").length,
+        {
+          timeout: 15_000,
+        },
+      )
+      .toBeGreaterThan(0);
+    const publicClick = seen.events
+      .filter((e) => e.event === "$autocapture")
+      .at(-1);
+    expect(JSON.stringify(publicClick?.properties)).toContain(
+      "Cookie settings",
+    );
+    await page.keyboard.press("Escape");
+
+    // Signed-in surface (RequireRole): the same kind of click carries no element text.
+    const before = seen.events.length;
+    await page.goto(`${BASE}/profile`);
+    const tab = page.getByRole("tab", { name: "Settings" });
+    await expect(tab).toBeVisible({ timeout: 15_000 });
+    await tab.click();
+    await expect
+      .poll(
+        () =>
+          seen.events.slice(before).filter((e) => e.event === "$autocapture")
+            .length,
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(0);
+    for (const e of seen.events
+      .slice(before)
+      .filter((x) => x.event === "$autocapture")) {
+      expect(e.properties["$el_text"] ?? null).toBeNull();
+      expect(String(e.properties["$elements_chain"] ?? "")).not.toMatch(
+        /text="[^"]+"/,
+      );
+      expect(JSON.stringify(e.properties)).not.toContain("Casey Student");
+    }
   });
 });
