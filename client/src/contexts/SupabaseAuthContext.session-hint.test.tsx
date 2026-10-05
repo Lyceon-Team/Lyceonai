@@ -12,9 +12,16 @@
  *  - hint absent (a server that does not send it): the profile is read, as before the hint.
  */
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const net = vi.hoisted(() => ({
   csrfBody: {} as Record<string, unknown>,
@@ -56,6 +63,11 @@ function mount(): void {
     </QueryClientProvider>,
   );
 }
+
+// Each test mounts its own provider; unmount it so an earlier one cannot answer a later focus.
+afterEach(() => {
+  cleanup();
+});
 
 beforeEach(() => {
   clearCsrfToken();
@@ -104,5 +116,43 @@ describe("F8 boot profile read follows the session hint", () => {
     mount();
     expect(await screen.findByText(`signed in ${STUDENT}`)).toBeInTheDocument();
     await waitFor(() => expect(net.requests).toContain("/api/profile"));
+  });
+});
+
+describe("F8 a signed-out tab's refocus check follows the session hint", () => {
+  it("no session cookie: a focus asks the CSRF bootstrap again and never requests the profile", async () => {
+    net.csrfBody = { csrfToken: "t", sessionCookiePresent: false };
+    mount();
+    expect(await screen.findByText("signed out")).toBeInTheDocument();
+    const before = net.requests.filter((u) => u === "/api/csrf-token").length;
+
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+
+    // Presence before absence: the focus really ran a check (a further bootstrap read). The
+    // count is a floor, not an exact number: what must hold is that no check reads the profile.
+    await waitFor(() =>
+      expect(
+        net.requests.filter((u) => u === "/api/csrf-token").length,
+      ).toBeGreaterThan(before),
+    );
+    expect(net.requests).not.toContain("/api/profile");
+    expect(screen.getByText("signed out")).toBeInTheDocument();
+  });
+
+  it("a session cookie appeared since (sign-in elsewhere): a focus reads the profile and signs in", async () => {
+    net.csrfBody = { csrfToken: "t", sessionCookiePresent: false };
+    mount();
+    expect(await screen.findByText("signed out")).toBeInTheDocument();
+    expect(net.requests).not.toContain("/api/profile");
+
+    net.csrfBody = { csrfToken: "t", sessionCookiePresent: true };
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+
+    expect(await screen.findByText(`signed in ${STUDENT}`)).toBeInTheDocument();
+    expect(net.requests).toContain("/api/profile");
   });
 });

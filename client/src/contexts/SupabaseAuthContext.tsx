@@ -305,9 +305,21 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
    * run while the first load or an in-tab sign-in is still settling — those set the user already.
    */
   const revalidating = useRef<Promise<void> | null>(null);
+  // @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: a signed-out tab asks the
+  // CSRF bootstrap (a 200) whether a session cookie has appeared since — a sign-in in another tab
+  // or from an emailed link sets one — and reads the profile only if it has. Without this, every
+  // focus of a signed-out tab answered 401. A signed-in tab reads the profile directly, as before,
+  // so a sign-out or account switch elsewhere is still detected. An unknown hint reads the profile.
+  const sessionMayExist = async (): Promise<boolean> => {
+    if (cacheOwnerId.current !== null) return true;
+    clearCsrfToken();
+    await getCsrfToken().catch(() => undefined);
+    return getSessionCookieHint() !== false;
+  };
   const revalidateSession = (): Promise<void> => {
     if (isInitializing.current) return Promise.resolve();
-    revalidating.current ??= fetchUserFromBackend()
+    revalidating.current ??= sessionMayExist()
+      .then((mayExist) => (mayExist ? fetchUserFromBackend() : null))
       .then((current) => {
         if (current && current.id !== cacheOwnerId.current) {
           clearCsrfToken();
