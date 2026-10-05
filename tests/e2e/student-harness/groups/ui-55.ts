@@ -6,15 +6,18 @@
  *        prototype ... and the page's main click path exercised"); DESIGN.md §2 (Calendar's
  *        right panel is 340px, no slim footer), §4 Calendar; design/prototype/Calendar.dc.html
  *        (plan paid and free, its Week/Month toggle and its Regenerate plan); OQ-4 (390px,
- *        light and dark); OQ-25 (free reads the ungated profile)] | @implemented [2026-10-03]
+ *        light and dark); OQ-25 (free reads the ungated profile); SCL-211 / OQ-56 (no streak
+ *        line, no facts strip; the free form read-only after the first save)]
+ *        | @implemented [2026-10-03; SCL-211 2026-10-05]
  *
  * plain English: the group asks for the "calendar-goal" seed (seed.ts): through the real
  * `PUT /api/calendar/profile` the paid student's SAT date is this week's Sunday, so the week,
  * the month and the mini month each show the starred test day. The paid plan is the one the
  * real generator builds on first open. The free student has no entitlement row and no profile:
  * the first free shot is the setup state; the click shot types a test date and a target into
- * the inline form and saves it through the real route; the shot after it reloads the page with
- * that profile saved. Shot order matters and is kept: setup, save, saved.
+ * the inline form and saves it through the real route, after which the card turns read-only
+ * (OQ-56 (b)); the shot after it reloads the page with that profile saved. Shot order matters
+ * and is kept: setup, save, saved.
  */
 import type { PageGroup } from "./types";
 
@@ -46,7 +49,7 @@ export const UI_55: PageGroup = {
     {
       id: "paid-week",
       title:
-        "Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D); Edit schedule and Regenerate plan; the starred test day; panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Your schedule, Show",
+        "Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D), no streak line; Edit schedule and Regenerate plan; the starred test day; no facts strip (SCL-211); panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Your schedule, Show",
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
@@ -132,10 +135,11 @@ export const UI_55: PageGroup = {
     {
       id: "free-save",
       title:
-        "Click path (free): type a test date and a target, Save (PUT /api/calendar/profile through the real route); the goal card then counts down to the saved date",
+        "Click path (free): type a test date and a target, Save (PUT /api/calendar/profile through the real route); the card then shows them read-only with Edit goals in Settings (OQ-56 (b)), and the goal card counts down to the saved date",
       persona: "free",
       route: "/calendar",
       waitFor: FREE_SETUP,
+      freshCalendarProfile: true,
       steps: [
         {
           fill: {
@@ -158,7 +162,7 @@ export const UI_55: PageGroup = {
           },
         },
       ],
-      expectText: "until your SAT",
+      expectText: "Edit goals in Settings",
       fullPage: true,
       prototype: {
         kind: "none",
@@ -169,7 +173,7 @@ export const UI_55: PageGroup = {
     {
       id: "free-saved",
       title:
-        "Calendar, free, with the profile saved: the form shows the saved answers (read from GET /api/calendar/profile, no plan read); panel: the ★ test date and Target",
+        "Calendar, free, with the profile saved: the card shows the saved answers read-only with Edit goals in Settings (read from GET /api/calendar/profile, no plan read; OQ-56 (b)); panel: the ★ test date and Target",
       persona: "free",
       route: "/calendar",
       waitFor: {

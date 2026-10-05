@@ -47,6 +47,8 @@ FILES=(
   "client/src/features/calendar/components/StudentChrome.tsx"
   "client/src/features/calendar/components/WeekGrid.tsx"
   "client/src/features/calendar/api/queries.ts"
+  "client/src/features/calendar/CalendarView.tsx"
+  "client/src/features/calendar/components/FreeCalendar.tsx"
   "client/src/pages/chat.tsx"
   "client/src/components/tutor/TutorThreadParts.tsx"
   "client/src/hooks/tutor-client.ts"
@@ -82,6 +84,11 @@ FILES=(
   "client/src/pages/account-recover.tsx"
   "client/src/pages/guardian-required.tsx"
   "client/src/components/account-deletion/PendingDeletionScreen.tsx"
+  "client/src/lib/plan-copy.ts"
+  "client/src/components/auth/RequireRole.tsx"
+  "client/src/components/layout/BareCardShell.tsx"
+  "client/src/components/tutor/ScopedTutorPanel.tsx"
+  "client/src/components/tutor/LisaUpgradeCard.tsx"
 )
 
 snapshot_all() {
@@ -674,6 +681,97 @@ assert s.count(a) == 1
 s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\") setSessionClosed(true);\n        // Owner ruling", 1)'
 
 
+# ── UI-53 / OQ-54 (a), OQ-57 (f) — the review runner's LISA panel on the student tokens ──
+# Owner ruling 2026-10-05: "Move the review runner's LISA panel onto student tokens in #1073
+# now". The review runner leaves the light lock; ScopedTutorPanel and LisaUpgradeCard draw with
+# the `lyc-*` tokens only, and the card shows approved copy only (OQ-44). Each plant mutates
+# product source at a single occurrence (asserted count == 1) and must redden the named test.
+T54L="client/src/components/tutor/ScopedTutorPanel.contract.test.tsx"
+
+plant "OQ54-TL1" "review runner put back on the light lock" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "focus(\"Review\", \"/review\", false, null)"
+assert s.count(a) == 1
+s = s.replace(a, "focus(\"Review\", \"/review\")", 1)'
+
+plant "OQ54-K1" "panel frame back on the app-wide tokens" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "overflow-hidden rounded-lg border border-lyc-rule bg-lyc-sheet\""
+assert s.count(a) == 1
+s = s.replace(a, "overflow-hidden rounded-2xl border border-border/60 bg-card\"", 1)'
+
+plant "OQ54-K2" "question chip back to 12px legacy text" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink\""
+assert s.count(a) == 1
+s = s.replace(a, "px-2.5 py-0.5 text-xs font-medium text-lyc-ink\"", 1)'
+
+plant "OQ54-K3" "opener body back on the legacy muted colour" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "<p className=\"m-0 mt-1 text-lyc-body text-lyc-muted\">{OPENER_BODY}</p>"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"m-0 mt-1 text-lyc-body text-muted-foreground\">{OPENER_BODY}</p>", 1)'
+
+plant "OQ54-K4" "Hide LISA falls back to the base 14px shadcn size" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "className=\"shrink-0 text-lyc-body\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"shrink-0\"", 1)'
+
+plant "OQ54-K5" "opener title drawn with a raw hex colour" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "<p className=\"m-0 text-lyc-body font-semibold text-lyc-ink-strong\">"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"m-0 text-lyc-body font-semibold text-[#1a1a1a]\">", 1)'
+
+plant "OQ54-K6" "the first-message composer loses the panel inset" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n            inset=\"panel\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n", 1)'
+
+plant "OQ54-K7" "a thread turn label back to 12px legacy text" \
+  "$T54L" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "<span className=\"text-lyc-meta font-semibold text-lyc-muted\">\n        {isStudent"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"text-xs font-semibold text-lyc-muted\">\n        {isStudent", 1)'
+
+plant "OQ54-C1" "the LISA card shows the unapproved W4-11 body" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "<p className=\"m-0 text-lyc-body text-lyc-ink\">{copy.body}</p>"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">{LISA_UPGRADE_PITCH.body}</p>", 1)'
+
+plant "OQ54-C2" "Unlock LISA opens the wrong feature's modal" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "upgrade.open(\"tutor_access\", \"plan\")"
+assert s.count(a) == 1
+s = s.replace(a, "upgrade.open(\"mastery_detail\", \"plan\")", 1)'
+
+plant "OQ54-C3" "the LISA card back on the app-wide tokens" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "rounded-lg border border-lyc-rule bg-lyc-paper p-5"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg border border-border bg-card p-5", 1)'
+
+plant "OQ54-C4" "the LISA card adds words beyond the approved copy" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "{copy.body}</p>"
+assert s.count(a) == 1
+s = s.replace(a, "{copy.body} Upgrade today.</p>", 1)'
+
 # ── UI-54 — Full-Length home, exam session and report on the student tokens (2026-10-03) ─
 # DESIGN.md §4 Full-Length home and Exam report, FullLength.dc.html, Report.dc.html; register
 # UI-54, ruling 7, OQ-30..OQ-34, OQ-49. Each plant mutates product source at a single
@@ -866,6 +964,78 @@ plant "UI55-F1" "a free first save drops the schedule the route requires on crea
   'a = "              ? { ...openingSchedule(setupDefaults), ...goal }"
 assert s.count(a) == 1
 s = s.replace(a, "              ? goal", 1)'
+
+# ── SCL-211 / OQ-56 (2026-10-05): no streak line, no facts strip; the free form is read-only
+# after the first save, with "Edit goals in Settings" ──
+
+plant "UI55-NF1" "the student calendar draws the facts strip again" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "      {viewer === \"guardian\" && model !== null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {model !== null ? (", 1)'
+
+plant "UI55-NS1" "the student header draws the streak line again" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "import { ABSENT_COPY, type ToneFilter } from \"./Chrome\";"
+assert s.count(a) == 1
+s = s.replace(a, "import { ABSENT_COPY, StreakFact, type ToneFilter } from \"./Chrome\";", 1)
+b = "          {title}\n        </h1>\n      </div>"
+assert s.count(b) == 1
+s = s.replace(b, "          {title}\n        </h1>\n        <StreakFact streak={{ current: 4, longest: 11, history_complete: false }} />\n      </div>", 1)'
+
+plant "UI55-NS2" "the student page reads the streak again" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "  // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).\n"
+assert s.count(a) == 1
+s = s.replace(a, "  void apiRequest(\"/api/me/streak\").catch(() => undefined);\n", 1)
+b = "import { toUserFacingMessage } from \"@/lib/api-error\";\n"
+assert s.count(b) == 1
+s = s.replace(b, b + "import { apiRequest } from \"@/lib/queryClient\";\n", 1)'
+
+plant "UI55-RO1" "the free form stays editable after the first save" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "        {profile === null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "        {true ? (", 1)'
+
+plant "UI55-RO2" "Edit goals in Settings goes somewhere the goal card's Edit goals does not" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "        href={EDIT_GOALS_HREF}"
+assert s.count(a) == 1
+s = s.replace(a, "        href=\"/profile?tab=account\"", 1)'
+
+plant "UI55-RO3" "the saved test date reads raw, not as the goal card's date" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "              : weekdayDayMonth(profile.target_exam_date)"
+assert s.count(a) == 1
+s = s.replace(a, "              : profile.target_exam_date", 1)'
+
+plant "UI55-RO4" "a saved profile with no test date reads blank" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "          absent={ABSENT_COPY.student.testDate}"
+assert s.count(a) == 1
+s = s.replace(a, "          absent=\"\"", 1)'
+
+plant "UI55-RO5" "a saved profile with no target reads blank" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "          absent={ABSENT_COPY.student.target}"
+assert s.count(a) == 1
+s = s.replace(a, "          absent=\"\"", 1)'
+
+plant "UI55-RO6" "the pre-save form reports itself as saved" \
+  "$T55" \
+  "client/src/features/calendar/components/FreeCalendar.tsx" \
+  'a = "      data-state=\"editing\""
+assert s.count(a) == 1
+s = s.replace(a, "      data-state=\"saved\"", 1)'
 
 # ── UI-56: LISA (client/src/pages/chat.ui56.test.tsx) ──────────────────────────────────
 
@@ -1163,6 +1333,28 @@ plant "UI57-D3" "the wide pill track back to 132px (the unmeasured pill overlaps
 assert s.count(a) == 1
 s = s.replace(a, "      ? \"sm:grid-cols-[minmax(0,1fr)_176px_132px]\"", 1)'
 
+# OQ-58 (Karl, 2026-10-05): "Practise" → "Practice". Each plant brings the British form back.
+plant "UI57-SP1" "the grid call to action back to 'Start practising'" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "<Link href=\"/practice\">Start practicing</Link>"
+assert s.count(a) == 1
+s = s.replace(a, "<Link href=\"/practice\">Start practising</Link>", 1)'
+
+plant "UI57-SP2" "the opened domain's call to action back to 'Practise <domain>'" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "<Link href=\"/practice\">Practice {domain}</Link>"
+assert s.count(a) == 1
+s = s.replace(a, "<Link href=\"/practice\">Practise {domain}</Link>", 1)'
+
+plant "UI57-SP3" "the British form anywhere else on the page (the absence assertion)" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "Levels move as you answer more questions."
+assert s.count(a) == 1
+s = s.replace(a, "Levels move as you keep practising.", 1)'
+
 # ── UI-58: Settings, Help, Notifications, the plans page ──────────────────────────────────
 # @spec [student-UI register UI-58; OQ-20, OQ-27, OQ-28 / F-54, OQ-26 / OQ-41, UI-S4, UI-S7 /
 #        F-40, UI-S8, OQ-38, OQ-39, OQ-46, UI-44, UI-47, OQ-49] | @implemented [2026-10-03]
@@ -1355,10 +1547,10 @@ s = s.replace(a, "export const HELP_PATH = \"/legal\";", 1)'
 
 plant "UI58-H2" "an approved answer is reworded" \
   "$H58" \
-  "client/src/pages/help.tsx" \
-  'a = "40 practice questions a day and unlimited review. Paid plans add your study calendar"
+  "client/src/lib/plan-copy.ts" \
+  'a = "40 practice questions a day and unlimited review."
 assert s.count(a) == 1
-s = s.replace(a, "40 questions a day and unlimited review. Paid plans add your study calendar", 1)'
+s = s.replace(a, "40 questions a day and unlimited review.", 1)'
 
 plant "UI58-H3" "a question is dropped (six, not seven)" \
   "$H58" \
@@ -1404,6 +1596,43 @@ plant "UI58-U2" "every plan button is filled (DESIGN.md §1 one primary)" \
   'a = "                variant={isBestValue ? \"lyc-primary\" : \"lyc-outline\"}"
 assert s.count(a) == 1
 s = s.replace(a, "                variant=\"lyc-primary\"", 1)'
+
+# OQ-59 (h) (Karl, 2026-10-05): /upgrade's plan copy is the Help FAQ's free/paid wording, from one
+# source (client/src/lib/plan-copy.ts); the projection reads as free.
+plant "UI58-U3" "the shipped 'One secure checkout flow' description comes back" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        description={PLAN_PAID_ADDS}"
+assert s.count(a) == 1
+s = s.replace(a, "        description=\"One secure checkout flow for monthly, quarterly, and yearly subscriptions.\"", 1)'
+
+plant "UI58-U4" "the free line replaced by the shipped 'projection access' bullet" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        {PLAN_FREE_INCLUDES}"
+assert s.count(a) == 1
+s = s.replace(a, "        Full KPI + mastery + projection access", 1)'
+
+plant "UI58-U5" "a card lists the projection as paid again" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "                {plan.intervalLabel}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + projection access\n", 1)'
+
+plant "UI58-U6" "the shared free sentence drops the projection" \
+  "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
+  "client/src/lib/plan-copy.ts" \
+  'a = "the diagnostic, your projected score, 40 practice"
+assert s.count(a) == 1
+s = s.replace(a, "the diagnostic, 40 practice", 1)'
+
+plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/help.tsx" \
+  'a = "    a: `${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`,"
+assert s.count(a) == 1
+s = s.replace(a, "    a: `${PLAN_FREE_INCLUDES} Paid plans add more.`,", 1)'
 
 plant "UI58-N1" "a notification's time drops to 12px" \
   "client/src/pages/notifications.test.tsx" \
@@ -1608,6 +1837,38 @@ plant "UI59-D3" "the pending-deletion heading is not an H1" \
   'a = "<BareCardHeader title=\"Your account is scheduled for deletion\" />"
 assert s.count(a) == 1
 s = s.replace(a, "<h2>Your account is scheduled for deletion</h2>", 1)'
+
+# OQ-60 (e) (Karl, 2026-10-05): RequireRole's loader follows the device theme on Bare routes.
+L60="client/src/components/auth/RequireRole.loader-theme.test.tsx"
+
+plant "UI59-RL1" "the route guard's loader pinned light on every route again" \
+  "$L60" \
+  "client/src/components/auth/RequireRole.tsx" \
+  'a = "    return requireRoleLoaderThemeLock(location) === \"light\" ? ("
+assert s.count(a) == 1
+s = s.replace(a, "    return true ? (", 1)'
+
+plant "UI59-RL2" "the loader unlocks on every table route, not only the Bare ones" \
+  "$L60" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  return spec?.shell === \"bare\" ? spec.themeLock : \"light\";"
+assert s.count(a) == 1
+s = s.replace(a, "  return spec !== undefined ? spec.themeLock : \"light\";", 1)'
+
+# OQ-60 (f) (Karl, 2026-10-05): tighter paragraph leading inside the Bare card only.
+plant "UI59-CL1" "the card's paragraphs fall back to the global 1.75 leading" \
+  "$B59" \
+  "client/src/components/layout/BareCardShell.tsx" \
+  'a = "          BARE_CARD_PROSE_LEADING,\n"
+assert s.count(a) == 1
+s = s.replace(a, "          undefined,\n", 1)'
+
+plant "UI59-CL2" "the card leading at class specificity (it would override a meta line's own)" \
+  "$B59" \
+  "client/src/components/layout/BareCardShell.tsx" \
+  'a = "\"[:where(&)_p]:leading-[1.55]\""
+assert s.count(a) == 1
+s = s.replace(a, "\"[&_p]:leading-[1.55]\"", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

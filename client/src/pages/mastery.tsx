@@ -15,7 +15,8 @@
  *        was interim duplication and is removed); owner ruling 2026-08-20 RULE 1 (level names
  *        from `mastery_levels`), RULE 5 (domain first, then its skills), RULE 6 (unmeasured is
  *        its own state, one call to action, never one per row); owner ruling 2026-08-27 (one flat
- *        skills fetch, filtered per domain)] | @implemented [2026-10-03]
+ *        skills fetch, filtered per domain); OQ-58 (owner ruling 2026-10-05: "Practise" →
+ *        "Practice", the app's US spelling)] | @implemented [2026-10-03; copy 2026-10-05]
  *
  * plain English: the page header, then the eight domains as wide mastery rows grouped by section
  * (Math, then Reading & Writing, the server's canonical order). Each domain row is a button that
@@ -36,8 +37,8 @@
  *
  * edge cases: a domain the server did not send reads "Not enough answers yet" (canonical list,
  * `canonicalDomainNodes`); a domain whose catalogue is empty says so, distinct from a failed
- * read; the grid's one "Start practising" shows only when nothing is measured (RULE 6) and each
- * opened domain with an unmeasured skill offers one outline "Practise <domain>".
+ * read; the grid's one "Start practicing" shows only when nothing is measured (RULE 6) and each
+ * opened domain with an unmeasured skill offers one outline "Practice <domain>".
  */
 import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -195,7 +196,7 @@ export default function MasteryPage(): JSX.Element {
           // RULE 6 at grid level: one call to action when nothing is measured yet.
           <div data-testid="grid-cta">
             <Button asChild variant="lyc-primary" size="lyc-lg">
-              <Link href="/practice">Start practising</Link>
+              <Link href="/practice">Start practicing</Link>
             </Button>
           </div>
         ) : null}
@@ -326,7 +327,7 @@ function SkillList({
       {hasUnmeasured ? (
         <div className="py-4" data-testid="panel-cta">
           <Button asChild variant="lyc-outline" size="lyc">
-            <Link href="/practice">Practise {domain}</Link>
+            <Link href="/practice">Practice {domain}</Link>
           </Button>
         </div>
       ) : null}

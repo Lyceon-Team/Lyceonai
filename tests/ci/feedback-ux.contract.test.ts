@@ -61,8 +61,17 @@ describe("Feedback UX hardening contract", () => {
     expect(read("client/src/components/tutor/ScopedTutorPanel.tsx")).toContain(
       "<LisaUpgradeCard />",
     );
+    // OQ-54 (a) / OQ-57 (f), owner ruling 2026-10-05: the in-review card leaves this list too.
+    // It is /chat's locked card in the panel: the approved copy from the modal's table and
+    // "Unlock LISA", which opens the app's one upgrade modal (UI-44). Comments stripped: its
+    // header names the component it replaced.
+    const lisaCard = read("client/src/components/tutor/LisaUpgradeCard.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    expect(lisaCard).toContain("UPGRADE_MODAL_COPY.tutor_access.plan");
+    expect(lisaCard).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
+    expect(lisaCard).not.toContain("PremiumUpgradePrompt");
     const surfaces = [
-      "client/src/components/tutor/LisaUpgradeCard.tsx",
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
       // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
       // this list; every remaining surface keeps the same assertion.

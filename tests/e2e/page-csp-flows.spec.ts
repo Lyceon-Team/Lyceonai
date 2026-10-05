@@ -83,7 +83,6 @@ import {
   type ConversationDetailMessage,
 } from "../../packages/shared/src/tutor-lifecycle-schema";
 import { examReportMetaSchema } from "../../packages/shared/src/exam-report-schema";
-import { streakSummarySchema } from "../../packages/shared/src/calendar/api";
 import { masterySkillsResponseSchema } from "../../packages/shared/src/mastery-levels";
 import type { EstimateResponse } from "../../client/src/lib/projectionApi";
 import {
@@ -291,12 +290,6 @@ const conversationList = listConversationsResponseSchema.parse({
     },
   ],
   pagination: { has_more: false, next_cursor: null },
-});
-
-const streak = streakSummarySchema.parse({
-  current: 3,
-  longest: 5,
-  history_complete: true,
 });
 
 const masterySkills = masterySkillsResponseSchema.parse({
@@ -564,7 +557,6 @@ const studentReads: ApiHandler = ({ path: p }) => {
   if (p === "/api/progress/kpis") return { body: kpis };
   if (p === "/api/progress/projection") return { body: projection };
   if (p === "/api/calendar") return { body: HARNESS.studentCalendar };
-  if (p === "/api/me/streak") return { body: streak };
   if (p === `/api/students/${STUDENT_ID}/mastery/domains`)
     return { body: HARNESS.masteryDomains };
   if (p === `/api/students/${STUDENT_ID}/mastery/skills`)

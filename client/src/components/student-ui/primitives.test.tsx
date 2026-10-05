@@ -496,7 +496,7 @@ describe("EmptyState: student variant", () => {
           headingLevel={2}
           title="No sessions yet"
           description="Your practice sessions will appear here."
-          action={{ label: "Start practising", onClick }}
+          action={{ label: "Start practicing", onClick }}
         />
       </Lyc>,
     );
@@ -510,7 +510,7 @@ describe("EmptyState: student variant", () => {
     expect(screen.getByTestId("empty-state-description").textContent).toBe(
       "Your practice sessions will appear here.",
     );
-    const action = screen.getByRole("button", { name: "Start practising" });
+    const action = screen.getByRole("button", { name: "Start practicing" });
     expect(classesOf(action)).toContain("border-lyc-ink-strong");
     expect(classesOf(action)).not.toContain("bg-lyc-primary-bg");
     fireEvent.click(action);

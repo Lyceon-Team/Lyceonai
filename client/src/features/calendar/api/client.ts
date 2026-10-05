@@ -23,7 +23,6 @@ import {
   launchResponseSchema,
   profileReadResponseSchema,
   profileUpsertResponseSchema,
-  streakSummarySchema,
   versionResponseSchema,
   type AcknowledgeBody,
   type CalendarResponse,
@@ -37,7 +36,6 @@ import {
   type PlanMember,
   type ProfileReadResponse,
   type ProfileUpsertResponse,
-  type StreakSummary,
   type StudyProfileUpsert,
   type VersionResponse,
 } from "@lyceon/shared/calendar";
@@ -45,7 +43,6 @@ import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { apiRequest } from "@/lib/queryClient";
 
 export const CALENDAR_ROOT = "/api/calendar" as const;
-export const STREAK_PATH = "/api/me/streak" as const;
 
 /**
  * Parses a response body against a shared schema. A failure THROWS, and the thrown message
@@ -193,12 +190,6 @@ export async function fetchStudyProfile(): Promise<ProfileReadResponse> {
     profileReadResponseSchema,
     "GET /api/calendar/profile",
   );
-}
-
-/** §15 GET /api/me/streak — INV-08-20, served without a `calendar_access` check. */
-export async function fetchStreak(): Promise<StreakSummary> {
-  const response = await apiRequest(STREAK_PATH);
-  return parsed(response, streakSummarySchema, "GET /api/me/streak");
 }
 
 /**

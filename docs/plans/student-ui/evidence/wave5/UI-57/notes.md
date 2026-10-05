@@ -26,8 +26,8 @@ What the page is:
   mastery rows (five segments to `mastery_level`, the level pill; unmeasured is the dashed pill).
 - Each domain row is a button with a chevron; it opens that domain's skills beneath it (several
   may be open). Skills are wide rows, indented, their meters and pills aligned with the domain's.
-- An opened domain with an unmeasured skill offers one outline "Practise <domain>" (RULE 6); a
-  student with nothing measured gets one filled "Start practising" under the grid.
+- An opened domain with an unmeasured skill offers one outline "Practice <domain>" (RULE 6); a
+  student with nothing measured gets one filled "Start practicing" under the grid.
 - Free: the locked mastery card; "See what's included" opens the upgrade modal for
   `mastery_detail`. No mastery request is made.
 - No right panel and no footer (UI-41 route table).

@@ -366,6 +366,8 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/help",
       "/notifications",
       "/practice/session/:sessionId",
+      // UI-53 / OQ-54 (a), ruling 2026-10-05: the review runner, its LISA panel on student tokens.
+      "/review/session/:sessionId",
       "/tests/:sessionId",
       "/tests/:sessionId/report",
       // UI-59: every bare-card page.
@@ -380,7 +382,7 @@ describe("the table says what DESIGN.md §2 says", () => {
     expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
   });
 
-  it("UI-53: the practice runner follows the device theme; the review runner stays pinned light (its LISA panel is not on the student tokens yet)", () => {
+  it("UI-53: both runners follow the device theme (the review runner's LISA panel is on the student tokens: OQ-54 (a), ruling 2026-10-05)", () => {
     expect(STUDENT_ROUTE_SHELLS["/practice/session/:sessionId"]).toEqual({
       shell: "focus",
       section: "Practice",
@@ -393,7 +395,7 @@ describe("the table says what DESIGN.md §2 says", () => {
       section: "Review",
       sectionHome: "/review",
       back: true,
-      themeLock: "light",
+      themeLock: null,
     });
   });
 

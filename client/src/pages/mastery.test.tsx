@@ -539,8 +539,10 @@ describe("Mastery, paid (featureAccess grants mastery_detail)", () => {
     expect(within(list).queryByText("Words in Context")).toBeNull();
     // RULE 6: one outline call to action for the opened domain, because something is unmeasured.
     expect(
-      within(list).getAllByRole("link", { name: "Practise Algebra" }),
+      within(list).getAllByRole("link", { name: "Practice Algebra" }),
     ).toHaveLength(1);
+    // OQ-58 (Karl, 2026-10-05): US spelling. The British form appears nowhere on the page.
+    expect(document.body.textContent ?? "").not.toMatch(/practis/i);
 
     // A second domain opens from the same fetch: no further request.
     fireEvent.click(domainRow("Craft and Structure"));
@@ -618,7 +620,7 @@ describe("Mastery, paid (featureAccess grants mastery_detail)", () => {
     }
   });
 
-  it("nothing measured: one 'Start practising', the screen's one primary action", async () => {
+  it("nothing measured: one 'Start practicing', the screen's one primary action", async () => {
     installDb({ domains: [], skills: [] });
     serve({ domains: await domainsBody(), skills: await skillsBody() });
     await mount("paid");
@@ -626,9 +628,11 @@ describe("Mastery, paid (featureAccess grants mastery_detail)", () => {
     const cta = screen.getByTestId("grid-cta");
     expect(
       within(cta)
-        .getByRole("link", { name: "Start practising" })
+        .getByRole("link", { name: "Start practicing" })
         .getAttribute("href"),
     ).toBe("/practice");
+    // OQ-58 (Karl, 2026-10-05): US spelling. The British form appears nowhere on the page.
+    expect(document.body.textContent ?? "").not.toMatch(/practis/i);
     expect(primaries()).toHaveLength(1);
   });
 

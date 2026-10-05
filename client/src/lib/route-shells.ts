@@ -44,7 +44,8 @@ export type RightPanelWidth = 360 | 340 | 320;
  * A Wave 5 row sets its route to null when its page is themed (so far: /dashboard, UI-50;
  * /practice, UI-51; /review, UI-52; /practice/session/:sessionId, UI-53; /tests, /tests/:sessionId
  * and /tests/:sessionId/report, UI-54; /calendar, UI-55; /chat, UI-56; /mastery, UI-57; /upgrade,
- * /profile, /help and /notifications, UI-58; every bare-card page, UI-59). The timed exam module
+ * /profile, /help and /notifications, UI-58; every bare-card page, UI-59; the review runner
+ * /review/session/:sessionId, UI-53 with OQ-54 (a), 2026-10-05). The timed exam module
  * stays "light" for good (DESIGN.md §2).
  */
 export type ThemeLock = "light" | null;
@@ -146,14 +147,13 @@ export const STUDENT_ROUTE_SHELLS = {
   "/notifications": app(null, false, "column", null),
   // Focus shell: the runners, the exam session and report pages.
   // UI-53 (2026-10-03): the practice runner is rebuilt on the student tokens only; off the light
-  // lock. The review runner keeps it: its LISA panel still draws partly with the app-wide light
-  // tokens, and a dark runner around a light-token LISA leaves its text dark on dark. UI-56
-  // (2026-10-03) moved the thread parts it shares with /chat (bubbles, typing indicator,
-  // composer, paused bar, crisis card) onto the student tokens; the panel's own frame, header
-  // chip and opener (ScopedTutorPanel) and its denial card (LisaUpgradeCard, the shared billing
-  // card) are not, so the lock stays (OQ-54 (a)).
+  // lock. The review runner followed on 2026-10-05, owner ruling on OQ-54 (a) and OQ-57 (f):
+  // "Move the review runner's LISA panel onto student tokens in #1073 now". UI-56 had moved the
+  // thread parts the panel shares with /chat; the panel's own frame, header chip and opener
+  // (ScopedTutorPanel) and its denial card (LisaUpgradeCard, now /chat's locked card with the
+  // approved copy) followed, so nothing in the review runner reads the light tokens; off the lock.
   "/practice/session/:sessionId": focus("Practice", "/practice", false, null),
-  "/review/session/:sessionId": focus("Review", "/review"),
+  "/review/session/:sessionId": focus("Review", "/review", false, null),
   // UI-54 (2026-10-03): the exam session page and the report are rebuilt on the student tokens
   // only; off the lock. The timed module keeps its Bluebook layout and stays light for good.
   "/tests/:sessionId": focus("Full-Length", "/tests", false, null),
@@ -213,3 +213,29 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/admin/crisis-review/:id": "admin",
   "/admin/crisis-review": "admin",
 };
+
+/**
+ * The theme lock for `RequireRole`'s full-page loader at a pathname.
+ *
+ * @spec [student-UI register UI-59, OQ-60 (e) (owner ruling 2026-10-05, accepted as recommended:
+ *        "let `RequireRole`'s loader follow the device theme on Bare routes (a small change,
+ *        removes the light flash)"); DESIGN.md §2 "Bare card"; OQ-49] | @implemented [2026-10-05]
+ *
+ * plain English: the route guard wraps the shell, so while auth loads no shell is mounted and the
+ * guard draws the loader itself. On a Bare route the loader takes that route's own lock from the
+ * table above (null since UI-59: the device theme), so a dark device goes dark loader → dark card
+ * with no light frame between. Every other route keeps the light lock, as before: the guard also
+ * fronts guardian and admin pages, and pages still pinned light.
+ *
+ * edge cases: matched on the exact path, because every Bare route the guard wraps
+ * (`/profile/complete`, `/update-password`, `/guardian-required`) has no parameters; a pathname
+ * that is not a key (or names a non-Bare route, or the catch-all key itself) reads "light". The
+ * lookup walks the table's own entries, so `constructor` and friends never match.
+ */
+export function requireRoleLoaderThemeLock(pathname: string): ThemeLock {
+  if (pathname === NOT_FOUND_ROUTE) return "light";
+  const entries: readonly (readonly [string, ShellSpec])[] =
+    Object.entries(STUDENT_ROUTE_SHELLS);
+  const spec = entries.find(([route]) => route === pathname)?.[1];
+  return spec?.shell === "bare" ? spec.themeLock : "light";
+}

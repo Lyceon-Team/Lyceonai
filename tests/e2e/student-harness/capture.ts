@@ -54,6 +54,7 @@ import type {
 import {
   isStudentPersona,
   PERSONA_HEADER,
+  PERSONAS,
   type StudentPersona,
 } from "./personas";
 import { SEED_CLIENT_INSTANCE, type SeedManifest } from "./seed";
@@ -397,6 +398,22 @@ async function harnessDb(): Promise<pg.Client> {
   return client;
 }
 
+/**
+ * SCL-211 / OQ-56 (b) (groups/types.ts `freshCalendarProfile`): removes the persona's study
+ * profile, so the next page load is a first visit again. Nothing references the row.
+ */
+async function clearCalendarProfile(persona: StudentPersona): Promise<void> {
+  const db = await harnessDb();
+  try {
+    await db.query(
+      "DELETE FROM public.student_study_profile WHERE student_id = $1",
+      [PERSONAS[persona].id],
+    );
+  } finally {
+    await db.end();
+  }
+}
+
 async function apiCall(
   stack: Stack,
   persona: StudentPersona,
@@ -535,6 +552,13 @@ async function shootBuilt(
     throw new Error(`${shot.id}: a fresh session needs a signed-in persona`);
   const sessionId =
     fresh && persona ? await startFreshSession(stack, persona, fresh) : null;
+  if (shot.freshCalendarProfile === true) {
+    if (persona === null)
+      throw new Error(
+        `${shot.id}: a fresh calendar profile needs a seeded student`,
+      );
+    await clearCalendarProfile(persona);
+  }
   const context = await browser.newContext({
     viewport: VIEWPORTS[viewport],
     colorScheme: theme,
@@ -834,6 +858,10 @@ function writeIndex(
     if (shot.freshSession)
       lines.push(
         `Fresh session per capture (real create route, ended after the shot): \`${shot.freshSession.engine} ${JSON.stringify(shot.freshSession.body)}\`.`,
+      );
+    if (shot.freshCalendarProfile === true)
+      lines.push(
+        "No study profile before each capture (the persona's `student_study_profile` row is deleted from the harness database), so the save is a first save in every viewport and theme.",
       );
     for (const step of shot.steps ?? [])
       lines.push(
