@@ -60,14 +60,15 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - A centered card on `--paper`.
 - Used by: login, signup, profile completion, update password, account recovery, the pending-deletion screen, 404, and the error screen.
 
-**Mobile (OQ-4, ruled 2026-10-02; tab bar and avatar menu revised by owner ruling, Karl, 2026-10-05; supersedes OQ-4 / OQ-48 menu order).**
-- Below `lg` (1024px) the rail becomes a bottom tab bar of five: **Home, Practice, Review, Calendar, LISA.** Calendar keeps its lock as a hint and navigates; LISA's lock opens the upgrade modal, as on the rail.
-- **Full-Length moves off the tab bar into the avatar menu.** The official SAT (Bluebook) can't be taken on a phone; full-length tests belong on a laptop or tablet.
-- A top bar carries the logo, the bell and the account avatar. The avatar menu holds **Full-Length, Settings, Help, Sign out**, in that order. Full-Length keeps its lock in the menu: locked, it opens the upgrade modal in place.
-- An admin keeps the avatar menu at every width, with the same entries and Crisis review before Sign out (OQ-48).
+**Mobile (OQ-4, ruled 2026-10-02; navigation per owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62).**
+- Below `lg` (1024px) the rail becomes a bottom tab bar of five: **Home, Review, Practice, Calendar, LISA**, with Practice in the middle. The bar has its own order; the desktop rail keeps its own (Home, Practice, Review, Full-Length, Calendar, LISA, unchanged). Calendar keeps its lock as a hint and navigates; LISA's lock opens the upgrade modal, as on the rail.
+- A top bar carries the logo, the bell and the account avatar. The avatar menu holds **Settings, Help, Sign out**, in that order. An admin keeps the avatar menu at every width, with Crisis review before Sign out.
+- The avatar menu follows the page theme: a light page has a light menu, a dark page a dark one, and a page pinned light a light one (register §8 F-70).
+- **Full-Length is on neither the tab bar nor the avatar menu.** On a phone it is reached only from a scheduled full-length block on the calendar or Home's "Start a full-length test" card (§4 Home). The official SAT (Bluebook) can't be taken on a phone; full-length tests belong on a laptop or tablet.
 - **Full-Length on a phone still works and is never blocked.** Its home shows the page title and the notice "Full-length tests are built for a laptop or tablet, like test day." with **Continue anyway**, which reveals the whole home (remembered for the visit). The notice's action is an outline button: Start or Resume stays the home's one filled action. The exam session, module and report pages never show it.
+- Students still land on Home after sign-in.
 - The right panel's content stacks below the main content.
-- The desktop rail is unchanged. The Focus shell and the Bare card are unchanged on mobile.
+- The Focus shell and the Bare card are unchanged on mobile.
 
 ---
 
@@ -94,6 +95,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - Paid: greeting and date line; today's plan (from the calendar) with "Start today's plan" as the primary action; Mastery (wide rows); "Pick up where you left off".
 - Right panel: projected score, this week's seven-day strip, recent sessions.
 - Free: the diagnostic card (ruler, "Start diagnostic") and "How Lyceon works" (three steps tagged Free or Paid plans). Right panel: projection empty state, locked mastery card, today's quota ruler.
+- **"Start a full-length test" card**, on both plans and at every screen size (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62). Paid: after today's plan. Free: last in the main column, after "How Lyceon works". Titled "Full-Length", with the Full-Length page's subtitle ("Timed like test day: two modules per section, a break between sections, and a scored report at the end.") and the outline action "Start a full-length test", which goes to the Full-Length page. Locked for a free student: the action shows the lock and opens the upgrade modal in place, as the rail lock does (no navigation, no call to the gated endpoint). It is an outline button: Home keeps its one filled primary.
 
 **Practice.**
 - The filter bar, then "Your session": a plain-language summary of the selection, "Questions per session" (5–30 in steps of 5) and Start. Free plans add the quota line.
@@ -113,7 +115,8 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - Right panel: score history linking to reports, and mastery.
 - Free plan: an in-page upgrade card.
 - Page title "Full-Length" (owner naming ruling, Karl, 2026-10-05: every student-facing "Tests" label becomes "Full-Length"; the `/tests` route stays).
-- On a phone: the laptop-or-tablet notice with Continue anyway first (§2 Mobile).
+- Reached from the desktop rail, from Home's "Start a full-length test" card and from a scheduled full-length block on the calendar; on a phone only from the Home card and the calendar block (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62).
+- On a phone: the laptop-or-tablet notice with Continue anyway first (§2 Mobile). It stays.
 
 **Exam report** (Focus shell).
 - Total score out of 1600 and section scores out of 800.
