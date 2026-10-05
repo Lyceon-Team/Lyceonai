@@ -207,7 +207,8 @@ test.describe("Question of the Day", () => {
     //    on interaction (owner ruling 2026-10-05), so count its requests from page load.
     const turnstileRequests: string[] = [];
     page.on("request", (r) => {
-      if (r.url().includes("challenges.cloudflare.com"))
+      // Host compared exactly (CodeQL js/incomplete-url-substring-sanitization).
+      if (new URL(r.url()).hostname === "challenges.cloudflare.com")
         turnstileRequests.push(r.url());
     });
     // The homepage widget is lazy (owner request 2026-10-05): its chunk and KaTeX load only when
