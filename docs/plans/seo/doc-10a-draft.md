@@ -70,7 +70,12 @@ Four locked documents send public and marketing surfaces to a "future Doc 05" th
 * Preamble:492;
 * D02B:2007 (and §34 B7 at :1819-1821, which stays unassigned).
 
-SCL-200's WAS list omits four further "future Doc 05" citations: D02B:79, Preamble:156, D01:2034 and D01A:1878. Doc 10A resolves them on the same footing where they name public or marketing surfaces (Q-10A-1).
+SCL-200's WAS list omits four further "future Doc 05" citations: D02B:79, Preamble:156, D01:2034 and D01A:1878. SCL-200 now names them, by a dated in-place note (Karl, 2026-10-05, answer to Q-10A-1). What Doc 10A takes from each:
+
+* **D02B:79**, "public-facing marketing surfaces": in full.
+* **Preamble:156**, "Future Document 05 (Trust / Growth / Compliance)": the public / marketing half only.
+* **D01A:1878**, "Future Doc 05 (Growth) | Observability | Instrumentation": only the consent-gated browser analytics on public surfaces (§6). Server instrumentation stays with the Doc 07 family.
+* **D01:2034**, "Guardian linking and consent flows | Doc 05 (Growth)": **not taken**. It is not a public surface.
 
 ## **1.2 Surface inventory**
 
@@ -108,11 +113,11 @@ Doc 10 keeps its direction. Doc 10A references it, and records where the as-buil
 |---|---|
 | §4.3 brand voice (:268) | Referenced. Copy follows it. |
 | §6.2 four public counters (:324-334) | Parked (**subject to SCL-203**; R31 :82). Doc 10A ships none (§3.6). |
-| §7.1 progress-sharing visualizations (:370-378); §7.2 written testimonials (:380-390) | Testimonials only from opted-in, anonymous in-app reviews (R29 :80; §7.6). Progress-sharing visualizations: not built, no ruling; FWD-10A-C. |
-| §8.2 QOTD brand intent (:412-421) | Referenced. One departure: :419 "LISA's explanation of each QOTD". The QOTD reveals the **pre-written** explanation, not LISA (R17 :59; §5.3). Q-10A-2. |
+| §7.1 progress-sharing visualizations (:370-378); §7.2 written testimonials (:380-390) | Testimonials only from opted-in, anonymous in-app reviews (R29 :80; §7.6; **subject to SCL-218**). Progress-sharing visualizations: not built, no ruling; FWD-10A-C. |
+| §8.2 QOTD brand intent (:412-421) | Referenced. One departure: :419 "LISA's explanation of each QOTD". The QOTD reveals the **pre-written** explanation, not LISA (R17 :59; §5.3). **Subject to SCL-218.** |
 | §8.3 Discord (:423-430); §8.5 V1 community (:443-454) | Referenced. Distribution direction only (§9). |
 | §9 legal inventory (:456); §9.11 banner (:581); §9.21 marketing consent (:681) | Referenced. Doc 10A owns the operational surfaces (§6.2, §7.1), not the legal text. |
-| §11.6 claim control (:858-877) | Adopted, with doctrine rule 5 layered on top (CR-10A-02; §3.1). |
+| §11.6 claim control (:858-877) | Adopted, with doctrine rule 5 layered on top (CR-10A-02; §3.1; **subject to SCL-218**). |
 | §2.4 under-13 hard-delete (:199) | Superseded for the launch posture by SCL-187/SCL-208 (**subject to SCL-208**). Doc 10A's under-13 rule is doctrine rule 7 (§6.4, §7). |
 | FWD-10-D brand/trust analytics surfaces (:35) | Lands in Doc 10A when introduced (SCL-200 IS bullet 1; FWD-10A-D). |
 
@@ -261,7 +266,11 @@ The browser mounts with `createRoot`, which replaces the static markup with an i
 
 * HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and `Permissions-Policy` are served on static HTML through `vercel.json`. F5 closed, production headers recorded in plan :261.
 * The page CSP (`vercel.json:52`) admits each inline script only by its sha256. Hashes are checked against the built page in CI (`ci.yml:163-167`, with a self-test proving each rule reddens), and by `tests/ci/csp-hero-hash.ci.test.ts` and `tests/ci/csp-theme-hash.ci.test.ts`.
-* **Accepted with reason:** the CSP carries `'unsafe-eval'` in `script-src` and `'unsafe-inline'` in `style-src` (`vercel.json:52`). Removing either needs its dependency audited first. This is open item Q-10A-4, not a defect of this contract.
+* **Accepted with reason:** the CSP carries `'unsafe-eval'` in `script-src` and `'unsafe-inline'` in `style-src` (`vercel.json:52`). The reasons are on record (`tests/ci/page-security-headers.ci.test.ts:85-95`):
+  * `'unsafe-eval'`: the Desmos calculator evals. With the CSP report-only there were 261 reports per session; when enforced without it, the calculator renders blank. Allowed page-wide by Karl's ruling, 2026-10-03, because the SPA is one document and cannot carry a per-route CSP.
+  * `style-src 'unsafe-inline'`: React style attributes and Radix positioning, on every page.
+
+  Both are kept with these reasons (Karl, 2026-10-05, answer to Q-10A-4). A CSP tightening audit, which identifies what needs each and removes them where possible, is plan follow-up FU10.
 
 ## **4.7 Performance targets**
 
@@ -409,7 +418,7 @@ A browser sending GPC is treated as Refuse, and the GPC notice replaces the bann
 * **Signed-in accounts.** The browser SDK starts only for an account known to be 13 or over (`is_under_13 === false`). Under-13 and unknown age are excluded (`CookieConsentRoot.tsx:122-132`).
 * **Late exclusion.** An excluded account that signs in on a running tab stops the SDK.
 * **Server events.** The server wrapper refuses events for the same accounts (`excluded_under_13_or_age_unknown`, SCL-213 IS 5(a)).
-* **Signed-out visitors** have no age on record and are not age-gated. That is the category standard for a general public page, and is recorded as Q-10A-3.
+* **Signed-out visitors** have no age on record and are not age-gated. This is the **standard general-audience posture**: a public page cannot know a visitor's age, so rule 7 applies once age is known. Signed-in under-13 and unknown-age accounts are excluded as above (Karl, 2026-10-05, answer to Q-10A-3).
 * **Later detection.** A recording made for a user later found to be under 13 is removed by Doc 07E §10's cascade (`delete_recordings`; **subject to SCL-204** IS 2).
 
 ## **6.5 Masking and session replay**
@@ -683,15 +692,23 @@ Every entry Doc 10A rests on is PROPOSED (owner answer 2):
 | SCL-204 | Session replay scope and `ph-no-capture` (§6.5) |
 | SCL-208 | Legal drafts' departures from Doc 10, under-13 posture (§1.4, §2.2 C1) |
 | SCL-213 | Seven launch events; `mask_all_text`; `homepage-hero` (§6.5, §6.6, §6.8) |
+| SCL-218 | Doc 10A's departures from locked Doc 10: §8.2 explanation source, the testimonials direction, Category 1 under the approval rule (§1.4, §3.1, §7.6) |
 
 SCL-205–207, 209–212 and 214–217 belong to other verticals. Doc 10A does not rest on them.
 
 ## **11.3 Open questions**
 
-* **Q-10A-1.** SCL-200's WAS list omits four "future Doc 05" citations: D02B:79, Preamble:156, D01:2034, D01A:1878. Should SCL-200 be widened in place to name them, so that the four documents point at Doc 10A? Doc 10A treats them as covered where they name public surfaces, and as not covered where they name B7.
-* **Q-10A-2.** Doc 10 is LOCKED. Its departures recorded in §1.4 currently have no SCL: §8.2 :419 (LISA explanation vs pre-written), §7.1 and §7.2 (testimonials vs R29), and §11.6 :871 (Category 1 without founder review; CR-10A-02). Should one PROPOSED SCL record them at Doc 10A's lock?
-* **Q-10A-3.** Rule 7 vs signed-out visitors. Public pages have no age gate, so an under-13 visitor who accepts the banner while signed out is counted like any visitor (§6.4). The category standard for a general-audience page is no age gate. Confirm, or name an alternative.
-* **Q-10A-4.** CSP `'unsafe-eval'` and `style-src 'unsafe-inline'` (§4.6): keep, with the reason recorded, or schedule a dependency audit to remove them?
+All four were answered by Karl on 2026-10-05:
+
+* **Q-10A-1. Answered: widen SCL-200 in place.** A dated note in SCL-200 names the four omitted "future Doc 05" citations: D02B:79, Preamble:156, D01:2034, D01A:1878. It records what Doc 10A takes from each; D01:2034, guardian linking, is not taken (§1.1).
+* **Q-10A-2. Answered: one PROPOSED SCL, ruled at lock.** **SCL-218** records Doc 10A's three departures from locked Doc 10:
+  * §8.2 :419, the explanation source: pre-written, not LISA;
+  * §7.1 and §7.2, the testimonials direction (R29);
+  * §11.6 :871, Lyceon-specific Category 1 claims now under Karl's approval rule (CR-10A-02).
+* **Q-10A-3. Answered: acceptable.** The standard general-audience posture: public pages cannot know a visitor's age; rule 7 applies once age is known (§6.4).
+* **Q-10A-4. Answered: keep both, with the reason recorded** (§4.6). The CSP tightening audit is FU10.
+
+No question is open. New ones raised in external review are added here as Q-10A-5 onward.
 
 ## **11.4 Follow-ups routed to the plan**
 
@@ -721,7 +738,7 @@ Doc 10A V1.0 is acceptable for lock when:
 5. §8 is marked NOT BUILT and states the contract C1–C5 must meet.
 6. §10 maps every invariant to a gate, test or manual proof, with an honest status.
 7. Every rule resting on a PROPOSED SCL is marked "subject to".
-8. External review is complete and Karl has answered or deferred Q-10A-1 to Q-10A-4.
+8. External review is complete, every §11.3 question is answered or deferred, and SCL-218 is ruled.
 9. Karl moves the file into `docs/Spec/` (G6 proof).
 
 ---
@@ -741,7 +758,14 @@ Doc 10A V1.0 is acceptable for lock when:
 
 Doc 10 is referenced, never restated (§8.2, §8.3, §9, §4.3). §8 is written as the not-built contract for C1–C5. Status: Draft for review.
 
-**CR-10A-02.** Claim control adopts Doc 10 §11.6's four categories (:862-867) and layers doctrine rule 5 on top. A **Lyceon-specific** Category 1 claim needs Karl's written approval, although Doc 10 §11.6 (:871) lets Category 1 claims appear "without founder review". Generic, industry-standard Category 1 wording (rule 1) needs none. Doc 10 §11.6's Category 1 example at :864 is a mechanism (rule 2) and is not usable public copy. The inventory's a–e labels are retired via §3.2. Owner answer 5, 2026-10-05. Whether this departure from locked Doc 10 also takes an SCL is Q-10A-2.
+**CR-10A-02.** Claim control adopts Doc 10 §11.6's four categories (:862-867) and layers doctrine rule 5 on top. A **Lyceon-specific** Category 1 claim needs Karl's written approval, although Doc 10 §11.6 (:871) lets Category 1 claims appear "without founder review". Generic, industry-standard Category 1 wording (rule 1) needs none. Doc 10 §11.6's Category 1 example at :864 is a mechanism (rule 2) and is not usable public copy. The inventory's a–e labels are retired via §3.2. Owner answer 5, 2026-10-05. The departure from locked Doc 10 is recorded in **SCL-218** (PROPOSED; ruled at lock).
+
+**CR-10A-03.** Karl's answers to §11.3, 2026-10-05:
+
+* Q-10A-1: SCL-200 widened in place to name the four omitted citations.
+* Q-10A-2: SCL-218 allocated (PROPOSED) for the three Doc 10 departures.
+* Q-10A-3: the general-audience posture is recorded in §6.4.
+* Q-10A-4: the CSP allowances are kept with their reason in §4.6, and FU10 (CSP tightening audit) is added to the plan.
 
 ---
 
