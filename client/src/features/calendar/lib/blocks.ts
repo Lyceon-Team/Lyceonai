@@ -78,17 +78,19 @@ export const TONE_LABEL: Readonly<Record<BlockTone, string>> = {
   math: "Math practice",
   rw: "Reading & Writing",
   review: "Review",
-  exam: "Practice test",
+  exam: "Full-length test",
 };
 
 /**
- * §17.1's row title: "Math · 15 questions", "Review · 7 items", "Full-length practice test".
+ * §17.1's row title: "Math · 15 questions", "Review · 7 items", and "Full-length test" for a
+ * sitting — §17.1's example reads "Full-length practice test"; owner ruling OQ-62 (b) (Karl,
+ * 2026-10-05) names a sitting "full-length test" everywhere a student sees it.
  */
 export function titleOf(block: PlanBlock): string {
   if (block.block_type === "review") {
     return `Review · ${block.target_count} ${block.target_count === 1 ? "item" : "items"}`;
   }
-  if (block.block_type === "full_length") return "Full-length practice test";
+  if (block.block_type === "full_length") return "Full-length test";
   return `${sectionName(block.section)} · ${block.target_count} ${block.target_count === 1 ? "question" : "questions"}`;
 }
 

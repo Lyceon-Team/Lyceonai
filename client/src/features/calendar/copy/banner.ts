@@ -11,7 +11,8 @@
  * mapping below is the only reading that fits: `weekly` is the week refresh, `post_exam` is
  * the one after an exam, `rollback` is support restoring a plan. It is written here, once,
  * rather than inline in the banner component, so the day the owner rules on the wording
- * there is one file to change.
+ * there is one file to change. The `post_exam` sentence names the sitting "full-length test"
+ * (owner ruling OQ-62 (b), Karl, 2026-10-05), where §17.4 says "exam".
  *
  * WHY THE STUDENT'S OWN TRIGGERS RETURN NULL. §12.7 only surfaces a version with
  * `initiated_by <> 'student'`, so `day_edit`, `student_refresh` and the rest can never reach
@@ -23,7 +24,7 @@ import type { PlanTrigger } from "@lyceon/shared/calendar";
 
 const BANNER_COPY: Partial<Readonly<Record<PlanTrigger, string>>> = {
   weekly: "Your plan was refreshed for the week.",
-  post_exam: "Your plan was updated after your practice test.",
+  post_exam: "Your plan was updated after your full-length test.",
   rollback: "Your plan was restored by support.",
   // `setup` and `profile_change` are student-initiated and never surface here; listing them
   // with copy would imply they can.

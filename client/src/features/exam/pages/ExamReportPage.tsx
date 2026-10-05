@@ -232,7 +232,7 @@ function KnowledgeAndSkills({
           Knowledge and skills
         </h2>
         <p className="m-0 text-[17px] text-lyc-muted">
-          How you did across the eight content domains on this test.
+          How you did across the eight content domains on this full-length test.
         </p>
       </div>
       <DomainSegments
@@ -357,7 +357,7 @@ export function ReportBody({
       );
     case "scoring_pending":
       return (
-        <StatePanel title="Scoring your test">
+        <StatePanel title="Scoring your full-length test">
           <p className={BODY} role="status" aria-live="polite">
             {payload.estimated_ready_at === null ||
             payload.estimated_ready_at === undefined
@@ -381,7 +381,7 @@ export function ReportBody({
         <StatePanel
           title={
             payload.resumable
-              ? "This test isn't finished"
+              ? "This full-length test isn't finished"
               : "This attempt ended before it was finished"
           }
         >
@@ -402,7 +402,7 @@ export function ReportBody({
                 href={sessionPath(payload.session_id)}
                 className="no-underline"
               >
-                Resume test
+                Resume full-length test
               </Link>
             </Button>
           ) : null}

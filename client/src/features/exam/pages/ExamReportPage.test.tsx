@@ -64,7 +64,7 @@ import {
   type ExamReportSource,
 } from "../../../../../server/services/exam-report-service";
 import ExamReportPage, { ReportBody } from "./ExamReportPage";
-import { ExamLoadError } from "../components/ExamStatus";
+import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
 import { HttpApiError } from "@/lib/api-error";
 
 /** A report source as `exam_report_source` returns it: a completed, scored test-day sitting. */
@@ -302,7 +302,7 @@ describe("Knowledge and skills (ruling 7: seven flat navy segments per domain fr
     show(withoutGeometry);
     expect(screen.getAllByTestId("exam-domain-row")).toHaveLength(7);
     expect(screen.getByTestId("exam-domain-omitted").textContent).toBe(
-      "Geometry and Trigonometry isn't shown because this test had no questions from it.",
+      "Geometry and Trigonometry isn't shown because this full-length test had no questions from it.",
     );
     expect(
       screen.getAllByTestId("exam-domain-name").map((n) => n.textContent),
@@ -342,10 +342,12 @@ describe("other states", () => {
     );
   });
 
-  it("not_completed: Resume test goes to the session", () => {
+  it("not_completed: Resume full-length test goes to the session", () => {
     show(studentInProgressReport);
     expect(
-      screen.getByRole("link", { name: "Resume test" }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: "Resume full-length test" })
+        .getAttribute("href"),
     ).toBe(`/tests/${FIXTURE_SESSION_ID}`);
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
   });
@@ -392,6 +394,39 @@ describe('naming: the section is "Full-Length" (owner ruling, Karl, 2026-10-05)'
     const back = screen.getByRole("link", { name: "Back to Full-Length" });
     expect(back.getAttribute("href")).toBe("/tests");
   });
+
+  // OQ-62 (b) (Karl, 2026-10-05): the sitting is a "full-length test" in every load state.
+  it.each([
+    [403, "This full-length test isn't available to your account."],
+    [404, "We couldn't find this full-length test."],
+    [
+      500,
+      "We couldn't load your full-length test. Check your connection and try again.",
+    ],
+  ] as const)(
+    "OQ-62 (b): a %i load error names the full-length test",
+    (status, message) => {
+      const { hook } = memoryLocation({ path: "/tests/x" });
+      render(
+        <Router hook={hook}>
+          <ExamLoadError error={new HttpApiError({ status, message: "x" })} />
+        </Router>,
+      );
+      expect(screen.getByRole("alert").textContent).toContain(message);
+      // Every whole-token "test" in the alert is the tail of "full-length test".
+      const text = screen.getByRole("alert").textContent ?? "";
+      expect(text.match(/\btests?\b/gi)?.length).toBe(
+        text.match(/\bfull-length tests?\b/gi)?.length,
+      );
+    },
+  );
+
+  it("OQ-62 (b): the default loading line names the full-length test", () => {
+    render(<ExamLoading />);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Loading your full-length test…",
+    );
+  });
 });
 
 describe("OQ-34: a lapsed report opens the upgrade modal for Full-Length", () => {
@@ -407,12 +442,12 @@ describe("OQ-34: a lapsed report opens the upgrade modal for Full-Length", () =>
     ).toBeTruthy();
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
     const modal = screen.getByTestId("upgrade-modal");
-    expect(modal.textContent).toContain("Full-length practice tests");
+    expect(modal.textContent).toContain("Full-length tests");
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByTestId("upgrade-modal")).toBeNull();
     fireEvent.click(screen.getByTestId("exam-report-renew"));
     expect(screen.getByTestId("upgrade-modal").textContent).toContain(
-      "Full-length practice tests",
+      "Full-length tests",
     );
   });
 

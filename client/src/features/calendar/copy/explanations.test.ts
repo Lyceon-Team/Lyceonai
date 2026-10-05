@@ -130,7 +130,9 @@ describe("domainExplanation", () => {
     expect(domainExplanation("weak")).toBe(
       "One of your weaker areas right now.",
     );
-    expect(domainExplanation("post_exam")).toBe("Your last test pointed here.");
+    expect(domainExplanation("post_exam")).toBe(
+      "Your last full-length test pointed here.",
+    );
   });
 
   it("returns null for an unknown key and for null", () => {

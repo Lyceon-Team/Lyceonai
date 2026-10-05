@@ -83,14 +83,15 @@ export function dayHeaderLabel(
 }
 
 /**
- * "Practice" / "Review" / "Practice test" — the engine a queued question originally
- * came from. `full_length` is a full-length practice test: its wrong and blank items
+ * "Practice" / "Review" / "Full-length test" — the engine a queued question originally
+ * came from (wording: owner ruling OQ-62 (b), Karl, 2026-10-05, was "Practice test").
+ * `full_length` is a full-length test: its wrong and blank items
  * are queued once it is scored (SCL-158), and the student picks it here exactly as they
  * pick a practice session.
  */
 export function sourceEngineLabel(engine: string): string {
   if (engine === "review") return "Review";
-  if (engine === "full_length") return "Practice test";
+  if (engine === "full_length") return "Full-length test";
   return "Practice";
 }
 

@@ -81,10 +81,10 @@ describe("sourceHeadline / sourceEngineLabel", () => {
     expect(sourceHeadline("practice", null)).toBe("Practice");
   });
 
-  it("a full-length test reads as a practice test, never as practice", () => {
-    expect(sourceEngineLabel("full_length")).toBe("Practice test");
+  it("a full-length test reads as a full-length test (OQ-62 (b)), never as practice", () => {
+    expect(sourceEngineLabel("full_length")).toBe("Full-length test");
     expect(sourceHeadline("full_length", "9:15 AM")).toBe(
-      "Practice test, 9:15 AM",
+      "Full-length test, 9:15 AM",
     );
   });
 });

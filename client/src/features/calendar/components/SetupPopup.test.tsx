@@ -634,7 +634,7 @@ describe("the practice-test frequency (Brief 14)", () => {
     // The figure comes from `fullLengthsBeforeTarget` — the generator's own steps — which is
     // why it is a promise the plan can keep rather than a client-side estimate.
     expect(screen.getByTestId("calendar-setup-note").textContent).toContain(
-      "about 3 practice tests before 23 November, on Saturdays",
+      "about 3 full-length tests before 23 November, on Saturdays",
     );
   });
 
@@ -656,7 +656,7 @@ describe("the practice-test frequency (Brief 14)", () => {
     // A count would have to invent a window to count against. The rate is the honest answer,
     // and it is the same sentence the settings sheet prints in the same situation.
     expect(screen.getByTestId("calendar-setup-note").textContent).toContain(
-      "a practice test every 3 weeks, on Saturdays",
+      "a full-length test every 3 weeks, on Saturdays",
     );
   });
 });

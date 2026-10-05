@@ -151,12 +151,12 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
   it("is derived, and moves when a chip moves", () => {
     renderSheet();
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 35 questions a day · about 3 practice tests before 7 November, on Saturdays",
+      "6 study days a week · about 35 questions a day · about 3 full-length tests before 7 November, on Saturdays",
     );
 
     fireEvent.click(chip("settings-minutes", "2 hr"));
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 80 questions a day · about 3 practice tests before 7 November, on Saturdays",
+      "6 study days a week · about 80 questions a day · about 3 full-length tests before 7 November, on Saturdays",
     );
   });
 
@@ -164,7 +164,7 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
     renderSheet();
     fireEvent.click(chip("settings-full-length", "None"));
     expect(screen.getByTestId("settings-summary").textContent).toContain(
-      "no automatic practice tests",
+      "no automatic full-length tests",
     );
   });
 
@@ -441,7 +441,7 @@ describe("practice test frequency (§8.1)", () => {
   it("states the RATE, not a count, when there is no target date to count toward", () => {
     renderSheet({ profile: { ...PROFILE, target_exam_date: null } });
     expect(screen.getByTestId("settings-summary").textContent).toContain(
-      "a practice test every 2 weeks, on Saturdays",
+      "a full-length test every 2 weeks, on Saturdays",
     );
   });
 });

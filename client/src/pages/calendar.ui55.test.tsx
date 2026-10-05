@@ -565,7 +565,10 @@ describe("paid: the Show filters (DESIGN.md §4)", () => {
       within(filters)
         .getAllByRole("checkbox")
         .map((c) => c.closest("label")?.textContent),
-    ).toEqual(["Math", "Reading & Writing", "Review", "Practice test"]);
+    ).toEqual(["Math", "Reading & Writing", "Review", "Full-length test"]);
+    // OQ-62 (b) (Karl, 2026-10-05): a sitting is a "full-length test" everywhere the student
+    // sees the calendar; "practice test" is gone from the whole page.
+    expect(document.body.textContent).not.toMatch(/\bpractice tests?\b/i);
   });
 });
 
