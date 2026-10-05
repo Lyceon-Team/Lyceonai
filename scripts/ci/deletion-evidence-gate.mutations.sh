@@ -538,11 +538,19 @@ expect_red M64 "F1.16 — an inline comment does not change a scalar's type"
 # The archive was invisible for a month because "returns ok: false" and "is not
 # scheduled" each explained the other. These mutations plant the two halves of
 # that back and require the suite to say so.
-SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
+#
+# M65 RE-POINTED 2026-10-05 (RS-03/RS-04, #1102). The 90d tier is an RPC now
+# (`sweepByRpc` → `sweep_tutor_instruction_retention`), so its old anchor
+# `const cutoff = retentionCutoff(opts.now, 90);` is gone, and the test it reddens
+# moved to the real-Postgres suite with the rest of the 90d cases. The anchor
+# below occurs once in retention-sweep.ts, inside sweep90d.
+SUITE="tests/ci/retention-sweep.pg.ci.test.ts"
 
 echo "==> (M65) the 90d tier declines again instead of deleting"
-plant M65 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 90);', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const cutoff = retentionCutoff(opts.now, 90);', 1)"
+plant M65 "$SWEEP" "s.replace('  const result = await sweepByRpc(', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const result = await sweepByRpc(', 1)"
 expect_red M65 "deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)"
+
+SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
 
 echo "==> (M66) an archive call comes back into the sweep module"
 plant M66 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 180);', '  const archiveTable = \"retention__crisis_review_cases\";\n  void archiveTable;\n  const cutoff = retentionCutoff(opts.now, 180);', 1)"
