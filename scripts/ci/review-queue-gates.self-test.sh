@@ -24,10 +24,17 @@ DB=review_gates_ci
 q()  { psql -v ON_ERROR_STOP=1 -q -d "$DB" "${@}"; }
 qt() { psql -v ON_ERROR_STOP=1 -tA -d "$DB" "${@}"; }
 
-build_db() {
+# The migrated database is built ONCE, into a template, and every build_db clones it. A clone
+# is byte-for-byte the database a fresh apply produces (CREATE DATABASE ... TEMPLATE copies the
+# files), so each gate and plant still starts from an untouched, fully migrated database; only
+# the ~24 re-applies of every migration are gone. The template is never connected to after it is
+# built, and nothing below writes to it.
+TPL="${DB}_tpl"
+
+build_template() {
   psql -v ON_ERROR_STOP=1 -q -d postgres \
-    -c "DROP DATABASE IF EXISTS $DB;" -c "CREATE DATABASE $DB;" >/dev/null
-  q >/dev/null <<'SQL'
+    -c "DROP DATABASE IF EXISTS $TPL;" -c "CREATE DATABASE $TPL;" >/dev/null
+  psql -v ON_ERROR_STOP=1 -q -d "$TPL" >/dev/null <<'SQL'
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon')          THEN CREATE ROLE anon NOLOGIN; END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
@@ -40,8 +47,15 @@ CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
   $f$ SELECT nullif(current_setting('lyceon.test_uid', true), '')::uuid $f$;
 SQL
-  for f in "$MIG_DIR"/*.sql; do q -f "$f" >/dev/null; done
+  for f in "$MIG_DIR"/*.sql; do psql -v ON_ERROR_STOP=1 -q -d "$TPL" -f "$f" >/dev/null; done
 }
+
+build_db() {
+  psql -v ON_ERROR_STOP=1 -q -d postgres \
+    -c "DROP DATABASE IF EXISTS $DB;" -c "CREATE DATABASE $DB TEMPLATE $TPL;" >/dev/null
+}
+
+build_template
 
 fail() { echo "    SELF-TEST FAIL: $1"; exit 1; }
 
