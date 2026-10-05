@@ -2,7 +2,18 @@
  * @spec [Doc-02B_V4 §21 (Surface-Aware Behavior, Question Awareness),
  *        CR-02B-29; closure plan W4-1 (LISA in review — launch scope, owner
  *        ruling 2026-09-25), W4-4 (LISA always open in review)]
- * @implemented 2026-09-25 | @updated 2026-09-25 — W4-4
+ *       [student-UI register UI-53; OQ-54 (a) and OQ-57 (f), owner ruling
+ *        2026-10-05: "Move the review runner's LISA panel onto student tokens
+ *        in #1073 now"; DESIGN.md §1 (tokens only, 14px floor)]
+ * @implemented 2026-09-25 | @updated 2026-09-25 — W4-4 | @updated 2026-10-05 — student tokens
+ *
+ * STUDENT TOKENS (2026-10-05). The frame, header, question chip, opener,
+ * loading and error lines draw with the `lyc-*` tokens only, as the thread
+ * parts shared with /chat already did (UI-56), and the denial card is the
+ * /chat locked card's twin (`LisaUpgradeCard`). Nothing here reads the
+ * app-wide light tokens any more, which is what let the review runner leave
+ * the light lock (`route-shells.ts`). The composer and paused bar take the
+ * "panel" inset: 16px sides at every width inside the 360px column.
  *
  * plain English: LISA beside the question under review. The panel names the
  * question it is about (a chip), can be hidden for the current question, and
@@ -81,13 +92,15 @@ const COMPOSER_PLACEHOLDER = "Ask about this question...";
 function TutorOpener() {
   return (
     <div
-      className="flex gap-3 rounded-2xl border border-border bg-secondary/40 p-4"
+      className="flex gap-3 rounded-lg border border-lyc-rule bg-lyc-paper p-4"
       data-testid="tutor-opener"
     >
       <LisaAvatar />
-      <div className="text-sm leading-relaxed">
-        <p className="font-semibold text-foreground">{OPENER_TITLE}</p>
-        <p className="mt-1 text-muted-foreground">{OPENER_BODY}</p>
+      <div className="min-w-0">
+        <p className="m-0 text-lyc-body font-semibold text-lyc-ink-strong">
+          {OPENER_TITLE}
+        </p>
+        <p className="m-0 mt-1 text-lyc-body text-lyc-muted">{OPENER_BODY}</p>
       </div>
     </div>
   );
@@ -104,7 +117,7 @@ export function ScopedTutorPanel({
 }: {
   sourceSurface: Extract<TutorSourceSurface, "review" | "practice">;
   sessionItemId: string;
-  /** Names the question under review, e.g. "Question 3 / 10". */
+  /** Names the question under review: the runner's own "Question N of M" (OQ-54). */
   questionLabel: string;
   /** Hide LISA for the current question; it returns on the next. */
   onHide: () => void;
@@ -172,16 +185,18 @@ export function ScopedTutorPanel({
 
   return (
     <section
-      className="flex h-full min-h-[480px] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card"
+      className="flex h-full min-h-[480px] flex-col overflow-hidden rounded-lg border border-lyc-rule bg-lyc-sheet"
       aria-label="LISA"
       data-testid="scoped-tutor-panel"
     >
-      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-lyc-rule bg-lyc-paper px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <LisaAvatar />
-          <span className="text-sm font-semibold text-foreground">LISA</span>
+          <span className="font-lyc-serif text-lyc-body font-semibold text-lyc-ink-strong">
+            LISA
+          </span>
           <span
-            className="truncate rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs font-medium text-foreground"
+            className="truncate rounded-full border border-lyc-rule bg-lyc-chip px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink"
             data-testid="tutor-question-chip"
           >
             {questionLabel}
@@ -189,13 +204,13 @@ export function ScopedTutorPanel({
         </div>
         <Button
           type="button"
-          variant="ghost"
-          size="icon"
+          variant="lyc-quiet"
+          size="lyc-icon"
           onClick={onHide}
           aria-label="Hide LISA"
-          className="min-h-[44px] min-w-[44px] shrink-0"
+          className="shrink-0 text-lyc-body"
         >
-          <X className="h-4 w-4" />
+          <X aria-hidden="true" className="h-4 w-4" />
         </Button>
       </header>
 
@@ -214,7 +229,10 @@ export function ScopedTutorPanel({
           role="status"
           aria-label="Opening LISA"
         >
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader2
+            aria-hidden="true"
+            className="h-6 w-6 animate-spin text-lyc-muted"
+          />
         </div>
       ) : (
         <>
@@ -234,10 +252,7 @@ export function ScopedTutorPanel({
               <TutorOpener />
             )}
             {!pendingMessage && createError && (
-              <p
-                className="text-center text-sm text-muted-foreground"
-                role="alert"
-              >
+              <p className="m-0 text-lyc-body text-lyc-muted" role="alert">
                 LISA isn&apos;t available right now. Your message is still below
                 — try sending it again.
               </p>
@@ -253,6 +268,7 @@ export function ScopedTutorPanel({
             placeholder={
               pendingMessage ? "LISA is responding..." : COMPOSER_PLACEHOLDER
             }
+            inset="panel"
           />
         </>
       )}
@@ -344,7 +360,10 @@ function ScopedThread({
             role="status"
             aria-label="Loading conversation"
           >
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader2
+              aria-hidden="true"
+              className="h-6 w-6 animate-spin text-lyc-muted"
+            />
           </div>
         )}
 
@@ -391,6 +410,7 @@ function ScopedThread({
           onContinue={resume}
           endPending={endConversation.isPending}
           resumePending={resumePending}
+          inset="panel"
         />
       ) : isEnded ? null : denied ? (
         <LisaUpgradeCard />
@@ -403,6 +423,7 @@ function ScopedThread({
           placeholder={
             isThinking ? "LISA is responding..." : COMPOSER_PLACEHOLDER
           }
+          inset="panel"
         />
       )}
     </>
