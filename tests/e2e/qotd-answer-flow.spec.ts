@@ -207,7 +207,8 @@ test.describe("Question of the Day", () => {
     //    on interaction (owner ruling 2026-10-05), so count its requests from page load.
     const turnstileRequests: string[] = [];
     page.on("request", (r) => {
-      if (r.url().includes("challenges.cloudflare.com"))
+      // Host compared exactly (CodeQL js/incomplete-url-substring-sanitization).
+      if (new URL(r.url()).hostname === "challenges.cloudflare.com")
         turnstileRequests.push(r.url());
     });
     // The homepage widget is lazy (owner request 2026-10-05): its chunk and KaTeX load only when
@@ -226,7 +227,8 @@ test.describe("Question of the Day", () => {
     const area = page.getByTestId("qotd-question-area");
     await expect(area).toBeVisible({ timeout: 20_000 });
     await expect(area).toHaveClass(/ph-no-capture/);
-    await expect(area.getByText("Explanation", { exact: true })).toHaveCount(0);
+    // No reveal before submit (the renderer's explanation panel, UI-53).
+    await expect(area.getByTestId("runner-explanation")).toHaveCount(0);
 
     // 3. No Turnstile before a pick; picking loads it, it issues a token (test key) and submit
     //    becomes possible. The options are shuffled server-side; the first on-screen one is "A".
@@ -234,7 +236,8 @@ test.describe("Question of the Day", () => {
     await expect(
       page.locator('iframe[src*="challenges.cloudflare.com"]'),
     ).toHaveCount(0);
-    await area.getByRole("button").first().click();
+    // Choices are radios in a radiogroup since the renderer moved to the student tokens (UI-53).
+    await area.getByRole("radio").first().click();
     await expect(
       page.locator('iframe[src*="challenges.cloudflare.com"]'),
     ).toHaveCount(1, {
@@ -249,14 +252,17 @@ test.describe("Question of the Day", () => {
     await submit.click();
 
     // 4. The reveal.
-    await expect(page.getByText(/^(Correct|Incorrect)$/)).toBeVisible({
+    await expect(page.getByText(/^(Correct|Not quite)$/)).toBeVisible({
       timeout: 20_000,
     });
-    await expect(area.getByText("Explanation", { exact: true })).toBeVisible();
+    // The explanation panel (the renderer's `runner-explanation` since UI-53; it has no
+    // "Explanation" label any more), holding the explanation's own text.
+    await expect(area.getByTestId("runner-explanation")).toBeVisible();
+    await expect(area.getByTestId("runner-explanation")).not.toHaveText("");
     // One answer per visit: the widget is locked — no submit control, every choice disabled.
     await expect(page.getByTestId("qotd-locked")).toBeVisible();
     await expect(page.getByTestId("qotd-submit")).toHaveCount(0);
-    const choices = area.getByRole("button");
+    const choices = area.getByRole("radio");
     for (let i = 0; i < (await choices.count()); i += 1) {
       await expect(choices.nth(i)).toBeDisabled();
     }

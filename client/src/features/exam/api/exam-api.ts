@@ -44,6 +44,10 @@ import {
   type ExamReportStatus,
 } from "@lyceon/shared/exam-report-schema";
 import {
+  examScoredSessionsPayloadSchema,
+  type ExamScoredSessionsPayload,
+} from "@lyceon/shared/exam-scored-sessions-schema";
+import {
   examStudentReportPayloadSchema,
   type ExamStudentReportPayload,
 } from "@lyceon/shared/exam-student-report-schema";
@@ -59,8 +63,12 @@ import { HttpApiError } from "@/lib/api-error";
 export const EXAM_ROOT = "/api/tests" as const;
 
 export type ExamItemsResponse = z.infer<typeof examItemsResponseSchema>;
-export type ExamStartModuleResponse = z.infer<typeof examStartModuleResponseSchema>;
-export type ExamSubmitModuleResponse = z.infer<typeof examSubmitModuleResponseSchema>;
+export type ExamStartModuleResponse = z.infer<
+  typeof examStartModuleResponseSchema
+>;
+export type ExamSubmitModuleResponse = z.infer<
+  typeof examSubmitModuleResponseSchema
+>;
 export type ExamHeartbeatResponse = z.infer<typeof examHeartbeatResponseSchema>;
 export type ExamSectionStateResponse = ExamHeartbeatResponse["section_state"];
 
@@ -77,23 +85,36 @@ async function parsed<T>(
   try {
     body = await response.json();
   } catch {
-    throw new Error(`${resource}: the server returned a body this client cannot read.`);
+    throw new Error(
+      `${resource}: the server returned a body this client cannot read.`,
+    );
   }
   const result = schema.safeParse(body);
   if (!result.success) {
     const paths = result.error.issues.map((i) => i.path.join(".")).join(", ");
     // eslint-disable-next-line no-console -- the client has no structured logger; paths only, never the body.
-    console.error(`[EXAM] ${resource}: response failed schema validation at [${paths}].`);
-    throw new Error(`${resource}: the server returned a body this client cannot read.`);
+    console.error(
+      `[EXAM] ${resource}: response failed schema validation at [${paths}].`,
+    );
+    throw new Error(
+      `${resource}: the server returned a body this client cannot read.`,
+    );
   }
   return result.data;
 }
 
-function json(method: "POST" | "PUT", value: unknown): { method: string; body: string } {
+function json(
+  method: "POST" | "PUT",
+  value: unknown,
+): { method: string; body: string } {
   return { method, body: JSON.stringify(value) };
 }
 
-function modulePath(sessionId: string, section: ExamSection, module: ExamModule): string {
+function modulePath(
+  sessionId: string,
+  section: ExamSection,
+  module: ExamModule,
+): string {
   return `${EXAM_ROOT}/sessions/${sessionId}/sections/${section}/modules/${module}`;
 }
 
@@ -104,7 +125,9 @@ export async function fetchExamForms(): Promise<ExamFormsResponse> {
   return parsed(res, examFormsResponseSchema, "GET /api/tests/forms");
 }
 
-export async function fetchExamSession(sessionId: string): Promise<ExamSessionResponse> {
+export async function fetchExamSession(
+  sessionId: string,
+): Promise<ExamSessionResponse> {
   const res = await apiRequest(`${EXAM_ROOT}/sessions/${sessionId}/state`);
   return parsed(res, examSessionResponseSchema, "GET session state");
 }
@@ -114,7 +137,9 @@ export async function fetchModuleItems(
   section: ExamSection,
   module: ExamModule,
 ): Promise<ExamItemsResponse> {
-  const res = await apiRequest(`${modulePath(sessionId, section, module)}/items`);
+  const res = await apiRequest(
+    `${modulePath(sessionId, section, module)}/items`,
+  );
   return parsed(res, examItemsResponseSchema, "GET module items");
 }
 
@@ -123,7 +148,9 @@ export async function fetchModuleWorkspace(
   section: ExamSection,
   module: ExamModule,
 ): Promise<ExamWorkspaceResponse> {
-  const res = await apiRequest(`${modulePath(sessionId, section, module)}/workspace`);
+  const res = await apiRequest(
+    `${modulePath(sessionId, section, module)}/workspace`,
+  );
   return parsed(res, examWorkspaceResponseSchema, "GET module workspace");
 }
 
@@ -135,7 +162,9 @@ const reportEnvelopeSchema = z
   .object({ data: examStudentReportPayloadSchema, meta: examReportMetaSchema })
   .strict();
 
-export async function fetchExamReport(sessionId: string): Promise<ExamStudentReportPayload> {
+export async function fetchExamReport(
+  sessionId: string,
+): Promise<ExamStudentReportPayload> {
   const res = await apiRequest(`${EXAM_ROOT}/sessions/${sessionId}/report`);
   return (await parsed(res, reportEnvelopeSchema, "GET report")).data;
 }
@@ -145,9 +174,34 @@ const reportStatusEnvelopeSchema = z
   .strict();
 
 /** 04C §16.1: the cheap read a pending report polls. */
-export async function fetchExamReportStatus(sessionId: string): Promise<ExamReportStatus> {
-  const res = await apiRequest(`${EXAM_ROOT}/sessions/${sessionId}/report/status`);
-  return (await parsed(res, reportStatusEnvelopeSchema, "GET report status")).data;
+export async function fetchExamReportStatus(
+  sessionId: string,
+): Promise<ExamReportStatus> {
+  const res = await apiRequest(
+    `${EXAM_ROOT}/sessions/${sessionId}/report/status`,
+  );
+  return (await parsed(res, reportStatusEnvelopeSchema, "GET report status"))
+    .data;
+}
+
+const scoredSessionsEnvelopeSchema = z
+  .object({ data: examScoredSessionsPayloadSchema, meta: examReportMetaSchema })
+  .strict();
+
+/**
+ * @spec [Doc-04C §16.3 as brought into V1.0 by SCL-207 (owner ruling OQ-40); register OQ-30
+ *        (score history), OQ-31 (the Full-Length card shows the completed test's score)]
+ *       | @implemented [2026-10-03]
+ * plain English: the student's scored sessions, newest first, each with its §15.1
+ * disclosure. The strict schema refuses a domain count or any other extra key.
+ */
+export async function fetchScoredSessions(): Promise<
+  ExamScoredSessionsPayload["sessions"]
+> {
+  const res = await apiRequest(`${EXAM_ROOT}/sessions?state=scored`);
+  return (
+    await parsed(res, scoredSessionsEnvelopeSchema, "GET scored sessions")
+  ).data.sessions;
 }
 
 // ── G1: a guardian reading a linked student's results (SCL-181) ─────────────
@@ -157,16 +211,35 @@ export async function fetchExamReportStatus(sessionId: string): Promise<ExamRepo
  * against the strict guardian envelope, never the student's report schema: a type wide
  * enough for both would let a student-only field through.
  */
-export async function fetchGuardianExamList(studentId: string): Promise<GuardianExamList["tests"]> {
-  const res = await apiRequest(`/api/students/${encodeURIComponent(studentId)}/tests`);
-  return (await parsed(res, guardianExamListEnvelopeSchema, "GET /api/students/:id/tests")).tests;
+export async function fetchGuardianExamList(
+  studentId: string,
+): Promise<GuardianExamList["tests"]> {
+  const res = await apiRequest(
+    `/api/students/${encodeURIComponent(studentId)}/tests`,
+  );
+  return (
+    await parsed(
+      res,
+      guardianExamListEnvelopeSchema,
+      "GET /api/students/:id/tests",
+    )
+  ).tests;
 }
 
-export async function fetchGuardianExamReport(studentId: string, sessionId: string): Promise<GuardianExamReport> {
+export async function fetchGuardianExamReport(
+  studentId: string,
+  sessionId: string,
+): Promise<GuardianExamReport> {
   const res = await apiRequest(
     `/api/students/${encodeURIComponent(studentId)}/tests/${encodeURIComponent(sessionId)}/report`,
   );
-  return (await parsed(res, guardianExamReportEnvelopeSchema, "GET /api/students/:id/tests/:sid/report")).report;
+  return (
+    await parsed(
+      res,
+      guardianExamReportEnvelopeSchema,
+      "GET /api/students/:id/tests/:sid/report",
+    )
+  ).report;
 }
 
 // ── Writes ──────────────────────────────────────────────────────────────────
@@ -187,9 +260,12 @@ export async function startExamModule(
   section: ExamSection,
   module: ExamModule,
 ): Promise<ExamStartModuleResponse> {
-  const res = await apiRequest(`${modulePath(sessionId, section, module)}/start`, {
-    method: "POST",
-  });
+  const res = await apiRequest(
+    `${modulePath(sessionId, section, module)}/start`,
+    {
+      method: "POST",
+    },
+  );
   return parsed(res, examStartModuleResponseSchema, "POST module start");
 }
 
@@ -198,13 +274,18 @@ export async function submitExamModule(
   section: ExamSection,
   module: ExamModule,
 ): Promise<ExamSubmitModuleResponse> {
-  const res = await apiRequest(`${modulePath(sessionId, section, module)}/submit`, {
-    method: "POST",
-  });
+  const res = await apiRequest(
+    `${modulePath(sessionId, section, module)}/submit`,
+    {
+      method: "POST",
+    },
+  );
   return parsed(res, examSubmitModuleResponseSchema, "POST module submit");
 }
 
-export async function submitExamAnswer(body: ExamAnswerRequest): Promise<ExamAnswerResponse> {
+export async function submitExamAnswer(
+  body: ExamAnswerRequest,
+): Promise<ExamAnswerResponse> {
   const res = await apiRequest(`${EXAM_ROOT}/answer`, json("POST", body));
   return parsed(res, examAnswerResponseSchema, "POST answer");
 }
@@ -247,12 +328,17 @@ export function examErrorStatus(error: unknown): number | null {
 
 /** HttpApiError.details is the whole error body: {error: {code, message, details}}. */
 const existingSessionDetailsSchema = z
-  .object({ error: z.object({ details: z.object({ session_id: z.string().uuid() }) }) })
+  .object({
+    error: z.object({ details: z.object({ session_id: z.string().uuid() }) }),
+  })
   .transform((b) => ({ session_id: b.error.details.session_id }));
 
 /** 409 existing_active_session carries the session to resume. */
 export function existingSessionId(error: unknown): string | null {
-  if (!(error instanceof HttpApiError) || error.code !== "existing_active_session") {
+  if (
+    !(error instanceof HttpApiError) ||
+    error.code !== "existing_active_session"
+  ) {
     return null;
   }
   const details = existingSessionDetailsSchema.safeParse(error.details);

@@ -8,7 +8,8 @@
  *
  * plain English: for one session, the student's own report (`ReportBody`, fed the student
  * projection) and the guardian's detail (`GuardianReportBody`, fed the guardian projection)
- * are rendered and switched to their Score breakdown tab. Per domain, in page order: the same
+ * are rendered. The guardian's breakdown sits behind its Score breakdown tab; the student's
+ * report shows it inline as "Knowledge and skills" since UI-54. Per domain, in page order: the same
  * domain name, the same number of segments and the same number filled. Presence first: each
  * side draws rows, with seven segments each and some filled. One case uses counts a whole
  * percent cannot separate (1/14, 3/14, 9/14, 4/19).
@@ -45,11 +46,22 @@ afterEach(cleanup);
 
 type Drawn = { domain: string; segments: number; filled: number };
 
-/** Renders `node`, opens Score breakdown, and reads its omission notes, in page order. */
-function notesOf(node: React.ReactElement): string[] {
+/**
+ * How a side shows its breakdown: the guardian's behind the Score breakdown tab, the student's
+ * inline (UI-54). Stated per call rather than probed, so a guardian page that lost its tab fails.
+ */
+type Reveal = "tab" | "inline";
+
+function reveal(how: Reveal): void {
+  if (how === "tab")
+    fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+}
+
+/** Renders `node`, reveals its breakdown, and reads its omission notes, in page order. */
+function notesOf(node: React.ReactElement, how: Reveal): string[] {
   const { hook } = memoryLocation({ path: "/x" });
   const { unmount } = render(<Router hook={hook}>{node}</Router>);
-  fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+  reveal(how);
   const notes = screen
     .queryAllByTestId("exam-domain-omitted")
     .map((n) => n.textContent ?? "");
@@ -57,17 +69,17 @@ function notesOf(node: React.ReactElement): string[] {
   return notes;
 }
 
-/** Renders `node`, opens Score breakdown, and reads each domain row in page order. */
-function breakdownOf(node: React.ReactElement): Drawn[] {
+/** Renders `node`, reveals its breakdown, and reads each domain row in page order. */
+function breakdownOf(node: React.ReactElement, how: Reveal): Drawn[] {
   const { hook } = memoryLocation({ path: "/x" });
   const { unmount } = render(<Router hook={hook}>{node}</Router>);
-  fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+  reveal(how);
   const rows = within(screen.getByTestId("exam-domain-breakdown"))
     .getAllByTestId("exam-domain-row")
     .map((row) => {
       const segs = within(row).queryAllByTestId("exam-domain-segment");
       return {
-        domain: row.querySelector("span")?.textContent ?? "",
+        domain: within(row).getByTestId("exam-domain-name").textContent ?? "",
         segments: segs.length,
         filled: segs.filter((s) => s.dataset.filled === "true").length,
       };
@@ -84,9 +96,11 @@ describe("G5-11 the guardian breakdown is the student's, segment for segment", (
   ] as const)("%s", (_name, report: ExamReportPayload) => {
     const student = breakdownOf(
       <ReportBody payload={toStudentExamReport(report)} />,
+      "inline",
     );
     const guardian = breakdownOf(
       <GuardianReportBody report={toGuardianExamReport(report)} />,
+      "tab",
     );
     // Presence first: rows, seven segments each, some filled.
     expect(student.length).toBeGreaterThan(0);
@@ -102,6 +116,7 @@ describe("G5-11 the guardian breakdown is the student's, segment for segment", (
       <GuardianReportBody
         report={toGuardianExamReport(ambiguousScoredReport)}
       />,
+      "tab",
     );
     const filled = Object.fromEntries(
       guardian.map((r) => [r.domain, r.filled]),
@@ -117,9 +132,11 @@ describe("G5-11 the guardian breakdown is the student's, segment for segment", (
   it("G5-12 partial score: the same note the student sees, for the section with no score", () => {
     const student = notesOf(
       <ReportBody payload={toStudentExamReport(partialReport)} />,
+      "inline",
     );
     const guardian = notesOf(
       <GuardianReportBody report={toGuardianExamReport(partialReport)} />,
+      "tab",
     );
     // Presence first: the student's note, word for word.
     expect(student).toEqual([
@@ -132,10 +149,14 @@ describe("G5-11 the guardian breakdown is the student's, segment for segment", (
     expect(
       notesOf(
         <GuardianReportBody report={toGuardianExamReport(scoredReport)} />,
+        "tab",
       ),
     ).toEqual([]);
     expect(
-      notesOf(<ReportBody payload={toStudentExamReport(scoredReport)} />),
+      notesOf(
+        <ReportBody payload={toStudentExamReport(scoredReport)} />,
+        "inline",
+      ),
     ).toEqual([]);
   });
 });

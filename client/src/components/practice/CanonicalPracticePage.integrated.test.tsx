@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
+import { renderRunner as render } from "@/test-support/runner.harness";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/math/DesmosCalculator", () => ({
@@ -147,13 +148,7 @@ describe("CanonicalPracticePage R&W passage rendering", () => {
       return jsonResponse({ error: `Unexpected ${url}` }, 500);
     });
 
-    render(
-      <CanonicalPracticePage
-        title="R&W Practice"
-        badgeLabel="R&W"
-        section="rw"
-      />,
-    );
+    render(<CanonicalPracticePage title="R&W Practice" section="rw" />);
 
     await waitFor(() => {
       expect(screen.getByText(RW_PASSAGE)).not.toBeNull();
@@ -202,22 +197,13 @@ describe("CanonicalPracticePage R&W passage rendering", () => {
       return jsonResponse({ error: `Unexpected ${url}` }, 500);
     });
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="math"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="math" />);
 
     await waitFor(() => {
       expect(screen.getByText("What is 2+2?")).not.toBeNull();
     });
 
-    const containers = document.querySelectorAll(
-      ".rounded-lg.border.border-slate-200.bg-slate-50",
-    );
-    expect(containers.length).toBe(0);
+    expect(screen.queryByTestId("runner-passage")).toBeNull();
   });
 });
 
@@ -226,20 +212,14 @@ describe("CanonicalPracticePage integrated MCQ round-trip", () => {
     vi.restoreAllMocks();
   });
 
-  it("incorrect MCQ: selects wrong option, submits through real pipeline, correct gets emerald + wrong gets rose", async () => {
+  it("incorrect MCQ: selects wrong option, submits through real pipeline, correct gets the correct tone + wrong gets the danger tone", async () => {
     buildFetchMock({
       isCorrect: false,
       correctOptionId: "A",
       explanation: "1 + 1 = 2.",
     });
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="math"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="math" />);
 
     await waitFor(() => {
       expect(screen.getByText("What is 1+1?")).not.toBeNull();
@@ -251,42 +231,36 @@ describe("CanonicalPracticePage integrated MCQ round-trip", () => {
       optionB!.click();
     });
 
-    const checkBtn = screen.getByText("Check Answer");
+    const checkBtn = screen.getByRole("button", { name: "Submit" });
     await act(async () => {
       checkBtn.click();
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Incorrect")).not.toBeNull();
+      expect(screen.getByText("Not quite")).not.toBeNull();
     });
 
     expect(screen.getByText("1 + 1 = 2.")).not.toBeNull();
 
     const correctBtn = findOptionButton("2");
     expect(correctBtn).not.toBeNull();
-    expect(correctBtn!.className).toContain("border-emerald-500");
-    expect(correctBtn!.className).toContain("bg-emerald-50");
+    expect(correctBtn!.className).toContain("border-lyc-lv4-fill");
+    expect(correctBtn!.className).toContain("bg-lyc-lv4-bg");
 
     const wrongBtn = findOptionButton("3");
     expect(wrongBtn).not.toBeNull();
-    expect(wrongBtn!.className).toContain("border-rose-500");
-    expect(wrongBtn!.className).toContain("bg-rose-50");
+    expect(wrongBtn!.className).toContain("border-lyc-danger");
+    expect(wrongBtn!.className).toContain("bg-lyc-danger-bg");
   });
 
-  it("correct MCQ: selects correct option, submits through real pipeline, correct gets emerald", async () => {
+  it("correct MCQ: selects correct option, submits through real pipeline, correct gets the correct tone", async () => {
     buildFetchMock({
       isCorrect: true,
       correctOptionId: "A",
       explanation: "1 + 1 = 2.",
     });
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="math"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="math" />);
 
     await waitFor(() => {
       expect(screen.getByText("What is 1+1?")).not.toBeNull();
@@ -298,7 +272,7 @@ describe("CanonicalPracticePage integrated MCQ round-trip", () => {
       optionA!.click();
     });
 
-    const checkBtn = screen.getByText("Check Answer");
+    const checkBtn = screen.getByRole("button", { name: "Submit" });
     await act(async () => {
       checkBtn.click();
     });
@@ -309,13 +283,13 @@ describe("CanonicalPracticePage integrated MCQ round-trip", () => {
 
     const correctBtn = findOptionButton("2");
     expect(correctBtn).not.toBeNull();
-    expect(correctBtn!.className).toContain("border-emerald-500");
-    expect(correctBtn!.className).toContain("bg-emerald-50");
+    expect(correctBtn!.className).toContain("border-lyc-lv4-fill");
+    expect(correctBtn!.className).toContain("bg-lyc-lv4-bg");
 
     const otherBtn = findOptionButton("3");
     expect(otherBtn).not.toBeNull();
-    expect(otherBtn!.className).not.toContain("border-emerald-500");
-    expect(otherBtn!.className).not.toContain("border-rose-500");
+    expect(otherBtn!.className).not.toContain("border-lyc-lv4-fill");
+    expect(otherBtn!.className).not.toContain("border-lyc-danger");
   });
 });
 
@@ -337,13 +311,7 @@ describe("CanonicalPracticePage — explanation renders through MathRenderer", (
       explanation: EXPLANATION_WITH_LATEX,
     });
 
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="math"
-      />,
-    );
+    render(<CanonicalPracticePage title="Math Practice" section="math" />);
 
     await waitFor(() => {
       expect(screen.getByText("What is 1+1?")).not.toBeNull();
@@ -355,13 +323,13 @@ describe("CanonicalPracticePage — explanation renders through MathRenderer", (
       optionB!.click();
     });
 
-    const checkBtn = screen.getByText("Check Answer");
+    const checkBtn = screen.getByRole("button", { name: "Submit" });
     await act(async () => {
       checkBtn.click();
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Incorrect")).not.toBeNull();
+      expect(screen.getByText("Not quite")).not.toBeNull();
     });
 
     await waitFor(() => {

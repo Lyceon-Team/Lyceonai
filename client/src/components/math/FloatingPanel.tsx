@@ -35,6 +35,10 @@ import React, {
   useRef,
   useState,
 } from "react";
+import {
+  buildEscapeKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 
 type Point = { x: number; y: number };
 type Size = { width: number; height: number };
@@ -146,6 +150,14 @@ export function FloatingPanel({
     returnFocusRef.current?.focus();
   }, [onClose, returnFocusRef]);
 
+  // @spec [student-UI register §2 Keyboard ("Esc closes the open modal or sheet"), UI-45]
+  // | @implemented [2026-10-03] | plain English: Esc from anywhere inside the panel (the
+  // calculator's own inputs included) closes it, through the one shared hook listening on
+  // the panel only; it stops there so the exam page underneath never sees that Esc.
+  useKeyboardShortcuts(buildEscapeKeymap(close, { stopPropagation: true }), {
+    target: panelRef,
+  });
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return;
     if (e.target instanceof Element && e.target.closest("button") !== null)
@@ -185,12 +197,6 @@ export function FloatingPanel({
       aria-modal="false"
       aria-labelledby={`${id}-title`}
       tabIndex={-1}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          close();
-        }
-      }}
       style={{
         position: "fixed",
         left: box.x,

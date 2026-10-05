@@ -12,6 +12,11 @@
  * on a send puts the card where the composer was. A paying student never
  * sees the card, and a non-entitlement failure is never drawn as one.
  *
+ * @updated 2026-10-03 — UI-56: the card is the page's locked state (`lisa-locked`: LISA's
+ * shipped headline and "Unlock LISA", which opens the app's upgrade modal), replacing the whole
+ * page, history panel included; the app's denial listener opens the modal on the same refusal.
+ * These tests run with NO feature-access map, so the server's refusal is the only signal.
+ *
  * WHY THIS TEST EXISTS. "New session" used to call `mutateAsync` inside an
  * empty `catch {}` whose comment said the error was handled by
  * `createConversation.error` — which nothing read. An unpaid student clicked,
@@ -28,6 +33,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeTutorDb } from "../../../tests/helpers/fake-tutor-db";
@@ -106,6 +112,7 @@ const STUDENT_ID = "44444444-4444-4444-8444-444444444444";
 import tutorRuntimeRouter from "../../../server/routes/tutor-runtime";
 import { EntitlementService } from "../../../server/services/entitlement-service";
 import { LISA_UPGRADE_PITCH } from "@/components/tutor/LisaUpgradeCard";
+import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 
 function makeApp(): express.Express {
   const app = express();
@@ -157,6 +164,20 @@ vi.mock("@/lib/queryClient", async () => {
 });
 
 let mockSearch = "";
+// UI-56: the page reads the feature-access map (GET /api/profile, OQ-29) before any tutor
+// request. These tests drive the conversation with NO map, which leaves every decision to the
+// tutor routes themselves (the server's own refusal); the map's locked states are covered by
+// chat.ui56.test.tsx.
+vi.mock("@/hooks/useProfileQuery", () => ({
+  useProfileQuery: () => ({ isPending: false, data: undefined }),
+}));
+// UI-56: the history is the App shell's right panel (a portal into the shell). Without the
+// shell, draw it in place so these tests can reach New session and the list.
+vi.mock("@/components/layout/app-shell", () => ({
+  AppShellPanel: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+}));
 vi.mock("wouter", () => ({
   useLocation: () => ["/chat", vi.fn()],
   useSearch: () => mockSearch,
@@ -231,7 +252,6 @@ function workerReply(
   };
 }
 
-
 async function renderChat(search = ""): Promise<void> {
   mockSearch = search;
   const qc = new QueryClient({
@@ -243,9 +263,37 @@ async function renderChat(search = ""): Promise<void> {
   const { default: ChatPage } = await import("./chat");
   render(
     <QueryClientProvider client={qc}>
-      <ChatPage />
+      <UpgradeModalProvider>
+        <ChatPage />
+      </UpgradeModalProvider>
     </QueryClientProvider>,
   );
+}
+
+/** The page's locked state, drawn only on the server's refusal here (no map). */
+async function lockedCard(): Promise<HTMLElement> {
+  const card = await screen.findByTestId("lisa-locked");
+  expect(card.getAttribute("data-reason")).toBe("plan");
+  expect(card.textContent).toContain(LISA_UPGRADE_PITCH.title);
+  expect(within(card).getByTestId("lisa-unlock").textContent).toBe(
+    "Unlock LISA",
+  );
+  return card;
+}
+
+/** The empty conversation has loaded: its GET returned and the composer is up. */
+async function conversationLoaded(convId: string): Promise<void> {
+  await waitFor(() =>
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "GET" &&
+          c.path === `/api/tutor/conversations/${convId}` &&
+          c.status === 200,
+      ),
+    ).toBe(true),
+  );
+  await screen.findByLabelText("Message");
 }
 
 function setEntitled(active: boolean): void {
@@ -267,19 +315,8 @@ function send(text: string): void {
 function refused(method: string, path: string): boolean {
   return calls.some(
     (c) =>
-      c.method === method &&
-      c.path.split("?")[0] === path &&
-      c.status === 403,
+      c.method === method && c.path.split("?")[0] === path && c.status === 403,
   );
-}
-
-/** The sidebar's "New session" (the one with an aria-label). */
-function sidebarNewSession(): HTMLButtonElement {
-  const [button] = screen
-    .getAllByRole("button", { name: /new session/i })
-    .filter((b) => b.getAttribute("aria-label") === "New session");
-  if (!button) throw new Error("sidebar New session button not rendered");
-  return button as HTMLButtonElement;
 }
 
 beforeEach(() => {
@@ -293,31 +330,39 @@ beforeEach(() => {
 afterEach(() => setEntitled(true));
 
 describe("W4-11 — standalone chat: an unpaid student never reaches a composer", () => {
-  it("unpaid, on load: the card replaces Welcome and New session — refused by the server, nothing typed", async () => {
+  it("unpaid, on load: the card replaces the page and New session — refused by the server, nothing typed", async () => {
     setEntitled(false);
     await renderChat();
 
-    const [card] = await screen.findAllByTestId("lisa-upgrade");
-    expect(card.textContent).toContain(LISA_UPGRADE_PITCH.title);
+    await lockedCard();
     expect(refused("GET", "/api/tutor/conversations")).toBe(true);
-    expect(screen.queryByText("Welcome to LISA")).toBeNull();
-    expect(sidebarNewSession().disabled).toBe(true);
+    // The app's denial listener opened the modal on the same refusal (UI-44).
+    expect(await screen.findByTestId("upgrade-modal")).toBeTruthy();
+    expect(screen.queryByTestId("lisa-new-session")).toBeNull();
     expect(screen.queryByLabelText("Message")).toBeNull();
   });
 
   it("clicking New session after entitlement lapsed: the card, not a silent spinner", async () => {
     await renderChat();
-    const [welcomeButton] = await screen.findAllByRole("button", {
-      name: /^new session$/i,
-    });
+    const newSession = await screen.findByTestId("lisa-new-session");
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.method === "GET" &&
+            c.path.startsWith("/api/tutor/conversations?") &&
+            c.status === 200,
+        ),
+      ).toBe(true),
+    );
 
     setEntitled(false);
-    fireEvent.click(welcomeButton);
+    fireEvent.click(newSession);
 
-    await screen.findAllByTestId("lisa-upgrade");
+    await lockedCard();
     expect(refused("POST", "/api/tutor/conversations")).toBe(true);
     expect(db.current.rows("tutor_conversations")).toHaveLength(0);
-    expect(screen.queryByText("Welcome to LISA")).toBeNull();
+    expect(screen.queryByLabelText("Message")).toBeNull();
   });
 
   it("a returning student whose entitlement lapsed: the card where the composer was", async () => {
@@ -325,21 +370,19 @@ describe("W4-11 — standalone chat: an unpaid student never reaches a composer"
     setEntitled(false);
     await renderChat(`?conversationId=${convId}`);
 
-    await screen.findAllByTestId("lisa-upgrade");
+    await lockedCard();
     expect(screen.queryByLabelText("Message")).toBeNull();
-    // The subject shortcuts send a message too; they go with the composer.
-    expect(screen.queryByRole("button", { name: /^math$/i })).toBeNull();
   });
 
   it("sending after entitlement lapsed: refused, and the composer is replaced — not left disabled", async () => {
     const convId = seedEmptyConversation();
     await renderChat(`?conversationId=${convId}`);
-    await screen.findByRole("button", { name: /^math$/i });
+    await conversationLoaded(convId);
 
     setEntitled(false);
     send(STUDENT_TEXT);
 
-    await screen.findAllByTestId("lisa-upgrade");
+    await lockedCard();
     expect(refused("POST", "/api/tutor/messages")).toBe(true);
     expect(screen.queryByLabelText("Message")).toBeNull();
     expect(orchestrateTurn).not.toHaveBeenCalled();
@@ -348,27 +391,25 @@ describe("W4-11 — standalone chat: an unpaid student never reaches a composer"
   it("a paying student never sees the card — on load, on New session, or on send", async () => {
     orchestrateTurn.mockResolvedValue(workerReply());
     await renderChat();
-    await screen.findAllByText("Welcome to LISA");
-    expect(screen.queryAllByTestId("lisa-upgrade")).toHaveLength(0);
+    const newSession = await screen.findByTestId("lisa-new-session");
+    expect(screen.queryAllByTestId("lisa-locked")).toHaveLength(0);
 
-    const [welcomeButton] = screen.getAllByRole("button", {
-      name: /^new session$/i,
-    });
-    fireEvent.click(welcomeButton);
+    fireEvent.click(newSession);
     await waitFor(() =>
       expect(db.current.rows("tutor_conversations")).toHaveLength(1),
     );
-    expect(screen.queryAllByTestId("lisa-upgrade")).toHaveLength(0);
+    expect(screen.queryAllByTestId("lisa-locked")).toHaveLength(0);
 
     cleanup();
     const convId = seedEmptyConversation();
     await renderChat(`?conversationId=${convId}`);
-    await screen.findByRole("button", { name: /^math$/i });
+    await conversationLoaded(convId);
     send(STUDENT_TEXT);
     await screen.findByText(TUTOR_TEXT);
 
-    expect(screen.queryAllByTestId("lisa-upgrade")).toHaveLength(0);
+    expect(screen.queryAllByTestId("lisa-locked")).toHaveLength(0);
     expect(screen.queryAllByTestId("premium-upgrade-prompt")).toHaveLength(0);
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
     expect(screen.getByLabelText("Message")).toBeTruthy();
     expect(calls.filter((c) => c.status === 403)).toHaveLength(0);
   });

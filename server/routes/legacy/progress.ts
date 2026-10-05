@@ -152,7 +152,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
             whyThisChanged:
               "Your baseline comes from the diagnostic you completed. It appears as soon as the calculation finishes.",
             whatToDoNext:
-              "Keep practising if you like — your baseline will appear on its own.",
+              "Keep practicing if you like — your baseline will appear on its own.",
           },
           official_sat_score: {
             whatThisMeans:

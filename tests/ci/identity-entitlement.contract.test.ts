@@ -103,6 +103,10 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     _res: unknown,
     next: () => void,
   ) => next(),
+  // UI-58: `PATCH /api/profile/name` mounts the student-account gate; its denials are proven in
+  // tests/ci/profile-name.pg.ci.test.ts. This suite never calls that route.
+  requireStudentAccount: (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
   requireSupabaseAuth: (req: any, res: any, next: any) => {
     if (!authState.currentUser) {
       return res.status(401).json({

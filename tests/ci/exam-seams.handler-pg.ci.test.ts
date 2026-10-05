@@ -296,11 +296,13 @@ describe.skipIf(!PG_AVAILABLE)("E9 exam seams → real PG, through the handlers"
       (await q(`SELECT md5($1::text || ':RW')::uuid AS id`, [run[0].id]))[0].id,
     );
 
-    // projection outbox: one row for the completion
+    // projection outbox: one row for the completion, already consumed by the request
+    // that finished the exam (SCL-206, Doc 05C §8.3 step 3 read-through)
     const proj = await q(
       `SELECT student_id, reason, test_session_id, processed_at FROM public.projection_refresh_outbox WHERE student_id = $1`, [STUDENT]);
     expect(proj).toHaveLength(1);
-    expect(proj[0]).toMatchObject({ reason: "full_length_completed", test_session_id: sid, processed_at: null });
+    expect(proj[0]).toMatchObject({ reason: "full_length_completed", test_session_id: sid });
+    expect(proj[0].processed_at).toBeInstanceOf(Date);
 
     // the report reads the same score
     const report = await as(STUDENT)(request(app).get(`/api/tests/sessions/${sid}/report`));

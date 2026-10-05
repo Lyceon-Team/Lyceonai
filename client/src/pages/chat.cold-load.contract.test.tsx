@@ -76,6 +76,13 @@ const idleMutation = (): Record<string, unknown> => ({
   error: null,
 });
 
+// UI-56: the page reads the feature-access map (GET /api/profile, OQ-29) before any tutor
+// request. These tests drive the conversation with NO map, which leaves every decision to the
+// tutor routes themselves (the server's own refusal); the map's locked states are covered by
+// chat.ui56.test.tsx.
+vi.mock("@/hooks/useProfileQuery", () => ({
+  useProfileQuery: () => ({ isPending: false, data: undefined }),
+}));
 vi.mock("wouter", () => ({
   useLocation: () => ["/chat", vi.fn()],
   useSearch: () => mockSearch,

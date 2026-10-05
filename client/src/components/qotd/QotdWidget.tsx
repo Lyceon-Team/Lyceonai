@@ -139,16 +139,23 @@ export function QotdWidget({
       <p className="text-sm font-medium text-muted-foreground">
         {SECTION_NAME[question.section_code]} · {question.domain}
       </p>
-      {/* ph-no-capture: no recording or autocapture of the question, the choice or the reveal. */}
-      <div className="ph-no-capture" data-testid="qotd-question-area">
+      {/* ph-no-capture: no recording or autocapture of the question, the choice or the reveal.
+          `lyc`, light-locked: QuestionRenderer is drawn on the student tokens (UI-53), which
+          exist only under a .lyc root; without one its choices lose their borders and fills.
+          The root's paper background is suppressed so the widget keeps the page's own surface
+          (merge of PR 1069, owner choice 2026-10-05). */}
+      <div
+        className="lyc ph-no-capture"
+        data-theme-lock="light"
+        style={{ background: "transparent" }}
+        data-testid="qotd-question-area"
+      >
         <QuestionRenderer
           question={{
             itemType: question.item_type,
             stem: question.stem,
             passage: question.passage,
             options: question.options,
-            correct_answer: null,
-            explanation: null,
           }}
           selectedAnswer={choice}
           onSelectAnswer={pick}

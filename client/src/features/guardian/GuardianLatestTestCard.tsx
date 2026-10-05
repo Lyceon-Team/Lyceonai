@@ -42,10 +42,8 @@ import type {
   GuardianExamList,
   GuardianExamReport,
 } from "@lyceon/shared/exam-guardian-report-schema";
-import {
-  EXAM_SECTION_LABEL,
-  examDisclosureSchema,
-} from "@lyceon/shared/exam-report-schema";
+import { examDisclosureSchema } from "@lyceon/shared/exam-report-schema";
+import { sectionDisplayLabel } from "@shared/section-display";
 import type { ExamSection } from "@lyceon/shared/exam-runtime-schema";
 import { levelTone } from "@/components/mastery/LevelPill";
 import { DisclosedScore } from "@/features/exam/components/DisclosedScore";
@@ -232,7 +230,8 @@ function Change({ change }: { change: ScoreChange }): JSX.Element | null {
       : direction === "up"
         ? pillTone(levelTone("L3"))
         : pillTone(levelTone("unmeasured"));
-  const where = section === null ? "" : ` in ${EXAM_SECTION_LABEL[section]}`;
+  const where =
+    section === null ? "" : ` in ${sectionDisplayLabel(section) ?? ""}`;
   const text =
     direction === "none"
       ? `No change${where} since last test`
@@ -262,7 +261,7 @@ function SectionTile({
       data-testid={`latest-test-section-${section}`}
     >
       <div className="text-base text-muted-foreground">
-        {EXAM_SECTION_LABEL[section]}
+        {sectionDisplayLabel(section) ?? ""}
       </div>
       {scaled === null ? (
         <div className="text-base font-medium">Not completed</div>

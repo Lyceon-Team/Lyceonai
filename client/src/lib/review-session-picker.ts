@@ -5,7 +5,7 @@
  *        client writes the sentence); brief R4 §2.3] | @implemented [2026-09-22]
  *
  * plain English: turns R3's `sessions[]` facts into the two lines the picker shows —
- * "Practice · 2:40 PM" and "Math · Algebra" — and groups the rows under "Today",
+ * "Practice, 2:40 PM" (UI-52) and "Math · Algebra" — and groups the rows under "Today",
  * "Yesterday" or "Thu, Sep 17". Expected outcome: a student sees their own days, in
  * their own clock, without the server ever storing a display string.
  *
@@ -26,8 +26,9 @@
  *   - a row whose parent session row is gone has `local_date: null`; it groups under
  *     "Earlier" rather than being dropped, because its questions are still queued and
  *     hiding the only way to reach them would lose them.
- *   - `filters` arrives as `unknown` (it is a jsonb column), so it is narrowed field by
- *     field and anything unrecognised degrades to "Mixed" instead of throwing.
+ *   - `filters` is narrowed field by field and anything unrecognised degrades to "Mixed"
+ *     instead of throwing. Since F-52 a practice row carries its criteria flat (before, practice
+ *     nested them under `session_spec`, so every practice row read "Mixed").
  */
 
 /** `YYYY-MM-DD` in the given IANA zone. `en-CA` is the locale that formats that way. */
@@ -81,18 +82,28 @@ export function dayHeaderLabel(
   }).format(new Date(parsed));
 }
 
-/** "Practice" / "Review" — the engine a queued question originally came from. */
+/**
+ * "Practice" / "Review" / "Practice test" — the engine a queued question originally
+ * came from. `full_length` is a full-length practice test: its wrong and blank items
+ * are queued once it is scored (SCL-158), and the student picks it here exactly as they
+ * pick a practice session.
+ */
 export function sourceEngineLabel(engine: string): string {
-  return engine === "review" ? "Review" : "Practice";
+  if (engine === "review") return "Review";
+  if (engine === "full_length") return "Practice test";
+  return "Practice";
 }
 
-/** The first line of a picker row: "Practice · 2:40 PM". */
+/**
+ * The first line of a picker row, as the Review prototype writes it (`{kind}, {time}`, UI-52):
+ * "Practice, 2:40 PM".
+ */
 export function sourceHeadline(
   engine: string,
   localTime: string | null,
 ): string {
   const who = sourceEngineLabel(engine);
-  return localTime === null ? who : `${who} · ${localTime}`;
+  return localTime === null ? who : `${who}, ${localTime}`;
 }
 
 function stringList(value: unknown): string[] {
@@ -109,13 +120,18 @@ const SECTION_LABELS: Readonly<Record<string, string>> = {
 
 /**
  * The second line of a picker row: the source session's mode and filters, e.g.
- * "Math · Algebra", "Reading & Writing · Mixed", or "Diagnostic".
+ * "Math · Algebra", "Reading & Writing · Mixed", "Diagnostic", or — for a full-length
+ * test — the form's name, "Practice Test 1" ("Full-length test" when the server sent
+ * none, e.g. a form no longer published).
  *
- * `filters` is the session's raw metadata (jsonb), so every read narrows.
+ * `filters` is the row's criteria (`{sections, domains, skills, difficulties}`, F-52) or a
+ * full-length row's `{test_form_name}`; it is still read as `unknown` and narrowed field by
+ * field, so anything unrecognised degrades to "Mixed".
  */
 export function sourceFiltersLine(
   mode: string | null,
   filters: unknown,
+  engine?: string,
 ): string {
   if (mode === "diagnostic") return "Diagnostic";
 
@@ -123,6 +139,12 @@ export function sourceFiltersLine(
     filters !== null && typeof filters === "object" && !Array.isArray(filters)
       ? (filters as Record<string, unknown>)
       : {};
+
+  // A full-length test row carries exactly one fact, its form's name (review-pool.ts).
+  if (typeof bag.test_form_name === "string" && bag.test_form_name.length > 0) {
+    return bag.test_form_name;
+  }
+  if (engine === "full_length") return "Full-length test";
 
   const sections = stringList(bag.sections);
   const domains = stringList(bag.domains);

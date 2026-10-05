@@ -38,6 +38,7 @@ import {
 import { toGuardianExamReport } from "../../packages/shared/src/exam-guardian-report-schema";
 import {
   ReportIntegrityError,
+  resumeActionFor,
   serializeStudentReport,
   reportStateOf,
   type ExamReportSource,
@@ -295,6 +296,38 @@ describe("per-state serializers (§11.3)", () => {
     const p = serializeStudentReport(s, reportStateOf(s, false), []);
     expect(p.report_state).toBe("unavailable");
     expect(JSON.stringify(p)).not.toMatch(/scaled|1340|disclosure/);
+  });
+
+  // @spec [Doc-04C_V1.0 §11.5b, §12.1b step 3] | owner ruling OQ-34 (2026-10-02)
+  // | @implemented [2026-10-03] | plain English: the lapsed report carries the renewal
+  // action, through the real serializer AND the real student projection the route sends.
+  it("revoked access (entitlement_lapsed): the payload carries renew_entitlement (OQ-34)", () => {
+    const s = source();
+    const p = serializeStudentReport(s, reportStateOf(s, false), []);
+    expect(p).toEqual({
+      report_state: "unavailable",
+      session_id: s.session.session_id,
+      test_form_id: s.session.test_form_id,
+      test_form_name: s.session.test_form_name,
+      unavailable_reason: "entitlement_lapsed",
+      unavailable_at: null,
+      resume_action: { type: "renew_entitlement", url: null },
+      review_unlocked: false,
+    });
+    const wire = examStudentReportPayloadSchema.parse(toStudentExamReport(p));
+    expect(wire).toMatchObject({
+      report_state: "unavailable",
+      resume_action: { type: "renew_entitlement", url: null },
+    });
+  });
+
+  it("resume_action by reason: only entitlement_lapsed is wired (§11.5b null otherwise)", () => {
+    expect(resumeActionFor("entitlement_lapsed")).toEqual({
+      type: "renew_entitlement",
+      url: null,
+    });
+    expect(resumeActionFor("content_takedown")).toBeNull();
+    expect(resumeActionFor("guardian_link_inactive")).toBeNull();
   });
 
   it("not_completed: resumable only before grace", () => {

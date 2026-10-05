@@ -75,6 +75,7 @@ function MonthCell({
   canDrag,
   onOpen,
   dayActions,
+  isTestDay,
 }: {
   date: string;
   day: ViewDay | null;
@@ -84,6 +85,7 @@ function MonthCell({
   canDrag: (day: ViewDay, block: ViewBlock) => boolean;
   onOpen: (blockId: string) => void;
   dayActions?: DayActions;
+  isTestDay: boolean;
 }): JSX.Element {
   const { setNodeRef, isOver } = useDroppable({
     id: `day:${date}`,
@@ -102,6 +104,7 @@ function MonthCell({
     isRest ? "rest" : "",
     blockedOut ? "off" : "",
     date === today ? "today" : "",
+    isTestDay ? "testday" : "",
     isOver ? "drop" : "",
   ]
     .filter(Boolean)
@@ -113,8 +116,27 @@ function MonthCell({
       className={className}
       data-date={date}
       data-testid={`calendar-month-cell-${date}`}
+      data-test-day={isTestDay ? "true" : undefined}
     >
-      <span className="mnum">{dayOfMonth(date)}</span>
+      {isTestDay ? (
+        <>
+          {/* The star sits beside the number (prototype), so the two share a row. */}
+          <span className="mrow">
+            <span className="mnum">{dayOfMonth(date)}</span>
+            <span
+              className="star"
+              role="img"
+              aria-label="Test day"
+              data-testid={`calendar-test-star-${date}`}
+            >
+              ★
+            </span>
+          </span>
+          <span className="mtest">SAT test day</span>
+        </>
+      ) : (
+        <span className="mnum">{dayOfMonth(date)}</span>
+      )}
       {canControlDay(date, today) ? (
         <DayMenu
           date={date}
@@ -147,6 +169,8 @@ export type MonthGridProps = {
   onOpen: (blockId: string) => void;
   /** §17.2's day controls, the SAME menu the week view renders. Absent for a guardian. */
   dayActions?: DayActions;
+  /** UI-55: the student's SAT date, starred (see `WeekGridProps.testDate`). */
+  testDate?: string | null;
 };
 
 export function MonthGrid({
@@ -158,6 +182,7 @@ export function MonthGrid({
   canDrag,
   onOpen,
   dayActions,
+  testDate = null,
 }: MonthGridProps): JSX.Element {
   return (
     <div data-testid="calendar-month-grid">
@@ -178,6 +203,7 @@ export function MonthGrid({
             canDrag={canDrag}
             onOpen={onOpen}
             {...(dayActions === undefined ? {} : { dayActions })}
+            isTestDay={testDate !== null && date === testDate}
           />
         ))}
       </div>

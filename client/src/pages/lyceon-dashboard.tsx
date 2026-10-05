@@ -1,537 +1,75 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { DateTime } from "luxon";
-import { Link, useLocation } from "wouter";
-import { AppShell } from "@/components/layout/app-shell";
-import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+/**
+ * Home (`/dashboard`): the student's first page.
+ *
+ * @spec [student-UI register UI-50; DESIGN.md §1 (tokens only, 14px floor, one primary action),
+ *        §2 (App shell: right panel, slim legal footer), §4 Home; prototype Main.dc.html (paid
+ *        and free); evidence/wiring-table.md §3 Home; register §2 Free versus paid, OQ-29 (the
+ *        feature-access map decides what is locked, never a call to the gated route), OQ-36,
+ *        OQ-39(c), OQ-49 (this route comes off the light lock: route-shells.ts)]
+ *        | @implemented [2026-10-03]
+ *
+ * plain English: picks the paid or the free Home from the student's feature-access map (the
+ * OQ-29 map on GET /api/profile, the same one the rail's locks read) and renders it. Paid means
+ * the calendar AND mastery are granted: the paid Home reads both, so anything less is the free
+ * Home, which calls no paid route. With no map (loading, a parse failure, a non-student) the
+ * page waits for the profile and then shows the free Home: the server refuses a gated read
+ * regardless, and showing less is the safe direction.
+ *
+ * Replaces the pre-redesign dashboard (weekly summary card, "Score Estimate" card, Practice and
+ * Review tiles, "Score Trend Analysis", the "Alpha" recommendations card, the diagnostic prompt
+ * modal and CTA card): the new Home's diagnostic card and right panel carry what they showed
+ * that is still allowed, from the routes the wiring table names.
+ */
+import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
+import { FreeHome } from "@/components/home/FreeHome";
+import { PaidHome } from "@/components/home/PaidHome";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
-import { resolveCtaDestination } from "@/lib/billing-cta";
-import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
-import {
-  ArrowRight,
-  Loader2,
-  MessageCircle,
-  Play,
-  RotateCcw,
-} from "lucide-react";
-import { fetchScoreEstimate, type EstimateResponse } from "@/lib/projectionApi";
-import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
-import { useProgressKpis } from "@/hooks/useProgressKpis";
-import { DiagnosticPromptModal } from "@/components/diagnostic/DiagnosticPromptModal";
-import { DiagnosticCTAGate } from "@/components/diagnostic/DiagnosticCTAGate";
-import { SECTION_LABEL_MATH, SECTION_LABEL_RW } from "@shared/section-display";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { browserLocalToday } from "@/features/calendar/lib/dates";
+import { useFeatureAccess } from "@/hooks/useFeatureAccess";
+import { useProfileQuery } from "@/hooks/useProfileQuery";
 
-interface KpiExplanation {
-  ruleId: string;
-  whatThisMeans: string;
-  whyThisChanged: string;
-  whatToDoNext: string;
+/** The paid Home needs both of the paid features it reads. */
+function isPaidHome(access: FeatureAccessMap | null): boolean {
+  return (
+    access !== null &&
+    access.calendar_access.access === "granted" &&
+    access.mastery_detail.access === "granted"
+  );
 }
 
-interface KpiMetric {
-  id: string;
-  label: string;
-  kind: "official" | "weighted" | "diagnostic";
-  unit: "count" | "percent" | "minutes" | "seconds" | "score";
-  value: number | null;
-  explanation: KpiExplanation;
-}
+export default function LyceonDashboard(): JSX.Element {
+  const { user } = useSupabaseAuth();
+  const profile = useProfileQuery();
+  const access = useFeatureAccess();
 
-interface KpiResponse {
-  timezone: string;
-  // SCL-186 / owner ruling 6 (2026-09-29): the payload still carries `accuracy` on `week`
-  // and `recency`. This page never renders it, so the type does not declare it.
-  week: {
-    questionsSolved: number;
-    explanations?: Record<string, KpiExplanation>;
-  };
-  recency: {
-    window: number;
-    totalAttempts: number;
-    explanations?: Record<string, KpiExplanation>;
-  } | null;
-  metrics?: KpiMetric[];
-  gating?: {
-    historicalTrends?: {
-      allowed: boolean;
-      requiredPlan: "paid";
-      reason: string;
-    };
-  };
-}
-
-function ScoreSnapshotRow({
-  label,
-  value,
-  max,
-}: {
-  label: string;
-  value: number | null;
-  max: number;
-}) {
-  if (value === null) {
+  if (user === null || profile.isLoading) {
     return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium">{label}</span>
-          <span className="text-muted-foreground">No data</span>
-        </div>
-        <div className="h-2 rounded-full bg-muted/60" />
+      <div className="flex flex-col gap-4" data-testid="home-loading">
+        <Skeleton variant="lyc" className="h-12 w-2/3" />
+        <Skeleton variant="lyc" className="h-6 w-1/2" />
       </div>
     );
   }
 
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
-
+  const name = user.display_name ?? null;
+  if (isPaidHome(access)) {
+    return (
+      <PaidHome
+        studentId={user.id}
+        name={name}
+        today={browserLocalToday()}
+        hour={new Date().getHours()}
+        examGranted={access?.exam_full_length.access === "granted"}
+      />
+    );
+  }
+  const mastery = access?.mastery_detail;
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between text-sm gap-3">
-        <span className="font-medium truncate">{label}</span>
-        <span className="font-semibold shrink-0">{value.toLocaleString()}</span>
-      </div>
-      <div className="h-2 rounded-full bg-muted/60 overflow-hidden">
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-export default function LyceonDashboard() {
-  const { user, isGuardian } = useSupabaseAuth();
-  const [, setLocation] = useLocation();
-
-  const {
-    data: kpiData,
-    isLoading: kpiLoading,
-    error: kpiError,
-  } = useProgressKpis<KpiResponse>(!!user);
-
-  const {
-    data: estimateData,
-    isLoading: estimateLoading,
-  } = useQuery<EstimateResponse>({
-    queryKey: ["/api/progress/projection"],
-    queryFn: fetchScoreEstimate,
-    enabled: !!user,
-    staleTime: 60000,
-  });
-
-  // Vertical-B Slice 2: 402→200 contract change — the projection endpoint
-  // now returns 200 with estimateStatus discriminator. Premium lock is conveyed
-  // via estimateStatus:'baseline_only' + cta:true, no longer via 402.
-  const estimateIsPremiumLocked =
-    estimateData?.estimateStatus === "baseline_only";
-
-  // Diagnostic client wiring: session creation via POST /diagnostic/sessions.
-  // 201 → sessionId (fresh); 409 → existingSessionId (seamless resume);
-  // 503 → curated error (never raw). Once we have a sessionId, navigate to
-  // /practice/session/:id where the shared practice loop takes over.
-  const {
-    startDiagnostic,
-    isStarting: isDiagnosticStarting,
-    error: diagnosticStartError,
-  } = useDiagnosticStart();
-
-  const handleStartDiagnostic = async (): Promise<void> => {
-    const sessionId = await startDiagnostic();
-    if (sessionId) {
-      setLocation(`/practice/session/${sessionId}`);
-    }
-  };
-
-  const metricById = useMemo(
-    () =>
-      new Map((kpiData?.metrics ?? []).map((metric) => [metric.id, metric])),
-    [kpiData?.metrics],
-  );
-
-  const weekQuestions = Number(kpiData?.week?.questionsSolved ?? 0);
-  const weekQuestionsChange =
-    metricById.get("week_questions")?.explanation?.whyThisChanged ??
-    "Scored events in the last 7 days.";
-  /**
-   * @spec [SCL-186 (strikes Doc 05 Parent §12.2 "your recency-weighted accuracy is Y%");
-   *   owner ruling 6, 2026-09-29; Doc 05 AC#20] | @implemented [2026-09-29] |
-   * plain English: the second weekly tile used to show the 7-day accuracy percentage. No raw
-   * accuracy figure is shown to a student any more (mastery is shown as its level only, on
-   * the mastery page), so the tile shows the current streak instead: a count of the
-   * student's own activity already in this payload (`metrics[id=current_streak]`). A
-   * missing or non-numeric value renders "-", never a substituted number.
-   */
-  const streakMetric = metricById.get("current_streak");
-  const currentStreakDays =
-    typeof streakMetric?.value === "number" ? streakMetric.value : null;
-  const currentStreakChange =
-    streakMetric?.explanation?.whyThisChanged ??
-    "Consecutive days with scored practice.";
-
-  const getGreeting = () => {
-    const hour = DateTime.local().hour;
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
-  };
-
-  const nextMilestone = "Complete one focused SAT practice block today.";
-
-  /**
-   * Routed through the ONE destination resolver rather than hardcoding
-   * `/upgrade`. This page is `RequireRole allow={["student","admin"]}` so a
-   * guardian never reaches it — the resolver is used anyway, because a
-   * hardcoded route is the thing that has to stop being written, not the
-   * particular button that got away with it.
-   */
-  const handleUpgradeToPremium = () => {
-    setLocation(resolveCtaDestination({ isGuardian }));
-  };
-
-  return (
-    <AppShell showFooter>
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
-        <div className="mb-10">
-          <h1
-            className="text-3xl md:text-4xl font-semibold text-foreground mb-2 tracking-tight"
-            data-testid="page-title"
-          >
-            Welcome back, {user?.display_name || "Student"}
-          </h1>
-          <p className="text-muted-foreground text-base">
-            {getGreeting()}. Your next milestone:{" "}
-            <span className="text-foreground font-medium">{nextMilestone}</span>
-          </p>
-        </div>
-
-        {kpiError && (
-          <RecoveryNotice
-            className="mb-6"
-            title="We couldn’t load part of your dashboard."
-            message="Try again. If this keeps happening, refresh the page."
-            onRetry={() => window.location.reload()}
-          />
-        )}
-
-        {/* Diagnostic prompting — gated on no_baseline (no diagnostic completed).
-            Modal: shown on load, dismissible per browser session.
-            CTA card: persistent, visible even after modal dismiss. Both vanish
-            entirely once estimateStatus !== ‘no_baseline’. */}
-        <DiagnosticPromptModal
-          shouldShow={estimateData?.estimateStatus === "no_baseline"}
-        />
-        <DiagnosticCTAGate
-          estimateStatus={estimateData?.estimateStatus}
-          className="mb-6"
-        />
-
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
-          <Card className="lg:col-span-8 border-border/40 bg-card">
-            <CardContent className="p-6 sm:p-8">
-              <div className="space-y-8">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold">
-                    Weekly Progress Summary
-                  </p>
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-8">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold mb-3">
-                      Questions Solved (7d)
-                    </p>
-                    {kpiLoading ? (
-                      <Skeleton className="h-10 w-28 mb-2" />
-                    ) : (
-                      <p className="text-5xl font-semibold text-foreground leading-none">
-                        {weekQuestions}
-                      </p>
-                    )}
-                    <p className="text-sm text-muted-foreground mt-3">
-                      {weekQuestionsChange}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold mb-3">
-                      Current Streak (days)
-                    </p>
-                    {kpiLoading ? (
-                      <Skeleton className="h-10 w-28 mb-2" />
-                    ) : (
-                      <p className="text-5xl font-semibold text-foreground leading-none">
-                        {currentStreakDays ?? "-"}
-                      </p>
-                    )}
-                    <p className="text-sm text-muted-foreground mt-3">
-                      {currentStreakChange}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-4 border-0 bg-primary text-primary-foreground">
-            <CardContent className="p-6 sm:p-8 h-full flex flex-col justify-between gap-6">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] font-semibold text-primary-foreground/80">
-                  Score Estimate
-                </p>
-                <p className="text-sm text-primary-foreground/70 mt-2">
-                  Based on weighted mastery evidence from live runtime data.
-                </p>
-              </div>
-
-              {estimateLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-12 w-48 bg-primary-foreground/20" />
-                  <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
-                </div>
-              ) : estimateData?.estimateStatus === "baseline_pending" ? (
-                // Owner ruling Q2, 2026-08-17: the student completed the
-                // diagnostic and the numbers are not ready. This arm offers no
-                // way to begin another one, and it sits ABOVE the no_baseline arm
-                // precisely so a completed-but-uncomputed student never reaches
-                // the arm that does. tests/ci/diagnostic-baseline-pending.contract.test.ts
-                // asserts both the ordering and the absence.
-                <div className="space-y-4">
-                  <p className="text-2xl font-semibold leading-tight tracking-tight">
-                    Your baseline is being calculated.
-                  </p>
-                  <p className="text-sm text-primary-foreground/80">
-                    You have finished the diagnostic — your starting point will
-                    appear here shortly.
-                  </p>
-                </div>
-              ) : estimateData?.estimateStatus === "no_baseline" ? (
-                // Diagnostic client wiring: button calls POST /diagnostic/sessions
-                // (via useDiagnosticStart), then navigates to /practice/session/:id
-                // where the shared practice answer loop takes over. 409 (active session
-                // exists) is handled as seamless resume; 503 (insufficient pool) shows
-                // a curated message, never the raw domain-count string.
-                <div className="space-y-4">
-                  <p className="text-2xl font-semibold leading-tight tracking-tight">
-                    Not yet available
-                  </p>
-                  <p className="text-sm text-primary-foreground/80">
-                    Complete the diagnostic to establish your baseline score.
-                  </p>
-                  {diagnosticStartError && (
-                    <p
-                      className="text-sm font-medium text-primary-foreground"
-                      role="alert"
-                    >
-                      {diagnosticStartError.message}
-                    </p>
-                  )}
-                  <Button
-                    variant="secondary"
-                    className="w-fit"
-                    disabled={isDiagnosticStarting}
-                    onClick={handleStartDiagnostic}
-                  >
-                    {isDiagnosticStarting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Starting…
-                      </>
-                    ) : (
-                      "Start Diagnostic"
-                    )}
-                  </Button>
-                </div>
-              ) : estimateIsPremiumLocked && estimateData ? (
-                // Vertical-B Slice 2: baseline exists, unpaid — frozen baseline + CTA.
-                <div className="space-y-4">
-                  <p className="text-5xl font-semibold leading-none tracking-tight">
-                    {estimateData.baseline.composite}
-                  </p>
-                  <p className="text-xs text-primary-foreground/80">
-                    Diagnostic baseline — upgrade to track live progression.
-                  </p>
-                  <Button
-                    variant="secondary"
-                    className="w-fit"
-                    onClick={handleUpgradeToPremium}
-                  >
-                    View Plans
-                  </Button>
-                </div>
-              ) : estimateData?.estimateStatus === "computed" &&
-                estimateData.estimate ? (
-                <div className="space-y-4">
-                  <p className="text-5xl font-semibold leading-none tracking-tight">
-                    {estimateData.estimate.range.low}-
-                    {estimateData.estimate.range.high}
-                  </p>
-                  {/* No confidence wording (F-51; coding standards §10, §17). The
-                      payload still carries `confidenceBand`; it is not rendered. */}
-                  {/* Omitted when the server could not establish the count. A
-                      figure on a student-facing surface is a claim; an
-                      unverified one does not get made. */}
-                  {estimateData.totalQuestionsAttempted !== null && (
-                    <p className="text-xs text-primary-foreground/80">
-                      Based on {estimateData.totalQuestionsAttempted} attempted
-                      questions.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                // Fallback: error or truly unavailable data.
-                <div className="space-y-4">
-                  <p className="text-sm text-primary-foreground/80">
-                    Start practicing to unlock a score estimate.
-                  </p>
-                  <Button asChild variant="secondary" className="w-fit">
-                    <Link href="/practice">Start Practice</Link>
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
-          <Link
-            href="/practice"
-            className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]"
-          >
-            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
-              <Play className="h-5 w-5" />
-            </div>
-            <h2 className="text-2xl font-semibold tracking-tight mb-1">
-              Practice
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Start a focused SAT block
-            </p>
-          </Link>
-
-          <Link
-            href="/review"
-            className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]"
-          >
-            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
-              <RotateCcw className="h-5 w-5" />
-            </div>
-            <h2 className="text-2xl font-semibold tracking-tight mb-1">
-              Review Queue
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Redo the questions you missed until they stick.
-            </p>
-          </Link>
-        </section>
-
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <Card className="lg:col-span-7 border-border/40 bg-card">
-            <CardContent className="p-6 sm:p-8 space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <h2 className="text-3xl font-semibold tracking-tight">
-                    Score Trend Analysis
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Section breakdown from live estimate data.
-                  </p>
-                </div>
-                <Button asChild variant="ghost" className="w-fit px-0">
-                  <Link href="/mastery">
-                    View Full Breakdown
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
-
-              <div className="rounded-lg bg-muted/45 p-4 text-sm text-muted-foreground">
-                Historical score trend points are not currently exposed by this
-                runtime contract. This card shows live snapshot values only.
-              </div>
-
-              {estimateLoading ? (
-                <div className="space-y-4">
-                  <Skeleton className="h-5 w-full" />
-                  <Skeleton className="h-5 w-full" />
-                  <Skeleton className="h-5 w-full" />
-                </div>
-              ) : estimateIsPremiumLocked ? (
-                /* One CTA card. This was an `EmptyStateCTA` whose action
-                   hardcoded `/upgrade`; the card resolves the destination from
-                   the role and reaches the reactivate state for a lapsed
-                   subscriber. */
-                <PremiumUpgradePrompt featureBenefit="your detailed score breakdown" />
-              ) : (
-                <div className="space-y-4">
-                  <ScoreSnapshotRow
-                    label="Composite"
-                    value={estimateData?.estimate?.composite ?? null}
-                    max={1600}
-                  />
-                  <ScoreSnapshotRow
-                    label={SECTION_LABEL_RW}
-                    value={estimateData?.estimate?.rw ?? null}
-                    max={800}
-                  />
-                  <ScoreSnapshotRow
-                    label={SECTION_LABEL_MATH}
-                    value={estimateData?.estimate?.math ?? null}
-                    max={800}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-5 border-border/40 bg-card">
-            <CardContent className="p-6 sm:p-8 space-y-6 h-full">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-3xl font-semibold tracking-tight">
-                  Personalized Recommendations
-                </h2>
-                <span className="text-[10px] tracking-[0.18em] uppercase font-semibold text-muted-foreground bg-muted rounded-full px-2 py-1">
-                  Alpha
-                </span>
-              </div>
-
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                The Stitch mock shows placeholder recommendation cards. In
-                Lyceon runtime, this feed is still rebuilding against live KPI
-                truth sources, so we show transparent status instead of fake
-                suggestions.
-              </p>
-
-              <div className="rounded-lg bg-muted/45 p-4 space-y-2">
-                <p className="text-sm font-medium">Current live signals</p>
-                <p className="text-sm text-muted-foreground">
-                  {weekQuestions} questions solved this week
-.
-                </p>
-              </div>
-
-              <div className="rounded-lg bg-card border border-border/60 p-4">
-                <p className="text-sm font-medium italic text-foreground">
-                  "Rebuilding from live data"
-                </p>
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground mt-2">
-                  Recommendation model wiring in progress
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Button asChild data-testid="button-dashboard-ask-lisa">
-                  <Link href="/chat">
-                    <MessageCircle className="h-4 w-4 mr-2" />
-                    Ask Lisa
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-      </div>
-    </AppShell>
+    <FreeHome
+      studentId={user.id}
+      name={name}
+      masteryLock={mastery?.access === "locked" ? mastery.reason : "plan"}
+    />
   );
 }

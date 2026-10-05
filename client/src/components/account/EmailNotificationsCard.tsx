@@ -39,7 +39,22 @@ type SuppressionState = {
   clearable: boolean;
 };
 
-export function EmailNotificationsCard() {
+const UNCLEARABLE_COPY =
+  "We are not able to send email to your address at the moment, because earlier messages could not be delivered. Please contact support so we can look into it — this is not something you can change here.";
+
+const LYC_BOX =
+  "flex flex-col gap-3 rounded-lg border border-lyc-rule-strong bg-lyc-margin px-5 py-5 text-lyc-body text-lyc-ink sm:px-7";
+
+/**
+ * `variant="lyc"` (UI-58): the same card on student Settings → Account, drawn with the student
+ * tokens so it follows the page's theme; same read, same one clear action, same words. The
+ * guardian profile keeps the default.
+ */
+export function EmailNotificationsCard({
+  variant = "default",
+}: {
+  variant?: "default" | "lyc";
+} = {}) {
   const queryClient = useQueryClient();
 
   const { data } = useQuery<SuppressionState>({
@@ -76,15 +91,47 @@ export function EmailNotificationsCard() {
 
   // A bounce or a complaint is not a do-not-contact request, so it is not this card's to lift —
   // and saying "because of a previous request" would be false. Report it honestly instead.
+  if (variant === "lyc") {
+    return data.clearable ? (
+      <div
+        role="status"
+        className={LYC_BOX}
+        data-testid="alert-email-suppressed"
+      >
+        <p className="m-0">
+          Email to your address is turned off because of an earlier request to
+          stop contacting you. That request still applies, so nothing reaches
+          you — <strong>including password reset links</strong>.
+        </p>
+        <Button
+          type="button"
+          variant="lyc-outline"
+          className="self-start"
+          onClick={() => clearMutation.mutate()}
+          disabled={clearMutation.isPending}
+          data-testid="button-clear-email-suppression"
+        >
+          {clearMutation.isPending
+            ? "Turning email back on…"
+            : "Turn email back on"}
+        </Button>
+      </div>
+    ) : (
+      <div
+        role="status"
+        className={LYC_BOX}
+        data-testid="alert-email-suppressed-unclearable"
+      >
+        <p className="m-0">{UNCLEARABLE_COPY}</p>
+      </div>
+    );
+  }
+
   if (!data.clearable) {
     return (
       <Alert data-testid="alert-email-suppressed-unclearable">
         <MailWarning className="h-4 w-4" />
-        <AlertDescription>
-          We are not able to send email to your address at the moment, because
-          earlier messages could not be delivered. Please contact support so we
-          can look into it — this is not something you can change here.
-        </AlertDescription>
+        <AlertDescription>{UNCLEARABLE_COPY}</AlertDescription>
       </Alert>
     );
   }

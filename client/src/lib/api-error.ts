@@ -205,7 +205,7 @@ export function getPremiumDenialReason(
   return null;
 }
 
-export function isEntitlementDenialError(error: unknown): boolean {
+function isEntitlementDenialError(error: unknown): boolean {
   return getPremiumDenialReason(error) !== null;
 }
 

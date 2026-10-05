@@ -1,33 +1,52 @@
 /**
- * @spec [Doc-02B_v4, §28 Math Tooling: Desmos and Formula Sheet] | @implemented [2026-07-26]
- * Canonical practice page with Bluebook-parity resizable calculator side-panel.
+ * The practice and review question runner, inside the Focus shell.
  *
- * Pixel-floor guarantee: the Desmos host is ≥DESMOS_HOST_MIN_PX at every
- * supported viewport, on first render, after resize, and in every fallback.
+ * @spec [DESIGN.md §4 Question runner (top bar: back, session name, "Question N of M" with a
+ *        progress strip, Calculator, Reference; body: stem and lettered choices, then the
+ *        feedback panel; footer: Skip and Submit, disabled until a choice, then Next question;
+ *        keys ↑/↓, Enter, Enter or →); DESIGN.md §2 Focus shell, §3 Keyboard hook (no keystroke
+ *        hint text); design/prototype/Runner.dc.html; student-UI register UI-53, §2, §9 OQ-22
+ *        (session named by its criteria), OQ-35 (the shorter-session sentence, no number), OQ-49
+ *        (light lock), §8 F-53 (skipping the last question finishes), F-64 (one /next per step);
+ *        Doc-02B_v4 §28 (Desmos and the formula sheet)] | @implemented [2026-10-03]
  *
- * Pixel floor enforced by CSS `min-width` (browser-continuous); the library's
- * `minSize` percentage is a soft initial constraint that bounds drag at the
- * breakpoint-minimum container width. No JS observer needed — CSS `min-width`
- * is the single source of truth for the pixel floor.
+ * plain English: the route renders this inside the Focus shell (route-shells.ts), whose bar
+ * already holds the back link to the section. This page portals the rest of the bar into it
+ * (`FocusBarContext`): the session name, "Question N of M" with one segment per question, and
+ * Calculator / Reference on Math items. The body is the question (QuestionRenderer) in a 760px
+ * column; the footer holds Skip and Submit before submitting and "Next question" (or "Done" on
+ * the last one) after. Everything is drawn on the student tokens.
  *
- *  1. CSS `min-width` on the calculator panel — browser-enforced, continuous,
- *     cannot be violated by any drag, keyboard resize, or window resize.
- *  2. `onResize` callback + imperative Panel API — defence-in-depth runtime
- *     clamp during drag (snaps back if library somehow violates the floor).
- *  3. Static `minSize` percentage computed from SPLIT_BREAKPOINT — guarantees
- *     the correct library-level bound at the smallest supported container.
+ * What the old runner had and this one does not (DESIGN.md draws none of it): the "Academic
+ * practice runner" header with its answered/streak chips and progress pill (the PracticeShell),
+ * the difficulty and domain badges, the "Session guidance" side card, and "End Session" (the
+ * back link leaves with the place saved; Practice and Review end open sessions from their rows).
  *
- * Below the SPLIT_BREAKPOINT the calculator renders full-width (stacked layout)
- * instead of in a narrow sidebar column, avoiding any sub-minimum host width.
+ * Finishing: "Done" asks `/next` once more. The server answers 409 `session_closed` after the
+ * last item (it completes the session if the last answer did not), the hook marks the session
+ * completed, and this page goes to the completion destination. Skipping the last item ends the
+ * same way (F-53). Nothing here abandons a session, so a shortened session (OQ-35) finishes as
+ * completed, never abandoned.
+ *
+ * Anti-leak: this page holds no correctness before submit. `correctOptionId`, `correctAnswer`,
+ * `explanation` and `isCorrect` come from the answer response only (useCanonicalPractice), and
+ * LISA (review) is given the served item's id and the "Question N of M" label, nothing else;
+ * what LISA may read is decided on the server (tutor-context.ts), choices in displayed order
+ * with display letters (Step 0b).
+ *
+ * The calculator layout (pixel floor, three panels with LISA) is unchanged from W4-4/E10b:
+ * see the constants and the notes beside each layout below.
  */
 import React from "react";
-import { PracticeShell } from "@/components/layout/PracticeShell";
+import { useLocation } from "wouter";
+import { BookOpen, Calculator, Loader2, MessageCircle } from "lucide-react";
 import QuestionRenderer from "@/components/question-renderer";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, LYC_FOCUS } from "@/components/ui/button";
+import { Notice } from "@/components/student-ui";
+import { FocusBarContext } from "@/components/layout/FocusShell";
 import {
   useCanonicalPractice,
-  PracticeSectionParam,
+  type PracticeSectionParam,
 } from "@/hooks/useCanonicalPractice";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import {
@@ -44,16 +63,14 @@ import {
   SPLIT_BREAKPOINT,
 } from "@/components/math/calculator-layout";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
-import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Calculator, Loader2, MessageCircle } from "lucide-react";
 import { ScopedTutorPanel } from "@/components/tutor/ScopedTutorPanel";
 import {
   type EngineConfig,
   type ReviewSessionSpec,
   PRACTICE_ENGINE_CONFIG,
 } from "@/lib/engine-config";
-import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import type { PracticeDifficulty } from "@/lib/practice-filters";
+import { cn } from "@/lib/utils";
 import { isMathSection } from "@shared/section-display";
 import {
   ResizablePanelGroup,
@@ -61,18 +78,10 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import type { ImperativePanelHandle } from "react-resizable-panels";
-
-const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
-  easy: "Easy",
-  medium: "Medium",
-  hard: "Hard",
-};
-
-const DIFFICULTY_COLORS: Record<PracticeDifficulty, string> = {
-  easy: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  hard: "bg-red-50 text-red-700 border-red-200",
-};
+import {
+  buildRunnerKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 
 /* ── Layout pixel constraints: defined in components/math/calculator-layout (E10b);
  * re-exported here, where the practice tests import them. ── */
@@ -105,6 +114,40 @@ export const THREE_PANEL_BREAKPOINT =
 /** Tailwind's `lg`: below it, the review layout is a single column. */
 export const TUTOR_SIDE_BY_SIDE_BREAKPOINT = 1024;
 
+/** OQ-35, owner ruling (Karl) 2026-10-02: the sentence, verbatim, with no number. */
+export const SHORTER_SESSION_NOTE =
+  "Fewer questions match these filters, so this session is shorter.";
+
+/** "Question 3 of 10" (DESIGN.md §4). */
+export function questionPosition(index: number, total: number): string {
+  return `Question ${index + 1} of ${total}`;
+}
+
+/**
+ * The progress strip (Runner.dc.html): one segment per question; answered ones in --ink-strong,
+ * the current one in --rule-strong, the rest in --seg-empty.
+ */
+export function progressSegments(
+  index: number,
+  total: number,
+): Array<"done" | "current" | "todo"> {
+  return Array.from({ length: total }, (_, i) =>
+    i < index ? "done" : i === index ? "current" : "todo",
+  );
+}
+
+const SEGMENT_TONE: Record<"done" | "current" | "todo", string> = {
+  done: "bg-lyc-ink-strong",
+  current: "bg-lyc-rule-strong",
+  todo: "bg-lyc-seg-empty",
+};
+
+/** The bar's tool buttons (Runner.dc.html: 40px, 1px --input-bd, 15px semibold). */
+const BAR_BUTTON = cn(
+  LYC_FOCUS,
+  "flex h-10 min-w-10 shrink-0 items-center justify-center gap-2 rounded-md border border-lyc-input-bd bg-transparent px-2.5 text-lyc-meta-lg sm:px-3.5 font-semibold text-lyc-ink-strong hover:bg-lyc-hover",
+);
+
 function useMinWidth(px: number): boolean {
   const [matches, setMatches] = React.useState<boolean>(
     typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -129,22 +172,18 @@ function useSplitEnabled(): boolean {
 }
 
 /**
- * @spec [Doc-05C §7.4, Doc-01_V8 §20–24 diagnostic client wiring]
- * @implemented 2026-08-14
+ * @spec [Doc-05C §7.4, Doc-01_V8 §20–24 diagnostic client wiring] | @implemented 2026-08-14
  *
- * engine: which engine's endpoints, labels and feature switches the loop uses
- *   (brief R4 §2.1). Defaults to practice, so every existing call site is unchanged.
- * completionHref: where to navigate after session completion. Defaults to the engine's
- *   own completion route ("/practice" for practice, "/review" for review).
- *   For diagnostic sessions, pass "/dashboard" so the student lands on the baseline card.
- * isDiagnostic: when true, hides "Skip" and "End Session" buttons. A skipped diagnostic
- *   item means that domain gets <5 mastery events → evidence gate may not clear →
- *   NULL projection → no baseline. The 8×5 guarantee requires all 40 items to land.
- *   Abandoning (End Session) sets status to abandoned → no baseline capture.
+ * title: the session's name in the bar (OQ-22: from its criteria; "Diagnostic Assessment").
+ * engine: which engine's endpoints and switches the loop uses (brief R4 §2.1).
+ * completionHref: where the runner goes when the session is over. Defaults to the engine's.
+ *   The diagnostic passes "/dashboard", where the baseline card is.
+ * isDiagnostic: hides Skip. A skipped diagnostic item leaves its domain short of the evidence
+ *   gate (the 8×5 guarantee needs all 40 answered).
+ * shortened: OQ-35 — the server says the filters matched fewer questions than asked for.
  */
 export default function CanonicalPracticePage(props: {
   title: string;
-  badgeLabel: string;
   section: PracticeSectionParam;
   targetMinutes?: number;
   sessionId?: string | null;
@@ -152,14 +191,16 @@ export default function CanonicalPracticePage(props: {
   domains?: string[];
   completionHref?: string;
   isDiagnostic?: boolean;
+  shortened?: boolean;
   engine?: EngineConfig;
   review?: ReviewSessionSpec;
-}) {
+}): JSX.Element {
   const engine = props.engine ?? PRACTICE_ENGINE_CONFIG;
+  const [, navigate] = useLocation();
   /**
    * The diagnostic prop is honoured only by an engine that HAS a diagnostic mode.
    * Review's modes are `queue | session | filter`, so a stray `isDiagnostic` from a
-   * review caller must not hide Skip and End Session on a review session.
+   * review caller must not hide Skip on a review session.
    */
   const isDiagnostic =
     engine.features.diagnostic && props.isDiagnostic === true;
@@ -193,15 +234,14 @@ export default function CanonicalPracticePage(props: {
     correctOptionId,
     correctAnswer,
     explanation,
-    score,
     currentIndex,
     totalQuestions,
+    sessionClosed,
     canSubmit,
     fetchNextQuestion,
     submitAnswer,
     nextQuestion,
     handleMissingMcChoices,
-    terminateSession,
     calculatorState,
     persistCalculatorState,
     submitBlocked,
@@ -209,7 +249,6 @@ export default function CanonicalPracticePage(props: {
     sessionItemId,
   } = useCanonicalPractice(props.section, sessionSpec, props.sessionId, engine);
 
-  const [isEndingSession, setIsEndingSession] = React.useState(false);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
   const [isReferenceOpen, setIsReferenceOpen] = React.useState(false);
   // W4-4: LISA is open on every question; "Hide LISA" hides it for the
@@ -228,10 +267,7 @@ export default function CanonicalPracticePage(props: {
   const calcPanelRef = React.useRef<ImperativePanelHandle | null>(null);
 
   // Static percentage constraints — soft library-level bound computed from the
-  // breakpoint-minimum container width. CSS min-width is the true pixel floor
-  // (browser-enforced, continuous); these percentages are a secondary initial
-  // constraint that bounds the library's drag allocation at the smallest
-  // supported container width. No dynamic observer needed.
+  // breakpoint-minimum container width. CSS min-width is the true pixel floor.
   const calcMinPct = CALC_MIN_PCT;
   const questionMinPct = QUESTION_MIN_PCT;
 
@@ -254,18 +290,10 @@ export default function CanonicalPracticePage(props: {
 
   /**
    * Override the library's percentage-based ARIA values with real pixel values.
-   * The library sets aria-value* in its layout effect; setTimeout(0) ensures
-   * our pixel override runs after the library's DOM mutations complete.
-   *
-   * ARIA controlled value = question panel width (separator position from left).
-   * This is the standard model for a left-to-right separator:
+   * ARIA controlled value = question panel width (separator position from left):
    *   aria-valuenow  = current question panel width in px
-   *   aria-valuemin  = QUESTION_MIN_PX (smallest the question panel can be)
-   *   aria-valuemax  = groupWidth − CALC_MIN_PX (largest the question panel can
-   *                    be before the calculator violates its pixel floor)
-   * The calculator pixel floor is provably enforced: when aria-valuenow equals
-   * aria-valuemax, calculator width = groupWidth − (groupWidth − CALC_MIN_PX)
-   * = CALC_MIN_PX = 496px → host = 480px ≥ 450px.
+   *   aria-valuemin  = QUESTION_MIN_PX
+   *   aria-valuemax  = groupWidth − CALC_MIN_PX
    */
   const handleGroupLayout = React.useCallback((sizes: number[]): void => {
     const groupEl = panelGroupRef.current;
@@ -294,31 +322,18 @@ export default function CanonicalPracticePage(props: {
 
   const completionDest = props.completionHref ?? engine.completionHref;
 
-  const endSession = React.useCallback(async () => {
-    if (isEndingSession) return;
-    setIsEndingSession(true);
-    try {
-      // Diagnostic sessions: do NOT call terminateSession (which sets status
-      // to 'abandoned', preventing baseline capture). Navigate directly to
-      // the completion destination — the session remains resumable.
-      if (isDiagnostic) {
-        window.location.assign(completionDest);
-        return;
-      }
-      await terminateSession();
-      window.location.assign(completionDest);
-    } finally {
-      setIsEndingSession(false);
-    }
-  }, [isEndingSession, terminateSession, completionDest, isDiagnostic]);
+  // F-53: `/next` found no next item and the server closed the session (after "Done" on the
+  // last question, or a skip of it), so the runner leaves for the completion destination,
+  // client-side. Not on the last ANSWER: its feedback stays on screen until "Done".
+  React.useEffect(() => {
+    if (sessionClosed) navigate(completionDest);
+  }, [sessionClosed, completionDest, navigate]);
 
   /**
    * @spec [Coding Standards §12.1, §13; register UI-10] | @implemented [2026-09-29]
-   * plain English: a failed calculator-state save used to go to the browser console.
-   * The client has no structured logger, so the failure is surfaced to the
-   * student instead: the calculator keeps working from local state, and a notice
-   * says the work was not saved. The next successful save clears it. Nothing is
-   * logged, so the calculator state (student work) never leaves the page.
+   * plain English: a failed calculator-state save is surfaced to the student instead of the
+   * console: the calculator keeps working from local state, and a notice says the work was not
+   * saved. The next successful save clears it. Nothing is logged.
    */
   const [calculatorSaveFailed, setCalculatorSaveFailed] = React.useState(false);
 
@@ -331,6 +346,35 @@ export default function CanonicalPracticePage(props: {
       );
     },
     [persistCalculatorState],
+  );
+
+  const isLastQuestion =
+    typeof totalQuestions === "number" && currentIndex + 1 === totalQuestions;
+  const goNext = (): void => {
+    void nextQuestion();
+  };
+  const runnerBusy = isSubmitting || isLoading;
+
+  /**
+   * @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3, §4 Question runner keys]
+   * | @implemented [2026-10-03]
+   * plain English: the runner's keys through the one shared hook — ↑/↓ choose, Enter submits
+   * (the selected option, or the typed grid-in answer from its box), and after feedback Enter
+   * or → does exactly what the Next/Done button does. Every key is gated the way its button
+   * is (busy, canSubmit), so the keyboard can never do what the buttons cannot.
+   */
+  useKeyboardShortcuts(
+    buildRunnerKeymap({
+      phase: showResult ? "feedback" : "answering",
+      busy: runnerBusy,
+      optionIds: (question?.options ?? []).map((o) => o.id),
+      selectedOptionId: selectedAnswer,
+      canSubmit,
+      onSelectOption: setSelectedAnswer,
+      onSubmit: () => void submitAnswer({ skipped: false }),
+      onNext: goNext,
+    }),
+    { enabled: question !== null },
   );
 
   const typedError = error as Record<string, unknown> | null;
@@ -346,36 +390,12 @@ export default function CanonicalPracticePage(props: {
   const handleForceTakeover = React.useCallback(() => {
     setForceTakeover(true);
     setTimeout(() => {
-      fetchNextQuestion();
+      void fetchNextQuestion();
     }, 10);
   }, [fetchNextQuestion, setForceTakeover]);
 
   const showCalculator = isMathSection(question?.section);
   const useSidePanel = showCalculator && isCalculatorExpanded && splitEnabled;
-
-  const calculatorToggle = showCalculator ? (
-    <div className="flex gap-2">
-      <Button
-        variant="outline"
-        type="button"
-        size="sm"
-        onClick={() => setIsReferenceOpen(true)}
-      >
-        Reference Sheet
-      </Button>
-      <Button
-        variant="outline"
-        type="button"
-        size="sm"
-        onClick={() => setIsCalculatorExpanded((prev) => !prev)}
-        aria-expanded={isCalculatorExpanded}
-        data-testid="practice-calculator-toggle"
-      >
-        <Calculator className="h-3.5 w-3.5 mr-1" />
-        {isCalculatorExpanded ? "Hide" : "Calculator"}
-      </Button>
-    </div>
-  ) : null;
 
   // W4-1 / W4-4: LISA beside the question, scoped to the served item, open
   // on every question in an engine that has it (review). Practice has no
@@ -383,241 +403,260 @@ export default function CanonicalPracticePage(props: {
   const canAskTutor = engine.features.tutor && !!sessionItemId && !!question;
   const tutorVisible =
     canAskTutor && !!sessionItemId && tutorHiddenForItem !== sessionItemId;
-  const questionLabel = `Question ${currentIndex + 1}${
-    typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""
-  }`;
+  const position =
+    typeof totalQuestions === "number"
+      ? questionPosition(currentIndex, totalQuestions)
+      : null;
   const tutorPanel =
     tutorVisible && sessionItemId ? (
       <ScopedTutorPanel
         sourceSurface={engine.domain === "review" ? "review" : "practice"}
         sessionItemId={sessionItemId}
-        questionLabel={questionLabel}
+        questionLabel={position ?? `Question ${currentIndex + 1}`}
         onHide={() => setTutorHiddenForItem(sessionItemId)}
       />
     ) : null;
 
-  const questionContent = (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center flex-wrap gap-2">
-          <Badge
-            variant="outline"
-            className="uppercase tracking-wider text-[10px] font-semibold"
-          >
-            Question {currentIndex + 1}
-            {typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""}
-          </Badge>
-          <Badge
-            variant="outline"
-            className="uppercase tracking-wider text-[10px] font-semibold"
-          >
-            {props.badgeLabel}
-          </Badge>
-          {props.difficulties &&
-            props.difficulties.length > 0 &&
-            props.difficulties.map((d) => (
-              <Badge
-                key={d}
-                className={`text-[10px] border ${DIFFICULTY_COLORS[d]}`}
-              >
-                {DIFFICULTY_LABELS[d]}
-              </Badge>
-            ))}
-          {props.domains &&
-            props.domains.length > 0 &&
-            props.domains.map((domain) => (
-              <Badge
-                key={domain}
-                variant="secondary"
-                className="text-[10px] max-w-[120px] truncate"
-              >
-                {domain}
-              </Badge>
-            ))}
-        </div>
-        <div className="flex items-center gap-3">
-          {calculatorToggle}
-          {canAskTutor && sessionItemId && (
-            <Button
-              variant="outline"
-              type="button"
-              size="sm"
-              onClick={() =>
-                setTutorHiddenForItem(tutorVisible ? sessionItemId : null)
-              }
-              aria-expanded={tutorVisible}
-              data-testid="practice-tutor-toggle"
-            >
-              <MessageCircle className="h-3.5 w-3.5 mr-1" />
-              {tutorVisible ? "Hide LISA" : "Show LISA"}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {isLoading && !question ? (
-        <div className="flex flex-col items-center justify-center py-14 text-slate-600">
-          <Loader2 className="h-8 w-8 animate-spin" />
-          <p className="mt-3 text-sm">Loading your practice session...</p>
-        </div>
-      ) : isConflict ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
-          <AlertCircle className="h-10 w-10 text-amber-600 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-amber-900 mb-2">
-            Session Conflict
-          </h3>
-          <p className="text-sm text-amber-700 mb-6">
-            This session is currently active in another browser tab or device.
-            Resuming here will disconnect the other instance.
-          </p>
-          <div className="flex justify-center gap-3">
-            <Button
-              variant="outline"
-              onClick={() => window.location.assign(engine.backHref)}
-            >
-              Go Back
-            </Button>
-            <Button onClick={handleForceTakeover}>Resume Here</Button>
-          </div>
-        </div>
-      ) : isLimit ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-          <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-red-900 mb-2">
-            Session Limit Exceeded
-          </h3>
-          <p className="text-sm text-red-700 mb-6">
-            {typedError?.message as string}
-          </p>
-          <Button onClick={() => window.location.assign(engine.backHref)}>
-            Manage Sessions
-          </Button>
-        </div>
-      ) : error && !question ? (
-        <RecoveryNotice
-          title="Unable to load session."
-          message={String(error)}
-          onRetry={() => void fetchNextQuestion()}
-          retryLabel="Retry"
+  // One wrapper in the shell's context slot, so the bar's spacing can tighten on a phone
+  // (gap 12px below `sm`, 20px above, as Runner.dc.html's 20px).
+  const bar = (
+    <FocusBarContext>
+      <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-5">
+        <span
+          aria-hidden="true"
+          className="hidden h-7 w-px shrink-0 bg-lyc-rule sm:block"
         />
-      ) : !question ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-          <p className="font-medium">No questions available right now.</p>
-          <p className="mt-1">Try again in a moment or switch sections.</p>
-          <Button
-            className="mt-4"
-            onClick={fetchNextQuestion}
-            disabled={isLoading}
-          >
-            Check Again
-          </Button>
-        </div>
-      ) : (
-        <>
-          {error && (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-              {error}
-            </div>
-          )}
-
-          {calculatorSaveFailed && (
-            <div
-              className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700"
-              role="status"
-              data-testid="practice-calculator-save-failed"
+        <span
+          data-testid="runner-session-name"
+          className="hidden min-w-0 truncate font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong sm:block"
+        >
+          {props.title}
+        </span>
+        <span className="flex-1" aria-hidden="true" />
+        {position !== null && typeof totalQuestions === "number" ? (
+          <>
+            <span
+              data-testid="runner-position"
+              className="shrink-0 whitespace-nowrap text-lyc-body text-lyc-ink"
             >
-              Your calculator work could not be saved. You can keep using it,
-              but it may not be there if you reload this page.
-            </div>
-          )}
-
-          <QuestionRenderer
-            question={question}
-            selectedAnswer={selectedAnswer}
-            onSelectAnswer={setSelectedAnswer}
-            freeResponseAnswer={freeResponseAnswer}
-            onFreeResponseAnswerChange={setFreeResponseAnswer}
-            showResult={showResult}
-            isCorrect={isCorrect}
-            correctOptionId={correctOptionId}
-            correctAnswer={correctAnswer}
-            explanation={explanation}
-            disabled={isSubmitting || isLoading}
-            onMissingMcChoices={handleMissingMcChoices}
-          />
-
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-            {!showResult ? (
-              <>
-                {/* Diagnostic mode: hide Skip (a skipped item breaks the 8×5
-                    guarantee — that domain gets <5 mastery events → NULL
-                    projection → no baseline) and End Session (abandon prevents
-                    baseline capture). The diagnostic is finishable, not
-                    discardable. */}
-                {!isDiagnostic && (
-                  <Button
-                    variant="outline"
-                    disabled={isSubmitting || isLoading || isEndingSession}
-                    onClick={() => submitAnswer({ skipped: true })}
-                  >
-                    Skip
-                  </Button>
-                )}
-
-                {!isDiagnostic && (
-                  <Button
-                    variant="ghost"
-                    disabled={isSubmitting || isLoading || isEndingSession}
-                    onClick={endSession}
-                  >
-                    End Session
-                  </Button>
-                )}
-
-                <Button
-                  disabled={
-                    isSubmitting || isLoading || !canSubmit || isEndingSession
-                  }
-                  onClick={() => submitAnswer({ skipped: false })}
-                >
-                  Check Answer
-                </Button>
-              </>
-            ) : null}
-
-            {!showResult && submitBlocked && (
-              <p
-                className="w-full text-sm text-rose-600 mt-1"
-                role="alert"
-                aria-live="assertive"
-              >
-                {submitBlocked}
-              </p>
-            )}
-
-            {showResult ? (
-              <Button
-                className="w-full"
-                disabled={isSubmitting || isLoading || isEndingSession}
-                onClick={() => {
-                  if (currentIndex + 1 === totalQuestions) {
-                    endSession();
-                  } else {
-                    nextQuestion();
-                  }
-                }}
-              >
-                {currentIndex + 1 === totalQuestions ? "Done" : "Next Question"}
-              </Button>
-            ) : null}
-          </div>
-        </>
-      )}
-    </>
+              {position}
+            </span>
+            <span
+              aria-hidden="true"
+              data-testid="runner-progress"
+              className="hidden shrink-0 gap-1 lg:flex"
+            >
+              {progressSegments(currentIndex, totalQuestions).map((tone, i) => (
+                <span
+                  key={i}
+                  data-segment={tone}
+                  className={cn(
+                    "h-1.5 w-3.5 rounded-[3px]",
+                    SEGMENT_TONE[tone],
+                  )}
+                />
+              ))}
+            </span>
+          </>
+        ) : null}
+        {showCalculator ? (
+          <>
+            <button
+              type="button"
+              className={BAR_BUTTON}
+              onClick={() => setIsCalculatorExpanded((prev) => !prev)}
+              aria-expanded={isCalculatorExpanded}
+              aria-label="Calculator"
+              data-testid="practice-calculator-toggle"
+            >
+              <Calculator aria-hidden="true" className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline">Calculator</span>
+            </button>
+            <button
+              type="button"
+              className={BAR_BUTTON}
+              onClick={() => setIsReferenceOpen(true)}
+              aria-label="Reference"
+              data-testid="practice-reference-toggle"
+            >
+              <BookOpen aria-hidden="true" className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline">Reference</span>
+            </button>
+          </>
+        ) : null}
+        {canAskTutor && sessionItemId ? (
+          <button
+            type="button"
+            className={BAR_BUTTON}
+            onClick={() =>
+              setTutorHiddenForItem(tutorVisible ? sessionItemId : null)
+            }
+            aria-expanded={tutorVisible}
+            data-testid="practice-tutor-toggle"
+          >
+            <MessageCircle aria-hidden="true" className="h-4 w-4" />
+            <span className="hidden sm:inline">
+              {tutorVisible ? "Hide LISA" : "Show LISA"}
+            </span>
+          </button>
+        ) : null}
+      </div>
+    </FocusBarContext>
   );
 
+  const stateBody =
+    isLoading && !question ? (
+      <div
+        role="status"
+        className="flex flex-col items-center justify-center py-14 text-lyc-muted"
+      >
+        <Loader2 aria-hidden="true" className="h-8 w-8 animate-spin" />
+        <p className="mt-3 text-lyc-body">{engine.labels.loading}</p>
+      </div>
+    ) : isConflict ? (
+      <Notice
+        tone="warning"
+        title="Session Conflict"
+        message="This session is currently active in another browser tab or device. Resuming here will disconnect the other instance."
+        actionLabel="Resume Here"
+        onAction={handleForceTakeover}
+        secondaryActionLabel="Go Back"
+        onSecondaryAction={() => navigate(engine.backHref)}
+      />
+    ) : isLimit ? (
+      <Notice
+        tone="danger"
+        title="Session Limit Exceeded"
+        message={
+          typeof typedError?.message === "string" ? typedError.message : ""
+        }
+        actionLabel="Manage Sessions"
+        onAction={() => navigate(engine.backHref)}
+      />
+    ) : error && !question ? (
+      <Notice
+        tone="danger"
+        title="Unable to load session."
+        message={String(error)}
+        actionLabel="Retry"
+        onAction={() => void fetchNextQuestion()}
+      />
+    ) : !question ? (
+      sessionClosed ? null : (
+        <Notice
+          tone="neutral"
+          title="No questions available right now."
+          message="Try again in a moment or switch sections."
+          actionLabel="Check Again"
+          onAction={() => void fetchNextQuestion()}
+        />
+      )
+    ) : null;
+
+  const questionBody = question ? (
+    <div className="flex flex-col gap-6">
+      {props.shortened === true && currentIndex === 0 ? (
+        <Notice
+          tone="info"
+          title={SHORTER_SESSION_NOTE}
+          data-testid="runner-shorter-note"
+        />
+      ) : null}
+      {error ? <Notice tone="danger" title={String(error)} /> : null}
+      {calculatorSaveFailed ? (
+        <Notice
+          tone="warning"
+          title="Your calculator work could not be saved."
+          message="You can keep using it, but it may not be there if you reload this page."
+          data-testid="practice-calculator-save-failed"
+        />
+      ) : null}
+      <QuestionRenderer
+        question={question}
+        selectedAnswer={selectedAnswer}
+        onSelectAnswer={setSelectedAnswer}
+        freeResponseAnswer={freeResponseAnswer}
+        onFreeResponseAnswerChange={setFreeResponseAnswer}
+        showResult={showResult}
+        isCorrect={isCorrect}
+        correctOptionId={correctOptionId}
+        correctAnswer={correctAnswer}
+        explanation={explanation}
+        missNote={engine.features.missNote}
+        disabled={isSubmitting || isLoading}
+        onMissingMcChoices={handleMissingMcChoices}
+      />
+    </div>
+  ) : (
+    stateBody
+  );
+
+  const questionColumn = (
+    <div
+      className="mx-auto w-full max-w-[760px] px-4 pb-8 pt-8 lg:pt-12"
+      data-testid="runner-body"
+    >
+      {questionBody}
+    </div>
+  );
+
+  const footer = question ? (
+    <footer
+      data-testid="runner-footer"
+      className="flex shrink-0 flex-col items-end gap-2 border-t border-lyc-rule bg-lyc-paper px-4 py-4 lg:px-8"
+    >
+      {!showResult && submitBlocked ? (
+        <p
+          className="m-0 text-lyc-meta-lg text-lyc-danger"
+          role="alert"
+          aria-live="assertive"
+        >
+          {submitBlocked}
+        </p>
+      ) : null}
+      <div className="flex items-center gap-3">
+        {!showResult ? (
+          <>
+            {/* Diagnostic: no Skip. A skipped item leaves its domain short of the 8×5 evidence
+                the baseline needs; the diagnostic is finishable, not skippable. */}
+            {!isDiagnostic ? (
+              <Button
+                variant="lyc-link"
+                size="lyc"
+                className="h-12 px-[18px]"
+                disabled={runnerBusy}
+                onClick={() => void submitAnswer({ skipped: true })}
+              >
+                Skip
+              </Button>
+            ) : null}
+            <Button
+              variant="lyc-primary"
+              size="lyc"
+              className="h-12 px-[26px] text-[17px] disabled:opacity-45"
+              disabled={runnerBusy || !canSubmit}
+              onClick={() => void submitAnswer({ skipped: false })}
+            >
+              Submit
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="lyc-primary"
+            size="lyc"
+            className="h-12 px-[26px] text-[17px]"
+            disabled={runnerBusy}
+            onClick={goNext}
+          >
+            {isLastQuestion ? "Done" : "Next question"}
+          </Button>
+        )}
+      </div>
+    </footer>
+  ) : null;
+
   const sidePanelCalculator = (
-    <div className="flex flex-col h-full py-4 pr-4">
+    <div className="flex h-full flex-col py-4 pr-4">
       <DesmosCalculator
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
@@ -627,88 +666,75 @@ export default function CanonicalPracticePage(props: {
     </div>
   );
 
+  // Mounted whenever the item is Math, expanded or not: DesmosCalculator collapses to zero
+  // height when closed and keeps its instance and state.
   const stackedCalculator = showCalculator ? (
-    <Card className="rounded-2xl border border-border/60 bg-card p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Math Tools
-        </p>
-      </div>
+    <div
+      className={
+        isCalculatorExpanded
+          ? "rounded-md border border-lyc-rule bg-lyc-sheet p-4"
+          : undefined
+      }
+    >
       <DesmosCalculator
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
         onStateChange={onCalculatorStateChange}
         className="w-full"
       />
-    </Card>
+    </div>
   ) : null;
 
-  const standardLayout = (
+  const standardLayout = useSidePanel ? (
+    <div
+      ref={panelGroupRef}
+      className="h-full px-4"
+      data-testid="practice-panel-group-container"
+    >
+      <ResizablePanelGroup
+        direction="horizontal"
+        autoSaveId="lyceon-practice-calc-panel-px"
+        onLayout={handleGroupLayout}
+        className="h-full min-h-[600px]"
+      >
+        <ResizablePanel
+          defaultSize={QUESTION_DEFAULT_PCT}
+          minSize={questionMinPct}
+          style={{ minWidth: QUESTION_MIN_PX }}
+        >
+          <div className="h-full overflow-y-auto">{questionColumn}</div>
+        </ResizablePanel>
+        <ResizableHandle
+          withHandle
+          aria-label="Resize question and calculator panels"
+          aria-orientation="vertical"
+          data-testid="practice-resize-handle"
+        />
+        <ResizablePanel
+          ref={calcPanelRef}
+          defaultSize={CALC_DEFAULT_PCT}
+          minSize={calcMinPct}
+          style={{ minWidth: CALC_MIN_PX }}
+          onResize={handleCalcPanelResize}
+          data-testid="practice-calc-panel"
+        >
+          {sidePanelCalculator}
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
+  ) : (
     <>
-      {useSidePanel ? (
-        <div ref={panelGroupRef} data-testid="practice-panel-group-container">
-          <ResizablePanelGroup
-            direction="horizontal"
-            autoSaveId="lyceon-practice-calc-panel-px"
-            onLayout={handleGroupLayout}
-            className="min-h-[600px] rounded-2xl border border-border/60 bg-card"
-          >
-            <ResizablePanel
-              defaultSize={QUESTION_DEFAULT_PCT}
-              minSize={questionMinPct}
-              style={{ minWidth: QUESTION_MIN_PX }}
-            >
-              <div className="p-6 h-full overflow-y-auto">
-                {questionContent}
-              </div>
-            </ResizablePanel>
-            <ResizableHandle
-              withHandle
-              aria-label="Resize question and calculator panels"
-              aria-orientation="vertical"
-              data-testid="practice-resize-handle"
-            />
-            <ResizablePanel
-              ref={calcPanelRef}
-              defaultSize={CALC_DEFAULT_PCT}
-              minSize={calcMinPct}
-              style={{ minWidth: CALC_MIN_PX }}
-              onResize={handleCalcPanelResize}
-              data-testid="practice-calc-panel"
-            >
-              {sidePanelCalculator}
-            </ResizablePanel>
-          </ResizablePanelGroup>
+      {questionColumn}
+      {/* Below-breakpoint calculator: full width under the question, so the Desmos host keeps
+          its DESMOS_HOST_MIN_PX floor. */}
+      {showCalculator ? (
+        <div
+          className="mx-auto w-full max-w-[760px] px-4 pb-8"
+          data-testid="stacked-calculator-container"
+        >
+          {stackedCalculator}
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <Card className="lg:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
-              {questionContent}
-            </Card>
-
-            <div className="lg:col-span-4 space-y-4">
-              <Card className="rounded-2xl border border-border/60 bg-card p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
-                  Session Guidance
-                </p>
-                <p className="text-sm text-foreground/90 leading-relaxed">
-                  {engine.labels.sessionGuidance}
-                </p>
-              </Card>
-            </div>
-          </div>
-
-          {/* Below-breakpoint calculator: render full-width to guarantee
-          Desmos host ≥ DESMOS_HOST_MIN_PX. Never in the narrow col-span-4
-          sidebar — that yields ~330px at 1024px viewport. */}
-          {showCalculator && !useSidePanel && (
-            <div className="mt-6" data-testid="stacked-calculator-container">
-              {stackedCalculator}
-            </div>
-          )}
-        </>
-      )}
+      ) : null}
     </>
   );
 
@@ -720,39 +746,26 @@ export default function CanonicalPracticePage(props: {
   const calcOverTutor = calcOpen && tutorSideBySide && !threePanelEnabled;
   const calcStacked = calcOpen && !tutorSideBySide;
 
-  const guidanceCard = (
-    <Card className="rounded-2xl border border-border/60 bg-card p-5">
-      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
-        Session Guidance
-      </p>
-      <p className="text-sm text-foreground/90 leading-relaxed">
-        {engine.labels.sessionGuidance}
-      </p>
-    </Card>
-  );
-
   const reviewTutorLayout = (
     <div
-      className="flex flex-col gap-6 lg:flex-row lg:items-start"
+      className="flex flex-col gap-6 lg:flex-row lg:items-start lg:px-4"
       data-testid="review-tutor-layout"
     >
-      <div className="min-w-0 flex-1 space-y-6">
+      <div className="min-w-0 flex-1">
         {calcBesideQuestion ? (
           <div ref={panelGroupRef} data-testid="practice-panel-group-container">
             <ResizablePanelGroup
               direction="horizontal"
               autoSaveId="lyceon-review-calc-panel-px"
               onLayout={handleGroupLayout}
-              className="min-h-[600px] rounded-2xl border border-border/60 bg-card"
+              className="min-h-[600px]"
             >
               <ResizablePanel
                 defaultSize={QUESTION_DEFAULT_PCT}
                 minSize={questionMinPct}
                 style={{ minWidth: QUESTION_MIN_PX }}
               >
-                <div className="p-6 h-full overflow-y-auto">
-                  {questionContent}
-                </div>
+                <div className="h-full overflow-y-auto">{questionColumn}</div>
               </ResizablePanel>
               <ResizableHandle
                 withHandle
@@ -773,15 +786,12 @@ export default function CanonicalPracticePage(props: {
             </ResizablePanelGroup>
           </div>
         ) : (
-          <Card className="rounded-2xl border border-border/60 bg-card p-6">
-            {questionContent}
-          </Card>
+          questionColumn
         )}
-        {guidanceCard}
       </div>
 
       <div
-        className="relative w-full lg:sticky lg:top-24 lg:shrink-0"
+        className="relative w-full px-4 pt-8 lg:sticky lg:top-0 lg:shrink-0 lg:px-0"
         style={
           tutorSideBySide
             ? {
@@ -800,46 +810,40 @@ export default function CanonicalPracticePage(props: {
         >
           {tutorPanel}
         </div>
-        {calcOverTutor && (
+        {calcOverTutor ? (
           <div
             className="absolute inset-0 z-10"
             data-testid="review-calc-over-tutor"
           >
             {sidePanelCalculator}
           </div>
-        )}
+        ) : null}
       </div>
 
-      {calcStacked && (
-        <div data-testid="stacked-calculator-container">
+      {calcStacked ? (
+        <div className="pb-8" data-testid="stacked-calculator-container">
           {stackedCalculator}
         </div>
-      )}
+      ) : null}
     </div>
   );
 
   return (
-    <PracticeShell
-      title={props.title}
-      eyebrow={engine.labels.shellEyebrow}
-      backLink={engine.backHref}
-      backLabel={engine.backLabel}
-      score={{
-        correct: score.correct,
-        incorrect: score.incorrect,
-        skipped: score.skipped,
-        total: score.total,
-        streak: score.streak,
-      }}
-      currentIndex={currentIndex}
-      totalQuestions={totalQuestions}
-      wide={tutorVisible}
+    <div
+      className="flex h-full flex-col bg-lyc-paper text-lyc-ink"
+      data-testid="canonical-practice-runner"
     >
-      {tutorVisible ? reviewTutorLayout : standardLayout}
-      <MathReferenceSheet
-        open={isReferenceOpen}
-        onOpenChange={setIsReferenceOpen}
-      />
-    </PracticeShell>
+      {bar}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {tutorVisible ? reviewTutorLayout : standardLayout}
+      </div>
+      {footer}
+      {showCalculator ? (
+        <MathReferenceSheet
+          open={isReferenceOpen}
+          onOpenChange={setIsReferenceOpen}
+        />
+      ) : null}
+    </div>
   );
 }

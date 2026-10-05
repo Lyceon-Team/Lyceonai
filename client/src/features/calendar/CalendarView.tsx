@@ -22,6 +22,21 @@
  * UI state in `useState` and keeps the query layer for server state; a student paging through
  * weeks is not navigating.
  *
+ * TWO CHROMES (UI-55, 2026-10-03; student-UI register §2, DESIGN.md §4 Calendar). The grid,
+ * the banners and the sheets are one tree for both surfaces. The FRAME
+ * differs by `viewer`: the student calendar sits in the App shell, with a Canvas-style header
+ * (Week/Month, Today, arrows; the range centred; Edit schedule and Regenerate plan) and the
+ * mini month, goal card, schedule summary and Show filters in the shell's right panel
+ * (`StudentChrome.tsx`); the guardian keeps `LeftRail` and `TopBar` inside `GuardianShell`,
+ * unchanged. `viewer` already selects the absence copy; the frame is the same fact (whose
+ * calendar, seen by whom), and every write control is still conditioned on `mutations`.
+ * The student's test day is starred in the week, month and mini month (`testDate`).
+ *
+ * THE STREAK LINE AND THE FACTS STRIP ARE THE GUARDIAN'S ONLY (SCL-211, owner ruling
+ * 2026-10-05 on OQ-56: "Drop the streak line and the facts strip to match the design"). Doc
+ * 05F §17.1 as amended draws neither on the student calendar; the guardian surface keeps both
+ * (its `TopBar` and the strip under its grid), unchanged — that is the guardian vertical's.
+ *
  * edge cases: switching Week↔Month inside the same month does NOT refetch — the month query
  * covers the week, TanStack serves the wider range from cache, and the grid slices it. That
  * is why `rangeForView` exists and why the query key carries the range.
@@ -50,6 +65,7 @@ import type { SectionProjectionDto } from "@lyceon/shared";
 import {
   daysBetween,
   monthGridDates,
+  numericRangeLabel,
   rangeLabel,
   shiftDays,
   shiftMonths,
@@ -58,9 +74,8 @@ import {
   startOfWeek,
   weekDates,
 } from "./lib/dates";
-import { domainsForSection, isDraggable } from "./lib/blocks";
+import { isDraggable } from "./lib/blocks";
 import {
-  MIX_GRANULARITY,
   isValidMix,
   membersWithEdit,
   membersWithNewBlock,
@@ -88,6 +103,15 @@ import { BlockSheet, type BlockSheetActions } from "./components/BlockSheet";
 import { CreateBlockSheet } from "./components/CreateBlockSheet";
 import { DayStrip } from "./components/DayStrip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { AppShellPanel } from "@/components/layout/app-shell";
+import {
+  CalendarPanelColumn,
+  GoalCard,
+  MiniMonth,
+  ScheduleSummary,
+  ShowFilters,
+  StudentCalendarHeader,
+} from "./components/StudentChrome";
 import type { DayActions } from "./components/DayMenu";
 import { SetupPopup, type SetupAnswers } from "./components/SetupPopup";
 import {
@@ -117,6 +141,8 @@ export type CalendarMutations = {
   launch: (blockId: string, blockType: PlanBlock["block_type"]) => void;
   acknowledge: (versionNo: number) => void;
   refreshPending: boolean;
+  /** True once a plan regenerate has returned: the button says "Plan regenerated". */
+  regenerated: boolean;
   launchPending: boolean;
 };
 
@@ -141,11 +167,8 @@ export type CalendarViewProps = {
      * requires. Naming the real type is what puts the compiler back in that gap.
      */
     onSubmit: (answers: SetupAnswers) => void;
-    /** False for a free student — the last press shows the third panel, not a plan. */
-    entitled: boolean;
     /** Dismiss saves nothing. It reopens next visit, because no profile exists yet. */
     onDismiss: () => void;
-    onUpgrade: () => void;
     pending: boolean;
     error: string | null;
   };
@@ -169,7 +192,11 @@ export type CalendarViewProps = {
    * sums them (`lib/projection`); nothing on this path re-derives a projection.
    */
   projection?: readonly SectionProjectionDto[];
-  streak: StreakSummary | undefined;
+  /**
+   * The guardian `TopBar`'s streak readout. The student calendar draws no streak line
+   * (SCL-211), so the student page passes none and the student chrome never reads it.
+   */
+  streak?: StreakSummary;
   /**
    * Brief 14 Step 4 — `full_length_suppressions`, straight off the payload. Dates the
    * generator refused to place a practice test on because both the chosen weekday occurrence
@@ -459,180 +486,126 @@ export function CalendarView({
       ? null
       : Math.max(0, daysBetween(today, targetExamDate));
 
-  return (
-    <div className="lyceon-calendar">
-      <div className={`app${setup === undefined ? "" : " blur"}`}>
-        <LeftRail
-          // The guardian shell carries the logo; the rail does not repeat it (item 6).
-          hideBrand={viewer === "guardian"}
-          name={viewerName}
-          subtitle={
-            readOnly
-              ? "Viewing only"
-              : targetExamDate === null
-                ? "No test date set"
-                : `SAT · ${shortDate(targetExamDate)}`
-          }
-          miniMonth={miniMonth}
-          cursor={cursor}
-          today={today}
-          hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
-          filters={filters}
-          onToggleFilter={(tone, next) =>
-            setFilters((prev) => ({ ...prev, [tone]: next }))
-          }
-          onPickDate={(date) => move("week", startOfWeek(date))}
-          onMonthStep={(delta) => {
-            const next = new Date(`${miniMonth}T00:00:00Z`);
-            next.setUTCMonth(next.getUTCMonth() + delta);
-            setMiniMonth(next.toISOString().slice(0, 10));
-          }}
-          footer={
-            readOnly ? "Read-only view" : "Your plan updates itself each week"
-          }
-          {...(schedule === undefined
-            ? {}
-            : {
-                schedule: {
-                  // Derived from the profile and the served estimates, never stored —
-                  // the same function the sheet's live readout uses, so the card and the
-                  // sheet cannot describe the same schedule differently.
-                  summary: scheduleSummary(
-                    schedule.profile,
-                    schedule.estimates,
-                    {
-                      targetExamDate: schedule.profile.target_exam_date,
-                      today,
-                      // The one field the readout reads, named rather than spread: the
-                      // prefill beside it on `examPlanning` is for the frequency control,
-                      // not for this sentence.
-                      finalExamLeadDays:
-                        schedule.examPlanning.final_exam_lead_days,
-                    },
-                  ),
-                },
-              })}
+  /** The student's test day, starred in the grids (UI-55). The guardian grid is unchanged. */
+  const starredTestDate = viewer === "student" ? targetExamDate : null;
+
+  const step = (delta: number): void => {
+    if (view === "week") {
+      move("week", startOfWeek(shiftDays(cursor, delta * 7)));
+    } else {
+      move("month", shiftMonths(cursor, delta));
+    }
+  };
+
+  /**
+   * The grid area — banners and the week or month grid — the SAME tree on both surfaces. Only
+   * the chrome around it differs (below), and the facts strip under the grid, which is the
+   * guardian's alone (SCL-211).
+   */
+  const gridArea = (
+    <>
+      {planUpdate !== null && mutations !== undefined ? (
+        <PlanUpdatedBanner
+          trigger={planUpdate.trigger}
+          onDismiss={() => mutations.acknowledge(planUpdate.versionNo)}
         />
+      ) : null}
 
-        <div className="main">
-          <TopBar
-            backHref={backHref}
-            hideBackLink={hideBackLink}
-            viewer={viewer}
-            targetScore={targetScore}
-            projection={projection}
-            rangeLabelText={rangeLabel(view, cursor)}
-            view={view}
-            onView={(next) => move(next, cursor)}
-            onStep={(delta) => {
-              if (view === "week") {
-                move("week", startOfWeek(shiftDays(cursor, delta * 7)));
-              } else {
-                move("month", shiftMonths(cursor, delta));
-              }
-            }}
-            onToday={() => move("week", startOfWeek(today))}
-            streak={streak}
-            daysToTest={daysToTest}
-            {...(mutations === undefined
-              ? {}
-              : {
-                  onRefresh: mutations.regeneratePlan,
-                  refreshPending: mutations.refreshPending,
-                })}
-            {...(schedule === undefined
-              ? {}
-              : { onEditSchedule: () => setSettingsOpen(true) })}
-          />
+      {/* The suppressed practice test, on both surfaces. The handler is passed for a
+          STUDENT only — the component takes `viewer` as well, so the "statement, never an
+          action" rule for a guardian holds even if a future caller passes a handler by
+          mistake. Two locks, because the copy rule and the control rule are both the
+          owner's 2026-09-26 ruling and neither is a style choice. */}
+      <FullLengthSuppressionNotice
+        viewer={viewer}
+        dates={fullLengthSuppressions}
+        {...(viewer === "student"
+          ? {
+              onGoToWeek: (date: string) => {
+                move("week", startOfWeek(date));
+                setAgendaDate(date);
+              },
+            }
+          : {})}
+      />
 
-          {planUpdate !== null && mutations !== undefined ? (
-            <PlanUpdatedBanner
-              trigger={planUpdate.trigger}
-              onDismiss={() => mutations.acknowledge(planUpdate.versionNo)}
+      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <div className="scroll">
+          {view === "week" && isMobile ? (
+            <>
+              <DayStrip
+                dates={dates}
+                selected={agendaDay}
+                today={today}
+                hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
+                onSelect={setAgendaDate}
+              />
+              {/* The SAME WeekGrid, given one date. Every affordance a column carries —
+                  the droppable, the day menu, the block cards, "+ Add block" — comes
+                  with it, so the phone layout cannot drift from the desktop one. */}
+              <WeekGrid
+                dates={[agendaDay]}
+                dayFor={dayFor}
+                today={today}
+                visible={visible}
+                canDrag={canDrag}
+                onOpen={setOpenBlockId}
+                {...(dayActions === undefined ? {} : { dayActions })}
+                {...(mutations === undefined
+                  ? {}
+                  : { onAddBlock: (date: string) => setAddOnDate(date) })}
+                {...(starredTestDate === null
+                  ? {}
+                  : { testDate: starredTestDate })}
+              />
+            </>
+          ) : view === "week" ? (
+            <WeekGrid
+              dates={dates}
+              dayFor={dayFor}
+              today={today}
+              visible={visible}
+              canDrag={canDrag}
+              onOpen={setOpenBlockId}
+              {...(dayActions === undefined ? {} : { dayActions })}
+              {...(mutations === undefined
+                ? {}
+                : {
+                    // §17.2: Add OPENS the create sheet. It writes nothing — the
+                    // write happens on confirm, in `onCreate` below.
+                    onAddBlock: (date: string) => setAddOnDate(date),
+                  })}
+              {...(starredTestDate === null
+                ? {}
+                : { testDate: starredTestDate })}
             />
-          ) : null}
-
-          {/* The suppressed practice test, on both surfaces. The handler is passed for a
-              STUDENT only — the component takes `viewer` as well, so the "statement, never an
-              action" rule for a guardian holds even if a future caller passes a handler by
-              mistake. Two locks, because the copy rule and the control rule are both the
-              owner's 2026-09-26 ruling and neither is a style choice. */}
-          <FullLengthSuppressionNotice
-            viewer={viewer}
-            dates={fullLengthSuppressions}
-            {...(viewer === "student"
-              ? {
-                  onGoToWeek: (date: string) => {
-                    move("week", startOfWeek(date));
-                    setAgendaDate(date);
-                  },
-                }
-              : {})}
-          />
-
-          <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-            <div className="scroll">
-              {view === "week" && isMobile ? (
-                <>
-                  <DayStrip
-                    dates={dates}
-                    selected={agendaDay}
-                    today={today}
-                    hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
-                    onSelect={setAgendaDate}
-                  />
-                  {/* The SAME WeekGrid, given one date. Every affordance a column carries —
-                      the droppable, the day menu, the block cards, "+ Add block" — comes
-                      with it, so the phone layout cannot drift from the desktop one. */}
-                  <WeekGrid
-                    dates={[agendaDay]}
-                    dayFor={dayFor}
-                    today={today}
-                    visible={visible}
-                    canDrag={canDrag}
-                    onOpen={setOpenBlockId}
-                    {...(dayActions === undefined ? {} : { dayActions })}
-                    {...(mutations === undefined
-                      ? {}
-                      : { onAddBlock: (date: string) => setAddOnDate(date) })}
-                  />
-                </>
-              ) : view === "week" ? (
-                <WeekGrid
-                  dates={dates}
-                  dayFor={dayFor}
-                  today={today}
-                  visible={visible}
-                  canDrag={canDrag}
-                  onOpen={setOpenBlockId}
-                  {...(dayActions === undefined ? {} : { dayActions })}
-                  {...(mutations === undefined
-                    ? {}
-                    : {
-                        // §17.2: Add OPENS the create sheet. It writes nothing — the
-                        // write happens on confirm, in `onCreate` below.
-                        onAddBlock: (date: string) => setAddOnDate(date),
-                      })}
-                />
-              ) : (
-                <MonthGrid
-                  dates={dates}
-                  cursor={cursor}
-                  dayFor={dayFor}
-                  today={today}
-                  visible={visible}
-                  canDrag={canDrag}
-                  onOpen={setOpenBlockId}
-                  {...(dayActions === undefined ? {} : { dayActions })}
-                />
-              )}
-            </div>
-          </DndContext>
-
-          {model === null ? null : <FactsStrip facts={model.facts} />}
+          ) : (
+            <MonthGrid
+              dates={dates}
+              cursor={cursor}
+              dayFor={dayFor}
+              today={today}
+              visible={visible}
+              canDrag={canDrag}
+              onOpen={setOpenBlockId}
+              {...(dayActions === undefined ? {} : { dayActions })}
+              {...(starredTestDate === null
+                ? {}
+                : { testDate: starredTestDate })}
+            />
+          )}
         </div>
-      </div>
+      </DndContext>
 
+      {viewer === "guardian" && model !== null ? (
+        <FactsStrip facts={model.facts} />
+      ) : null}
+    </>
+  );
+
+  /** Sheets and the setup popup: fixed-position, so they sit outside the blurred body. */
+  const overlays = (
+    <>
       {opened === null ? null : (
         <BlockSheet
           block={opened.block}
@@ -691,21 +664,156 @@ export function CalendarView({
         />
       )}
 
-      {/* §17.5 — the popup renders OVER the plan (blurred above), never instead of it: a
+      {/* §17.5 — the popup renders OVER the plan (blurred), never instead of it: a
           student deciding whether to set up should be able to see what they are setting
           up. It is dismissible and nothing behind it is disabled. */}
       {setup === undefined ? null : (
         <SetupPopup
           defaults={setup.defaults}
           today={today}
-          entitled={setup.entitled}
           onSubmit={setup.onSubmit}
           onDismiss={setup.onDismiss}
-          onUpgrade={setup.onUpgrade}
           pending={setup.pending}
           error={setup.error}
         />
       )}
+    </>
+  );
+
+  if (viewer === "student") {
+    // UI-55: the App shell is the chrome. The header is a sibling of the `.lyceon-calendar`
+    // grid root, not inside it, because that stylesheet resets every `button` inside its
+    // root, which would strip the shared `Button`'s student variants.
+    return (
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        data-testid="calendar-student"
+      >
+        <div
+          className={`flex min-h-0 flex-1 flex-col${
+            setup === undefined
+              ? ""
+              : " pointer-events-none select-none blur-[3px]"
+          }`}
+          data-testid="calendar-student-body"
+        >
+          <StudentCalendarHeader
+            view={view}
+            title={numericRangeLabel(view, cursor)}
+            onView={(next) => move(next, cursor)}
+            onToday={() => move("week", startOfWeek(today))}
+            onStep={step}
+            {...(schedule === undefined
+              ? {}
+              : { onEditSchedule: () => setSettingsOpen(true) })}
+            {...(mutations === undefined
+              ? {}
+              : {
+                  regenerate: {
+                    onClick: mutations.regeneratePlan,
+                    pending: mutations.refreshPending,
+                    done: mutations.regenerated,
+                  },
+                })}
+          />
+          <div className="lyceon-calendar lyc-cal flex min-h-0 flex-1 flex-col">
+            {gridArea}
+          </div>
+        </div>
+        <div className="lyceon-calendar lyc-cal contents">{overlays}</div>
+        <AppShellPanel>
+          <CalendarPanelColumn>
+            <MiniMonth
+              month={miniMonth}
+              onMonthStep={(delta) =>
+                setMiniMonth(shiftMonths(miniMonth, delta))
+              }
+              today={today}
+              weekStart={view === "week" ? startOfWeek(cursor) : null}
+              testDate={targetExamDate}
+              onPickDate={(date) => move("week", startOfWeek(date))}
+            />
+            <GoalCard
+              today={today}
+              testDate={targetExamDate}
+              targetScore={targetScore}
+              projection={projection ?? []}
+            />
+            {schedule === undefined ? null : (
+              <ScheduleSummary
+                // Derived from the profile and the served estimates, never stored — the
+                // same function the sheet's live readout uses, so the panel and the sheet
+                // cannot describe the same schedule differently.
+                summary={scheduleSummary(schedule.profile, schedule.estimates, {
+                  targetExamDate: schedule.profile.target_exam_date,
+                  today,
+                  // The one field the readout reads, named rather than spread: the
+                  // prefill beside it on `examPlanning` is for the frequency control,
+                  // not for this sentence.
+                  finalExamLeadDays: schedule.examPlanning.final_exam_lead_days,
+                })}
+              />
+            )}
+            <ShowFilters
+              filters={filters}
+              onToggle={(tone, next) =>
+                setFilters((prev) => ({ ...prev, [tone]: next }))
+              }
+            />
+          </CalendarPanelColumn>
+        </AppShellPanel>
+      </div>
+    );
+  }
+
+  // The guardian surface: its own rail and three-zone header inside `GuardianShell`,
+  // unchanged by UI-55.
+  return (
+    <div className="lyceon-calendar">
+      <div className="app">
+        <LeftRail
+          name={viewerName}
+          subtitle={
+            readOnly
+              ? "Viewing only"
+              : targetExamDate === null
+                ? "No test date set"
+                : `SAT · ${shortDate(targetExamDate)}`
+          }
+          miniMonth={miniMonth}
+          cursor={cursor}
+          today={today}
+          hasWork={(date) => (dayFor(date)?.blocks.length ?? 0) > 0}
+          filters={filters}
+          onToggleFilter={(tone, next) =>
+            setFilters((prev) => ({ ...prev, [tone]: next }))
+          }
+          onPickDate={(date) => move("week", startOfWeek(date))}
+          onMonthStep={(delta) => setMiniMonth(shiftMonths(miniMonth, delta))}
+          footer={
+            readOnly ? "Read-only view" : "Your plan updates itself each week"
+          }
+        />
+
+        <div className="main">
+          <TopBar
+            backHref={backHref}
+            hideBackLink={hideBackLink}
+            viewer={viewer}
+            targetScore={targetScore}
+            projection={projection}
+            rangeLabelText={rangeLabel(view, cursor)}
+            view={view}
+            onView={(next) => move(next, cursor)}
+            onStep={step}
+            onToday={() => move("week", startOfWeek(today))}
+            streak={streak}
+            daysToTest={daysToTest}
+          />
+          {gridArea}
+        </div>
+      </div>
+      {overlays}
     </div>
   );
 }

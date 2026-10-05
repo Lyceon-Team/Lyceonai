@@ -67,6 +67,7 @@ import {
   engineAnswerResponseSchema,
   engineNextItemResponseSchema,
   engineSessionStateResponseSchema,
+  practiceSessionStateResponseSchema,
 } from "../../packages/shared/src/practice-response-schema";
 import {
   reviewOpenSessionsResponseSchema,
@@ -82,7 +83,6 @@ import {
   type ConversationDetailMessage,
 } from "../../packages/shared/src/tutor-lifecycle-schema";
 import { examReportMetaSchema } from "../../packages/shared/src/exam-report-schema";
-import { streakSummarySchema } from "../../packages/shared/src/calendar/api";
 import { masterySkillsResponseSchema } from "../../packages/shared/src/mastery-levels";
 import type { EstimateResponse } from "../../client/src/lib/projectionApi";
 import {
@@ -188,6 +188,15 @@ function sessionState(sessionId: string, mode: string): unknown {
     lastServedUnansweredItem: null,
     clientInstanceId: null,
     readOnly: false,
+    criteria: { sections: ["M"], domains: [], skills: [], difficulties: [] },
+  });
+}
+
+/** Practice's /state adds OQ-35's `shortened` (UI-53); the runner page parses it strictly typed. */
+function practiceSessionState(sessionId: string): unknown {
+  return practiceSessionStateResponseSchema.parse({
+    ...(sessionState(sessionId, "balanced") as Record<string, unknown>),
+    shortened: false,
   });
 }
 
@@ -281,12 +290,6 @@ const conversationList = listConversationsResponseSchema.parse({
     },
   ],
   pagination: { has_more: false, next_cursor: null },
-});
-
-const streak = streakSummarySchema.parse({
-  current: 3,
-  longest: 5,
-  history_complete: true,
 });
 
 const masterySkills = masterySkillsResponseSchema.parse({
@@ -554,7 +557,6 @@ const studentReads: ApiHandler = ({ path: p }) => {
   if (p === "/api/progress/kpis") return { body: kpis };
   if (p === "/api/progress/projection") return { body: projection };
   if (p === "/api/calendar") return { body: HARNESS.studentCalendar };
-  if (p === "/api/me/streak") return { body: streak };
   if (p === `/api/students/${STUDENT_ID}/mastery/domains`)
     return { body: HARNESS.masteryDomains };
   if (p === `/api/students/${STUDENT_ID}/mastery/skills`)
@@ -641,7 +643,7 @@ test("practice-desmos", async ({ page }) => {
     ({ method, path: p }) => {
       const base = `/api/practice/sessions/${PRACTICE_SESSION}`;
       if (p === `${base}/state`)
-        return { body: sessionState(PRACTICE_SESSION, "balanced") };
+        return { body: practiceSessionState(PRACTICE_SESSION) };
       if (p === `${base}/next`)
         return { body: nextItem(PRACTICE_SESSION, PRACTICE_ITEM) };
       if (method === "POST" && p === `${base}/calculator-state`) {

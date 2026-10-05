@@ -43,10 +43,8 @@ function open(over: Partial<React.ComponentProps<typeof SetupPopup>> = {}): {
     <SetupPopup
       defaults={DEFAULTS}
       today={TODAY}
-      entitled
       onSubmit={(a) => submitted.push(a)}
       onDismiss={onDismiss}
-      onUpgrade={vi.fn()}
       pending={false}
       error={null}
       {...over}
@@ -270,35 +268,21 @@ describe("dismissing", () => {
   });
 });
 
-describe("a free student — Step 3's third panel", () => {
-  it("saves first, THEN shows what they would get", () => {
-    const { submitted } = open({ entitled: false });
-
-    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
-    fireEvent.click(screen.getByTestId("calendar-setup-done"));
-
-    // The order is the claim: the write already happened, so the panel's "saved either
-    // way" is a fact rather than a promise.
-    expect(submitted).toHaveLength(1);
-    expect(screen.getByTestId("calendar-setup-upgrade")).toBeTruthy();
-  });
-
-  it("labels the last press for what it does", () => {
-    open({ entitled: false });
-    fireEvent.click(screen.getByTestId("calendar-setup-continue"));
-    expect(screen.getByTestId("calendar-setup-done").textContent).toBe(
-      "See what I'd get",
-    );
-  });
-
-  it("an entitled student builds the plan and never sees the panel", () => {
-    open({ entitled: true });
+/*
+ * UI-55 (2026-10-03): the free student's third panel is gone. DESIGN.md §4 gives the free plan
+ * an inline setup form beside the plan upsell card (`FreeCalendar.tsx`, tested in
+ * `pages/calendar.ui55.test.tsx`), so this popup is opened only for a student the server
+ * serves the plan to, and its last press builds the plan.
+ */
+describe("the last press builds the plan", () => {
+  it("labels the last press for what it does, and saves on it", () => {
+    const { submitted } = open();
     fireEvent.click(screen.getByTestId("calendar-setup-continue"));
     expect(screen.getByTestId("calendar-setup-done").textContent).toBe(
       "Build my plan",
     );
     fireEvent.click(screen.getByTestId("calendar-setup-done"));
-    expect(screen.queryByTestId("calendar-setup-upgrade")).toBeNull();
+    expect(submitted).toHaveLength(1);
   });
 });
 

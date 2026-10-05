@@ -103,13 +103,18 @@ export function maskOfStudyDows(dows: readonly number[]): number {
 
 // ── Read shape ──────────────────────────────────────────────────────────────
 
-/** `target_score integer CHECK (BETWEEN 400 AND 1600 AND target_score % 10 = 0)`. */
+/**
+ * `target_score integer CHECK (BETWEEN 400 AND 1600 AND target_score % 10 = 0)`. The bounds are
+ * exported so a form's `min`/`max`/`step` (Settings → Profile, UI-58) reads the same numbers the
+ * schema enforces.
+ */
+export const TARGET_SCORE_BOUNDS = { min: 400, max: 1600, step: 10 } as const;
 export const targetScoreSchema = z
   .number()
   .int()
-  .min(400)
-  .max(1600)
-  .refine((value) => value % 10 === 0, {
+  .min(TARGET_SCORE_BOUNDS.min)
+  .max(TARGET_SCORE_BOUNDS.max)
+  .refine((value) => value % TARGET_SCORE_BOUNDS.step === 0, {
     message: "target score moves in steps of 10",
   });
 

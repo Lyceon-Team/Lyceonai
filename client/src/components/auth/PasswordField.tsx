@@ -6,6 +6,7 @@ import {
   PASSWORD_POLICY,
   evaluatePassword,
 } from "@lyceon/shared/password-policy";
+import { LYC_FOCUS } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,13 @@ import { cn } from "@/lib/utils";
  * rather than silently truncated. Edge case: sign-in passes `showRequirements={false}` — accounts
  * created under the earlier 6-character minimum must still sign in; the policy gates setting a
  * password, never using one.
+ *
+ * @spec [student-UI register UI-59; DESIGN.md §1 (tokens only, 3px focus ring, nothing below
+ *   14px)] | @implemented [2026-10-03]
+ * UI-59: every surface that renders this field is a Bare card page (sign-in, sign-up, update
+ * password), so it draws with the student tokens only: the `lyc` Input and Label, a 40px show/hide
+ * button with the --focus ring, and the rule list at 15px (a met rule in --ink with an --ok tick,
+ * an unmet one in --muted). Behaviour, test ids and announcements are unchanged.
  */
 export type PasswordFieldProps = {
   id: string;
@@ -64,26 +72,31 @@ export function PasswordField({
   const showInvalid = showRequirements && value.length > 0 && !evaluation.valid;
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       {labelAccessory ? (
-        <div className="flex items-center justify-between">
-          <Label htmlFor={id}>{label}</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label variant="lyc" htmlFor={id}>
+            {label}
+          </Label>
           {labelAccessory}
         </div>
       ) : (
-        <Label htmlFor={id}>{label}</Label>
+        <Label variant="lyc" htmlFor={id}>
+          {label}
+        </Label>
       )}
       <div className="relative">
         {leadingIcon ? (
           <span
             aria-hidden="true"
-            className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"
+            className="pointer-events-none absolute left-3.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center text-lyc-muted"
           >
             {leadingIcon}
           </span>
         ) : null}
         <Input
           id={id}
+          variant="lyc"
           data-testid={testId}
           type={visible ? "text" : "password"}
           autoComplete={autoComplete}
@@ -92,7 +105,7 @@ export function PasswordField({
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={cn(leadingIcon ? "pl-10" : undefined, "pr-11")}
+          className={cn(leadingIcon ? "pl-10" : undefined, "pr-12")}
           required={required}
           disabled={disabled}
           aria-invalid={showInvalid ? true : undefined}
@@ -106,7 +119,7 @@ export function PasswordField({
           aria-pressed={visible}
           aria-controls={id}
           disabled={disabled}
-          className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warm-gray-800 disabled:opacity-50"
+          className={`${LYC_FOCUS} absolute right-1 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-md text-lyc-muted hover:bg-lyc-hover hover:text-lyc-ink-strong disabled:opacity-50`}
         >
           {visible ? (
             <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -124,7 +137,7 @@ export function PasswordField({
           data-testid={
             testId ? `${testId}-requirements` : "password-requirements"
           }
-          className="space-y-1 text-sm"
+          className="m-0 flex list-none flex-col gap-1 p-0 text-lyc-meta-lg"
         >
           {evaluation.rules
             .filter((rule) => rule.display === "always" || !rule.met)
@@ -135,11 +148,14 @@ export function PasswordField({
                 data-met={rule.met ? "true" : "false"}
                 className={cn(
                   "flex items-center gap-2",
-                  rule.met ? "text-emerald-700" : "text-muted-foreground",
+                  rule.met ? "text-lyc-ink" : "text-lyc-muted",
                 )}
               >
                 {rule.met ? (
-                  <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <Check
+                    className="h-4 w-4 shrink-0 text-lyc-ok"
+                    aria-hidden="true"
+                  />
                 ) : (
                   <X className="h-4 w-4 shrink-0" aria-hidden="true" />
                 )}

@@ -514,6 +514,18 @@ routes:
     requires_hmac: false
     prerender: false
     indexable: false
+  # UI-58 (cleanup): the student Help page — static FAQ, Contact support is mailto:
+  - path_pattern: /help
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
   - path_pattern: /guardian
     surface_class: authenticated_guardian
     clarity_allowed: false

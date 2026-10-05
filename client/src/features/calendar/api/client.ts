@@ -21,8 +21,8 @@ import {
   doItNowResponseSchema,
   guardianCalendarResponseSchema,
   launchResponseSchema,
+  profileReadResponseSchema,
   profileUpsertResponseSchema,
-  streakSummarySchema,
   versionResponseSchema,
   type AcknowledgeBody,
   type CalendarResponse,
@@ -34,8 +34,8 @@ import {
   type LaunchResponse,
   type MoveBlockBody,
   type PlanMember,
+  type ProfileReadResponse,
   type ProfileUpsertResponse,
-  type StreakSummary,
   type StudyProfileUpsert,
   type VersionResponse,
 } from "@lyceon/shared/calendar";
@@ -43,7 +43,6 @@ import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { apiRequest } from "@/lib/queryClient";
 
 export const CALENDAR_ROOT = "/api/calendar" as const;
-export const STREAK_PATH = "/api/me/streak" as const;
 
 /**
  * Parses a response body against a shared schema. A failure THROWS, and the thrown message
@@ -176,10 +175,21 @@ export async function fetchCalendar(
   return parsed(response, calendarResponseSchema, "GET /api/calendar");
 }
 
-/** §15 GET /api/me/streak — INV-08-20, served without a `calendar_access` check. */
-export async function fetchStreak(): Promise<StreakSummary> {
-  const response = await apiRequest(STREAK_PATH);
-  return parsed(response, streakSummarySchema, "GET /api/me/streak");
+/**
+ * GET /api/calendar/profile — the study profile alone (test date, target score, schedule),
+ * served WITHOUT `calendar_access` (owner ruling OQ-25, 2026-10-02; SCL-130). `profile: null`
+ * is the pre-setup state. It never carries plan data: the shared response schema is
+ * `.strict()`, so a plan field arriving here is a parse failure, not a quiet extra.
+ *
+ * @spec [Doc 05F §15, §16; student-UI register OQ-25, UI-55] | @implemented [2026-10-03]
+ */
+export async function fetchStudyProfile(): Promise<ProfileReadResponse> {
+  const response = await apiRequest(`${CALENDAR_ROOT}/profile`);
+  return parsed(
+    response,
+    profileReadResponseSchema,
+    "GET /api/calendar/profile",
+  );
 }
 
 /**
