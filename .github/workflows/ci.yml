@@ -141,6 +141,14 @@ jobs:
       - name: Shared package — lint (blocking)
         run: pnpm run lint:shared
 
+      # Codex audit of #1073 + #1108 + #1113, finding 1 (HIGH), accepted by Karl 2026-10-05:
+      # no console.* in shipped client code. `pnpm lint` already sets no-console to error but
+      # runs in the advisory ci-known-gaps job; this step is the blocking one. One rule only,
+      # inline disable comments ignored (eslint.no-console.config.mjs explains its two SEO-owned
+      # exclusions, register F-74).
+      - name: Client — no console (blocking)
+        run: pnpm run lint:no-console
+
       # build:vercel is a superset of build: it runs `build` and then emits
       # dist/vercel-api.cjs, the CJS bundle Vercel actually loads. CI used to
       # build only dist/index.js, so the artifact production runs was never
