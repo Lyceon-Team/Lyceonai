@@ -18,6 +18,8 @@ import { Router, Request, Response } from "express";
 import { logger } from "../logger.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
+import { recordSignupSource } from "../lib/analytics/signup-source.js";
+import { emitEvent } from "../lib/analytics/emit-event.js";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import {
   ensureProfileForAuthUser,
@@ -364,6 +366,16 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       }
 
       const profileNeedsCompletion = !profile.profile_completed_at;
+
+      // SCL-201 IS 6: a Google signup carries the first-touch channel through the callback URL
+      // (`signupSource`); a new account (not yet onboarded) records it once. Doc 07A §6.2
+      // user_signed_in fires for an onboarded account — a new one is still in signup, and its
+      // first event is user_signed_up at onboarding completion.
+      if (profileNeedsCompletion) {
+        await recordSignupSource(user.id, req.query.signupSource, req.requestId);
+      } else {
+        await emitEvent(user.id, "user_signed_in", {});
+      }
       // G2-04: an under-13 student with no ACTIVE guardian link lands on the linking page, read
       // live from `guardian_links` (no stored flag). The server gate refuses every learning
       // request anyway; this only saves the student a detour through a refused page.

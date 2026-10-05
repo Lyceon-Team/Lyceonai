@@ -1,0 +1,208 @@
+// @vitest-environment jsdom
+/**
+ * @spec [Doc 10 §9.11; legal-drafts README banner requirements; SCL-201 IS 1; owner Step 0
+ *       decision 1, 2026-10-05 (nothing loads or sends before Accept)] | @implemented [2026-10-05]
+ *
+ * plain English: the REAL banner and the REAL consent store; only the PostHog loader and the auth
+ * hook are stubbed, and `fetch` is recorded. Each case asserts what the visitor sees AND whether
+ * PostHog was started — the decision this component exists to make.
+ */
+import React from "react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const loader = vi.hoisted(() => ({
+  start: vi.fn(async () => undefined),
+  stop: vi.fn(),
+  running: false,
+}));
+vi.mock("@/lib/analytics/posthog-client", () => ({
+  startAnalytics: loader.start,
+  stopAnalytics: loader.stop,
+  analyticsRunning: () => loader.running,
+}));
+
+const auth = vi.hoisted(() => ({
+  user: null as null | { id: string; is_under_13: boolean | null },
+  authLoading: false,
+}));
+vi.mock("@/contexts/SupabaseAuthContext", () => ({
+  useSupabaseAuth: () => auth,
+}));
+
+const posts: { url: string; body: unknown }[] = [];
+
+function clearCookies(): void {
+  for (const part of document.cookie.split(";")) {
+    const name = part.split("=")[0]?.trim();
+    if (name) document.cookie = `${name}=; Max-Age=0; Path=/`;
+  }
+}
+
+function setGpc(value: boolean | undefined): void {
+  Object.defineProperty(window.navigator, "globalPrivacyControl", {
+    value,
+    configurable: true,
+  });
+}
+
+async function mountFresh(): Promise<void> {
+  vi.resetModules();
+  const { CookieConsentRoot } = await import("./CookieConsentRoot");
+  await act(async () => {
+    render(<CookieConsentRoot />);
+  });
+}
+
+beforeEach(() => {
+  clearCookies();
+  window.sessionStorage.clear();
+  setGpc(undefined);
+  posts.length = 0;
+  loader.start.mockClear();
+  loader.stop.mockClear();
+  loader.running = false;
+  auth.user = null;
+  auth.authLoading = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      posts.push({ url, body: JSON.parse(String(init?.body ?? "null")) });
+      return new Response(null, { status: 204 });
+    }),
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("cookie banner", () => {
+  it("first visit: shows the banner with both choices equally styled, and starts nothing", async () => {
+    await mountFresh();
+    const reject = screen.getByTestId("cookie-reject");
+    const accept = screen.getByTestId("cookie-accept");
+    expect(reject.textContent).toBe("Reject analytics");
+    expect(accept.textContent).toBe("Accept analytics");
+    expect(reject.className).toBe(accept.className);
+    expect(loader.start).not.toHaveBeenCalled();
+    expect(posts).toEqual([]);
+  });
+
+  it("Reject: remembers the refusal, logs it, starts nothing, and the banner is gone", async () => {
+    await mountFresh();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cookie-reject"));
+    });
+    expect(screen.queryByTestId("cookie-banner")).toBeNull();
+    expect(loader.start).not.toHaveBeenCalled();
+    expect(document.cookie).toMatch(/lyceon_consent=1\.[0-9a-f-]{36}\.r\.\d+/);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      url: "/api/public/cookie-consent",
+      body: { analytics: false, banner_version: 1, source: "banner" },
+    });
+    // A later visit: still refused, no banner, still nothing started.
+    cleanup();
+    await mountFresh();
+    expect(screen.queryByTestId("cookie-banner")).toBeNull();
+    expect(loader.start).not.toHaveBeenCalled();
+  });
+
+  it("Accept: starts PostHog and logs the acceptance", async () => {
+    await mountFresh();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cookie-accept"));
+    });
+    expect(loader.start).toHaveBeenCalledTimes(1);
+    expect(posts[0]).toMatchObject({
+      body: { analytics: true, source: "banner" },
+    });
+  });
+
+  it("GPC: no banner, the GPC notice instead, nothing started, nothing logged", async () => {
+    setGpc(true);
+    await mountFresh();
+    expect(screen.queryByTestId("cookie-banner")).toBeNull();
+    expect(screen.getByTestId("gpc-notice").textContent).toMatch(
+      /Your browser has asked us not to use analytics\./,
+    );
+    expect(loader.start).not.toHaveBeenCalled();
+    expect(posts).toEqual([]);
+  });
+
+  it("a choice older than 6 months no longer counts: the banner asks again", async () => {
+    const old = Math.floor(Date.now() / 1000) - 183 * 24 * 60 * 60;
+    document.cookie = `lyceon_consent=1.0d3c2b1a-9f8e-4d7c-8b6a-5f4e3d2c1b0a.a.${old}; Path=/`;
+    await mountFresh();
+    expect(screen.getByTestId("cookie-banner")).toBeTruthy();
+    expect(loader.start).not.toHaveBeenCalled();
+  });
+});
+
+describe("under-13 exclusion", () => {
+  const accepted = (): void => {
+    const now = Math.floor(Date.now() / 1000);
+    document.cookie = `lyceon_consent=1.0d3c2b1a-9f8e-4d7c-8b6a-5f4e3d2c1b0a.a.${now}; Path=/`;
+  };
+
+  it("an adult account with consent: started (presence before absence)", async () => {
+    accepted();
+    auth.user = { id: "u", is_under_13: false };
+    await mountFresh();
+    expect(loader.start).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["under 13", true],
+    ["age unknown", null],
+  ])(
+    "an account %s: never started, no banner, even with consent",
+    async (_l, isUnder13) => {
+      accepted();
+      auth.user = { id: "u", is_under_13: isUnder13 };
+      await mountFresh();
+      expect(loader.start).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("cookie-banner")).toBeNull();
+    },
+  );
+
+  it("PostHog already running when an under-13 account signs in: stopped", async () => {
+    accepted();
+    loader.running = true;
+    auth.user = { id: "u", is_under_13: true };
+    await mountFresh();
+    expect(loader.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("an excluded account cannot record a choice: every settings control is disabled", async () => {
+    auth.user = { id: "u", is_under_13: true };
+    await mountFresh();
+    const { openCookieSettings } = await import("@/lib/analytics/consent");
+    await act(async () => {
+      openCookieSettings();
+    });
+    // Presence first: the dialog is open.
+    expect(screen.getByTestId("cookie-settings")).toBeTruthy();
+    for (const name of ["Reject all", "Save my choices", "Accept all"]) {
+      expect(
+        (screen.getByRole("button", { name }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+    }
+    expect(posts).toEqual([]);
+  });
+
+  it("while the session is still resolving: nothing starts", async () => {
+    accepted();
+    auth.authLoading = true;
+    await mountFresh();
+    expect(loader.start).not.toHaveBeenCalled();
+  });
+});

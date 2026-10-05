@@ -30,6 +30,8 @@ import { isAdminRoleRequest } from "../lib/auth-role.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
+import { recordSignupSource } from "../lib/analytics/signup-source.js";
+import { emitEvent } from "../lib/analytics/emit-event.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 
 const router = Router();
@@ -65,6 +67,9 @@ const signupSchema = z.object({
       .optional(),
   }),
   role: z.unknown().optional(),
+  // SCL-201 IS 6: the first-touch channel the browser derived in memory. Parsed by
+  // recordSignupSource, never here — a bad value is dropped, it never refuses a signup.
+  signupSource: z.unknown().optional(),
 });
 
 /**
@@ -204,6 +209,8 @@ router.post(
       // profiles.update was a phantom write that could 404/race against the trigger. We only need the
       // admin client for the durable consent capture below.
       const admin = getSupabaseAdmin();
+
+      await recordSignupSource(authData.user.id, validation.data.signupSource, req.requestId);
 
       // AS-1: durable + non-throwing. A SINGLE-store failure keeps the signup (outbox absorbs it).
       // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed — consent is
@@ -385,6 +392,11 @@ router.post(
         requestId: req.requestId,
       });
 
+      // Doc 07A §6.2 user_signed_in, after credential verification. The wrapper refuses an
+      // under-13 or age-unknown account and any account that has not completed onboarding
+      // (its first event is user_signed_up, at completion).
+      await emitEvent(data.user.id, "user_signed_in", {});
+
       res.json({
         success: true,
         message: "Signed in successfully",
@@ -421,6 +433,12 @@ router.post(
       logger.info("AUTH", "signout_success", "User signed out", {
         userId: req.user?.id || null,
       });
+
+      // Doc 07A §6.2 user_signed_out. Only an explicit sign-out reaches this route; expiry and
+      // security logouts are never observed here, so `explicit` is the only value emitted.
+      if (req.user?.id) {
+        await emitEvent(req.user.id, "user_signed_out", { signout_trigger: "explicit" });
+      }
 
       res.json({
         success: true,

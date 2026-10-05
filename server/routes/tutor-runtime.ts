@@ -35,6 +35,7 @@
 
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
+import { emitEvent } from "../lib/analytics/emit-event";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { EntitlementService } from "../services/entitlement-service";
@@ -850,6 +851,12 @@ router.post(
       }
 
       const row = created as TutorConversationRow;
+      // Doc 07A §6.7 tutor_session_started — a NEW conversation only (reused and replayed
+      // conversations return earlier with 200). No prompt content: id and entry mode.
+      await emitEvent(studentId, "tutor_session_started", {
+        tutor_session_id: row.id,
+        tutor_entry_mode: row.entry_mode,
+      });
       res.status(201).json({
         data: {
           conversation_id: row.id,
@@ -2550,10 +2557,14 @@ router.post(
       }
 
       const endedAt = new Date().toISOString();
-      const { error } = await supabaseServer
+      // `status = active` makes the transition single-winner: of two concurrent ends, only one
+      // updates a row, and only that one emits tutor_session_ended. The response is unchanged.
+      const { data: endedRows, error } = await supabaseServer
         .from("tutor_conversations")
         .update({ status: "ended", ended_at: endedAt, closed_at: endedAt })
-        .eq("id", conversation.id);
+        .eq("id", conversation.id)
+        .eq("status", "active")
+        .select("id");
 
       if (error) {
         logger.error(
@@ -2564,6 +2575,30 @@ router.post(
         );
         sendTutorError(res, "canonical_write_failed");
         return;
+      }
+
+      // Doc 07A §6.7 tutor_session_ended: duration and turn count only (a turn is one student
+      // message). No content, and no helped/failed measure (KPI-TUT-02 carve-out).
+      if (Array.isArray(endedRows) && endedRows.length === 1) {
+        const { count: turnCount, error: countError } = await supabaseServer
+          .from("tutor_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("conversation_id", conversation.id)
+          .eq("role", "student");
+        if (countError || turnCount === null) {
+          logger.warn("TUTOR_RUNTIME", "turn_count_failed", "tutor_session_ended not emitted", {
+            code: countError?.code ?? "no_count",
+          });
+        } else {
+          await emitEvent(studentId, "tutor_session_ended", {
+            tutor_session_id: conversation.id,
+            session_duration_ms: Math.max(
+              0,
+              Date.parse(endedAt) - Date.parse(conversation.created_at),
+            ),
+            turn_count: turnCount,
+          });
+        }
       }
 
       // Async memory compaction (Doc 03A V3 §9.1, Doc 03C V3 §8.3).
