@@ -14,7 +14,9 @@ describe("displayFormName", () => {
     ["Practice Test 1", "Full-Length Test 1"],
     ["Practice Test 2", "Full-Length Test 2"],
     ["Practice Test 3", "Full-Length Test 3"],
+    // Production's three rows, per the owner's report of 2026-10-05 (OQ-64 (b)).
     ["Full-Length Practice Test 1", "Full-Length Test 1"],
+    ["Full-Length Practice Test 2", "Full-Length Test 2"],
     ["Full-Length Practice Test 3", "Full-Length Test 3"],
     // N >= 10 keeps every digit.
     ["Practice Test 10", "Full-Length Test 10"],

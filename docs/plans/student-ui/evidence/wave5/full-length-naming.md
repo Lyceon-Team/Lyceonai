@@ -560,7 +560,9 @@ case-sensitively over the whole string:
 | `scripts/exam-forms/form_001_003.sql:699-701` (the E5 seed, owner-run; the three real forms) | `Full-Length Practice Test 1/2/3` |
 | `scripts/ci/exam-shell-server-gates.sql:35`, `scripts/ci/calendar-full-length-gates.sql:85,87`, client fixtures | `Practice Test 1/2/3` |
 
-Production's live values were not read from here (CLAUDE.md: owner-run). Both shapes map to
+Production holds `Full-Length Practice Test 1`, `2` and `3`, one row each, per the owner's report
+of 2026-10-05 (OQ-64 (b); not read from this session, CLAUDE.md: owner-run). The unit test pins all
+three (`packages/shared/src/__tests__/exam-form-display.test.ts`). Both shapes map to
 "Full-Length Test N"; anything else (another name, other casing, padding whitespace, a suffix)
 passes through unchanged.
 

@@ -11,7 +11,8 @@
  *
  * expected outcome: "Practice Test 2" (what the CI gates and fixtures store) and
  * "Full-Length Practice Test 2" (what the E5 seed, scripts/exam-forms/form_001_003.sql:699-701,
- * stores) both read "Full-Length Test 2".
+ * stores, and what production holds: "Full-Length Practice Test 1/2/3", one row each, per the
+ * owner's report of 2026-10-05, OQ-64 (b)) both read "Full-Length Test 2".
  *
  * trade-offs: presentation only. API payloads, DB rows, keys, sorting and identifiers keep the
  * stored value; a test or lookup keyed on the name keeps working. Guardian surfaces do not call
