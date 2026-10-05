@@ -87,3 +87,40 @@ describe("question runner: display letters by position", () => {
     ]);
   });
 });
+
+/**
+ * F-69 (owner ruling 2026-10-05): the `sr-only` letter is absolutely positioned, so its choice
+ * button must be its containing block. Otherwise it is placed against an ancestor outside the
+ * runner's scroll area and stretches the page below the footer (a blank band on a phone,
+ * measured in the browser by the student harness, evidence/wave5/F-69.md). jsdom has no layout,
+ * so this pins the class and the nesting.
+ */
+describe("question runner: the screen-reader letter stays inside its choice (F-69)", () => {
+  it("every choice button is positioned and holds its own sr-only letter", () => {
+    const { container } = render(
+      <QuestionRenderer
+        question={{
+          stem: "If 2x = 24, what is x?",
+          options: [
+            { id: "opt_a1", text: "6" },
+            { id: "opt_c3", text: "12" },
+            { id: "opt_b2", text: "9" },
+            { id: "opt_d4", text: "15" },
+          ],
+        }}
+        selectedAnswer={null}
+        onSelectAnswer={() => undefined}
+        showResult={false}
+      />,
+    );
+    const buttons = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="runner-choice"]'),
+    );
+    expect(buttons).toHaveLength(4);
+    for (const [i, button] of buttons.entries()) {
+      expect(button.className.split(/\s+/)).toContain("relative");
+      const srOnly = button.querySelector(".sr-only");
+      expect(srOnly?.textContent).toBe(`${"ABCD"[i]}.`);
+    }
+  });
+});

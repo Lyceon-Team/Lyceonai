@@ -32,7 +32,26 @@ export type PickStep = { pick: "correct" | "incorrect" | "first" };
  */
 export type FillStep = { fill: Record<Viewport, string | null>; value: string };
 
-export type Step = ClickStep | PickStep | FillStep;
+/**
+ * F-69: give a field keyboard focus (`element.focus()`), addressed per viewport like a click,
+ * with no typing: the review runner's LISA composer focused, as a student's tap leaves it.
+ * `null` for a viewport skips it there.
+ */
+export type FocusStep = { focus: Record<Viewport, string | null> };
+
+export type Step = ClickStep | PickStep | FillStep | FocusStep;
+
+/**
+ * F-69: one more size to shoot a shot at, beyond desktop and phone (the timed exam module at
+ * tablet width). Its steps and selectors are the `selectors` viewport's. The PNG is
+ * `<shot>--<name>--<theme>--built.png`.
+ */
+export type ExtraViewport = {
+  name: string;
+  width: number;
+  height: number;
+  selectors: Viewport;
+};
 
 /**
  * UI-53: a fresh runner session for each capture, started through the REAL create route before
@@ -90,6 +109,17 @@ export type Shot = {
   freshCalendarProfile?: true;
   /** UI-53: text the page must show after `steps` (e.g. "Question 2 of 10"); the capture fails otherwise. */
   expectText?: string;
+  /**
+   * F-69: after `steps`, the document must be no taller than the viewport, the window unscrolled,
+   * and `topBar` wholly inside the viewport: a `100dvh` shell scrolls only inside itself. The
+   * capture fails otherwise, naming the numbers; the index records them for every capture.
+   * `unscrolled`, when given, is a container that must have nothing to scroll (scrollHeight no
+   * more than clientHeight): the shell's `<main>` around a runner, which scrolls inside itself,
+   * so nothing may hang below the runner's footer.
+   */
+  expectFitsViewport?: { topBar: string; unscrolled?: string };
+  /** F-69: sizes to shoot beyond desktop and phone (see ExtraViewport). */
+  extraViewports?: readonly ExtraViewport[];
   /** UI-56: a selector the page must show after `steps` (the capture fails otherwise). */
   expectVisible?: string;
   /** UI-56: a selector the page must NOT show after `steps` (e.g. no bubbles in a new column). */
