@@ -101,6 +101,10 @@ const DigitalSATReadingWriting = lazy(
 );
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
+const SatQuestionOfTheDay = lazy(() => import("@/pages/sat-question-of-the-day"));
+const SatQuestionOfTheDayArchive = lazy(
+  () => import("@/pages/sat-question-of-the-day-day"),
+);
 const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
@@ -146,6 +150,14 @@ export function Router() {
         />
         <Route path="/blog" component={Blog} />
         <Route path="/blog/:slug" component={BlogPost} />
+        <Route
+          path="/sat-question-of-the-day"
+          component={SatQuestionOfTheDay}
+        />
+        <Route
+          path="/sat-question-of-the-day/:date"
+          component={SatQuestionOfTheDayArchive}
+        />
 
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />

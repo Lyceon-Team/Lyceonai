@@ -72,6 +72,9 @@ function headersFor(
  * tests/e2e/page-csp-flows.spec.ts against the built bundle, 2026-10-02):
  *   - script-src theme hash: every page (the theme boot in client/index.html, F-58).
  *   - script-src https://www.desmos.com: practice, review and exam Math runners (calculator.js).
+ *   - script-src and frame-src https://challenges.cloudflare.com: the Question of the Day widget
+ *     on the homepage and /sat-question-of-the-day (Cloudflare Turnstile loads api.js from that
+ *     host and renders its challenge in an iframe from it; SCL-202 item 2, added 2026-10-05).
  *   - style-src 'unsafe-inline': every page (React style attributes, Radix positioning).
  *   - (no font host: Poppins and Inter are self-hosted under client/public/fonts/ since
  *     2026-10-03, so style-src and font-src name no Google domain.)
@@ -87,11 +90,12 @@ const PAGE_CSP = [
   "base-uri 'self'",
   "object-src 'none'",
   "form-action 'self'",
-  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com`,
+  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data:",
   "connect-src 'self'",
+  "frame-src https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
 ].join("; ");
 
@@ -153,14 +157,14 @@ describe("F-59: page security headers (vercel.json)", () => {
     expect(ROUTES.slice(0, headerAt).every((r) => "handle" in r)).toBe(true);
   });
 
-  it("script-src is our origin, the theme script's hash and Desmos; nothing inline or eval'd", () => {
+  it("script-src is our origin, the theme script's hash, Desmos and Turnstile; nothing inline or eval'd", () => {
     const csp = headersFor("/")["Content-Security-Policy-Report-Only"] ?? "";
     const scriptSrc = csp
       .split(";")
       .map((d) => d.trim())
       .find((d) => d.startsWith("script-src "));
     expect(scriptSrc).toBe(
-      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com`,
+      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com https://challenges.cloudflare.com`,
     );
     expect(csp).not.toMatch(/unsafe-eval/);
     expect(scriptSrc).not.toMatch(/unsafe-inline/);

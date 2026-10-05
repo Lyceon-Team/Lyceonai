@@ -52,6 +52,9 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 | College Board trademark notice | every public footer, /trust | answer 6 |
 | Spaced-practice sentence | blog "quick-sat-study-routine" | answer 9: kept with CEPEDA_2006 |
 | 400–1600 total, 200–800 per section | blog "digital-sat-scoring-explained" | answer 4: kept, cites CB_SCORES (text confirmed) |
+| "A free Digital SAT practice question every day … without an account" / "No account needed." | home QOTD slot; /sat-question-of-the-day hub and meta | plan R16 (anyone can answer, no login, ungated), Wave 2, 2026-10-05; wording pending Karl's review (open item 4) |
+| "{n}% of students got this right." | QOTD reveal; archive pages once a day has ≥ 5 attempts (qotd_archive() returns the counts, so the prerendered page and the API agree) | plan R17 ("approved and shown only once a day's question has at least 5 attempts"); hidden below 5 by the server (`qotdStat`, CI-tested) |
+| "Every past question stays here with its answer and explanation" | archive pages; hub | plan R20a (the dated archive is the one public exposure of bank content) |
 
 ## Before and after
 
@@ -211,3 +214,4 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 1. **Billing Terms v2** (`legal/billing-terms/v2/en.md:29`) still reads "Premium unlocks unlimited practice, the LISA tutor, … the complete mastery breakdown … and expanded guardian visibility". This contradicts H25/H26/X6 above. Published legal text changes only as a new version proposed for counsel (Doctrine rule 6; G7), so Wave 1B does not edit it. The guard carries it as one pinned exception that fails once the wording is fixed.
 2. ~~**"score estimate"** (H23/M9)~~: closed. Karl confirmed "diagnostic score estimate" on 2026-10-03; applied to the homepage pricing card and the free-vs-paid FAQ (page and JSON-LD).
 3. **Blog dates and author** (B22): unchanged until the C4 rewrite (answer 5).
+4. **Question of the Day copy (Wave 2, 2026-10-05).** The hub (`client/src/pages/sat-question-of-the-day.tsx`), archive pages, the homepage slot and their metadata (`shared/seo/public-meta.ts`) are new public copy. The SAT facts reuse M5, M10, M15 and M16 with their sources; the three Lyceon-specific lines are in the approved table above under R16/R17/R20a. Nothing describes how a day's question is chosen (doctrine §0.2, pinned by `tests/seo.qotd-pages.test.ts`). Awaiting Karl's review of the exact wording.

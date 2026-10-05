@@ -82,7 +82,12 @@ describe("/api responses are private, no-store by default (F-27)", () => {
   });
 
   it("the listed public route keeps its public header", async () => {
-    expect(cacheableRoutes.map((r) => r.path)).toEqual(["/api/public/pricing"]);
+    expect(cacheableRoutes.map((r) => r.path)).toEqual([
+      "/api/public/pricing",
+      "/api/public/qotd/today",
+      "/api/public/qotd/archive",
+      "/api/public/qotd/:date",
+    ]);
     const res = await request(app).get("/api/public/pricing");
     expect(String(res.headers["cache-control"])).toMatch(
       /^public, max-age=\d+$/,
@@ -106,6 +111,9 @@ describe("/api responses are private, no-store by default (F-27)", () => {
       }
     };
     walk(join(ROOT, "server"));
-    expect(offenders).toEqual(["server/routes/public-pricing-routes.ts"]);
+    expect(offenders.sort()).toEqual([
+      "server/routes/public-pricing-routes.ts",
+      "server/routes/public-qotd-routes.ts",
+    ]);
   });
 });
