@@ -487,14 +487,13 @@ describe("W4-11 — upgrade card instead of a composer for an unpaid student", (
 
     const card = await screen.findByTestId("lisa-upgrade");
     // Approved copy only (OQ-44; OQ-57 (f)): the headline and the prototype body the /chat locked
-    // card shows, and never the unapproved W4-11 draft body.
+    // card shows. (The unapproved W4-11 draft body is deleted, OQ-61 (h).)
     const approved = UPGRADE_MODAL_COPY.tutor_access.plan;
     expect(within(card).getByRole("heading", { level: 2 }).textContent).toBe(
       approved.title,
     );
     expect(approved.title).toBe(LISA_UPGRADE_PITCH.title);
     expect(card.textContent).toContain(approved.body);
-    expect(card.textContent).not.toContain(LISA_UPGRADE_PITCH.body);
     expect(screen.queryByLabelText("Message")).toBeNull();
     expect(screen.queryByTestId("tutor-opener")).toBeNull();
     // It was the server's refusal of THIS item's on-load lookup that drew the
@@ -750,7 +749,6 @@ describe("OQ-54 (a) — the panel on the student tokens (ruling 2026-10-05)", ()
     const approved = UPGRADE_MODAL_COPY.tutor_access.plan;
     expect(card.textContent).toContain(approved.title);
     expect(card.textContent).toContain(approved.body);
-    expect(card.textContent).not.toContain(LISA_UPGRADE_PITCH.body);
     // The card's words are exactly the approved title, body and button, nothing more.
     expect(card.textContent).toBe(
       `${approved.title}${approved.body}${LISA_UPGRADE_PITCH.actionLabel}`,

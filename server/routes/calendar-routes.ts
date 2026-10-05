@@ -1,7 +1,9 @@
 /**
- * The §15 calendar API surface — the student's routes, and the streak. Two carry no
- * entitlement gate at all: the profile write (SCL-130) and the profile read (OQ-25,
- * 2026-10-03); `GET /` serves only its pre-setup state before the gate.
+ * The §15 calendar API surface — the student's routes. Two carry no entitlement gate at
+ * all: the profile write (SCL-130) and the profile read (OQ-25, 2026-10-03); `GET /` serves
+ * only its pre-setup state before the gate. §15's streak route is retired (SCL-212, owner
+ * ruling 2026-10-05, OQ-61 (a)): no client called it; the streak is served inside the
+ * calendar payloads and `kpi/overall` instead.
  *
  * @spec [Doc-05F_V1.0 §15 (API surface), §15.1 (launch), §16 (entitlement),
  *        §18 (observability, failure modes), §12.1–§12.7;
@@ -20,11 +22,6 @@
  * `unknown` in — which is what §7.1 actually requires. Those services return
  * `{ kind: "invalid", details }` and the handler renders it as the same 400 it would have
  * written itself. Doing the reads here instead would put IO and workflow in the handler.
- *
- * TWO ROUTERS, AND WHY. `/api/me/streak` is served to any tier with NO `calendar_access`
- * check (INV-08-20, sheet item 11) — the streak is platform-wide and not calendar-owned. It
- * is a separate router so it cannot be mounted behind the calendar's entitlement middleware
- * by accident: the gate it must not have is absent by construction rather than by review.
  *
  * THE GUARDIAN CALENDAR IS NOT IN THIS FILE. Sheet item 14 routes it to
  * `GET /api/students/:studentId/calendar`, through the existing `resolveSubject` pattern in
@@ -55,7 +52,6 @@ import { sendPaymentRequired } from "../lib/http-errors";
 import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { EntitlementService } from "../services/entitlement-service";
-import { getStudentActivityStreak } from "../services/activity-streak";
 import { loadCalendarConfig } from "../services/calendar/config";
 import {
   acknowledgeVersion,
@@ -83,7 +79,6 @@ import {
 import { liveLaunchDeps } from "../services/calendar/launch-deps";
 
 export const calendarRouter = Router();
-export const streakRouter = Router();
 
 /** §16: the one feature key this surface gates on. Never the entitlement predicate directly. */
 export const CALENDAR_FEATURE_KEY = "calendar_access" satisfies EntitlementFeatureKey;
@@ -1088,29 +1083,5 @@ calendarRouter.post("/acknowledge", async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, requestId: req.requestId });
   } catch (error) {
     return sendServerError(res, "acknowledge", error, req.requestId);
-  }
-});
-
-// ── GET /api/me/streak (§15, INV-08-20) ─────────────────────────────────────
-
-/**
- * NO `calendar_access` CHECK. That is the point of this route existing on its own router:
- * §15 serves the streak to a student of ANY tier, and sheet item 11 makes it platform-wide
- * rather than calendar-owned. A free student sees their streak on the practice page.
- *
- * `plants` in Step 7 includes adding an entitlement check here and watching a test go red.
- */
-streakRouter.get("/streak", async (req: Request, res: Response) => {
-  const caller = callerOf(req, res);
-  if (caller === null) return;
-
-  try {
-    const streak = await getStudentActivityStreak(
-      caller.studentId,
-      req.requestId,
-    );
-    return res.status(200).json({ ...streak, requestId: req.requestId });
-  } catch (error) {
-    return sendServerError(res, "streak_read", error, req.requestId);
   }
 });

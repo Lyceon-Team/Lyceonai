@@ -50,7 +50,7 @@ import {
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
-import { calendarRouter, streakRouter } from "./routes/calendar-routes";
+import { calendarRouter } from "./routes/calendar-routes";
 import { scoreReportRouter } from "./routes/score-report-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
@@ -492,11 +492,9 @@ app.use(
   calendarRouter,
 );
 
-// Doc 05F §15 / INV-08-20 and formula sheet §8 item 11: GET /api/me/streak is served to a
-// student of ANY tier and carries NO calendar_access check. It is mounted on its own path
-// with its own router so that gate is absent by construction and cannot be acquired by
-// someone adding middleware to the calendar mount above.
-app.use("/api/me", requireSupabaseAuth, requireStudentOrAdmin, streakRouter);
+// Doc 05F §15's standalone streak route is retired (SCL-212, owner ruling 2026-10-05, OQ-61 (a)):
+// no client called it. The streak reaches its surfaces inside the calendar payloads and
+// `kpi/overall`, each read through `server/services/activity-streak.ts`.
 
 // SCL-191. The post-exam score report and retake answer. `requireStudentOrAdmin` because every
 // route is the student answering about their OWN sitting and their OWN subscription; a paying

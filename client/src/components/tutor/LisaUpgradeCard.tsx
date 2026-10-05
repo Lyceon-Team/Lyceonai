@@ -13,7 +13,7 @@
  * prototype body, both read from the upgrade modal's one copy table
  * (`UPGRADE_MODAL_COPY.tutor_access.plan`, OQ-44), and "Unlock LISA", which
  * opens the app's one upgrade modal for `tutor_access` (UI-44). No new
- * wording: the unapproved `LISA_UPGRADE_PITCH.body` is not shown (OQ-57 (f)).
+ * wording: the unapproved W4-11 body is not shown (OQ-57 (f)), and is deleted (OQ-61 (h)).
  *
  * Until 2026-10-05 this drew the shared billing card (`PremiumUpgradePrompt`)
  * with LISA's pitch, on the app-wide light tokens; that is what kept the review

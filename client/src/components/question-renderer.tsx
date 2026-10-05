@@ -192,9 +192,13 @@ export default function QuestionRenderer({
                 data-testid="runner-choice"
                 disabled={disabled || showResult}
                 onClick={() => onSelectAnswer(opt.id)}
+                // F-69: `relative` keeps the `sr-only` letter below (absolutely positioned) inside
+                // this button. Without a positioned ancestor it is placed against a containing
+                // block outside the runner's own scroll area, escapes that area's clip and
+                // stretches the page below the runner's footer (a blank band on a phone).
                 className={cn(
                   LYC_FOCUS,
-                  "flex w-full items-center gap-4 rounded-lg px-5 py-4 text-left text-[19px] text-lyc-ink disabled:cursor-default",
+                  "relative flex w-full items-center gap-4 rounded-lg px-5 py-4 text-left text-[19px] text-lyc-ink disabled:cursor-default",
                   choiceTone(state),
                 )}
               >

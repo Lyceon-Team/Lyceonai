@@ -16,7 +16,9 @@
  *     label and Manage billing, which opens the student's own Stripe portal through the one
  *     portal hook (`POST /api/billing/portal`).
  *   - free: anything else (never paid, or ended): the free plan's lines and See plans, which
- *     goes to the plans page through the one role-aware resolver.
+ *     goes to the plans page through the one role-aware resolver. The two lines are the approved
+ *     Help FAQ wording from `@/lib/plan-copy`, the same sentences `/help` and `/upgrade` show
+ *     (owner ruling 2026-10-05, OQ-61 (e)), so the three surfaces cannot drift apart.
  * The server decides access everywhere; this only chooses words and a button.
  *
  * edge cases: a guardian-managed plan reads "guardian" whatever its standing (the guardian
@@ -36,6 +38,7 @@ import {
 } from "@/hooks/useBillingStatusQuery";
 import { toUserFacingMessage } from "@/lib/api-error";
 import { resolveCtaDestination } from "@/lib/billing-cta";
+import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
 import {
   BoxHeading,
   FIELD_HELP,
@@ -133,12 +136,10 @@ function BillingState({ status }: { status: BillingStatus }): JSX.Element {
     <SheetBox data-testid="settings-billing-free">
       <BoxHeading>Free plan</BoxHeading>
       <p className="m-0 text-[17px] leading-relaxed text-lyc-ink">
-        The diagnostic, your projected score, 40 practice questions a day and
-        unlimited review.
+        {PLAN_FREE_INCLUDES}
       </p>
       <p className="m-0 text-[17px] leading-relaxed text-lyc-muted">
-        Paid plans add a study calendar, mastery for every domain and skill,
-        full-length tests and LISA.
+        {PLAN_PAID_ADDS}
       </p>
       <Button
         type="button"

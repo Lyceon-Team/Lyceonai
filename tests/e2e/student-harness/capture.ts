@@ -43,6 +43,7 @@ import { pgConnConfig } from "../../helpers/pg-supabase";
 import { STUDENT_HARNESS_DB } from "./db";
 import { PAGE_GROUPS } from "./groups";
 import type {
+  ExtraViewport,
   FreshSession,
   PageGroup,
   PickStep,
@@ -77,6 +78,24 @@ const VIEWPORTS: Readonly<Record<Viewport, { width: number; height: number }>> =
     mobile: { width: 390, height: 844 },
   };
 const THEMES: readonly Theme[] = ["light", "dark"];
+
+/** A size a shot is captured at: desktop, phone, or a shot's extra size (F-69: tablet). */
+type Size = ExtraViewport;
+
+function standardSize(viewport: Viewport): Size {
+  return { name: viewport, ...VIEWPORTS[viewport], selectors: viewport };
+}
+
+/** F-69: what `expectFitsViewport` measured after the steps (groups/types.ts). */
+type Fit = {
+  scrollHeight: number;
+  innerHeight: number;
+  scrollY: number;
+  barTop: number;
+  barBottom: number;
+  /** The `unscrolled` container's scrollHeight and clientHeight, when the shot names one. */
+  unscrolled: { scrollHeight: number; clientHeight: number } | null;
+};
 const SETTLE_MS = 700;
 
 type BuiltResult = {
@@ -86,6 +105,8 @@ type BuiltResult = {
   themeLock: string | null;
   /** CSS px the page is wider than the viewport (0 when nothing overflows horizontally). */
   overflowX: number;
+  /** F-69: the document and top-bar measurement, for shots with `expectFitsViewport`. */
+  fit: Fit | null;
   skipped?: string;
 };
 
@@ -539,12 +560,13 @@ async function shootBuilt(
   browser: Browser,
   stack: Stack,
   shot: Shot,
-  viewport: Viewport,
+  size: Size,
   theme: Theme,
   outDir: string,
   fontCss: string,
 ): Promise<BuiltResult> {
-  const file = `${shot.id}--${viewport}--${theme}--built.png`;
+  const viewport = size.selectors;
+  const file = `${shot.id}--${size.name}--${theme}--built.png`;
   // A fresh runner session needs one of the seeded students (UI-59's bare-page personas have none).
   const persona = isStudentPersona(shot.persona) ? shot.persona : null;
   const fresh = shot.freshSession ?? null;
@@ -560,7 +582,7 @@ async function shootBuilt(
     await clearCalendarProfile(persona);
   }
   const context = await browser.newContext({
-    viewport: VIEWPORTS[viewport],
+    viewport: { width: size.width, height: size.height },
     colorScheme: theme,
     reducedMotion: "reduce",
     extraHTTPHeaders:
@@ -669,6 +691,13 @@ async function shootBuilt(
         await page.locator(field).first().fill(step.value);
         continue;
       }
+      if ("focus" in step) {
+        const field = step.focus[viewport];
+        if (field === null) continue;
+        await page.locator(field).first().focus();
+        await page.waitForTimeout(SETTLE_MS);
+        continue;
+      }
       const selector = step.click[viewport];
       if (selector === null) continue;
       await page.locator(selector).first().click();
@@ -696,10 +725,61 @@ async function shootBuilt(
       });
       await settle(page);
     }
+    // F-69: measured before the screenshot, which is taken either way so a failure can be seen.
+    const fits = shot.expectFitsViewport;
+    const fit: Fit | null = fits
+      ? await page.evaluate(
+          (arg: { topBar: string; unscrolled: string | null }): Fit => {
+            const bar = document
+              .querySelector(arg.topBar)
+              ?.getBoundingClientRect();
+            const box =
+              arg.unscrolled === null
+                ? null
+                : document.querySelector(arg.unscrolled);
+            return {
+              scrollHeight: document.documentElement.scrollHeight,
+              innerHeight: window.innerHeight,
+              scrollY: window.scrollY,
+              barTop: bar ? bar.top : Number.NaN,
+              barBottom: bar ? bar.bottom : Number.NaN,
+              unscrolled:
+                arg.unscrolled === null
+                  ? null
+                  : box
+                    ? {
+                        scrollHeight: box.scrollHeight,
+                        clientHeight: box.clientHeight,
+                      }
+                    : { scrollHeight: Number.NaN, clientHeight: Number.NaN },
+            };
+          },
+          { topBar: fits.topBar, unscrolled: fits.unscrolled ?? null },
+        )
+      : null;
     await page.screenshot({
       path: path.join(outDir, file),
       fullPage: shot.fullPage === true,
     });
+    if (
+      fit &&
+      !(
+        fit.scrollHeight <= fit.innerHeight &&
+        fit.scrollY === 0 &&
+        fit.barTop >= 0 &&
+        fit.barBottom <= fit.innerHeight &&
+        (fit.unscrolled === null ||
+          fit.unscrolled.scrollHeight <= fit.unscrolled.clientHeight)
+      )
+    )
+      throw new Error(
+        `${shot.id} ${size.name} ${theme}: the page does not fit the viewport (F-69): ` +
+          `scrollHeight ${fit.scrollHeight} vs innerHeight ${fit.innerHeight}, scrollY ${fit.scrollY}, ` +
+          `top bar ${fit.barTop}..${fit.barBottom}` +
+          (fit.unscrolled
+            ? `, ${fits?.unscrolled ?? ""} scrollHeight ${fit.unscrolled.scrollHeight} vs clientHeight ${fit.unscrolled.clientHeight}`
+            : ""),
+      );
     if (fail && failed === 0)
       throw new Error(
         `${shot.id}: no request matched failRequest ${fail.pathPattern}`,
@@ -721,7 +801,7 @@ async function shootBuilt(
           .querySelector("[data-theme-lock]")
           ?.getAttribute("data-theme-lock") ?? null,
     }));
-    return { file, finalPath: new URL(page.url()).pathname, ...dom };
+    return { file, finalPath: new URL(page.url()).pathname, ...dom, fit };
   } finally {
     await context.close();
     if (fresh && persona && sessionId !== null)
@@ -819,7 +899,7 @@ function writeIndex(
   outDir: string,
   rows: Array<{
     shot: Shot;
-    viewport: Viewport;
+    viewport: string;
     theme: Theme;
     built: BuiltResult;
     proto: ProtoResult;
@@ -836,7 +916,7 @@ function writeIndex(
       "routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.",
     "",
     "Conditions, read before comparing:",
-    "- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844.",
+    "- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.",
     "- The prototypes are a fixed 1440x900 canvas with no phone layout; phone rows show the desktop prototype.",
     "- Dark is requested through the app's own per-device setting; the theme column records what the page rendered.",
     "- No external requests: the built app's Google Fonts (Inter, Poppins) are blocked, so legacy page bodies fall back to system faces; " +
@@ -869,7 +949,9 @@ function writeIndex(
           ? `Step: pick the ${step.pick} choice (resolved from the served item's stored order in the harness database).`
           : "fill" in step
             ? `Step: type \`${step.value}\` into \`${JSON.stringify(step.fill)}\`.`
-            : `Step: click \`${JSON.stringify(step.click)}\`.`,
+            : "focus" in step
+              ? `Step: focus \`${JSON.stringify(step.focus)}\` (no typing).`
+              : `Step: click \`${JSON.stringify(step.click)}\`.`,
       );
     if (shot.expectText !== undefined)
       lines.push(
@@ -893,6 +975,18 @@ function writeIndex(
       );
     if (shot.fullPage === true)
       lines.push("Full page: the whole document, not just the viewport.");
+    if (shot.expectFitsViewport !== undefined)
+      lines.push(
+        `Must fit the viewport (F-69): document no taller than the viewport, window unscrolled, \`${shot.expectFitsViewport.topBar}\` wholly in view${
+          shot.expectFitsViewport.unscrolled !== undefined
+            ? `, nothing to scroll in \`${shot.expectFitsViewport.unscrolled}\``
+            : ""
+        } (the capture fails otherwise); the measurement is under each built shot.`,
+      );
+    for (const extra of shot.extraViewports ?? [])
+      lines.push(
+        `Also shot at ${extra.name} ${extra.width}x${extra.height} (the ${extra.selectors} steps and selectors).`,
+      );
     if (shot.failRequest !== undefined)
       lines.push(
         `Failed in the browser: requests whose path matches \`${shot.failRequest.pathPattern}\` get a network error and never reach the server. ${shot.failRequest.reason}`,
@@ -919,12 +1013,20 @@ function writeIndex(
     for (const row of rows.filter((r) => r.shot.id === shot.id)) {
       const built = row.built.skipped
         ? `skipped: ${row.built.skipped}`
-        : `![${shot.id} ${row.viewport} ${row.theme}](${row.built.file})<br>\`${row.built.finalPath}\`, ${sizeOf(outDir, row.built.file)}, horizontal overflow ${row.built.overflowX}px`;
+        : `![${shot.id} ${row.viewport} ${row.theme}](${row.built.file})<br>\`${row.built.finalPath}\`, ${sizeOf(outDir, row.built.file)}, horizontal overflow ${row.built.overflowX}px${
+            row.built.fit
+              ? `, document ${row.built.fit.scrollHeight}px in a ${row.built.fit.innerHeight}px viewport, scrollY ${row.built.fit.scrollY}, top bar ${Math.round(row.built.fit.barTop)}..${Math.round(row.built.fit.barBottom)}px${
+                  row.built.fit.unscrolled
+                    ? `, \`${row.shot.expectFitsViewport?.unscrolled ?? ""}\` ${row.built.fit.unscrolled.scrollHeight}px of content in ${row.built.fit.unscrolled.clientHeight}px`
+                    : ""
+                }`
+              : ""
+          }`;
       let proto: string;
       if ("none" in row.proto) proto = row.proto.none;
       else {
         const caveat =
-          row.viewport === "mobile"
+          row.viewport !== "desktop"
             ? "<br>desktop prototype (no phone layout)"
             : "";
         proto = `![prototype ${row.theme}](${row.proto.file})${caveat}, ${sizeOf(outDir, row.proto.file)}`;
@@ -979,21 +1081,28 @@ async function main(): Promise<void> {
   const fontCss = fontFaceCss();
   const rows: Array<{
     shot: Shot;
-    viewport: Viewport;
+    viewport: string;
     theme: Theme;
     built: BuiltResult;
     proto: ProtoResult;
   }> = [];
   try {
     for (const shot of group.shots) {
-      for (const viewport of ["desktop", "mobile"] as const) {
+      // F-69: a shot may name sizes beyond desktop and phone (the exam module at tablet width).
+      const sizes: Size[] = [
+        standardSize("desktop"),
+        standardSize("mobile"),
+        ...(shot.extraViewports ?? []),
+      ];
+      for (const size of sizes) {
+        const viewport = size.name;
         // UI-54: a shot may name its themes (the timed exam module is light only).
         for (const theme of shot.themes ?? THEMES) {
           const built = await shootBuilt(
             browser,
             stack,
             shot,
-            viewport,
+            size,
             theme,
             outDir,
             fontCss,
@@ -1012,7 +1121,7 @@ async function main(): Promise<void> {
                 };
           rows.push({ shot, viewport, theme, built, proto });
           log(
-            `capture: ${shot.id} ${viewport} ${theme} -> ${built.file} (${built.finalPath}, html data-theme=${String(built.htmlTheme)}, lock=${String(built.themeLock)}, overflow-x=${built.overflowX}px)` +
+            `capture: ${shot.id} ${viewport} ${theme} -> ${built.file} (${built.finalPath}, html data-theme=${String(built.htmlTheme)}, lock=${String(built.themeLock)}, overflow-x=${built.overflowX}px${built.fit ? `, document ${built.fit.scrollHeight}/${built.fit.innerHeight}px, scrollY ${built.fit.scrollY}, top bar ${Math.round(built.fit.barTop)}..${Math.round(built.fit.barBottom)}${built.fit.unscrolled ? `, unscrolled ${built.fit.unscrolled.scrollHeight}/${built.fit.unscrolled.clientHeight}` : ""}` : ""})` +
               ("file" in proto ? ` | ${proto.file}` : " | no prototype"),
           );
         }

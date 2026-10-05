@@ -64,6 +64,8 @@ import {
   type ExamReportSource,
 } from "../../../../../server/services/exam-report-service";
 import ExamReportPage, { ReportBody } from "./ExamReportPage";
+import { ExamLoadError } from "../components/ExamStatus";
+import { HttpApiError } from "@/lib/api-error";
 
 /** A report source as `exam_report_source` returns it: a completed, scored test-day sitting. */
 function source(overrides: Partial<ExamReportSource> = {}): ExamReportSource {
@@ -346,6 +348,49 @@ describe("other states", () => {
       screen.getByRole("link", { name: "Resume test" }).getAttribute("href"),
     ).toBe(`/tests/${FIXTURE_SESSION_ID}`);
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
+  });
+});
+
+describe('naming: the section is "Full-Length" (owner ruling, Karl, 2026-10-05)', () => {
+  it("an attempt that ended unscored points back to Full-Length by name", () => {
+    const payload = toStudentExamReport(
+      serializeStudentReport(
+        source({
+          session: {
+            ...source().session,
+            state: "abandoned_final",
+            completed_at: null,
+            abandoned_at: "2026-09-26T15:00:00Z",
+          },
+          score_run: null,
+        }),
+        "not_completed",
+        [],
+      ),
+    );
+    expect(payload.report_state === "not_completed" && payload.resumable).toBe(
+      false,
+    );
+    show(payload);
+    expect(
+      screen.getByText(
+        "There's no score for this attempt. You can start a new attempt from Full-Length.",
+      ),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bTests\b/);
+  });
+
+  it('an exam load error\'s way out is "Back to Full-Length", to /tests', () => {
+    const { hook } = memoryLocation({ path: "/tests/x" });
+    render(
+      <Router hook={hook}>
+        <ExamLoadError
+          error={new HttpApiError({ status: 404, message: "gone" })}
+        />
+      </Router>,
+    );
+    const back = screen.getByRole("link", { name: "Back to Full-Length" });
+    expect(back.getAttribute("href")).toBe("/tests");
   });
 });
 

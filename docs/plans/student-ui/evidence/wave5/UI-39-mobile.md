@@ -2,12 +2,12 @@
 
 Register row UI-39 ("Mobile: bottom tab bar and one page per shell"; proof: Karl's sign-off). This index collects the phone (390x844) captures that each Wave 4/5 page group already took with the student harness (`tests/e2e/student-harness/capture.ts`), so the mobile layout can be signed off in one place. Nothing here is newly captured; each row links the group's own capture, and that group's `index.md` has the conditions, the personas and the desktop/prototype pairs.
 
-- **Tab bar and avatar menu:** UI-41 (App shell). The five-tab bar replaces the rail below the `lg` breakpoint; the avatar menu reads Calendar, Settings, Help, Sign out (OQ-48).
+- **Tab bar and avatar menu:** UI-41 (App shell). The five-tab bar (Home, Practice, Review, Calendar, LISA) replaces the rail below the `lg` breakpoint; the avatar menu reads Full-Length, Settings, Help, Sign out (owner ruling, Karl, 2026-10-05; supersedes OQ-4 / OQ-48 menu order). On a phone the Full-Length home first shows "Full-length tests are built for a laptop or tablet, like test day." with Continue anyway (UI-54 `tests-phone-notice`).
 - **One page per shell:** the App shell pages (UI-50, 51, 52, 54 home, 55, 56, 57, 58) carry the tab bar; the Focus shell pages (UI-53 runners, UI-54 exam session and report) have the back arrow and no tab bar; the Bare card pages (UI-59) have neither.
-- **Overflow:** every group's `index.md` records 0px horizontal overflow on every phone capture (UI-50 to UI-59). UI-41's index predates the overflow column.
+- **Overflow:** every group's `index.md` records 0px horizontal overflow on every phone capture (UI-41 to UI-59).
 - **Prototypes:** the prototypes are a fixed 1440x900 canvas with no phone layout, so no phone prototype exists to compare against; these are built-only.
 
-**175 phone captures** across 11 page groups.
+**189 phone captures** across 11 page groups.
 
 ## UI-41: Shells: App shell (rail, mobile tab bar, avatar menu), Focus shell, Bare card
 
@@ -15,10 +15,13 @@ Full index with conditions: [`UI-41/index.md`](UI-41/index.md).
 
 | State | Light | Dark |
 |---|---|---|
+| `app-avatar-menu-free` | ![app-avatar-menu-free light](UI-41/app-avatar-menu-free--mobile--light--built.png) | ![app-avatar-menu-free dark](UI-41/app-avatar-menu-free--mobile--dark--built.png) |
+| `app-avatar-menu-paid` | ![app-avatar-menu-paid light](UI-41/app-avatar-menu-paid--mobile--light--built.png) | ![app-avatar-menu-paid dark](UI-41/app-avatar-menu-paid--mobile--dark--built.png) |
 | `app-calendar-free` | ![app-calendar-free light](UI-41/app-calendar-free--mobile--light--built.png) | ![app-calendar-free dark](UI-41/app-calendar-free--mobile--dark--built.png) |
 | `app-chat-free` | ![app-chat-free light](UI-41/app-chat-free--mobile--light--built.png) | ![app-chat-free dark](UI-41/app-chat-free--mobile--dark--built.png) |
 | `app-dashboard-free` | ![app-dashboard-free light](UI-41/app-dashboard-free--mobile--light--built.png) | ![app-dashboard-free dark](UI-41/app-dashboard-free--mobile--dark--built.png) |
 | `app-dashboard-paid` | ![app-dashboard-paid light](UI-41/app-dashboard-paid--mobile--light--built.png) | ![app-dashboard-paid dark](UI-41/app-dashboard-paid--mobile--dark--built.png) |
+| `app-upgrade-modal-fulllength-free` | ![app-upgrade-modal-fulllength-free light](UI-41/app-upgrade-modal-fulllength-free--mobile--light--built.png) | ![app-upgrade-modal-fulllength-free dark](UI-41/app-upgrade-modal-fulllength-free--mobile--dark--built.png) |
 | `app-upgrade-modal-lisa-free` | ![app-upgrade-modal-lisa-free light](UI-41/app-upgrade-modal-lisa-free--mobile--light--built.png) | ![app-upgrade-modal-lisa-free dark](UI-41/app-upgrade-modal-lisa-free--mobile--dark--built.png) |
 | `bare-404` | ![bare-404 light](UI-41/bare-404--mobile--light--built.png) | ![bare-404 dark](UI-41/bare-404--mobile--dark--built.png) |
 | `bare-login` | ![bare-login light](UI-41/bare-login--mobile--light--built.png) | ![bare-login dark](UI-41/bare-login--mobile--dark--built.png) |
@@ -78,6 +81,9 @@ Full index with conditions: [`UI-53/index.md`](UI-53/index.md).
 | `practice-shortened` | ![practice-shortened light](UI-53/practice-shortened--mobile--light--built.png) | ![practice-shortened dark](UI-53/practice-shortened--mobile--dark--built.png) |
 | `review-correct` | ![review-correct light](UI-53/review-correct--mobile--light--built.png) | ![review-correct dark](UI-53/review-correct--mobile--dark--built.png) |
 | `review-incorrect` | ![review-incorrect light](UI-53/review-incorrect--mobile--light--built.png) | ![review-incorrect dark](UI-53/review-incorrect--mobile--dark--built.png) |
+| `review-lisa-focused` | ![review-lisa-focused light](UI-53/review-lisa-focused--mobile--light--built.png) | ![review-lisa-focused dark](UI-53/review-lisa-focused--mobile--dark--built.png) |
+| `review-lisa-locked` | ![review-lisa-locked light](UI-53/review-lisa-locked--mobile--light--built.png) | ![review-lisa-locked dark](UI-53/review-lisa-locked--mobile--dark--built.png) |
+| `review-lisa-typing` | ![review-lisa-typing light](UI-53/review-lisa-typing--mobile--light--built.png) | ![review-lisa-typing dark](UI-53/review-lisa-typing--mobile--dark--built.png) |
 | `review-selected` | ![review-selected light](UI-53/review-selected--mobile--light--built.png) | ![review-selected dark](UI-53/review-selected--mobile--dark--built.png) |
 
 ## UI-54: Full-Length home, exam session, report
@@ -92,6 +98,7 @@ Full index with conditions: [`UI-54/index.md`](UI-54/index.md).
 | `tests-free` | ![tests-free light](UI-54/tests-free--mobile--light--built.png) | ![tests-free dark](UI-54/tests-free--mobile--dark--built.png) |
 | `tests-paid` | ![tests-paid light](UI-54/tests-paid--mobile--light--built.png) | ![tests-paid dark](UI-54/tests-paid--mobile--dark--built.png) |
 | `tests-paid-full` | ![tests-paid-full light](UI-54/tests-paid-full--mobile--light--built.png) | ![tests-paid-full dark](UI-54/tests-paid-full--mobile--dark--built.png) |
+| `tests-phone-notice` | ![tests-phone-notice light](UI-54/tests-phone-notice--mobile--light--built.png) | ![tests-phone-notice dark](UI-54/tests-phone-notice--mobile--dark--built.png) |
 | `timed-module` | ![timed-module light](UI-54/timed-module--mobile--light--built.png) | — |
 
 ## UI-55: Calendar
@@ -173,4 +180,3 @@ Full index with conditions: [`UI-59/index.md`](UI-59/index.md).
 | `profile-complete` | ![profile-complete light](UI-59/profile-complete--mobile--light--built.png) | ![profile-complete dark](UI-59/profile-complete--mobile--dark--built.png) |
 | `update-password` | ![update-password light](UI-59/update-password--mobile--light--built.png) | ![update-password dark](UI-59/update-password--mobile--dark--built.png) |
 | `update-password-refused` | ![update-password-refused light](UI-59/update-password-refused--mobile--light--built.png) | ![update-password-refused dark](UI-59/update-password-refused--mobile--dark--built.png) |
-

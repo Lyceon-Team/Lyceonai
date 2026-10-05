@@ -2,7 +2,9 @@
  * UI-41: the three shells (App shell with rail lock states, Focus shell, Bare card).
  *
  * @spec [student-UI register §6 Wave 4 UI-41; design/DESIGN.md §2 (shells, free plan locks,
- *        mobile OQ-4)] | @implemented [2026-10-03]
+ *        mobile OQ-4; tab bar and avatar menu per the owner ruling, Karl, 2026-10-05: tabs Home,
+ *        Practice, Review, Calendar, LISA; menu Full-Length, Settings, Help, Sign out)]
+ *        | @implemented [2026-10-03; avatar menu shots 2026-10-05]
  *
  * plain English: one shot per shell state UI-41 owns, each paired with the closest signed-off
  * prototype screen. The prototypes have no Bare card screen (DESIGN.md §2 describes it in words
@@ -117,6 +119,81 @@ export const UI_41: PageGroup = {
         plan: "free",
         steps: ['button[aria-label^="LISA"]'],
         note: "Home, plan = free, LISA rail item clicked",
+      },
+    },
+    {
+      id: "app-avatar-menu-paid",
+      title:
+        "App shell, /dashboard, paid: the avatar menu opened (390: Full-Length, Settings, Help, Sign out; desktop: the rail, unchanged)",
+      persona: "paid",
+      route: "/dashboard",
+      waitFor: {
+        desktop: '[data-testid="app-rail"]',
+        mobile: '[data-testid="app-tab-bar"]',
+      },
+      steps: [
+        {
+          click: { desktop: null, mobile: '[data-testid="button-user-menu"]' },
+        },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototypes have no phone layout (fixed 1440x900 canvas); the avatar menu is the owner ruling of 2026-10-05 (DESIGN.md §2 Mobile).",
+      },
+    },
+    {
+      id: "app-avatar-menu-free",
+      title:
+        "App shell, /dashboard, free: the avatar menu opened (390: Full-Length first, with its lock; desktop: the rail, unchanged)",
+      persona: "free",
+      route: "/dashboard",
+      sessionStorage: DIAGNOSTIC_PROMPT_DISMISSED,
+      waitFor: {
+        desktop: '[data-testid="app-rail"]',
+        mobile: '[data-testid="app-tab-bar"]',
+      },
+      steps: [
+        {
+          click: { desktop: null, mobile: '[data-testid="button-user-menu"]' },
+        },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototypes have no phone layout (fixed 1440x900 canvas); the avatar menu is the owner ruling of 2026-10-05 (DESIGN.md §2 Mobile).",
+      },
+    },
+    {
+      id: "app-upgrade-modal-fulllength-free",
+      title:
+        "Upgrade modal opened from the locked Full-Length entry (390: in the avatar menu; desktop: on the rail), free, on /dashboard",
+      persona: "free",
+      route: "/dashboard",
+      sessionStorage: DIAGNOSTIC_PROMPT_DISMISSED,
+      waitFor: {
+        desktop: '[data-testid="app-rail"]',
+        mobile: '[data-testid="app-tab-bar"]',
+      },
+      steps: [
+        {
+          click: {
+            desktop: '[data-testid="rail-full-length"]',
+            mobile: '[data-testid="button-user-menu"]',
+          },
+        },
+        {
+          click: { desktop: null, mobile: '[data-testid="menu-full-length"]' },
+        },
+      ],
+      expectVisible: '[data-testid="upgrade-modal"]',
+      prototype: {
+        kind: "screen",
+        file: "Main.dc.html",
+        plan: "free",
+        steps: ['button[aria-label^="Full-Length"]'],
+        state: "full-length-clicked",
+        note: "Home, plan = free, Full-Length rail item clicked",
       },
     },
     {

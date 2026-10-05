@@ -70,6 +70,16 @@ const LISA_COMPOSER = {
   desktop: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
   mobile: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
 } as const;
+/**
+ * F-69 (owner ruling 2026-10-05): the Focus shell is `100dvh` and scrolls only inside `<main>`,
+ * so the document must fit the viewport with the shell's top bar in view, and the runner scrolls
+ * inside itself, so `<main>` has nothing to scroll (no band below the footer). capture.ts fails
+ * the capture otherwise. Asserted on both runners and on the LISA panel focused and in use.
+ */
+const FITS = {
+  topBar: '[data-testid="focus-shell-header"]',
+  unscrolled: "main#main",
+} as const;
 const PROTO_CHOICE = (n: number): string => `[role="radio"] >> nth=${n}`;
 const PROTO_SUBMIT = 'button:has-text("Submit")';
 
@@ -88,6 +98,7 @@ export const UI_53: PageGroup = {
       localStorage: CLIENT,
       waitFor: RUNNER,
       steps: [{ pick: "first" }],
+      expectFitsViewport: FITS,
       prototype: {
         kind: "screen",
         file: "Runner.dc.html",
@@ -142,6 +153,7 @@ export const UI_53: PageGroup = {
       localStorage: CLIENT,
       waitFor: RUNNER,
       steps: [{ pick: "first" }],
+      expectFitsViewport: FITS,
       prototype: {
         kind: "screen",
         file: "Runner.dc.html",
@@ -209,10 +221,35 @@ export const UI_53: PageGroup = {
       ],
       expectVisible:
         '[data-testid="scoped-tutor-panel"] [data-testid="lisa-typing"]',
+      expectFitsViewport: FITS,
       prototype: {
         kind: "none",
         reason:
           "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d), ruling W4-4 keeps LISA in the review runner). The panel reuses the UI-56 thread parts (Lisa.dc.html).",
+      },
+    },
+    {
+      id: "review-lisa-focused",
+      title:
+        "Review runner, the LISA composer focused (F-69, owner ruling 2026-10-05): the Focus shell's top bar stays in view and the document is the viewport's height (no blank band under the footer); on a phone the focus scrolls the panel into view inside the shell, never the window",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: LISA_COMPOSER,
+      steps: [
+        {
+          focus: {
+            desktop: LISA_COMPOSER.desktop,
+            mobile: LISA_COMPOSER.mobile,
+          },
+        },
+      ],
+      expectFitsViewport: FITS,
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d)). F-69's proof shot: the shell's top bar with the composer focused.",
       },
     },
     {

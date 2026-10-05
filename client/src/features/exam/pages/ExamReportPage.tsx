@@ -388,7 +388,8 @@ export function ReportBody({
           <p className={BODY}>
             {payload.resumable
               ? "Your score appears here once both sections are submitted."
-              : "There's no score for this attempt. You can start a new attempt from Tests."}
+              : // The section's name (owner naming ruling, Karl, 2026-10-05).
+                "There's no score for this attempt. You can start a new attempt from Full-Length."}
           </p>
           {payload.resumable ? (
             <Button

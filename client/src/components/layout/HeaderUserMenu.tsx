@@ -68,9 +68,9 @@ export function HeaderUserMenu({
 }: HeaderSignOut & {
   fallbackName: string;
   /**
-   * Shell-specific entries rendered BEFORE Settings. OQ-48 (Karl, 2026-10-03): the student
-   * avatar menu reads Calendar, Settings, Help, Sign out (OQ-4), so the App shell passes Calendar
-   * here and Help in `items`.
+   * Shell-specific entries rendered BEFORE Settings. Owner ruling (Karl, 2026-10-05; supersedes
+   * OQ-48's order): the student avatar menu reads Full-Length, Settings, Help, Sign out, so the
+   * App shell passes Full-Length here and Help in `items`.
    */
   leadingItems?: React.ReactNode;
   /**
