@@ -131,6 +131,26 @@ describe("Doc 07A §9.2 emitEvent", () => {
     expect(h.writes).toEqual([{ profileId: PROFILE, derived: expectedId }]);
   });
 
+  it("emits consent_captured for the marketing opt-in (registered 2026-10-05, plan Q5)", async () => {
+    const stored = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const h = harness({ analyticsUserId: stored, isUnder13: false });
+    expect(
+      await emitEventWith(h.deps, PROFILE, "consent_captured", {
+        consent_type: "marketing_optin",
+        consent_version: "1.0.0",
+      }),
+    ).toEqual({ ok: true });
+    expect(h.sent[0]?.distinctId).toBe(stored);
+    // Doc 07A §6: consent_version is semver; a "1.0"-shaped value is refused.
+    const bad = harness({ analyticsUserId: stored, isUnder13: false });
+    const refused = await emitEventWith(bad.deps, PROFILE, "consent_captured", {
+      consent_type: "marketing_optin",
+      consent_version: "1.0",
+    });
+    expect(refused.ok).toBe(false);
+    expect(bad.sent).toEqual([]);
+  });
+
   it("reuses a stored analytics_user_id and never rewrites it", async () => {
     const stored = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const h = harness({ analyticsUserId: stored, isUnder13: false });
@@ -184,7 +204,9 @@ describe("Doc 07A §9.2 emitEvent", () => {
     },
   );
 
-  it.each(["practice_question_submitted", "consent_captured", "page_viewed"])(
+  // consent_captured left this list on 2026-10-05: registered for the marketing opt-in (plan Q5),
+  // as SCL-213 item 3 provides ("a registry PR against its unchanged §6 entry").
+  it.each(["practice_question_submitted", "page_viewed"])(
     "refuses an unregistered event (%s — deferred by SCL-213 or never registered)",
     async (name) => {
       const h = harness({ analyticsUserId: null, isUnder13: false });
@@ -345,8 +367,11 @@ describe("user_signed_up fires once (requireFirstIdentity)", () => {
 });
 
 describe("registry module", () => {
-  it("carries exactly the SCL-213 launch set", () => {
+  // The SCL-213 launch set, plus consent_captured, registered 2026-10-05 for the marketing opt-in
+  // (plan Q5; SCL-213 item 3: a deferred event is registered by a registry PR, no new SCL).
+  it("carries exactly the SCL-213 launch set plus consent_captured", () => {
     expect(EVENT_REGISTRY.events.map((e) => e.event_name).sort()).toEqual([
+      "consent_captured",
       "exam_section_submitted",
       "exam_started",
       "tutor_session_ended",

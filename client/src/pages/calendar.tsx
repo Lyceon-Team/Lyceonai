@@ -76,6 +76,7 @@ import { studentViewModel } from "@/features/calendar/lib/view-model";
 import { toUserFacingMessage } from "@/lib/api-error";
 import "@/features/calendar/calendar.css";
 import "@/features/calendar/calendar-student.css";
+import { ReviewPrompt } from "@/components/product-feedback/ReviewPrompt";
 
 export default function CalendarPage(): JSX.Element {
   /**
@@ -338,107 +339,115 @@ export default function CalendarPage(): JSX.Element {
   const change = response.latest_unacknowledged_nonstudent_change;
 
   return (
-    <CalendarView
-      backHref="/dashboard"
-      hideBackLink
-      model={model}
-      today={today}
-      viewer="student"
-      viewerName={user?.display_name ?? "Your plan"}
-      targetExamDate={response.profile.target_exam_date}
-      targetScore={response.profile.target_score}
-      // Doc 05C's rows, straight off the response. The goal card sums them; nothing here
-      // touches them.
-      projection={response.projection}
-      // Brief 14 Step 4 — the dates the generator refused to place a test on, straight off
-      // the payload. The notice names them; nothing here re-derives which days are blocked.
-      fullLengthSuppressions={response.full_length_suppressions}
-      planUpdate={
-        change === null
-          ? null
-          : { versionNo: change.version_no, trigger: change.trigger }
-      }
-      onRangeChange={onRangeChange}
-      schedule={{
-        profile: response.profile,
-        // §8.1's bounds, straight off the payload -- the SAME object the server validates
-        // the save against. Never a literal preset list in the client.
-        bounds: response.bounds,
-        estimates: response.estimates,
-        examPlanning: response.exam_planning,
-        onSave: (draft) =>
-          saveProfile(
-            {
-              timezone: draft.timezone,
-              study_days_mask: draft.study_days_mask,
-              daily_minutes: draft.daily_minutes,
-              target_exam_date: draft.target_exam_date,
-              target_score: draft.target_score,
-              full_length_weekday: draft.full_length_weekday,
-              // Both halves, always. `calendarProfileUpsertSchema` refuses a body that
-              // names one and not the other (Brief 14 Step 2), so omitting this — as this
-              // call site did until the pair landed — makes every schedule save that touches
-              // the exam a 400 rather than a silent half-write. The sheet's own chips move
-              // both halves together for the same reason.
-              full_length_interval_weeks: draft.full_length_interval_weeks,
-              planner_mode: draft.planner_mode,
-            },
-            {
-              onSuccess: (result) =>
-                // No version number means nothing was replanned, which in practice means a
-                // `custom` student. Offer, never act.
-                setReplanOffered(result.version_no === undefined),
-            },
-          ),
-        pending: profile.isPending,
-        error: profileError,
-        offerReplan: replanOffered,
-        onConfirmReplan: () => {
-          regeneratePlan.mutate(newIntent({}));
-          setReplanOffered(false);
-        },
-        onDismissReplan: () => setReplanOffered(false),
-      }}
-      mutations={{
-        // One fresh key per user intent; `newIntent` is the only minter, and TanStack reuses
-        // the same variables object on retry, which is what makes a retry idempotent (§7.8).
-        editDay: (date, members, hint: EditHint) =>
-          editDay.mutate(
-            newIntent({
-              date,
-              members,
-              ...("removeBlockId" in hint && hint.removeBlockId === ""
-                ? {}
-                : {
-                    optimisticBlocks:
-                      "removeBlockId" in hint
-                        ? { removeBlockId: hint.removeBlockId }
-                        : { blockId: hint.blockId, edited: hint.edited },
-                  }),
-            }),
-          ),
-        moveBlock: (blockId, toDate) =>
-          moveBlock.mutate(newIntent({ blockId, toDate })),
-        // DESIGN.md §4: "Regenerate plan" (`POST /api/calendar/plan/regenerate`), one key
-        // per press.
-        regeneratePlan: () => regeneratePlan.mutate(newIntent({})),
-        regenerateDay: (date) => regenerateDay.mutate(newIntent({ date })),
-        resetDay: (date) => resetDay.mutate(newIntent({ date })),
-        // §12.4: blocking out a day is an edit to an empty member list, not a status of
-        // its own. No optimistic hint -- the prediction would have to guess which blocks
-        // the server carries (V-12), and guessing wrong would flash the wrong day at the
-        // student. The settle-invalidate brings back what actually happened.
-        blockOutDay: (date) =>
-          editDay.mutate(newIntent({ date, members: membersCleared() })),
-        doItNow: (blockId) => doItNow.mutate(newIntent({ blockId, today })),
-        launch: (blockId, blockType) => void launch(blockId, blockType),
-        // §12.7 is monotonic, so this route takes no idempotency key.
-        acknowledge: (versionNo) =>
-          acknowledge.mutate({ version_no: versionNo }),
-        refreshPending: regeneratePlan.isPending,
-        regenerated: regeneratePlan.isSuccess,
-        launchPending,
-      }}
-    />
+    <>
+      {/* Plan R30 / Q6 (owner Step 0 answer 3, 2026-10-05): a completed study week — last week
+          had at least one block and every block was completed — is a success moment. The server
+          checks the week from the plan itself, then applies the cadence. */}
+      <div className="mb-6 empty:hidden">
+        <ReviewPrompt query={{ moment: "study_week" }} variant="lyc" />
+      </div>
+      <CalendarView
+        backHref="/dashboard"
+        hideBackLink
+        model={model}
+        today={today}
+        viewer="student"
+        viewerName={user?.display_name ?? "Your plan"}
+        targetExamDate={response.profile.target_exam_date}
+        targetScore={response.profile.target_score}
+        // Doc 05C's rows, straight off the response. The goal card sums them; nothing here
+        // touches them.
+        projection={response.projection}
+        // Brief 14 Step 4 — the dates the generator refused to place a test on, straight off
+        // the payload. The notice names them; nothing here re-derives which days are blocked.
+        fullLengthSuppressions={response.full_length_suppressions}
+        planUpdate={
+          change === null
+            ? null
+            : { versionNo: change.version_no, trigger: change.trigger }
+        }
+        onRangeChange={onRangeChange}
+        schedule={{
+          profile: response.profile,
+          // §8.1's bounds, straight off the payload -- the SAME object the server validates
+          // the save against. Never a literal preset list in the client.
+          bounds: response.bounds,
+          estimates: response.estimates,
+          examPlanning: response.exam_planning,
+          onSave: (draft) =>
+            saveProfile(
+              {
+                timezone: draft.timezone,
+                study_days_mask: draft.study_days_mask,
+                daily_minutes: draft.daily_minutes,
+                target_exam_date: draft.target_exam_date,
+                target_score: draft.target_score,
+                full_length_weekday: draft.full_length_weekday,
+                // Both halves, always. `calendarProfileUpsertSchema` refuses a body that
+                // names one and not the other (Brief 14 Step 2), so omitting this — as this
+                // call site did until the pair landed — makes every schedule save that touches
+                // the exam a 400 rather than a silent half-write. The sheet's own chips move
+                // both halves together for the same reason.
+                full_length_interval_weeks: draft.full_length_interval_weeks,
+                planner_mode: draft.planner_mode,
+              },
+              {
+                onSuccess: (result) =>
+                  // No version number means nothing was replanned, which in practice means a
+                  // `custom` student. Offer, never act.
+                  setReplanOffered(result.version_no === undefined),
+              },
+            ),
+          pending: profile.isPending,
+          error: profileError,
+          offerReplan: replanOffered,
+          onConfirmReplan: () => {
+            regeneratePlan.mutate(newIntent({}));
+            setReplanOffered(false);
+          },
+          onDismissReplan: () => setReplanOffered(false),
+        }}
+        mutations={{
+          // One fresh key per user intent; `newIntent` is the only minter, and TanStack reuses
+          // the same variables object on retry, which is what makes a retry idempotent (§7.8).
+          editDay: (date, members, hint: EditHint) =>
+            editDay.mutate(
+              newIntent({
+                date,
+                members,
+                ...("removeBlockId" in hint && hint.removeBlockId === ""
+                  ? {}
+                  : {
+                      optimisticBlocks:
+                        "removeBlockId" in hint
+                          ? { removeBlockId: hint.removeBlockId }
+                          : { blockId: hint.blockId, edited: hint.edited },
+                    }),
+              }),
+            ),
+          moveBlock: (blockId, toDate) =>
+            moveBlock.mutate(newIntent({ blockId, toDate })),
+          // DESIGN.md §4: "Regenerate plan" (`POST /api/calendar/plan/regenerate`), one key
+          // per press.
+          regeneratePlan: () => regeneratePlan.mutate(newIntent({})),
+          regenerateDay: (date) => regenerateDay.mutate(newIntent({ date })),
+          resetDay: (date) => resetDay.mutate(newIntent({ date })),
+          // §12.4: blocking out a day is an edit to an empty member list, not a status of
+          // its own. No optimistic hint -- the prediction would have to guess which blocks
+          // the server carries (V-12), and guessing wrong would flash the wrong day at the
+          // student. The settle-invalidate brings back what actually happened.
+          blockOutDay: (date) =>
+            editDay.mutate(newIntent({ date, members: membersCleared() })),
+          doItNow: (blockId) => doItNow.mutate(newIntent({ blockId, today })),
+          launch: (blockId, blockType) => void launch(blockId, blockType),
+          // §12.7 is monotonic, so this route takes no idempotency key.
+          acknowledge: (versionNo) =>
+            acknowledge.mutate({ version_no: versionNo }),
+          refreshPending: regeneratePlan.isPending,
+          regenerated: regeneratePlan.isSuccess,
+          launchPending,
+        }}
+      />
+    </>
   );
 }

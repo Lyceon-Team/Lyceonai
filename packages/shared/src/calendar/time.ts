@@ -219,3 +219,17 @@ export function addDaysToLocalDate(value: LocalDate, days: number): LocalDate {
   );
   return `${pad(civil.year, 4)}-${pad(civil.month, 2)}-${pad(civil.day, 2)}`;
 }
+
+/**
+ * R-08-30: the Monday that starts the local ISO week containing `value`. The same rule as the
+ * client's `startOfWeek` (client/src/features/calendar/lib/dates.ts), here for the server, which
+ * needs "last week" for the review prompt's study-week moment. @implemented [2026-10-05]
+ */
+export function startOfLocalWeek(value: LocalDate): LocalDate {
+  const match = LOCAL_DATE_PATTERN.exec(value);
+  if (match === null) return value;
+  const sunday0 = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+  ).getUTCDay();
+  return addDaysToLocalDate(value, -((sunday0 + 6) % 7));
+}

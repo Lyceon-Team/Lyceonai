@@ -44,6 +44,17 @@ import {
   type RoleChoiceFacts,
   type RoleChoiceRefusal,
 } from "../lib/role-choice";
+import {
+  emitMarketingConsentCaptured,
+  setMarketingConsent,
+  type MarketingConsentWrite,
+} from "../lib/marketing-consent";
+import {
+  MARKETING_OPT_IN_INELIGIBLE,
+  marketingConsentRequestSchema,
+  marketingConsentResponseSchema,
+  marketingOptInEligible,
+} from "../../packages/shared/src/marketing-consent-schema";
 
 const router = Router();
 
@@ -195,7 +206,9 @@ const profileCompletionSchema = z.object({
   dateOfBirth: dateOfBirthSchema.optional().nullable(),
   // Guardian final purge, item 3 (owner brief 2026-10-02): `guardianEmail` is gone. It only ever
   // addressed the removed consent email (G2-05); an unknown key is stripped here, never written.
-  marketingOptIn: z.boolean().optional().default(false),
+  // Plan R26 / Q5 (the "reset bug", F-54): no default. An omitted field leaves the stored value
+  // alone; it is written only when sent, and only through `setMarketingConsent` below.
+  marketingOptIn: z.boolean().optional(),
 });
 
 /**
@@ -518,6 +531,27 @@ router.patch("/", async (req: Request, res: Response) => {
       }
     }
 
+    // Plan R26: never under-13 (and never an unknown age). Refused before anything is written,
+    // with the same rule the database trigger applies. The onboarding form only shows the
+    // checkbox to guardians and students 13+, so this is reached only by a crafted request.
+    if (
+      data.marketingOptIn === true &&
+      !marketingOptInEligible(effectiveDateOfBirth, new Date())
+    ) {
+      logger.warn(
+        "PROFILE",
+        "marketing_opt_in_refused",
+        "Marketing opt-in refused: under 13 or no date of birth",
+        { code: MARKETING_OPT_IN_INELIGIBLE, requestId: req.requestId },
+      );
+      return res.status(400).json({
+        error: {
+          code: MARKETING_OPT_IN_INELIGIBLE,
+          message: "Product update emails are for ages 13 and over.",
+        },
+      });
+    }
+
     const isUnder13 =
       data.role === "student" && effectiveDateOfBirth
         ? calculateAge(effectiveDateOfBirth) < 13
@@ -537,7 +571,6 @@ router.patch("/", async (req: Request, res: Response) => {
         // G2-03: a locked date of birth is not written at all, and `is_under_13` is never
         // written — the age trigger derives it from the date of birth.
         ...(dateOfBirthLocked ? {} : { date_of_birth: effectiveDateOfBirth }),
-        marketing_opt_in: data.marketingOptIn,
         profile_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -546,6 +579,35 @@ router.patch("/", async (req: Request, res: Response) => {
     if (updateError) {
       console.error("[PROFILE] Error updating profile:", updateError);
       return res.status(500).json({ error: "Failed to update profile" });
+    }
+
+    // Plan Q5: the opt-in is written only when the body carries it, after the date of birth is
+    // stored (the database's age check reads it), and through the one logged writer. Source
+    // `signup`: this route is the onboarding step (owner answer 1), and only that form sends the
+    // field; the Settings toggle has its own route.
+    //
+    // NOT ATOMIC with the profile write above, deliberately: the consent check reads the stored
+    // date of birth, which that write sets. A refusal here is unreachable in practice (the same
+    // rule refused it before anything was written); what remains is a birthday race or an RPC
+    // error, which answers 400/500 with the profile saved and no consent recorded. The person is
+    // then simply not opted in — the safe side — and a retry of this form writes `signup` again.
+    let consentWrite: MarketingConsentWrite | null = null;
+    if (data.marketingOptIn !== undefined) {
+      consentWrite = await setMarketingConsent(
+        supabase,
+        userId,
+        data.marketingOptIn,
+        "signup",
+        req.requestId,
+      );
+      if (!consentWrite.ok) {
+        return res.status(400).json({
+          error: {
+            code: MARKETING_OPT_IN_INELIGIBLE,
+            message: "Product update emails are for ages 13 and over.",
+          },
+        });
+      }
     }
 
     // Fetch updated profile
@@ -578,6 +640,8 @@ router.patch("/", async (req: Request, res: Response) => {
         { requireFirstIdentity: true },
       );
     }
+    // After user_signed_up, never before: see server/lib/marketing-consent.ts.
+    await emitMarketingConsentCaptured(emitEvent, userId, consentWrite);
 
     return res.json({
       success: true,
@@ -596,6 +660,124 @@ router.patch("/", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("[PROFILE] Unexpected error:", error);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * PUT /api/profile/marketing-consent — the Settings toggle for product-update emails.
+ *
+ * @spec [docs/plans/seo/seo-marketing-vertical.md R26 ("Settings toggle"), row Q5; Doc 10 §9.21
+ *        ("must be revocable"); owner Step 0 answer 2 (2026-10-05): its own endpoint, never the
+ *        onboarding PATCH] | @implemented [2026-10-05]
+ *
+ * plain English: `{ granted }` turns the opt-in on or off at any time, for a student or a
+ * guardian. Fixed order: auth (the mount) → Zod parse → load the caller's role and date of birth
+ * → refuse a grant to an admin, an unknown age or anyone under 13 (400, coded) → write through
+ * the one logged writer (source `settings`) → emit `consent_captured` for a grant → 200
+ * `{ marketingOptIn }`.
+ *
+ * Why not the PATCH: that route is onboarding. It requires a role, re-stamps
+ * `profile_completed_at` and validates the whole profile, so a toggle sent through it would carry
+ * fields it has no business writing (F-54, OQ-28). Turning the opt-in OFF is never refused —
+ * revocation must always work, whatever the account's age.
+ *
+ * Edge cases: writing the value already held answers 200 and logs nothing (the SQL function
+ * compares first). A database refusal after the route's own check (a birthday race) is the same
+ * coded 400.
+ */
+router.put("/marketing-consent", async (req: Request, res: Response) => {
+  const user = requireRequestUser(req, res);
+  if (!user) return;
+
+  const parsed = marketingConsentRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: {
+        code: "INVALID_REQUEST",
+        message: "Invalid input",
+        details: parsed.error.flatten(),
+      },
+    });
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: row, error: readError } = await supabase
+      .from("profiles")
+      .select("role, date_of_birth")
+      .eq("id", user.id)
+      .single();
+    if (readError || !row) {
+      logger.error(
+        "PROFILE",
+        "marketing_consent_profile_read_failed",
+        "Could not load the profile for a marketing consent change",
+        { requestId: req.requestId },
+      );
+      return res.status(500).json({
+        error: { code: "INTERNAL", message: "Something went wrong." },
+      });
+    }
+    const role = String((row as { role: unknown }).role);
+    const dateOfBirth = toIsoDate(
+      (row as { date_of_birth: string | null }).date_of_birth,
+    );
+
+    if (parsed.data.granted) {
+      const eligible =
+        (role === "student" || role === "guardian") &&
+        marketingOptInEligible(dateOfBirth, new Date());
+      if (!eligible) {
+        logger.warn(
+          "PROFILE",
+          "marketing_opt_in_refused",
+          "Marketing opt-in refused: role, under 13 or no date of birth",
+          { code: MARKETING_OPT_IN_INELIGIBLE, requestId: req.requestId },
+        );
+        return res.status(400).json({
+          error: {
+            code: MARKETING_OPT_IN_INELIGIBLE,
+            message: "Product update emails are for ages 13 and over.",
+          },
+        });
+      }
+    }
+
+    const write = await setMarketingConsent(
+      supabase,
+      user.id,
+      parsed.data.granted,
+      "settings",
+      req.requestId,
+    );
+    if (!write.ok) {
+      return res.status(400).json({
+        error: {
+          code: MARKETING_OPT_IN_INELIGIBLE,
+          message: "Product update emails are for ages 13 and over.",
+        },
+      });
+    }
+    await emitMarketingConsentCaptured(emitEvent, user.id, write);
+
+    return res
+      .status(200)
+      .json(
+        marketingConsentResponseSchema.parse({ marketingOptIn: write.granted }),
+      );
+  } catch (error: unknown) {
+    logger.error(
+      "PROFILE",
+      "marketing_consent_failed",
+      "Marketing consent change failed",
+      {
+        requestId: req.requestId,
+        reason: error instanceof Error ? error.message : "unknown",
+      },
+    );
+    return res.status(500).json({
+      error: { code: "INTERNAL", message: "Something went wrong." },
+    });
   }
 });
 

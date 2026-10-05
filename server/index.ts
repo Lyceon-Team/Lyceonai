@@ -66,6 +66,7 @@ import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
+import productFeedbackRoutes from "./routes/product-feedback-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -333,6 +334,15 @@ app.use(
   requireSupabaseAuth,
   doubleCsrfProtection,
   profileRoutes,
+);
+
+// SEO Wave 2, plan Q6 (R28-R30). The review prompt, in-app reviews and private feedback, for
+// students and guardians alike (each route reads the caller's role and age from their profile).
+app.use(
+  "/api/feedback",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  productFeedbackRoutes,
 );
 
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
