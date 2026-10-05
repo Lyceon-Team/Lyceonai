@@ -12,7 +12,8 @@
  * plain English: a bordered card titled with the section's name, "Full-Length", the Full-Length
  * page's own approved subtitle (prototype FullLength.dc.html) as its one line, and the ruling's
  * action, "Start a full-length test". Granted (or no map yet): the action is a link to `/tests`,
- * the Full-Length home, which still shows its phone notice there. Locked: the action is a button
+ * the Full-Length home, whose Start and Resume ask the shared phone pre-start check (OQ-63); the
+ * link itself starts nothing, so it does not ask. Locked: the action is a button
  * with the lock glyph that opens the upgrade modal for `exam_full_length` with the map's reason
  * (`age` gets the age message), in place: no href, so nothing navigates and no gated request is
  * made. The lock is read with the rail's own `featureLockReason`, so the two cannot disagree.

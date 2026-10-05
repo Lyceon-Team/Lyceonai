@@ -1,14 +1,16 @@
 /**
- * The Full-Length home's phone notice: its copy and the per-visit memory of "Continue anyway".
+ * The full-length phone notice: its copy and the per-visit memory of "Continue anyway". Read only
+ * by the one shared pre-start check, `useFullLengthPhonePrecheck` (owner ruling, Karl, 2026-10-05,
+ * OQ-63: "show it for every full-length start on a phone, including calendar-launched starts").
  *
  * @spec [owner ruling (Karl, 2026-10-05): "On phone widths, Full-Length still works, but its home
  *        shows: \"Full-length tests are built for a laptop or tablet, like test day.\" with
  *        \"Continue anyway\". Never blocked."; DESIGN.md §2 Mobile] | @implemented [2026-10-05]
  *
  * plain English: the notice's two strings are the ruling's words exactly, held here once so the
- * page and its tests read the same text. Continuing is remembered for this browser tab
- * (sessionStorage), so a student who chose to continue is not asked again on every return to
- * the home during the visit; a new tab or a new visit asks again.
+ * check and its tests read the same text. Continuing is remembered for this browser tab
+ * (sessionStorage), so a student who chose to continue is not asked again on every full-length
+ * start during the visit; a new tab or a new visit asks again.
  *
  * edge cases: storage can be unavailable (private mode, blocked site data) and reads or writes
  * can throw. A failed read answers "not continued", so the student sees the notice and one tap

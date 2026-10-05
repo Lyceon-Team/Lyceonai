@@ -9,9 +9,11 @@
  *        the completed test's score; supersedes E7b ruling 2), OQ-32 (owner ruling 2026-10-02:
  *        "section, module" from the in-progress session's `/state`)]
  *       [Doc-04C §15.1: a scaled score always ships with its disclosure]
- *       [owner ruling (Karl, 2026-10-05): on phone widths the home shows "Full-length tests are
- *        built for a laptop or tablet, like test day." with "Continue anyway"; never blocked]
- * @implemented [2026-10-03; phone notice 2026-10-05]
+ *       [owner ruling (Karl, 2026-10-05): on phone widths "Full-length tests are built for a
+ *        laptop or tablet, like test day." with "Continue anyway"; never blocked; owner ruling
+ *        (Karl, 2026-10-05, OQ-63): shown for every full-length start on a phone, one shared
+ *        pre-start check]
+ * @implemented [2026-10-03; phone notice 2026-10-05; OQ-63 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (the right
  * panel portals into it) and the real upgrade modal, over a scripted network standing in for
@@ -474,7 +476,6 @@ async function mount(
   await screen.findByTestId("tests-home");
   if (
     plan === "paid" &&
-    view !== "phone" &&
     scenario.formsError !== true &&
     scenario.noForms !== true
   ) {
@@ -767,121 +768,190 @@ describe("free plan (register §2: Full-Length is paid)", () => {
   });
 });
 
-// ── Phone widths (owner ruling, Karl, 2026-10-05) ────────────────────────────────────────────
+// ── Phone widths (owner rulings, Karl, 2026-10-05; OQ-63) ──────────────────────────────────
 
 const PHONE_TEXT =
   "Full-length tests are built for a laptop or tablet, like test day.";
 
-describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", () => {
-  it("phone: the title and the ruling's notice with Continue anyway, in place of the home's body", async () => {
+function createRequests(): string[] {
+  return net.log.filter((l) => l === "POST /api/tests/sessions");
+}
+
+/** The shared pre-start check's notice (a student Modal, portalled to <body>). */
+function phoneNotice(): HTMLElement | null {
+  return screen.queryByTestId("full-length-phone-notice");
+}
+
+describe("phone widths: the shared pre-start check (OQ-63)", () => {
+  it("phone: the home is never held; the whole list, timing and panel draw with no notice", async () => {
     await mount("paid", {}, "phone");
-    // Presence first: the title and the notice are drawn.
+    // Presence first: the title, the list, the timing and the panel are drawn.
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Full-Length",
     );
-    const notice = screen.getByTestId("tests-phone-notice");
-    expect(within(notice).getByText(PHONE_TEXT)).toBeTruthy();
-    const button = within(notice).getByRole("button");
-    expect(button.textContent).toBe("Continue anyway");
-    // Exactly the ruling's words: the title line and the button, nothing else.
-    expect(notice.textContent).toBe(PHONE_TEXT + "Continue anyway");
-    // The notice's action is an outline (it dismisses a note); no filled primary while held.
-    expect(button.className).toContain("border-lyc-ink-strong");
-    expect(filledActions()).toEqual([]);
-    expect(screen.queryByTestId("tests-home-body")).toBeNull();
-    expect(screen.queryByTestId("tests-list")).toBeNull();
-    expect(screen.queryByTestId("tests-panel")).toBeNull();
+    expect(screen.getByTestId("tests-home-body")).toBeTruthy();
+    expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
+    expect(screen.getByTestId("tests-panel")).toBeTruthy();
+    expect(phoneNotice()).toBeNull();
+    expect(screen.queryByText(PHONE_TEXT)).toBeNull();
   });
 
-  it("Continue anyway reveals the whole home: Resume and Start are reachable, the panel too", async () => {
-    await mount("paid", {}, "phone");
-    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
-    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
-    const body = screen.getByTestId("tests-home-body");
-    // Focus moves to the revealed body, not to <body>.
-    expect(document.activeElement).toBe(body);
-    const resume = await within(row("Full-Length Test 2")).findByRole("link", {
-      name: "Resume",
-    });
-    expect(resume.getAttribute("href")).toBe(`/tests/${OPEN_SESSION}`);
-    expect(
-      within(row("Full-Length Test 3")).getByRole("button", { name: "Start" }),
-    ).toBeTruthy();
-    expect(filledActions()).toEqual([resume]);
-    expect(await screen.findByTestId("tests-history")).toBeTruthy();
-  });
-
-  it("nothing is blocked: after Continue anyway, Start creates the session and lands on it", async () => {
+  it("phone Start: the ruling's notice with an outline Continue anyway, and no create request until it is pressed", async () => {
     const { history } = await mount(
       "paid",
       { inProgress: false, scored: false },
       "phone",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
     fireEvent.click(
-      await within(row("Full-Length Test 1")).findByRole("button", {
-        name: "Start",
-      }),
+      within(row("Full-Length Test 1")).getByRole("button", { name: "Start" }),
+    );
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    expect(notice.getAttribute("role")).toBe("dialog");
+    expect(within(notice).getByRole("heading").textContent).toBe(PHONE_TEXT);
+    const button = within(notice).getByTestId("full-length-phone-continue");
+    expect(button.textContent).toBe("Continue anyway");
+    // An outline, never a filled primary: it acknowledges a note.
+    expect(button.className).toContain("border-lyc-ink-strong");
+    expect(button.className).not.toContain("bg-lyc-primary-bg");
+    // Exactly the ruling's words, plus the Modal's named Close.
+    expect(notice.textContent).toBe(PHONE_TEXT + "Continue anywayClose");
+    // The check runs BEFORE the start: nothing has been created.
+    expect(createRequests()).toEqual([]);
+    expect(history.at(-1)).toBe("/tests");
+
+    fireEvent.click(button);
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+    expect(createRequests()).toEqual(["POST /api/tests/sessions"]);
+    expect(phoneNotice()).toBeNull();
+  });
+
+  it("phone Resume: the same notice; Continue anyway lands on the sitting", async () => {
+    const { history } = await mount("paid", {}, "phone");
+    const resume = await within(row("Full-Length Test 2")).findByRole("link", {
+      name: "Resume",
+    });
+    expect(resume.getAttribute("href")).toBe(`/tests/${OPEN_SESSION}`);
+    fireEvent.click(resume);
+    expect(await screen.findByTestId("full-length-phone-notice")).toBeTruthy();
+    expect(history.at(-1)).toBe("/tests");
+    fireEvent.click(screen.getByTestId("full-length-phone-continue"));
+    expect(history.at(-1)).toBe(`/tests/${OPEN_SESSION}`);
+  });
+
+  it("cancel: closing the notice starts nothing and leaves the student where they were; Start asks again", async () => {
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "phone",
+    );
+    const start = within(row("Full-Length Test 1")).getByRole("button", {
+      name: "Start",
+    });
+    fireEvent.click(start);
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    fireEvent.click(within(notice).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(phoneNotice()).toBeNull());
+    expect(createRequests()).toEqual([]);
+    expect(history.at(-1)).toBe("/tests");
+    // Not remembered: a cancel is not a Continue anyway.
+    fireEvent.click(start);
+    expect(await screen.findByTestId("full-length-phone-notice")).toBeTruthy();
+    expect(createRequests()).toEqual([]);
+  });
+
+  it("Continue anyway is remembered for the tab: the next start goes straight through", async () => {
+    await mount("paid", { inProgress: false, scored: false }, "phone");
+    fireEvent.click(
+      within(row("Full-Length Test 1")).getByRole("button", { name: "Start" }),
+    );
+    fireEvent.click(await screen.findByTestId("full-length-phone-continue"));
+    await waitFor(() => expect(createRequests()).toHaveLength(1));
+    cleanup();
+    net.log.length = 0;
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "phone",
+    );
+    fireEvent.click(
+      within(row("Full-Length Test 1")).getByRole("button", { name: "Start" }),
     );
     await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+    expect(phoneNotice()).toBeNull();
   });
 
-  it("Continue anyway is remembered for the visit (this tab)", async () => {
-    await mount("paid", {}, "phone");
-    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
-    await screen.findAllByTestId("tests-row");
-    cleanup();
-    await mount("paid", {}, "phone");
-    expect(await screen.findAllByTestId("tests-row")).not.toHaveLength(0);
-    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
-  });
-
-  it("free plan on a phone: Continue anyway reveals the upgrade card", async () => {
+  it("free plan on a phone: the upgrade card draws directly, no notice", async () => {
     await mount("free", {}, "phone");
-    expect(screen.getByTestId("tests-phone-notice")).toBeTruthy();
-    expect(screen.queryByTestId("tests-upgrade-card")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Continue anyway" }));
     expect(await screen.findByTestId("tests-upgrade-card")).toBeTruthy();
+    expect(phoneNotice()).toBeNull();
   });
 
-  it("desktop (lg and up): no notice, the home as before", async () => {
-    await mount("paid", {}, "desktop");
-    // Naming ruling (Karl, 2026-10-05): the page title is the section's name.
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Full-Length",
+  it("desktop (lg and up): Start creates the session at once, no notice", async () => {
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "desktop",
     );
-    expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
-    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
-    expect(screen.queryByText(PHONE_TEXT)).toBeNull();
+    fireEvent.click(
+      within(row("Full-Length Test 1")).getByRole("button", { name: "Start" }),
+    );
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+    expect(createRequests()).toEqual(["POST /api/tests/sessions"]);
+    expect(phoneNotice()).toBeNull();
   });
 
-  it("widening a phone past lg reveals the home with no tap", async () => {
-    await mount("paid", {}, "phone");
-    expect(screen.getByTestId("tests-phone-notice")).toBeTruthy();
+  it("widening a phone past lg: Start goes straight through", async () => {
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "phone",
+    );
     React.act(() => viewport.resize(false));
-    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
-    expect(await screen.findAllByTestId("tests-row")).not.toHaveLength(0);
+    fireEvent.click(
+      within(row("Full-Length Test 1")).getByRole("button", { name: "Start" }),
+    );
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+    expect(phoneNotice()).toBeNull();
   });
 
   it("no matchMedia at all (a non-browser render): the desktop path, no notice", async () => {
-    await mount("paid", {}, "absent");
-    expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
-    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "absent",
+    );
+    fireEvent.click(
+      within(row("Full-Length Test 1")).getByRole("button", { name: "Start" }),
+    );
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+    expect(phoneNotice()).toBeNull();
   });
 
-  it("the test setup's default matchMedia (no query matches) is the desktop path", async () => {
-    await mount("paid");
-    expect(screen.getAllByTestId("tests-row")).not.toHaveLength(0);
-    expect(screen.queryByTestId("tests-phone-notice")).toBeNull();
-  });
-
-  it("only the Full-Length home shows it: no exam session, module or report page imports the notice", () => {
-    const pages = path.dirname(fileURLToPath(import.meta.url));
-    const sources = fs
-      .readdirSync(pages)
-      .filter((f) => f.endsWith(".tsx") && !f.endsWith(".test.tsx"));
-    // Presence: the pages directory holds the session, module and report pages.
-    expect(sources).toEqual(
+  it("one shared check: only it imports the notice; every full-length start calls it; no exam session, module or report page does", () => {
+    const clientSrc = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../..",
+    );
+    const sources: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (
+          /\.(ts|tsx)$/.test(entry.name) &&
+          !/\.test\.(ts|tsx)$/.test(entry.name)
+        )
+          sources.push(full);
+      }
+    };
+    walk(clientSrc);
+    const matching = (pattern: RegExp): string[] =>
+      sources
+        .filter((f) => pattern.test(fs.readFileSync(f, "utf8")))
+        .map((f) => path.relative(clientSrc, f))
+        .sort();
+    // Presence: the walk saw the exam pages.
+    expect(sources.map((f) => path.basename(f))).toEqual(
       expect.arrayContaining([
         "ExamSessionPage.tsx",
         "ExamModulePage.tsx",
@@ -889,11 +959,23 @@ describe("phone widths: the laptop-or-tablet notice (owner ruling 2026-10-05)", 
         "TestsHomePage.tsx",
       ]),
     );
-    const users = sources.filter((f) =>
-      /phone-notice|PHONE_LAYOUT_QUERY/.test(
-        fs.readFileSync(path.join(pages, f), "utf8"),
-      ),
-    );
-    expect(users).toEqual(["TestsHomePage.tsx"]);
+    // The notice's words and memory are imported by the shared check alone.
+    expect(matching(/from "[^"]*\/phone-notice"/)).toEqual([
+      "features/exam/lib/useFullLengthPhonePrecheck.tsx",
+    ]);
+    // Every full-length start calls it: the Full-Length home, Home (Today's plan and Pick up),
+    // and the calendar (the block sheet's Start/Resume).
+    expect(matching(/useFullLengthPhonePrecheck\(\)/)).toEqual([
+      "components/home/PaidHome.tsx",
+      "features/exam/lib/useFullLengthPhonePrecheck.tsx",
+      "features/exam/pages/TestsHomePage.tsx",
+      "pages/calendar.tsx",
+    ]);
+    // The sitting's own pages never ask.
+    expect(
+      matching(
+        /useFullLengthPhonePrecheck|phone-notice|PHONE_LAYOUT_QUERY/,
+      ).filter((f) => /Exam(Session|Module|Report)Page/.test(f)),
+    ).toEqual([]);
   });
 });

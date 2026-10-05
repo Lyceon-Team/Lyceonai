@@ -395,8 +395,14 @@
 
 .lyceon-calendar.lyc-cal .scrim {
   background: var(--scrim);
+  /* OQ-63 (found testing a calendar block's Start at 390px): the App shell's phone bars are
+     fixed at z-index 40 (app-shell.tsx, Tailwind z-40), and the shared sheet's 8/9 put the
+     bottom sheet's footer, Start included, UNDER the tab bar, which took the tap. Above the
+     bars, below the student Modal (Radix, z-50), so the phone pre-start check opens over it. */
+  z-index: 44;
 }
 .lyceon-calendar.lyc-cal .sheet {
+  z-index: 45;
   background: var(--paper);
   color: var(--ink);
   border-left: 1px solid var(--rule);
