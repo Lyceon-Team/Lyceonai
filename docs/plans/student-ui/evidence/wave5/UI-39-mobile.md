@@ -7,7 +7,7 @@ Register row UI-39 ("Mobile: bottom tab bar and one page per shell"; proof: Karl
 - **Overflow:** every group's `index.md` records 0px horizontal overflow on every phone capture (UI-41 to UI-59).
 - **Prototypes:** the prototypes are a fixed 1440x900 canvas with no phone layout, so no phone prototype exists to compare against; these are built-only.
 
-**187 phone captures** across 11 page groups.
+**189 phone captures** across 11 page groups.
 
 ## UI-41: Shells: App shell (rail, mobile tab bar, avatar menu), Focus shell, Bare card
 
@@ -81,6 +81,7 @@ Full index with conditions: [`UI-53/index.md`](UI-53/index.md).
 | `practice-shortened` | ![practice-shortened light](UI-53/practice-shortened--mobile--light--built.png) | ![practice-shortened dark](UI-53/practice-shortened--mobile--dark--built.png) |
 | `review-correct` | ![review-correct light](UI-53/review-correct--mobile--light--built.png) | ![review-correct dark](UI-53/review-correct--mobile--dark--built.png) |
 | `review-incorrect` | ![review-incorrect light](UI-53/review-incorrect--mobile--light--built.png) | ![review-incorrect dark](UI-53/review-incorrect--mobile--dark--built.png) |
+| `review-lisa-focused` | ![review-lisa-focused light](UI-53/review-lisa-focused--mobile--light--built.png) | ![review-lisa-focused dark](UI-53/review-lisa-focused--mobile--dark--built.png) |
 | `review-lisa-locked` | ![review-lisa-locked light](UI-53/review-lisa-locked--mobile--light--built.png) | ![review-lisa-locked dark](UI-53/review-lisa-locked--mobile--dark--built.png) |
 | `review-lisa-typing` | ![review-lisa-typing light](UI-53/review-lisa-typing--mobile--light--built.png) | ![review-lisa-typing dark](UI-53/review-lisa-typing--mobile--dark--built.png) |
 | `review-selected` | ![review-selected light](UI-53/review-selected--mobile--light--built.png) | ![review-selected dark](UI-53/review-selected--mobile--dark--built.png) |
