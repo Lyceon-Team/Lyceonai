@@ -165,14 +165,18 @@ describe("Premium CTA wiring contract", () => {
     // billing card with LISA's pitch — not a second card. UI-56 (2026-10-03): the
     // standalone page's denial is its locked state, which opens the app's one upgrade
     // modal for `tutor_access` (UI-44), and still keys on the tutor's own reader.
-    const lisaCard = read("client/src/components/tutor/LisaUpgradeCard.tsx");
+    // OQ-54 (a) / OQ-57 (f), owner ruling 2026-10-05: the card is /chat's locked card in the
+    // panel, and opens the app's one upgrade modal for `tutor_access`, as /chat does.
+    const lisaCard = readCode(
+      "client/src/components/tutor/LisaUpgradeCard.tsx",
+    );
     expect(chat).toContain("isLisaEntitlementDenial(");
     expect(chat).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
     expect(chat).toContain("useTutorTurn");
     expect(tutorTurn).toContain("mapTutorErrorToPremiumReason");
     expect(reviewPanel).toContain("LisaUpgradeCard");
     expect(reviewPanel).toContain("useTutorTurn");
-    expect(lisaCard).toContain("PremiumUpgradePrompt");
+    expect(lisaCard).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
     expect(lisaCard).toContain("mapTutorErrorToPremiumReason");
     // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
     // pending Doc 04 rebuild. The two full-test.tsx assertions (PremiumUpgradePrompt,

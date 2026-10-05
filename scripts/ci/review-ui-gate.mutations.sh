@@ -87,6 +87,8 @@ FILES=(
   "client/src/lib/plan-copy.ts"
   "client/src/components/auth/RequireRole.tsx"
   "client/src/components/layout/BareCardShell.tsx"
+  "client/src/components/tutor/ScopedTutorPanel.tsx"
+  "client/src/components/tutor/LisaUpgradeCard.tsx"
 )
 
 snapshot_all() {
@@ -678,6 +680,97 @@ plant "UI53-C4" "the last answer closes the runner before its feedback is read" 
 assert s.count(a) == 1
 s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\") setSessionClosed(true);\n        // Owner ruling", 1)'
 
+
+# ── UI-53 / OQ-54 (a), OQ-57 (f) — the review runner's LISA panel on the student tokens ──
+# Owner ruling 2026-10-05: "Move the review runner's LISA panel onto student tokens in #1073
+# now". The review runner leaves the light lock; ScopedTutorPanel and LisaUpgradeCard draw with
+# the `lyc-*` tokens only, and the card shows approved copy only (OQ-44). Each plant mutates
+# product source at a single occurrence (asserted count == 1) and must redden the named test.
+T54L="client/src/components/tutor/ScopedTutorPanel.contract.test.tsx"
+
+plant "OQ54-TL1" "review runner put back on the light lock" \
+  "client/src/lib/route-shells.test.tsx" \
+  "client/src/lib/route-shells.ts" \
+  'a = "focus(\"Review\", \"/review\", false, null)"
+assert s.count(a) == 1
+s = s.replace(a, "focus(\"Review\", \"/review\")", 1)'
+
+plant "OQ54-K1" "panel frame back on the app-wide tokens" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "overflow-hidden rounded-lg border border-lyc-rule bg-lyc-sheet\""
+assert s.count(a) == 1
+s = s.replace(a, "overflow-hidden rounded-2xl border border-border/60 bg-card\"", 1)'
+
+plant "OQ54-K2" "question chip back to 12px legacy text" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink\""
+assert s.count(a) == 1
+s = s.replace(a, "px-2.5 py-0.5 text-xs font-medium text-lyc-ink\"", 1)'
+
+plant "OQ54-K3" "opener body back on the legacy muted colour" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "<p className=\"m-0 mt-1 text-lyc-body text-lyc-muted\">{OPENER_BODY}</p>"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"m-0 mt-1 text-lyc-body text-muted-foreground\">{OPENER_BODY}</p>", 1)'
+
+plant "OQ54-K4" "Hide LISA falls back to the base 14px shadcn size" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "className=\"shrink-0 text-lyc-body\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"shrink-0\"", 1)'
+
+plant "OQ54-K5" "opener title drawn with a raw hex colour" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "<p className=\"m-0 text-lyc-body font-semibold text-lyc-ink-strong\">"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"m-0 text-lyc-body font-semibold text-[#1a1a1a]\">", 1)'
+
+plant "OQ54-K6" "the first-message composer loses the panel inset" \
+  "$T54L" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n            inset=\"panel\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n", 1)'
+
+plant "OQ54-K7" "a thread turn label back to 12px legacy text" \
+  "$T54L" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "<span className=\"text-lyc-meta font-semibold text-lyc-muted\">\n        {isStudent"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"text-xs font-semibold text-lyc-muted\">\n        {isStudent", 1)'
+
+plant "OQ54-C1" "the LISA card shows the unapproved W4-11 body" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "<p className=\"m-0 text-lyc-body text-lyc-ink\">{copy.body}</p>"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">{LISA_UPGRADE_PITCH.body}</p>", 1)'
+
+plant "OQ54-C2" "Unlock LISA opens the wrong feature's modal" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "upgrade.open(\"tutor_access\", \"plan\")"
+assert s.count(a) == 1
+s = s.replace(a, "upgrade.open(\"mastery_detail\", \"plan\")", 1)'
+
+plant "OQ54-C3" "the LISA card back on the app-wide tokens" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "rounded-lg border border-lyc-rule bg-lyc-paper p-5"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg border border-border bg-card p-5", 1)'
+
+plant "OQ54-C4" "the LISA card adds words beyond the approved copy" \
+  "$T54L" \
+  "client/src/components/tutor/LisaUpgradeCard.tsx" \
+  'a = "{copy.body}</p>"
+assert s.count(a) == 1
+s = s.replace(a, "{copy.body} Upgrade today.</p>", 1)'
 
 # ── UI-54 — Full-Length home, exam session and report on the student tokens (2026-10-03) ─
 # DESIGN.md §4 Full-Length home and Exam report, FullLength.dc.html, Report.dc.html; register

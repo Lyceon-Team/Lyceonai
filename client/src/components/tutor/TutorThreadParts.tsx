@@ -319,14 +319,19 @@ export function PausedBar({
   onContinue,
   endPending,
   resumePending,
+  inset = "page",
 }: {
   onEnd: () => void;
   onContinue: () => void;
   endPending: boolean;
   resumePending: boolean;
+  /** See `ThreadInset`. */
+  inset?: ThreadInset;
 }) {
   return (
-    <div className="shrink-0 border-t border-lyc-rule bg-lyc-paper px-4 py-4 lg:px-10">
+    <div
+      className={`shrink-0 border-t border-lyc-rule bg-lyc-paper py-4 ${THREAD_INSET_X[inset]}`}
+    >
       <div className="mx-auto flex max-w-[760px] flex-wrap items-center justify-between gap-4">
         <div>
           <p className="m-0 text-lyc-body font-semibold text-lyc-ink-strong">
@@ -370,12 +375,25 @@ export function PausedBar({
 export const LISA_DISCLAIMER =
   "LISA can make mistakes; your practice results are the source of truth.";
 
+/**
+ * Where a thread's bottom bar (composer, paused bar) sits. "page": the /chat column, 16px sides
+ * and 40px from `lg` (Lisa.dc.html). "panel": the review runner's 360px LISA panel (UI-53,
+ * OQ-54 (a), ruling 2026-10-05), 16px sides at every width, so the textarea keeps its room.
+ */
+export type ThreadInset = "page" | "panel";
+
+const THREAD_INSET_X: Readonly<Record<ThreadInset, string>> = {
+  page: "px-4 lg:px-10",
+  panel: "px-4",
+};
+
 export function Composer({
   draft,
   onDraftChange,
   onSubmit,
   disabled,
   placeholder,
+  inset = "page",
 }: {
   draft: string;
   onDraftChange: (value: string) => void;
@@ -383,6 +401,8 @@ export function Composer({
   /** LISA is thinking (or the thread cannot take a message): Send is disabled. */
   disabled: boolean;
   placeholder: string;
+  /** See `ThreadInset`. */
+  inset?: ThreadInset;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -399,7 +419,9 @@ export function Composer({
   );
 
   return (
-    <div className="shrink-0 border-t border-lyc-rule bg-lyc-paper px-4 pb-[22px] pt-[18px] lg:px-10">
+    <div
+      className={`shrink-0 border-t border-lyc-rule bg-lyc-paper pb-[22px] pt-[18px] ${THREAD_INSET_X[inset]}`}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();

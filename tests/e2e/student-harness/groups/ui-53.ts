@@ -13,6 +13,12 @@
  * "incorrect", "first"), resolved by capture.ts from the served item's stored order in the
  * harness database: the page itself never knows which choice is right. The prototype is
  * clicked into the same state: Runner.dc.html's correct choice is its second (LYC_CORRECT = 1).
+ *
+ * OQ-54 (a) / OQ-57 (f), owner ruling 2026-10-05: the review runner's LISA panel is on the
+ * student tokens and the runner follows the device theme. Two shots show the panel itself (on a
+ * phone it stacks under the question, and the steps scroll it into view): in use (a first message sent, LISA's typing
+ * dots, the turn request held in the browser as UI-56 does) and, for the free student, the LISA
+ * card that replaces the composer when the server refuses the panel's on-load lookup.
  */
 import { SEED_CLIENT_INSTANCE } from "../seed";
 import type { FreshSession, PageGroup, Step } from "./types";
@@ -59,6 +65,11 @@ const SHORTENED: FreshSession = {
 };
 
 const CLIENT = { lyceon_client_instance_id: SEED_CLIENT_INSTANCE } as const;
+/** The review runner's LISA composer (ScopedTutorPanel). */
+const LISA_COMPOSER = {
+  desktop: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
+  mobile: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
+} as const;
 const PROTO_CHOICE = (n: number): string => `[role="radio"] >> nth=${n}`;
 const PROTO_SUBMIT = 'button:has-text("Submit")';
 
@@ -172,6 +183,60 @@ export const UI_53: PageGroup = {
         steps: [PROTO_CHOICE(0), PROTO_SUBMIT],
         state: "incorrect",
         note: "a wrong (first) choice, then Submit",
+      },
+    },
+    {
+      id: "review-lisa-typing",
+      title:
+        "Review runner, LISA panel in use (OQ-54 (a), ruling 2026-10-05: student tokens, follows the device theme): a first message typed and sent creates the item's conversation (real POST /api/tutor/conversations); the student's bubble and LISA's typing dots show in the panel. The turn request is held in the browser, so no turn runs. On a phone the panel stacks under the question; typing into it scrolls it into view",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: LISA_COMPOSER,
+      holdRequest: { method: "POST", path: "/api/tutor/messages" },
+      steps: [
+        {
+          fill: {
+            desktop: LISA_COMPOSER.desktop,
+            mobile: LISA_COMPOSER.mobile,
+          },
+          value: "How should I start this one?",
+        },
+        both(
+          '[data-testid="scoped-tutor-panel"] button[aria-label="Send message"]',
+        ),
+      ],
+      expectVisible:
+        '[data-testid="scoped-tutor-panel"] [data-testid="lisa-typing"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d), ruling W4-4 keeps LISA in the review runner). The panel reuses the UI-56 thread parts (Lisa.dc.html).",
+      },
+    },
+    {
+      id: "review-lisa-locked",
+      title:
+        "Review runner, free student: the server refuses LISA's on-load lookup, so the panel shows the LISA card (approved copy: LISA's headline and the prototype body, OQ-44) with Unlock LISA in place of the composer. The app's upgrade modal opens on the refusal (UI-44) and is closed with Not now before the shot; a click on the panel's question chip scrolls the panel into view (on a phone it stacks under the question)",
+      persona: "free",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: {
+        desktop: '[data-testid="lisa-upgrade"]',
+        mobile: '[data-testid="lisa-upgrade"]',
+      },
+      steps: [
+        both('[data-testid="upgrade-modal"] button:has-text("Not now")'),
+        both('[data-testid="tutor-question-chip"]'),
+      ],
+      expectVisible: '[data-testid="lisa-upgrade-unlock"]',
+      expectGone: '[data-testid="upgrade-modal"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped in the runner: the card is the Lisa.dc.html free card (plan = free) sized for the review runner's LISA panel.",
       },
     },
     {

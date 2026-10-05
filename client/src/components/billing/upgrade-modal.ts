@@ -39,7 +39,7 @@ import {
 } from "@lyceon/shared/feature-access";
 import { getEntitlementDenial } from "@/lib/api-error";
 import { resolveCtaCopy } from "@/lib/billing-cta";
-import { LISA_UPGRADE_PITCH } from "@/components/tutor/LisaUpgradeCard";
+import { LISA_UPGRADE_PITCH } from "@/components/tutor/lisa-upgrade-pitch";
 import { sectionHref } from "@/components/settings/settings-sections";
 
 /**
