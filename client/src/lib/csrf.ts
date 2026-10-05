@@ -1,4 +1,6 @@
+import { csrfTokenResponseSchema } from "@lyceon/shared/csrf-token-schema";
 import { HttpApiError } from "./api-error";
+import { setSessionCookieHint } from "./session-hint";
 
 let cachedToken: string | null = null;
 let inflight: Promise<string> | null = null;
@@ -13,6 +15,8 @@ async function fetchCsrfToken(): Promise<string> {
     throw new Error(`Failed to fetch CSRF token: ${res.status} ${text}`);
   }
   const data = (await res.json()) as { csrfToken?: string };
+  const parsed = csrfTokenResponseSchema.safeParse(data);
+  setSessionCookieHint(parsed.success ? parsed.data.sessionCookiePresent : null);
   if (!data?.csrfToken) {
     console.error("[CSRF] Token missing in server response body");
     throw new Error("CSRF token missing in response");
@@ -46,6 +50,7 @@ export function clearCsrfToken(): void {
   console.log("[CSRF] Clearing cached token");
   cachedToken = null;
   inflight = null;
+  setSessionCookieHint(null);
 }
 
 function hasCsrfBlockedCode(payload: any): boolean {

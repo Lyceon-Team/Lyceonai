@@ -149,6 +149,9 @@ jobs:
       - name: Build (including the Vercel production bundle)
         run: pnpm run build:vercel
 
+      - name: SEO output gate (sitemap ↔ registry ↔ prerendered pages, F1/F3)
+        run: pnpm run gate:seo-output
+
       - name: Boot probe (production bundle must complete module load)
         run: pnpm run probe:boot
 
@@ -874,6 +877,28 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-rls-gates.sql
+
+      # QOTD (SEO Wave 2, plan Q1) and the SCL-202 anonymous ledger. Runs here because this
+      # job already holds a database with the full migration pipeline applied; the gate
+      # writes only inside one transaction and rolls back, so it cannot disturb the calendar
+      # gates around it.
+      - name: QOTD + anonymous ledger schema gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/qotd-schema-gates.sql
+
+      # Plants a repeat schedule, a readable future day, two pre-submit answer leaks and an early
+      # archive page; each must turn its guarding check red on a named assertion (plan Q1-Q3).
+      - name: QOTD mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/qotd.mutations.sh
 
       - name: Calendar write-RPC gates
         env:
@@ -2090,6 +2115,26 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-review.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-review.json \
             --file tests/ci/exam-review.handler-pg.ci.test.ts
+
+      # G5-08: the guardian's exam list, detail and Dashboard card say what the student's own
+      # card and report say. One real session per state (scored, partial, pending, failed,
+      # abandoned, in progress) made by the real exam functions; the student's truth from the
+      # real student route rendered by the student's own components; the guardian's from the
+      # real guardian routes rendered by the real app. Named BY FILE.
+      # @spec [Guardian_Closure_Plan G5-08; Doc 04C §2.6, §12.2, §12.3; SCL-181; SCL-199]
+      # | @implemented [2026-10-02]
+      - name: Guardian exam mirror → real PG proof (G5-08)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/guardian-exam-mirror.handler-pg.ci.test.tsx \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-guardian-exam-mirror.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam-mirror.json \
+            --file tests/ci/guardian-exam-mirror.handler-pg.ci.test.tsx
 
       # The fourteen assertions above are worth exactly as much as their plants. This
       # mutates product source once per assertion and fails the build unless that

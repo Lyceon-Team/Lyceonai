@@ -72,6 +72,7 @@ import {
   examFormsResponseSchema,
   type ExamFormsResponse,
 } from "../../packages/shared/src/exam-report-schema";
+import type { GuardianListSessionFacts } from "../../packages/shared/src/exam-guardian-report-schema";
 
 const COMPONENT = "EXAM_RUNTIME";
 
@@ -729,8 +730,10 @@ const formRowSchema = z.object({
       score_total_present: z.boolean(),
       score_partial_present: z.boolean(),
       failed_outbox_id: z.string().uuid().nullable(),
-      // `exam_list_forms` has always emitted it; the guardian list carries it (SCL-192).
+      // `exam_list_forms` has always emitted both; the guardian list carries them (SCL-192;
+      // `abandoned_at` since G5-08: a partial score's outcome instant).
       completed_at: z.string().nullable(),
+      abandoned_at: z.string().nullable(),
     })
     .nullable(),
 });
@@ -755,11 +758,15 @@ export async function listExamForms(
  * unchanged PLUS each latest session's `completed_at`, keyed by session id. The student's
  * listing does not gain the field; only the guardian list, which needs it to pick the latest
  * test, reads the map. Null for a session that never completed (in progress, abandoned).
+ *
+ * SCL-199 (G5-08, 2026-10-02; narrowed by G5-09, 2026-10-03): each session's map entry also
+ * carries its abandonment instant, so the guardian can tell when a partial score ended. No
+ * score rides here: a guardian reads scores through the report route only (G5-09).
  */
 export async function listExamFormsWithCompletion(studentId: string): Promise<
   ExamResult<{
     forms: ExamFormsResponse;
-    completedAt: Readonly<Record<string, string | null>>;
+    sessions: Readonly<Record<string, GuardianListSessionFacts>>;
   }>
 > {
   const env = await callExamRpc("exam_list_forms", {
@@ -769,17 +776,21 @@ export async function listExamFormsWithCompletion(studentId: string): Promise<
   const rows = z
     .object({ forms: z.array(formRowSchema) })
     .parse(env.body).forms;
-  const completedAt: Record<string, string | null> = {};
+  const sessions: Record<string, GuardianListSessionFacts> = {};
   for (const f of rows) {
-    if (f.latest_session !== null) {
-      completedAt[f.latest_session.session_id] = f.latest_session.completed_at;
+    const l = f.latest_session;
+    if (l !== null) {
+      sessions[l.session_id] = {
+        completed_at: l.completed_at,
+        abandoned_at: l.abandoned_at,
+      };
     }
   }
   return {
     ok: true,
     status: 200,
     value: {
-      completedAt,
+      sessions,
       forms: examFormsResponseSchema.parse({
         forms: rows.map((f) => ({
           test_form_id: f.test_form_id,

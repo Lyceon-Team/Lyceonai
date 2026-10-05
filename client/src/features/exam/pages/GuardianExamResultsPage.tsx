@@ -18,10 +18,18 @@
  * answer, explanation, skill, module, routing, raw-count or timing field to draw — so there
  * is nothing to hide. The server decides access; the 402 and 404 below are its answers.
  *
- * Pending, partial and failed get their own guardian wording: a pending result is "being
- * scored", never a number; a partial one shows only the section that was scored and says
- * why there is no total; a failed one says the score is delayed on our side, without the
- * student-addressed message or incident reference (§12.3).
+ * G5-08 (owner brief 2026-10-02): THE STUDENT'S WORDS. The list, the detail and the
+ * Dashboard card say what the student's own surfaces say, from the same producer fields: the
+ * card word is the student's `formCardStateLabel` over the same session and report state, the
+ * names are the exam surface's ("Full-length tests", "Full-length practice test"), and each
+ * report state reads as the student's report does (`ReportBody`). Owner decisions of the same
+ * day: where the student's sentence says "you/your", the guardian's names the student; a
+ * clause that is false for a guardian is dropped, never reworded (this page does not poll,
+ * SCL-181; a guardian cannot resume or start a test, §12.3); the failed state shows its title
+ * only (SCL-181 keeps the student-addressed message and incident reference off the guardian
+ * wire). What is deliberately absent is the guardian-wide removals: x/y counts (SCL-189),
+ * skills (SCL-194), answers and review (§12.3). `real-PG proof: tests/ci/guardian-exam-mirror
+ * .handler-pg.ci.test.tsx`.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
@@ -43,10 +51,18 @@ import {
   useCurrentStudentName,
   useGuardianReadFailure,
 } from "@/features/guardian/GuardianStates";
-import { MODE_SHORT_LABEL } from "../lib/labels";
+import { formCardStateLabel, MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoading } from "../components/ExamStatus";
-import { DomainBreakdown } from "../components/DomainBreakdown";
+import { DomainSegments } from "../components/DomainSegments";
+import {
+  unscoredSectionOmissions,
+  type ExamOmittedDomain,
+} from "@lyceon/shared/exam-domain-segments";
+import {
+  examSectionSchema,
+  type ExamSection,
+} from "@lyceon/shared/exam-runtime-schema";
 import {
   Fact,
   Panel,
@@ -56,19 +72,6 @@ import {
   formatDate,
 } from "../components/ExamReportParts";
 import "../exam.css";
-
-const REPORT_STATE_LABEL: Record<
-  GuardianExamList["tests"][number]["report_state"],
-  string
-> = {
-  scored: "Scored",
-  scoring_pending: "Being scored",
-  partial_scored: "Partial score",
-  failed_requires_review: "Score delayed",
-  not_completed: "Not finished",
-  unavailable: "Unavailable",
-  voided: "Unavailable",
-};
 
 /**
  * The page body inside the guardian shell (G4-05). The shell brings the only header — logo,
@@ -98,10 +101,10 @@ function Shell({
               ? guardianPaths.dashboard(studentId)
               : guardianPaths.exams(studentId)
           }
-          className="flex min-h-[48px] w-fit items-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-base font-medium"
+          className="flex min-h-[48px] w-fit items-center self-center rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-6 text-base font-medium sm:self-start"
           data-testid="guardian-exam-back"
         >
-          {sessionId === undefined ? "Back to dashboard" : "All results"}
+          {sessionId === undefined ? "Back to dashboard" : "Full-length tests"}
         </Link>
       </div>
     </div>
@@ -181,7 +184,10 @@ function ResultsList({ studentId }: { studentId: string }) {
   }
   return (
     <>
-      <Title name="Practice test results" line="Full-length practice tests" />
+      {/* The student's own page name (TestsHomePage). */}
+      <h1 className="m-0 text-center font-serif text-[32px] font-semibold sm:text-left">
+        Full-length tests
+      </h1>
       {list.data.length === 0 ? (
         <NoExams />
       ) : (
@@ -190,32 +196,73 @@ function ResultsList({ studentId }: { studentId: string }) {
           data-testid="guardian-exam-list"
         >
           {list.data.map((t) => (
-            <li key={t.session_id}>
-              <Link
-                href={guardianPaths.exam(studentId, t.session_id)}
-                className="flex min-h-[64px] items-center justify-between gap-4 rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] px-5 py-3"
-              >
-                <span className="flex flex-col">
-                  <span className="text-base font-semibold">
-                    {t.test_form_name}
-                  </span>
-                  <span className="text-base text-[var(--exam-muted)]">
-                    {t.completed_at === null
-                      ? ""
-                      : `${formatDate(t.completed_at)} · `}
-                    {MODE_SHORT_LABEL[t.mode]} timing · Attempt{" "}
-                    {t.attempt_number_for_form}
-                  </span>
-                </span>
-                <span className="text-base font-medium">
-                  {REPORT_STATE_LABEL[t.report_state]}
-                </span>
-              </Link>
+            <li
+              key={t.session_id}
+              data-testid={`guardian-exam-row-${t.session_id}`}
+            >
+              <ResultRow studentId={studentId} test={t} />
             </li>
           ))}
         </ul>
       )}
     </>
+  );
+}
+
+type ListItem = GuardianExamList["tests"][number];
+
+const IN_PROGRESS: ReadonlySet<ListItem["session_state"]> = new Set([
+  "created",
+  "active",
+  "section_break",
+]);
+
+/**
+ * @spec [Guardian_Closure_Plan G5-08; SCL-181 (5); Doc-04C §12.3] | @implemented [2026-10-02]
+ *
+ * One attempt, as the student's own card shows it (TestsHomePage `FormCard`): the eyebrow, the
+ * form, the student's state word, and "View scores" exactly where the student has it — not for
+ * an attempt in progress or one that ended with nothing scored. The card's question count and
+ * timing are the student's start controls and are not carried (SCL-181 (5)); Resume, Start and
+ * Take again are student actions (§12.3).
+ */
+function ResultRow({ studentId, test }: { studentId: string; test: ListItem }) {
+  const hasReport =
+    !IN_PROGRESS.has(test.session_state) &&
+    test.session_state !== "abandoned_final";
+  return (
+    <article
+      aria-label={test.test_form_name}
+      className="flex flex-col gap-3 rounded-xl border border-[var(--exam-line)] bg-[var(--exam-surface)] px-5 py-4 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left"
+    >
+      <div className="flex flex-col gap-1">
+        <span className="text-base font-semibold uppercase tracking-[0.06em] text-[var(--exam-muted)]">
+          Full-length practice test
+        </span>
+        <h2 className="m-0 font-serif text-[22px] font-semibold">
+          {test.test_form_name}
+        </h2>
+      </div>
+      <div className="flex flex-col items-center gap-3 sm:flex-row">
+        <span
+          className="rounded-full bg-muted px-3 py-1 text-base font-semibold"
+          data-testid="guardian-exam-state"
+        >
+          {formCardStateLabel({
+            state: test.session_state,
+            report_state: test.report_state,
+          })}
+        </span>
+        {hasReport && (
+          <Link
+            href={guardianPaths.exam(studentId, test.session_id)}
+            className="flex min-h-[44px] items-center rounded-lg border border-[var(--exam-line)] bg-[var(--exam-surface)] px-4 text-base font-semibold"
+          >
+            View scores
+          </Link>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -248,8 +295,13 @@ function Result({
     );
   }
   return (
+    // G5-07 (owner brief 2026-10-03): on a phone the detail centres its lines — title, line,
+    // total and facts, disclosure, section cards, panel — as the other guardian pages do (item
+    // 10); the per-domain bars stay left (`LeftAligned`). The shared student components are
+    // untouched: they inherit the alignment from this guardian-only wrapper.
     <div
-      className="flex flex-col gap-7"
+      className="flex flex-col gap-7 text-center sm:text-left"
+      data-testid="guardian-exam-report"
       data-report-state={report.data.report_state}
     >
       <GuardianReportBody report={report.data} />
@@ -257,33 +309,116 @@ function Result({
   );
 }
 
+/**
+ * @spec [Guardian_Closure_Plan G5-12; Doc-04C §9.1; SCL-180 owner ruling 7] | @implemented
+ *       [2026-10-05]
+ * plain English: the omissions behind the student's "… wasn't completed, so its domains aren't
+ * shown." note, for every section a partial attempt did not score — derived from the payload's
+ * own `completed_sections` by the shared `unscoredSectionOmissions`, the function the student
+ * projection uses, so the note is the student's sentence from the student's component. No
+ * omitted list is sent (no payload change). A section scored but missing a domain's items
+ * (`no_items_served`) cannot be told from here; the SQL cannot produce one today.
+ */
+function unscoredOmissions(
+  completed: ReadonlyArray<ExamSection>,
+): ExamOmittedDomain[] {
+  return examSectionSchema.options
+    .filter((s) => !completed.includes(s))
+    .flatMap(unscoredSectionOmissions);
+}
+
+/** Domain-card content stays left-aligned on a phone (item 10), inside the centred detail. */
+function LeftAligned({ children }: { children: React.ReactNode }) {
+  return <div className="text-left">{children}</div>;
+}
+
 function AttemptFacts({
   report,
 }: {
-  report: Extract<
-    GuardianExamReport,
-    { report_state: "scored" | "partial_scored" }
-  >;
+  report: Extract<GuardianExamReport, { report_state: "scored" }>;
 }) {
   return (
-    <dl className="m-0 flex flex-wrap gap-8">
+    <dl className="m-0 flex flex-wrap justify-center gap-8 sm:justify-start">
       <Fact label="Timing" value={MODE_SHORT_LABEL[report.mode]} />
       <Fact label="Attempt" value={String(report.attempt_number_for_form)} />
-      <Fact
-        label="This form"
-        value={
-          report.is_first_seen_form_attempt
-            ? "New to the student"
-            : "Seen before"
-        }
-      />
     </dl>
   );
 }
 
+/**
+ * @spec [Guardian_Closure_Plan G5-08; Doc-04C §12.2/§12.3; SCL-181; owner decisions
+ *       2026-10-02 ("you/your" names the student; the failed state shows its title only)]
+ *       | @implemented [2026-10-02]
+ *
+ * The student's report words for a state with no score to show (`ReportBody`), said of the
+ * student by name. `line` is the student's line above the form name; `title` the panel title;
+ * `body` the panel sentence, or null where the guardian has none (the failed state, by owner
+ * decision 2026-10-02). Shared by the detail and the Dashboard card, so the two cannot differ.
+ */
+type GuardianOutcomeCopy = {
+  line: string;
+  title: string;
+  body: string | null;
+};
+
+export function guardianOutcomeCopy(
+  report: Exclude<
+    GuardianExamReport,
+    { report_state: "scored" | "partial_scored" }
+  >,
+  studentName: string,
+): GuardianOutcomeCopy {
+  const their = possessive(studentName);
+  switch (report.report_state) {
+    case "scoring_pending":
+      // The student's second sentence ("This page updates on its own.") is dropped: the
+      // guardian page does not poll (SCL-181). §12.2 keeps `estimated_ready_at` off the wire.
+      return {
+        line: "Test submitted",
+        title: `Scoring ${their} test`,
+        body: "Scoring usually takes a few minutes.",
+      };
+    case "failed_requires_review":
+      return {
+        line: "Test submitted",
+        title: `${their} score isn't ready`,
+        body: null,
+      };
+    case "unavailable":
+      return {
+        line: "Report",
+        title: "This report isn't available right now",
+        body:
+          report.unavailable_reason === "entitlement_lapsed"
+            ? `Full-length test reports are part of an active subscription. ${their} results are kept, and you can see them again when ${their} subscription is active.`
+            : "This report can't be shown at the moment.",
+      };
+    case "not_completed":
+      // The student's `resumable` is withheld (§12.2); the session state is what decides it.
+      // "You can start a new attempt from Tests." and "Resume test" are the student's actions.
+      return report.session_state === "abandoned_final"
+        ? {
+            line: "Report",
+            title: "This attempt ended before it was finished",
+            body: "There's no score for this attempt.",
+          }
+        : {
+            line: "Report",
+            title: "This test isn't finished",
+            body: `${their} score appears here once both sections are submitted.`,
+          };
+  }
+}
+
+/** G4-06: the withheld-score line names the student; the Dashboard card shows it too (G5-04). */
+export function guardianWithheldCopy(studentName: string): string {
+  return `${possessive(studentName)} score can't be shown right now. Please check back soon.`;
+}
+
 export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
   // G4-06: the withheld-score line names the student; the student's own report says "Your".
-  const withheld = `${possessive(useCurrentStudentName())} score can't be shown right now. Please check back soon.`;
+  const name = useCurrentStudentName();
+  const withheld = guardianWithheldCopy(name);
   switch (report.report_state) {
     case "scored":
       return (
@@ -297,7 +432,7 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             withheldCopy={withheld}
           >
             <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
+              <div className="flex flex-wrap items-end justify-center gap-x-10 gap-y-4 sm:justify-start">
                 <div className="flex flex-col">
                   <span
                     className="font-serif text-[64px] font-semibold leading-none"
@@ -314,7 +449,15 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
               <DisclosureNote disclosure={report.disclosure} />
             </div>
             <ScoreTabs
-              breakdown={<DomainBreakdown rows={report.domain_breakdown} />}
+              breakdown={
+                <LeftAligned>
+                  {/* G5-11: the student's own seven-segment rows (SCL-210). */}
+                  <DomainSegments
+                    segments={report.domain_breakdown}
+                    omitted={[]}
+                  />
+                </LeftAligned>
+              }
             >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard
@@ -348,11 +491,19 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
               >
                 {report.partial_disclosure.summary}
               </p>
-              <AttemptFacts report={report} />
               <DisclosureNote disclosure={report.disclosure} />
             </Panel>
             <ScoreTabs
-              breakdown={<DomainBreakdown rows={report.domain_breakdown} />}
+              breakdown={
+                <LeftAligned>
+                  {/* G5-11: the student's own seven-segment rows (SCL-210); G5-12: the
+                      student's note for the section with no score. */}
+                  <DomainSegments
+                    segments={report.domain_breakdown}
+                    omitted={unscoredOmissions(report.completed_sections)}
+                  />
+                </LeftAligned>
+              }
             >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard
@@ -368,62 +519,20 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
           </DisclosedScore>
         </>
       );
-    case "scoring_pending":
+    default: {
+      const copy = guardianOutcomeCopy(report, name);
       return (
         <>
-          <Title name={report.test_form_name} line="Test submitted" />
-          <Panel title="Being scored">
-            <p className="m-0 text-base leading-relaxed" role="status">
-              This test has been submitted and is being scored. Scores usually
-              appear within a few minutes.
-            </p>
+          <Title name={report.test_form_name} line={copy.line} />
+          <Panel title={copy.title}>
+            {copy.body === null ? null : (
+              <p className="m-0 text-base leading-relaxed" role="status">
+                {copy.body}
+              </p>
+            )}
           </Panel>
         </>
       );
-    case "failed_requires_review":
-      return (
-        <>
-          <Title name={report.test_form_name} line="Test submitted" />
-          <Panel title="Score delayed">
-            <p
-              className="m-0 text-base leading-relaxed"
-              data-testid="guardian-exam-delayed"
-            >
-              A technical issue on our end delayed this score. Our team is
-              looking into it, and the score will appear here once it's ready.
-            </p>
-          </Panel>
-        </>
-      );
-    case "not_completed":
-      return (
-        <>
-          <Title name={report.test_form_name} line="Practice test" />
-          <Panel
-            title={
-              report.session_state === "abandoned_final"
-                ? "Not finished"
-                : "In progress"
-            }
-          >
-            <p className="m-0 text-base leading-relaxed">
-              {report.session_state === "abandoned_final"
-                ? "This attempt ended before it was finished, so it has no score."
-                : "A score appears here once both sections are submitted."}
-            </p>
-          </Panel>
-        </>
-      );
-    case "unavailable":
-      return (
-        <>
-          <Title name={report.test_form_name} line="Practice test" />
-          <Panel title="Not available right now">
-            <p className="m-0 text-base leading-relaxed">
-              This result can't be shown at the moment.
-            </p>
-          </Panel>
-        </>
-      );
+    }
   }
 }

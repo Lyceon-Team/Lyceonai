@@ -50,8 +50,8 @@ const TABS: ReadonlyArray<{ id: ScoreTab; label: string }> = [
 /**
  * WAI-ARIA tabs: the selected tab is the only one in the tab order; Left/Right/Home/End
  * move selection and focus. Only the selected panel is rendered. `breakdown` is the
- * already-rendered breakdown panel: the guardian passes `DomainBreakdown` (a bar per domain,
- * no counts, SCL-189).
+ * already-rendered breakdown panel: the guardian passes `DomainSegments`, the student's own
+ * seven segments per domain (G5-11, SCL-210).
  */
 export function ScoreTabs({
   children,

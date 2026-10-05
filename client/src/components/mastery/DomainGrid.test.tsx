@@ -8,8 +8,7 @@
  *
  * plain English: the grid is driven by the canonical domain list, not by the rows it is
  * handed. A served row keeps its own level and the server's words; a domain with no row is a
- * card reading "Not enough answers yet" — never missing. With `sections`, only that
- * section's four are drawn (the guardian Dashboard draws one grid per section).
+ * card reading "Not enough answers yet" — never missing.
  */
 import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -70,9 +69,7 @@ function cards(
 
 describe("DomainGrid — all eight domains", () => {
   it("four rows still draw all eight, four per section, in canonical order", () => {
-    const { container } = render(
-      <DomainGrid viewer="student" domains={FOUR} />,
-    );
+    const { container } = render(<DomainGrid domains={FOUR} />);
     const drawn = cards(container);
     expect(drawn.map((c) => c.domain)).toEqual([
       ...CANONICAL_DOMAINS_BY_SECTION.M,
@@ -100,21 +97,12 @@ describe("DomainGrid — all eight domains", () => {
   });
 
   it("no rows at all: eight unmeasured cards, not an empty grid", () => {
-    const { container } = render(<DomainGrid viewer="student" domains={[]} />);
+    const { container } = render(<DomainGrid domains={[]} />);
     const drawn = cards(container);
     expect(drawn).toHaveLength(8);
     expect(new Set(drawn.map((c) => c.pill))).toEqual(
       new Set([UNMEASURED_DISPLAY_NAME]),
     );
-  });
-
-  it("with `sections`, draws that section's four only", () => {
-    const { container } = render(
-      <DomainGrid viewer="student" domains={FOUR} sections={["RW"]} />,
-    );
-    expect(cards(container).map((c) => c.domain)).toEqual([
-      ...CANONICAL_DOMAINS_BY_SECTION.RW,
-    ]);
   });
 
   it("the unmeasured name is the `mastery_levels` seed row's, word for word", async () => {
@@ -169,11 +157,9 @@ describe("DomainGrid — the five-segment mastery meter", () => {
     ({ levelKey, level, displayName, filled }) => {
       const { container } = render(
         <DomainGrid
-          viewer="student"
           domains={[
             { section: "M", domain: "Algebra", levelKey, level, displayName },
           ]}
-          sections={["M"]}
         />,
       );
       const meter = meterOf(container, "Algebra");
@@ -221,9 +207,7 @@ describe("DomainGrid — the five-segment mastery meter", () => {
   );
 
   it("the meter draws no text of its own, so it can never fall under the 16px floor", () => {
-    const { container } = render(
-      <DomainGrid viewer="student" domains={FOUR} />,
-    );
+    const { container } = render(<DomainGrid domains={FOUR} />);
     const meters = Array.from(
       container.querySelectorAll<HTMLElement>("[data-testid='mastery-meter']"),
     );
@@ -233,31 +217,14 @@ describe("DomainGrid — the five-segment mastery meter", () => {
   });
 });
 
-/**
- * `viewer="guardian"` renders nothing skill-related, whatever it is handed (owner ruling
- * 2026-10-01, #1013 review item 2; SCL-194): the student keeps the Skills drill-down.
- */
-describe("DomainGrid — the viewer decides whether skills exist", () => {
-  it("student: every card carries its Skills drill-down", () => {
-    render(
-      <DomainGrid viewer="student" domains={FOUR} onOpen={() => undefined} />,
-    );
+/** The student keeps the Skills drill-down on every card. */
+describe("DomainGrid — the Skills drill-down", () => {
+  it("with onOpen, every card carries its Skills drill-down", () => {
+    render(<DomainGrid domains={FOUR} onOpen={() => undefined} />);
     // Presence: the student's control, one per card.
     expect(screen.getAllByTestId("domain-open")).toHaveLength(8);
     expect(
       screen.getByRole("button", { name: "View skills in Algebra" }),
     ).toBeTruthy();
-  });
-
-  it("guardian: no Skills control and no skill text, even when handed a drill-down", () => {
-    const { container } = render(
-      <DomainGrid viewer="guardian" domains={FOUR} onOpen={() => undefined} />,
-    );
-    // Presence first: the eight cards and their meters are drawn.
-    expect(container.querySelectorAll("[data-domain]")).toHaveLength(8);
-    expect(screen.getAllByTestId("mastery-meter")).toHaveLength(8);
-    expect(screen.queryAllByTestId("domain-open")).toEqual([]);
-    expect(screen.queryAllByRole("button")).toEqual([]);
-    expect(container.textContent ?? "").not.toMatch(/skill/i);
   });
 });

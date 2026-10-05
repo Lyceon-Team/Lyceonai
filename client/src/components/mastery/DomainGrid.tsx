@@ -7,17 +7,21 @@ import type { MasteryDomainNode, MasterySection } from "@/lib/masteryApi";
 import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
 
 /** Server order: Math, then Reading & Writing (`canonicalDomainPairs`). */
-const ALL_SECTIONS: readonly MasterySection[] = ["M", "RW"];
+const SECTIONS: readonly MasterySection[] = ["M", "RW"];
 
 /**
  * @spec [owner ruling 2026-08-20 RULE 1, RULE 5 (drill-down: domain first, then skills);
- *   Guardian_Closure_Plan G4-03, R11; owner approval 2026-09-30 (extraction); owner decision
- *   2026-10-01 on #1003 (always the eight domains, four per section)]
- *   | @implemented [2026-09-30]
+ *   Guardian_Closure_Plan G4-03, R11, G5-10; owner approval 2026-09-30 (extraction); owner
+ *   decision 2026-10-01 on #1003 (always the eight domains, four per section); ruling R13
+ *   (Karl, 2026-10-02: the guardian Dashboard draws its own mastery card)]
+ *   | @implemented [2026-09-30; guardian branch removed 2026-10-03]
  *
- * plain English: the grid of domain cards, each naming its mastery level with `LevelPill`
- * (the name from `mastery_levels`, never a client table). Extracted from `pages/mastery.tsx`
- * so the student page and the guardian Dashboard render ONE component (R11), not two.
+ * plain English: the student mastery page's grid of domain cards, each naming its mastery
+ * level with `LevelPill` (the name from `mastery_levels`, never a client table). Extracted
+ * from `pages/mastery.tsx` in G4-03 so the guardian Dashboard could share it (R11); since R13
+ * the guardian draws `GuardianMasteryCard` instead, so G5-10 removed the guardian-only
+ * `viewer` and `sections` props. Guardians still see no skills (SCL-194): the server refuses
+ * a guardian's skills read with 403, and no guardian surface renders this grid.
  *
  * ALWAYS THE CANONICAL DOMAINS (`canonicalDomainNodes`, shared with Home since UI-50). The
  * cards are driven by `CANONICAL_DOMAINS_BY_SECTION` — the
@@ -25,30 +29,17 @@ const ALL_SECTIONS: readonly MasterySection[] = ["M", "RW"];
  * served row keeps its level and the server's words; a domain with no row is a card reading
  * "Not enough answers yet" (the `unmeasured` state), never a missing card. The server already
  * sends all eight, so for a real payload this changes nothing; it stops a short payload from
- * quietly hiding domains. `sections` narrows to one section's four (the guardian Dashboard
- * draws a grid per section). A row whose domain is not canonical is not drawn — the database
- * CHECK makes one impossible.
- *
- * GUARDIANS SEE NO SKILLS (owner ruling 2026-10-01, #1013 review item 2; SCL-194). `viewer`
- * is required, as on `HeaderFacts`. For `viewer="guardian"` the grid draws nothing
- * skill-related — no "Skills" control, whatever `onOpen` it is handed — so a guardian caller
- * that passed a drill-down by mistake still renders none; the server refuses a guardian's
- * skills read with 403 in any case. The student page passes `viewer="student"` and `onOpen`,
- * and each card keeps its drill-down. Domain levels and the meter are the same for both.
+ * quietly hiding domains. A row whose domain is not canonical is not drawn — the database
+ * CHECK makes one impossible. With `onOpen`, each card carries its Skills drill-down.
  */
 export function DomainGrid({
-  viewer,
   domains,
-  sections = ALL_SECTIONS,
   onOpen,
 }: {
-  viewer: "student" | "guardian";
   domains: readonly MasteryDomainNode[];
-  sections?: readonly MasterySection[];
   onOpen?: (target: { section: MasterySection; domain: string }) => void;
 }): JSX.Element {
-  const openSkills = viewer === "student" ? onOpen : undefined;
-  const nodes = canonicalDomainNodes(domains, sections);
+  const nodes = canonicalDomainNodes(domains, SECTIONS);
   return (
     <div
       className="grid grid-cols-1 sm:grid-cols-2 gap-4"
@@ -74,12 +65,12 @@ export function DomainGrid({
                 levelKey={node.levelKey}
                 displayName={node.displayName}
               />
-              {openSkills === undefined ? null : (
+              {onOpen === undefined ? null : (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    openSkills({ section: node.section, domain: node.domain })
+                    onOpen({ section: node.section, domain: node.domain })
                   }
                   data-testid="domain-open"
                   aria-label={`View skills in ${node.domain}`}
@@ -90,8 +81,7 @@ export function DomainGrid({
               )}
             </div>
             {/* The one segment renderer `MasteryRow` also draws (UI-42), stretched across
-                the card. The card keeps its title / pill / meter layout until Wave 5 rebuilds
-                the Mastery page with mastery rows (UI-37). */}
+                the card. */}
             <MasteryMeter
               levelKey={node.levelKey}
               displayName={node.displayName}

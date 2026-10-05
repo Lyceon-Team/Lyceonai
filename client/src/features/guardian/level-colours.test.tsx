@@ -57,10 +57,14 @@ describe("G4-07 mastery level colours", () => {
     expect(new Set(tones).size).toBe(keys.length);
   });
 
-  it("draws the Dashboard's levels with LevelPill, in its tone and the server's words", async () => {
+  // G5-03 (R13): the Dashboard's guardian-only mastery card wears the live `levelTone` — its
+  // fill and text classes; the card's pill draws no border, as the design board draws none.
+  it("draws the Dashboard's levels in the live levelTone and the server's words", async () => {
     mountApp(Router, `/guardian/${ADA}`);
-    const grids = await screen.findAllByTestId("domain-grid");
-    const pills = grids.flatMap((g) => within(g).getAllByTestId("level-pill"));
+    const grids = [await screen.findByTestId("mastery-card")];
+    const pills = grids.flatMap((g) =>
+      within(g).getAllByTestId("mastery-pill"),
+    );
     const served = (
       masteryDomains() as {
         domains: { domain: string; levelKey: string; displayName: string }[];
@@ -76,11 +80,13 @@ describe("G4-07 mastery level colours", () => {
         )
         .find((c) => c !== null);
       expect(card).toBeTruthy();
-      const pill = within(card!).getByTestId("level-pill");
+      const pill = within(card!).getByTestId("mastery-pill");
       expect(pill.dataset.levelKey).toBe(want.levelKey);
       expect(pill.textContent).toBe(want.displayName);
       const key = masteryLevelKeySchema.parse(want.levelKey);
-      for (const cls of levelTone(key).split(" ")) {
+      for (const cls of levelTone(key)
+        .split(" ")
+        .filter((c) => !c.startsWith("border-"))) {
         expect(pill.classList.contains(cls)).toBe(true);
       }
     }

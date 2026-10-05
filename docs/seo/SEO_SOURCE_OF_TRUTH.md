@@ -1,45 +1,36 @@
 # SEO Source of Truth
 
-This document defines the canonical ownership for public metadata, structured data, crawlability artifacts, and request/logging correlation for Lyceon’s public surfaces.
+Updated 2026-10-03 (SEO Wave 1A: F1, F2, F3, F4, F12 — `docs/plans/seo/seo-marketing-vertical.md` §5).
+The Express SSR path this document used to describe (`server/seo-content.ts`, `injectMeta`,
+`injectJsonLd`) never ran on Vercel and has been deleted.
 
-## Canonical Metadata Owner
+| What | Single source | Consumers |
+|---|---|---|
+| Which routes exist, and which are public / prerendered / in the sitemap | `infra/route-surface-classification.yaml` (Doc 06A §5.3.1) | `pnpm run route:validate` (App.tsx ↔ YAML ↔ `docs/route-registry.md`), the prerender, `vercel.json`, `sitemap.xml`, robots test |
+| Per-page title, description, canonical, OG image, JSON-LD | `shared/seo/public-meta.ts` (+ `structured-data.ts`) | the prerender (`shared/seo/head.ts`) |
+| FAQ copy | the `*_FAQS` arrays in `shared/seo/public-meta.ts` | the page renders them AND the FAQPage JSON-LD is built from them |
+| Page body | the React pages themselves | rendered at build by `client/src/prerender/entry-server.tsx` |
+| Legal document bodies | `legal/<slug>/<version>/en.md` | the legal pages, loaded at build through the same query the page runs |
+| Sitemap | generated at build from the registry + content dates (blog `date`, legal `effective_date`, registry `last_modified`) | `dist/public/sitemap.xml` |
+| robots.txt | `client/public/robots.txt` | held to the registry by `tests/seo.route-registry.test.ts` |
 
-Shared metadata lives in `shared/seo/public-meta.ts`.
+## How a public page is built
 
-It owns:
-- `title`
-- `description`
-- `canonical`
-- `ogImage`
-- public JSON-LD definitions per route
+`pnpm run build` → client build → `pnpm run build:prerender` (Vite SSR build of
+`client/src/prerender/entry-server.tsx`, then `scripts/build/prerender.mjs`) writes
+`dist/public/<route>/index.html` for every prerendered row, `404.html` (noindex), `app.html` (the SPA
+shell, noindex) and `sitemap.xml`.
 
-`server/seo-content.ts` resolves metadata from the shared module and keeps public `bodyHtml` content in place.
+`vercel.json` (derived from the registry, checked by `tests/seo.route-registry.test.ts`): 301s for
+redirect rows → filesystem (prerendered pages, assets, legal files) → SPA shell for every
+non-prerendered route → 404 for everything else.
 
-## Canonical JSON-LD Owner (SSR Only)
+## Adding a public page
 
-Server-side rendering injects JSON-LD for SSR routes in `server/index.ts` via `injectJsonLd()`.
+1. Add the `<Route>` to `client/src/App.tsx`.
+2. Add a row to `infra/route-surface-classification.yaml` (`prerender: true`, `indexable: true`, `last_modified`).
+3. Add its metadata to `PUBLIC_META` in `shared/seo/public-meta.ts` (the build fails without it).
+4. Add the row to `docs/route-registry.md`.
+5. `pnpm run build && pnpm run gate:seo-output && pnpm test`.
 
-Client JSON-LD must not be used for SSR-owned public routes. Client JSON-LD is only permitted for non-SSR routes.
-
-## Crawlability Owners
-
-Canonical crawlability sources:
-- `client/public/robots.txt`
-- `client/public/sitemap.xml`
-
-Sitemap URLs must be covered by SSR metadata either in `PUBLIC_SSR_ROUTES` or by the legal metadata fallback in `LEGAL_META`.
-
-## Client Fallback Metadata
-
-Client SEO (`client/src/components/SEO.tsx`) is a fallback only for routes that are not SSR-owned. SSR routes must not rely on client meta injection.
-
-## Request/Logging Ownership
-
-The single request correlation owner is:
-- `server/middleware/request-id.ts`
-
-`logger.generateRequestId()` remains the fallback only inside the final error boundary when a request ID is missing.
-
-## Naming Guidance
-
-Public metadata uses “tutor” generically. The branded name “Lisa” appears only where explicitly required for brand surfaces.
+Every public surface is governed by the Public Disclosure Doctrine (CLAUDE.md; plan §0).

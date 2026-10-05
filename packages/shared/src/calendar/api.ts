@@ -42,24 +42,8 @@ import { localDateSchema } from "./time.js";
 
 // ── The platform error shape (Coding Standards §8.2) ────────────────────────
 
-/**
- * `{ error: { message, code?, details? } }` — the standard's error envelope. Defined here
- * because no shared definition existed when the calendar needed one; it is deliberately NOT
- * calendar-named, and any other vertical that needs the shape should import this rather than
- * declare a second one.
- */
-export const apiErrorSchema = z
-  .object({
-    error: z
-      .object({
-        message: z.string(),
-        code: z.string().optional(),
-        details: z.unknown().optional(),
-      })
-      .strict(),
-  })
-  .strict();
-export type ApiError = z.infer<typeof apiErrorSchema>;
+// Defined in `../api-error-schema.ts`; re-exported so this module's importers are unchanged.
+export { apiErrorSchema, type ApiError } from "../api-error-schema.js";
 
 // ── Shared pieces ───────────────────────────────────────────────────────────
 

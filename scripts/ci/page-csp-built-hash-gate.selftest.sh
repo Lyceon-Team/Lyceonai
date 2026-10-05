@@ -10,6 +10,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 node "$GATE" "$BUILT" vercel.json >/dev/null || { echo "FAIL: gate is red on the real build"; exit 1; }
+# Default mode checks every built page (SEO Wave 1A: 22 prerendered pages + 404.html + app.html).
+node "$GATE" >/dev/null || { echo "FAIL: gate is red on the real build (all pages)"; exit 1; }
 
 expect_red() {
   local name=$1 html=$2 vj=$3
@@ -36,5 +38,23 @@ expect_red "stale hash allowed" "$BUILT" "$tmp/m3.json"
 # 4. vercel.json drops the theme hash.
 sed "s#'sha256-[A-Za-z0-9+/=]*' ##" vercel.json > "$tmp/m4.json"
 expect_red "theme hash removed" "$BUILT" "$tmp/m4.json"
+
+# 5. A JSON-LD data block becomes an executable inline script: it now needs a hash.
+grep -q 'type="application/ld+json"' "$BUILT"
+sed '0,/<script type="application\/ld+json">/s//<script>/' "$BUILT" > "$tmp/m5.html"
+expect_red "data block made executable" "$tmp/m5.html" vercel.json
+
+# 6. A prerendered page (not index.html) ships a changed theme script.
+PAGE=dist/public/blog/is-digital-sat-harder/index.html
+node "$GATE" "$PAGE" vercel.json >/dev/null || { echo "FAIL: gate is red on $PAGE"; exit 1; }
+sed 's/"lyceon-theme"/"lyceon-themX"/' "$PAGE" > "$tmp/m6.html"
+grep -q lyceon-themX "$tmp/m6.html"
+expect_red "theme script changed on a prerendered page" "$tmp/m6.html" vercel.json
+
+# 7. Control: a data block of another non-JavaScript type stays exempt (the gate is not just
+#    counting <script> tags).
+sed 's#</head>#<script type="application/json">{"a":1}</script></head>#' "$BUILT" > "$tmp/c7.html"
+node "$GATE" "$tmp/c7.html" vercel.json >/dev/null || { echo "FAIL: a non-executable data block turned the gate red"; exit 1; }
+echo "ok: a non-executable data block stays green"
 
 echo "page-csp-built-hash-gate selftest: all mutations red"

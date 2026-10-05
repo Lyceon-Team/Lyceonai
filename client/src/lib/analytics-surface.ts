@@ -34,18 +34,19 @@
  *
  * trade-offs:
  *  - This duplicates the *classification* that Doc 06A §5.3 puts in
- *    `infra/route-surface-classification.yaml`. That file does not exist and
- *    belongs to the Doc 06A workstream; the owner ruling leaves it there. So
- *    the coupling is asserted instead of imported: the contract test requires
- *    every `PUBLIC_SSR_ROUTES` key to be allowed here, and every `RequireRole`
- *    route in `App.tsx` to be denied. A route that gains a role guard without
+ *    `infra/route-surface-classification.yaml` (created 2026-10-03, SEO F12).
+ *    The coupling is asserted rather than imported, because this module ships
+ *    to the browser and the registry is read at build time: the contract test
+ *    requires every prerendered registry route to be allowed here, and every
+ *    `RequireRole` route in `App.tsx` to be denied. (Vercel Analytics, and
+ *    with it this predicate, is retired by SEO F10.) A route that gains a role guard without
  *    losing its analytics reddens a test.
  *  - Prefix matching, so `/blog/<slug>` and `/legal/<slug>` work without
  *    enumerating slugs. The prefix is matched at a path SEGMENT boundary, so
  *    `/blogging-internal` does not inherit `/blog`'s allowance.
  *  - `/tutor` IS NOT HERE. It is retired (owner ruling 2026-09-29, UI-04): the
  *    SPA route only redirects to the role-gated `/chat`, and it is no longer a
- *    public SSR page. An unlisted path is denied by default, so the redirect
+ *    public page. An unlisted path is denied by default, so the redirect
  *    reports nothing.
  *
  * edge cases:
@@ -57,7 +58,7 @@
 
 /**
  * Exact public paths. These mirror the marketing surface; the contract test
- * holds them to `server/seo-content.ts`'s `PUBLIC_SSR_ROUTES`.
+ * holds them to the prerendered rows of `infra/route-surface-classification.yaml`.
  */
 const PUBLIC_EXACT: readonly string[] = [
   "/",
@@ -67,8 +68,8 @@ const PUBLIC_EXACT: readonly string[] = [
   "/digital-sat/math",
   "/digital-sat/reading-writing",
   "/blog",
+  "/sat-question-of-the-day",
   "/trust",
-  "/trust/evidence",
   "/legal",
   "/privacy",
   "/terms",
@@ -79,7 +80,12 @@ const PUBLIC_EXACT: readonly string[] = [
  * a content slug — never where it could be an identifier belonging to a person
  * or a session.
  */
-const PUBLIC_PREFIXES: readonly string[] = ["/blog/", "/legal/"];
+const PUBLIC_PREFIXES: readonly string[] = [
+  "/blog/",
+  "/legal/",
+  // The tail is a calendar date (an archive day), never a person or session (SEO Wave 2, Q3).
+  "/sat-question-of-the-day/",
+];
 
 /** Normalises a path: strips a trailing slash, leaves "/" alone. */
 function normalisePath(pathname: string): string {

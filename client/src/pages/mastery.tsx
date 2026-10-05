@@ -32,7 +32,7 @@
  * inline meta, so the app's upgrade modal also opens on that refusal (UI-44), as before.
  *
  * Replaces the pre-redesign page: the in-body Back button and "Mastery" eyebrow, the domain cards
- * (`DomainGrid`, still the guardian Dashboard's), the separate skill screen with its "All domains"
+ * (`DomainGrid`; the guardian Dashboard draws `GuardianMasteryCard` since R13), the separate skill screen with its "All domains"
  * button, `PremiumUpgradePrompt` and `RecoveryNotice`.
  *
  * edge cases: a domain the server did not send reads "Not enough answers yet" (canonical list,

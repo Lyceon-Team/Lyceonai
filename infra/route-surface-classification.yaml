@@ -1,0 +1,604 @@
+# Route-surface-classification registry — Doc 06A §5.3.1 (fields extended per RB-06A-V1-11).
+#
+# @spec [Doc-06A §5.3.1; Doc-06B §11.4, §12.2 (RB-06A-V1-11); docs/plans/seo/seo-marketing-vertical.md §5 F12, F1, F3]
+# @implemented [2026-10-03]
+# plain English: the ONE inventory of client routes. Every <Route path> in client/src/App.tsx
+# (and the GUARDIAN_ROUTES table) has exactly one row here; `pnpm run route:validate` fails in
+# CI on a route missing from this file or a row naming no route. docs/route-registry.md is prose
+# (roles, entitlements, endpoints) checked against this file by the same script.
+#
+# Doc 06A fields: path_pattern, surface_class, clarity_allowed, masking_required, owning_doc,
+# last_classified_at. RB-06A-V1-11 fields: is_internal_api, requires_cloudflare_access,
+# requires_hmac (every row here is a client page, so all three are false).
+#
+# Owner-approved extension fields (2026-10-03, SEO Wave 1A):
+#   prerender      true = built to static HTML at deploy time (scripts/build/prerender.mjs).
+#   indexable      true = listed in sitemap.xml. A public route that is not content (login,
+#                  redirects) stays unauth_marketing with prerender/indexable false.
+#   last_modified  sitemap lastmod for a static page (YYYY-MM-DD) — the date its content last
+#                  changed. Required when prerender is true and content_source is absent.
+#   content_source blog | legal | qotd — a parameterised page expanded from that content source
+#                  (qotd: the past Question of the Day dates, read at build time).
+#   redirect_to    a permanent (301) redirect served by vercel.json.
+#
+# Format: a strict YAML subset parsed by shared/seo/route-registry.ts — one `key: value` per
+# line, `- ` opens a row, `#` comments. Anything else fails the parse (and the build).
+
+routes:
+  - path_pattern: /
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /digital-sat
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-03
+  - path_pattern: /digital-sat/math
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-03
+  - path_pattern: /digital-sat/reading-writing
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-03
+  - path_pattern: /blog
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-09-22
+  # expanded from shared/content/blog.ts; lastmod = the post date
+  - path_pattern: /blog/:slug
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    content_source: blog
+  # Question of the Day hub (SEO Wave 2, plan Q3): static copy; today's question loads in the
+  # browser, so the HTML carries no answer. lastmod = the latest archive day.
+  - path_pattern: /sat-question-of-the-day
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  # expanded from the qotd_archive() days at build time (strictly past days); lastmod = the day
+  - path_pattern: /sat-question-of-the-day/:date
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    content_source: qotd
+  - path_pattern: /trust
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-09-29
+  - path_pattern: /legal
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-09-22
+  # expanded from legal/*/manifest.json; lastmod = effective_date of the current version
+  - path_pattern: /legal/:slug
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    content_source: legal
+  # public, not content: never prerendered or indexed (owner ruling 2026-10-03)
+  - path_pattern: /login
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /account/recover
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # client redirect to /login
+  - path_pattern: /signup
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # client redirect to /chat
+  - path_pattern: /tutor
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-03B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # 301 at the edge (vercel.json), owner ruling 2026-10-03
+  - path_pattern: /privacy
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+    redirect_to: /legal/privacy-policy
+  - path_pattern: /terms
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+    redirect_to: /legal/student-terms
+  # client redirect to /practice
+  - path_pattern: /practice/math
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /practice/reading-writing
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /practice/random
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /math-practice
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /reading-writing-practice
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /dashboard
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-05
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /chat
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-03B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /practice
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /practice/topics
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /practice/session/:sessionId
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /tests
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-04A
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /tests/:sessionId
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-04A
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /tests/:sessionId/:section/:module
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-04A
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /tests/:sessionId/report
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-04C
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /score-report
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-05C
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /calendar
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-05F
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /mastery
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-05
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /upgrade
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /review
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Review_Vertical_Standards_Brief
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /review/session/:sessionId
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Review_Vertical_Standards_Brief
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /guardian-required
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # signed-in, any role (student, guardian, admin); the enum has no shared class
+  - path_pattern: /profile
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # signed-in, any role (student, guardian, admin); the enum has no shared class
+  - path_pattern: /profile/complete
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # signed-in, any role (student, guardian, admin); the enum has no shared class
+  - path_pattern: /update-password
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # signed-in, any role (student, guardian, admin); the enum has no shared class
+  - path_pattern: /notifications
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /guardian
+    surface_class: authenticated_guardian
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /guardian/students
+    surface_class: authenticated_guardian
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /guardian/:studentId/calendar
+    surface_class: authenticated_guardian
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /guardian/:studentId/exams
+    surface_class: authenticated_guardian
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /guardian/:studentId/exams/:sessionId
+    surface_class: authenticated_guardian
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /guardian/:studentId
+    surface_class: authenticated_guardian
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /admin/crisis-review
+    surface_class: authenticated_admin
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-03
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  - path_pattern: /admin/crisis-review/:id
+    surface_class: authenticated_admin
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-03
+    last_classified_at: 2026-10-03
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false

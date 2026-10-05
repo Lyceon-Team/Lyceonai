@@ -1,8 +1,8 @@
 import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
-import { levelFill } from "@/components/mastery/LevelPill";
+import { levelFill, levelTone } from "@/components/mastery/LevelPill";
 
 /** Five segments: one per level from Foundations (`mastery_level` 0) to Strong (4). */
-const MASTERY_METER_SEGMENTS = 5;
+export const MASTERY_METER_SEGMENTS = 5;
 
 /**
  * How many segments a level fills: L0–L4 (`mastery_level` 0–4) fill 1–5, the level index plus
@@ -17,8 +17,11 @@ const MASTERY_METER_SEGMENTS = 5;
  * Keyed on `levelKey`, not on `level`: the shared schema's refine already makes the two agree
  * (`masteryLevelLabelInvariant`), and one input cannot disagree with itself. Exhaustive, with
  * no `default`, so a seventh level fails the build.
+ *
+ * Exported for the guardian Dashboard's mastery card (G5-03), which draws its own meter with the
+ * same fill rule.
  */
-function masteryMeterFill(levelKey: MasteryLevelKey): number {
+export function masteryMeterFill(levelKey: MasteryLevelKey): number {
   switch (levelKey) {
     case "unmeasured":
       return 0;
@@ -33,6 +36,21 @@ function masteryMeterFill(levelKey: MasteryLevelKey): number {
     case "L4":
       return 5;
   }
+}
+
+/**
+ * A level's INK: the pill's TEXT tone — the darker shade of the level's hue — as a class, for
+ * painting a fill through `bg-current` (owner review 2026-10-01: the pale background shade read
+ * too faint). Taken from `levelTone` itself, so a guardian meter, a legend swatch and the pill
+ * cannot disagree on a level's colour. Used by the guardian Dashboard's mastery card (G5-03);
+ * the student meter fills with `levelFill` (UI-42).
+ */
+export function levelInk(levelKey: MasteryLevelKey): string {
+  return (
+    levelTone(levelKey)
+      .split(" ")
+      .find((c) => c.startsWith("text-")) ?? "text-foreground"
+  );
 }
 
 /**
