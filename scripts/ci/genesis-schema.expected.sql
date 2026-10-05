@@ -8799,6 +8799,30 @@ $$;
 
 
 --
+-- Name: profiles_analytics_fields_set_once(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_analytics_fields_set_once() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.analytics_user_id IS NOT NULL
+     AND NEW.analytics_user_id IS DISTINCT FROM OLD.analytics_user_id THEN
+    RAISE EXCEPTION 'profiles.analytics_user_id is immutable once set (Doc 07A §7.1)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.signup_source IS NOT NULL
+     AND NEW.signup_source IS DISTINCT FROM OLD.signup_source THEN
+    RAISE EXCEPTION 'profiles.signup_source is immutable once set (SCL-201 IS 6)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: profiles_lock_date_of_birth(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8946,6 +8970,158 @@ $$;
 
 
 --
+-- Name: qotd_archive(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  -- Counts included so an archive page built from this shows the same stat the API does.
+  SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
+         q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+    FROM public.qotd_schedule s
+    JOIN public.questions q ON q.id = s.question_id
+    LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
+   WHERE s.qotd_date < public.qotd_today()
+     AND q.status = 'published'
+     AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
+   ORDER BY s.qotd_date
+$$;
+
+
+--
+-- Name: qotd_question_for(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
+         q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+    FROM public.qotd_schedule s
+    JOIN public.questions q ON q.id = s.question_id
+    LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
+   WHERE s.qotd_date = COALESCE(p_date, public.qotd_today())
+     AND s.qotd_date <= public.qotd_today()
+     AND q.status = 'published'
+     AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
+$$;
+
+
+--
+-- Name: qotd_question_is_eligible(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_question_is_eligible(p_question_id text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.questions q
+     WHERE q.id = p_question_id
+       AND q.status = 'published'
+       AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
+       AND (q.assets IS NULL OR q.assets IN ('[]'::jsonb, '{}'::jsonb, 'null'::jsonb))
+       AND NOT EXISTS (SELECT 1 FROM public.test_form_items t WHERE t.question_id = q.id)
+       AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)
+  )
+$$;
+
+
+--
+-- Name: qotd_record_attempt(date, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean) RETURNS TABLE(attempts integer, correct integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_date > public.qotd_today()
+     OR NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.qotd_date = p_date) THEN
+    RAISE EXCEPTION 'qotd_record_attempt: % is not a scheduled day that has arrived', p_date
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  INSERT INTO public.qotd_daily_stats AS d (qotd_date, attempts, correct)
+  VALUES (p_date, 1, CASE WHEN p_correct THEN 1 ELSE 0 END)
+  ON CONFLICT (qotd_date) DO UPDATE
+    SET attempts = d.attempts + 1,
+        correct  = d.correct + CASE WHEN p_correct THEN 1 ELSE 0 END
+  RETURNING d.attempts, d.correct;
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_candidates(text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_candidates(p_section text, p_domain text, p_limit integer) RETURNS TABLE(question_id text, stem text, passage text, options jsonb, explanation text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT q.id, q.stem, q.passage, q.options, q.explanation
+    FROM public.questions q
+   WHERE q.section = p_section
+     AND q.domain = p_domain
+     AND public.qotd_question_is_eligible(q.id)
+   ORDER BY q.id
+   LIMIT GREATEST(p_limit, 0)
+$$;
+
+
+--
+-- Name: qotd_schedule_insert(date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.qotd_schedule WHERE qotd_date = p_date) THEN
+    RETURN 'exists';
+  END IF;
+  IF NOT public.qotd_question_is_eligible(p_question_id) THEN
+    RETURN 'ineligible';
+  END IF;
+  INSERT INTO public.qotd_schedule (qotd_date, question_id)
+  VALUES (p_date, p_question_id)
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 1 THEN
+    RETURN 'inserted';
+  END IF;
+  -- A concurrent run took the date or the question between the checks and the insert.
+  IF EXISTS (SELECT 1 FROM public.qotd_schedule WHERE qotd_date = p_date) THEN
+    RETURN 'exists';
+  END IF;
+  RETURN 'taken';
+END
+$$;
+
+
+--
+-- Name: qotd_today(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_today() RETURNS date
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date
+$$;
+
+
+--
 -- Name: rate_limit_check_and_increment(uuid, text, integer, timestamp with time zone, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8970,6 +9146,38 @@ BEGIN
   SELECT l.used_count INTO v_used FROM public.rate_limit_ledger AS l
    WHERE l.profile_id = p_profile_id AND l.bucket_key = p_bucket_key AND l.window_start = p_window_start;
   allowed := FALSE; used := COALESCE(v_used, 0); remaining := GREATEST(p_limit - COALESCE(v_used, 0), 0);
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: rate_limit_check_and_increment_anon(bytea, text, integer, timestamp with time zone, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) RETURNS TABLE(allowed boolean, remaining integer, used integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_used integer;
+BEGIN
+  INSERT INTO public.rate_limit_ledger_anon AS l
+    (subject_hmac, bucket_key, window_start, window_end, used_count, limit_count)
+  VALUES (p_subject_hmac, p_bucket_key, p_window_start, p_window_end, p_cost, p_limit)
+  ON CONFLICT (subject_hmac, bucket_key, window_start) DO UPDATE
+    SET used_count = l.used_count + p_cost, updated_at = now()
+    WHERE l.used_count + p_cost <= p_limit
+  RETURNING l.used_count INTO v_used;
+
+  IF FOUND THEN
+    allowed := TRUE; used := v_used; remaining := p_limit - v_used; RETURN NEXT; RETURN;
+  END IF;
+
+  SELECT l.used_count INTO v_used FROM public.rate_limit_ledger_anon AS l
+   WHERE l.subject_hmac = p_subject_hmac AND l.bucket_key = p_bucket_key
+     AND l.window_start = p_window_start;
+  allowed := FALSE; used := COALESCE(v_used, 0);
+  remaining := GREATEST(p_limit - COALESCE(v_used, 0), 0);
   RETURN NEXT;
 END;
 $$;
@@ -11594,6 +11802,178 @@ COMMENT ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer)
 
 
 --
+-- Name: sweep_rate_limit_ledger_anon(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_rate_limit_ledger_anon() RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_deleted integer;
+BEGIN
+  DELETE FROM public.rate_limit_ledger_anon WHERE window_end <= now();
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END;
+$$;
+
+
+--
+-- Name: sweep_tutor_conversation_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_cutoff   timestamptz := now() - make_interval(days => public.tutor_conversation_retention_days());
+  v_ids      uuid[];
+  v_students uuid[];
+  v_n        integer;
+  v_tbl      text;
+  -- Tables whose rows go with a deleted conversation (ON DELETE CASCADE on conversation_id).
+  v_cascade  CONSTANT text[] := ARRAY[
+    'tutor_messages',
+    'tutor_question_links',
+    'tutor_instruction_assignments',
+    'tutor_instruction_exposures',
+    'tutor_turn_metrics',
+    'tutor_context_resolution_log'
+  ];
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_conversation_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Expired, soft-deleted, and NOT crisis-flagged (RS-00). Locked before the check.
+  SELECT coalesce(array_agg(x.id), '{}')
+    INTO v_ids
+    FROM (
+      SELECT c.id
+        FROM public.tutor_conversations c
+       WHERE c.deleted_at IS NOT NULL
+         AND c.deleted_at < v_cutoff
+       ORDER BY c.id
+         FOR UPDATE
+    ) x
+   WHERE NOT EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = x.id)
+     AND NOT EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = x.id);
+
+  -- Memory summaries go only for students losing a conversation in this run who keep nothing:
+  -- no live conversation, none still recoverable, and none flagged (RS-00).
+  SELECT coalesce(array_agg(DISTINCT c.student_id), '{}')
+    INTO v_students
+    FROM public.tutor_conversations c
+   WHERE c.id = ANY (v_ids)
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.tutor_conversations o
+        WHERE o.student_id = c.student_id
+          AND (
+            o.deleted_at IS NULL
+            OR o.deleted_at >= v_cutoff
+            OR EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = o.id)
+            OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = o.id)
+          )
+     );
+
+  -- Counts first (they are the dry-run answer, and the live run reports the same numbers).
+  swept_table   := 'tutor_conversations';
+  deleted_count := coalesce(array_length(v_ids, 1), 0);
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  FOREACH v_tbl IN ARRAY v_cascade LOOP
+    EXECUTE format('SELECT count(*)::integer FROM public.%I WHERE conversation_id = ANY ($1)', v_tbl)
+      INTO v_n
+      USING v_ids;
+    swept_table   := v_tbl;
+    deleted_count := v_n;
+    cutoff        := v_cutoff;
+    RETURN NEXT;
+  END LOOP;
+
+  SELECT count(*)::integer INTO v_n
+    FROM public.tutor_memory_summaries s
+   WHERE s.student_id = ANY (v_students);
+  swept_table   := 'tutor_memory_summaries';
+  deleted_count := v_n;
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  IF NOT p_dry_run THEN
+    DELETE FROM public.tutor_memory_summaries s WHERE s.student_id = ANY (v_students);
+    DELETE FROM public.tutor_conversations c WHERE c.id = ANY (v_ids);
+  END IF;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner ruling 2026-10-05 RS-00: the 7d tier. Deletes conversations soft-deleted more than tutor_conversation_retention_days() ago EXCEPT any a crisis_review_cases or crisis_review_events row links to, with their cascade rows, and the memory summaries of students left with no live, recoverable or flagged conversation. p_dry_run counts without deleting. One row per table, zero counts included, with the cutoff.';
+
+
+--
+-- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz := now() - interval '90 days';
+  v_assign  integer;
+  v_expose  integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_instruction_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_assign
+      FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_expose
+      FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+    GET DIAGNOSTICS v_expose = ROW_COUNT;
+
+    DELETE FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+    GET DIAGNOSTICS v_assign = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_instruction_assignments'; deleted_count := v_assign; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_instruction_exposures';   deleted_count := v_expose; cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner rulings 2026-10-05 RS-03, RS-04: the 90d tier. Deletes instruction assignments created more than 90 days ago and exposures shown more than 90 days ago or belonging to such an assignment. p_dry_run counts the same rows without deleting. One row per table, with the cutoff.';
+
+
+--
 -- Name: sync_tutor_conversations_on_entitlement_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11633,6 +12013,25 @@ $$;
 --
 
 COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS 'Doc 03 §14.2 / INV-03-19 / owner ruling 2026-09-22 C1: stamps tutor_conversations.deleted_at when public.entitlement_active(profile_id) turns false and clears it when it turns true. Calls the canonical predicate rather than re-listing statuses. Stamps only where deleted_at IS NULL so a second inactive transition cannot push the 7-day clock out.';
+
+
+--
+-- Name: tutor_conversation_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tutor_conversation_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 7;
+$$;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.tutor_conversation_retention_days() IS 'Doc 03 §14.2: days a soft-deleted tutor conversation stays recoverable before the 7d tier deletes it. THE single definition; the sweep reads it.';
 
 
 --
@@ -12636,6 +13035,43 @@ CREATE TABLE public.consent_runtime_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: cookie_consent_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cookie_consent_log (
+    id bigint NOT NULL,
+    consent_id uuid NOT NULL,
+    analytics boolean NOT NULL,
+    banner_version text NOT NULL,
+    source text NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cookie_consent_log_banner_version_check CHECK ((banner_version ~ '^[0-9]+$'::text)),
+    CONSTRAINT cookie_consent_log_source_check CHECK ((source = ANY (ARRAY['banner'::text, 'settings'::text])))
+);
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.cookie_consent_log IS 'Doc 10 §9.11: cookie consent log (timestamp + category + banner version). consent_id is the random id in the visitor''s consent cookie; no user id and no IP are stored.';
+
+
+--
+-- Name: cookie_consent_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.cookie_consent_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -14057,7 +14493,10 @@ CREATE TABLE public.profiles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     profile_completed_at timestamp with time zone,
     marketing_opt_in boolean DEFAULT false NOT NULL,
-    actor_id uuid DEFAULT gen_random_uuid() NOT NULL
+    actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    analytics_user_id uuid,
+    signup_source text,
+    CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
 
@@ -14066,6 +14505,20 @@ CREATE TABLE public.profiles (
 --
 
 COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
+
+
+--
+-- Name: COLUMN profiles.analytics_user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA256(ANALYTICS_SALT, profile id), UUID-shaped. Written once by the server at onboarding completion; immutable (profiles_analytics_fields_set_once).';
+
+
+--
+-- Name: COLUMN profiles.signup_source; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
 
 
 --
@@ -14124,6 +14577,45 @@ COMMENT ON TABLE public.psi_occurred_at_backfill_log IS 'One row per practice_se
 
 
 --
+-- Name: qotd_daily_stats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qotd_daily_stats (
+    qotd_date date NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    correct integer DEFAULT 0 NOT NULL,
+    CONSTRAINT qotd_daily_stats_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT qotd_daily_stats_correct_check CHECK ((correct >= 0)),
+    CONSTRAINT qotd_daily_stats_correct_le_attempts CHECK ((correct <= attempts))
+);
+
+
+--
+-- Name: TABLE qotd_daily_stats; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.qotd_daily_stats IS 'QOTD (plan R17): aggregate counters per day, atomic increments, no per-person rows.';
+
+
+--
+-- Name: qotd_schedule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qotd_schedule (
+    qotd_date date NOT NULL,
+    question_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE qotd_schedule; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18): one question per America/Chicago day. qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+
+
+--
 -- Name: rate_limit_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14136,6 +14628,29 @@ CREATE TABLE public.rate_limit_ledger (
     limit_count integer NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: rate_limit_ledger_anon; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rate_limit_ledger_anon (
+    subject_hmac bytea NOT NULL,
+    bucket_key text NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    window_end timestamp with time zone NOT NULL,
+    used_count integer DEFAULT 0 NOT NULL,
+    limit_count integer NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rate_limit_ledger_anon_subject_hmac_check CHECK ((octet_length(subject_hmac) = 32))
+);
+
+
+--
+-- Name: TABLE rate_limit_ledger_anon; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.rate_limit_ledger_anon IS 'SCL-202: Doc 01A §41 ledger for public endpoints with no authenticated caller. subject_hmac = HMAC-SHA256(server secret, client IP); the raw IP is never stored. Rows are deleted once their window ends (sweep_rate_limit_ledger_anon).';
 
 
 --
@@ -15570,6 +16085,14 @@ ALTER TABLE ONLY public.consent_runtime_config
 
 
 --
+-- Name: cookie_consent_log cookie_consent_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cookie_consent_log
+    ADD CONSTRAINT cookie_consent_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: crisis_review_audit_log crisis_review_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15978,6 +16501,14 @@ ALTER TABLE ONLY public.practice_sessions
 
 
 --
+-- Name: profiles profiles_analytics_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_analytics_user_id_key UNIQUE (analytics_user_id);
+
+
+--
 -- Name: profiles profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16010,11 +16541,43 @@ ALTER TABLE ONLY public.psi_occurred_at_backfill_log
 
 
 --
+-- Name: qotd_daily_stats qotd_daily_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_daily_stats
+    ADD CONSTRAINT qotd_daily_stats_pkey PRIMARY KEY (qotd_date);
+
+
+--
+-- Name: qotd_schedule qotd_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_schedule
+    ADD CONSTRAINT qotd_schedule_pkey PRIMARY KEY (qotd_date);
+
+
+--
+-- Name: qotd_schedule qotd_schedule_question_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_schedule
+    ADD CONSTRAINT qotd_schedule_question_id_key UNIQUE (question_id);
+
+
+--
 -- Name: questions questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.questions
     ADD CONSTRAINT questions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rate_limit_ledger_anon rate_limit_ledger_anon_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_ledger_anon
+    ADD CONSTRAINT rate_limit_ledger_anon_pkey PRIMARY KEY (subject_hmac, bucket_key, window_start);
 
 
 --
@@ -16669,6 +17232,13 @@ CREATE INDEX idx_calendar_block_launches_student ON public.calendar_block_launch
 
 
 --
+-- Name: idx_cookie_consent_log_consent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cookie_consent_log_consent_id ON public.cookie_consent_log USING btree (consent_id, recorded_at);
+
+
+--
 -- Name: idx_crisis_audit_log_case; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16960,6 +17530,13 @@ CREATE INDEX idx_questions_section ON public.questions USING btree (section) WHE
 --
 
 CREATE INDEX idx_questions_status ON public.questions USING btree (status);
+
+
+--
+-- Name: idx_ratelimit_anon_window_end; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ratelimit_anon_window_end ON public.rate_limit_ledger_anon USING btree (window_end);
 
 
 --
@@ -17803,6 +18380,13 @@ CREATE TRIGGER practice_runtime_config_notify AFTER INSERT OR UPDATE ON public.p
 
 
 --
+-- Name: profiles profiles_analytics_fields_set_once; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_analytics_fields_set_once BEFORE UPDATE OF analytics_user_id, signup_source ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_analytics_fields_set_once();
+
+
+--
 -- Name: profiles profiles_lock_date_of_birth; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -18629,6 +19213,22 @@ ALTER TABLE ONLY public.profiles
 
 
 --
+-- Name: qotd_daily_stats qotd_daily_stats_qotd_date_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_daily_stats
+    ADD CONSTRAINT qotd_daily_stats_qotd_date_fkey FOREIGN KEY (qotd_date) REFERENCES public.qotd_schedule(qotd_date);
+
+
+--
+-- Name: qotd_schedule qotd_schedule_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_schedule
+    ADD CONSTRAINT qotd_schedule_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
 -- Name: rate_limit_ledger rate_limit_ledger_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -19375,6 +19975,12 @@ ALTER TABLE public.consent_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consent_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: cookie_consent_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: crisis_review_audit_log crisis_review_admin insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -19774,6 +20380,18 @@ ALTER TABLE public.projection_refresh_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: qotd_daily_stats; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.qotd_daily_stats ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: qotd_schedule; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.qotd_schedule ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19791,6 +20409,12 @@ CREATE POLICY questions_scoring_owner_read ON public.questions FOR SELECT TO lyc
 --
 
 ALTER TABLE public.rate_limit_ledger ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: rate_limit_ledger_anon; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rate_limit_ledger_anon ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: rate_limit_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
@@ -21746,6 +22370,13 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 
 
 --
+-- Name: FUNCTION profiles_analytics_fields_set_once(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_analytics_fields_set_once() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION profiles_lock_date_of_birth(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21777,10 +22408,74 @@ GRANT ALL ON FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigin
 
 
 --
+-- Name: FUNCTION qotd_archive(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_archive() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_archive() TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_question_for(p_date date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_question_for(p_date date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_question_for(p_date date) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_question_is_eligible(p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_question_is_eligible(p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_question_is_eligible(p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_record_attempt(p_date date, p_correct boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_schedule_candidates(p_section text, p_domain text, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_candidates(p_section text, p_domain text, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_schedule_candidates(p_section text, p_domain text, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_schedule_insert(p_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_today(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_today() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_today() TO service_role;
+
+
+--
 -- Name: FUNCTION rate_limit_check_and_increment(p_profile_id uuid, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.rate_limit_check_and_increment(p_profile_id uuid, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) TO service_role;
 
 
 --
@@ -22134,10 +22829,42 @@ GRANT ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size intege
 
 
 --
+-- Name: FUNCTION sweep_rate_limit_ledger_anon(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_rate_limit_ledger_anon() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_rate_limit_ledger_anon() TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tutor_conversation_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.tutor_conversation_retention_days() TO service_role;
 
 
 --
@@ -22490,6 +23217,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config TO serv
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.cookie_consent_log TO service_role;
 
 
 --
@@ -23452,10 +24186,31 @@ GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role
 
 
 --
+-- Name: TABLE qotd_daily_stats; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.qotd_daily_stats TO service_role;
+
+
+--
+-- Name: TABLE qotd_schedule; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.qotd_schedule TO service_role;
+
+
+--
 -- Name: TABLE rate_limit_ledger; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_ledger TO service_role;
+
+
+--
+-- Name: TABLE rate_limit_ledger_anon; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_ledger_anon TO service_role;
 
 
 --

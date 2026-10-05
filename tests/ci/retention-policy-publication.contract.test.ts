@@ -210,13 +210,22 @@ describe("Phase 7 A — published Privacy Policy is structurally sound", () => {
     expect(body).toMatch(/never subscribed/);
   });
 
-  it("the analytics disclosure names the provider actually running", () => {
+  it("the analytics disclosure names no provider the code does not run", () => {
     // §6.6 and the §5.2 sub-processor table have to agree with the code.
     // Trust & Safety promises every provider that processes your data is
-    // named in the Privacy Policy, so a provider in App.tsx and not here is
-    // a broken promise, not a documentation nit.
-    expect(body).toMatch(/Vercel Analytics/);
+    // named in the Privacy Policy. Vercel Analytics was retired 2026-10-05
+    // (SEO F10, SCL-201) in favour of PostHog; per the owner's ruling of
+    // that date the SDK ships prelaunch and Privacy Policy v5, which names
+    // PostHog, is published before launch. So this published body may still
+    // name Vercel Analytics until v5 lands, and the launch draft is pinned
+    // below instead — what must never appear is a provider nobody runs.
     expect(body).not.toMatch(/Microsoft|Clarity(?!\b.*improve)/);
+  });
+
+  it("the launch Privacy Policy draft names PostHog and not Vercel Analytics", () => {
+    const v5 = readOrEmpty("docs/compliance/legal-drafts/privacy-policy-v5.md");
+    expect(v5).toMatch(/\bPostHog\b/);
+    expect(v5).not.toMatch(/Vercel Analytics/);
   });
 });
 
@@ -328,11 +337,19 @@ describe("Phase 7 B — Microsoft Clarity is removed", () => {
     expect(main.toLowerCase()).not.toMatch(/clarity\.init|from "@microsoft/);
   });
 
-  it("Vercel Analytics — the provider that stayed — is still mounted", () => {
-    // The brief kept Vercel Analytics. If it is ever removed, §6.6 and the
-    // §5.2 table become false in the other direction, so pin it here too.
-    const app = read("client/src/App.tsx");
-    expect(app).toMatch(/@vercel\/analytics/);
+  it("Vercel Analytics is retired and PostHog starts from one module only", () => {
+    // Plan gate G2: `@vercel/analytics` absent. SCL-201 IS 2: posthog-js is
+    // imported by exactly one client module.
+    const offenders = allSources.filter((rel) =>
+      read(rel).includes("@vercel/analytics"),
+    );
+    expect(offenders).toEqual([]);
+    const pkg = read("package.json");
+    expect(pkg).not.toMatch(/"@vercel\/analytics"/);
+    const importers = allSources.filter((rel) =>
+      /(from |import\()"posthog-js(\/[^"]*)?"/.test(read(rel)),
+    );
+    expect(importers).toEqual(["client/src/lib/analytics/posthog-client.ts"]);
   });
 });
 

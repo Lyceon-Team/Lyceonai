@@ -20,6 +20,7 @@ import {
   parseGridInValue,
   gridInAcceptedForms,
 } from "../shared/question-ingestion-qa.js";
+import { explanationNamesChoiceLetter } from "../shared/practice/letter-reference.js";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 
@@ -564,9 +565,9 @@ function validateRecord(
   // This regex is a detection aid — it flags for human/LLM review, not auto-reject,
   // because capital A–D also appear as math variables, geometric labels, and articles.
   // The auditor performs the binding comprehension check; the gate only warns.
-  const letterRefTripwire =
-    /(?:Option|option|Choice|choice|Answer|answer)\s+[A-D]\b|\([A-D]\)|answer is [A-D]\b/;
-  if (letterRefTripwire.test(rec.explanation)) {
+  // The pattern lives in shared/practice/letter-reference.ts (one rule, shared with the QOTD
+  // scheduler, which skips such questions).
+  if (explanationNamesChoiceLetter(rec.explanation)) {
     console.warn(
       `[REVIEW] ${file}:${line} (record ${index}): possible letter-reference in explanation — verify by reading`,
     );

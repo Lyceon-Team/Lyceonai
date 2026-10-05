@@ -1,32 +1,33 @@
 import { Link } from "wouter";
-import { buttonVariants } from "@/components/ui/button";
-import { BareCardHeader } from "@/components/layout/BareCardShell";
+import { Card, CardContent } from "@/components/ui/card";
+import { AlertCircle } from "lucide-react";
 
 /**
- * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1 "Hierarchy" (one primary action), §2
- *        "Bare card" (404)] | @implemented [2026-10-03]
- *
- * plain English: the 404, inside the Bare card App.tsx wraps it in. The heading is the shipped
- * "404 Page Not Found". The way home is one filled link to /dashboard with the shipped words
- * "Back to dashboard": RequireRole sends each visitor on from there (a student stays, a guardian
- * goes to /guardian, a signed-out visitor to sign-in), so one target serves every role without
- * the page reading who is signed in. The shipped developer line ("Did you forget to add the page
- * to the router?") is gone: it spoke to developers, not students (owner question in UI-59).
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §0, §5 F6 (404 copy)] |
+ * @implemented [2026-10-03] | plain English: the catch-all page. Generic copy and a link home;
+ * it used to tell visitors to "add the page to the router", a developer message about how the
+ * app is built. Rendered into the static 404.html as well (`client/src/prerender`).
  */
-export default function NotFound() {
+export default function NotFound(): JSX.Element {
   return (
-    <div className="flex flex-col items-center" data-testid="not-found">
-      <BareCardHeader title="404 Page Not Found" align="center" />
-      <Link
-        href="/dashboard"
-        className={buttonVariants({
-          variant: "lyc-primary",
-          className: "no-underline",
-        })}
-        data-testid="not-found-home"
-      >
-        Back to dashboard
-      </Link>
+    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
+      <Card className="w-full max-w-md mx-4">
+        <CardContent className="pt-6">
+          <div className="flex mb-4 gap-2">
+            <AlertCircle className="h-8 w-8 text-amber-600" />
+            <h1 className="text-2xl font-bold text-gray-900">Page not found</h1>
+          </div>
+
+          <p className="mt-4 text-sm text-gray-600">
+            Sorry, we couldn't find that page.
+          </p>
+          <p className="mt-4 text-sm">
+            <Link href="/" className="font-medium underline underline-offset-2">
+              Go to the homepage
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

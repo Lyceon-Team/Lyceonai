@@ -530,9 +530,6 @@ export function SupabaseAuthForm() {
           </div>
         </>
       )}
-      <p className="m-0 mt-6 text-center text-lyc-meta-lg text-lyc-muted">
-        Authentication and legal consent are handled in one standard flow.
-      </p>
     </div>
   );
 }

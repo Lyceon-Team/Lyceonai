@@ -49,19 +49,15 @@ async function createOgImage() {
   // Create text overlay with all elements
   const textSvg = `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <!-- Top-left domain -->
-      <text x="40" y="50" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="600" fill="${NAVY}">
-        lyceon.ai
-      </text>
-      
       <!-- Subtitle under logo (centered) -->
       <text x="600" y="420" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="32" font-weight="500" fill="${DARK_NAVY}" text-anchor="middle">
-        SAT Tutor at your Finger Tips.
+        Digital SAT Prep
       </text>
       
-      <!-- Bottom-center tagline -->
+      <!-- Bottom-center domain. SEO Wave 1B F6 (2026-10-03): neutral text only, no tagline or
+           claim (Public Disclosure Doctrine §0). -->
       <text x="600" y="580" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="24" font-weight="400" fill="${NAVY}" text-anchor="middle" opacity="0.8">
-        Practice smarter. Score higher.
+        lyceon.ai
       </text>
     </svg>
   `;

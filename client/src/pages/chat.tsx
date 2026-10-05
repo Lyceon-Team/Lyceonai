@@ -363,7 +363,12 @@ function LisaConversation(): JSX.Element {
     isThinking || isPaused || isEnded || firstMessage !== null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="lisa-page">
+    // SCL-204 / R32: `ph-no-capture` — the whole LISA page (log, composer, conversation titles);
+    // tutor content is never recorded (Coding Standards §12).
+    <div
+      className="ph-no-capture flex min-h-0 flex-1 flex-col"
+      data-testid="lisa-page"
+    >
       <header className="flex min-h-[73px] shrink-0 items-center justify-between gap-4 border-b border-lyc-rule px-4 py-4 lg:px-10 lg:min-h-[81px] lg:py-5">
         <h1
           className="m-0 min-w-0 truncate font-lyc-serif text-[22px] font-semibold text-lyc-ink-strong lg:text-[24px]"

@@ -41,7 +41,6 @@ const ROOT = process.cwd();
 const JSON_OUT = process.argv.includes("--json");
 
 const SCOPE_EXTRA = [
-  "client/src/components/mastery/DomainGrid.tsx",
   "client/src/components/mastery/MasteryMeter.tsx",
 ];
 const SCOPE_EXCLUDE = [/^server\/lib\/stripe\//];

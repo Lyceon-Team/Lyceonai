@@ -40,6 +40,10 @@ const routeSchema = z.union([
       dest: z.string().optional(),
       headers: z.record(z.string(), z.string()).optional(),
       continue: z.boolean().optional(),
+      // SEO Wave 1A (#1054): 301 redirects and the final 404 carry a status; the
+      // directory-index rewrite applies only when its file exists (check).
+      status: z.number().int().optional(),
+      check: z.boolean().optional(),
     })
     .strict(),
 ]);
@@ -77,25 +81,35 @@ function headersFor(
  *   - script-src 'unsafe-eval': the Desmos calculator evals (261 reports per session with the
  *     policy report-only, 2026-10-02; blank calculator when enforced without it). Owner ruling
  *     (Karl) 2026-10-03: allowed, page-wide (see 4. above).
+ *   - script-src and frame-src https://challenges.cloudflare.com: the Question of the Day widget
+ *     on the homepage and /sat-question-of-the-day (Cloudflare Turnstile loads api.js from that
+ *     host and renders its challenge in an iframe from it; SCL-202 item 2, added 2026-10-05).
  *   - style-src 'unsafe-inline': every page (React style attributes, Radix positioning).
- *   - style-src / font-src Google Fonts: every page (Poppins and Inter, client/index.html).
+ *   - (no font host: Poppins and Inter are self-hosted under client/public/fonts/ since
+ *     2026-10-03, so style-src and font-src name no Google domain.)
  *   - font-src data:: review and LISA (KaTeX inlines a small font in MathRenderer's CSS).
  *   - img-src data:: inline SVG/data images in the bundle.
- *   - worker-src blob:: the Desmos calculator starts its worker from a blob URL.
+ *   - worker-src blob:: the Desmos calculator starts its worker from a blob URL (and PostHog's
+ *     replay compression worker, when replay is on).
+ *   - connect-src https://us.i.posthog.com and https://us-assets.i.posthog.com, script-src
+ *     https://us-assets.i.posthog.com: PostHog (US region, owner decision 6, 2026-10-05), only
+ *     after cookie consent — events and remote config go to the ingestion host; the replay
+ *     recorder and config scripts load from the assets host (SCL-201, SCL-204).
  * Not needed, and so absent: Supabase (Google sign-in is a top-level navigation to its
  * authorize URL, which CSP does not govern; no browser fetch reaches Supabase), Stripe (Checkout
- * and the portal are navigations; no Stripe.js), Vercel Analytics (same-origin /_vercel/insights).
+ * and the portal are navigations; no Stripe.js). Vercel Analytics was retired 2026-10-05.
  */
 const PAGE_CSP = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "form-action 'self'",
-  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com`,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' data: https://fonts.gstatic.com",
+  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
   "img-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://us.i.posthog.com https://us-assets.i.posthog.com",
+  "frame-src https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
 ].join("; ");
@@ -106,6 +120,9 @@ const EXPECTED: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  // SEO Wave 1B F5 (owner answer 8, 2026-10-03): two years, subdomains included, and
+  // deliberately NO `preload` — preload-list submission is hard to undo and is not approved.
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
 };
 
 const PAGE_PATHS = [
@@ -163,14 +180,14 @@ describe("F-59: page security headers (vercel.json)", () => {
     }
   });
 
-  it("script-src is our origin, the theme script's hash, eval (Desmos) and Desmos; nothing inline", () => {
+  it("script-src is our origin, the theme script's hash, eval (Desmos), Desmos, Turnstile and PostHog; nothing inline", () => {
     const csp = headersFor("/")["Content-Security-Policy"] ?? "";
     const scriptSrc = csp
       .split(";")
       .map((d) => d.trim())
       .find((d) => d.startsWith("script-src "));
     expect(scriptSrc).toBe(
-      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com`,
+      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
     );
     // 'unsafe-eval' appears in script-src only (owner ruling 2026-10-03), never inline script.
     expect(csp.match(/'unsafe-eval'/g)).toHaveLength(1);

@@ -32,7 +32,6 @@ import {
   parseCorrectVariants,
   parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
-  resolveSelectedCanonicalKey,
   filterAssetsPreSubmit,
   resolveCanonicalDomain,
   resolveClientInstanceBinding,
@@ -41,6 +40,16 @@ import {
   type CanonicalSectionCode,
   type StudentSafeOption,
 } from "../../shared/question-bank-contract";
+// gradeAnswer, GradeResult and CanonicalQuestionForServing moved verbatim to
+// shared/practice/grade.ts (SEO Wave 2, owner decision 7, 2026-10-05) so the public Question of
+// the Day grades with the SAME function without importing this route module. Re-exported here
+// so every existing importer (review-canonical, review-pool, tests) is unchanged.
+import {
+  gradeAnswer,
+  type GradeResult,
+  type CanonicalQuestionForServing,
+} from "../../shared/practice/grade";
+export { gradeAnswer, type GradeResult, type CanonicalQuestionForServing };
 import type { PracticeSessionItemRow } from "../../packages/shared/src/practice-schema";
 import {
   MASTERY_EMISSION_COMPONENT,
@@ -87,31 +96,6 @@ type StudentSafeQuestionDTO = {
   difficulty: string | number | null;
   correct_answer: null;
   explanation: null;
-};
-
-// Server-side serving record. correct_answer / explanation / correct_variants live here for
-// grading ONLY and are never projected to the student DTO. For grid_in, options is [] and the
-// accepted-answer set rides in correct_variants; for mcq, correct_variants is null.
-export type CanonicalQuestionForServing = {
-  id: string;
-  canonical_id: string;
-  section_code: string;
-  item_type: CanonicalItemType;
-  stem: string;
-  passage: string | null;
-  options: McOption[];
-  difficulty: string | number | null;
-  domain?: string | null;
-  skill?: string | null;
-  subskill?: string | null;
-  exam?: string | null;
-  structure_cluster_id?: string | null;
-  correct_answer: string | null;
-  explanation: string | null;
-  correct_variants: string[] | null;
-  assets: unknown | null;
-  option_metadata: unknown | null;
-  estimated_time_seconds: number | null;
 };
 
 type SessionRow = {
@@ -2954,112 +2938,6 @@ async function findSessionItemForSubmission(
   if (!data || data.length === 0) return null;
   return data[0];
 }
-// @spec [Doc-02B_V4 §14; TIGHTENING-1 correct_variants grading] | @implemented 2026-07-09
-// Unified grader — MCQ key-match vs grid-in correct_variants array membership.
-// Grid-in grades against the snapshot correct_variants, NOT parseGridInValue.
-// Fail closed on malformed data — no fallback grading path.
-// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
-// rather than copying it. No signature or behaviour change.
-export type GradeResult =
-  | {
-      ok: true;
-      isCorrect: boolean;
-      outcome: "correct" | "incorrect";
-      selectedCanonicalKey: string;
-      correctOptionId: string | null;
-    }
-  | { ok: false; status: number; error: string; message: string };
-
-// Exported 2026-09-21 (brief R3 §1 check 2): review calls the SAME function
-// rather than copying it. No signature or behaviour change.
-export function gradeAnswer(
-  canonicalQuestion: CanonicalQuestionForServing,
-  selectedAnswer: string,
-  optionTokenMap: Record<string, string> | null,
-): GradeResult {
-  const isGridIn = canonicalQuestion.item_type === "grid_in";
-
-  if (isGridIn) {
-    const variants = canonicalQuestion.correct_variants;
-    if (!variants || variants.length === 0) {
-      return {
-        ok: false,
-        status: 422,
-        error: "invalid_question_data",
-        message:
-          "Grid-in question is missing correct_variants and cannot be graded.",
-      };
-    }
-    const trimmed = selectedAnswer.trim();
-    if (!trimmed) {
-      return {
-        ok: false,
-        status: 400,
-        error: "invalid_answer",
-        message: "selectedAnswer must be a non-empty string for grid-in.",
-      };
-    }
-    const isCorrect = variants.includes(trimmed);
-    return {
-      ok: true,
-      isCorrect,
-      outcome: isCorrect ? "correct" : "incorrect",
-      selectedCanonicalKey: trimmed,
-      correctOptionId: null,
-    };
-  }
-
-  // MCQ path
-  if (!optionTokenMap) {
-    return {
-      ok: false,
-      status: 409,
-      error: "session_item_mapping_missing",
-      message: "The served option mapping is missing for this session item.",
-    };
-  }
-
-  const correctAnswerKey = normalizeAnswerKey(canonicalQuestion.correct_answer);
-  if (!correctAnswerKey) {
-    return {
-      ok: false,
-      status: 422,
-      error: "invalid_question_data",
-      message: "This question is missing an answer key and cannot be graded.",
-    };
-  }
-
-  // One resolution rule for practice, review and the full-length exam (E6).
-  const selectedCanonicalKey = resolveSelectedCanonicalKey(
-    selectedAnswer,
-    optionTokenMap,
-  );
-
-  if (!selectedCanonicalKey) {
-    return {
-      ok: false,
-      status: 400,
-      error: "invalid_answer",
-      message:
-        "selectedAnswer must match a served option token or canonical option key.",
-    };
-  }
-
-  const correctOptionId =
-    Object.entries(optionTokenMap).find(
-      (entry) => entry[1] === correctAnswerKey,
-    )?.[0] ?? null;
-
-  const isCorrect = selectedCanonicalKey === correctAnswerKey;
-  return {
-    ok: true,
-    isCorrect,
-    outcome: isCorrect ? "correct" : "incorrect",
-    selectedCanonicalKey,
-    correctOptionId,
-  };
-}
-
 // @spec [Doc-05A §11, Codex audit Fix 2] On idempotent replay of a diagnostic
 // answer, re-attempt mastery emission (best-effort). The answer was already
 // recorded (status → "answered") on the first attempt, but mastery emission may

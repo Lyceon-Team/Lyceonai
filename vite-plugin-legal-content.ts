@@ -22,10 +22,12 @@
  *
  * trade-offs:
  *  - The output lands at `dist/public/legal/`, which shares a URL prefix with
- *    the SPA route `/legal/:slug`. They do not collide: Vercel's `filesystem`
- *    handler matches real files, and `/legal/privacy-policy` is a directory
- *    with no index.html, so it falls through to the SPA as before. Only the
- *    deeper asset paths resolve to files.
+ *    the page route `/legal/:slug`. Since F1 (2026-10-03) the prerender writes
+ *    each document page as `dist/public/legal/<slug>/index.html`, into the same
+ *    directory this plugin fills: Vercel's `filesystem` handler serves that
+ *    index.html for `/legal/<slug>` and the deeper asset paths
+ *    (`/legal/<slug>/<version>/en.md`, `manifest.json`, `index.json`) as files.
+ *    The prerender runs after this copy, so neither overwrites the other.
  *  - Dev serving is a middleware rather than Vite's `publicDir`, because
  *    publicDir is a single directory rooted at `client/` and pointing it at
  *    `legal/` would mean committing the copy — the thing being avoided.
@@ -71,50 +73,105 @@ function buildIndex(sourceDir: string): string {
   return `${JSON.stringify({ slugs }, null, 2)}\n`;
 }
 
+export type LegalFile = { body: Buffer; contentType: string | undefined };
+
+/**
+ * What `GET /legal/<relative>` answers, read from `legal/`: the file, `"forbidden"` for a path
+ * that escapes the directory, or null for anything that is not a file. `index.json` is
+ * synthesized from the directory, exactly as the build writes it.
+ *
+ * The ONE implementation of that answer: the dev middleware serves it, and the build-time
+ * prerender (`legalFetch` below) loads legal pages through it, so the static HTML is built
+ * from the same bytes `legal-body-purity-gate.mjs` proves the deployment ships.
+ */
+export function readLegalFile(
+  sourceDir: string,
+  relative: string,
+): LegalFile | "forbidden" | null {
+  if (relative === "index.json") {
+    return {
+      body: Buffer.from(buildIndex(sourceDir)),
+      contentType: CONTENT_TYPES[".json"],
+    };
+  }
+  const resolved = path.resolve(sourceDir, relative);
+  // Refuse anything that escapes legal/, and anything that is not a file.
+  if (resolved !== sourceDir && !resolved.startsWith(sourceDir + path.sep)) {
+    return "forbidden";
+  }
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return null;
+  return {
+    body: fs.readFileSync(resolved),
+    contentType: CONTENT_TYPES[path.extname(resolved)],
+  };
+}
+
+/**
+ * A `fetch` for the build-time prerender (F1). The legal pages load their content with
+ * `fetch("/legal/...")`; in Node there is no origin to resolve that against, so the
+ * prerender answers those requests from `legal/` through `readLegalFile`. Any other URL is
+ * refused, loudly: a page that fetches anything else at prerender time is a page whose static
+ * HTML would depend on a network the build does not have.
+ */
+export function legalFetch(sourceDir: string): typeof fetch {
+  return async (input) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.pathname
+          : input.url;
+    if (!url.startsWith(URL_PREFIX)) {
+      throw new Error(`prerender: unexpected fetch of ${url}`);
+    }
+    const file = readLegalFile(
+      sourceDir,
+      decodeURIComponent(url.slice(URL_PREFIX.length)),
+    );
+    if (file === "forbidden") return new Response("Forbidden", { status: 403 });
+    if (file === null) return new Response("Not found", { status: 404 });
+    return new Response(new Uint8Array(file.body), {
+      status: 200,
+      headers: file.contentType ? { "Content-Type": file.contentType } : {},
+    });
+  };
+}
+
 export function legalContentPlugin(repoRoot: string): Plugin {
   const sourceDir = path.resolve(repoRoot, "legal");
+  let ssrBuild = false;
 
   return {
     name: "lyceon-legal-content",
+
+    configResolved(config) {
+      ssrBuild = Boolean(config.build.ssr);
+    },
 
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = (req.url ?? "").split("?")[0];
         if (!url.startsWith(URL_PREFIX)) return next();
 
-        const relative = decodeURIComponent(url.slice(URL_PREFIX.length));
-
-        // index.json is generated, not stored — synthesize it here so dev and
-        // a deployed build answer the same question the same way.
-        if (relative === "index.json") {
-          res.setHeader("Content-Type", CONTENT_TYPES[".json"]);
-          res.end(buildIndex(sourceDir));
-          return;
-        }
-
-        const resolved = path.resolve(sourceDir, relative);
-
-        // Refuse anything that escapes legal/, and anything that is not a file.
-        if (
-          resolved !== sourceDir &&
-          !resolved.startsWith(sourceDir + path.sep)
-        ) {
+        const file = readLegalFile(
+          sourceDir,
+          decodeURIComponent(url.slice(URL_PREFIX.length)),
+        );
+        if (file === "forbidden") {
           res.statusCode = 403;
           res.end("Forbidden");
           return;
         }
-        if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-          return next();
-        }
-
-        const type = CONTENT_TYPES[path.extname(resolved)];
-        if (type) res.setHeader("Content-Type", type);
-        res.end(fs.readFileSync(resolved));
+        if (file === null) return next();
+        if (file.contentType) res.setHeader("Content-Type", file.contentType);
+        res.end(file.body);
       });
     },
 
     closeBundle() {
-      // Only the client build produces the static output this belongs in.
+      // Only the client build produces the static output this belongs in. The prerender's
+      // SSR build (F1) writes to dist/prerender and must not re-copy over dist/public.
+      if (ssrBuild) return;
       if (!fs.existsSync(sourceDir)) return;
       const outDir = path.resolve(repoRoot, "dist/public/legal");
 

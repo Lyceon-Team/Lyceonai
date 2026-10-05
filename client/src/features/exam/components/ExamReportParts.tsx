@@ -50,8 +50,8 @@ const TABS: ReadonlyArray<{ id: ScoreTab; label: string }> = [
 /**
  * WAI-ARIA tabs: the selected tab is the only one in the tab order; Left/Right/Home/End
  * move selection and focus. Only the selected panel is rendered. `breakdown` is the
- * already-rendered breakdown panel: the guardian passes `DomainBreakdown` (a bar per domain,
- * no counts, SCL-189).
+ * already-rendered breakdown panel: the guardian passes `DomainSegments`, the student's own
+ * seven segments per domain (G5-11, SCL-210).
  */
 export function ScoreTabs({
   children,
@@ -151,7 +151,8 @@ export function SectionCard({
           <span className="font-serif text-[34px] font-semibold leading-none">
             {scaled}
           </span>
-          <span className="text-[12px] text-[var(--exam-muted)]">200–800</span>
+          {/* "/ 800", as the student's report states it (UI-54; G5-08 mirror). */}
+          <span className="text-[12px] text-[var(--exam-muted)]">/ 800</span>
         </>
       )}
     </div>
