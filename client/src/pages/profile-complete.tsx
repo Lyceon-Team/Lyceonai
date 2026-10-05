@@ -361,7 +361,7 @@ export default function ProfileComplete() {
                 data-testid="text-under-13-next-step"
               >
                 Under 13: after this step you&apos;ll connect a guardian with
-                your link code before you can start practising.
+                your link code before you can start practicing.
               </p>
             )}
           </div>

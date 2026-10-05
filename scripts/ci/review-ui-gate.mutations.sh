@@ -84,6 +84,9 @@ FILES=(
   "client/src/pages/account-recover.tsx"
   "client/src/pages/guardian-required.tsx"
   "client/src/components/account-deletion/PendingDeletionScreen.tsx"
+  "client/src/lib/plan-copy.ts"
+  "client/src/components/auth/RequireRole.tsx"
+  "client/src/components/layout/BareCardShell.tsx"
 )
 
 snapshot_all() {
@@ -1237,6 +1240,28 @@ plant "UI57-D3" "the wide pill track back to 132px (the unmeasured pill overlaps
 assert s.count(a) == 1
 s = s.replace(a, "      ? \"sm:grid-cols-[minmax(0,1fr)_176px_132px]\"", 1)'
 
+# OQ-58 (Karl, 2026-10-05): "Practise" → "Practice". Each plant brings the British form back.
+plant "UI57-SP1" "the grid call to action back to 'Start practising'" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "<Link href=\"/practice\">Start practicing</Link>"
+assert s.count(a) == 1
+s = s.replace(a, "<Link href=\"/practice\">Start practising</Link>", 1)'
+
+plant "UI57-SP2" "the opened domain's call to action back to 'Practise <domain>'" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "<Link href=\"/practice\">Practice {domain}</Link>"
+assert s.count(a) == 1
+s = s.replace(a, "<Link href=\"/practice\">Practise {domain}</Link>", 1)'
+
+plant "UI57-SP3" "the British form anywhere else on the page (the absence assertion)" \
+  "$T57" \
+  "client/src/pages/mastery.tsx" \
+  'a = "Levels move as you answer more questions."
+assert s.count(a) == 1
+s = s.replace(a, "Levels move as you keep practising.", 1)'
+
 # ── UI-58: Settings, Help, Notifications, the plans page ──────────────────────────────────
 # @spec [student-UI register UI-58; OQ-20, OQ-27, OQ-28 / F-54, OQ-26 / OQ-41, UI-S4, UI-S7 /
 #        F-40, UI-S8, OQ-38, OQ-39, OQ-46, UI-44, UI-47, OQ-49] | @implemented [2026-10-03]
@@ -1429,10 +1454,10 @@ s = s.replace(a, "export const HELP_PATH = \"/legal\";", 1)'
 
 plant "UI58-H2" "an approved answer is reworded" \
   "$H58" \
-  "client/src/pages/help.tsx" \
-  'a = "40 practice questions a day and unlimited review. Paid plans add your study calendar"
+  "client/src/lib/plan-copy.ts" \
+  'a = "40 practice questions a day and unlimited review."
 assert s.count(a) == 1
-s = s.replace(a, "40 questions a day and unlimited review. Paid plans add your study calendar", 1)'
+s = s.replace(a, "40 questions a day and unlimited review.", 1)'
 
 plant "UI58-H3" "a question is dropped (six, not seven)" \
   "$H58" \
@@ -1478,6 +1503,43 @@ plant "UI58-U2" "every plan button is filled (DESIGN.md §1 one primary)" \
   'a = "                variant={isBestValue ? \"lyc-primary\" : \"lyc-outline\"}"
 assert s.count(a) == 1
 s = s.replace(a, "                variant=\"lyc-primary\"", 1)'
+
+# OQ-59 (h) (Karl, 2026-10-05): /upgrade's plan copy is the Help FAQ's free/paid wording, from one
+# source (client/src/lib/plan-copy.ts); the projection reads as free.
+plant "UI58-U3" "the shipped 'One secure checkout flow' description comes back" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        description={PLAN_PAID_ADDS}"
+assert s.count(a) == 1
+s = s.replace(a, "        description=\"One secure checkout flow for monthly, quarterly, and yearly subscriptions.\"", 1)'
+
+plant "UI58-U4" "the free line replaced by the shipped 'projection access' bullet" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        {PLAN_FREE_INCLUDES}"
+assert s.count(a) == 1
+s = s.replace(a, "        Full KPI + mastery + projection access", 1)'
+
+plant "UI58-U5" "a card lists the projection as paid again" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "                {plan.intervalLabel}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + projection access\n", 1)'
+
+plant "UI58-U6" "the shared free sentence drops the projection" \
+  "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
+  "client/src/lib/plan-copy.ts" \
+  'a = "the diagnostic, your projected score, 40 practice"
+assert s.count(a) == 1
+s = s.replace(a, "the diagnostic, 40 practice", 1)'
+
+plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
+  "client/src/pages/upgrade.page.test.tsx" \
+  "client/src/pages/help.tsx" \
+  'a = "    a: `${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`,"
+assert s.count(a) == 1
+s = s.replace(a, "    a: `${PLAN_FREE_INCLUDES} Paid plans add more.`,", 1)'
 
 plant "UI58-N1" "a notification's time drops to 12px" \
   "client/src/pages/notifications.test.tsx" \
@@ -1682,6 +1744,38 @@ plant "UI59-D3" "the pending-deletion heading is not an H1" \
   'a = "<BareCardHeader title=\"Your account is scheduled for deletion\" />"
 assert s.count(a) == 1
 s = s.replace(a, "<h2>Your account is scheduled for deletion</h2>", 1)'
+
+# OQ-60 (e) (Karl, 2026-10-05): RequireRole's loader follows the device theme on Bare routes.
+L60="client/src/components/auth/RequireRole.loader-theme.test.tsx"
+
+plant "UI59-RL1" "the route guard's loader pinned light on every route again" \
+  "$L60" \
+  "client/src/components/auth/RequireRole.tsx" \
+  'a = "    return requireRoleLoaderThemeLock(location) === \"light\" ? ("
+assert s.count(a) == 1
+s = s.replace(a, "    return true ? (", 1)'
+
+plant "UI59-RL2" "the loader unlocks on every table route, not only the Bare ones" \
+  "$L60" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  return spec?.shell === \"bare\" ? spec.themeLock : \"light\";"
+assert s.count(a) == 1
+s = s.replace(a, "  return spec !== undefined ? spec.themeLock : \"light\";", 1)'
+
+# OQ-60 (f) (Karl, 2026-10-05): tighter paragraph leading inside the Bare card only.
+plant "UI59-CL1" "the card's paragraphs fall back to the global 1.75 leading" \
+  "$B59" \
+  "client/src/components/layout/BareCardShell.tsx" \
+  'a = "          BARE_CARD_PROSE_LEADING,\n"
+assert s.count(a) == 1
+s = s.replace(a, "          undefined,\n", 1)'
+
+plant "UI59-CL2" "the card leading at class specificity (it would override a meta line's own)" \
+  "$B59" \
+  "client/src/components/layout/BareCardShell.tsx" \
+  'a = "\"[:where(&)_p]:leading-[1.55]\""
+assert s.count(a) == 1
+s = s.replace(a, "\"[&_p]:leading-[1.55]\"", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

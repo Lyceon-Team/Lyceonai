@@ -5,6 +5,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { FullPageLoader } from "@/components/student-ui";
+import { requireRoleLoaderThemeLock } from "@/lib/route-shells";
 import {
   loginPathWithReturn,
   onboardingPathWithReturn,
@@ -56,10 +57,17 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   });
 
   if (authLoading || (user && profileLoading)) {
-    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
-    // The shared FullPageLoader (role="status", named by its label). Light-locked because this
-    // gate sits above every role's pages, and none of them is themed yet.
-    return <FullPageLoader themeLock="light" />;
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"; UI-59, OQ-60 (e) (owner
+    // ruling 2026-10-05)] | @implemented [2026-10-03; Bare routes 2026-10-05]
+    // The shared FullPageLoader (role="status", named by its label). This gate sits above the
+    // shell, so the loader takes its lock from the route table: a Bare route's own lock (the
+    // device theme since UI-59, so a dark device sees no light flash before the dark card), and
+    // light everywhere else (guardian, admin and still-pinned pages share this gate).
+    return requireRoleLoaderThemeLock(location) === "light" ? (
+      <FullPageLoader themeLock="light" />
+    ) : (
+      <FullPageLoader />
+    );
   }
 
   // G2-02: the server refused this session as ROLE_UNRECOGNIZED. Not a sign-out, so not /login —

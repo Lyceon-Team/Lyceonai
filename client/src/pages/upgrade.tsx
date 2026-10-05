@@ -5,21 +5,29 @@
  *        gets screenshots before merge), §1 (tokens only, 14px floor, one filled action, no
  *        motion beyond the LISA dots), §2 App shell; student-UI register UI-58, OQ-49 (off the
  *        light lock once on tokens), UI-41 (the in-body back link was interim duplication of the
- *        shell's navigation; removed); wiring-table §13 (`GET /api/billing/plans`, checkout)]
- *        | @implemented [2026-10-03 restyle; billing behaviour unchanged]
+ *        shell's navigation; removed); wiring-table §13 (`GET /api/billing/plans`, checkout);
+ *        OQ-59 (h) (owner ruling 2026-10-05: the plan copy is the Help FAQ's approved free/paid
+ *        wording; the projection is free — register §2, Step 2 ruling 4)]
+ *        | @implemented [2026-10-03 restyle; billing behaviour unchanged; copy 2026-10-05]
  *
  * plain English: the same three plan cards from the same live prices, and the same server-made
  * Stripe checkout per plan; only the presentation moved onto the student tokens. The best-value
  * card's button is the page's one filled action (the others are outline), the spinner icons are
- * gone (no motion), and the "Back to Dashboard" link is removed (the rail is the way back). Every
- * word is the page's shipped copy.
+ * gone (no motion), and the "Back to Dashboard" link is removed (the rail is the way back).
+ *
+ * COPY (OQ-59 (h)). What a paid plan adds and what free includes are the Help FAQ's two approved
+ * sentences, imported from `@/lib/plan-copy` (the FAQ's own source), so the two pages cannot
+ * drift. They replace the shipped "One secure checkout flow…" description and the per-card
+ * "Full KPI + mastery + projection access" / "Premium tutor and full-test analytics" lines: every
+ * plan carries the same features, so they are stated once, above the cards, not three times.
+ * Plan names, intervals and prices still come from `GET /api/billing/plans`; the title, eyebrow,
+ * "Best value", "Choose plan" and the loading/error lines are the shipped copy, unchanged.
  */
 import { useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   type BillingPlan,
@@ -32,6 +40,7 @@ import {
   monthlyAmountFrom,
 } from "../../../packages/shared/src/billing-pricing";
 import { useToast } from "@/hooks/use-toast";
+import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
 
 const planCardTestIds: Record<BillingPlan, string> = {
   monthly: "upgrade-plan-monthly",
@@ -141,8 +150,14 @@ export default function UpgradePage() {
       <PageHeader
         eyebrow="Membership"
         title="Choose Your Lyceon Plan"
-        description="One secure checkout flow for monthly, quarterly, and yearly subscriptions."
+        description={PLAN_PAID_ADDS}
       />
+      <p
+        className="m-0 -mt-4 text-lyc-meta-lg text-lyc-muted"
+        data-testid="upgrade-free-includes"
+      >
+        {PLAN_FREE_INCLUDES}
+      </p>
 
       {error && (
         <Notice
@@ -235,22 +250,6 @@ export default function UpgradePage() {
                   {savingsText}
                 </span>
               )}
-              <ul className="m-0 flex list-none flex-col gap-2 p-0 text-lyc-meta-lg text-lyc-ink">
-                <li className="flex items-start gap-2">
-                  <Check
-                    className="mt-0.5 h-4 w-4 shrink-0 text-lyc-ink-strong"
-                    aria-hidden="true"
-                  />
-                  Full KPI + mastery + projection access
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check
-                    className="mt-0.5 h-4 w-4 shrink-0 text-lyc-ink-strong"
-                    aria-hidden="true"
-                  />
-                  Premium tutor and full-test analytics
-                </li>
-              </ul>
               <Button
                 type="button"
                 variant={isBestValue ? "lyc-primary" : "lyc-outline"}

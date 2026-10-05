@@ -25,13 +25,15 @@ import { Link } from "wouter";
 import { PageHeader } from "@/components/student-ui";
 import { buttonVariants, LYC_FOCUS } from "@/components/ui/button";
 import { GUARDIAN_VISIBILITY_SENTENCE } from "@/components/settings/LinkSection";
+import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import { cn } from "@/lib/utils";
 
 export const HELP_FAQS: readonly { q: string; a: string }[] = [
   {
     q: "What is free, and what needs a paid plan?",
-    a: "Free: the diagnostic, your projected score, 40 practice questions a day and unlimited review. Paid plans add your study calendar, mastery for every domain and skill, full-length practice tests and LISA, your tutor.",
+    // One source with the plans page (OQ-59 (h)): `client/src/lib/plan-copy.ts`.
+    a: `${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`,
   },
   {
     q: "How is my projected score worked out?",

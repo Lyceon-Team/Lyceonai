@@ -71,7 +71,7 @@ export const UI_57: PageGroup = {
     {
       id: "mastery-paid-skills",
       title:
-        "Mastery, paid, Algebra opened: its skills listed beneath it, measured and unmeasured, with one outline 'Practise Algebra'",
+        "Mastery, paid, Algebra opened: its skills listed beneath it, measured and unmeasured, with one outline 'Practice Algebra'",
       persona: "paid",
       route: "/mastery",
       waitFor: DOMAINS,
