@@ -226,7 +226,7 @@ describe("QotdWidget", () => {
     );
     expect(posts).toHaveLength(1);
     // The reveal marks the correct option in THIS visitor's order, by token.
-    expect(screen.getByText("Incorrect")).toBeTruthy();
+    expect(screen.getByText("Not quite")).toBeTruthy();
   });
 
   it("a day with no question yet says so", async () => {
