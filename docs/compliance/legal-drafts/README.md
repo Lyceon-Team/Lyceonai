@@ -86,7 +86,9 @@ Requirements are from Doc 10 (`docs/Spec/Lyceon — Document 10_ … Legal Docum
 | Resend | `server/lib/notifications/transport.ts` |
 | Desmos | `client/src/components/math/DesmosCalculator.tsx` |
 | Slack | `server/services/crisis-notification.ts` (payload: IDs, reason label, SLA, admin link) |
-| PostHog, Cloudflare Turnstile, Trustpilot | Launch processors; not yet in the code |
+| PostHog | `client/src/lib/analytics/posthog-client.ts` (browser, after consent; US region); `server/lib/analytics/emit-event.ts` (server events, HMAC id only) |
+| Cloudflare Turnstile | `server/lib/turnstile.ts`; `client/src/components/qotd/turnstile.tsx` |
+| Trustpilot | Launch processor; not yet in the code |
 | Not listed: error-monitoring webhook | `ERROR_MONITOR_WEBHOOK_URL` not configured on Vercel, verified 2026-10-03; `server/logger.ts` returns early while it is unset |
 | Not listed: Google BigQuery | Never installed; nothing archived (SCL-106) |
 | Not listed: Google Fonts | Self-hosted (#1088) |

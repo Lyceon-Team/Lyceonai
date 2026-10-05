@@ -89,21 +89,26 @@ function headersFor(
  *     2026-10-03, so style-src and font-src name no Google domain.)
  *   - font-src data:: review and LISA (KaTeX inlines a small font in MathRenderer's CSS).
  *   - img-src data:: inline SVG/data images in the bundle.
- *   - worker-src blob:: the Desmos calculator starts its worker from a blob URL.
+ *   - worker-src blob:: the Desmos calculator starts its worker from a blob URL (and PostHog's
+ *     replay compression worker, when replay is on).
+ *   - connect-src https://us.i.posthog.com and https://us-assets.i.posthog.com, script-src
+ *     https://us-assets.i.posthog.com: PostHog (US region, owner decision 6, 2026-10-05), only
+ *     after cookie consent — events and remote config go to the ingestion host; the replay
+ *     recorder and config scripts load from the assets host (SCL-201, SCL-204).
  * Not needed, and so absent: Supabase (Google sign-in is a top-level navigation to its
  * authorize URL, which CSP does not govern; no browser fetch reaches Supabase), Stripe (Checkout
- * and the portal are navigations; no Stripe.js), Vercel Analytics (same-origin /_vercel/insights).
+ * and the portal are navigations; no Stripe.js). Vercel Analytics was retired 2026-10-05.
  */
 const PAGE_CSP = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "form-action 'self'",
-  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com`,
+  `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://us.i.posthog.com https://us-assets.i.posthog.com",
   "frame-src https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
@@ -175,14 +180,14 @@ describe("F-59: page security headers (vercel.json)", () => {
     }
   });
 
-  it("script-src is our origin, the theme script's hash, eval (Desmos), Desmos and Turnstile; nothing inline", () => {
+  it("script-src is our origin, the theme script's hash, eval (Desmos), Desmos, Turnstile and PostHog; nothing inline", () => {
     const csp = headersFor("/")["Content-Security-Policy"] ?? "";
     const scriptSrc = csp
       .split(";")
       .map((d) => d.trim())
       .find((d) => d.startsWith("script-src "));
     expect(scriptSrc).toBe(
-      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com`,
+      `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' 'unsafe-eval' https://www.desmos.com https://challenges.cloudflare.com https://us-assets.i.posthog.com`,
     );
     // 'unsafe-eval' appears in script-src only (owner ruling 2026-10-03), never inline script.
     expect(csp.match(/'unsafe-eval'/g)).toHaveLength(1);

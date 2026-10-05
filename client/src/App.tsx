@@ -9,9 +9,7 @@ import {
 } from "@/contexts/SupabaseAuthContext";
 import { UIProvider } from "@/components/providers/ui-provider";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
-import { Analytics } from "@vercel/analytics/react";
-
-import { analyticsBeforeSend } from "./lib/analytics-surface";
+import { CookieConsentRoot } from "@/components/consent/CookieConsentRoot";
 import "@/styles/tokens.css";
 import "@/styles/student-tokens.css";
 import "@/styles/accessibility.css";
@@ -591,19 +589,13 @@ function App() {
                   </DeletionGate>
                 </StudentUpgradeModal>
               </ActiveThemeLockProvider>
+              {/* SEO F10/F11: cookie banner + the only switch that starts PostHog (after
+                  Accept, never for under-13). Every route, including the deletion screen. */}
+              <CookieConsentRoot />
             </UIProvider>
           </SupabaseAuthProvider>
         </QueryClientProvider>
       </HelmetProvider>
-      {/*
-        Doc 06A §5.3 / Coding Standards §12.2: page views are reported from the
-        public marketing and legal surface ONLY. `analyticsBeforeSend` denies
-        by default, so every signed-in student page — and every route added
-        later — is silent unless someone deliberately makes it public. See
-        `client/src/lib/analytics-surface.ts` for why this is a predicate and
-        not a conditional mount.
-      */}
-      <Analytics beforeSend={analyticsBeforeSend} />
     </ErrorBoundary>
   );
 }

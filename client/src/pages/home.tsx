@@ -26,7 +26,8 @@ import {
   formatMonthlyPrice,
 } from "@/lib/public-pricing";
 import { ctaClickHandlers } from "@/lib/cta-click";
-import { QotdWidget } from "@/components/qotd/QotdWidget";
+// Lazy and viewport-triggered: keeps the widget and KaTeX out of the homepage's initial script.
+import { LazyQotdWidget } from "@/components/qotd/LazyQotdWidget";
 
 /**
  * The free-tier daily practice allowance, as advertised.
@@ -242,7 +243,7 @@ export default function HomePage() {
             </p>
           </div>
           <Card>
-            <QotdWidget />
+            <LazyQotdWidget />
           </Card>
         </Section>
       </Container>

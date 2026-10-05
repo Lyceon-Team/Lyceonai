@@ -8799,6 +8799,30 @@ $$;
 
 
 --
+-- Name: profiles_analytics_fields_set_once(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_analytics_fields_set_once() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.analytics_user_id IS NOT NULL
+     AND NEW.analytics_user_id IS DISTINCT FROM OLD.analytics_user_id THEN
+    RAISE EXCEPTION 'profiles.analytics_user_id is immutable once set (Doc 07A §7.1)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.signup_source IS NOT NULL
+     AND NEW.signup_source IS DISTINCT FROM OLD.signup_source THEN
+    RAISE EXCEPTION 'profiles.signup_source is immutable once set (SCL-201 IS 6)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: profiles_lock_date_of_birth(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11795,6 +11819,161 @@ $$;
 
 
 --
+-- Name: sweep_tutor_conversation_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_cutoff   timestamptz := now() - make_interval(days => public.tutor_conversation_retention_days());
+  v_ids      uuid[];
+  v_students uuid[];
+  v_n        integer;
+  v_tbl      text;
+  -- Tables whose rows go with a deleted conversation (ON DELETE CASCADE on conversation_id).
+  v_cascade  CONSTANT text[] := ARRAY[
+    'tutor_messages',
+    'tutor_question_links',
+    'tutor_instruction_assignments',
+    'tutor_instruction_exposures',
+    'tutor_turn_metrics',
+    'tutor_context_resolution_log'
+  ];
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_conversation_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Expired, soft-deleted, and NOT crisis-flagged (RS-00). Locked before the check.
+  SELECT coalesce(array_agg(x.id), '{}')
+    INTO v_ids
+    FROM (
+      SELECT c.id
+        FROM public.tutor_conversations c
+       WHERE c.deleted_at IS NOT NULL
+         AND c.deleted_at < v_cutoff
+       ORDER BY c.id
+         FOR UPDATE
+    ) x
+   WHERE NOT EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = x.id)
+     AND NOT EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = x.id);
+
+  -- Memory summaries go only for students losing a conversation in this run who keep nothing:
+  -- no live conversation, none still recoverable, and none flagged (RS-00).
+  SELECT coalesce(array_agg(DISTINCT c.student_id), '{}')
+    INTO v_students
+    FROM public.tutor_conversations c
+   WHERE c.id = ANY (v_ids)
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.tutor_conversations o
+        WHERE o.student_id = c.student_id
+          AND (
+            o.deleted_at IS NULL
+            OR o.deleted_at >= v_cutoff
+            OR EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = o.id)
+            OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = o.id)
+          )
+     );
+
+  -- Counts first (they are the dry-run answer, and the live run reports the same numbers).
+  swept_table   := 'tutor_conversations';
+  deleted_count := coalesce(array_length(v_ids, 1), 0);
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  FOREACH v_tbl IN ARRAY v_cascade LOOP
+    EXECUTE format('SELECT count(*)::integer FROM public.%I WHERE conversation_id = ANY ($1)', v_tbl)
+      INTO v_n
+      USING v_ids;
+    swept_table   := v_tbl;
+    deleted_count := v_n;
+    cutoff        := v_cutoff;
+    RETURN NEXT;
+  END LOOP;
+
+  SELECT count(*)::integer INTO v_n
+    FROM public.tutor_memory_summaries s
+   WHERE s.student_id = ANY (v_students);
+  swept_table   := 'tutor_memory_summaries';
+  deleted_count := v_n;
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  IF NOT p_dry_run THEN
+    DELETE FROM public.tutor_memory_summaries s WHERE s.student_id = ANY (v_students);
+    DELETE FROM public.tutor_conversations c WHERE c.id = ANY (v_ids);
+  END IF;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner ruling 2026-10-05 RS-00: the 7d tier. Deletes conversations soft-deleted more than tutor_conversation_retention_days() ago EXCEPT any a crisis_review_cases or crisis_review_events row links to, with their cascade rows, and the memory summaries of students left with no live, recoverable or flagged conversation. p_dry_run counts without deleting. One row per table, zero counts included, with the cutoff.';
+
+
+--
+-- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz := now() - interval '90 days';
+  v_assign  integer;
+  v_expose  integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_instruction_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_assign
+      FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_expose
+      FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+    GET DIAGNOSTICS v_expose = ROW_COUNT;
+
+    DELETE FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+    GET DIAGNOSTICS v_assign = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_instruction_assignments'; deleted_count := v_assign; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_instruction_exposures';   deleted_count := v_expose; cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner rulings 2026-10-05 RS-03, RS-04: the 90d tier. Deletes instruction assignments created more than 90 days ago and exposures shown more than 90 days ago or belonging to such an assignment. p_dry_run counts the same rows without deleting. One row per table, with the cutoff.';
+
+
+--
 -- Name: sync_tutor_conversations_on_entitlement_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11834,6 +12013,25 @@ $$;
 --
 
 COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS 'Doc 03 §14.2 / INV-03-19 / owner ruling 2026-09-22 C1: stamps tutor_conversations.deleted_at when public.entitlement_active(profile_id) turns false and clears it when it turns true. Calls the canonical predicate rather than re-listing statuses. Stamps only where deleted_at IS NULL so a second inactive transition cannot push the 7-day clock out.';
+
+
+--
+-- Name: tutor_conversation_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tutor_conversation_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 7;
+$$;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.tutor_conversation_retention_days() IS 'Doc 03 §14.2: days a soft-deleted tutor conversation stays recoverable before the 7d tier deletes it. THE single definition; the sweep reads it.';
 
 
 --
@@ -12837,6 +13035,43 @@ CREATE TABLE public.consent_runtime_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: cookie_consent_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cookie_consent_log (
+    id bigint NOT NULL,
+    consent_id uuid NOT NULL,
+    analytics boolean NOT NULL,
+    banner_version text NOT NULL,
+    source text NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cookie_consent_log_banner_version_check CHECK ((banner_version ~ '^[0-9]+$'::text)),
+    CONSTRAINT cookie_consent_log_source_check CHECK ((source = ANY (ARRAY['banner'::text, 'settings'::text])))
+);
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.cookie_consent_log IS 'Doc 10 §9.11: cookie consent log (timestamp + category + banner version). consent_id is the random id in the visitor''s consent cookie; no user id and no IP are stored.';
+
+
+--
+-- Name: cookie_consent_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.cookie_consent_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -14258,7 +14493,10 @@ CREATE TABLE public.profiles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     profile_completed_at timestamp with time zone,
     marketing_opt_in boolean DEFAULT false NOT NULL,
-    actor_id uuid DEFAULT gen_random_uuid() NOT NULL
+    actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    analytics_user_id uuid,
+    signup_source text,
+    CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
 
@@ -14267,6 +14505,20 @@ CREATE TABLE public.profiles (
 --
 
 COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
+
+
+--
+-- Name: COLUMN profiles.analytics_user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA256(ANALYTICS_SALT, profile id), UUID-shaped. Written once by the server at onboarding completion; immutable (profiles_analytics_fields_set_once).';
+
+
+--
+-- Name: COLUMN profiles.signup_source; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
 
 
 --
@@ -15833,6 +16085,14 @@ ALTER TABLE ONLY public.consent_runtime_config
 
 
 --
+-- Name: cookie_consent_log cookie_consent_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cookie_consent_log
+    ADD CONSTRAINT cookie_consent_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: crisis_review_audit_log crisis_review_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16238,6 +16498,14 @@ ALTER TABLE ONLY public.practice_session_items
 
 ALTER TABLE ONLY public.practice_sessions
     ADD CONSTRAINT practice_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: profiles profiles_analytics_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_analytics_user_id_key UNIQUE (analytics_user_id);
 
 
 --
@@ -16961,6 +17229,13 @@ CREATE INDEX idx_calendar_block_launches_block_student ON public.calendar_block_
 --
 
 CREATE INDEX idx_calendar_block_launches_student ON public.calendar_block_launches USING btree (student_id);
+
+
+--
+-- Name: idx_cookie_consent_log_consent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cookie_consent_log_consent_id ON public.cookie_consent_log USING btree (consent_id, recorded_at);
 
 
 --
@@ -18102,6 +18377,13 @@ CREATE TRIGGER practice_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE
 --
 
 CREATE TRIGGER practice_runtime_config_notify AFTER INSERT OR UPDATE ON public.practice_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: profiles profiles_analytics_fields_set_once; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_analytics_fields_set_once BEFORE UPDATE OF analytics_user_id, signup_source ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_analytics_fields_set_once();
 
 
 --
@@ -19691,6 +19973,12 @@ ALTER TABLE public.consent_runtime_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.consent_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cookie_consent_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: crisis_review_audit_log crisis_review_admin insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
@@ -22082,6 +22370,13 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 
 
 --
+-- Name: FUNCTION profiles_analytics_fields_set_once(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_analytics_fields_set_once() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION profiles_lock_date_of_birth(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -22542,10 +22837,34 @@ GRANT ALL ON FUNCTION public.sweep_rate_limit_ledger_anon() TO service_role;
 
 
 --
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tutor_conversation_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.tutor_conversation_retention_days() TO service_role;
 
 
 --
@@ -22898,6 +23217,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config TO serv
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.cookie_consent_log TO service_role;
 
 
 --

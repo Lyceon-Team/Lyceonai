@@ -16,19 +16,28 @@
  *   * toArchiveResponse (shared/qotd/projection.ts, re-exported): a past day, answer and
  *     explanation included (R20a). The build-time prerender uses the same projection.
  *   * gradeQotd: the shared gradeAnswer (shared/practice/grade.ts), the same function practice and
- *     review use. Options are served in authored order with their canonical key as the id, so the
- *     token map is the identity map A->A ... D->D.
+ *     review use, over the day's recomputed token map (option-tokens.ts).
+ *
+ * Owner ruling 2026-10-05 (QOTD follow-up, items 1 and 4) | updated [2026-10-05]: today's options
+ * are shuffled on EVERY request with the same unseeded Fisher-Yates practice uses
+ * (`fisherYates`, shared/question-bank-contract.ts) and each is sent as an opaque token, never
+ * the canonical letter. On submit only one of the day's four tokens is accepted: a raw letter
+ * or any other string is `invalid_answer` (400) before grading, because the shared resolver
+ * would otherwise fall back to reading a bare "A"-"D" as a canonical key. No payload carries the
+ * canonical question id.
  */
 import { z } from "zod";
 import {
+  fisherYates,
   mapGenesisQuestionRow,
   parseCanonicalMcOptions,
   projectStudentSafeQuestion,
 } from "../../../shared/question-bank-contract";
+import { qotdOptionToken, qotdOptionTokenMap } from "./option-tokens";
+import { explanationNamesChoiceLetter } from "../../../shared/practice/letter-reference";
 import {
   qotdCorrectOptionId,
   qotdRowSchema,
-  qotdServedOptions,
   toArchiveIndex,
   toArchiveResponse,
   type QotdRow,
@@ -128,6 +137,27 @@ export function toArchiveIndexResponse(
   );
 }
 
+/**
+ * Today's options: a fresh unseeded shuffle per call, each option carrying only its token.
+ *
+ * Read-time guard for days scheduled before the scheduler screened letter references
+ * (owner ruling 2026-10-05; spec audit the same day): if the explanation names a choice letter,
+ * the options are served in CANONICAL order — still as tokens — so the on-screen letters match
+ * the explanation. A wrong "choice B" for most visitors is the worse outcome; new days never
+ * reach this branch because the scheduler skips such questions.
+ */
+function shuffledTokenOptions(row: QotdRow): { id: string; text: string }[] {
+  if (row.item_type === "grid_in") return [];
+  const options = parseCanonicalMcOptions(row.options);
+  const ordered = explanationNamesChoiceLetter(row.explanation)
+    ? options
+    : fisherYates(options);
+  return ordered.map((o) => ({
+    id: qotdOptionToken(row.qotd_date, o.key),
+    text: o.text,
+  }));
+}
+
 /** Pre-submit: the canonical student-safe projection, then the strict schema. */
 export function toTodayResponse(row: QotdRow): QotdTodayResponse {
   const projected = projectStudentSafeQuestion(
@@ -136,28 +166,41 @@ export function toTodayResponse(row: QotdRow): QotdTodayResponse {
   return qotdTodayResponseSchema.parse({
     qotd_date: row.qotd_date,
     question: {
-      id: projected.id,
       section_code: row.section,
       domain: row.domain,
       item_type: projected.item_type,
       stem: projected.stem,
       passage: projected.passage,
-      options: qotdServedOptions(row),
+      options: shuffledTokenOptions(row),
       correct_answer: projected.correct_answer,
       explanation: projected.explanation,
     },
   });
 }
 
-const IDENTITY_TOKEN_MAP: Record<string, string> = {
-  A: "A",
-  B: "B",
-  C: "C",
-  D: "D",
-};
+/** The day's token -> canonical key map (recomputed; nothing is stored). */
+export function qotdTokenMapFor(row: QotdRow): Record<string, string> {
+  return qotdOptionTokenMap(
+    row.qotd_date,
+    parseCanonicalMcOptions(row.options).map((o) => o.key),
+  );
+}
 
-/** Grade with the shared grader. Options are served by canonical key, so tokens are keys. */
+/**
+ * Grade with the shared grader over the recomputed token map. An MCQ answer that is not one of
+ * the day's tokens (a tampered token, a bare canonical letter) is refused before grading.
+ * The result's `correctOptionId` is the correct option's token.
+ */
 export function gradeQotd(row: QotdRow, answer: string): GradeResult {
+  const tokenMap = row.item_type === "grid_in" ? null : qotdTokenMapFor(row);
+  if (tokenMap && !Object.prototype.hasOwnProperty.call(tokenMap, answer)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "invalid_answer",
+      message: "The answer must be one of today's options.",
+    };
+  }
   const question: CanonicalQuestionForServing = {
     id: row.question_id,
     canonical_id: row.question_id,
@@ -176,11 +219,7 @@ export function gradeQotd(row: QotdRow, answer: string): GradeResult {
     option_metadata: null,
     estimated_time_seconds: null,
   };
-  return gradeAnswer(
-    question,
-    answer,
-    row.item_type === "grid_in" ? null : IDENTITY_TOKEN_MAP,
-  );
+  return gradeAnswer(question, answer, tokenMap);
 }
 
 export { qotdCorrectOptionId, toArchiveResponse };

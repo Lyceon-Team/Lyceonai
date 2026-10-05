@@ -273,5 +273,26 @@ Rows this vertical routed out. They do not block COMPLETE; each is owned elsewhe
 | inventory G2 | `tests/e2e/exam-disclosure.spec.ts` guardian step: the exam e2e harness served no `/api/guardian/students` roster, which the Wave 4 shell reads first. It had failed since Wave 4; local only | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 9: FIXED, not deleted (no other test drives the real report payload through to the guardian screen in a browser). The harness mounts the real `/api/guardian` router; its entitlement stub answers the roster with the real `entitlement_active` RPC; the spec passes |
 | — | Counsel review: is a redeemed guardian link valid under-13 consent? | Karl / counsel | OPEN |
 | — | Privacy Policy §6.2 still promises skill-level mastery (SCL-194) | Karl / counsel | OPEN |
+| — | Privacy Policy retention table (LISA Conversation Content) keeps flagged conversation content "up to ninety (90) days after resolution"; Doc 03 §14.2 says 180 days with manual purge by the safety review queue owner, and the build (RS-00/RS-05, 2026-10-05) never purges flagged conversations or crisis cases automatically. Which number is the commitment? No legal text edited | Karl / counsel | OPEN |
+| RS-HO | Retention rules with no enforcement at all (about a dozen; list and spec lines in "Retention rules with no enforcement" below). Found while establishing the retention-sweep 401 (owner brief 2026-10-05) | cleanup | OPEN — handed off, not built in the RS PR |
+
+### Retention rules with no enforcement (hand-off RS-HO, 2026-10-05)
+
+Each rule below has no sweep, job, trigger or cascade that enforces it today. Nothing here was built in the retention-sweep PR; periods are as the spec states them (no period was changed). D01 = `docs/Spec/Lyceon — Document 01_ Identity, Access, Billing & Guardian Trust.md`; 01A = `docs/Spec/Lyceon — Document 01A_ Platform Primitives.md`; 07E = `docs/Spec/Lyceon — Document 07E_ Analytics Retention, Privacy & Cascade.md`; PP = `docs/Spec/Lyceon Privacy Policy.md`.
+
+| # | Rule | Spec line(s) |
+|---|---|---|
+| 1 | Under-13 account: hard delete everywhere, no 7-day grace | 07E:614 ("fires immediately (no 7-day soft-delete envelope…)"); PP:477 (§9.4); D01:2000-2003 (consent revoked/expired case; says "next nightly cron") |
+| 2 | Under-13: PostHog `persons/bulk_delete` with `delete_events=true` | 07E:612-640 |
+| 3 | Downgrade: instruction assignments and exposures purged 7 days after entitlement loss (the 7d tier only removes them by cascade when the conversation goes) | Doc 03:1230-1235 |
+| 4 | LISA cost telemetry and quota appeal records, 365 days (the 365d tier is a no-op: tables not provisioned) | Doc 03:1257-1258 |
+| 5 | Guardian consent events: permanent, anonymized after 1 year | D01:222, 253 |
+| 6 | Emails in audit `changes` → domain-only after 90 days | D01:242; 01A:453, 544 |
+| 7 | Idempotency key TTLs (stripe_webhook 30d, practice_session_start 7d, tutor_turn 7d, exam_submit 90d, account_deletion 90d, guardian_link_request 7d, calendar_regenerate 24h) and their purge cron | 01A:963-973 |
+| 8 | Revoked service secrets purged 7 days after `revoked_at` | 01A:1724-1725 |
+| 9 | `exam_audit_events` 7 years; `exam_audit_events_informational` 90 days; `exam_failure_ledger` 7 years | Doc 04D:1168-1174 |
+| 10 | Account deletion after 12 months of inactivity, with a 48-hour pre-deletion notice | PP:460, 516-517, 522; 07E:205, 540 |
+| 11 | Parent/guardian consent record kept 3 years | NOT IN docs/Spec — `legal/privacy-policy/v4/en.md:176` (and v3:176) only; needs a spec home before it can be built |
+| 12 | `legal_acceptances` / `legal_acceptance_outbox`: "Deletion-bound only" | NOT IN docs/Spec — `docs/SpecAudit/retention-matrix-reconciliation.md:515` only. Whether the account-deletion cascade already covers it is UNKNOWN from this work |
 
 G-NEW-15 is not handed off: the guardian closeout PR does it (dead-code purge, category F), and it is CLOSED (owner, 2026-10-02).

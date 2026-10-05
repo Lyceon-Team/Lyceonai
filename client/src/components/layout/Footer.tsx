@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { GraduationCap } from "lucide-react";
+import { openCookieSettings } from "@/lib/analytics/consent";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -81,6 +82,16 @@ export default function Footer() {
                   </Link>
                 </li>
               ))}
+              {/* Doc 10 §9.11 withdrawal: "Cookie settings" (cookie-banner-text.md, Footer link). */}
+              <li>
+                <button
+                  type="button"
+                  onClick={openCookieSettings}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cookie settings
+                </button>
+              </li>
             </ul>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { runtimeRoleSchema } from "@lyceon/shared/runtime-role-schema";
 import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -17,6 +17,7 @@ import {
   dismissReconsent,
   isReconsentDismissed,
 } from "@/components/legal/reconsent-dismissal";
+import { enterSignedInSurface } from "@/lib/analytics/posthog-client";
 
 type UserRole = "student" | "guardian" | "admin";
 
@@ -39,6 +40,10 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   const { user, authLoading, isAdmin, isGuardian, accountUnavailable } =
     useSupabaseAuth();
   const [location] = useLocation();
+
+  // Owner ruling 2026-10-05 (SCL-213 IS 6): every role-gated page is a signed-in surface, where
+  // PostHog autocapture records no element text. Registered for exactly as long as it is mounted.
+  useEffect(() => enterSignedInSurface(), []);
 
   // Was the guardian re-consent prompt waved away? Two sources, deliberately.
   // State answers within this mount, so dismissing hides it at once. Storage

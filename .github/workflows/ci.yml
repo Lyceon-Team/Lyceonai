@@ -302,6 +302,17 @@ jobs:
       - name: Legal registry reaches every runtime (incident 2026-09-16)
         run: pnpm run gate:legal-registry
 
+      # Doc 07A §11.1 / §11.2 (launch-required, hard-fail at V1). Parity: every emitEvent name is
+      # registered, PostHog SDKs are imported only by the two permitted modules (SCL-201 IS 2),
+      # redaction keys equal property keys, and the bundled registry module is current.
+      # Conformance: every property has a runtime redaction posture and none is a forbidden
+      # identifier type.
+      - name: ci/event-schema-registry-parity (Doc 07A §11.1)
+        run: pnpm run gate:event-registry-parity
+
+      - name: ci/pii-redaction-conformance (Doc 07A §11.2)
+        run: pnpm run gate:pii-redaction
+
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
       # create a diagnostic session through the practice route, bypassing the
@@ -1644,6 +1655,22 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/crisis-flag-atomic.mutations.sh
 
+      # The tutor retention sweep on real Postgres (RS-00/RS-04/RS-05, 2026-10-05). The in-memory
+      # mock suite let a sweep on a column that does not exist pass for weeks; these run the real
+      # tier functions against the migrated schema. Verdict from vitest's JSON report.
+      - name: Tutor retention sweep (Doc 03 §14.2) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/retention-sweep.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-retention-sweep.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-retention-sweep.json \
+            --file tests/ci/retention-sweep.pg.ci.test.ts
+
       - name: Notifications rebuild → real PG proof
         env:
           PGHOST: localhost
@@ -2007,6 +2034,23 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-runtime.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-runtime.json \
             --file tests/ci/exam-runtime.handler-pg.ci.test.ts
+
+      # @spec [Doc 07A §7.1; SCL-201 IS 6; Doc 10 §9.11] SEO F10/F11 migration -> real PG:
+      # analytics_user_id and signup_source are set-once in the database itself, signup_source
+      # takes only the five Doc 07A values, and the cookie consent log is RLS-on, service-only,
+      # insert/select only. Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Analytics identity + cookie consent log → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/analytics-identity.pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-analytics-identity.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-analytics-identity.json \
+            --file tests/ci/analytics-identity.pg.ci.test.ts
 
       # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
       # student through the real /api/tests handlers to a score, then the executor's
@@ -2767,6 +2811,61 @@ jobs:
 
       - name: Verify GCP auth (one command proof)
         run: gcloud auth list
+
+  # SEO F10/F11/F15 (plan R11, R32; SCL-201, SCL-204; Doc 10 §9.11): the cookie banner decides
+  # whether PostHog loads, proved in a real browser against the BUILT app served with vercel.json's
+  # own headers — Reject and GPC send zero PostHog requests, Accept sends events, an under-13
+  # session sends nothing, and withdrawal clears PostHog's storage. Every *.posthog.com request is
+  # answered inside the browser; nothing leaves the runner. The key is a dummy (`phc_e2e…`).
+  analytics-consent-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build (with a dummy PostHog key so the SDK path is in the bundle)
+        env:
+          VITE_SUPABASE_URL: http://localhost:9
+          VITE_SUPABASE_ANON_KEY: ci
+          VITE_POSTHOG_KEY: phc_e2e_dummy_key_not_a_project
+        run: pnpm run build
+
+      - name: Serve dist/public with vercel.json's headers
+        run: |
+          set -euo pipefail
+          nohup node scripts/ops/page-csp-static-server.mjs 5175 > "$RUNNER_TEMP/static.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:5175/; then echo "static server up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/static.log"
+          exit 1
+
+      - name: Consent → PostHog browser proof (reject, accept, GPC, under-13, withdrawal)
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5175
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test tests/e2e/analytics-consent.spec.ts --forbid-only --reporter=list
 
   # ---------------------------------------------------------------------------
   # Guardian browser proofs (guardian closeout, Part B step 3).

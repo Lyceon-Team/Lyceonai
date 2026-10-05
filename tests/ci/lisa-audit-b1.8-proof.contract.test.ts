@@ -50,10 +50,7 @@ import { resolvePromptArtifact } from "../../apps/workers/tutor-orchestrator/src
 
 // ── AUDIT-003 imports ──────────────────────────────────────────────────
 
-import {
-  sweep7d,
-  retentionCutoff,
-} from "../../server/services/retention-sweep";
+import { sweep7d } from "../../server/services/retention-sweep";
 
 // ── Mock logger (both worker and server) ───────────────────────────────
 
@@ -67,13 +64,6 @@ vi.mock("../../server/logger", () => ({
 }));
 
 // ── Helpers ────────────────────────────────────────────────────────────
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const NOW = new Date("2026-08-28T12:00:00.000Z");
-
-function daysAgo(n: number): string {
-  return new Date(NOW.getTime() - n * MS_PER_DAY).toISOString();
-}
 
 /**
  * Builds a minimal valid OrchestrateRequest for proof tests.
@@ -203,9 +193,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     // The pre-submit prohibition is present instead
     expect(systemInstruction).toContain("This question is pre-submit");
-    expect(systemInstruction).toContain(
-      "Do not state, compute, demonstrate",
-    );
+    expect(systemInstruction).toContain("Do not state, compute, demonstrate");
 
     // correct_answer MUST be null pre-submit (INV-03-04)
     expect(envelope.correct_answer).toBeNull();
@@ -256,9 +244,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     // The generic pre-submit directive is present instead
     expect(systemInstruction).toContain("This question is pre-submit");
-    expect(systemInstruction).toContain(
-      "Do not state, compute, demonstrate",
-    );
+    expect(systemInstruction).toContain("Do not state, compute, demonstrate");
 
     // No correct answer
     expect(systemInstruction).not.toContain("Correct answer:");
@@ -279,8 +265,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
           { key: "D", text: "2" },
         ],
         item_type: "mcq",
-        explanation:
-          "Using the power rule, the derivative of x² is 2x.",
+        explanation: "Using the power rule, the derivative of x² is 2x.",
         student_answer: "A",
         attempt_number: 1,
       },
@@ -289,9 +274,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
     const systemInstruction = buildSystemInstruction(envelope);
 
     // ── PRINT: full systemInstruction for POST-SUBMIT ──
-    console.log(
-      "=== PROOF-3: POST-SUBMIT — full systemInstruction ===",
-    );
+    console.log("=== PROOF-3: POST-SUBMIT — full systemInstruction ===");
     console.log(systemInstruction);
     console.log("=== END PROOF-3 ===");
 
@@ -300,9 +283,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     // Post-submit directive present
     expect(systemInstruction).toContain("This question is post-submit");
-    expect(systemInstruction).toContain(
-      "You may explain the correct answer",
-    );
+    expect(systemInstruction).toContain("You may explain the correct answer");
 
     // Explanation present in item block
     expect(systemInstruction).toContain(
@@ -394,10 +375,7 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
 
     console.log("=== AUDIT-002 BUG DEMONSTRATION ===");
     console.log("Model routing for stale 'standard':", modelAlias);
-    console.log(
-      "Expected per spec (scaffolded → pro_class), got:",
-      modelAlias,
-    );
+    console.log("Expected per spec (scaffolded → pro_class), got:", modelAlias);
     console.log("=== END ===");
 
     // 'standard' falls through to flash_class — this was the bug
@@ -407,249 +385,59 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
 
 // ═════════════════════════════════════════════════════════════════════════
 // AUDIT-003: retention sweep returns ok:false on memory-summary purge
-// failure, with reason string reporting partial state.
+// failure.
+//
+// G5/RS-00 (2026-10-05): the 7d tier is one SQL function now
+// (`sweep_tutor_conversation_retention`, migration 20261025000000), so a failed
+// memory-summary delete rolls the WHOLE run back — no conversation is purged and
+// no partial state exists to report. The planted-failure proof runs against real
+// Postgres in tests/ci/retention-sweep.pg.ci.test.ts ("AUDIT-003 on real PG").
+// What stays here is the TypeScript half: any RPC error is ok:false with its reason.
 // ═════════════════════════════════════════════════════════════════════════
 
 describe("AUDIT-003: retention sweep fails on memory-summary purge failure", () => {
-  /**
-   * Filtering mock client, identical to the pattern in
-   * retention-sweep.negative-control.contract.test.ts, but with the ability
-   * to inject errors on specific tables.
-   */
-  type Row = Record<string, unknown>;
+  const rpcClient = (result: {
+    data: unknown;
+    error: { message: string } | null;
+  }) =>
+    ({ rpc: async () => result }) as unknown as Parameters<typeof sweep7d>[0];
 
-  function filteringMockClientWithError(
-    tables: Record<string, Row[]>,
-    errorTable: string,
-    errorOp: "delete",
-  ) {
-    const store: Record<string, Row[]> = {};
-    for (const [k, v] of Object.entries(tables)) {
-      store[k] = v.map((r) => ({ ...r }));
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client: any = {
-      from: (table: string) => {
-        function makeChain(
-          mode: "select" | "delete",
-          predicates: Array<(row: Row) => boolean>,
-          initialFields?: string,
-          initialOpts?: { count?: string; head?: boolean },
-        ) {
-          const chain: Record<string, unknown> = {};
-
-          function resolve(
-            fields?: string,
-            opts?: { count?: string; head?: boolean },
-          ): Promise<{
-            data: Row[] | null;
-            count?: number;
-            error: { message: string } | null;
-          }> {
-            const rows = store[table] ?? [];
-            const matching = rows.filter((row) =>
-              predicates.every((p) => p(row)),
-            );
-
-            if (mode === "delete") {
-              // Inject error for the target table
-              if (table === errorTable) {
-                return Promise.resolve({
-                  data: null,
-                  error: {
-                    message:
-                      "simulated DB error: permission denied for table tutor_memory_summaries",
-                  },
-                });
-              }
-              store[table] = rows.filter(
-                (row) => !predicates.every((p) => p(row)),
-              );
-              const projected = projectFields(matching, fields);
-              return Promise.resolve({ data: projected, error: null });
-            }
-
-            // select mode
-            if (opts?.head && opts?.count === "exact") {
-              return Promise.resolve({
-                data: null,
-                count: matching.length,
-                error: null,
-              });
-            }
-            const projected = projectFields(matching, fields);
-            return Promise.resolve({ data: projected, error: null });
-          }
-
-          chain.lt = (col: string, val: unknown) => {
-            predicates.push((row) => {
-              const rv = row[col];
-              if (rv === null || rv === undefined) return false;
-              return String(rv) < String(val);
-            });
-            return chain;
-          };
-
-          chain.eq = (col: string, val: unknown) => {
-            predicates.push((row) => row[col] === val);
-            return chain;
-          };
-
-          chain.neq = (col: string, val: unknown) => {
-            predicates.push((row) => row[col] !== val);
-            return chain;
-          };
-
-          chain.not = (col: string, op: string, val: unknown) => {
-            if (op === "is" && val === null) {
-              predicates.push(
-                (row) => row[col] !== null && row[col] !== undefined,
-              );
-            }
-            return chain;
-          };
-
-          chain.is = (col: string, val: unknown) => {
-            if (val === null) {
-              predicates.push(
-                (row) => row[col] === null || row[col] === undefined,
-              );
-            }
-            return chain;
-          };
-
-          chain.gte = (col: string, val: unknown) => {
-            predicates.push((row) => {
-              const rv = row[col];
-              if (rv === null || rv === undefined) return false;
-              return String(rv) >= String(val);
-            });
-            return chain;
-          };
-
-          chain.in = (col: string, vals: unknown[]) => {
-            predicates.push((row) => (vals as unknown[]).includes(row[col]));
-            return chain;
-          };
-
-          chain.select = (
-            fields?: string,
-            opts?: { count?: string; head?: boolean },
-          ) => {
-            return resolve(fields, opts);
-          };
-
-          chain.then = (
-            onFulfilled?: (value: unknown) => unknown,
-            onRejected?: (reason: unknown) => unknown,
-          ) => {
-            return resolve(initialFields, initialOpts).then(
-              onFulfilled,
-              onRejected,
-            );
-          };
-
-          return chain;
-        }
-
-        return {
-          select: (
-            fields?: string,
-            opts?: { count?: string; head?: boolean },
-          ) => {
-            return makeChain("select", [], fields, opts);
-          },
-          delete: () => {
-            return makeChain("delete", []);
-          },
-        };
-      },
-      _store: store,
-    };
-
-    return client;
-  }
-
-  function projectFields(rows: Row[], fields?: string): Row[] {
-    if (!fields) return rows;
-    const keys = fields.split(",").map((f) => f.trim());
-    return rows.map((row) => {
-      const out: Row = {};
-      for (const k of keys) {
-        if (k in row) out[k] = row[k];
-      }
-      return out;
-    });
-  }
-
-  // ── Proof 5: memory-summary purge failure → ok:false with partial state ──
-  it("returns ok:false with reason when memory-summary delete fails", async () => {
-    // Scenario: student s1 has one expired conversation (8 days old), zero
-    // active conversations, zero recoverable conversations. After the
-    // conversation is swept, the memory-summary purge runs but the DB
-    // returns an error.
-    const client = filteringMockClientWithError(
-      {
-        tutor_conversations: [
-          { id: "conv-s1", student_id: "s1", deleted_at: daysAgo(8) },
-        ],
-        tutor_memory_summaries: [
-          { id: "mem-s1", student_id: "s1", summary_type: "weekly" },
-        ],
-      },
-      "tutor_memory_summaries",
-      "delete",
+  it("returns ok:false with reason when the sweep function fails", async () => {
+    const result = await sweep7d(
+      rpcClient({
+        data: null,
+        error: { message: "memory summary delete: permission denied" },
+      }),
+      false,
+      { now: new Date() },
     );
-
-    const result = await sweep7d(client, false, { now: NOW });
-
-    // ── PRINT: full result for AUDIT-003 ──
-    console.log("=== PROOF-5: MEMORY PURGE FAILURE ===");
-    console.log(JSON.stringify(result, null, 2));
-
-    // The sweep MUST return ok:false (not ok:true as before the fix)
     expect(result.ok).toBe(false);
-
     if (!result.ok) {
-      // The reason string must report:
-      //   - which operation failed (memory_summary_delete_failed)
-      //   - which student (s1)
-      //   - how many conversations were already purged (partial state)
-      //   - the DB error message
-      expect(result.reason).toContain("memory_summary_delete_failed");
-      expect(result.reason).toContain("student=s1");
-      expect(result.reason).toContain("conversations_purged=1");
+      expect(result.reason).toContain("rpc_failed");
       expect(result.reason).toContain("permission denied");
-
-      console.log("Conversations purged before failure: 1");
-      console.log(
-        "Memory summaries NOT purged (error):",
-        client._store.tutor_memory_summaries.length,
-      );
-      console.log("Sweep returned ok:", result.ok);
-      console.log("Reason:", result.reason);
     }
-    console.log("=== END PROOF-5 ===");
   });
 
-  it("returns ok:true when memory-summary delete succeeds (regression guard)", async () => {
-    // Same scenario but no error — the happy path still works
-    const client = filteringMockClientWithError(
-      {
-        tutor_conversations: [
-          { id: "conv-s1", student_id: "s1", deleted_at: daysAgo(8) },
+  it("returns ok:true when the sweep function succeeds (regression guard)", async () => {
+    const result = await sweep7d(
+      rpcClient({
+        data: [
+          {
+            swept_table: "tutor_conversations",
+            deleted_count: 1,
+            cutoff: "2026-10-01T00:00:00+00:00",
+          },
+          {
+            swept_table: "tutor_memory_summaries",
+            deleted_count: 1,
+            cutoff: "2026-10-01T00:00:00+00:00",
+          },
         ],
-        tutor_memory_summaries: [
-          { id: "mem-s1", student_id: "s1", summary_type: "weekly" },
-        ],
-      },
-      "NONE", // no error injection
-      "delete",
+        error: null,
+      }),
+      false,
+      { now: new Date() },
     );
-
-    const result = await sweep7d(client, false, { now: NOW });
-
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.deleted_count).toBe(1);

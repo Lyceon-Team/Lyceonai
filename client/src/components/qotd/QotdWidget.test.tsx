@@ -15,7 +15,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QotdWidget } from "./QotdWidget";
 import {
   gradeQotd,
-  qotdCorrectOptionId,
   toTodayResponse,
 } from "../../../../server/services/qotd/qotd-service";
 import {
@@ -32,8 +31,19 @@ vi.mock("./turnstile", () => ({
   },
 }));
 
+// The option tokens are HMACs under a key derived from this secret (option-tokens.ts).
+process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??= "widget-test-secret-not-real";
+
 const row = qotdTodayRow();
+// The server's own payload: shuffled options, each identified by its token.
 const todayPayload = toTodayResponse(row);
+
+/** The token the payload gives the option showing `text`. */
+function tokenOf(text: string): string {
+  const id = todayPayload.question.options.find((o) => o.text === text)?.id;
+  if (!id) throw new Error(`no option ${text}`);
+  return id;
+}
 
 function revealFor(
   answer: string,
@@ -45,7 +55,7 @@ function revealFor(
   return qotdSubmitResponseSchema.parse({
     qotd_date: row.qotd_date,
     is_correct: graded.isCorrect,
-    correct_option_id: qotdCorrectOptionId(row),
+    correct_option_id: graded.correctOptionId,
     correct_answer: null,
     explanation: row.explanation ?? "",
     stats: qotdStat(attempts, correct),
@@ -100,7 +110,9 @@ describe("QotdWidget", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, { data: todayPayload }))
-      .mockResolvedValueOnce(jsonResponse(200, { data: revealFor("C", 7, 3) }));
+      .mockResolvedValueOnce(
+        jsonResponse(200, { data: revealFor(tokenOf("24"), 7, 3) }),
+      );
     renderWidget();
     await screen.findByTestId("qotd-question-area");
     const submit = screen.getByTestId("qotd-submit");
@@ -118,7 +130,7 @@ describe("QotdWidget", () => {
     expect(init.credentials).toBe("omit");
     expect(JSON.parse(String(init.body))).toEqual({
       qotd_date: row.qotd_date,
-      answer: "C",
+      answer: tokenOf("24"),
       turnstile_token: "stub-turnstile-token",
     });
     expect(screen.getByTestId("qotd-question-area").textContent).toContain(
@@ -133,7 +145,9 @@ describe("QotdWidget", () => {
   it("shows no stat line when the server hides it (fewer than 5 attempts)", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, { data: todayPayload }))
-      .mockResolvedValueOnce(jsonResponse(200, { data: revealFor("A", 4, 4) }));
+      .mockResolvedValueOnce(
+        jsonResponse(200, { data: revealFor(tokenOf("11"), 4, 4) }),
+      );
     renderWidget();
     await screen.findByTestId("qotd-question-area");
     fireEvent.click(screen.getByText("11"));
@@ -168,6 +182,51 @@ describe("QotdWidget", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("The check did not go through");
     expect(screen.queryByText("Explanation")).toBeNull();
+  });
+
+  it("Turnstile is not loaded until the visitor picks an answer", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: todayPayload }));
+    renderWidget();
+    await screen.findByTestId("qotd-question-area");
+    // Presence of the question first; no Turnstile mount (so no script fetch) before a pick.
+    expect(screen.queryByTestId("qotd-turnstile")).toBeNull();
+    fireEvent.click(screen.getByText("24"));
+    await screen.findByTestId("qotd-turnstile");
+  });
+
+  it("one answer per visit: after the reveal the widget is locked and a second submit cannot be made", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { data: todayPayload }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { data: revealFor(tokenOf("11"), 7, 3) }),
+      );
+    renderWidget();
+    await screen.findByTestId("qotd-question-area");
+    fireEvent.click(screen.getByText("11"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("qotd-submit") as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("qotd-submit"));
+    await screen.findByTestId("qotd-locked");
+
+    // Locked: no submit control, every choice disabled, and clicking another does nothing.
+    expect(screen.queryByTestId("qotd-submit")).toBeNull();
+    const choices = screen
+      .getByTestId("qotd-question-area")
+      .querySelectorAll("button");
+    expect(choices.length).toBe(4);
+    choices.forEach((b) =>
+      expect((b as HTMLButtonElement).disabled).toBe(true),
+    );
+    choices.forEach((b) => fireEvent.click(b));
+    const posts = fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(posts).toHaveLength(1);
+    // The reveal marks the correct option in THIS visitor's order, by token.
+    expect(screen.getByText("Incorrect")).toBeTruthy();
   });
 
   it("a day with no question yet says so", async () => {

@@ -32,6 +32,7 @@ import {
   qotdTodayRow,
 } from "../lib/qotd-fixture";
 import { TURNSTILE_SITEVERIFY_URL } from "../../server/lib/turnstile";
+import { qotdOptionToken } from "../../server/services/qotd/option-tokens";
 
 type Call = { fn: string; args: Record<string, unknown> };
 
@@ -165,6 +166,35 @@ function nextIp(): string {
 const today = qotdTodayRow();
 const PASS = "pass-token";
 
+/** The fixture's option text for a canonical key. */
+function optionText(key: string): string {
+  const options = today.options as { key: string; text: string }[];
+  const text = options.find((o) => o.key === key)?.text;
+  if (text === undefined) throw new Error(`fixture has no option ${key}`);
+  return text;
+}
+
+type ServedOption = { id: string; text: string };
+
+/** GET /today from a fresh IP: the options exactly as a visitor receives them. */
+async function served(): Promise<ServedOption[]> {
+  const res = await request(app)
+    .get("/api/public/qotd/today")
+    .set("x-vercel-forwarded-for", nextIp());
+  expect(res.status).toBe(200);
+  return res.body.data.question.options as ServedOption[];
+}
+
+/** The token the API serves for a canonical key (found by its text, as a visitor would). */
+async function tokenFor(key: string): Promise<string> {
+  const token = (await served()).find((o) => o.text === optionText(key))?.id;
+  if (!token) throw new Error(`no served option for ${key}`);
+  return token;
+}
+
+const WRONG_KEY = () =>
+  ["A", "B", "C", "D"].find((k) => k !== today.correct_answer) ?? "A";
+
 function submit(ip: string, body: Record<string, unknown>) {
   return request(app)
     .post("/api/public/qotd/today/answer")
@@ -250,7 +280,8 @@ describe("GET /today — pre-submit payload (§5.2)", () => {
       .get("/api/public/qotd/today")
       .set("x-vercel-forwarded-for", nextIp());
     expect(res.status).toBe(200);
-    expect(res.headers["cache-control"]).toBe("public, max-age=60");
+    // Owner ruling 2026-10-05: each response carries its own shuffle, so nothing may cache it.
+    expect(res.headers["cache-control"]).toBe("private, no-store");
     const q = res.body.data.question;
     // Presence before absence.
     expect(q.stem).toBe(today.stem);
@@ -261,12 +292,18 @@ describe("GET /today — pre-submit payload (§5.2)", () => {
     expect(raw).not.toContain(String(today.explanation));
     expect(raw).not.toContain("correct_option_id");
     expect(raw).not.toContain("correct_variants");
+    // No canonical question id anywhere, and no option carries a canonical letter.
+    expect(raw).not.toContain(today.question_id);
+    for (const o of q.options as ServedOption[]) {
+      expect(o.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+      expect(["A", "B", "C", "D"]).not.toContain(o.id);
+      expect(Object.keys(o).sort()).toEqual(["id", "text"]);
+    }
     expect(Object.keys(q).sort()).toEqual(
       [
         "correct_answer",
         "domain",
         "explanation",
-        "id",
         "item_type",
         "options",
         "passage",
@@ -403,14 +440,14 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
   it("a correct answer reveals correctness, the correct choice and the explanation", async () => {
     const res = await submit(nextIp(), {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: String(today.correct_answer),
+      answer: await tokenFor(String(today.correct_answer)),
       turnstile_token: PASS,
     });
     expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({
       qotd_date: QOTD_FIXTURE_TODAY,
       is_correct: true,
-      correct_option_id: today.correct_answer,
+      correct_option_id: await tokenFor(String(today.correct_answer)),
       explanation: today.explanation,
     });
     assertOnlyAllowedCalls();
@@ -418,10 +455,12 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
 
   it("the stat is hidden below 5 counted attempts, shown from the 5th, and a repeat from one IP counts once", async () => {
     const statuses: string[] = [];
+    const right = await tokenFor(String(today.correct_answer));
+    const wrong = await tokenFor(WRONG_KEY());
     for (let i = 0; i < 4; i += 1) {
       const res = await submit(nextIp(), {
         qotd_date: QOTD_FIXTURE_TODAY,
-        answer: i === 0 ? "A" : String(today.correct_answer),
+        answer: i === 0 ? wrong : right,
         turnstile_token: PASS,
       });
       expect(res.status).toBe(200);
@@ -434,7 +473,7 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
     const repeatIp = `203.0.113.${ipCounter}`;
     const repeat = await submit(repeatIp, {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: String(today.correct_answer),
+      answer: right,
       turnstile_token: PASS,
     });
     expect(repeat.body.data.stats).toEqual({ status: "hidden" });
@@ -442,7 +481,7 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
 
     const fifth = await submit(nextIp(), {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: String(today.correct_answer),
+      answer: right,
       turnstile_token: PASS,
     });
     // 5 attempts, 4 correct (the first was wrong).
@@ -456,7 +495,7 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
   it("writes no quota or practice row: only the anonymous ledger, the QOTD functions and the bucket map are touched", async () => {
     await submit(nextIp(), {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: "B",
+      answer: await tokenFor("B"),
       turnstile_token: PASS,
     });
     const fns = fake.state.calls.map((c) => c.fn);
@@ -469,7 +508,7 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
     const ip = "198.51.100.23";
     await submit(ip, {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: "B",
+      answer: await tokenFor("B"),
       turnstile_token: PASS,
     });
     const ledgerCalls = fake.state.calls.filter(
@@ -490,14 +529,14 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
     for (let i = 0; i < limit; i += 1) {
       const ok = await submit(ip, {
         qotd_date: QOTD_FIXTURE_TODAY,
-        answer: "B",
+        answer: await tokenFor("B"),
         turnstile_token: PASS,
       });
       expect(ok.status, `submit ${i + 1}`).toBe(200);
     }
     const denied = await submit(ip, {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: "B",
+      answer: await tokenFor("B"),
       turnstile_token: PASS,
     });
     expect(denied.status).toBe(429);
@@ -511,7 +550,7 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
 
     const other = await submit(nextIp(), {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: "B",
+      answer: await tokenFor("B"),
       turnstile_token: PASS,
     });
     expect(other.status).toBe(200);
@@ -534,7 +573,7 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
     fake.state.failRecordAttempt = true;
     const res = await submit(nextIp(), {
       qotd_date: QOTD_FIXTURE_TODAY,
-      answer: String(today.correct_answer),
+      answer: await tokenFor(String(today.correct_answer)),
       turnstile_token: PASS,
     });
     expect(res.status).toBe(200);
@@ -550,5 +589,98 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
       turnstile_token: PASS,
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("owner ruling 2026-10-05: server-side shuffle with opaque tokens", () => {
+  it("two requests (and more) return different option orders over the same four tokens", async () => {
+    const orders = new Set<string>();
+    let tokenSet: string | null = null;
+    for (let i = 0; i < 30; i += 1) {
+      const options = await served();
+      orders.add(options.map((o) => o.text).join("|"));
+      const tokens = options
+        .map((o) => o.id)
+        .sort()
+        .join("|");
+      // Stateless: every request carries the same four tokens, only the order changes.
+      if (tokenSet === null) tokenSet = tokens;
+      expect(tokens).toBe(tokenSet);
+    }
+    // Four options shuffled 30 times: the chance of a single order is 24^-29.
+    expect(orders.size).toBeGreaterThan(1);
+  });
+
+  it("each token resolves to its own option: only the correct one grades correct, and the reveal names it by token", async () => {
+    const options = await served();
+    const correctText = optionText(String(today.correct_answer));
+    const correctToken = options.find((o) => o.text === correctText)?.id;
+    expect(correctToken).toBeDefined();
+    for (const o of options) {
+      const res = await submit(nextIp(), {
+        qotd_date: QOTD_FIXTURE_TODAY,
+        answer: o.id,
+        turnstile_token: PASS,
+      });
+      expect(res.status, o.text).toBe(200);
+      expect(res.body.data.is_correct, o.text).toBe(o.text === correctText);
+      expect(res.body.data.correct_option_id).toBe(correctToken);
+    }
+  });
+
+  it.each([
+    [
+      "a tampered token",
+      (t: string) => `${t.slice(0, 21)}${t.endsWith("A") ? "B" : "A"}`,
+    ],
+    ["a bare canonical letter", () => String(today.correct_answer)],
+    [
+      "another day's token",
+      () => qotdOptionToken("2026-10-04", String(today.correct_answer)),
+    ],
+  ])("%s is rejected (400) with no reveal", async (_label, make) => {
+    const answer = make(await tokenFor(String(today.correct_answer)));
+    const res = await submit(nextIp(), {
+      qotd_date: QOTD_FIXTURE_TODAY,
+      answer,
+      turnstile_token: PASS,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("invalid_answer");
+    expect(JSON.stringify(res.body)).not.toContain(String(today.explanation));
+    expect(fake.state.calls.map((c) => c.fn)).not.toContain(
+      "qotd_record_attempt",
+    );
+  });
+
+  it("a day scheduled before the letter screen, whose explanation names a choice letter, is served in canonical order (letters match the explanation)", async () => {
+    fake.state.rows.today = {
+      ...today,
+      explanation: "Choice C is correct: 8 times 3 is 24.",
+    };
+    const canonical = (today.options as { key: string; text: string }[]).map(
+      (o) => o.text,
+    );
+    for (let i = 0; i < 10; i += 1) {
+      const options = await served();
+      expect(options.map((o) => o.text)).toEqual(canonical);
+      for (const o of options) expect(o.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    }
+  });
+
+  it("no canonical question id in the archive payloads either (keyed by qotd_date)", async () => {
+    const past = QOTD_ARCHIVE_ROWS[0];
+    const day = await request(app)
+      .get(`/api/public/qotd/${String(past?.qotd_date)}`)
+      .set("x-vercel-forwarded-for", nextIp());
+    expect(day.status).toBe(200);
+    expect(day.body.data.question).not.toHaveProperty("id");
+    expect(JSON.stringify(day.body)).not.toContain(String(past?.question_id));
+    const index = await request(app)
+      .get("/api/public/qotd/archive")
+      .set("x-vercel-forwarded-for", nextIp());
+    for (const row of QOTD_ARCHIVE_ROWS) {
+      expect(JSON.stringify(index.body)).not.toContain(row.question_id);
+    }
   });
 });
