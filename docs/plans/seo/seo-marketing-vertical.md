@@ -44,9 +44,9 @@
 | # | Ruling |
 |---|---|
 | R10 | Rendering fix = build-time prerender of public routes. |
-| R11 | **PostHog** (free tier) on public pages, cookieless until consent, no `identify`, session replay per R32; Doc 07A server-side `emitEvent` for signed-in events incl. `user_signed_up.signup_source` from first-touch UTM; **Vercel Analytics retired**. SCL required (departs from Doc 07A §9.2/§9.3.1). |
+| R11 | **PostHog** (free tier) on public pages, cookieless until consent, no `identify`, session replay per R32; Doc 07A server-side `emitEvent` for signed-in events incl. `user_signed_up.signup_source` from first-touch UTM; **Vercel Analytics retired**. SCL required (departs from Doc 07A §9.2/§9.3.1). **"Cookieless until consent" superseded by Karl's ruling, 2026-10-05 (G6 Step 0 answer 3):** nothing loads or sends before Accept, as built (`client/src/lib/analytics/posthog-client.ts:8-14`); Doc 10A draft §6.1. |
 | R12 | Marketing data hub = PostHog (see §3). Supermetrics not kept beyond its trial. PostHog and BigQuery connectors added. |
-| R12a | PostHog project settings: IP anonymization on, console-log capture off, cookieless mode on (stateful), timezone America/Chicago, session recording off. Applied 2026-10-02. |
+| R12a | PostHog project settings: IP anonymization on, console-log capture off, cookieless mode on (stateful), timezone America/Chicago, session recording off. Applied 2026-10-02. **Superseded as a before-consent mode by Karl's ruling, 2026-10-05 (G6 Step 0 answer 3):** the project's cookieless setting stays as applied, but nothing runs before Accept, so it is not a before-consent analytics mode (Doc 10A draft §6.1). |
 | R12b | Search Console bulk export lands in BigQuery `replit-cop`, location us-central1 (same as existing dataset). |
 | R13 | Homepage hero A/B test removed; A/B testing returns later via PostHog experiments once traffic supports it. **Superseded for the homepage hero by Karl's ruling, 2026-10-05 (F13 Step 0 decision 6):** the PostHog experiment `homepage-hero` runs now, consent-gated, Variant A prerendered (SCL-213 IS 7). |
 | R14 | Cookie banner and the missing legal artifacts are built **in this vertical**; legal text = industry-standard drafts for counsel. |
@@ -159,7 +159,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | G3 | SCL: anonymous-endpoint rate limiter (R19) | SCL entry |
 | G4 | SCL: Doc 10 §6 public counters parked; `/trust/evidence` removed (R31) | SCL entry |
 | G5 | Doctrine (§0) added to CLAUDE.md; `seo` row added to branch routing | File on `main` |
-| G6 | Doc 10A pre-draft Q&A → draft → review → lock | Locked doc in Spec folder |
+| G6 | Doc 10A pre-draft Q&A → draft → review → lock. Q&A answered 2026-10-05; draft at `docs/plans/seo/doc-10a-draft.md` (agents cannot write `docs/Spec/`; Karl moves it at lock, answer 1) | Locked doc in Spec folder |
 | G7 | Legal drafts for counsel: Cookie Policy, Cookie Banner text, Children's Online Privacy Notice, AI Content Disclosure, CA Notice at Collection, CA Do-Not-Sell/GPC, Marketing Communications Consent, privacy policy update (PostHog replaces Vercel Analytics) | Published under `/legal/*`; counsel sign-off recorded internally (HTTP + register) |
 | G8 | Internal compliance register `docs/compliance/` created | File on `main` |
 | G9 | SCL: PostHog session replay per R32 — against Coding Standards §12.2, Doc 07E §10.2 and Doc 06A §5 | SCL entry in register |
@@ -175,7 +175,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | F5 | CSP + HSTS on static HTML via `vercel.json` (CTO-owned) | HTTP: `curl -I` shows headers |
 | F6 | False/stale public claims corrected (digital-sat FAQ, "unlimited", free tutor CTA, unsourced "35%", OG image text, "difficulty adjusts" scoped to paid); internal claim inventory per doctrine | Internal inventory (each claim: doctrine category + source); CI check extended to all public pages |
 | F7 | Hero A/B test removed (R13) | CI/Playwright: first visit writes no storage |
-| F8 | Fonts trimmed to used weights; logo compressed; `maximum-scale` removed | Lighthouse mobile on 4 prod pages: Perf ≥90, SEO 100, A11y ≥95 (SHOT) |
+| F8 | Fonts trimmed to used weights; logo compressed; `maximum-scale` removed | Lighthouse mobile on 4 prod pages: Perf ≥90, SEO 100, A11y ≥95 (SHOT). **Targets raised by Karl's ruling, 2026-10-05 (G6 Step 0 answer 4):** Perf ≥90; Accessibility, Best Practices and SEO 100; manual evidence per release, no CI gate (Doc 10A draft §4.7). |
 | F9 | GSC + Bing verified (DNS TXT), sitemap submitted; GSC bulk export → BigQuery | SHOT both consoles; READ export tables |
 | F10 | PostHog per R11; server-side `emitEvent` per Doc 07A incl. `signup_source` (first-touch UTM); under-13 excluded | SHOT/READ prod signup with source; CI `ci/event-schema-registry-parity` + `ci/pii-redaction-conformance`; under-13 test |
 | F11 | Cookie banner per Doc 10 §9.11 (equal accept/refuse, granular, 6-month memory, GPC = refuse, consent log) | Playwright: refuse → zero analytics requests; GPC → refuse; consent row (CI + DB) |
@@ -248,7 +248,7 @@ Average score improvement (R31) · owned subreddit + Reddit API approval · LISA
 
 ## 8. Open owner questions
 
-None open as of 2026-10-02. Doc 10A pre-draft Q&A runs separately (G6).
+None open as of 2026-10-02. Doc 10A pre-draft Q&A runs separately (G6): answered 2026-10-05; the draft's own open questions are its §11.3 (Q-10A-1 to Q-10A-4).
 
 ## 9. Closure log
 
@@ -261,3 +261,19 @@ None open as of 2026-10-02. Doc 10A pre-draft Q&A runs separately (G6).
 - **F5 — HSTS and security headers** · 2026-10-05 · `curl -I https://lyceon.ai/legal/privacy-policy` on production (`main` @ `a93d5dd`): `strict-transport-security: max-age=63072000; includeSubDomains`, `content-security-policy: frame-ancestors 'none'`, `content-security-policy-report-only: default-src 'self'; …`, `x-frame-options: DENY`, `x-content-type-options: nosniff`, `referrer-policy: strict-origin-when-cross-origin`, `permissions-policy: camera=(), microphone=(), geolocation=()`.
 - **F6 — public claims corrected; internal claim inventory** · 2026-10-05 · On `main` @ `a93d5dd`: `git ls-tree --name-only a93d5dd docs/compliance/` → `docs/compliance/claim-inventory.md`.
 - **F14 — `/trust/evidence` removed** · 2026-10-05 · Production: `/trust/evidence -> 404`; `curl -s https://lyceon.ai/sitemap.xml | grep -c trust/evidence` → `0`.
+
+## 10. Follow-ups from G6 (Doc 10A drafting, 2026-10-05)
+
+Found while drafting Doc 10A (`docs/plans/seo/doc-10a-draft.md`). Logged here, not fixed in the doc PR (owner G6 answers, 2026-10-05). Each becomes its own PR into `seo` with its own proof.
+
+| # | Follow-up | Where | Proof when closed |
+|---|---|---|---|
+| FU1 | `robots.txt` disallows paths whose pages also carry `noindex`; a crawler that obeys the disallow never reads the `noindex`. Stop disallowing `noindex` pages (Doc 10A §4.4, INV-10A-05) | `client/public/robots.txt`; `tests/seo.route-registry.test.ts` | CI: robots ↔ registry test asserts no `noindex` path is disallowed |
+| FU2 | Duplicate migration timestamp `20261027000000` (`audit_purge_keeps_guardian_consent` and `marketing_consent_and_product_reviews`) | `supabase/migrations/` | Unique timestamps; owner confirms no re-apply needed |
+| FU3 | Stale references: `server/services/product-feedback/product-feedback-service.ts:20` names `tests/ci/product-feedback-routes.contract.test.ts` (does not exist; the test is `tests/ci/product-feedback.contract.test.ts`); `supabase/migrations/20261027000000_marketing_consent_and_product_reviews.sql:253` names `packages/shared/src/review-prompt.ts` (does not exist; the decision is `packages/shared/src/product-feedback-schema.ts:161`) | as named | grep: zero references to either missing path |
+| FU4 | Q5/Q6 closure-log entries (#1121 merged into `seo` 2026-10-05) | §9 above | Proof pasted per §2 after deploy |
+| FU5 | QOTD e2e (`tests/e2e/qotd-answer-flow.spec.ts`), page-CSP flows (`tests/e2e/page-csp-flows.spec.ts`) and the crawl check (`scripts/seo/crawl-check.mjs`) are not run in CI (Doc 10A INV-10A-11, -17, -18) | `.github/workflows/ci.yml` | CI job runs each; a planted defect reddens it |
+| FU6 | Blog author JSON-LD typed `Person` for "Lyceon Team"; move to `Organization` (Doctrine rule 8; Doc 10A §4.3) | `shared/seo/structured-data.ts:77-80` | Rendered-page test asserts Article `author.@type` = `Organization` |
+| FU7 | QOTD stat wording "% of students got this right" → "N% answered correctly" (owner answer 7; Doc 10A §5.6). Counts are first attempts per hashed IP, not students | `client/src/components/qotd/QotdWidget.tsx:65`; `packages/shared/src/qotd-schema.ts:27` comment | Widget test asserts the new string; claim inventory row updated |
+| FU8 | Turnstile production fail-closed: production with no `TURNSTILE_SECRET_KEY` answers 503 and logs an error; the always-pass test secret stays outside production (owner answer 8; Doc 10A §5.9, INV-10A-09) | `server/lib/turnstile.ts:42-55`; `tests/ci/public-ip-and-turnstile.test.ts:173` | CI: production-mode test reddens on the fallback |
+| FU9 | At Doc 10A lock: registry `owning_doc` `Doc-10` → `Doc-10A` on the `unauth_marketing` content rows; claim inventory and guard messages move from a–e to Doc 10A §3.2's categories | `infra/route-surface-classification.yaml`; `docs/compliance/claim-inventory.md`; `tests/ci/public-copy-claims.contract.test.ts` | `route:validate` green; inventory carries the new labels |
