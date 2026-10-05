@@ -33,6 +33,7 @@
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { emitEvent } from "../lib/analytics/emit-event";
 import {
   buildServedOptions,
   buildStudentSafeOptionsFromStoredMap,
@@ -72,6 +73,7 @@ import {
   examFormsResponseSchema,
   type ExamFormsResponse,
 } from "../../packages/shared/src/exam-report-schema";
+import type { GuardianListSessionFacts } from "../../packages/shared/src/exam-guardian-report-schema";
 
 const COMPONENT = "EXAM_RUNTIME";
 
@@ -449,10 +451,18 @@ export async function createExamSession(
   });
   if (env.status !== 200 && env.status !== 201)
     return { ok: false, error: failureFrom(env) };
+  const session = examSessionResponseSchema.parse(env.body);
+  // Doc 07A §6.6 exam_started — 201 only: a 200 is the live session handed back, not a start.
+  if (env.status === 201) {
+    await emitEvent(studentId, "exam_started", {
+      test_session_id: session.session_id,
+      test_form_id: session.test_form_id,
+    });
+  }
   return {
     ok: true,
     status: env.status,
-    value: examSessionResponseSchema.parse(env.body),
+    value: session,
   };
 }
 
@@ -610,6 +620,50 @@ export async function submitExamAnswer(
   };
 }
 
+/**
+ * Doc 07A §6.6 exam_section_submitted, read from the canonical section row after the submit:
+ * the physical module ("1", "2A", "2B" — Doc 04A's module2_path) and the module's start-to-submit
+ * duration. If the row cannot be read the event is skipped and logged; the submit stands.
+ */
+async function emitExamSectionSubmitted(
+  studentId: string,
+  sessionId: string,
+  section: ExamSection,
+  module: ExamModule,
+): Promise<void> {
+  const { data, error } = await supabaseServer
+    .from("test_session_sections")
+    .select(
+      "module2_path, module1_started_at, module1_submitted_at, module2_started_at, module2_submitted_at",
+    )
+    .eq("test_session_id", sessionId)
+    .eq("section", section)
+    .maybeSingle();
+  const row = data as {
+    module2_path: string | null;
+    module1_started_at: string | null;
+    module1_submitted_at: string | null;
+    module2_started_at: string | null;
+    module2_submitted_at: string | null;
+  } | null;
+  const started = module === "1" ? row?.module1_started_at : row?.module2_started_at;
+  const submitted = module === "1" ? row?.module1_submitted_at : row?.module2_submitted_at;
+  const physical =
+    module === "1" ? "1" : row?.module2_path === "A" || row?.module2_path === "B" ? `2${row.module2_path}` : null;
+  if (error || !started || !submitted || physical === null) {
+    logger.warn(COMPONENT, "exam_section_event_skipped", "exam_section_submitted not emitted", {
+      code: error?.code ?? "section_row_incomplete",
+    });
+    return;
+  }
+  await emitEvent(studentId, "exam_section_submitted", {
+    test_session_id: sessionId,
+    section,
+    module: physical,
+    section_duration_ms: Math.max(0, Date.parse(submitted) - Date.parse(started)),
+  });
+}
+
 /** §12 */
 export async function submitExamModule(
   studentId: string,
@@ -624,6 +678,8 @@ export async function submitExamModule(
     p_module: module,
   });
   if (env.status !== 200) return { ok: false, error: failureFrom(env) };
+  // A re-submit is 409 `module_submitted`, so a 200 here is the one submission of this module.
+  await emitExamSectionSubmitted(studentId, sessionId, section, module);
   return {
     ok: true,
     status: 200,
@@ -729,8 +785,10 @@ const formRowSchema = z.object({
       score_total_present: z.boolean(),
       score_partial_present: z.boolean(),
       failed_outbox_id: z.string().uuid().nullable(),
-      // `exam_list_forms` has always emitted it; the guardian list carries it (SCL-192).
+      // `exam_list_forms` has always emitted both; the guardian list carries them (SCL-192;
+      // `abandoned_at` since G5-08: a partial score's outcome instant).
       completed_at: z.string().nullable(),
+      abandoned_at: z.string().nullable(),
     })
     .nullable(),
 });
@@ -755,11 +813,15 @@ export async function listExamForms(
  * unchanged PLUS each latest session's `completed_at`, keyed by session id. The student's
  * listing does not gain the field; only the guardian list, which needs it to pick the latest
  * test, reads the map. Null for a session that never completed (in progress, abandoned).
+ *
+ * SCL-199 (G5-08, 2026-10-02; narrowed by G5-09, 2026-10-03): each session's map entry also
+ * carries its abandonment instant, so the guardian can tell when a partial score ended. No
+ * score rides here: a guardian reads scores through the report route only (G5-09).
  */
 export async function listExamFormsWithCompletion(studentId: string): Promise<
   ExamResult<{
     forms: ExamFormsResponse;
-    completedAt: Readonly<Record<string, string | null>>;
+    sessions: Readonly<Record<string, GuardianListSessionFacts>>;
   }>
 > {
   const env = await callExamRpc("exam_list_forms", {
@@ -769,17 +831,21 @@ export async function listExamFormsWithCompletion(studentId: string): Promise<
   const rows = z
     .object({ forms: z.array(formRowSchema) })
     .parse(env.body).forms;
-  const completedAt: Record<string, string | null> = {};
+  const sessions: Record<string, GuardianListSessionFacts> = {};
   for (const f of rows) {
-    if (f.latest_session !== null) {
-      completedAt[f.latest_session.session_id] = f.latest_session.completed_at;
+    const l = f.latest_session;
+    if (l !== null) {
+      sessions[l.session_id] = {
+        completed_at: l.completed_at,
+        abandoned_at: l.abandoned_at,
+      };
     }
   }
   return {
     ok: true,
     status: 200,
     value: {
-      completedAt,
+      sessions,
       forms: examFormsResponseSchema.parse({
         forms: rows.map((f) => ({
           test_form_id: f.test_form_id,

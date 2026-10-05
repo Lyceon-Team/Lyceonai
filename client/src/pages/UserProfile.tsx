@@ -46,6 +46,7 @@ import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { SessionNotice } from "@/components/feedback/SessionNotice";
 import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
 import { EmailNotificationsCard } from "@/components/account/EmailNotificationsCard";
+import { CookiesAnalyticsCard } from "@/components/account/CookiesAnalyticsCard";
 import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 
@@ -517,6 +518,7 @@ export default function UserProfile() {
                     explain it lives here, above the control that creates it. Renders nothing
                     unless this address is actually suppressed. */}
                 <EmailNotificationsCard />
+                <CookiesAnalyticsCard />
                 <DeleteAccountCard />
               </CardContent>
             </Card>

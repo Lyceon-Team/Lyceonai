@@ -87,6 +87,30 @@ export class RateLimitUnavailableError extends Error {
  * limit, which has no spec-stated default and must deny instead.
  */
 const SOFT_WARNING_DEFAULT_PCT = 80;
+/** Doc 01A Appendix A.3: `soft_warning_threshold_pct` default 80, min 50, max 95. */
+const SOFT_WARNING_MIN_PCT = 50;
+const SOFT_WARNING_MAX_PCT = 95;
+
+/**
+ * @spec [Doc-01A_V1.0 §43, Appendix A.3] | @implemented [2026-10-05] | plain English: the
+ * configured threshold when it is a number within the spec's 50-95 range, otherwise the spec's
+ * default of 80. Before this, an ABSENT row read as `Number(null)` = 0, which is finite, so the
+ * threshold became 0% and every request — even the first of 120 — carried the soft warning.
+ * Production has no such row, so the default is what applies there.
+ */
+export function softWarningThresholdPct(raw: unknown): number {
+  const value =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string" && raw.trim() !== ""
+        ? Number(raw)
+        : Number.NaN;
+  return Number.isFinite(value) &&
+    value >= SOFT_WARNING_MIN_PCT &&
+    value <= SOFT_WARNING_MAX_PCT
+    ? value
+    : SOFT_WARNING_DEFAULT_PCT;
+}
 const CONFIG_TABLE = "rate_limit_runtime_config";
 const SOFT_WARNING_KEY = "soft_warning_threshold_pct";
 const BUCKET_DEFINITIONS_KEY = "bucket_definitions";
@@ -193,13 +217,53 @@ async function readBucketDefinition(
  * rate_limit_runtime_config.bucket_definitions" as a blocking condition, so
  * proceeding on an invented number would defeat the very gate the spec sets.
  */
+const SUBJECT_HMAC_HEX = /^[0-9a-f]{64}$/;
+
+/** The ledger function and subject argument for a subject (one place, both paths). */
+function ledgerTarget(subject: LedgerSubject): {
+  fn: "rate_limit_check_and_increment" | "rate_limit_check_and_increment_anon";
+  subjectArg: Record<string, string>;
+} {
+  if ("subjectHmac" in subject) {
+    if (!SUBJECT_HMAC_HEX.test(subject.subjectHmac)) {
+      // A raw IP (or anything else) must never be written as a subject.
+      throw new RateLimitUnavailableError(
+        "subjectHmac must be a 32-byte HMAC as 64 lowercase hex characters",
+      );
+    }
+    return {
+      fn: "rate_limit_check_and_increment_anon",
+      subjectArg: { p_subject_hmac: `\\x${subject.subjectHmac}` },
+    };
+  }
+  return {
+    fn: "rate_limit_check_and_increment",
+    subjectArg: { p_profile_id: subject.profileId },
+  };
+}
+
+/**
+ * Who a bucket belongs to. A signed-in caller is keyed on their profile (Doc 01A §41). A public
+ * endpoint with no authenticated caller is keyed on `subjectHmac` = HMAC-SHA256(server secret,
+ * client IP), 32 bytes as 64 hex characters, in the sibling table `rate_limit_ledger_anon`
+ * (SCL-202). The raw IP never reaches this module.
+ */
+export type LedgerSubject = { profileId: string } | { subjectHmac: string };
+
+/**
+ * @spec [Doc-01A_V1.0 §39-§41; SCL-202 (anonymous buckets) | @implemented 2026-10-05 for the
+ *       subject union and the explicit window]
+ * `window`: an explicit window instead of the one derived from `window_seconds`, for a bucket
+ * whose period is not a UTC-aligned multiple (the QOTD stats bucket is one America/Chicago day).
+ * The limit still comes from the bucket definition.
+ */
 export async function checkAndIncrement(
   client: LedgerClient,
-  params: {
-    profileId: string;
+  params: LedgerSubject & {
     bucketKey: string;
     cost?: number;
     now?: Date;
+    window?: { start: Date; end: Date };
   },
 ): Promise<RateLimitResult> {
   const cost = params.cost ?? 1;
@@ -215,10 +279,13 @@ export async function checkAndIncrement(
     );
   }
   const limit = def.limit;
-  const { windowStart, windowEnd } = windowFor(now, def.window_seconds);
+  const { windowStart, windowEnd } = params.window
+    ? { windowStart: params.window.start, windowEnd: params.window.end }
+    : windowFor(now, def.window_seconds);
 
-  const { data, error } = await client.rpc("rate_limit_check_and_increment", {
-    p_profile_id: params.profileId,
+  const { fn, subjectArg } = ledgerTarget(params);
+  const { data, error } = await client.rpc(fn, {
+    ...subjectArg,
     p_bucket_key: params.bucketKey,
     p_cost: cost,
     p_window_start: windowStart.toISOString(),
@@ -228,29 +295,23 @@ export async function checkAndIncrement(
 
   if (error) {
     // Fail closed. A rate limiter that opens on infrastructure failure is not one.
-    throw new RateLimitUnavailableError(
-      `rate_limit_check_and_increment failed: ${error.message}`,
-    );
+    throw new RateLimitUnavailableError(`${fn} failed: ${error.message}`);
   }
 
   const row = Array.isArray(data)
     ? (data[0] as Record<string, unknown> | undefined)
     : (data as Record<string, unknown> | undefined);
   if (!row || typeof row.allowed !== "boolean") {
-    throw new RateLimitUnavailableError(
-      "rate_limit_check_and_increment returned no decision row",
-    );
+    throw new RateLimitUnavailableError(`${fn} returned no decision row`);
   }
 
   const used = Number(row.used ?? 0);
   const remaining = Math.max(0, Number(row.remaining ?? 0));
   const allowed = row.allowed === true;
 
-  const rawPct = await readConfigValue(client, SOFT_WARNING_KEY);
-  const parsedPct = Number(rawPct);
-  const thresholdPct = Number.isFinite(parsedPct)
-    ? parsedPct
-    : SOFT_WARNING_DEFAULT_PCT;
+  const thresholdPct = softWarningThresholdPct(
+    await readConfigValue(client, SOFT_WARNING_KEY),
+  );
   const softWarning = limit > 0 && (used / limit) * 100 >= thresholdPct;
 
   const result: RateLimitResult = {

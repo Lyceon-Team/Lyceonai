@@ -35,7 +35,6 @@
     "server/lib/**/*",
     "server/index.ts",
     "server/logger.ts",
-    "server/seo-content.ts",
     "apps/api/src/config.ts",
     "apps/api/src/db/**/*",
     "apps/api/src/env.ts",

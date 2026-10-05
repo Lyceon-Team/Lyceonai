@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../logger';
+import { loggableIp } from '../lib/client-ip';
 
 declare global {
   namespace Express {
@@ -43,7 +44,8 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
       duration,
       requestId,
       req.user?.id,
-      req.ip || req.socket?.remoteAddress,
+      // /api/public/* logs a keyed digest, never the raw IP (SCL-202; server/lib/client-ip.ts).
+      loggableIp(req),
       undefined,
       responseSize,
     );

@@ -470,18 +470,26 @@ describe("owner ruling 7: the student report carries segments, never counts", ()
     expect(toStudentExamReport(internal)).toEqual(internal);
   });
 
-  it("guardian: the guardian projection of the same report is a bar per domain, no counts (SCL-189)", () => {
+  it("guardian: the guardian projection of the same report is the student's segments, no counts (SCL-210)", () => {
     const internal = serializeStudentReport(source(), "scored", BREAKDOWN);
     const g = toGuardianExamReport(internal);
     if (g.report_state !== "scored") throw new Error(g.report_state);
-    // Expected bars computed here, not by the projection under test (G3-02, SCL-189).
-    expect(g.domain_breakdown).toEqual(
+    const byDomain = (a: { domain: string }, b: { domain: string }) =>
+      a.domain.localeCompare(b.domain);
+    // Expected segments computed here, not by the projection under test (G5-11, SCL-210):
+    // the nearest of seven, half rounding up (SCL-180 ruling 7).
+    expect([...g.domain_breakdown].sort(byDomain)).toEqual(
       BREAKDOWN.map((r) => ({
         section: r.section,
         domain: r.domain,
-        bar_pct: Math.round((100 * r.correct) / r.total),
-      })),
+        segments_filled: Math.floor((14 * r.correct + r.total) / (2 * r.total)),
+      })).sort(byDomain),
     );
+    // And in the student's own order: the rows are the student's rows.
+    const student = toStudentExamReport(internal);
+    if (student.report_state !== "scored")
+      throw new Error(student.report_state);
+    expect(g.domain_breakdown).toEqual(student.domain_segments);
     expect(g).not.toHaveProperty("domain_segments");
     expect(g).not.toHaveProperty("omitted_domains");
   });

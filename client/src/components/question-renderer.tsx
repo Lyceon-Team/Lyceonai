@@ -132,7 +132,9 @@ export default function QuestionRenderer({
   const shownExplanation = (explanation ?? "").trim();
 
   return (
-    <div className="flex flex-col gap-[26px]">
+    // SCL-204 / R32: `ph-no-capture` on the question/answer area (practice, review, QOTD) — student
+    // answers are never recorded (Coding Standards §12).
+    <div className="ph-no-capture flex flex-col gap-[26px]">
       {question.passage ? (
         <div
           data-testid="runner-passage"

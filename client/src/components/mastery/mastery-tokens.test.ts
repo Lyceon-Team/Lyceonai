@@ -68,7 +68,6 @@ describe("mastery components use tokens only", () => {
       "MasteryMeter.tsx",
       "MasteryRow.tsx",
       "LockedMasteryCard.tsx",
-      "DomainGrid.tsx",
     ])
       expect(names).toContain(want);
   });

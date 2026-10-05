@@ -46,8 +46,6 @@ SWEEP="server/services/retention-sweep.ts"
 SCHEDTF="infra/terraform/cloud-scheduler.tf"
 RETROUTE="server/routes/internal-retention-routes.ts"
 OBSCFG="supabase/migrations/20260922020000_observability_retention_config.sql"
-ANASURF="client/src/lib/analytics-surface.ts"
-APPTSX="client/src/App.tsx"
 VERIF="supabase/migrations/20260930000000_deletion_verification_in_t3.sql"
 SENT="supabase/migrations/20261005000000_actor_id_integrity_sentinel.sql"
 CARVE="supabase/migrations/20261007000000_deletion_verification_drop_deleted_profile_id.sql"
@@ -75,8 +73,6 @@ cp "$SWEEP"      "$BACKUP/retention-sweep.ts"
 cp "$SCHEDTF"    "$BACKUP/cloud-scheduler.tf"
 cp "$RETROUTE"   "$BACKUP/internal-retention-routes.ts"
 cp "$OBSCFG"     "$BACKUP/observability_retention_config.sql"
-cp "$ANASURF"    "$BACKUP/analytics-surface.ts"
-cp "$APPTSX"     "$BACKUP/App.tsx"
 cp "$VERIF"      "$BACKUP/deletion_verification_in_t3.sql"
 cp "$SENT"       "$BACKUP/actor_id_integrity_sentinel.sql"
 cp "$CARVE"      "$BACKUP/drop_deleted_profile_id.sql"
@@ -106,8 +102,6 @@ restore() {
   cp "$BACKUP/cloud-scheduler.tf" "$SCHEDTF"
   cp "$BACKUP/internal-retention-routes.ts" "$RETROUTE"
   cp "$BACKUP/observability_retention_config.sql" "$OBSCFG"
-  cp "$BACKUP/analytics-surface.ts" "$ANASURF"
-  cp "$BACKUP/App.tsx" "$APPTSX"
   cp "$BACKUP/deletion_verification_in_t3.sql" "$VERIF"
   cp "$BACKUP/actor_id_integrity_sentinel.sql" "$SENT"
   cp "$BACKUP/drop_deleted_profile_id.sql" "$CARVE"
@@ -538,11 +532,19 @@ expect_red M64 "F1.16 — an inline comment does not change a scalar's type"
 # The archive was invisible for a month because "returns ok: false" and "is not
 # scheduled" each explained the other. These mutations plant the two halves of
 # that back and require the suite to say so.
-SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
+#
+# M65 RE-POINTED 2026-10-05 (RS-03/RS-04, #1102). The 90d tier is an RPC now
+# (`sweepByRpc` → `sweep_tutor_instruction_retention`), so its old anchor
+# `const cutoff = retentionCutoff(opts.now, 90);` is gone, and the test it reddens
+# moved to the real-Postgres suite with the rest of the 90d cases. The anchor
+# below occurs once in retention-sweep.ts, inside sweep90d.
+SUITE="tests/ci/retention-sweep.pg.ci.test.ts"
 
 echo "==> (M65) the 90d tier declines again instead of deleting"
-plant M65 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 90);', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const cutoff = retentionCutoff(opts.now, 90);', 1)"
+plant M65 "$SWEEP" "s.replace('  const result = await sweepByRpc(', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const result = await sweepByRpc(', 1)"
 expect_red M65 "deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)"
+
+SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
 
 echo "==> (M66) an archive call comes back into the sweep module"
 plant M66 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 180);', '  const archiveTable = \"retention__crisis_review_cases\";\n  void archiveTable;\n  const cutoff = retentionCutoff(opts.now, 180);', 1)"
@@ -625,42 +627,9 @@ echo "==> (M81) the derivation is replaced by a literal that is correct TODAY"
 plant M81 "$OBSCFG" "s.replace('to_jsonb(public.audit_logs_retention_days())', \"to_jsonb(365)\", 1)"
 expect_red M81 "F2.8 — each seeded value is DERIVED from its enforcing function, not typed"
 
-echo "==> (29j2) the analytics student-surface block"
-SUITE="tests/ci/analytics-student-surface.contract.test.ts"
-
-echo "==> (M82) the predicate is dropped from the call site"
-plant M82 "$APPTSX" "s.replace('<Analytics beforeSend={analyticsBeforeSend} />', '<Analytics />', 1)"
-expect_red M82 "E1.10 — there is exactly one Analytics mount, and it carries the predicate"
-
-echo "==> (M83) a second Analytics mount bypasses the one predicate"
-plant M83 "$APPTSX" "s.replace('    </ErrorBoundary>', '      <Analytics />\n    </ErrorBoundary>', 1)"
-expect_red M83 "E1.10 — there is exactly one Analytics mount, and it carries the predicate"
-
-echo "==> (M84) a student surface is added to the public allowlist"
-plant M84 "$ANASURF" "s.replace('  \"/digital-sat\",', '  \"/digital-sat\",\n  \"/chat\",', 1)"
-expect_red M84 "E1.2 — every role-gated route is denied"
-
-echo "==> (M85) the predicate stops defaulting to deny"
-plant M85 "$ANASURF" "s.replace('  if (typeof pathname !== \"string\" || !pathname.startsWith(\"/\")) return false;', '  if (typeof pathname !== \"string\" || !pathname.startsWith(\"/\")) return false;\n  return true;', 1)"
-expect_red M85 "E1.3 — an unknown path is denied (defaults to deny, per Doc 06A §5.3)"
-
-echo "==> (M86) prefix matching loses its segment boundary"
-plant M86 "$ANASURF" "s.replace('const PUBLIC_PREFIXES: readonly string[] = [\"/blog/\", \"/legal/\"];', 'const PUBLIC_PREFIXES: readonly string[] = [\"/blog\", \"/legal\"];', 1)"
-expect_red M86 "E1.6 — a prefix matches at a segment boundary, not as a substring"
-
-echo "==> (M87) the verdict is taken from the whole URL instead of its path"
-plant M87 "$ANASURF" "s.replace('  const pathname = pathnameOf(event.url);\n  return pathname !== null \x26\x26 isAnalyticsAllowedPath(pathname) ? event : null;', '  return event.url.includes(\"/chat\") ? null : event;', 1)"
-expect_red M87 "E1.7 — the verdict comes from the path, not from the query string"
-
-echo "==> (M88) an empty event url resolves to the home page and is reported"
-plant M88 "$ANASURF" "s.replace('  if (typeof url !== \"string\" || url.length === 0) return null;\n  try {\n    return new URL(url).pathname;', '  if (typeof url !== \"string\") return null;\n  try {\n    return new URL(url, \"https://lyceon.ai\").pathname;', 1)"
-expect_red M88 "E1.8 — an unparseable URL is denied rather than guessed"
-
-# Re-pointed 2026-09-29 (student UI UI-04): /tutor is retired, so E1.11 now asserts it stays
-# denied with no entry anywhere; the same plant (re-adding it to the allowlist) turns it red.
-echo "==> (M89) the retired /tutor is put back on the analytics allowlist"
-plant M89 "$ANASURF" "s.replace('  \"/terms\",', '  \"/terms\",\n  \"/tutor\",', 1)"
-expect_red M89 "E1.11 — retired /tutor is neither public nor a page, and stays denied"
+# (29j2) M82–M89 guarded the Vercel Analytics allowlist (`client/src/lib/analytics-surface.ts`)
+# and its suite. Both were deleted 2026-10-05 when Vercel Analytics was retired (SEO F10,
+# SCL-201), so the plants were removed with them rather than left as dead mutations.
 
 # ── The verification record's wiring ────────────────────────────────────────────
 # These four exist because the mechanism they guard was BUILT, SHAPED CORRECTLY AND TESTED,
@@ -730,9 +699,9 @@ expect_red M97 "D1.1 the diagnostic route resolves actor_id from the profile"
 
 SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 
-echo "==> (29k) restored: the analytics-surface suite must be green again"
+echo "==> (29k) restored: the deletion-evidence-bundle suite must be green again"
 again="$(run_suite)"
-if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: analytics-surface suite not green after restore"; fails=1; else echo "  ok   analytics-surface suite green after restore"; fi
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: deletion-evidence-bundle suite not green after restore"; fails=1; else echo "  ok   deletion-evidence-bundle suite green after restore"; fi
 
 SUITE="tests/ci/observability-retention-config.pg.ci.test.ts"
 echo "==> (29j) restored: the observability-config suite must be green again"

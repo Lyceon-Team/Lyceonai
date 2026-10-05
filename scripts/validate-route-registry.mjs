@@ -1,11 +1,20 @@
 #!/usr/bin/env node
 /**
  * Route Registry Validation Script
- * 
+ *
+ * @spec [Doc-06A §5.3.1; docs/plans/seo/seo-marketing-vertical.md §5 F12; owner ruling 2026-10-03:
+ *   infra/route-surface-classification.yaml is the canonical registry, docs/route-registry.md is
+ *   prose checked against it] | @implemented [2026-10-03]
+ *
  * Ensures that:
- * 1. All routes in client/src/App.tsx are documented in docs/route-registry.md
- * 2. All ACTIVE routes in docs/route-registry.md exist in client/src/App.tsx
- * 
+ * 1. Every route in client/src/App.tsx (and GUARDIAN_ROUTES) has a row in
+ *    infra/route-surface-classification.yaml — "CI fails on an unregistered route" (F12).
+ * 2. Every row in the YAML names a route App.tsx mounts (no stale classifications).
+ * 3. docs/route-registry.md lists exactly the YAML's routes as ACTIVE, so the prose (roles,
+ *    entitlements, endpoints) cannot describe a different route set.
+ * The YAML is parsed by shared/seo/route-registry.ts — the same parser the build uses — so a row
+ * the build would reject fails here too. Run with tsx (it imports TypeScript).
+ *
  * Exit codes:
  * - 0: All routes are properly documented
  * - 1: Validation failed (missing or undocumented routes)
@@ -14,6 +23,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { parseRouteRegistry } from '../shared/seo/route-registry.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -109,55 +119,64 @@ function extractRegistryActiveRoutes() {
 }
 
 /**
+ * Rows of infra/route-surface-classification.yaml (throws on a malformed registry).
+ */
+function extractYamlRoutes() {
+  const yamlPath = path.join(projectRoot, 'infra/route-surface-classification.yaml');
+  return parseRouteRegistry(fs.readFileSync(yamlPath, 'utf-8'))
+    .map((row) => row.path_pattern)
+    .sort();
+}
+
+/** Prints the routes in `a` that are not in `b`; returns true if there were any. */
+function reportMissing(a, b, heading) {
+  const missing = a.filter((route) => !b.includes(route));
+  if (missing.length === 0) return false;
+  console.log(`${colors.red}❌ ${heading}:${colors.reset}`);
+  missing.forEach((route) => console.log(`   ${colors.red}  - ${route}${colors.reset}`));
+  console.log('');
+  return true;
+}
+
+/**
  * Main validation function
  */
 function validateRoutes() {
   console.log(`${colors.blue}=== Route Registry Validation ===${colors.reset}\n`);
-  
+
   const appRoutes = extractAppRoutes();
-  const registryRoutes = extractRegistryActiveRoutes();
-  
+  const yamlRoutes = extractYamlRoutes();
+  const proseRoutes = extractRegistryActiveRoutes();
+
   console.log(`${colors.magenta}Found ${appRoutes.length} routes in App.tsx${colors.reset}`);
-  console.log(`${colors.magenta}Found ${registryRoutes.length} ACTIVE routes in route-registry.md${colors.reset}\n`);
-  
-  // Find routes in App.tsx but not in registry
-  const undocumented = appRoutes.filter(route => !registryRoutes.includes(route));
-  
-  // Find ACTIVE routes in registry but not in App.tsx
-  const missing = registryRoutes.filter(route => !appRoutes.includes(route));
-  
-  let hasErrors = false;
-  
-  if (undocumented.length > 0) {
-    hasErrors = true;
-    console.log(`${colors.red}❌ Routes in App.tsx but NOT documented in route-registry.md:${colors.reset}`);
-    undocumented.forEach(route => {
-      console.log(`   ${colors.red}  - ${route}${colors.reset}`);
-    });
-    console.log('');
-  }
-  
-  if (missing.length > 0) {
-    hasErrors = true;
-    console.log(`${colors.red}❌ ACTIVE routes in route-registry.md but NOT found in App.tsx:${colors.reset}`);
-    missing.forEach(route => {
-      console.log(`   ${colors.red}  - ${route}${colors.reset}`);
-    });
-    console.log('');
-  }
-  
-  if (!hasErrors) {
+  console.log(`${colors.magenta}Found ${yamlRoutes.length} rows in infra/route-surface-classification.yaml${colors.reset}`);
+  console.log(`${colors.magenta}Found ${proseRoutes.length} ACTIVE routes in docs/route-registry.md${colors.reset}\n`);
+
+  const errors = [
+    reportMissing(appRoutes, yamlRoutes, 'Routes in App.tsx but NOT classified in infra/route-surface-classification.yaml'),
+    reportMissing(yamlRoutes, appRoutes, 'Rows in infra/route-surface-classification.yaml naming no App.tsx route'),
+    reportMissing(yamlRoutes, proseRoutes, 'Registry routes NOT listed ACTIVE in docs/route-registry.md'),
+    reportMissing(proseRoutes, yamlRoutes, 'ACTIVE routes in docs/route-registry.md NOT in the registry'),
+  ].some(Boolean);
+
+  if (!errors) {
     console.log(`${colors.green}✅ All routes are properly documented!${colors.reset}`);
     console.log(`${colors.green}   - ${appRoutes.length} routes in App.tsx${colors.reset}`);
-    console.log(`${colors.green}   - ${registryRoutes.length} ACTIVE routes in registry${colors.reset}`);
+    console.log(`${colors.green}   - ${yamlRoutes.length} rows in the registry${colors.reset}`);
+    console.log(`${colors.green}   - ${proseRoutes.length} ACTIVE routes in docs/route-registry.md${colors.reset}`);
     console.log('');
     return 0;
-  } else {
-    console.log(`${colors.yellow}Please update docs/route-registry.md to match App.tsx${colors.reset}\n`);
-    return 1;
   }
+  console.log(`${colors.yellow}Classify every App.tsx route in infra/route-surface-classification.yaml, and keep docs/route-registry.md in step with it${colors.reset}\n`);
+  return 1;
 }
 
 // Run validation
-const exitCode = validateRoutes();
+let exitCode;
+try {
+  exitCode = validateRoutes();
+} catch (error) {
+  console.error(`${colors.red}❌ ${error instanceof Error ? error.message : String(error)}${colors.reset}`);
+  exitCode = 1;
+}
 process.exit(exitCode);

@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { GraduationCap } from "lucide-react";
+import { openCookieSettings } from "@/lib/analytics/consent";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -32,7 +33,7 @@ export default function Footer() {
               <span className="font-bold">Lyceon</span>
             </Link>
             <p className="text-sm text-muted-foreground">
-              Study Smarter, Score Higher.
+              Study smarter for the SAT.
             </p>
           </div>
 
@@ -81,12 +82,28 @@ export default function Footer() {
                   </Link>
                 </li>
               ))}
+              {/* Doc 10 §9.11 withdrawal: "Cookie settings" (cookie-banner-text.md, Footer link). */}
+              <li>
+                <button
+                  type="button"
+                  onClick={openCookieSettings}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cookie settings
+                </button>
+              </li>
             </ul>
           </div>
         </div>
 
         <div className="pt-8 border-t border-border text-center text-sm text-muted-foreground">
-          {currentYear} Lyceon. All rights reserved.
+          <p>© {currentYear} Lyceon. All rights reserved.</p>
+          {/* The standard trademark notice used across SAT-prep sites (owner answer 6,
+              2026-10-03): on every public page, since every public page renders this footer. */}
+          <p className="mt-2">
+            SAT® is a trademark registered by the College Board, which is not
+            affiliated with, and does not endorse, this product.
+          </p>
         </div>
       </div>
     </footer>

@@ -20,6 +20,8 @@ import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state";
 import { hasPasswordIdentity } from "../lib/password-credentials";
+import { emitEvent } from "../lib/analytics/emit-event";
+import { signupSourceSchema } from "../../packages/shared/src/analytics-consent-schema";
 import {
   dateOfBirthSchema,
   setDateOfBirthRequestSchema,
@@ -560,6 +562,22 @@ router.patch("/", async (req: Request, res: Response) => {
 
     const guardianConnected = await hasActiveGuardianLink(supabase, userId);
     const guardianConsentRequired = isUnder13 && !guardianConnected;
+
+    // Doc 07A §6.2 / owner Step 0 decision 2 (2026-10-05): `user_signed_up` fires when onboarding
+    // completes — the date of birth, and so the under-13 exclusion, is known only now. The first
+    // completion only, and once across concurrent requests: the wrapper emits only from the call
+    // that writes the set-once analytics_user_id. Under-13 and refused outcomes are no-ops.
+    if (existingProfile.profile_completed_at === null) {
+      const parsedSource = signupSourceSchema.safeParse(
+        (profile as { signup_source?: unknown }).signup_source,
+      );
+      await emitEvent(
+        userId,
+        "user_signed_up",
+        { signup_source: parsedSource.success ? parsedSource.data : "unknown" },
+        { requireFirstIdentity: true },
+      );
+    }
 
     return res.json({
       success: true,

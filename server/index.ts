@@ -11,10 +11,7 @@
 
 import express, { Request, Response } from "express";
 import path from "path";
-import fs from "fs";
 import cookieParser from "cookie-parser";
-import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
-import { LEGAL_META, PUBLIC_META } from "../shared/seo/public-meta";
 import rateLimit from "express-rate-limit";
 // Canonical mounted owner: server/routes/tutor-* is the production owner.
 // Any duplicate tutor route under apps/api/** must remain unmounted.
@@ -31,7 +28,9 @@ import {
   requireStudentOrAdmin,
   requireStudentOnly,
   requireStudentAccount,
+  hasSsrSessionCookie,
 } from "./middleware/supabase-auth";
+import { csrfTokenResponseSchema } from "../packages/shared/src/csrf-token-schema";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import {
@@ -56,6 +55,8 @@ import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
+import publicQotdRoutes from "./routes/public-qotd-routes";
+import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
@@ -201,9 +202,17 @@ app.use(globalRateLimiter);
 
 // CSRF token bootstrap endpoint (stateless double-submit cookie).
 // CSRF_EXEMPT_REASON: GET-only endpoint to issue a CSRF token + cookie.
+// @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: the response also says whether
+// a session cookie came with the request, so a visitor with no session never sends the profile
+// read that would answer 401. A hint only: `hasSsrSessionCookie` checks presence, not validity.
 app.get("/api/csrf-token", (req: Request, res: Response) => {
   const csrfToken = generateToken(req, res);
-  return res.json({ csrfToken });
+  return res.json(
+    csrfTokenResponseSchema.parse({
+      csrfToken,
+      sessionCookiePresent: hasSsrSessionCookie(req),
+    }),
+  );
 });
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
@@ -217,137 +226,6 @@ app.use(enforceDeletionLock);
 
 // Legal API (requires Supabase auth)
 app.use("/api/legal", requireSupabaseAuth, doubleCsrfProtection, legalRouter);
-
-// ============================================================================
-// SEO: Server-side meta injection for legal pages
-// ============================================================================
-
-// Legal doc metadata registry (mirrors client/src/lib/legal.ts slugs)
-// Canonical source-of-truth is shared/seo/public-meta.ts (LEGAL_META).
-
-// Inject SEO meta tags into HTML template
-function injectMeta(
-  html: string,
-  meta: {
-    title: string;
-    description: string;
-    canonical: string;
-    ogImage?: string;
-  },
-): string {
-  let result = html;
-
-  // Replace <title>...</title>
-  result = result.replace(
-    /<title>[^<]*<\/title>/,
-    `<title>${meta.title}</title>`,
-  );
-
-  // Replace or insert meta description
-  if (result.includes('name="description"')) {
-    result = result.replace(
-      /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i,
-      `<meta name="description" content="${meta.description}">`,
-    );
-  } else {
-    result = result.replace(
-      "</head>",
-      `<meta name="description" content="${meta.description}">\n</head>`,
-    );
-  }
-
-  // Insert canonical link
-  if (result.includes('rel="canonical"')) {
-    result = result.replace(
-      /<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i,
-      `<link rel="canonical" href="${meta.canonical}">`,
-    );
-  } else {
-    result = result.replace(
-      "</head>",
-      `<link rel="canonical" href="${meta.canonical}">\n</head>`,
-    );
-  }
-
-  // Insert/replace OpenGraph tags
-  const ogImage = meta.ogImage || "https://lyceon.ai/og-image.jpg";
-  const ogTags = `
-    <meta property="og:title" content="${meta.title}">
-    <meta property="og:description" content="${meta.description}">
-    <meta property="og:url" content="${meta.canonical}">
-    <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Lyceon">
-    <meta property="og:image" content="${ogImage}">
-    <meta property="og:image:alt" content="${meta.title}">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="${meta.title}">
-    <meta name="twitter:description" content="${meta.description}">
-    <meta name="twitter:image" content="${ogImage}">
-  `;
-
-  // Remove existing OG/Twitter tags and add new ones
-  result = result.replace(
-    /<meta\s+property="og:(title|description|url|type|image|image:alt|image:width|image:height|site_name)"\s+content="[^"]*"\s*\/?>/gi,
-    "",
-  );
-  result = result.replace(
-    /<meta\s+name="twitter:(card|title|description|image)"\s+content="[^"]*"\s*\/?>/gi,
-    "",
-  );
-  result = result.replace("</head>", `${ogTags}</head>`);
-
-  return result;
-}
-
-function injectJsonLd(
-  html: string,
-  jsonLd: Record<string, unknown>[] | undefined,
-): string {
-  if (!jsonLd || jsonLd.length === 0) {
-    let previousHtml: string;
-    do {
-      previousHtml = html;
-      html = html.replace(
-        /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
-        "",
-      );
-    } while (html !== previousHtml);
-    return html;
-  }
-
-  let previousHtml: string;
-  do {
-    previousHtml = html;
-    html = html.replace(
-      /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
-      "",
-    );
-  } while (html !== previousHtml);
-
-  let result = html;
-  const jsonLdScripts = jsonLd
-    .map(
-      (data) =>
-        `<script type="application/ld+json">${JSON.stringify(data)}</script>`,
-    )
-    .join("\n");
-  result = result.replace("</head>", `${jsonLdScripts}\n</head>`);
-  return result;
-}
-
-// Inject visible body content into the root div for SSR/SEO
-function injectBodyContent(html: string, content: string): string {
-  // Replace empty <div id="root"></div> with content inside
-  // Content will be replaced by React hydration
-  return html.replace(
-    /<div\s+id="root">\s*<\/div>/i,
-    `<div id="root">${content}</div>`,
-  );
-}
-
-// SEO 301 redirects for legacy URLs (GET + HEAD)
-app.all("/privacy", (_req, res) => res.redirect(301, "/legal/privacy-policy"));
-app.all("/terms", (_req, res) => res.redirect(301, "/legal/student-terms"));
 
 // Health checks
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
@@ -583,6 +461,19 @@ app.use(
 // load; the module's 15-minute memo is what bounds calls to Stripe itself.
 app.use("/api/public", publicPricingRoutes);
 
+// Public Question of the Day (UNAUTHENTICATED BY DESIGN — SEO Wave 2, plan R16-R19, Q2).
+// No auth and no CSRF: nothing reads `req.user` and no ambient credential is used; the one write
+// (POST /today/answer) is gated by Cloudflare Turnstile and the SCL-202 hashed-IP ledger, and
+// the reads are hashed-IP limited too. See server/routes/public-qotd-routes.ts.
+// CSRF_EXEMPT_REASON: no ambient credential is read; the submit is Turnstile-gated (owner Step 0 decision, 2026-10-05).
+app.use("/api/public/qotd", publicQotdRoutes);
+
+// Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
+// Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no
+// CSRF: it reads no cookie or session; the SCL-202 hashed-IP ledger bounds it.
+// CSRF_EXEMPT_REASON: no ambient credential is read; rate-limited on the anonymous ledger (owner Step 0 decision, 2026-10-05).
+app.use("/api/public/cookie-consent", cookieConsentRoutes);
+
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
 
@@ -672,109 +563,6 @@ app.use(
 // Serve static frontend files in production
 const staticPath = path.join(process.cwd(), "dist", "public");
 
-// Cache the index.html template for SEO injection
-let indexHtmlCache = "";
-function getIndexHtml(): string {
-  // In development, always read fresh (for hot reload support)
-  // In production, cache for performance
-  if (!indexHtmlCache || process.env.NODE_ENV !== "production") {
-    try {
-      const filePath = path.join(staticPath, "index.html");
-      if (fs.existsSync(filePath)) {
-        indexHtmlCache = fs.readFileSync(filePath, "utf-8");
-      } else {
-        // Fallback for development before build
-        indexHtmlCache =
-          '<!DOCTYPE html><html lang="en"><head><title>Lyceon</title></head><body><div id="root"></div></body></html>';
-      }
-    } catch {
-      indexHtmlCache =
-        '<!DOCTYPE html><html lang="en"><head><title>Lyceon</title></head><body><div id="root"></div></body></html>';
-    }
-  }
-  return indexHtmlCache;
-}
-
-// SSR: Unified handler for all public pages (SEO-crawlable content)
-// Injects both meta tags and body content for public routes
-function servePublicSsr(routePath: string, res: Response): boolean {
-  const seo = getPublicPageSeo(routePath);
-  if (!seo) return false;
-  const publicMeta = PUBLIC_META[routePath];
-
-  let html = getIndexHtml();
-  html = injectMeta(html, {
-    title: seo.title,
-    description: seo.description,
-    canonical: seo.canonical,
-    ogImage: publicMeta?.ogImage,
-  });
-  html = injectJsonLd(html, publicMeta?.jsonLd);
-  html = injectBodyContent(html, seo.bodyHtml);
-  res.type("html").send(html);
-  return true;
-}
-
-// Register all public SSR routes before static middleware
-for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
-  app.get(routePath, (_req, res) => {
-    servePublicSsr(routePath, res);
-  });
-}
-
-// SSR metadata fallback for public legal docs not explicitly listed in PUBLIC_SSR_ROUTES.
-// Keeps sitemap legal slugs indexable with canonical title/description metadata.
-app.get("/legal/:slug", (req, res, next) => {
-  // @spec [CodeQL js/reflected-xss alert #36; Coding Standards §7.1, §12.2]
-  //   | @implemented [2026-08-27]
-  //
-  // plain English: the slug echoed into the page is the TABLE'S OWN KEY, never the
-  // request's string. `slug` below is an element of `Object.keys(LEGAL_META)` — a server
-  // constant — and the request only chooses WHICH element. Same characters, different
-  // provenance, so no user-controlled value reaches the HTML at `/legal/${slug}` below.
-  // Fixed at the source rather than escaped at the sink: `injectBodyContent` interpolates
-  // raw, so an escape here would be one call away from being forgotten by the next caller.
-  //
-  // This also closes a hole the previous `LEGAL_META[slug]` truthiness check left open.
-  // LEGAL_META is a plain object literal, so a bare index resolves INHERITED members too:
-  // `/legal/constructor` returned `Object`, passed `if (!meta)`, and reflected
-  // "constructor" back into the page. `Object.keys` enumerates own keys only, so the
-  // guard is now an allowlist rather than a truthiness test.
-  const requestedSlug = String(req.params.slug || "");
-  const slug = Object.keys(LEGAL_META).find((key) => key === requestedSlug);
-  if (slug === undefined) return next();
-
-  const meta = LEGAL_META[slug];
-  if (!meta) return next();
-
-  const canonical = meta.canonical;
-  const bodyHtml = `
-<main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
-  <article>
-    <header style="margin-bottom: 1.5rem;">
-      <nav style="margin-bottom: 0.75rem;"><a href="/legal" style="color: #0F2E48;">← Back to Legal</a></nav>
-      <h1 style="font-size: 2rem; margin-bottom: 0.5rem; color: #0F2E48;">${meta.title}</h1>
-      <p style="color: #555; line-height: 1.6;">${meta.description}</p>
-    </header>
-    <section style="line-height: 1.8; color: #333;">
-      <p>This page is publicly available at <code>/legal/${slug}</code>.</p>
-      <p>Use the legal hub for complete policy navigation and PDF links.</p>
-      <p><a href="/legal" style="color: #0F2E48;">Open Legal Hub</a></p>
-    </section>
-  </article>
-</main>`;
-
-  let html = getIndexHtml();
-  html = injectMeta(html, {
-    title: `${meta.title} | Lyceon`,
-    description: meta.description,
-    canonical,
-    ogImage: meta.ogImage,
-  });
-  html = injectJsonLd(html, undefined);
-  html = injectBodyContent(html, bodyHtml);
-  res.type("html").send(html);
-});
 app.use(express.static(staticPath));
 
 // @spec [Coding Standards §8.2, §8.3; student-ui register F-42, owner ruling 2026-10-01] |
@@ -787,10 +575,14 @@ app.use("/api", (_req, res) => {
   res.status(404).json({ error: "API endpoint not found" });
 });
 
-// SPA fallback - serve index.html for all non-API routes
-// Private routes (dashboard, practice, etc.) get plain SPA shell
-app.get("*", (req, res) => {
-  res.sendFile(path.join(staticPath, "index.html"));
+// @spec [docs/plans/seo/seo-marketing-vertical.md §5 F1, F4] | @implemented [2026-10-03] |
+// plain English: the public pages are static files now — prerendered at build into dist/public
+// (scripts/build/prerender.mjs) and served by express.static above, as Vercel's filesystem
+// handler serves them in production. The Express "SSR" path that used to inject meta here never
+// ran on Vercel (vercel.json sends only /api and /auth/callback to this function) and is gone.
+// Every other route gets the SPA shell, app.html, which carries noindex.
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(staticPath, "app.html"));
 });
 
 // Final error boundary for uncaught route errors (G-NEW-12: extracted, and its CSRF 403 now logs

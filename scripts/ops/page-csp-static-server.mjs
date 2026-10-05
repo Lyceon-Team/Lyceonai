@@ -7,8 +7,8 @@
  * plain English: a stand-in for Vercel's CDN for tests/e2e/page-csp-flows.spec.ts. It serves
  * dist/public and applies vercel.json's `routes` the way Vercel does (the same walk as
  * tests/ci/page-security-headers.ci.test.ts): header routes with `continue: true` add their
- * headers, `handle: filesystem` serves a file that exists, the last route falls back to
- * /index.html. So the browser gets the built bundle with the exact header values production
+ * headers, `handle: filesystem` serves a file that exists, and the routes after it rewrite to
+ * the prerendered page, the SPA shell (app.html) or 404.html as vercel.json says. So the browser gets the built bundle with the exact header values production
  * will send, without depending on a preview's network path. /api is not served: the spec
  * answers it in the browser.
  *
@@ -52,20 +52,42 @@ function fileFor(pathname) {
 }
 
 createServer((req, res) => {
-  const pathname = new URL(req.url ?? "/", "http://x").pathname;
+  // SEO Wave 1A (#1054): vercel.json now routes by registry — 301s, filesystem, the prerendered
+  // homepage, the SPA shell (app.html), a directory-index rewrite applied only when the file
+  // exists (`check`; a miss carries the rewritten path forward, as Vercel does), and a final 404.
+  // This walk follows any `dest`/`status`/`check`, not only the old /index.html fallback.
+  let pathname = new URL(req.url ?? "/", "http://x").pathname;
   const headers = {};
   let file = null;
+  let status = 200;
   for (const route of routes) {
     if (route.handle === "filesystem") {
-      file = fileFor(pathname === "/" ? "/index.html" : pathname);
+      file = pathname === "/" ? null : fileFor(pathname);
       if (file) break;
       continue;
     }
     if (route.handle) continue;
-    if (!new RegExp(route.src).test(pathname)) continue;
+    const match = new RegExp(route.src).exec(pathname);
+    if (!match) continue;
     Object.assign(headers, route.headers ?? {});
     if (route.continue === true) continue;
-    if (route.dest === "/index.html") file = path.join(publicDir, "index.html");
+    if (route.status === 301) {
+      res.writeHead(301, headers);
+      res.end();
+      return;
+    }
+    if (!route.dest || route.dest === "/api/index") break;
+    const dest = route.dest.replace(
+      /\$(\d)/g,
+      (_m, i) => match[Number(i)] ?? "",
+    );
+    const target = fileFor(dest);
+    if (route.check === true && !target) {
+      pathname = dest;
+      continue;
+    }
+    file = target;
+    status = route.status ?? 200;
     break;
   }
   if (!file) {
@@ -73,7 +95,7 @@ createServer((req, res) => {
     res.end("not found");
     return;
   }
-  res.writeHead(200, {
+  res.writeHead(status, {
     ...headers,
     "content-type": TYPES[path.extname(file)] ?? "application/octet-stream",
   });
