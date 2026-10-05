@@ -121,6 +121,15 @@ export const UI_54: PageGroup = {
         mobile: '[data-testid="exam-module"] [data-testid="exam-choice"]',
       },
       themes: ["light"],
+      // F-69 (owner ruling 2026-10-05): the module shares the Focus shell, so it is also shot at
+      // tablet width and must fit the viewport with the bar in view at every size.
+      extraViewports: [
+        { name: "tablet", width: 820, height: 1180, selectors: "mobile" },
+      ],
+      expectFitsViewport: {
+        topBar: '[data-testid="focus-shell-header"]',
+        unscrolled: "main#main",
+      },
       prototype: {
         kind: "none",
         reason:

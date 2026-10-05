@@ -30,6 +30,14 @@ the served item's stored order and correct key in the harness database (the page
 `expectText` makes the capture wait for a text after the steps ("Question 2 of 10"). A
 prototype pairing's `state` names a clicked prototype state in its PNG file name.
 
+F-69 adds three more. A `{ focus: {...} }` step gives a field keyboard focus without typing (the
+review runner's LISA composer). `expectFitsViewport: { topBar, unscrolled? }` fails the capture
+unless the document is no taller than the viewport, the window is unscrolled, the top bar is
+wholly in view and (when named) the `unscrolled` container has nothing to scroll; the numbers are
+written under each built shot in the index. `extraViewports` shoots a shot at more sizes than
+desktop and phone (the timed exam module at tablet 820x1180), using one standard viewport's
+selectors.
+
 Output: `docs/plans/student-ui/evidence/wave5/<group>/` — one PNG per built shot
 (`<shot>--<desktop|mobile>--<light|dark>--built.png`), one per prototype state
 (`proto--<Screen>--<plan>--<theme>[--clicked].png`), and `index.md` with a built | prototype
