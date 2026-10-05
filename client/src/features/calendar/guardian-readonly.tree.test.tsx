@@ -711,7 +711,7 @@ describe("the suppressed practice test (Brief 14, owner ruling 2026-09-26)", () 
     );
     expect(notice).not.toBeNull();
     expect(notice!.textContent).toContain(
-      "We couldn't fit your practice test — the days you picked are blocked.",
+      "We couldn't fit your full-length test — the days you picked are blocked.",
     );
     // The date is a control, because a student CAN do something about it: it moves the grid
     // to that week, where §17.2's day menu undoes the day off.

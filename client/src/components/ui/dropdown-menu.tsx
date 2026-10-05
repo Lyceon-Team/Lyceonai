@@ -54,22 +54,57 @@ const DropdownMenuSubContent = React.forwardRef<
 DropdownMenuSubContent.displayName =
   DropdownMenuPrimitive.SubContent.displayName
 
+/**
+ * @spec [student-UI register §8 F-70 ("the avatar dropdown follows the page theme"), F-65]
+ *       | @implemented [2026-10-05]
+ * plain English: `portalClassName` wraps the portalled menu in one element, as the dialog and
+ * the sheet do for the student Modal and Sheet. The student avatar menu passes `lyc contents`, so
+ * the student tokens (light or dark) resolve on <body>, outside the shell's `.lyc` root, and
+ * `portalThemeLock` carries the shell's lock onto that wrapper, so a page pinned light gets a
+ * light menu. Callers that pass neither render exactly as before (the guardian shell's menu).
+ */
+type DropdownMenuContentProps = React.ComponentPropsWithoutRef<
+  typeof DropdownMenuPrimitive.Content
+> & {
+  portalClassName?: string
+  portalThemeLock?: "light" | null
+}
+
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
-  <DropdownMenuPrimitive.Portal>
-    <DropdownMenuPrimitive.Content
-      ref={ref}
-      sideOffset={sideOffset}
-      className={cn(
-        "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-dropdown-menu-content-transform-origin]",
-        className
-      )}
-      {...props}
-    />
-  </DropdownMenuPrimitive.Portal>
-))
+  DropdownMenuContentProps
+>(
+  (
+    { className, sideOffset = 4, portalClassName, portalThemeLock = null, ...props },
+    ref
+  ) => {
+    const content = (
+      <DropdownMenuPrimitive.Content
+        ref={ref}
+        sideOffset={sideOffset}
+        className={cn(
+          "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-dropdown-menu-content-transform-origin]",
+          className
+        )}
+        {...props}
+      />
+    )
+    return (
+      <DropdownMenuPrimitive.Portal>
+        {portalClassName === undefined ? (
+          content
+        ) : (
+          <div
+            className={portalClassName}
+            data-theme-lock={portalThemeLock ?? undefined}
+          >
+            {content}
+          </div>
+        )}
+      </DropdownMenuPrimitive.Portal>
+    )
+  }
+)
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
 
 const DropdownMenuItem = React.forwardRef<

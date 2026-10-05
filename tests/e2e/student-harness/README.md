@@ -38,6 +38,14 @@ written under each built shot in the index. `extraViewports` shoots a shot at mo
 desktop and phone (the timed exam module at tablet 820x1180), using one standard viewport's
 selectors.
 
+OQ-63 adds one more: a click step's `ariaDisabledOk: true` clicks an element that carries
+`aria-disabled` but still answers a click in the product (a started calendar block, which dnd-kit
+marks aria-disabled because it will not drag it); it waits for the element to be visible, then
+clicks with Playwright's `force`. Every capture is also taken as a student who has already answered
+the site-wide cookie banner: capture.ts sets the strictly necessary consent cookie (analytics
+refused, the app's own `lyceon_consent` format) on each browser context, so the banner is not
+drawn over the pages under review.
+
 Output: `docs/plans/student-ui/evidence/wave5/<group>/` — one PNG per built shot
 (`<shot>--<desktop|mobile>--<light|dark>--built.png`), one per prototype state
 (`proto--<Screen>--<plan>--<theme>[--clicked].png`), and `index.md` with a built | prototype

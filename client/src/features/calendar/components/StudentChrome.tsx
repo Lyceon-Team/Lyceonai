@@ -482,7 +482,7 @@ const SHOW_ROWS: readonly {
   // Section vocabulary: the canonical display name (OQ-51 (a)), not the prototype's "and".
   { tone: "rw", label: "Reading & Writing", swatch: "bg-lyc-cat-rw-bd" },
   { tone: "review", label: "Review", swatch: "bg-lyc-cat-review-bd" },
-  { tone: "exam", label: "Practice test", swatch: "bg-lyc-cat-test-bd" },
+  { tone: "exam", label: "Full-length test", swatch: "bg-lyc-cat-test-bd" },
 ];
 
 export function ShowFilters({

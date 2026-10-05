@@ -105,8 +105,9 @@ export function classifyTutorError(error: unknown): TutorErrorNotice | null {
     // ── 403: Live exam block ────────────────────────────────────────────
     case "tutor_unavailable_during_live_exam":
       return {
-        title: "LISA is paused during your exam",
-        message: "You can use LISA again after you finish your current exam.",
+        title: "LISA is paused during your full-length test",
+        message:
+          "You can use LISA again after you finish your full-length test.",
         action: "informational",
       };
 

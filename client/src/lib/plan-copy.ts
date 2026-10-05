@@ -24,4 +24,4 @@ export const PLAN_FREE_INCLUDES =
 
 /** What a paid plan adds, as the Help FAQ states it. */
 export const PLAN_PAID_ADDS =
-  "Paid plans add your study calendar, mastery for every domain and skill, full-length practice tests and LISA, your tutor.";
+  "Paid plans add your study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.";

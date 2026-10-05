@@ -45,7 +45,7 @@ function omissionNote(
   if (reason === "section_not_scored") {
     return `${sectionDisplayLabel(section) ?? ""} wasn't completed, so its domains aren't shown.`;
   }
-  return `${domains.join(", ")} ${domains.length === 1 ? "isn't" : "aren't"} shown because this test had no questions from ${domains.length === 1 ? "it" : "them"}.`;
+  return `${domains.join(", ")} ${domains.length === 1 ? "isn't" : "aren't"} shown because this full-length test had no questions from ${domains.length === 1 ? "it" : "them"}.`;
 }
 
 function OmittedNotes({

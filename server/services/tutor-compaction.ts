@@ -314,7 +314,12 @@ async function deriveConversationOwner(
     return { ok: false, reason: "conversation_not_found" };
   }
 
-  const derivedStudentId = (data as { student_id: string }).student_id;
+  // C-01 (owner ruling 2026-10-05): a crisis-flagged conversation survives account deletion
+  // de-linked (student_id NULL). It has no student to summarise for — refuse, never cast.
+  const derivedStudentId = (data as { student_id: string | null }).student_id;
+  if (derivedStudentId === null) {
+    return { ok: false, reason: "conversation_owner_deleted" };
+  }
   return { ok: true, derivedStudentId };
 }
 

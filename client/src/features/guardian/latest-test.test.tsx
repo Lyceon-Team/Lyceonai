@@ -311,7 +311,7 @@ describe("G5-04 the latest-test card", () => {
     // G5-08: the student's report words for this state, naming the student.
     expect(
       within(root).getByTestId("latest-test-state-title"),
-    ).toHaveTextContent(/^Scoring Ada's test$/);
+    ).toHaveTextContent(/^Scoring Ada's full-length test$/);
     expect(within(root).getByTestId("latest-test-status")).toHaveTextContent(
       /^Scoring usually takes a few minutes\.$/,
     );
@@ -351,7 +351,7 @@ describe("G5-04 the latest-test card", () => {
     ).toHaveTextContent(/^▲ 40 in Reading & Writing since last test$/);
   });
 
-  it("G5-08: an attempt still in progress is the student's 'This test isn't finished'", async () => {
+  it("G5-08: an attempt still in progress is the student's 'This full-length test isn't finished'", async () => {
     net.handlers.push((url) =>
       url === `/api/students/${ADA}/tests`
         ? json(
@@ -380,7 +380,7 @@ describe("G5-04 the latest-test card", () => {
     const root = await card();
     expect(
       within(root).getByTestId("latest-test-state-title"),
-    ).toHaveTextContent(/^This test isn't finished$/);
+    ).toHaveTextContent(/^This full-length test isn't finished$/);
     expect(within(root).getByTestId("latest-test-status")).toHaveTextContent(
       /^Ada's score appears here once both sections are submitted\.$/,
     );

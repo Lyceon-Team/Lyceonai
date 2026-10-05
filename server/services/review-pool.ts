@@ -658,7 +658,8 @@ export function pageSourceSessions(
  * `exam_apply_scored_seams` stamps on its queue entries — the student remembers the day
  * they sat the test, not the day the session row was created. `mode` is null (the exam's
  * strict/lenient is not a review filter) and `filters` carries exactly one fact, the
- * form's name, so the picker can say "Practice Test 1". Nothing else from the exam
+ * form's stored name (the picker shows it through `displayFormName`, so a stored "Practice
+ * Test 1" reads "Full-Length Test 1"; owner ruling 2026-10-05). Nothing else from the exam
  * leaves this function (F-52: no raw session metadata to the student).
  *
  * The name comes from the exam surface's own forms read (`listExamForms` →

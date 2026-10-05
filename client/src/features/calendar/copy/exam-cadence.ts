@@ -69,9 +69,10 @@ export const WEEKDAYS: readonly {
 /**
  * The exam half of the readout. THREE shapes, and which one appears is the point:
  *
- *   nothing chosen           "no automatic practice tests"
- *   cadence, no target date  "a practice test every 2 weeks, on Saturdays"
- *   cadence and a target     "about 5 practice tests before 5 December, on Saturdays"
+ *   nothing chosen           "no automatic full-length tests"
+ *   cadence, no target date  "a full-length test every 2 weeks, on Saturdays"
+ *   cadence and a target     "about 5 full-length tests before 5 December, on Saturdays"
+ *   (wording: owner ruling OQ-62 (b), Karl, 2026-10-05 — "full-length test", was "practice test")
  *
  * The COUNT only appears when there is something to count toward.
  */
@@ -84,7 +85,8 @@ export function examCadenceNote(input: {
 }): string {
   const day = WEEKDAYS.find((d) => d.dow === input.weekday);
   const weeks = input.intervalWeeks;
-  if (day === undefined || weeks === null) return "no automatic practice tests";
+  if (day === undefined || weeks === null)
+    return "no automatic full-length tests";
 
   const onDay = `on ${day.full}s`;
   // THE SHARED FUNCTION, not a local estimate. It walks the generator's own steps, so the
@@ -98,9 +100,9 @@ export function examCadenceNote(input: {
   });
   if (count === null) {
     const rate = weeks === 1 ? "every week" : `every ${weeks} weeks`;
-    return `a practice test ${rate}, ${onDay}`;
+    return `a full-length test ${rate}, ${onDay}`;
   }
-  const noun = count === 1 ? "practice test" : "practice tests";
+  const noun = count === 1 ? "full-length test" : "full-length tests";
   const when =
     input.targetExamDate === null
       ? "your test"

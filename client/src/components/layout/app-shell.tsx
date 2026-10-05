@@ -7,10 +7,12 @@
  *        endpoint); OQ-4 (five-tab bar; its contents superseded 2026-10-05, below); OQ-29
  *        (locks from the feature-access map, reason plan | age); issue #829 (one anchor per nav
  *        item); contracts/notifications.contract.md §3 (the bell); OQ-47 (bell in the rail
- *        above Help, ruled 2026-10-03); OQ-48 (avatar menu order, ruled 2026-10-03); owner
- *        ruling (Karl, 2026-10-05; supersedes OQ-4's tab bar and OQ-48's menu order): tabs Home,
- *        Practice, Review, Calendar, LISA; avatar menu Full-Length, Settings, Help, Sign out;
- *        desktop rail unchanged] | @implemented [2026-10-03; tab bar and menu 2026-10-05]
+ *        above Help, ruled 2026-10-03); OQ-48 (avatar menu, ruled 2026-10-03); owner ruling
+ *        (Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62): desktop
+ *        rail unchanged; phone tabs Home, Review, Practice, Calendar, LISA; avatar menu Settings,
+ *        Help, Sign out (admins keep Crisis review); Full-Length on a phone only from a
+ *        scheduled calendar block or the Home card; register §8 F-70 (the avatar dropdown
+ *        follows the page theme)] | @implemented [2026-10-03; tab bar and menu 2026-10-05]
  *
  * plain English: replaces the old top-nav student header. Desktop (lg, 1024px and up): a 96px
  * --rail column (logo and wordmark; Home, Practice, Review, Full-Length, Calendar, LISA, icon
@@ -18,8 +20,8 @@
  * that scrolls; 800px max, 56px 72px padding) and, when the route has one, the right panel
  * (360 / 340 / 320px, --margin, hairline left rule, scrolling on its own). Below lg the same
  * <header> is a top bar (logo, bell, avatar menu), a five-tab bar sits at the bottom (Home,
- * Practice, Review, Calendar, LISA; Full-Length is in the avatar menu), and the right panel stacks
- * under the content.
+ * Review, Practice, Calendar, LISA; Full-Length is on neither phone surface), and the right panel
+ * stacks under the content.
  *
  * WHY lg (1024px). Tailwind's default screens are unchanged in tailwind.config.ts. At the rail
  * (96) plus the panel (360) plus the content padding (2 × 72) the fixed chrome is 600px, which
@@ -40,15 +42,19 @@
  * reasons are recorded in shells.notification-bell.test.tsx, which holds the "every shell" rule
  * (the notification contract §3 names the in-app surface, not every layout).
  *
- * THE TAB BAR AND THE AVATAR MENU. Owner ruling (Karl, 2026-10-05), superseding OQ-4's tab bar
- * and OQ-48's menu order: the phone tab bar is Home, Practice, Review, Calendar, LISA, and the
- * avatar menu is Full-Length, Settings, Help, Sign out. Reason: the official SAT (Bluebook) cannot
- * be taken on a phone; full-length tests belong on a laptop or tablet. Full-Length keeps the
- * rail's lock behaviour in the menu (locked: the menu entry opens the upgrade modal in place);
- * Calendar keeps its lock-as-hint on the tab bar. The menu's leading entries are every rail item
- * NOT on the tab bar, so one flag (`inTabBar`) decides both places and nothing can be in neither.
- * The desktop rail is unchanged. The admin exception (OQ-48) stands: an admin keeps the menu at
- * every width, with the same entries and Crisis review before Sign out.
+ * THE TAB BAR AND THE AVATAR MENU. Owner ruling (Karl, 2026-10-05; supersedes OQ-4, OQ-48 and
+ * the Full-Length part of OQ-62, and the earlier same-day ruling that put Full-Length in the
+ * menu): the phone tab bar is Home, Review, Practice (the middle), Calendar, LISA, and the avatar
+ * menu is Settings, Help, Sign out. Full-Length is on neither: on a phone it is reached only from
+ * a scheduled calendar block or Home's "Start a full-length test" card (the official SAT,
+ * Bluebook, cannot be taken on a phone). The tab bar's order is its own (`TAB_BAR_KEYS`), not the
+ * rail's, so the two can differ; each tab is the rail item itself, so its lock behaviour cannot
+ * drift (Calendar: hint and navigate; LISA: the modal). The desktop rail is unchanged. The admin
+ * exception (OQ-48) stands: an admin keeps the menu at every width, with Crisis review before
+ * Sign out.
+ *
+ * F-70: the avatar menu is drawn with the student tokens inside the page's theme (and its theme
+ * lock), like the student Modal and Sheet (`HeaderUserMenu`'s `tone="student"`).
  */
 import {
   createContext,
@@ -90,7 +96,11 @@ import type {
   RightPanelWidth,
   ThemeLock,
 } from "@/lib/route-shells";
-import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
+import {
+  HeaderUserMenu,
+  STUDENT_MENU_ITEM_CLASS,
+  useHeaderSignOut,
+} from "./HeaderUserMenu";
 import { HELP_PATH, LegalFooter } from "./LegalFooter";
 import { usePublishThemeLock } from "./theme-lock";
 
@@ -106,11 +116,6 @@ export type RailItem = {
     readonly feature: LockableFeatureKey;
     readonly behaviour: LockBehaviour;
   } | null;
-  /**
-   * On the five-tab mobile bar; otherwise the item leads the avatar menu (owner ruling, Karl,
-   * 2026-10-05: Full-Length moves to the menu, Calendar returns to the bar).
-   */
-  readonly inTabBar: boolean;
 };
 
 /**
@@ -124,7 +129,6 @@ export const RAIL_ITEMS: readonly RailItem[] = [
     href: "/dashboard",
     icon: House,
     lock: null,
-    inTabBar: true,
   },
   {
     key: "practice",
@@ -132,7 +136,6 @@ export const RAIL_ITEMS: readonly RailItem[] = [
     href: "/practice",
     icon: PenLine,
     lock: null,
-    inTabBar: true,
   },
   {
     key: "review",
@@ -140,7 +143,6 @@ export const RAIL_ITEMS: readonly RailItem[] = [
     href: "/review",
     icon: RotateCcw,
     lock: null,
-    inTabBar: true,
   },
   {
     key: "full-length",
@@ -148,7 +150,6 @@ export const RAIL_ITEMS: readonly RailItem[] = [
     href: "/tests",
     icon: ClipboardCheck,
     lock: { feature: "exam_full_length", behaviour: "modal" },
-    inTabBar: false,
   },
   {
     key: "calendar",
@@ -156,7 +157,6 @@ export const RAIL_ITEMS: readonly RailItem[] = [
     href: "/calendar",
     icon: CalendarDays,
     lock: { feature: "calendar_access", behaviour: "navigate" },
-    inTabBar: true,
   },
   {
     key: "lisa",
@@ -164,14 +164,36 @@ export const RAIL_ITEMS: readonly RailItem[] = [
     href: "/chat",
     icon: MessageSquare,
     lock: { feature: "tutor_access", behaviour: "modal" },
-    inTabBar: true,
   },
 ];
+
+/**
+ * The phone tab bar, in its own order (owner ruling, Karl, 2026-10-05): Home, Review, Practice
+ * (the middle), Calendar, LISA. Full-Length is not on it. Keys into `RAIL_ITEMS`, so each tab is
+ * the rail item itself (label, href, lock) and only the order and membership are the bar's own.
+ */
+export const TAB_BAR_KEYS = [
+  "home",
+  "review",
+  "practice",
+  "calendar",
+  "lisa",
+] as const;
+
+function railItem(key: string): RailItem {
+  const item = RAIL_ITEMS.find((i) => i.key === key);
+  // A tab key with no rail item is a programming error in this file, not a runtime state.
+  if (item === undefined)
+    throw new Error(`tab bar key "${key}" is not a rail item`);
+  return item;
+}
+
+export const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
 
 const SETTINGS_PATH = "/profile";
 
 /** Accessible names for a locked item (prototype: "<label>, included with a paid plan"). */
-const LOCK_SUFFIX: Readonly<Record<FeatureLockReason, string>> = {
+export const LOCK_SUFFIX: Readonly<Record<FeatureLockReason, string>> = {
   plan: "included with a paid plan",
   age: "not available on your account",
 };
@@ -180,13 +202,26 @@ function isActive(location: string, href: string): boolean {
   return location === href || location.startsWith(`${href}/`);
 }
 
+/**
+ * Why `feature` is locked for this student, or null (granted, or no map). The ONE reading of the
+ * OQ-29 map for a lock: the rail, the tab bar and Home's full-length card all use it.
+ */
+export function featureLockReason(
+  feature: LockableFeatureKey,
+  access: FeatureAccessMap | null,
+): FeatureLockReason | null {
+  if (access === null) return null;
+  const entry = access[feature];
+  return entry.access === "locked" ? entry.reason : null;
+}
+
 function lockReasonFor(
   item: RailItem,
   access: FeatureAccessMap | null,
 ): FeatureLockReason | null {
-  if (item.lock === null || access === null) return null;
-  const entry = access[item.lock.feature];
-  return entry.access === "locked" ? entry.reason : null;
+  return item.lock === null
+    ? null
+    : featureLockReason(item.lock.feature, access);
 }
 
 const RAIL_ITEM_CLASS =
@@ -319,12 +354,11 @@ export function AppShell({
       signOut={signOut}
       isSigningOut={isSigningOut}
       fallbackName="Student"
-      // Owner ruling (Karl, 2026-10-05; supersedes OQ-48's order): Full-Length, Settings, Help,
-      // Sign out. The leading entries are the rail items off the tab bar. Settings and Sign out
-      // are the shared menu's own; an admin's Crisis review sits between Help and Sign out.
-      leadingItems={RAIL_ITEMS.filter((item) => !item.inTabBar).map((item) => (
-        <MenuRailEntry key={item.key} item={item} access={access} />
-      ))}
+      // F-70: the student tokens, inside the page's theme and theme lock.
+      tone="student"
+      // Owner ruling (Karl, 2026-10-05; supersedes OQ-48): Settings, Help, Sign out. Settings
+      // and Sign out are the shared menu's own; an admin's Crisis review sits between Help and
+      // Sign out. No rail item is in the menu.
       items={<MenuLink href={HELP_PATH} label="Help" testId="menu-help" />}
     />
   );
@@ -463,7 +497,7 @@ export function AppShell({
         data-testid="app-tab-bar"
         className="fixed inset-x-0 bottom-0 z-40 flex border-t border-lyc-rule bg-lyc-rail px-1 lg:hidden"
       >
-        {RAIL_ITEMS.filter((item) => item.inTabBar).map((item) => (
+        {TAB_BAR_ITEMS.map((item) => (
           <RailEntry
             key={item.key}
             item={item}
@@ -474,51 +508,6 @@ export function AppShell({
         ))}
       </nav>
     </div>
-  );
-}
-
-/**
- * A rail item in the avatar menu (owner ruling, Karl, 2026-10-05: Full-Length). The lock comes
- * from the same OQ-29 map and does what the rail does: a "modal" lock opens the upgrade modal in
- * place (no navigation, no gated request); otherwise the entry navigates. The menu is portalled
- * outside the student root, so the lock glyph takes the menu's own muted ink.
- */
-function MenuRailEntry({
-  item,
-  access,
-}: {
-  item: RailItem;
-  access: FeatureAccessMap | null;
-}): JSX.Element {
-  const [, navigate] = useLocation();
-  const { open } = useUpgradeModal();
-  const reason = lockReasonFor(item, access);
-  const lock = item.lock;
-  const testId = `menu-${item.key}`;
-  return (
-    <DropdownMenuItem
-      data-testid={testId}
-      aria-label={
-        reason === null ? item.label : `${item.label}, ${LOCK_SUFFIX[reason]}`
-      }
-      onClick={() => {
-        if (reason !== null && lock !== null && lock.behaviour === "modal") {
-          open(lock.feature, reason);
-          return;
-        }
-        navigate(item.href);
-      }}
-    >
-      {item.label}
-      {reason !== null ? (
-        <Lock
-          aria-hidden="true"
-          data-testid={`${testId}-lock`}
-          className="ml-auto h-4 w-4 text-muted-foreground"
-          strokeWidth={2.25}
-        />
-      ) : null}
-    </DropdownMenuItem>
   );
 }
 
@@ -533,7 +522,11 @@ function MenuLink({
 }): JSX.Element {
   const [, navigate] = useLocation();
   return (
-    <DropdownMenuItem onClick={() => navigate(href)} data-testid={testId}>
+    <DropdownMenuItem
+      className={STUDENT_MENU_ITEM_CLASS}
+      onClick={() => navigate(href)}
+      data-testid={testId}
+    >
       {label}
     </DropdownMenuItem>
   );

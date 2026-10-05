@@ -29,6 +29,12 @@
  * edge cases: while `GET /api/profile` is still loading, nothing is read: guessing paid would
  * spend a gated request on a free student. A profile read that fails leaves no map, and the
  * page reads the plan and lets the server answer (a 402 still lands on the free page).
+ *
+ * PHONE NOTICE (owner ruling, Karl, 2026-10-05, OQ-63: "show it for every full-length start on a
+ * phone, including calendar-launched starts. One shared pre-start check, same \"Continue
+ * anyway\"."). A block's Start or Resume whose block is a full-length one goes through
+ * `useFullLengthPhonePrecheck` before `launch`: on a phone the notice asks first (over the block
+ * sheet), and a cancelled start sends no launch request. Practice and review blocks never ask.
  */
 import { useCallback, useMemo, useState } from "react";
 import type { ProfileUpsertResponse } from "@lyceon/shared";
@@ -55,6 +61,7 @@ import {
   type StudyProfileFields,
 } from "@/features/calendar/api";
 import { CalendarView, type EditHint } from "@/features/calendar/CalendarView";
+import { useFullLengthPhonePrecheck } from "@/features/exam/lib/useFullLengthPhonePrecheck";
 import {
   CalendarError,
   StudentCalendarSkeleton,
@@ -145,6 +152,7 @@ export default function CalendarPage(): JSX.Element {
   const acknowledge = useAcknowledge();
   const profile = useStudyProfileMutation();
   const { launch, isPending: launchPending } = useLaunchBlock(navigate);
+  const precheck = useFullLengthPhonePrecheck();
 
   /**
    * THE ONE PROFILE SAVE PATH. Every surface that writes a profile goes through here — the
@@ -440,6 +448,11 @@ export default function CalendarPage(): JSX.Element {
             editDay.mutate(newIntent({ date, members: membersCleared() })),
           doItNow: (blockId) => doItNow.mutate(newIntent({ blockId, today })),
           launch: (blockId, blockType) => void launch(blockId, blockType),
+          // OQ-63: a full-length block asks the shared phone pre-start check first.
+          launch: (blockId, blockType) =>
+            blockType === "full_length"
+              ? precheck.run(() => void launch(blockId, blockType))
+              : void launch(blockId, blockType),
           // §12.7 is monotonic, so this route takes no idempotency key.
           acknowledge: (versionNo) =>
             acknowledge.mutate({ version_no: versionNo }),
@@ -448,6 +461,7 @@ export default function CalendarPage(): JSX.Element {
           launchPending,
         }}
       />
+      {precheck.dialog}
     </>
   );
 }

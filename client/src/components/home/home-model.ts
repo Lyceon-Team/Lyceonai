@@ -87,7 +87,7 @@ type PlanRowView = {
 
 /**
  * One row of "Today's plan". Titles: "Review", the section's display name, or the shipped
- * "Full-length practice test". Detail: "15 questions from your review queue", "15 questions in
+ * "Full-length test" (OQ-62 (b), 2026-10-05). Detail: "15 questions from your review queue", "15 questions in
  * Advanced Math and Algebra", or "15 questions" when the block is section-level (no mix yet).
  */
 export function planRowView(
@@ -110,7 +110,7 @@ export function planRowView(
     };
   }
   if (block.block_type === "full_length") {
-    return { ...base, title: "Full-length practice test", detail: null };
+    return { ...base, title: "Full-length test", detail: null };
   }
   const domains =
     block.scope.level === "domain" ? block.scope.mix.map((m) => m.domain) : [];

@@ -15,8 +15,18 @@ import type { Persona } from "../personas";
 export type Viewport = "desktop" | "mobile";
 export type Theme = "light" | "dark";
 
-/** A click, addressed per viewport. `null` for a viewport means "skip this shot there". */
-export type ClickStep = { click: Record<Viewport, string | null> };
+/**
+ * A click, addressed per viewport. `null` for a viewport means "skip this shot there".
+ * `ariaDisabledOk` (OQ-63): click an element that carries `aria-disabled` but still answers a
+ * click in the product, which Playwright's actionability check otherwise refuses: a started
+ * calendar block (dnd-kit marks a block it will not drag `aria-disabled`; tapping it still
+ * opens its sheet). The element must be visible; it is then clicked with Playwright's `force`,
+ * which skips the remaining actionability checks, so use it only on such an element.
+ */
+export type ClickStep = {
+  click: Record<Viewport, string | null>;
+  ariaDisabledOk?: true;
+};
 
 /**
  * UI-53: pick a runner choice by what it IS, resolved by capture.ts from the served item in

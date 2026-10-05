@@ -34,6 +34,10 @@ MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
 # the pipeline keeps. Resolved, not named, so a later redefinition (E6b: 20260930080000) cannot
 # silently turn M2/M3 into plants on an overwritten copy.
 MIGCASCADE="$(grep -l 'FUNCTION public.execute_account_deletion_cascade(' supabase/migrations/*.sql | sort | tail -1)"
+# The LATEST migration that (re)defines apply_audit_logs_retention, resolved for the same reason:
+# 20261027000000 (C-02, consent rows kept) replaced 20260917100000's body, which turned M32 into a
+# plant on an overwritten copy until it was re-pointed here.
+MIGAUDITRET="$(grep -l 'FUNCTION public.apply_audit_logs_retention(' supabase/migrations/*.sql | sort | tail -1)"
 GUARD="scripts/ci/fk-delete-action-guard.sql"
 MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
@@ -61,6 +65,7 @@ cp "$DISPATCH" "$BACKUP/dispatch.ts"
 cp "$RECONSENT" "$BACKUP/reconsent.ts"
 cp "$MIGFK" "$BACKUP/migfk.sql"
 cp "$MIGCASCADE" "$BACKUP/migcascade.sql"
+cp "$MIGAUDITRET" "$BACKUP/migauditret.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
@@ -90,6 +95,7 @@ restore() {
   cp "$BACKUP/reconsent.ts" "$RECONSENT"
   cp "$BACKUP/migfk.sql" "$MIGFK"
   cp "$BACKUP/migcascade.sql" "$MIGCASCADE"
+  cp "$BACKUP/migauditret.sql" "$MIGAUDITRET"
   cp "$BACKUP/guard.sql" "$GUARD"
   cp "$BACKUP/mig6.sql" "$MIG6"
   cp "$BACKUP/mig7.sql" "$MIG7"
@@ -287,6 +293,11 @@ echo "==> (M22) the audit purge hardcodes 365 instead of reading the configured 
 plant M22 "$MIG3" 's.replace("  RETURN v_days;", "  RETURN 365;", 1)'
 expect_red M22 "P5.5 the audit purge runs only through"
 
+# C-02: the purge keeps guardian-link consent rows. Dropping the exclusion must redden P5.7.
+echo "==> (M98) the audit purge forgets the guardian-link consent exclusion"
+plant M98 "$MIGAUDITRET" "s.replace(\"        AND b.action NOT IN ('guardian_link_initiated', 'guardian_link_accepted', 'guardian_link_revoked')\n\", \"\", 1)"
+expect_red M98 "P5.7 the audit purge keeps every guardian-link consent row"
+
 echo "==> (M23) the retry sweep never runs"
 plant M23 "$EXEC" 's.replace("  await retryFailedSuppressions(admin, requestId);", "", 1)'
 expect_red M23 "P2.4 the retry sweep re-attempts"
@@ -379,8 +390,26 @@ expect_red M31 "P6.5 a verification record is written"
 # The carve-out sweep must actually bite: if audit_logs keeps the dead profile uuid, the
 # verification record is no longer the only place it survives.
 echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
-plant M32 "$MIG3" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
+plant M32 "$MIGAUDITRET" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
 expect_red M32 "P6.6 the deleted profile's uuid survives NOWHERE"
+
+# C-01: the crisis hold on account deletion. MIGCASCADE resolves to its last definition
+# (20261027000001), which also carries the CHECK and the message trigger.
+echo "==> (M99) the cascade holds no flagged conversation"
+plant M99 "$MIGCASCADE" 's.replace("   WHERE c.student_id = p_profile_id\n     AND (EXISTS", "   WHERE false AND c.student_id = p_profile_id\n     AND (EXISTS", 1)'
+expect_red M99 "P6.8 (hard_delete)"
+
+echo "==> (M100) the hold forgets a conversation flagged only by a crisis_review_events row"
+plant M100 "$MIGCASCADE" 's.replace("\n       OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = c.id));", ");", 1)'
+expect_red M100 "P6.8 (hard_delete)"
+
+echo "==> (M101) the conversation CHECK admits a NULL student on an unflagged row"
+plant M101 "$MIGCASCADE" 's.replace("CHECK (student_id IS NOT NULL OR crisis_flagged);", "CHECK (true);", 1)'
+expect_red M101 "P6.9 a NULL student_id is refused on an unflagged conversation"
+
+echo "==> (M102) the message trigger admits a NULL student outside a held conversation"
+plant M102 "$MIGCASCADE" 's.replace("  IF NEW.student_id IS NULL AND NOT EXISTS (", "  IF false AND NOT EXISTS (", 1)'
+expect_red M102 "P6.10 a NULL student_id is refused on a message"
 
 # =============================================================================
 # Operational-log retention (v3 §6.7 / SCL-101) — B1

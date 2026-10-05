@@ -64,6 +64,37 @@ import {
   type StudentPersona,
 } from "./personas";
 import { SEED_CLIENT_INSTANCE, type SeedManifest } from "./seed";
+import {
+  CONSENT_COOKIE_NAME,
+  COOKIE_BANNER_VERSION,
+  formatConsentCookieValue,
+} from "../../../packages/shared/src/analytics-consent-schema";
+
+/**
+ * The site-wide cookie banner (SEO Wave 1C, `CookieConsentRoot`) shows until a visitor answers it,
+ * fixed over the bottom of every page, where it covers the phone tab bar and a bottom sheet's
+ * actions. The student pages under review are shot as a student who has already answered it
+ * ("Reject analytics", the strictly necessary consent cookie only, in the app's own format), so
+ * the banner is not drawn over them. The banner itself is the SEO vertical's surface, not shot here.
+ */
+function answeredConsentCookie(baseUrl: string): {
+  name: string;
+  value: string;
+  url: string;
+} {
+  return {
+    name: CONSENT_COOKIE_NAME,
+    value: encodeURIComponent(
+      formatConsentCookieValue({
+        consentId: "5e55c000-0000-4000-8000-000000000063",
+        analytics: false,
+        bannerVersion: COOKIE_BANNER_VERSION,
+        decidedAtSeconds: Math.floor(Date.now() / 1000),
+      }),
+    ),
+    url: baseUrl,
+  };
+}
 
 const ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
@@ -635,6 +666,7 @@ async function shootBuilt(
       ]);
     }
     await localOnly(context, fontCss);
+    await context.addCookies([answeredConsentCookie(stack.baseUrl)]);
     await context.addInitScript(
       (arg: {
         theme: string;
@@ -745,7 +777,14 @@ async function shootBuilt(
       }
       const selector = step.click[viewport];
       if (selector === null) continue;
-      await page.locator(selector).first().click();
+      if (step.ariaDisabledOk === true) {
+        // groups/types.ts ClickStep: an aria-disabled element that still answers a click.
+        const target = page.locator(selector).first();
+        await target.waitFor({ state: "visible", timeout: 20_000 });
+        await target.click({ force: true });
+      } else {
+        await page.locator(selector).first().click();
+      }
       await settleAfterStep();
     }
     if (shot.expectVisible !== undefined)
@@ -1004,7 +1043,7 @@ function writeIndex(
             ? `Step: type \`${step.value}\` into \`${JSON.stringify(step.fill)}\`.`
             : "focus" in step
               ? `Step: focus \`${JSON.stringify(step.focus)}\` (no typing).`
-              : `Step: click \`${JSON.stringify(step.click)}\`.`,
+              : `Step: click \`${JSON.stringify(step.click)}\`${step.ariaDisabledOk === true ? " (aria-disabled but clickable: forced once visible)" : ""}.`,
       );
     if (shot.expectText !== undefined)
       lines.push(
