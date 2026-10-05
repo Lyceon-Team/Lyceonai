@@ -1663,10 +1663,12 @@ plant "UI59-L2" "the error screen is pinned light again" \
 assert s.count(a) == 1
 s = s.replace(a, a.replace("<BareCard>", "<BareCard themeLock=\"light\">"), 1)'
 
+# Re-pointed 2026-10-05 (merge of PR 1069): the screen is lazy since SEO F8, so the card now wraps
+# a Suspense; the anchor follows it.
 plant "UI59-L3" "the pending-deletion screen is pinned light again" \
   "$B59" \
   "client/src/App.tsx" \
-  'a = "      <BareCard>\n        <PendingDeletionScreen />"
+  'a = "      <BareCard>\n        <Suspense fallback={null}>"
 assert s.count(a) == 1
 s = s.replace(a, a.replace("<BareCard>", "<BareCard themeLock=\"light\">"), 1)'
 
@@ -1677,26 +1679,29 @@ plant "UI59-E1" "the error screen's Reload Page is not the student filled action
 assert s.count(a) == 1
 s = s.replace(a, a.replace("lyc-primary", "default"), 1)'
 
-plant "UI59-N1" "the 404's way home goes to the marketing page" \
+# Re-pointed 2026-10-05 (merge of PR 1069): the 404 is the SEO page (main F6/F2, owner choice),
+# so the three 404 plants guard what that page promises: its link home, its heading, and no
+# developer line.
+plant "UI59-N1" "the 404's way home no longer goes home" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = "        href=\"/dashboard\""
+  'a = "<Link href=\"/\" "
 assert s.count(a) == 1
-s = s.replace(a, "        href=\"/\"", 1)'
+s = s.replace(a, "<Link href=\"/dashboard\" ", 1)'
 
-plant "UI59-N2" "the 404's way home is not filled" \
+plant "UI59-N2" "the 404's heading reverts to the developer-style 404 Page Not Found" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = "          variant: \"lyc-primary\",\n          className: \"no-underline\","
+  'a = ">Page not found</h1>"
 assert s.count(a) == 1
-s = s.replace(a, a.replace("lyc-primary", "lyc-outline"), 1)'
+s = s.replace(a, ">404 Page Not Found</h1>", 1)'
 
 plant "UI59-N3" "the developer line returns to the 404" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = "<BareCardHeader title=\"404 Page Not Found\" align=\"center\" />"
+  'a = "            Sorry, we couldn"
 assert s.count(a) == 1
-s = s.replace(a, "<BareCardHeader title=\"404 Page Not Found\" description=\"Did you forget to add the page to the router?\" align=\"center\" />", 1)'
+s = s.replace(a, "            Did you forget to add the page to the router? Sorry, we couldn", 1)'
 
 plant "UI59-A1" "Continue with Google is filled (two primaries on sign in)" \
   "$B59" \

@@ -38,7 +38,9 @@ import { useInAppHistoryTracking } from "@/lib/in-app-history";
 // renders inside the router's Suspense boundary, as the pages it wraps do. `/login` stays eager:
 // it is a landing page (student-ui register UI-11).
 const RequireRole = lazy(() =>
-  import("@/components/auth/RequireRole").then((m) => ({ default: m.RequireRole })),
+  import("@/components/auth/RequireRole").then((m) => ({
+    default: m.RequireRole,
+  })),
 );
 const PendingDeletionScreen = lazy(() =>
   import("@/components/account-deletion/PendingDeletionScreen").then((m) => ({
@@ -117,7 +119,7 @@ function AccountRecoverRoute() {
     </StudentRouteFrame>
   );
 }
-/** The SEO 404 (F6/F2), as the static 404.html renders it: no student shell (#1069 merge). */
+/** The SEO 404 (F6/F2), as the static 404.html renders it: no student shell (PR 1069 merge). */
 function NotFoundRoute() {
   return <NotFound />;
 }
@@ -156,7 +158,9 @@ const DigitalSATReadingWriting = lazy(
 );
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
-const SatQuestionOfTheDay = lazy(() => import("@/pages/sat-question-of-the-day"));
+const SatQuestionOfTheDay = lazy(
+  () => import("@/pages/sat-question-of-the-day"),
+);
 const SatQuestionOfTheDayArchive = lazy(
   () => import("@/pages/sat-question-of-the-day-day"),
 );

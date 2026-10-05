@@ -484,7 +484,7 @@ describe("/guardian-required", () => {
 });
 
 describe("404", () => {
-  // The catch-all renders the SEO page (main, F6/F2; owner choice 2026-10-05 when #1069 merged
+  // The catch-all renders the SEO page (main, F6/F2; owner choice 2026-10-05 when PR 1069 merged
   // main): the same page as the static 404.html, its own card, no student shell. Its words and
   // link are pinned here and, prerendered, by tests/seo.prerender-output.test.ts.
   it("the approved SEO copy and a link home, with no developer message", () => {

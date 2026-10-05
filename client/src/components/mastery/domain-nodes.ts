@@ -13,7 +13,7 @@ import { CANONICAL_DOMAINS_BY_SECTION } from "@shared/canonical-domains";
  * answers yet" (`unmeasured`), never a missing row and never an invented level. A row whose
  * domain is not canonical is not drawn (the database CHECK makes one impossible). One function,
  * so every mastery view (Home's rows, the Mastery page) draws the same domains. (DomainGrid, which
- * it was extracted from, is gone: deleted when #1069 merged main, its last callers having moved.)
+ * it was extracted from, is gone: deleted when PR 1069 merged main, its last callers having moved.)
  */
 export function canonicalDomainNodes(
   domains: readonly MasteryDomainNode[],

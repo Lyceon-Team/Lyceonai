@@ -1,5 +1,5 @@
 /**
- * UI-59: the bare-card pages (register UI-3A's list), and the 404 (the SEO page since #1069).
+ * UI-59: the bare-card pages (register UI-3A's list), and the 404 (the SEO page since PR 1069).
  *
  * @spec [student-UI register §6 Wave 5 UI-59, UI-3A; DESIGN.md §2 "Bare card", §4 "Not
  *        prototyped" (the bare-card pages; the pending-deletion screen — build to the shell spec
@@ -141,7 +141,7 @@ export const UI_59: PageGroup = {
       route: "/guardian-required",
       ready: '[data-testid="guardian-required"]',
     }),
-    // The 404 is the SEO page since the #1069 merge (main F6/F2; owner choice 2026-10-05): the
+    // The 404 is the SEO page since the PR 1069 merge (main F6/F2; owner choice 2026-10-05): the
     // same page as the static 404.html, unshelled, with a link to the homepage.
     bare({
       id: "not-found",

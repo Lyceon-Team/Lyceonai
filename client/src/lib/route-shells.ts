@@ -213,7 +213,7 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/admin/crisis-review/:id": "admin",
   "/admin/crisis-review": "admin",
   // The 404 is the SEO page (main, F6/F2): the same page the static 404.html is, with its own
-  // card and a link home, so no shell wraps it (merge of #1069, owner choice 2026-10-05).
+  // card and a link home, so no shell wraps it (merge of PR 1069, owner choice 2026-10-05).
   [NOT_FOUND_ROUTE]: "public-marketing",
 };
 

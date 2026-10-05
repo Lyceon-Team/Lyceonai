@@ -113,7 +113,7 @@ export function QotdWidget({
           `lyc`, light-locked: QuestionRenderer is drawn on the student tokens (UI-53), which
           exist only under a .lyc root; without one its choices lose their borders and fills.
           The root's paper background is suppressed so the widget keeps the page's own surface
-          (merge of #1069, owner choice 2026-10-05). */}
+          (merge of PR 1069, owner choice 2026-10-05). */}
       <div
         className="lyc ph-no-capture"
         data-theme-lock="light"

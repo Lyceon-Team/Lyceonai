@@ -343,7 +343,7 @@ const GUARDIAN_LYC_FLOOR: React.CSSProperties & Record<`--${string}`, string> =
  * The breakdown panel. `DomainSegments` is drawn on the student tokens (UI-54), which exist only
  * under a .lyc root, so the panel is one — light-locked, with the root's paper background
  * suppressed so it sits on the guardian page's own surface, and the student's meta sizes raised
- * to the guardian's 16px floor (G5-11 parity, R12; merge of #1069).
+ * to the guardian's 16px floor (G5-11 parity, R12; merge of PR 1069).
  */
 function LeftAligned({ children }: { children: React.ReactNode }) {
   return (
