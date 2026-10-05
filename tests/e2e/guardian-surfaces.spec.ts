@@ -299,6 +299,16 @@ const SURFACES: readonly Surface[] = [
     ready: "exam-total-score",
   },
   {
+    // G5-11 (SCL-210): the Score breakdown tab — the student's seven segments per domain.
+    name: "exam-detail-breakdown",
+    path: (f) => `/guardian/${f.ADA}/exams/${f.EXAM_SESSION}`,
+    ready: "exam-total-score",
+    act: async (page) => {
+      await page.getByRole("tab", { name: "Score breakdown" }).click();
+      await page.getByTestId("exam-domain-segments").first().waitFor();
+    },
+  },
+  {
     name: "students-billing",
     path: () => "/guardian/students",
     ready: "billing-manage",

@@ -26,6 +26,11 @@
  * change chip is proven on real numbers: the partial's scored section minus that section of
  * the previous scored outcome.
  *
+ * G5-11 (SCL-210): for each scored state, and for a real session answered so that one domain
+ * is 3 of 14 (a whole percent cannot give the student's fill), the guardian detail's Score
+ * breakdown and the student's own draw the same domains, in the same order, with the same
+ * seven segments and the same number filled.
+ *
  * G5-09: every number on the card is the guardian REPORT route's — the real list, which carries
  * no score field in any state (asserted on the raw wire), only chooses the sessions; the card's
  * report calls are logged and are exactly the latest's (and, for the chip, the previous's).
@@ -38,11 +43,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import type { ReactElement } from "react";
 import request from "supertest";
 import express, {
   type Express,
@@ -183,6 +190,12 @@ const CASES: Case[] = [
 /** The partial-score student's earlier scored test, on FORM2. */
 let partialPreviousSid = "";
 
+/**
+ * G5-11: a scored session whose Information and Ideas count is 3 of 14 (21%: a whole percent
+ * would fill 1 segment; the student's rule fills 2). Not one of the six state cases.
+ */
+const AMBIGUOUS = { student: "00000000-0000-4000-8000-0000000062b7", sid: "" };
+
 const text = (el: Element | null | undefined): string =>
   (el?.textContent ?? "").replace(/\s+/g, " ").trim();
 
@@ -308,6 +321,7 @@ describe.skipIf(!PG_AVAILABLE)(
       for (const [id, role] of [
         [GUARDIAN, "guardian"],
         ...CASES.map((x) => [x.student, "student"]),
+        [AMBIGUOUS.student, "student"],
       ] as const) {
         await q(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [
           id,
@@ -319,7 +333,7 @@ describe.skipIf(!PG_AVAILABLE)(
           [id, `${id}@example.test`, role],
         );
       }
-      for (const x of CASES) {
+      for (const x of [...CASES, AMBIGUOUS]) {
         await q(
           `INSERT INTO public.entitlements (profile_id, tier, status) VALUES ($1, 'premium', 'active')`,
           [x.student],
@@ -338,6 +352,87 @@ describe.skipIf(!PG_AVAILABLE)(
       // PARTIAL: an earlier scored test on FORM2, then RW walked, Math Module 1 answered,
       // grace expired -> partial_scored_abandoned, scored by the real consumer.
       partialPreviousSid = await walk(c("partial").student, FORM2, "{RW,M}");
+      // G5-11: Reading and Writing answered so Information and Ideas is 3 of 14 — its three
+      // Module 1 items at ordinals 0-2 right, everything else in the section wrong (the
+      // fixture form has 7 of them in Module 1 and 7 in either Module 2). Math as usual.
+      await q(`
+        CREATE FUNCTION pg_temp.answer_only(p_student uuid, p_session uuid, p_section text,
+                                            p_module text, p_right int[])
+        RETURNS void LANGUAGE plpgsql AS $f$
+        DECLARE it record; v jsonb; v_phys text;
+        BEGIN
+          v_phys := public.exam_physical_module(p_session, p_section, p_module);
+          v := public.exam_record_item_options(p_student, p_session, p_section, p_module, (
+                 SELECT jsonb_agg(jsonb_build_object(
+                          'ordinal', fi.ordinal, 'question_id', fi.question_id,
+                          'option_order', CASE WHEN q.item_type = 'mcq' THEN '["A","B","C","D"]'::jsonb END,
+                          'option_token_map', CASE WHEN q.item_type = 'mcq' THEN jsonb_build_object(
+                              'opt_' || fi.ordinal || 'a', 'A', 'opt_' || fi.ordinal || 'b', 'B',
+                              'opt_' || fi.ordinal || 'c', 'C', 'opt_' || fi.ordinal || 'd', 'D') END))
+                   FROM public.test_sessions s
+                   JOIN public.test_form_items fi ON fi.test_form_id = s.test_form_id
+                   JOIN public.questions q ON q.id = fi.question_id
+                  WHERE s.id = p_session AND fi.section = p_section AND fi.module = v_phys));
+          IF (v->>'status')::int <> 200 THEN RAISE EXCEPTION 'G5-11 fixture: options %', v; END IF;
+          FOR it IN
+            SELECT fi.ordinal, fi.question_id, q.item_type
+              FROM public.test_sessions s
+              JOIN public.test_form_items fi ON fi.test_form_id = s.test_form_id
+              JOIN public.questions q ON q.id = fi.question_id
+             WHERE s.id = p_session AND fi.section = p_section AND fi.module = v_phys
+             ORDER BY fi.ordinal
+          LOOP
+            v := public.exam_submit_answer(p_student, p_session, p_section, p_module, it.ordinal,
+                   it.question_id,
+                   CASE WHEN it.ordinal = ANY(p_right)
+                        THEN CASE WHEN it.item_type = 'grid_in' THEN '1' ELSE 'A' END
+                        ELSE CASE WHEN it.item_type = 'grid_in' THEN '2' ELSE 'B' END END,
+                   'display', 1000, 'g511:' || p_session::text || ':' || v_phys || ':' || it.ordinal);
+            IF (v->>'status')::int <> 200 THEN RAISE EXCEPTION 'G5-11 fixture: answer %', v; END IF;
+          END LOOP;
+        END $f$`);
+      {
+        const [made] = await q<{ v: { body: { session_id: string } } }>(
+          `SELECT public.exam_create_session($1, $2, 'strict') AS v`,
+          [AMBIGUOUS.student, FORM2],
+        );
+        AMBIGUOUS.sid = String(made!.v.body.session_id);
+        for (const [section, module, right] of [
+          ["RW", "1", "{0,1,2}"],
+          ["RW", "2", "{}"],
+        ] as const) {
+          await q(
+            `SELECT pg_temp.expect_status('fx', public.exam_start_module($1, $2, $3, $4), 200)`,
+            [AMBIGUOUS.student, AMBIGUOUS.sid, section, module],
+          );
+          await q(`SELECT pg_temp.answer_only($1, $2, $3, $4, $5::int[])`, [
+            AMBIGUOUS.student,
+            AMBIGUOUS.sid,
+            section,
+            module,
+            right,
+          ]);
+          await q(
+            `SELECT pg_temp.expect_status('fx', public.exam_submit_module($1, $2, $3, $4), 200)`,
+            [AMBIGUOUS.student, AMBIGUOUS.sid, section, module],
+          );
+        }
+        for (const module of ["1", "2"]) {
+          await q(
+            `SELECT pg_temp.expect_status('fx', public.exam_start_module($1, $2, 'M', $3), 200)`,
+            [AMBIGUOUS.student, AMBIGUOUS.sid, module],
+          );
+          await q(`SELECT pg_temp.answer_mixed($1, $2, 'M', $3)`, [
+            AMBIGUOUS.student,
+            AMBIGUOUS.sid,
+            module,
+          ]);
+          await q(
+            `SELECT pg_temp.expect_status('fx', public.exam_submit_module($1, $2, 'M', $3), 200)`,
+            [AMBIGUOUS.student, AMBIGUOUS.sid, module],
+          );
+        }
+      }
       await drain();
       const partial = c("partial");
       partial.sid = await walk(partial.student, FORM, "{RW}");
@@ -628,6 +723,115 @@ describe.skipIf(!PG_AVAILABLE)(
         cleanup();
       },
     );
+
+    type Drawn = { domain: string; segments: number; filled: number };
+
+    /** Renders `node`, opens Score breakdown, and reads each domain row in page order. */
+    function breakdownOf(node: ReactElement): Drawn[] {
+      const { unmount } = render(node);
+      fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+      const rows = within(screen.getByTestId("exam-domain-breakdown"))
+        .getAllByTestId("exam-domain-row")
+        .map((row) => {
+          const segs = within(row).queryAllByTestId("exam-domain-segment");
+          return {
+            domain: text(row.querySelector("span")),
+            segments: segs.length,
+            filled: segs.filter((x) => x.dataset.filled === "true").length,
+          };
+        });
+      unmount();
+      return rows;
+    }
+
+    /** The guardian detail's Score breakdown, from what the real guardian route answered. */
+    async function guardianBreakdown(
+      who: string,
+      sid: string,
+    ): Promise<Drawn[]> {
+      net.reset();
+      net.roster = roster([
+        ...CASES.map((y) => ({ id: y.student, name: y.name })),
+        { id: AMBIGUOUS.student, name: "Ana" },
+      ]);
+      const body = (
+        await get(GUARDIAN, `/api/students/${who}/tests/${sid}/report`)
+      ).body as unknown;
+      guardianExamReportEnvelopeSchema.parse(body);
+      net.handlers.push((url) =>
+        url === `/api/students/${who}/tests/${sid}/report`
+          ? json(body)
+          : undefined,
+      );
+      mountApp(Router, `/guardian/${who}/exams/${sid}`);
+      await screen.findByTestId("guardian-exam-report");
+      fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+      const rows = within(screen.getByTestId("exam-domain-breakdown"))
+        .getAllByTestId("exam-domain-row")
+        .map((row) => {
+          const segs = within(row).queryAllByTestId("exam-domain-segment");
+          return {
+            domain: text(row.querySelector("span")),
+            segments: segs.length,
+            filled: segs.filter((x) => x.dataset.filled === "true").length,
+          };
+        });
+      cleanup();
+      return rows;
+    }
+
+    /** The student's own Score breakdown, from the real student route. */
+    async function studentBreakdown(
+      who: string,
+      sid: string,
+    ): Promise<Drawn[]> {
+      const own = await get(who, `/api/tests/sessions/${sid}/report`);
+      expect(own.status).toBe(200);
+      return breakdownOf(
+        <ReportBody
+          payload={examStudentReportPayloadSchema.parse(own.body.data)}
+        />,
+      );
+    }
+
+    it.each([
+      ["scored", () => c("scored")],
+      ["partial", () => c("partial")],
+      ["3 of 14 in one domain", () => ({ ...AMBIGUOUS, key: "ambiguous" })],
+    ] as const)(
+      "G5-11 %s: the guardian breakdown is the student's — domains, order, segments, filled",
+      async (_name, pick) => {
+        const x = pick();
+        const own = await studentBreakdown(x.student, x.sid);
+        // Presence first: rows, seven segments each, some filled.
+        expect(own.length).toBeGreaterThan(0);
+        expect(own.every((r) => r.segments === 7)).toBe(true);
+        expect(own.some((r) => r.filled > 0)).toBe(true);
+        expect(await guardianBreakdown(x.student, x.sid)).toEqual(own);
+      },
+    );
+
+    it("G5-11: the real 3-of-14 domain fills 2 on both sides, where a whole percent (21%) would fill 1", async () => {
+      const [row] = await q<{
+        d: Array<{ domain: string; correct: number; total: number }>;
+      }>(
+        `SELECT public.exam_domain_breakdown($1, $2) -> 'body' -> 'domains' AS d`,
+        [AMBIGUOUS.student, AMBIGUOUS.sid],
+      );
+      const ii = row!.d.find((r) => r.domain === "Information and Ideas");
+      expect(ii).toMatchObject({ correct: 3, total: 14 });
+      // A whole percent would round to 21, and 21 × 7 / 100 = 1.47 rounds to 1.
+      expect(Math.round((100 * 3) / 14)).toBe(21);
+      const guardian = await guardianBreakdown(
+        AMBIGUOUS.student,
+        AMBIGUOUS.sid,
+      );
+      const own = await studentBreakdown(AMBIGUOUS.student, AMBIGUOUS.sid);
+      const filledOf = (rows: Drawn[]) =>
+        rows.find((r) => r.domain === "Information and Ideas")?.filled;
+      expect(filledOf(own)).toBe(2);
+      expect(filledOf(guardian)).toBe(2);
+    });
 
     it("partial: the chip compares the scored section with that section of the previous scored test", async () => {
       const x = c("partial");

@@ -54,7 +54,7 @@ import {
 import { formCardStateLabel, MODE_SHORT_LABEL } from "../lib/labels";
 import { DisclosedScore, DisclosureNote } from "../components/DisclosedScore";
 import { ExamLoading } from "../components/ExamStatus";
-import { DomainBreakdown } from "../components/DomainBreakdown";
+import { DomainSegments } from "../components/DomainSegments";
 import {
   Fact,
   Panel,
@@ -425,7 +425,11 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             <ScoreTabs
               breakdown={
                 <LeftAligned>
-                  <DomainBreakdown rows={report.domain_breakdown} />
+                  {/* G5-11: the student's own seven-segment rows (SCL-210). */}
+                  <DomainSegments
+                    segments={report.domain_breakdown}
+                    omitted={[]}
+                  />
                 </LeftAligned>
               }
             >
@@ -466,7 +470,11 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             <ScoreTabs
               breakdown={
                 <LeftAligned>
-                  <DomainBreakdown rows={report.domain_breakdown} />
+                  {/* G5-11: the student's own seven-segment rows (SCL-210). */}
+                  <DomainSegments
+                    segments={report.domain_breakdown}
+                    omitted={[]}
+                  />
                 </LeftAligned>
               }
             >
