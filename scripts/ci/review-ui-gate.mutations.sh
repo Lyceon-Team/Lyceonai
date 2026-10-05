@@ -83,6 +83,7 @@ FILES=(
   "client/src/pages/guardian-required.tsx"
   "client/src/components/account-deletion/PendingDeletionScreen.tsx"
   "client/src/lib/plan-copy.ts"
+  "client/src/components/auth/RequireRole.tsx"
 )
 
 snapshot_all() {
@@ -1668,6 +1669,23 @@ plant "UI59-D3" "the pending-deletion heading is not an H1" \
   'a = "<BareCardHeader title=\"Your account is scheduled for deletion\" />"
 assert s.count(a) == 1
 s = s.replace(a, "<h2>Your account is scheduled for deletion</h2>", 1)'
+
+# OQ-60 (e) (Karl, 2026-10-05): RequireRole's loader follows the device theme on Bare routes.
+L60="client/src/components/auth/RequireRole.loader-theme.test.tsx"
+
+plant "UI59-L1" "the route guard's loader pinned light on every route again" \
+  "$L60" \
+  "client/src/components/auth/RequireRole.tsx" \
+  'a = "    return requireRoleLoaderThemeLock(location) === \"light\" ? ("
+assert s.count(a) == 1
+s = s.replace(a, "    return true ? (", 1)'
+
+plant "UI59-L2" "the loader unlocks on every table route, not only the Bare ones" \
+  "$L60" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  return spec?.shell === \"bare\" ? spec.themeLock : \"light\";"
+assert s.count(a) == 1
+s = s.replace(a, "  return spec !== undefined ? spec.themeLock : \"light\";", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

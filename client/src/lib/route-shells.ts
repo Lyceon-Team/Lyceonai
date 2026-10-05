@@ -213,3 +213,29 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/admin/crisis-review/:id": "admin",
   "/admin/crisis-review": "admin",
 };
+
+/**
+ * The theme lock for `RequireRole`'s full-page loader at a pathname.
+ *
+ * @spec [student-UI register UI-59, OQ-60 (e) (owner ruling 2026-10-05, accepted as recommended:
+ *        "let `RequireRole`'s loader follow the device theme on Bare routes (a small change,
+ *        removes the light flash)"); DESIGN.md §2 "Bare card"; OQ-49] | @implemented [2026-10-05]
+ *
+ * plain English: the route guard wraps the shell, so while auth loads no shell is mounted and the
+ * guard draws the loader itself. On a Bare route the loader takes that route's own lock from the
+ * table above (null since UI-59: the device theme), so a dark device goes dark loader → dark card
+ * with no light frame between. Every other route keeps the light lock, as before: the guard also
+ * fronts guardian and admin pages, and pages still pinned light.
+ *
+ * edge cases: matched on the exact path, because every Bare route the guard wraps
+ * (`/profile/complete`, `/update-password`, `/guardian-required`) has no parameters; a pathname
+ * that is not a key (or names a non-Bare route, or the catch-all key itself) reads "light". The
+ * lookup walks the table's own entries, so `constructor` and friends never match.
+ */
+export function requireRoleLoaderThemeLock(pathname: string): ThemeLock {
+  if (pathname === NOT_FOUND_ROUTE) return "light";
+  const entries: readonly (readonly [string, ShellSpec])[] =
+    Object.entries(STUDENT_ROUTE_SHELLS);
+  const spec = entries.find(([route]) => route === pathname)?.[1];
+  return spec?.shell === "bare" ? spec.themeLock : "light";
+}
