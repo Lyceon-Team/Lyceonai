@@ -37,6 +37,8 @@ FILES=(
   "client/src/components/product-feedback/ReviewPrompt.tsx"
   "client/src/pages/profile-complete.tsx"
   "client/src/pages/resume-practice.tsx"
+  "server/lib/analytics/emit-event.ts"
+  "client/src/lib/analytics/first-touch.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -65,6 +67,8 @@ PG_ROUTES=tests/ci/marketing-consent-routes.pg.ci.test.ts
 CONTRACT=tests/ci/product-feedback.contract.test.ts
 PROMPT_UI=client/src/components/product-feedback/ReviewPrompt.test.tsx
 ONBOARD_UI=client/src/pages/profile-complete.marketing-opt-in.test.tsx
+SIGNUP_PG=tests/ci/signup-analytics.pg.ci.test.ts
+FIRST_TOUCH=client/src/lib/analytics/first-touch.test.ts
 
 HAVE_PG=1
 pg_isready -q -h "$PGHOST" -p "$PGPORT" 2>/dev/null || HAVE_PG=0
@@ -94,12 +98,12 @@ run() {
 
 echo "=== (0) GREEN BASELINE ==="
 if [ "$HAVE_PG" = 1 ]; then
-  OUT="$(check "$PG_DB" "$PG_ROUTES")"; RC=$?
+  OUT="$(check "$PG_DB" "$PG_ROUTES" "$SIGNUP_PG")"; RC=$?
   [ "$RC" = 0 ] && ok "PG suites green" || { bad "PG suites not green"; echo "$OUT" | tail -30; }
 else
   echo "  SKIP  PG plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(check "$CONTRACT" "$PROMPT_UI" "$ONBOARD_UI")"; RC=$?
+OUT="$(check "$CONTRACT" "$PROMPT_UI" "$ONBOARD_UI" "$FIRST_TOUCH")"; RC=$?
 [ "$RC" = 0 ] && ok "contract + UI tests green" || { bad "contract + UI tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "MARKETING/REVIEWS MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -174,7 +178,36 @@ if [ "$HAVE_PG" = 1 ]; then
   audience        text        NOT NULL CHECK (audience IN ('student', 'guardian')),
   body            text        NOT NULL" || { bad "C10 STALE"; exit 1; }
   run "C10 deletion cascade" "deleting the profile removes its rows" "$PG_DB"
+
+  # Owner report 2026-10-05: a production signup emitted nothing and logged nothing.
+  echo "=== A (22) analytics misconfiguration is silent again ==="
+  plant server/lib/analytics/emit-event.ts \
+    "    return refuse(
+      eventName,
+      \"analytics_not_configured\",
+      analyticsConfigProblems(deps.env),
+    );" \
+    "    return { ok: false, reason: \"analytics_not_configured\" };" || { bad "A22 STALE"; exit 1; }
+  run "A22 loud misconfiguration" "NOT configured: nothing is sent" "$SIGNUP_PG"
+
+  echo "=== A (23) a missed user_signed_up is not said at the call site ==="
+  plant server/routes/profile-routes.ts \
+    "      if (!signedUp.ok && signedUp.reason !== \"excluded_under_13_or_age_unknown\") {" \
+    "      if (false) {" || { bad "A23 STALE"; exit 1; }
+  run "A23 call-site signup miss" "NOT configured: nothing is sent" "$SIGNUP_PG"
 fi
+
+echo "=== A (24) first-touch attribution is memory-only again (lost on a full page load) ==="
+plant client/src/lib/analytics/first-touch.ts \
+  "    window.sessionStorage.setItem(FIRST_TOUCH_STORAGE_KEY, value);" \
+  "    void value;" || { bad "A24 STALE"; exit 1; }
+run "A24 first touch survives a reload" "analytics accepted: a paid landing is still paid_ad" "$FIRST_TOUCH"
+
+echo "=== A (25) first-touch attribution is stored without consent ==="
+plant client/src/lib/analytics/first-touch.ts \
+  "  if (consent.status === \"accepted\" && firstTouch !== null) {" \
+  "  if (firstTouch !== null) {" || { bad "A25 STALE"; exit 1; }
+run "A25 consent gate" "undecided: nothing is stored" "$FIRST_TOUCH"
 
 echo "=== Q6 (11) the 120-day cooldown is gone ==="
 plant packages/shared/src/product-feedback-schema.ts \
@@ -247,7 +280,7 @@ plant client/src/pages/profile-complete.tsx \
 run "R21 onboarding 13+" "is hidden for an under-13 student" "$ONBOARD_UI"
 
 echo "=== RESTORED: re-check green ==="
-OUT="$(check "$CONTRACT" "$PROMPT_UI" "$ONBOARD_UI")"; RC=$?
+OUT="$(check "$CONTRACT" "$PROMPT_UI" "$ONBOARD_UI" "$FIRST_TOUCH")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "MARKETING/REVIEWS MUTATIONS: $PASS passed, $FAIL failed"

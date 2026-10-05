@@ -300,15 +300,40 @@ describe("Doc 07A §9.2 emitEvent", () => {
     expect(h.sent).toEqual([]);
   });
 
-  it("is a no-op with no configuration, touching nothing", async () => {
+  it("is a no-op with no configuration, touching nothing, and names what is missing", async () => {
     const h = harness({ analyticsUserId: null, isUnder13: false });
     h.deps.env = {};
+    // Owner report 2026-10-05: the reason now carries WHICH variable (never a value), and the
+    // wrapper logs it at ERROR (tests/ci/signup-analytics.pg.ci.test.ts reads the log).
     expect(await emitEventWith(h.deps, PROFILE, "user_signed_in", {})).toEqual({
       ok: false,
       reason: "analytics_not_configured",
+      details: ["POSTHOG_API_KEY:missing", "ANALYTICS_SALT:missing"],
     });
     expect(h.reads).toEqual([]);
     expect(h.sent).toEqual([]);
+  });
+
+  it("a malformed variable is named by its Zod issue code, never its value", async () => {
+    const h = harness({ analyticsUserId: null, isUnder13: false });
+    h.deps.env = {
+      POSTHOG_API_KEY: "phc_test",
+      POSTHOG_HOST: "us.i.posthog.com",
+      ANALYTICS_SALT: "short",
+    };
+    const result = await emitEventWith(h.deps, PROFILE, "user_signed_in", {});
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "analytics_not_configured",
+    });
+    const details = result.ok ? [] : (result.details ?? []);
+    expect(details.sort()).toEqual([
+      "ANALYTICS_SALT:too_small",
+      "POSTHOG_HOST:invalid_string",
+    ]);
+    expect(JSON.stringify(details)).not.toMatch(
+      /short|us\.i\.posthog|phc_test/,
+    );
   });
 
   it("returns send_failed (never throws) when PostHog refuses", async () => {

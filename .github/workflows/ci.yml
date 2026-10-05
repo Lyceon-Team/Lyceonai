@@ -2047,10 +2047,12 @@ jobs:
           set -euo pipefail
           pnpm exec vitest run tests/ci/marketing-consent-reviews.pg.ci.test.ts \
             tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            tests/ci/signup-analytics.pg.ci.test.ts \
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-marketing-reviews.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-marketing-reviews.json \
             --file tests/ci/marketing-consent-reviews.pg.ci.test.ts \
-            --file tests/ci/marketing-consent-routes.pg.ci.test.ts
+            --file tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            --file tests/ci/signup-analytics.pg.ci.test.ts
 
       # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
       # student through the real /api/tests handlers to a score, then the executor's
@@ -2934,12 +2936,12 @@ jobs:
           cat "$RUNNER_TEMP/static.log"
           exit 1
 
-      - name: Consent → PostHog browser proof (reject, accept, GPC, under-13, withdrawal)
+      - name: Consent → PostHog browser proof (reject, accept, GPC, under-13, withdrawal; first-touch survives a reload)
         env:
           E2E_BASE_URL: http://127.0.0.1:5175
         run: |
           set -euo pipefail
-          pnpm exec playwright test tests/e2e/analytics-consent.spec.ts --forbid-only --reporter=list
+          pnpm exec playwright test tests/e2e/analytics-consent.spec.ts tests/e2e/first-touch-attribution.spec.ts --forbid-only --reporter=list
 
   # ---------------------------------------------------------------------------
   # Guardian browser proofs (guardian closeout, Part B step 3).

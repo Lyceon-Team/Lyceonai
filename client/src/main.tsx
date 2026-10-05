@@ -36,7 +36,8 @@ window.__BUILD__ = `${new Date().toISOString().slice(0, 10)}-${Date.now().toStri
 // from `client/src/lib/analytics/posthog-client.ts` — never from here.
 
 // SCL-201 IS 6: read the landing address and referrer before the router can change the URL.
-// In memory only — no storage, no network — so it runs before consent.
+// No network. Kept in sessionStorage only once analytics is accepted (first-touch.ts); until
+// then, memory only — so it is safe to run before consent is known.
 captureFirstTouch();
 
 createRoot(document.getElementById("root")!).render(

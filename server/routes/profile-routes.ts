@@ -634,12 +634,23 @@ router.patch("/", async (req: Request, res: Response) => {
       const parsedSource = signupSourceSchema.safeParse(
         (profile as { signup_source?: unknown }).signup_source,
       );
-      await emitEvent(
+      const signedUp = await emitEvent(
         userId,
         "user_signed_up",
         { signup_source: parsedSource.success ? parsedSource.data : "unknown" },
         { requireFirstIdentity: true },
       );
+      // Owner report 2026-10-05: a first completion that does not emit is said here too, at the
+      // call site, with the wrapper's reason. Only an under-13 account is expected to skip it.
+      if (!signedUp.ok && signedUp.reason !== "excluded_under_13_or_age_unknown") {
+        logger.error(
+          "PROFILE",
+          "signup_event_missed",
+          "user_signed_up was not sent for a first onboarding completion",
+          undefined,
+          { reason: signedUp.reason, requestId: req.requestId },
+        );
+      }
     }
     // After user_signed_up, never before: see server/lib/marketing-consent.ts.
     await emitMarketingConsentCaptured(emitEvent, userId, consentWrite);

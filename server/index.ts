@@ -40,6 +40,7 @@ import {
   reportGcpCredentialStatusAtStartup,
 } from "./lib/startup-guards";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
+import { analyticsConfigProblems } from "./lib/analytics/emit-event";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
 } from "./routes/oauth-callback-routes";
@@ -256,6 +257,24 @@ const googleOAuthCallbackLimiter = rateLimit({
 // race it. A failed load logs ERROR boot_load_failed and serves defaults.
 const TUTOR_CONFIG_BOOT_WAIT_MS = 3_000;
 void TutorConfig.bootLoad();
+
+// Owner report 2026-10-05: a production signup emitted no `user_signed_up` and left no trace,
+// because a missing or malformed analytics variable made every server event a silent no-op. Said
+// once per cold start, at ERROR, naming the variable and the Zod issue code (never the value), so
+// a misconfigured deployment is visible before anyone signs up. Production only: a local or
+// preview build without analytics is a choice, not a fault.
+{
+  const analyticsProblems = analyticsConfigProblems(process.env);
+  if (analyticsProblems.length > 0 && isProductionDeployment()) {
+    logger.error(
+      "ANALYTICS",
+      "boot_not_configured",
+      "Server analytics is not configured: no server event will be sent",
+      undefined,
+      { problems: analyticsProblems },
+    );
+  }
+}
 const awaitTutorConfig: express.RequestHandler = (_req, _res, next) => {
   TutorConfig.whenBooted(TUTOR_CONFIG_BOOT_WAIT_MS).then(() => next(), next);
 };
