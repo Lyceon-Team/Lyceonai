@@ -60,7 +60,7 @@ export type SweepResult =
       deleted_count: number;
       tier: string;
       dry_run: boolean;
-      /** Per-table counts, cascades included (RS-03). Absent only where a tier has none. */
+      /** Per-table counts, cascades included (RS-03). Every tier that runs reports them. */
       per_table?: SweepTableCount[];
     }
   | { ok: false; reason: string; tier: string };
@@ -115,11 +115,30 @@ export async function sweep7d(
   dryRun: boolean,
   _opts: SweepOpts,
 ): Promise<SweepResult> {
-  const tier = "7d";
-  const { data, error } = await client.rpc(
+  return sweepByRpc(
+    client,
     "sweep_tutor_conversation_retention",
-    { p_dry_run: dryRun },
+    "7d",
+    dryRun,
+    (perTable) =>
+      perTable.find((r) => r.table === "tutor_conversations")?.count ?? 0,
   );
+}
+
+/**
+ * Shared body of the SQL-owned tiers (7d, 90d): call the function, parse its rows with
+ * the shared schema, and return them as `per_table`. An RPC error or an unparsable or empty answer
+ * is `ok: false`; nothing in TypeScript decides what is deleted. `headline` picks the
+ * `deleted_count` the route logs (7d: conversations; 90d: every row).
+ */
+async function sweepByRpc(
+  client: SupabaseClient,
+  fn: string,
+  tier: string,
+  dryRun: boolean,
+  headline: (perTable: SweepTableCount[]) => number,
+): Promise<SweepResult> {
+  const { data, error } = await client.rpc(fn, { p_dry_run: dryRun });
   if (error) {
     return { ok: false, reason: `rpc_failed: ${error.message}`, tier };
   }
@@ -131,11 +150,9 @@ export async function sweep7d(
     table: r.swept_table,
     count: r.deleted_count,
   }));
-  const conversations =
-    per_table.find((r) => r.table === "tutor_conversations")?.count ?? 0;
   return {
     ok: true,
-    deleted_count: conversations,
+    deleted_count: headline(per_table),
     tier,
     dry_run: dryRun,
     per_table,
@@ -146,8 +163,9 @@ export async function sweep7d(
 
 /**
  * @spec [Doc-03_V1.1 §14.2 ("90 days from creation" for both tables); owner ruling 2026-09-22
- *       (Doc 07B §5.4); owner ruling 2026-10-05 RS-04 (exposures measured by shown_at)]
- * @implemented [2026-09-22; shown_at 2026-10-05]
+ *       (Doc 07B §5.4); owner rulings 2026-10-05 RS-04 (exposures measured by shown_at) and
+ *       RS-03 (the dry run counts exactly what the live run removes)]
+ * @implemented [2026-09-22; shown_at and SQL 2026-10-05]
  *
  * Delete tutor_instruction_assignments and tutor_instruction_exposures older
  * than 90 days from creation. Creation is `created_at` for assignments and
@@ -155,6 +173,13 @@ export async function sweep7d(
  * every run, dry or live, failed with "column does not exist" and the mock
  * tests could not see it (tests/ci/retention-sweep.pg.ci.test.ts now runs
  * this tier against real Postgres).
+ *
+ * ONE SQL FUNCTION (RS-03): `sweep_tutor_instruction_retention(p_dry_run)`
+ * (migration 20261025000001). Deleting an assignment cascades every exposure
+ * of it, including one shown inside the window; PostgREST could neither
+ * count nor report those, so the dry run under-counted the live run. The
+ * function counts and deletes with one predicate and returns per-table rows.
+ * The cutoff is the database clock, not `opts.now`.
  *
  * plain English: the rows go. Nothing is copied anywhere first.
  *
@@ -184,84 +209,24 @@ export async function sweep7d(
 export async function sweep90d(
   client: SupabaseClient,
   dryRun: boolean,
-  opts: SweepOpts,
+  _opts: SweepOpts,
 ): Promise<SweepResult> {
-  const tier = "90d";
-  const cutoff = retentionCutoff(opts.now, 90);
-
-  if (dryRun) {
-    const { count: assignmentCount, error: e1 } = await client
-      .from("tutor_instruction_assignments")
-      .select("id", { count: "exact", head: true })
-      .lt("created_at", cutoff);
-
-    // RS-04: exposures have no created_at; shown_at is their creation time.
-    const { count: exposureCount, error: e2 } = await client
-      .from("tutor_instruction_exposures")
-      .select("id", { count: "exact", head: true })
-      .lt("shown_at", cutoff);
-
-    if (e1 || e2) {
-      return {
-        ok: false,
-        reason: `count_failed: ${e1?.message ?? e2?.message}`,
-        tier,
-      };
-    }
-    return {
-      ok: true,
-      deleted_count: (assignmentCount ?? 0) + (exposureCount ?? 0),
-      tier,
-      dry_run: true,
-    };
-  }
-
-  let totalDeleted = 0;
-
-  // Exposures first: deleting an assignment cascades its exposures, and a row removed by the
-  // cascade would go uncounted. RS-04: measured by shown_at (the table has no created_at).
-  const { data: deletedExpose, error: delExposeErr } = await client
-    .from("tutor_instruction_exposures")
-    .delete()
-    .lt("shown_at", cutoff)
-    .select("id");
-
-  if (delExposeErr) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${delExposeErr.message}`,
-      tier,
-    };
-  }
-  totalDeleted += deletedExpose?.length ?? 0;
-
-  const { data: deletedAssign, error: delAssignErr } = await client
-    .from("tutor_instruction_assignments")
-    .delete()
-    .lt("created_at", cutoff)
-    .select("id");
-
-  if (delAssignErr) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${delAssignErr.message}`,
-      tier,
-    };
-  }
-  totalDeleted += deletedAssign?.length ?? 0;
-
-  logger.info(
-    "RETENTION_SWEEP",
-    "sweep_90d_delete",
-    `90d sweep: deleted ${totalDeleted} rows`,
-    {
-      assignmentsDeleted: deletedAssign?.length ?? 0,
-      exposuresDeleted: deletedExpose?.length ?? 0,
-      totalDeleted,
-    },
+  const result = await sweepByRpc(
+    client,
+    "sweep_tutor_instruction_retention",
+    "90d",
+    dryRun,
+    (perTable) => perTable.reduce((n, r) => n + r.count, 0),
   );
-
-  return { ok: true, deleted_count: totalDeleted, tier, dry_run: false };
+  if (result.ok && !dryRun) {
+    logger.info(
+      "RETENTION_SWEEP",
+      "sweep_90d_delete",
+      `90d sweep: deleted ${result.deleted_count} rows`,
+      { perTable: result.per_table, totalDeleted: result.deleted_count },
+    );
+  }
+  return result;
 }
 // ── 180-day tier ──────────────────────────────────────────────────────
 
@@ -310,6 +275,7 @@ export async function sweep180d(
       deleted_count: injectionCount ?? 0,
       tier,
       dry_run: true,
+      per_table: [{ table: "tutor_injection_log", count: injectionCount ?? 0 }],
     };
   }
 
@@ -331,7 +297,13 @@ export async function sweep180d(
     { injectionsDeleted: totalDeleted, totalDeleted },
   );
 
-  return { ok: true, deleted_count: totalDeleted, tier, dry_run: false };
+  return {
+    ok: true,
+    deleted_count: totalDeleted,
+    tier,
+    dry_run: false,
+    per_table: [{ table: "tutor_injection_log", count: totalDeleted }],
+  };
 }
 // ── 365-day tier ──────────────────────────────────────────────────────
 

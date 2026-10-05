@@ -11465,6 +11465,61 @@ COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean)
 
 
 --
+-- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz := now() - interval '90 days';
+  v_assign  integer;
+  v_expose  integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_instruction_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_assign
+      FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_expose
+      FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+    GET DIAGNOSTICS v_expose = ROW_COUNT;
+
+    DELETE FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+    GET DIAGNOSTICS v_assign = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_instruction_assignments'; deleted_count := v_assign; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_instruction_exposures';   deleted_count := v_expose; cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner rulings 2026-10-05 RS-03, RS-04: the 90d tier. Deletes instruction assignments created more than 90 days ago and exposures shown more than 90 days ago or belonging to such an assignment. p_dry_run counts the same rows without deleting. One row per table, with the cutoff.';
+
+
+--
 -- Name: sync_tutor_conversations_on_entitlement_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -21997,6 +22052,14 @@ GRANT ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size intege
 
 REVOKE ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) TO service_role;
 
 
 --

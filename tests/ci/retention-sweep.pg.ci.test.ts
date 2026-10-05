@@ -673,4 +673,99 @@ describe.skipIf(!PG_AVAILABLE)("tutor retention sweep → real PG", () => {
       });
     });
   });
+
+  describe("RS-03: every tier's dry run counts exactly what its live run removes", () => {
+    const F_GONE = "0d7d7d7d-0000-4000-8000-0000000000c1";
+    const F_LIVE = "0d7d7d7d-0000-4000-8000-0000000000c2";
+    const F_A_EDGE = "0d7d7d7d-0000-4000-8000-0000000000c3";
+    const F_A_OLD = "0d7d7d7d-0000-4000-8000-0000000000c4";
+
+    const rows = (table: string): Promise<number> =>
+      count(`SELECT count(*) AS n FROM public.${table}`, []);
+
+    beforeEach(async () => {
+      await q(`DELETE FROM public.crisis_review_audit_log`);
+      await q(`DELETE FROM public.crisis_review_cases`);
+      await q(`DELETE FROM public.tutor_injection_log`);
+      await q(`DELETE FROM public.tutor_memory_summaries`);
+      await q(`DELETE FROM public.tutor_conversations`);
+      // 7d: one expired conversation with messages; the student's summary goes with it.
+      await conversation(F_GONE, ANA, 10);
+      await memorySummary(ANA);
+      // 90d on a live conversation: an old assignment with an old exposure, and an assignment
+      // created 91 days ago whose exposure was shown 89 days ago. Deleting that assignment
+      // cascades the exposure, so the exposure is removed although its own shown_at is inside
+      // the window — the dry run must count it.
+      await conversation(F_LIVE, BEN, null, 1);
+      for (const [id, created, shown] of [
+        [F_A_OLD, 120, 120],
+        [F_A_EDGE, 91, 89],
+      ] as const) {
+        await q(
+          `INSERT INTO public.tutor_instruction_assignments
+             (id, conversation_id, student_id, policy_variant, policy_version,
+              assignment_mode, reason_snapshot, created_at)
+           VALUES ($1, $2, $3, 'concise', 'fixture', 'deterministic', '{}'::jsonb,
+                   now() - make_interval(days => $4))`,
+          [id, F_LIVE, BEN, created],
+        );
+        await q(
+          `INSERT INTO public.tutor_instruction_exposures
+             (assignment_id, conversation_id, student_id, exposure_type, sequence_ordinal, shown_at)
+           VALUES ($1, $2, $3, 'hint', 1, now() - make_interval(days => $4))`,
+          [id, F_LIVE, BEN, shown],
+        );
+      }
+      // 180d: one injection row past the window, one inside.
+      for (const days of [200, 100]) {
+        await q(
+          `INSERT INTO public.tutor_injection_log
+             (conversation_id, student_id, detection_layer, action_taken, detected_at)
+           VALUES ($1, $2, 'fixture', 'fixture', now() - make_interval(days => $3))`,
+          [F_LIVE, BEN, days],
+        );
+      }
+    });
+
+    it.each(["7d", "90d", "180d"] as const)(
+      "%s: per-table dry-run counts equal the rows the live run deletes",
+      async (tier) => {
+        const dry = await sweep(tier, true);
+        expect(dry.ok).toBe(true);
+        if (!dry.ok) return;
+        expect(dry.per_table).toBeDefined();
+        const perTable = dry.per_table ?? [];
+        // Presence first: each tier has something to remove in this fixture.
+        expect(dry.deleted_count).toBeGreaterThan(0);
+        const before = new Map<string, number>();
+        for (const t of perTable) before.set(t.table, await rows(t.table));
+
+        const live = await sweep(tier);
+        expect(live.ok).toBe(true);
+        if (!live.ok) return;
+        expect(live.per_table).toEqual(perTable);
+        expect(live.deleted_count).toBe(dry.deleted_count);
+        for (const t of perTable) {
+          expect({
+            table: t.table,
+            removed: before.get(t.table)! - (await rows(t.table)),
+          }).toEqual({
+            table: t.table,
+            removed: t.count,
+          });
+        }
+      },
+    );
+
+    it("90d: the cascaded exposure is in the count", async () => {
+      const dry = await sweep("90d", true);
+      expect(dry).toMatchObject({
+        ok: true,
+        per_table: [
+          { table: "tutor_instruction_assignments", count: 2 },
+          { table: "tutor_instruction_exposures", count: 2 },
+        ],
+      });
+    });
+  });
 });

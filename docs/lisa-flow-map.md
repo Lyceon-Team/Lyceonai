@@ -219,7 +219,7 @@ flowchart TD
   WB -->|"trigger_reason 'end' ∉ {close,threshold,stale} → 400 :85, 95-110"| DEAD[["dead: no summary written"]]
   WB -.->|"if it parsed"| EXC["executeCompaction server/services/tutor-compaction.ts:109-260<br/>→ compactConversation OC:387 → worker /compact"]
   SCH["Cloud Scheduler lyceon-retention-sweep-{7d,90d,180d}<br/>infra/terraform/cloud-scheduler.tf:69-241"] --> RS["POST /api/internal/retention/sweep<br/>server/routes/internal-retention-routes.ts:108-186 (OIDC)"]
-  RS --> RT["retention-sweep.ts tiers<br/>7d: RPC sweep_tutor_conversation_retention — unflagged deleted_at conversations (+cascade), crisis-flagged kept (RS-00)<br/>90d: assignments (created_at) / exposures (shown_at) (RS-04)<br/>180d: injection log only; crisis cases are manual purge (RS-05)<br/>365d: always ok:false"]
+  RS --> RT["retention-sweep.ts tiers<br/>7d: RPC sweep_tutor_conversation_retention — unflagged deleted_at conversations (+cascade), crisis-flagged kept (RS-00)<br/>90d: RPC sweep_tutor_instruction_retention — assignments (created_at), exposures (shown_at or cascaded) (RS-04, RS-03)<br/>180d: injection log only; crisis cases are manual purge (RS-05)<br/>365d: always ok:false"]
   RT -->|"ok:false → INFO sweep_skipped + 200 (no retry) :147-159"| QUIET[["silent"]]
   LAPSE["entitlement-lapse trigger stamps deleted_at<br/>supabase/migrations/20260922010000_tutor_lapse_severance.sql:85-106"] --> RT
 ```

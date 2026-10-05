@@ -31,8 +31,12 @@
  *    only — crisis cases and their audit rows are manual purge (RS-05).
  *  - 365d tier: tables (cost telemetry, quota appeals) not yet provisioned.
  *    Returns { ok: false, reason: "365d_tables_not_provisioned" }.
- *  - Dry-run returns count only (SELECT COUNT, no DELETE). Used for
- *    negative-control validation before first production run.
+ *  - Dry-run (RS-03, 2026-10-05) returns `per_table`: for every tier that
+ *    runs, exactly the rows its live run would delete, cascades included
+ *    (7d and 90d are SQL functions that count and delete with one
+ *    predicate; 180d is one table). Nothing is deleted. Before the first
+ *    production run Karl runs the read-only backlog SQL in the PR and
+ *    approves the counts.
  *
  * edge cases:
  *  - Duplicate delivery: DELETE is idempotent — already-deleted rows
