@@ -73,6 +73,6 @@ If (b) cannot ship before **2026-10-09 02:00 UTC**, the owner can turn off `ACCO
 
 | Item | Source | Owner | Status |
 |---|---|---|---|
-| The Privacy Policy's under-13 hard-deletion list names "LISA conversation data" (PP:477, 481). Crisis-flagged transcripts now survive account deletion de-linked (C-01, SCL-216), and crisis data outranks that line. In practice no under-13 LISA rows exist, because LISA is blocked for under-13. | C-01 | Karl / counsel | OPEN |
-| The Privacy Policy does not disclose the 48-hour inactivity notice, which 07E:477 says it must ("you will receive notification 48 hours before deletion"). | Q9 | Karl / counsel | OPEN |
+| The Privacy Policy's under-13 hard-deletion list names "LISA conversation data" (PP:477, 481). Crisis-flagged transcripts now survive account deletion de-linked (C-01, SCL-216), and crisis data outranks that line. In practice no under-13 LISA rows exist, because LISA is blocked for under-13. | C-01 | Karl / counsel | COUNSEL-APPROVED 2026-10-05 — applied in Privacy Policy v5 (this PR, SCL-219) |
+| The Privacy Policy does not disclose the 48-hour inactivity notice, which 07E:477 says it must ("you will receive notification 48 hours before deletion"). | Q9 | Karl / counsel | COUNSEL-APPROVED 2026-10-05 — applied in Privacy Policy v5 (this PR, SCL-219) |
 | Under-13 revoke trigger: the owner's 30-day-clock ruling against counsel's 2026-06-20 GAP-HY-14 resolution (standard 7-day path). | Q1–5 | Karl / counsel | OPEN |
