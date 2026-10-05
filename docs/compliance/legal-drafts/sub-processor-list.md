@@ -12,6 +12,7 @@ These are the service providers that process personal information on LYCEON's be
 |---|---|---|---|
 | **Supabase** | Database and authentication | Account data, learning data | **[REGION — TO CONFIRM]** |
 | **Vercel** | Application hosting, delivery, scheduled jobs | Request and log data, including IP address | **[REGION — TO CONFIRM]** |
+| **Vercel** **[Removed when PostHog analytics ships (F10)]** | Website analytics (public pages) | Page views and technical browser data on public pages; no cookies | **[REGION — TO CONFIRM]** |
 | **Stripe** | Payment processing | Payer name, email, billing address, payment method | United States **[TO CONFIRM]** |
 | **Google Cloud** | AI services and content safety for the LISA tutor; background processing | Tutor conversation text (students 13 and over only); internal identifiers | United States and other Google Cloud locations **[TO CONFIRM]** |
 | **Google** | "Sign in with Google" | Google sign-in details, if the user chooses it | United States **[TO CONFIRM]** |
@@ -60,4 +61,5 @@ We will update this list before adding a new sub-processor that processes person
 2. **Error monitoring.** Resolved: not configured on Vercel, verified 2026-10-03 (Karl), so it is omitted. No action unless it is configured later.
 3. **Desmos and Slack.** Confirm both are processors. Desmos is loaded by the user's browser; Slack is an internal staff tool that receives only internal reference numbers.
 4. **Change-notice period.** Decide whether to commit to a notice period before adding a sub-processor (e.g. 30 days), as B2B and school DPAs often require.
-5. **DPAs in place.** Confirm a signed DPA exists with each provider before publication. The PostHog DPA is a precondition of plan R32.
+5. **Matches the live code on the day of publication.** This list must be checked against the code that is live in production on the day it is published (for example, Vercel Analytics is mounted at `client/src/App.tsx:440` until F10 ships; PostHog and Cloudflare are listed only once F10/F11 and Q2 are live). Remove or add rows so that it matches.
+6. **DPAs in place.** Confirm a signed DPA exists with each provider before publication. The PostHog DPA is a precondition of plan R32.

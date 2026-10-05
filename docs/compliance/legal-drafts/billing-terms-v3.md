@@ -5,6 +5,7 @@
 > **The only change from v2 is Section 1, paragraph 2** (v2 line 29), approved by Karl on 2026-10-03:
 > * "unlimited practice" becomes "practice beyond the free plan's daily limit". Paid practice has a per-session cap (`max_session_count_premium`), so "unlimited" was not true.
 > * "expanded guardian visibility for anyone linked to that student" becomes "lets a linked parent or guardian see the student's progress". This matches the rule that guardian visibility depends on the student's active entitlement.
+> * Feature names follow the approved public wording (`docs/compliance/claim-inventory.md` H27; Codex audit of `seo`, 2026-10-05): the paid features are named "full-length practice tests with score reports", "skill-level progress" and "a study plan", replacing v2's exam, breakdown and calendar names.
 >
 > Everything else is v2 verbatim.
 
@@ -36,7 +37,7 @@ They summarise how billing works. The **LYCEON Subscription and Auto-Renewal Not
 
 A LYCEON premium subscription for **one student account**.
 
-Premium unlocks practice beyond the free plan's daily limit, the LISA tutor, full-length SAT exams with review and score reports, the complete mastery breakdown and study calendar, and lets a linked parent or guardian see the student's progress.
+Premium unlocks practice beyond the free plan's daily limit, the LISA tutor, full-length practice tests with score reports, skill-level progress and a study plan, and lets a linked parent or guardian see the student's progress.
 
 **The entitlement belongs to the student, not to the payer.** A parent, guardian, or other third party may pay, and the paid access attaches to the student account selected at checkout. A guardian linked to a subscribed student sees that student's progress data for as long as the student's subscription is active.
 

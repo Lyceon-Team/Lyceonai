@@ -130,7 +130,7 @@ LYCEON shares information only where necessary to operate the platform, where yo
 
 ### **5.1 With a Connected Parent or Guardian**
 
-**When a parent or guardian is connected to a student account, they can see the student's progress and practice activity, skill breakdown, test results, and study calendar.** Some of this is available only while the student has a paid subscription.
+**When a parent or guardian is connected to a student account, they can see the student's progress and practice activity, skill-level progress, practice test results, and study plan.** Some of this is available only while the student has a paid subscription.
 
 **A connected parent or guardian cannot see the student's conversations with LISA.** Tutor conversations are private to the student.
 
@@ -144,6 +144,7 @@ We share information with the following providers, which process it only on LYCE
 |---|---|---|
 | **Supabase** | Database and authentication | Account data, learning data |
 | **Vercel** | Application hosting and delivery | Request and log data, including IP address |
+| **Vercel** **[Removed when PostHog analytics ships (F10)]** | Website analytics (public pages) | Page views and technical browser data on public pages, as described in Section 6.6; no cookies |
 | **Stripe** | Payment processing | Payer name, email, billing address, payment method |
 | **Google Cloud** | AI services and content safety for LISA; background processing | Tutor conversation content (**never for users under 13**); internal identifiers |
 | **Google** | Sign in with Google, if you choose it | Your Google sign-in |
@@ -213,7 +214,7 @@ Records of how our systems were configured are kept permanently, as an operation
 
 ### **6.6 Analytics**
 
-We use Vercel Analytics to understand how the public pages of the website are used. It does not use cookies. Analytics data is kept for 12 months.
+We use Vercel Analytics to understand how the public pages of the website are used. It does not use cookies. Analytics data is kept for 12 months. **[Removed when PostHog analytics ships (F10).]**
 
 **[Effective when F10/F11 ship — replaces the paragraph above]** We use PostHog to understand how the service is used. Analytics events are kept for **[PERIOD — TO BE CONFIRMED FROM POSTHOG PROJECT SETTINGS]**, and session recordings for **[PERIOD — TO BE CONFIRMED]**. Where analytics data has been aggregated so that it no longer relates to any person, we may keep the aggregate.
 
@@ -269,6 +270,8 @@ Contact **support@lyceon.ai**. We will respond within the time required by appli
 LYCEON uses cookies and similar technologies that are strictly necessary to keep you signed in, protect your account, and remember your settings. These do not need your consent.
 
 **We do not use advertising or cross-site tracking cookies.**
+
+The public pages of our website use Vercel Analytics, which does not use cookies (Section 6.6). **[Removed when PostHog analytics ships (F10).]**
 
 **[Effective when F10/F11 ship]** We also use PostHog for product analytics and session recording, which help us see where the service is confusing or broken. Specifically:
 
@@ -334,3 +337,4 @@ Decisions counsel must make before publication:
 12. **Analytics retention (§6.6).** v4 §6.6 also said de-identified analytics data is kept "for up to 24 months, then only in aggregate". v5 drops that sentence: Vercel Analytics has no de-identified tier that LYCEON controls, and the BigQuery archive the sentence related to was never used (SCL-106). v5 also narrows the Vercel Analytics statement to public pages, which matches `client/src/lib/analytics-surface.ts`. Confirm.
 13. **Naming safety tooling.** Google Cloud is described only by purpose, "AI services and content safety" (Karl, 2026-10-03). Do not describe how those checks work (doctrine rule 2).
 14. **Google Fonts.** Not listed: fonts are self-hosted on `seo` by #1088 (SEO-1). v5 must not publish until that change is live in production.
+15. **Matches the live code on the day of publication.** §5.2, §6.6 and §9 must be checked against the code that is live in production on the day v5 is published: Vercel Analytics stays listed while `client/src/App.tsx:440` mounts it, and the PostHog and Cloudflare text is included only once F10/F11 and Q2 are live.
