@@ -307,14 +307,22 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     expect(report.domain_breakdown).toHaveLength(8);
     expect(report.disclosure.disclosure_version.length).toBeGreaterThan(0);
 
-    // G3-02 (R4, SCL-189): the guardian sees the same eight domains as a BAR each, no counts.
-    // Owner ruling 7 (SCL-180 amended 2026-09-29): the student sees them as seven segments.
-    // Both are projections of one set of counts, read below from exam_domain_breakdown itself.
+    // G5-11 (SCL-210, amending SCL-189): the guardian sees the same eight domains as the
+    // student's own seven segments (owner ruling 7) — no counts and no percentage. Both are
+    // projections of one set of counts, read below from exam_domain_breakdown itself. WIRE:
+    // on the raw body, each row is exactly {section, domain, segments_filled}.
     for (const row of res.body.report.domain_breakdown as Record<
       string,
       unknown
     >[]) {
-      expect(Object.keys(row).sort()).toEqual(["bar_pct", "domain", "section"]);
+      expect(Object.keys(row).sort()).toEqual([
+        "domain",
+        "section",
+        "segments_filled",
+      ]);
+      for (const k of ["bar_pct", "correct", "total"]) {
+        expect(row, k).not.toHaveProperty(k);
+      }
     }
     const own = await get(STUDENT, `/api/tests/sessions/${sid}/report`);
     expect(own.status).toBe(200);
@@ -345,14 +353,16 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     const byDomain = (a: { domain: string }, b: { domain: string }) =>
       a.domain.localeCompare(b.domain);
     // Expected values are computed here from the counts, not by the projections under test,
-    // so a wrong projection cannot agree with itself: the bar is the rounded percentage
-    // (SCL-189), the segments the nearest of seven, half rounding up (SCL-180 ruling 7).
+    // so a wrong projection cannot agree with itself: the segments are the nearest of seven,
+    // half rounding up (SCL-180 ruling 7), for the guardian (SCL-210) and the student alike.
     expect([...report.domain_breakdown].sort(byDomain)).toEqual(
       counts
         .map((r) => ({
           section: r.section,
           domain: r.domain,
-          bar_pct: Math.round((100 * r.correct) / r.total),
+          segments_filled: Math.floor(
+            (14 * r.correct + r.total) / (2 * r.total),
+          ),
         }))
         .sort(byDomain),
     );
@@ -368,6 +378,8 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
         }))
         .sort(byDomain),
     );
+    // G5-11: the guardian's rows ARE the student's, in the student's order.
+    expect(report.domain_breakdown).toEqual(student.domain_segments);
     expect(report.score.total_scaled).toBe(student.score.total_scaled);
     // Strict subset (04C §2.6), less the one field ruling 7 re-shapes for the student:
     // every other guardian top-level key is a student key.
@@ -440,15 +452,16 @@ describe.skipIf(!PG_AVAILABLE)("G1 guardian exam results → real PG", () => {
     );
   });
 
-  it("ruling 7 with SCL-189: the guardian on the same path gets a bar per domain, no counts and no segments", async () => {
+  it("ruling 7 with SCL-210: the guardian on the same path gets the student's seven segments per domain, no counts", async () => {
     const res = await get(GUARDIAN, reportUrl(STUDENT, sid));
     expect(res.status).toBe(200);
     const report = guardianExamReportEnvelopeSchema.parse(res.body).report;
     if (report.report_state !== "scored") throw new Error(report.report_state);
     expect(report.domain_breakdown).toHaveLength(8);
     for (const row of report.domain_breakdown) {
-      expect(row.bar_pct).toBeGreaterThanOrEqual(0);
-      expect(row.bar_pct).toBeLessThanOrEqual(100);
+      expect(row.segments_filled).toBeGreaterThanOrEqual(0);
+      expect(row.segments_filled).toBeLessThanOrEqual(7);
+      expect(row).not.toHaveProperty("bar_pct");
       expect(row).not.toHaveProperty("correct");
       expect(row).not.toHaveProperty("total");
     }

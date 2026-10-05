@@ -39,6 +39,7 @@ type Fixtures = {
   CY: string;
   rosterWithRevoked: { students: unknown[] };
   EXAM_SESSION: string;
+  PARTIAL_SESSION: string;
   roster: { students: unknown[] };
   calendarWeek: unknown;
   masteryDomains: unknown;
@@ -297,6 +298,27 @@ const SURFACES: readonly Surface[] = [
     name: "exam-detail",
     path: (f) => `/guardian/${f.ADA}/exams/${f.EXAM_SESSION}`,
     ready: "exam-total-score",
+  },
+  {
+    // G5-11 (SCL-210): the Score breakdown tab — the student's seven segments per domain.
+    name: "exam-detail-breakdown",
+    path: (f) => `/guardian/${f.ADA}/exams/${f.EXAM_SESSION}`,
+    ready: "exam-total-score",
+    act: async (page) => {
+      await page.getByRole("tab", { name: "Score breakdown" }).click();
+      await page.getByTestId("exam-domain-segments").first().waitFor();
+    },
+  },
+  {
+    // G5-12: a partial score's breakdown — the scored section's segments and the student's
+    // note for the section with no score.
+    name: "exam-detail-partial-breakdown",
+    path: (f) => `/guardian/${f.ADA}/exams/${f.PARTIAL_SESSION}`,
+    ready: "exam-partial-summary",
+    act: async (page) => {
+      await page.getByRole("tab", { name: "Score breakdown" }).click();
+      await page.getByTestId("exam-domain-omitted").first().waitFor();
+    },
   },
   {
     name: "students-billing",
