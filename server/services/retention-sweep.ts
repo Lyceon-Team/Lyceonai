@@ -1,6 +1,7 @@
 /**
- * @spec [Doc-03_V1.1 §14.2, INV-03-19; owner ruling 2026-10-05 RS-00]
- * @implemented 2026-08-21 (7d tier moved into SQL 2026-10-05)
+ * @spec [Doc-03_V1.1 §14.2, INV-03-19; owner rulings 2026-10-05 RS-00, RS-04, RS-05]
+ * @implemented 2026-08-21 (7d tier moved into SQL, 90d shown_at, 180d crisis cases removed:
+ *   2026-10-05)
  *
  * plain English: Retention sweep tier functions for LISA data. Each function
  * deletes only rows that have crossed the retention boundary for its tier,
@@ -33,21 +34,15 @@
  *    memory summaries only when no live, recoverable or flagged conversation
  *    remains. Tests run it against real Postgres
  *    (tests/ci/retention-sweep.pg.ci.test.ts), not the filtering mock.
- *  - 180d crisis: only RESOLVED cases are swept. Open/in-review cases are
- *    retained regardless of age (safety review ongoing). Spec: "hard delete
- *    at 180 days or on closure, whichever is later." The crisis_review_cases
- *    CHECK constraint allows ('open', 'in_review', 'resolved') — there is
- *    no 'closed' status.
+ *  - 180d tier (RS-05, 2026-10-05): tutor_injection_log only. Crisis cases
+ *    and their audit rows are manual purge (Doc 03 §14.2); no tier deletes
+ *    them. Tests run against real Postgres.
  *
  * edge cases:
  *  - Duplicate delivery: DELETE is idempotent — already-deleted rows don't
  *    match the WHERE clause.
  *  - Empty result: normal for tiers with no expired rows. Returns
  *    { ok: true, deleted_count: 0 }.
- *  - 180d crisis: open cases older than 180 days are retained (safety review
- *    ongoing). The dual condition (status=resolved AND created_at<cutoff)
- *    naturally implements "hard delete at 180 days or on closure, whichever
- *    is later" — both conditions must be met.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -83,23 +78,6 @@ export type TierHandler = (
 // ── Constants ─────────────────────────────────────────────────────────
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/**
- * crisis_review_cases status lifecycle: open → in_review → resolved.
- * Source of truth: migration 20260813000000_crisis_review_queue.sql,
- * CHECK (status IN ('open', 'in_review', 'resolved')).
- *
- * Exported so tests derive valid status values from the code that uses
- * them rather than hardcoding strings that can silently drift (LISA-GCP-002).
- */
-export const CRISIS_STATUS = {
-  /** Initial state when a crisis case is created. */
-  OPEN: "open" as const,
-  /** Reviewer has claimed the case. */
-  IN_REVIEW: "in_review" as const,
-  /** Terminal: incident resolved by reviewer. Only resolved cases are swept. */
-  RESOLVED: "resolved" as const,
-};
 
 /**
  * Pure. Returns ISO cutoff timestamp for a given number of days before now.
@@ -288,35 +266,27 @@ export async function sweep90d(
 // ── 180-day tier ──────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03_V1.1 §14.2; owner ruling 2026-09-22 (Doc 07B §5.4)]
- * @implemented [2026-09-22]
+ * @spec [Doc-03_V1.1 §14.2 ("Crisis-flagged conversations | 180 days (extended for safety
+ *       review) | Manual purge by safety review queue owner after incident closure");
+ *       owner ruling 2026-09-22 (Doc 07B §5.4); owner ruling 2026-10-05 RS-05 (the 180d tier
+ *       stops deleting crisis_review_cases: cases and their audit rows are manual purge only;
+ *       it keeps deleting tutor_injection_log past 180 days)]
+ * @implemented [2026-09-22; crisis cases removed 2026-10-05]
  *
- * Delete resolved crisis review cases and injection logs older than 180 days.
+ * plain English: delete tutor_injection_log rows detected more than 180 days ago. Nothing else.
  *
- * Crisis review cases: only RESOLVED cases older than 180 days from created_at
- * (the crisis flag timestamp). Open/in-review cases are retained regardless of
- * age — safety review ongoing. Spec: "hard delete at 180 days or on closure,
- * whichever is later" — the dual condition (status=resolved AND
- * created_at<cutoff) naturally implements this.
+ * WHY CRISIS CASES ARE NOT HERE ANY MORE. Until RS-05 this tier also deleted resolved crisis
+ * cases older than 180 days. That was wrong twice over: the spec makes their purge manual (the
+ * safety review queue owner, after incident closure), and every resolved case carries the
+ * `disposition_set` audit row SCL-025 requires, which references it ON DELETE RESTRICT — so the
+ * delete failed and took the whole tier down with it, injection logs included. The Privacy
+ * Policy's "up to ninety (90) days after resolution" for flagged content disagrees with Doc 03
+ * §14.2; that is on the counsel backlog (docs/plans/Guardian_Closure_Plan.md), not decided here.
  *
- * Note: the crisis_review_cases CHECK constraint allows ('open', 'in_review',
- * 'resolved'). The terminal lifecycle state is "resolved", NOT "closed".
- * Filtering on 'closed' matched zero rows and let resolved cases accumulate
- * indefinitely (LISA-GCP-002).
+ * Archive: none (owner ruling 2026-09-22, Doc 07B §5.4) — the rows are deleted outright.
  *
- * Injection log: older than 180 days from detected_at.
- *
- * WHY THERE IS NO ARCHIVE STEP ANY MORE, AND WHY IT MATTERS MOST HERE. This
- * tier used to export every expired row to BigQuery first (LISA-RET-002).
- * `crisis_review_cases` is the table that ended the practice: it carries
- * `student_id`, `reviewer_id` and `review_notes` — free text written by a
- * human reviewer about a minor in crisis — and Doc 07B §5.4 bans
- * identity-bearing columns in the warehouse outright. The owner ruling of
- * 2026-09-22: "BigQuery is the worst home for those." Nothing was ever
- * archived, so nothing was migrated; the rows are simply deleted now.
- *
- * expected outcome: resolved cases past 180 days go, open and in-review cases
- * stay at any age, and the tier can no longer decline.
+ * expected outcome: injection rows past 180 days go, younger ones stay, every crisis case and
+ * audit row stays at any age; the tier cannot decline except on a database error.
  */
 export async function sweep180d(
   client: SupabaseClient,
@@ -327,52 +297,21 @@ export async function sweep180d(
   const cutoff = retentionCutoff(opts.now, 180);
 
   if (dryRun) {
-    // Crisis cases: only resolved cases older than 180 days
-    const { count: crisisCount, error: e1 } = await client
-      .from("crisis_review_cases")
-      .select("id", { count: "exact", head: true })
-      .eq("status", CRISIS_STATUS.RESOLVED)
-      .lt("created_at", cutoff);
-
-    const { count: injectionCount, error: e2 } = await client
+    const { count: injectionCount, error } = await client
       .from("tutor_injection_log")
       .select("id", { count: "exact", head: true })
       .lt("detected_at", cutoff);
 
-    if (e1 || e2) {
-      return {
-        ok: false,
-        reason: `count_failed: ${e1?.message ?? e2?.message}`,
-        tier,
-      };
+    if (error) {
+      return { ok: false, reason: `count_failed: ${error.message}`, tier };
     }
     return {
       ok: true,
-      deleted_count: (crisisCount ?? 0) + (injectionCount ?? 0),
+      deleted_count: injectionCount ?? 0,
       tier,
       dry_run: true,
     };
   }
-
-  let totalDeleted = 0;
-
-  // Resolved AND older than 180 days. Both conditions, every time: an open
-  // case is never deleted by age alone.
-  const { data: deletedCrisis, error: delCrisisErr } = await client
-    .from("crisis_review_cases")
-    .delete()
-    .eq("status", CRISIS_STATUS.RESOLVED)
-    .lt("created_at", cutoff)
-    .select("id");
-
-  if (delCrisisErr) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${delCrisisErr.message}`,
-      tier,
-    };
-  }
-  totalDeleted += deletedCrisis?.length ?? 0;
 
   const { data: deletedInjections, error: delInjErr } = await client
     .from("tutor_injection_log")
@@ -383,17 +322,13 @@ export async function sweep180d(
   if (delInjErr) {
     return { ok: false, reason: `delete_failed: ${delInjErr.message}`, tier };
   }
-  totalDeleted += deletedInjections?.length ?? 0;
+  const totalDeleted = deletedInjections?.length ?? 0;
 
   logger.info(
     "RETENTION_SWEEP",
     "sweep_180d_delete",
     `180d sweep: deleted ${totalDeleted} rows`,
-    {
-      crisisDeleted: deletedCrisis?.length ?? 0,
-      injectionsDeleted: deletedInjections?.length ?? 0,
-      totalDeleted,
-    },
+    { injectionsDeleted: totalDeleted, totalDeleted },
   );
 
   return { ok: true, deleted_count: totalDeleted, tier, dry_run: false };

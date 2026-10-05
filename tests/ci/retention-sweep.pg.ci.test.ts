@@ -5,7 +5,9 @@
  *       for safety review) | Manual purge by safety review queue owner after incident closure");
  *       owner rulings 2026-10-05 RS-00 (a conversation is crisis-flagged when any
  *       crisis_review_cases or crisis_review_events row links to it; the 7d tier never deletes it,
- *       its cascade rows, or the student's memory summary while one exists)]
+ *       its cascade rows, or the student's memory summary while one exists); RS-04 (90d measures
+ *       exposures by shown_at); RS-05 (180d never deletes crisis_review_cases; it deletes
+ *       tutor_injection_log past 180 days)]
  *       | @implemented [2026-10-05]
  *
  * plain English: a throwaway database built from this repo's migrations, the real
@@ -516,6 +518,114 @@ describe.skipIf(!PG_AVAILABLE)("tutor retention sweep → real PG", () => {
     it("empty tables: ok, deleted_count 0", async () => {
       await q(`DELETE FROM public.tutor_instruction_assignments`);
       expect(await sweep("90d")).toMatchObject({ ok: true, deleted_count: 0 });
+    });
+  });
+
+  describe("RS-05: the 180d tier never deletes crisis cases; it deletes old injection logs", () => {
+    const E_CASE = "0d7d7d7d-0000-4000-8000-0000000000f1";
+    const E_OPEN = "0d7d7d7d-0000-4000-8000-0000000000f2";
+
+    const cases = (): Promise<number> =>
+      count(`SELECT count(*) AS n FROM public.crisis_review_cases`, []);
+    const auditRows = (): Promise<number> =>
+      count(`SELECT count(*) AS n FROM public.crisis_review_audit_log`, []);
+    const injections = (): Promise<number> =>
+      count(`SELECT count(*) AS n FROM public.tutor_injection_log`, []);
+
+    async function injection(daysAgo: number): Promise<void> {
+      await q(
+        `INSERT INTO public.tutor_injection_log
+           (conversation_id, student_id, detection_layer, action_taken, detected_at)
+         VALUES ($1, $2, 'fixture', 'fixture', now() - make_interval(days => $3))`,
+        [E_OPEN, BEN, daysAgo],
+      );
+    }
+
+    beforeEach(async () => {
+      await q(`DELETE FROM public.crisis_review_audit_log`);
+      await q(`DELETE FROM public.crisis_review_cases`);
+      await q(`DELETE FROM public.tutor_injection_log`);
+      await q(`DELETE FROM public.tutor_memory_summaries`);
+      await q(`DELETE FROM public.tutor_conversations`);
+      // A case flagged 200 days ago and resolved, with the audit row the disposition writer
+      // (server/services/crisis-review-queue.ts updateCaseDisposition) records.
+      await conversation(E_CASE, BEN, null, 2);
+      await flag(E_CASE, BEN);
+      await q(
+        `UPDATE public.crisis_review_cases
+            SET status = 'resolved', disposition = 'true_positive', reviewer_id = $2,
+                reviewed_at = now() - interval '190 days', created_at = now() - interval '200 days'
+          WHERE conversation_id = $1`,
+        [E_CASE, ANA],
+      );
+      await q(
+        `INSERT INTO public.crisis_review_audit_log (case_id, conversation_id, reviewer_id, action, metadata)
+         SELECT id, conversation_id, $2, 'disposition_set', '{"new_status":"resolved"}'::jsonb
+           FROM public.crisis_review_cases WHERE conversation_id = $1`,
+        [E_CASE, ANA],
+      );
+      // An open case of the same age.
+      await conversation(E_OPEN, BEN, null, 1);
+      await flag(E_OPEN, BEN);
+      await q(
+        `UPDATE public.crisis_review_cases SET created_at = now() - interval '200 days'
+          WHERE conversation_id = $1`,
+        [E_OPEN],
+      );
+      await injection(200);
+      await injection(170);
+    });
+
+    afterAll(async () => {
+      await q(`DELETE FROM public.crisis_review_audit_log`);
+    });
+
+    it("presence first: two 200-day-old cases (one resolved, audited), two injection rows", async () => {
+      expect(await cases()).toBe(2);
+      expect(
+        await count(
+          `SELECT count(*) AS n FROM public.crisis_review_cases
+            WHERE status = 'resolved' AND created_at < now() - interval '180 days'`,
+          [],
+        ),
+      ).toBe(1);
+      expect(await auditRows()).toBe(1);
+      expect(await injections()).toBe(2);
+    });
+
+    it("live run: every case and audit row stays; the injection row past 180 days goes", async () => {
+      const result = await sweep("180d");
+      expect(result).toMatchObject({
+        ok: true,
+        dry_run: false,
+        deleted_count: 1,
+      });
+      expect(await cases()).toBe(2);
+      expect(await auditRows()).toBe(1);
+      expect(await injections()).toBe(1);
+      expect(
+        await count(
+          `SELECT count(*) AS n FROM public.tutor_injection_log
+            WHERE detected_at > now() - interval '180 days'`,
+          [],
+        ),
+      ).toBe(1);
+    });
+
+    it("dry run counts the injection row only and deletes nothing", async () => {
+      const result = await sweep("180d", true);
+      expect(result).toMatchObject({
+        ok: true,
+        dry_run: true,
+        deleted_count: 1,
+      });
+      expect(await cases()).toBe(2);
+      expect(await injections()).toBe(2);
+    });
+
+    it("empty tables: ok, deleted_count 0", async () => {
+      await q(`DELETE FROM public.tutor_injection_log`);
+      expect(await sweep("180d")).toMatchObject({ ok: true, deleted_count: 0 });
     });
   });
 });

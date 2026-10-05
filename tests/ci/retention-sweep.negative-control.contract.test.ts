@@ -29,25 +29,19 @@
  *    module carries no archive path at all.
  *
  * edge cases:
- *  - 180d crisis: only RESOLVED cases are swept. Open/in-review cases older
- *    than 180 days are retained regardless of age (safety review ongoing).
- *    This is the spec's "hard delete at 180 days or on closure, whichever is
- *    later." Status values are derived from CRISIS_STATUS (which traces to the
- *    CHECK constraint), never hardcoded — LISA-GCP-002.
- *  - 7d memory summaries: only purged when a student has zero remaining active
- *    conversations (conservative — spec says "cascade from account/entitlement").
- *  - 7d and 90d tiers run against real Postgres (tests/ci/retention-sweep.pg.ci.test.ts).
- *  - Cross-student: a sweep must not delete another student's unexpired rows.
+ *  - The 7d, 90d and 180d tiers run against real Postgres
+ *    (tests/ci/retention-sweep.pg.ci.test.ts, RS-00/RS-04/RS-05): the
+ *    filtering mock agreed with two schema bugs (a column that does not exist,
+ *    a RESTRICT foreign key it did not model). What stays here is pure or
+ *    source-level: the cutoff function, the 365d no-op, the archive removal.
  */
 import { describe, it, expect, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { stripComments } from "./lib/strip-comments";
 import {
-  sweep180d,
   sweep365d,
   retentionCutoff,
-  CRISIS_STATUS,
 } from "../../server/services/retention-sweep";
 
 // ── Mock logger ──────────────────────────────────────────────────────
@@ -63,17 +57,8 @@ vi.mock("../../server/logger", () => ({
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
 /** Fixed "now" for all tests — makes boundary arithmetic deterministic. */
 const NOW = new Date("2026-08-21T12:00:00.000Z");
-
-/**
- * Helper: produce an ISO timestamp N days before NOW.
- */
-function daysAgo(n: number): string {
-  return new Date(NOW.getTime() - n * MS_PER_DAY).toISOString();
-}
 
 // ── Filtering mock client ────────────────────────────────────────────
 
@@ -294,196 +279,12 @@ describe("retentionCutoff (pure boundary function)", () => {
 // configuration, dry run, the boundary, isolation from the 7d/180d tables, the empty table — runs
 // in tests/ci/retention-sweep.pg.ci.test.ts against the real schema.
 
-// ── 180-day tier ─────────────────────────────────────────────────────
-
-describe("180d tier — delete outright", () => {
-  it("deletes expired resolved crisis cases + injection logs", async () => {
-    const client = filteringMockClient({
-      crisis_review_cases: [
-        {
-          id: "crisis-expired",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(200),
-        },
-        {
-          id: "crisis-fresh",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(90),
-        },
-      ],
-      tutor_injection_log: [
-        { id: "inj-expired", detected_at: daysAgo(181) },
-        { id: "inj-fresh", detected_at: daysAgo(179) },
-      ],
-    });
-
-    const result = await sweep180d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(2);
-      expect(result.dry_run).toBe(false);
-    }
-
-    // Negative control: unexpired rows survive
-    expect(client._store.crisis_review_cases).toHaveLength(1);
-    expect(client._store.crisis_review_cases[0].id).toBe("crisis-fresh");
-    expect(client._store.tutor_injection_log).toHaveLength(1);
-    expect(client._store.tutor_injection_log[0].id).toBe("inj-fresh");
-  });
-
-  it("open/in-review crisis cases retained regardless of age", async () => {
-    const client = filteringMockClient({
-      crisis_review_cases: [
-        // Open case, 200 days old — NOT swept (safety review ongoing)
-        {
-          id: "crisis-open-old",
-          status: CRISIS_STATUS.OPEN,
-          created_at: daysAgo(200),
-        },
-        // In-review case, 190 days old — NOT swept
-        {
-          id: "crisis-review-old",
-          status: CRISIS_STATUS.IN_REVIEW,
-          created_at: daysAgo(190),
-        },
-        // Resolved case, 200 days old — swept
-        {
-          id: "crisis-resolved-old",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(200),
-        },
-      ],
-      tutor_injection_log: [],
-    });
-
-    const result = await sweep180d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(1); // only the resolved one
-    }
-
-    // Open + in-review survive
-    expect(client._store.crisis_review_cases).toHaveLength(2);
-    const ids = client._store.crisis_review_cases.map((r: Row) => r.id);
-    expect(ids).toContain("crisis-open-old");
-    expect(ids).toContain("crisis-review-old");
-    expect(ids).not.toContain("crisis-resolved-old");
-  });
-
-  it("deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)", async () => {
-    // The 180d counterpart of the 90d assertion above. This tier carried the
-    // worst of the §5.4 violation — `reviewer_id` and `review_notes`, human
-    // free text about a minor in crisis — so the reversal matters most here.
-    const saved = process.env.BIGQUERY_ARCHIVE_DATASET;
-    delete process.env.BIGQUERY_ARCHIVE_DATASET;
-    try {
-      const client = filteringMockClient({
-        crisis_review_cases: [
-          {
-            id: "crisis-expired",
-            status: CRISIS_STATUS.RESOLVED,
-            created_at: daysAgo(200),
-          },
-          {
-            id: "crisis-fresh",
-            status: CRISIS_STATUS.RESOLVED,
-            created_at: daysAgo(90),
-          },
-        ],
-        tutor_injection_log: [],
-      });
-
-      const result = await sweep180d(client, false, { now: NOW });
-
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.deleted_count).toBe(1);
-
-      expect(client._store.crisis_review_cases).toHaveLength(1);
-      expect(client._store.crisis_review_cases[0].id).toBe("crisis-fresh");
-    } finally {
-      if (saved === undefined) delete process.env.BIGQUERY_ARCHIVE_DATASET;
-      else process.env.BIGQUERY_ARCHIVE_DATASET = saved;
-    }
-  });
-
-  it("dry-run still counts expired rows (monitoring path preserved)", async () => {
-    const client = filteringMockClient({
-      crisis_review_cases: [
-        {
-          id: "crisis-expired",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(200),
-        },
-      ],
-      tutor_injection_log: [{ id: "inj-expired", detected_at: daysAgo(181) }],
-    });
-
-    const result = await sweep180d(client, true, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(2);
-      expect(result.dry_run).toBe(true);
-    }
-
-    // Both survive — no DELETE
-    expect(client._store.crisis_review_cases).toHaveLength(1);
-    expect(client._store.tutor_injection_log).toHaveLength(1);
-  });
-
-  it("dry-run: open/in-review crisis cases not counted", async () => {
-    const client = filteringMockClient({
-      crisis_review_cases: [
-        { id: "crisis-open-old", status: "open", created_at: daysAgo(200) },
-        {
-          id: "crisis-review-old",
-          status: "in_review",
-          created_at: daysAgo(190),
-        },
-        {
-          id: "crisis-closed-old",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: daysAgo(200),
-        },
-      ],
-      tutor_injection_log: [],
-    });
-
-    const result = await sweep180d(client, true, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(1); // only the resolved one counted
-      expect(result.dry_run).toBe(true);
-    }
-
-    // ALL survive — dry-run
-    expect(client._store.crisis_review_cases).toHaveLength(3);
-  });
-
-  it("exact boundary: dry-run at 180 days reports 0 expired", async () => {
-    const exactBoundary = retentionCutoff(NOW, 180);
-    const client = filteringMockClient({
-      crisis_review_cases: [
-        {
-          id: "crisis-exact",
-          status: CRISIS_STATUS.RESOLVED,
-          created_at: exactBoundary,
-        },
-      ],
-      tutor_injection_log: [],
-    });
-
-    const result = await sweep180d(client, true, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.deleted_count).toBe(0);
-
-    expect(client._store.crisis_review_cases).toHaveLength(1);
-  });
-});
+// 180d tier: moved to real Postgres (RS-05, 2026-10-05). This block asserted that resolved crisis
+// cases older than 180 days were deleted — the behaviour the owner ruling removes (cases and their
+// audit rows are manual purge, Doc 03 §14.2). The mock had no crisis_review_audit_log and so no
+// ON DELETE RESTRICT, which is why it stayed green while the real delete failed. The 180d cases —
+// injection rows on both sides of the boundary, every crisis case kept, dry run, empty — run in
+// tests/ci/retention-sweep.pg.ci.test.ts.
 
 // ── 365-day tier ─────────────────────────────────────────────────────
 
@@ -508,25 +309,6 @@ describe("365d tier — structured no-op", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe("365d_tables_not_provisioned");
-    }
-  });
-});
-
-// ── Empty tables ─────────────────────────────────────────────────────
-
-describe("empty tables — no rows to sweep", () => {
-  it("180d returns ok: true, deleted_count: 0 on empty tables", async () => {
-    const client = filteringMockClient({
-      crisis_review_cases: [],
-      tutor_injection_log: [],
-    });
-
-    const result = await sweep180d(client, false, { now: NOW });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.deleted_count).toBe(0);
-      expect(result.dry_run).toBe(false);
     }
   });
 });

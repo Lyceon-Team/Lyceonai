@@ -219,7 +219,7 @@ flowchart TD
   WB -->|"trigger_reason 'end' ∉ {close,threshold,stale} → 400 :85, 95-110"| DEAD[["dead: no summary written"]]
   WB -.->|"if it parsed"| EXC["executeCompaction server/services/tutor-compaction.ts:109-260<br/>→ compactConversation OC:387 → worker /compact"]
   SCH["Cloud Scheduler lyceon-retention-sweep-{7d,90d,180d}<br/>infra/terraform/cloud-scheduler.tf:69-241"] --> RS["POST /api/internal/retention/sweep<br/>server/routes/internal-retention-routes.ts:108-186 (OIDC)"]
-  RS --> RT["retention-sweep.ts tiers<br/>7d: hard-delete deleted_at conversations (+cascade msgs) :120-205<br/>90d: assignments/exposures :285-305<br/>180d: resolved crisis cases, injection log :401-420<br/>365d: always ok:false :455"]
+  RS --> RT["retention-sweep.ts tiers<br/>7d: RPC sweep_tutor_conversation_retention — unflagged deleted_at conversations (+cascade), crisis-flagged kept (RS-00)<br/>90d: assignments (created_at) / exposures (shown_at) (RS-04)<br/>180d: injection log only; crisis cases are manual purge (RS-05)<br/>365d: always ok:false"]
   RT -->|"ok:false → INFO sweep_skipped + 200 (no retry) :147-159"| QUIET[["silent"]]
   LAPSE["entitlement-lapse trigger stamps deleted_at<br/>supabase/migrations/20260922010000_tutor_lapse_severance.sql:85-106"] --> RT
 ```
@@ -323,7 +323,7 @@ Grouped by where it sits on the path. "Level" is the logger level. "—" means n
 | D34 | `cloud-tasks-enqueue.ts:110-117` | No GCP token → skip logged at **DEBUG**, dropped outside development (`server/logger.ts:555`) | Nothing | **Invisible in production** | None |
 | D35 | `TR:2034` | `PUBLIC_SITE_URL` unset → target **and OIDC audience** become `http://localhost:3000/...` | Nothing | — | None |
 | D36 | `internal-retention-routes.ts:147-159` | Any tier DB error returns `{ok:false}` → **INFO** `sweep_skipped` + HTTP 200, so Cloud Scheduler does not retry | n/a | INFO | None |
-| D37 | `retention-sweep.ts:170-205` | 7d memory-summary deletion is not transactional with the conversation delete, so summaries can be orphaned indefinitely | n/a | WARN/— | None |
+| D37 | `retention-sweep.ts:170-205` | 7d memory-summary deletion is not transactional with the conversation delete, so summaries can be orphaned indefinitely | n/a | WARN/— | FIXED 2026-10-05 (RS-00): one SQL function, one transaction (`sweep_tutor_conversation_retention`) |
 | D38 | `tutor-memory-refresh.ts:42-58`, `tutor-pending-reconciliation.ts:33-44`, `internal-memory-routes.ts:224-237, 313-321` | Memory refresh and pending reconciliation are stubs returning `not_implemented` with HTTP 200 | n/a | INFO | None |
 
 **Client**
@@ -561,7 +561,7 @@ stateDiagram-v2
   in_review --> resolved: updateCaseDisposition :303-313
   open --> resolved: updateCaseDisposition (API allows; UI does not)
   resolved --> resolved: re-resolve overwrites reviewer/disposition (no guard)
-  resolved --> [*]: 180d retention delete retention-sweep.ts:401-404
+  resolved --> [*]: manual purge only (Doc 03 §14.2; RS-05 2026-10-05 — no sweep deletes a case)
 ```
 
 - Audit metadata hardcodes `previous_status:"open"` (`crisis-review-queue.ts:337`), which is wrong on the UI's only path.

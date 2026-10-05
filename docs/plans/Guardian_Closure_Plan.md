@@ -273,5 +273,6 @@ Rows this vertical routed out. They do not block COMPLETE; each is owned elsewhe
 | inventory G2 | `tests/e2e/exam-disclosure.spec.ts` guardian step: the exam e2e harness served no `/api/guardian/students` roster, which the Wave 4 shell reads first. It had failed since Wave 4; local only | guardian (final purge, owner brief 2026-10-02) | DONE — final-purge item 9: FIXED, not deleted (no other test drives the real report payload through to the guardian screen in a browser). The harness mounts the real `/api/guardian` router; its entitlement stub answers the roster with the real `entitlement_active` RPC; the spec passes |
 | — | Counsel review: is a redeemed guardian link valid under-13 consent? | Karl / counsel | OPEN |
 | — | Privacy Policy §6.2 still promises skill-level mastery (SCL-194) | Karl / counsel | OPEN |
+| — | Privacy Policy retention table (LISA Conversation Content) keeps flagged conversation content "up to ninety (90) days after resolution"; Doc 03 §14.2 says 180 days with manual purge by the safety review queue owner, and the build (RS-00/RS-05, 2026-10-05) never purges flagged conversations or crisis cases automatically. Which number is the commitment? No legal text edited | Karl / counsel | OPEN |
 
 G-NEW-15 is not handed off: the guardian closeout PR does it (dead-code purge, category F), and it is CLOSED (owner, 2026-10-02).

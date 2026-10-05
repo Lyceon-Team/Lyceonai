@@ -26,7 +26,9 @@
  *  - 90d/180d tiers delete outright. They used to archive every expired row
  *    to BigQuery first and decline when they could not; the owner ruling of
  *    2026-09-22 removed the archive (Doc 07B §5.4). Neither tier can decline
- *    any more, which is why both are scheduled for the first time.
+ *    any more, which is why both are scheduled for the first time. 90d
+ *    measures exposures by `shown_at` (RS-04); 180d deletes injection logs
+ *    only — crisis cases and their audit rows are manual purge (RS-05).
  *  - 365d tier: tables (cost telemetry, quota appeals) not yet provisioned.
  *    Returns { ok: false, reason: "365d_tables_not_provisioned" }.
  *  - Dry-run returns count only (SELECT COUNT, no DELETE). Used for
