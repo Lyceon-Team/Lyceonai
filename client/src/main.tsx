@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import App from "./App";
+import { captureFirstTouch } from "./lib/analytics/first-touch";
 import "./index.css";
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: the math stylesheet is no longer imported here. MathRenderer.tsx imports it
@@ -30,8 +31,13 @@ window.__BUILD__ = `${new Date().toISOString().slice(0, 10)}-${Date.now().toStri
 // legal corpus, while Trust & Safety promises that every provider which processes your data
 // is named in the Privacy Policy.
 //
-// Removed 2026-09-21 (Phase 7 Part B). Vercel Analytics stays, mounted in App.tsx:
-// page-level, not session replay, and now disclosed in Privacy Policy v3 §6.6 and §5.2.
+// Removed 2026-09-21 (Phase 7 Part B). Vercel Analytics, which stayed then, was retired
+// 2026-10-05 (SEO F10, SCL-201). Analytics is now PostHog, started only after cookie consent
+// from `client/src/lib/analytics/posthog-client.ts` — never from here.
+
+// SCL-201 IS 6: read the landing address and referrer before the router can change the URL.
+// In memory only — no storage, no network — so it runs before consent.
+captureFirstTouch();
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

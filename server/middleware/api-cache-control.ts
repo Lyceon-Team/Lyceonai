@@ -32,12 +32,6 @@ export const API_CACHEABLE_ROUTES: ReadonlyArray<{
   },
   {
     method: "GET",
-    path: "/api/public/qotd/today",
-    reason:
-      "Today's public Question of the Day before submit: the same body for every viewer, answer and explanation null, max-age 60 (server/routes/public-qotd-routes.ts).",
-  },
-  {
-    method: "GET",
     path: "/api/public/qotd/archive",
     reason:
       "The public list of past Question of the Day dates with section and domain: the same body for every viewer, max-age 3600 (server/routes/public-qotd-routes.ts).",

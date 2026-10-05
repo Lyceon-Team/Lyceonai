@@ -146,7 +146,8 @@ export default function QuestionRenderer({
   if (!hasUsableMcChoices) {
     if (isGrid) {
       return (
-        <div className="space-y-5">
+        // SCL-204 / R32: `ph-no-capture` — student answers are never recorded (Coding Standards §12).
+        <div className="ph-no-capture space-y-5">
           {question.passage ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-base text-slate-800 whitespace-pre-wrap">
               <MathRenderer content={question.passage} />
@@ -171,7 +172,9 @@ export default function QuestionRenderer({
   }
 
   return (
-    <div className="space-y-5">
+    // SCL-204 / R32: `ph-no-capture` on the question/answer area (practice, review, QOTD) — student
+    // answers are never recorded (Coding Standards §12).
+    <div className="ph-no-capture space-y-5">
       {question.passage ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-base text-slate-800 whitespace-pre-wrap">
           <MathRenderer content={question.passage} />

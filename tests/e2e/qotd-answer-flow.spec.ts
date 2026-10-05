@@ -36,7 +36,6 @@ import fs from "fs";
 import path from "path";
 import {
   gradeQotd,
-  qotdCorrectOptionId,
   toArchiveIndexResponse,
   toTodayResponse,
 } from "../../server/services/qotd/qotd-service";
@@ -47,6 +46,8 @@ import {
 } from "../../packages/shared/src/qotd-schema";
 import { QOTD_ARCHIVE_ROWS, qotdTodayRow } from "../lib/qotd-fixture";
 
+// Mocked mode builds payloads with the server's token code, which keys off this secret.
+process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??= "e2e-mock-secret-not-real";
 const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:5175";
 const LIVE = process.env.E2E_QOTD_LIVE_API === "1";
 const STUB_TURNSTILE = process.env.E2E_TURNSTILE_STUB === "1";
@@ -150,7 +151,7 @@ function mockApi(page: Page, posted: unknown[]): Promise<void> {
             data: qotdSubmitResponseSchema.parse({
               qotd_date: row.qotd_date,
               is_correct: graded.isCorrect,
-              correct_option_id: qotdCorrectOptionId(row),
+              correct_option_id: graded.correctOptionId,
               correct_answer: null,
               explanation: row.explanation ?? "",
               stats: qotdStat(6, 4),
@@ -202,20 +203,43 @@ test.describe("Question of the Day", () => {
       }
     }
 
-    // 2. The widget renders today's question inside ph-no-capture.
+    // 2. The widget renders today's question inside ph-no-capture. Turnstile is requested only
+    //    on interaction (owner ruling 2026-10-05), so count its requests from page load.
+    const turnstileRequests: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("challenges.cloudflare.com"))
+        turnstileRequests.push(r.url());
+    });
+    // The homepage widget is lazy (owner request 2026-10-05): its chunk and KaTeX load only when
+    // the slot nears the viewport, so record those requests and scroll to the slot first.
+    const lazyChunks: string[] = [];
+    page.on("request", (r) => {
+      if (/\/assets\/(QotdWidget|MathRenderer)-/.test(r.url()))
+        lazyChunks.push(r.url());
+    });
     await page.goto("/");
+    const entryHtml = (await (await page.request.get("/")).text()) ?? "";
+    expect(entryHtml).not.toMatch(
+      /modulepreload[^>]*(QotdWidget|MathRenderer)/,
+    );
+    await page.getByTestId("qotd-lazy-slot").scrollIntoViewIfNeeded();
     const area = page.getByTestId("qotd-question-area");
     await expect(area).toBeVisible({ timeout: 20_000 });
     await expect(area).toHaveClass(/ph-no-capture/);
     await expect(area.getByText("Explanation", { exact: true })).toHaveCount(0);
 
-    // 3. Turnstile issues a token (test key), then submit becomes possible once a choice is made.
+    // 3. No Turnstile before a pick; picking loads it, it issues a token (test key) and submit
+    //    becomes possible. The options are shuffled server-side; the first on-screen one is "A".
+    expect(turnstileRequests).toEqual([]);
+    await expect(
+      page.locator('iframe[src*="challenges.cloudflare.com"]'),
+    ).toHaveCount(0);
+    await area.getByRole("button").first().click();
     await expect(
       page.locator('iframe[src*="challenges.cloudflare.com"]'),
     ).toHaveCount(1, {
       timeout: 20_000,
     });
-    await area.getByRole("button").first().click();
     const submit = page.getByTestId("qotd-submit");
     await expect(submit).toBeEnabled({ timeout: 20_000 });
     await page.screenshot({
@@ -229,6 +253,13 @@ test.describe("Question of the Day", () => {
       timeout: 20_000,
     });
     await expect(area.getByText("Explanation", { exact: true })).toBeVisible();
+    // One answer per visit: the widget is locked — no submit control, every choice disabled.
+    await expect(page.getByTestId("qotd-locked")).toBeVisible();
+    await expect(page.getByTestId("qotd-submit")).toHaveCount(0);
+    const choices = area.getByRole("button");
+    for (let i = 0; i < (await choices.count()); i += 1) {
+      await expect(choices.nth(i)).toBeDisabled();
+    }
     await page.screenshot({
       path: path.join(SHOT_DIR, "qotd-after-submit.png"),
       fullPage: false,
@@ -236,7 +267,8 @@ test.describe("Question of the Day", () => {
     if (!LIVE) {
       expect(posted).toHaveLength(1);
       const sent = posted[0] as { answer: string; turnstile_token: string };
-      expect(sent.answer).toBe("A");
+      // The first on-screen choice is sent as its opaque token, never a letter.
+      expect(sent.answer).toMatch(/^[A-Za-z0-9_-]{22}$/);
       expect(sent.turnstile_token.length).toBeGreaterThan(10);
       await expect(page.getByTestId("qotd-stat")).toHaveText(
         "67% of students got this right.",
@@ -254,6 +286,67 @@ test.describe("Question of the Day", () => {
       JSON.stringify(csp, null, 2),
     );
     expect(csp).toEqual([]);
+  });
+
+  test("homepage at mobile size: the widget chunk and KaTeX load only once the slot nears the viewport", async ({
+    browser,
+  }) => {
+    const page = await browser.newPage({
+      viewport: { width: 412, height: 823 },
+    });
+    const posted: unknown[] = [];
+    await bypass(page);
+    if (!LIVE) await mockApi(page, posted);
+    const lazyChunks: string[] = [];
+    page.on("request", (r) => {
+      if (/\/assets\/(QotdWidget|MathRenderer)-/.test(r.url()))
+        lazyChunks.push(r.url());
+    });
+    await page.goto("/", { waitUntil: "networkidle" });
+    // Presence first: the slot is on the page, below the fold.
+    await expect(page.getByTestId("qotd-lazy-slot")).toHaveCount(1);
+    expect(lazyChunks).toEqual([]);
+    await page.getByTestId("qotd-lazy-slot").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("qotd-question-area")).toBeVisible({
+      timeout: 20_000,
+    });
+    expect(lazyChunks.some((u) => u.includes("/QotdWidget-"))).toBe(true);
+    expect(lazyChunks.some((u) => u.includes("/MathRenderer-"))).toBe(true);
+    await page.close();
+  });
+
+  test("the hub's widget (not lazy) answers end to end too", async ({
+    page,
+  }) => {
+    const posted: unknown[] = [];
+    await bypass(page);
+    if (!LIVE) await mockApi(page, posted);
+    if (STUB_TURNSTILE) {
+      await page.route(/challenges\.cloudflare\.com\/turnstile\//, (route) =>
+        route.fulfill({
+          contentType: "text/javascript",
+          body: TURNSTILE_STUB_JS,
+        }),
+      );
+      await page.route(/challenges\.cloudflare\.com\/stub/, (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: "<!doctype html><p>stub</p>",
+        }),
+      );
+    }
+    await page.goto("/sat-question-of-the-day");
+    const area = page.getByTestId("qotd-question-area");
+    await expect(area).toBeVisible({ timeout: 20_000 });
+    await area.getByRole("button").first().click();
+    const submit = page.getByTestId("qotd-submit");
+    await expect(submit).toBeEnabled({ timeout: 20_000 });
+    await submit.click();
+    await expect(page.getByText(/^(Correct|Incorrect)$/)).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("qotd-locked")).toBeVisible();
+    if (!LIVE) expect(posted).toHaveLength(1);
   });
 
   test("an archive page has its own head, Quiz JSON-LD and a sitemap entry (live only)", async ({
