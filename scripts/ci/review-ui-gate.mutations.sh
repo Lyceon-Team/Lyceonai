@@ -35,6 +35,10 @@ FILES=(
   "client/src/hooks/useCanonicalPractice.ts"
   "client/src/hooks/useKeyboardShortcuts.ts"
   "client/src/components/layout/app-shell.tsx"
+  "client/src/components/layout/HeaderUserMenu.tsx"
+  "client/src/components/home/FullLengthCard.tsx"
+  "client/src/components/home/PaidHome.tsx"
+  "client/src/components/home/FreeHome.tsx"
   "packages/shared/src/return-path.ts"
   "client/src/features/exam/lib/tests-home-model.ts"
   "client/src/features/exam/pages/TestsHomePage.tsx"
@@ -255,11 +259,12 @@ s = s.replace(a, "  if (false) {", 1)'
 
 # ── U8 — review is reachable from the global nav ─────────────────────────────────────
 # Re-pointed 2026-10-03 (student UI UI-41): the top-nav `navItems` array became the rail's
-# `RAIL_ITEMS`, so the plant removes the whole Review rail entry.
+# `RAIL_ITEMS`, so the plant removes the whole Review rail entry. Re-anchored 2026-10-05: the
+# rail item lost #1108's `inTabBar` flag (the tab bar has its own `TAB_BAR_KEYS`).
 plant "U8" "remove the Review entry from the live global nav" \
   "client/src/review-entry-points.test.ts" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "  {\n    key: \"review\",\n    label: \"Review\",\n    href: \"/review\",\n    icon: RotateCcw,\n    lock: null,\n    inTabBar: true,\n  },\n"
+  'a = "  {\n    key: \"review\",\n    label: \"Review\",\n    href: \"/review\",\n    icon: RotateCcw,\n    lock: null,\n  },\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
@@ -1913,38 +1918,143 @@ assert s.count(a) == 1
 s = s.replace(a, "\"flex w-full items-center gap-4 rounded-lg px-5", 1)'
 
 # ── Owner rulings (Karl, 2026-10-05): mobile tab bar, avatar menu, Full-Length naming ─────
-# Tabs Home, Practice, Review, Calendar, LISA; avatar menu Full-Length, Settings, Help, Sign out
-# (supersedes OQ-4's tab bar and OQ-48's menu order); the Full-Length home's phone notice with
-# "Continue anyway", never blocked; every student-facing "Tests" label becomes "Full-Length".
+# The later 2026-10-05 ruling (supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62, and the
+# earlier same-day ruling built in #1108): phone tabs Home, Review, Practice, Calendar, LISA; the
+# avatar menu Settings, Help, Sign out (admins add Crisis review); Full-Length on neither phone
+# surface, reached on a phone from a calendar block or Home's card; the desktop rail unchanged.
+# FU-M1–M4 re-pointed from #1108's `inTabBar` flags to `TAB_BAR_KEYS` and the menu's `items`.
+# The Full-Length home's phone notice with "Continue anyway" stays (FU-N1–N3); every
+# student-facing "Tests" label is "Full-Length" (FU-T1–T3).
 T41_RAIL="client/src/components/layout/app-shell.rail.test.tsx"
+T50_HOME="client/src/pages/lyceon-dashboard.test.tsx"
 
 plant "FU-M1" "Full-Length back on the phone tab bar" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: false,"
+  'a = "  \"calendar\",\n  \"lisa\",\n] as const;"
 assert s.count(a) == 1
-s = s.replace(a, "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: true,", 1)'
+s = s.replace(a, "  \"calendar\",\n  \"full-length\",\n  \"lisa\",\n] as const;", 1)'
 
-plant "FU-M2" "Calendar off the phone tab bar (the OQ-4 bar)" \
+plant "FU-M2" "the tab bar goes back to #1108's order (Practice before Review)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: true,"
+  'a = "  \"review\",\n  \"practice\",\n"
 assert s.count(a) == 1
-s = s.replace(a, "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: false,", 1)'
+s = s.replace(a, "  \"practice\",\n  \"review\",\n", 1)'
 
-plant "FU-M3" "the avatar menu leads with Calendar (the OQ-48 order)" \
+plant "FU-M3" "Full-Length back in the avatar menu (#1108's menu)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      leadingItems={RAIL_ITEMS.filter((item) => !item.inTabBar).map((item) => ("
+  'a = "      items={<MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" />}"
 assert s.count(a) == 1
-s = s.replace(a, "      leadingItems={RAIL_ITEMS.filter((item) => item.key === \"calendar\").map((item) => (", 1)'
+s = s.replace(a, "      items={<><MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" /><MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" /></>}", 1)'
 
-plant "FU-M4" "a locked Full-Length menu entry navigates instead of opening the modal" \
+plant "FU-M4" "Calendar off the phone tab bar" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "if (reason !== null && lock !== null && lock.behaviour === \"modal\") {"
+  'a = "  \"practice\",\n  \"calendar\",\n"
 assert s.count(a) == 1
-s = s.replace(a, "if (reason !== null && lock !== null && lock.behaviour === \"navigate\") {", 1)'
+s = s.replace(a, "  \"practice\",\n", 1)'
+
+plant "FU-M5" "the tab bar takes the rail's order instead of its own" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "TAB_BAR_KEYS.map(railItem);"
+assert s.count(a) == 1
+s = s.replace(a, "RAIL_ITEMS.filter((i) => (TAB_BAR_KEYS as readonly string[]).includes(i.key));", 1)'
+
+plant "FU-M6" "the admin menu loses Help" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "        {items}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {isAdmin ? null : items}\n", 1)'
+
+# F-70: the avatar dropdown follows the page theme (student tokens, the shell's theme lock).
+plant "F70-1" "the App shell's menu back on the app-wide tone (outside any .lyc root)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      tone=\"student\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "F70-2" "the menu ignores the shell's light lock" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "portalThemeLock: themeLock }"
+assert s.count(a) == 1
+s = s.replace(a, "portalThemeLock: null }", 1)'
+
+plant "F70-3" "the student menu panel drawn with the app-wide light tokens" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "    content: \"w-56 border-lyc-rule bg-lyc-sheet text-lyc-ink\","
+assert s.count(a) == 1
+s = s.replace(a, "    content: \"w-56 bg-background border-border\",", 1)'
+
+plant "F70-4" "student menu items take the app-wide accent on focus" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "  \"text-lyc-ink focus:bg-lyc-hover focus:text-lyc-ink-strong\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"text-lyc-ink focus:bg-accent focus:text-lyc-ink-strong\";", 1)'
+
+# Home's "Start a full-length test" card (the ruling's item 4).
+plant "HC-1" "no full-length card on the paid Home" \
+  "$T50_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "      <FullLengthCard />\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "HC-2" "no full-length card on the free Home" \
+  "$T50_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "      <FullLengthCard />\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "HC-3" "a locked card navigates instead of opening the modal" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "        {reason === null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "        {true ? (", 1)'
+
+plant "HC-4" "the locked card opens the modal for the wrong feature" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "open(\"exam_full_length\", reason)"
+assert s.count(a) == 1
+s = s.replace(a, "open(\"tutor_access\", reason)", 1)'
+
+plant "HC-5" "the card links somewhere other than the Full-Length page" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "const FULL_LENGTH_HREF = \"/tests\";"
+assert s.count(a) == 1
+s = s.replace(a, "const FULL_LENGTH_HREF = \"/practice\";", 1)'
+
+plant "HC-6" "the card's link becomes a second filled primary" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "<Button asChild variant=\"lyc-outline\" size=\"lyc\">"
+assert s.count(a) == 1
+s = s.replace(a, "<Button asChild variant=\"lyc-primary\" size=\"lyc\">", 1)'
+
+plant "HC-7" "the card is hidden on a phone" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "className=\"flex flex-col gap-4 rounded-lg border"
+assert s.count(a) == 1
+s = s.replace(a, "className=\"hidden lg:flex flex-col gap-4 rounded-lg border", 1)'
+
+plant "HC-8" "the card's line drifts from the approved Full-Length subtitle" \
+  "$T50_HOME" \
+  "client/src/components/home/FullLengthCard.tsx" \
+  'a = "and a scored report at the end.\";"
+assert s.count(a) == 1
+s = s.replace(a, "and a score at the end.\";", 1)'
 
 plant "FU-N1" "no phone notice on the Full-Length home" \
   "$T54_HOME" \

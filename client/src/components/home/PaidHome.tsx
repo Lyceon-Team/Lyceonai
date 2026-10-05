@@ -9,7 +9,8 @@
  *
  * plain English: the main column is the greeting and date line, today's plan from the calendar
  * with "Start today's plan" as the ONE primary action (it launches the first block of the day
- * that is not done; each row has its own outline Start), Mastery as wide rows, and "Pick up
+ * that is not done; each row has its own outline Start), the "Start a full-length test" card
+ * (owner ruling, Karl, 2026-10-05; FullLengthCard.tsx), Mastery as wide rows, and "Pick up
  * where you left off" (open practice, review and full-length sessions; the diagnostic is
  * dropped, wiring table §3). The right panel is the projected score with the target, this week's
  * seven days, and recent sessions.
@@ -45,6 +46,7 @@ import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { useActiveReviewSessions, useReviewPool } from "@/hooks/useReview";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
+import { FullLengthCard } from "./FullLengthCard";
 import {
   ProjectionSection,
   RecentSessionsSection,
@@ -198,6 +200,9 @@ export function PaidHome({
           onStart={(block) => void start(block)}
         />
       ) : null}
+
+      {/* Owner ruling (Karl, 2026-10-05) item 4: the full-length card, after today's plan. */}
+      <FullLengthCard />
 
       {mastery.data !== undefined ? (
         <section

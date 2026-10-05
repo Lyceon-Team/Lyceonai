@@ -14,7 +14,9 @@
  * plain English: the main column is the welcome, the diagnostic card (only while the student
  * has no baseline: a ruler of their own diagnostic's progress and "Start diagnostic", the ONE
  * primary action) and "How Lyceon works" (three steps tagged Free or Paid plans). Once the
- * diagnostic is done the card goes and "Go to practice" becomes the primary (OQ-39(c)). The
+ * diagnostic is done the card goes and "Go to practice" becomes the primary (OQ-39(c)). Last in
+ * the column is the "Start a full-length test" card (owner ruling, Karl, 2026-10-05), locked
+ * here: it opens the upgrade modal in place and reads nothing. The
  * right panel is the projected score (or why there is none yet), the locked mastery card
  * ("See what's included" opens the upgrade modal for `mastery_detail`) and today's quota.
  *
@@ -42,6 +44,7 @@ import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { usePracticeQuota } from "@/hooks/usePracticeQuota";
+import { FullLengthCard } from "./FullLengthCard";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
 import { answeredLine, freeHomeStage } from "./home-model";
 
@@ -256,6 +259,10 @@ export function FreeHome({
           </Link>
         </div>
       </section>
+
+      {/* Owner ruling (Karl, 2026-10-05) item 4: the full-length card, locked on the free plan
+          (it opens the upgrade modal in place). Last in the column, after the free flow. */}
+      <FullLengthCard />
 
       <AppShellPanel>
         <div className="flex flex-col gap-10" data-testid="home-panel">

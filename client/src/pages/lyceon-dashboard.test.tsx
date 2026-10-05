@@ -5,7 +5,8 @@
  * @spec [student-UI register UI-50; DESIGN.md §1 (one primary action), §3, §4 Home;
  *        evidence/wiring-table.md §3 Home (the endpoint behind each element); register §2 (free
  *        vs paid; mastery_level only; no raw accuracy; no bank counts; no confidence), OQ-21,
- *        OQ-22, OQ-23, OQ-29, OQ-36, OQ-39(c), §8 F-51] | @implemented [2026-10-03]
+ *        OQ-22, OQ-23, OQ-29, OQ-36, OQ-39(c), §8 F-51; owner ruling (Karl, 2026-10-05) item 4,
+ *        the "Start a full-length test" card] | @implemented [2026-10-03; card 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (its right
  * panel is where the panel sections portal), the real upgrade modal and a scripted network
@@ -64,6 +65,12 @@ import { resolveFeatureAccess } from "../../../server/lib/feature-access";
 import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
 import LyceonDashboard from "./lyceon-dashboard";
+import fs from "node:fs";
+import path from "node:path";
+import {
+  FULL_LENGTH_CARD_ACTION,
+  FULL_LENGTH_CARD_LINE,
+} from "@/components/home/FullLengthCard";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
 
@@ -889,5 +896,96 @@ describe("Home shows no raw accuracy, bank count or confidence (register §2; F-
     expect(text).not.toMatch(/\bcorrect\b/i);
     expect(text).not.toMatch(/confidence/i);
     expect(text).not.toContain("1130");
+  });
+});
+
+// ── The full-length card (owner ruling, Karl, 2026-10-05, item 4) ─────────────────────────
+
+describe("Home's 'Start a full-length test' card (owner ruling, Karl, 2026-10-05)", () => {
+  /** The card is drawn at every size: nothing on it or above it (to <main>) hides it. */
+  function expectShownAtEverySize(card: HTMLElement): void {
+    const HIDE = /(^|\s)((sm|md|lg|xl|max-lg|max-md):)?hidden(\s|$)/;
+    for (
+      let el: HTMLElement | null = card;
+      el !== null && el.tagName !== "MAIN";
+      el = el.parentElement
+    ) {
+      expect([el.getAttribute("data-testid"), HIDE.test(el.className)]).toEqual(
+        [el.getAttribute("data-testid"), false],
+      );
+    }
+  }
+
+  it("its words are the ruling's action and the Full-Length page's approved subtitle", () => {
+    expect(FULL_LENGTH_CARD_ACTION).toBe("Start a full-length test");
+    const prototype = fs.readFileSync(
+      path.join(
+        __dirname,
+        "../../../docs/plans/student-ui/design/prototype/FullLength.dc.html",
+      ),
+      "utf8",
+    );
+    expect(prototype).toContain(FULL_LENGTH_CARD_LINE);
+  });
+
+  it("paid: after today's plan, shown at every size, an outline link to /tests that navigates", async () => {
+    const { container, history } = await mount("paid", { calendar: "ready" });
+    const card = await screen.findByTestId("home-full-length");
+    expectShownAtEverySize(card);
+    expect(within(card).getByRole("heading", { level: 2 }).textContent).toBe(
+      "Full-Length",
+    );
+    expect(within(card).getByText(FULL_LENGTH_CARD_LINE)).toBeTruthy();
+    // Placed straight after today's plan.
+    expect(screen.getByTestId("home-plan").nextElementSibling).toBe(card);
+
+    const start = within(card).getByTestId("home-full-length-start");
+    expect(start.tagName).toBe("A");
+    expect(start.getAttribute("href")).toBe("/tests");
+    expect(start.textContent).toBe("Start a full-length test");
+    expect(within(card).queryByTestId("home-full-length-lock")).toBeNull();
+    // Not a second filled primary: Start today's plan stays the one.
+    await waitFor(() =>
+      expect(screen.getByTestId("home-mastery")).toBeTruthy(),
+    );
+    expect(primaries(container)).toEqual([
+      screen.getByTestId("home-start-plan"),
+    ]);
+
+    fireEvent.click(start);
+    expect(history[history.length - 1]).toBe("/tests");
+  });
+
+  it("free: last in the column, shown at every size, locked; a click opens the upgrade modal in place with no navigation and no gated request", async () => {
+    const { container, history } = await mount("free", {
+      estimateStatus: "no_baseline",
+    });
+    const card = await screen.findByTestId("home-full-length");
+    expectShownAtEverySize(card);
+    expect(screen.getByTestId("home-how").nextElementSibling).toBe(card);
+
+    const start = within(card).getByTestId("home-full-length-start");
+    expect(within(card).getByTestId("home-full-length-lock")).toBeTruthy();
+    // A button: no href, so nothing can navigate.
+    expect(start.tagName).toBe("BUTTON");
+    expect(start.getAttribute("href")).toBeNull();
+    expect(start.getAttribute("aria-label")).toBe(
+      "Start a full-length test, included with a paid plan",
+    );
+    expect(primaries(container)).toEqual([
+      screen.getByTestId("home-start-diagnostic"),
+    ]);
+
+    const before = net.log.length;
+    fireEvent.click(start);
+    const modal = await screen.findByTestId("upgrade-modal");
+    expect(modal.textContent).toContain(
+      UPGRADE_MODAL_COPY.exam_full_length.plan.title,
+    );
+    expect(history).toEqual(["/dashboard"]);
+    expect(
+      net.log.slice(before).filter((l) => /\/api\/(tests|exam)/.test(l)),
+    ).toEqual([]);
+    expect(gets().filter((p) => /^\/api\/(tests|exam)/.test(p))).toEqual([]);
   });
 });

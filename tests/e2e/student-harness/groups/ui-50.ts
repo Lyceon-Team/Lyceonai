@@ -3,7 +3,8 @@
  *
  * @spec [student-UI register §6 Wave 5 UI-50 ("side-by-side screenshot with the signed-off
  *        prototype ... and the page's main click path exercised"); design/DESIGN.md §4 Home;
- *        OQ-4 (390px, light and dark)] | @implemented [2026-10-03]
+ *        OQ-4 (390px, light and dark); owner ruling (Karl, 2026-10-05) item 4, the "Start a
+ *        full-length test" card] | @implemented [2026-10-03; card shots 2026-10-05]
  *
  * plain English: Home as each persona sees it, paired with Main.dc.html in the same plan; the
  * free locked mastery card's upgrade modal, paired with the canvas's own; and the two primary
@@ -139,6 +140,57 @@ export const UI_50: PageGroup = {
         kind: "none",
         reason:
           "A click path: the screenshot is where the click landed (the runner), proven by its pathname.",
+      },
+    },
+    {
+      id: "click-paid-full-length-card",
+      title:
+        "Click path (paid): Home's 'Start a full-length test' card lands on the Full-Length page (owner ruling, Karl, 2026-10-05)",
+      persona: "paid",
+      route: "/dashboard",
+      waitFor: {
+        desktop: '[data-testid="home-full-length"]',
+        mobile: '[data-testid="home-full-length"]',
+      },
+      steps: [
+        {
+          click: {
+            desktop: '[data-testid="home-full-length-start"]',
+            mobile: '[data-testid="home-full-length-start"]',
+          },
+        },
+      ],
+      expectPath: "^/tests$",
+      prototype: {
+        kind: "none",
+        reason:
+          "A click path: the screenshot is where the click landed (the Full-Length page; on a phone, its notice), proven by its pathname. The card is the owner ruling of 2026-10-05, not in the prototype.",
+      },
+    },
+    {
+      id: "home-free-full-length-modal",
+      title:
+        "Home, free: the locked 'Start a full-length test' card opens the upgrade modal in place (exam_full_length)",
+      persona: "free",
+      route: "/dashboard",
+      waitFor: {
+        desktop: '[data-testid="home-full-length"]',
+        mobile: '[data-testid="home-full-length"]',
+      },
+      steps: [
+        {
+          click: {
+            desktop: '[data-testid="home-full-length-start"]',
+            mobile: '[data-testid="home-full-length-start"]',
+          },
+        },
+      ],
+      expectVisible: '[data-testid="upgrade-modal"]',
+      expectPath: "^/dashboard$",
+      prototype: {
+        kind: "none",
+        reason:
+          "The card is the owner ruling of 2026-10-05 and is not in the prototype; the modal's copy is the prototype's LYC_COPY.full (UI-41 pairs it with the rail click).",
       },
     },
     {

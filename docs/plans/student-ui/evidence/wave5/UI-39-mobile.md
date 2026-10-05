@@ -2,12 +2,12 @@
 
 Register row UI-39 ("Mobile: bottom tab bar and one page per shell"; proof: Karl's sign-off). This index collects the phone (390x844) captures that each Wave 4/5 page group already took with the student harness (`tests/e2e/student-harness/capture.ts`), so the mobile layout can be signed off in one place. Nothing here is newly captured; each row links the group's own capture, and that group's `index.md` has the conditions, the personas and the desktop/prototype pairs.
 
-- **Tab bar and avatar menu:** UI-41 (App shell). The five-tab bar (Home, Practice, Review, Calendar, LISA) replaces the rail below the `lg` breakpoint; the avatar menu reads Full-Length, Settings, Help, Sign out (owner ruling, Karl, 2026-10-05; supersedes OQ-4 / OQ-48 menu order). On a phone the Full-Length home first shows "Full-length tests are built for a laptop or tablet, like test day." with Continue anyway (UI-54 `tests-phone-notice`).
+- **Tab bar and avatar menu:** UI-41 (App shell). The five-tab bar (Home, Review, Practice, Calendar, LISA; Practice in the middle) replaces the rail below the `lg` breakpoint; the avatar menu reads Settings, Help, Sign out, and follows the page theme (F-70; `app-avatar-menu-light-locked` shows a page pinned light). Full-Length is on neither: on a phone it is reached from Home's "Start a full-length test" card (UI-50 `click-paid-full-length-card`, `home-free-full-length-modal`; UI-41 `app-upgrade-modal-fulllength-free`) or a scheduled calendar block (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the Full-Length part of OQ-62). On a phone the Full-Length home first shows "Full-length tests are built for a laptop or tablet, like test day." with Continue anyway (UI-54 `tests-phone-notice`).
 - **One page per shell:** the App shell pages (UI-50, 51, 52, 54 home, 55, 56, 57, 58) carry the tab bar; the Focus shell pages (UI-53 runners, UI-54 exam session and report) have the back arrow and no tab bar; the Bare card pages (UI-59) have neither.
 - **Overflow:** every group's `index.md` records 0px horizontal overflow on every phone capture (UI-41 to UI-59).
 - **Prototypes:** the prototypes are a fixed 1440x900 canvas with no phone layout, so no phone prototype exists to compare against; these are built-only.
 
-**189 phone captures** across 11 page groups.
+**195 phone captures** across 11 page groups.
 
 ## UI-41: Shells: App shell (rail, mobile tab bar, avatar menu), Focus shell, Bare card
 
@@ -16,6 +16,7 @@ Full index with conditions: [`UI-41/index.md`](UI-41/index.md).
 | State | Light | Dark |
 |---|---|---|
 | `app-avatar-menu-free` | ![app-avatar-menu-free light](UI-41/app-avatar-menu-free--mobile--light--built.png) | ![app-avatar-menu-free dark](UI-41/app-avatar-menu-free--mobile--dark--built.png) |
+| `app-avatar-menu-light-locked` | ![app-avatar-menu-light-locked light](UI-41/app-avatar-menu-light-locked--mobile--light--built.png) | ![app-avatar-menu-light-locked dark](UI-41/app-avatar-menu-light-locked--mobile--dark--built.png) |
 | `app-avatar-menu-paid` | ![app-avatar-menu-paid light](UI-41/app-avatar-menu-paid--mobile--light--built.png) | ![app-avatar-menu-paid dark](UI-41/app-avatar-menu-paid--mobile--dark--built.png) |
 | `app-calendar-free` | ![app-calendar-free light](UI-41/app-calendar-free--mobile--light--built.png) | ![app-calendar-free dark](UI-41/app-calendar-free--mobile--dark--built.png) |
 | `app-chat-free` | ![app-chat-free light](UI-41/app-chat-free--mobile--light--built.png) | ![app-chat-free dark](UI-41/app-chat-free--mobile--dark--built.png) |
@@ -34,9 +35,11 @@ Full index with conditions: [`UI-50/index.md`](UI-50/index.md).
 | State | Light | Dark |
 |---|---|---|
 | `click-free-start-diagnostic` | ![click-free-start-diagnostic light](UI-50/click-free-start-diagnostic--mobile--light--built.png) | ![click-free-start-diagnostic dark](UI-50/click-free-start-diagnostic--mobile--dark--built.png) |
+| `click-paid-full-length-card` | ![click-paid-full-length-card light](UI-50/click-paid-full-length-card--mobile--light--built.png) | ![click-paid-full-length-card dark](UI-50/click-paid-full-length-card--mobile--dark--built.png) |
 | `click-paid-start-plan` | ![click-paid-start-plan light](UI-50/click-paid-start-plan--mobile--light--built.png) | ![click-paid-start-plan dark](UI-50/click-paid-start-plan--mobile--dark--built.png) |
 | `home-free` | ![home-free light](UI-50/home-free--mobile--light--built.png) | ![home-free dark](UI-50/home-free--mobile--dark--built.png) |
 | `home-free-full` | ![home-free-full light](UI-50/home-free-full--mobile--light--built.png) | ![home-free-full dark](UI-50/home-free-full--mobile--dark--built.png) |
+| `home-free-full-length-modal` | ![home-free-full-length-modal light](UI-50/home-free-full-length-modal--mobile--light--built.png) | ![home-free-full-length-modal dark](UI-50/home-free-full-length-modal--mobile--dark--built.png) |
 | `home-free-mastery-modal` | ![home-free-mastery-modal light](UI-50/home-free-mastery-modal--mobile--light--built.png) | ![home-free-mastery-modal dark](UI-50/home-free-mastery-modal--mobile--dark--built.png) |
 | `home-paid` | ![home-paid light](UI-50/home-paid--mobile--light--built.png) | ![home-paid dark](UI-50/home-paid--mobile--dark--built.png) |
 | `home-paid-full` | ![home-paid-full light](UI-50/home-paid-full--mobile--light--built.png) | ![home-paid-full dark](UI-50/home-paid-full--mobile--dark--built.png) |
