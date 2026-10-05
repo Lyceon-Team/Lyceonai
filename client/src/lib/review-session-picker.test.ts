@@ -68,12 +68,12 @@ describe("dayHeaderLabel", () => {
 });
 
 describe("sourceHeadline / sourceEngineLabel", () => {
-  it('formats "Practice · 2:40 PM"', () => {
-    expect(sourceHeadline("practice", "2:40 PM")).toBe("Practice · 2:40 PM");
+  it('formats "Practice, 2:40 PM" (UI-52, the prototype)', () => {
+    expect(sourceHeadline("practice", "2:40 PM")).toBe("Practice, 2:40 PM");
   });
 
-  it('labels a review-sourced row "Review · 3:10 PM"', () => {
-    expect(sourceHeadline("review", "3:10 PM")).toBe("Review · 3:10 PM");
+  it('labels a review-sourced row "Review, 3:10 PM"', () => {
+    expect(sourceHeadline("review", "3:10 PM")).toBe("Review, 3:10 PM");
     expect(sourceEngineLabel("review")).toBe("Review");
   });
 
@@ -84,7 +84,7 @@ describe("sourceHeadline / sourceEngineLabel", () => {
   it("a full-length test reads as a practice test, never as practice", () => {
     expect(sourceEngineLabel("full_length")).toBe("Practice test");
     expect(sourceHeadline("full_length", "9:15 AM")).toBe(
-      "Practice test · 9:15 AM",
+      "Practice test, 9:15 AM",
     );
   });
 });

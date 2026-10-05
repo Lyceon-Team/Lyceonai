@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   getSupabaseAdmin,
   requireRequestUser,
+  requireStudentAccount,
 } from "../middleware/supabase-auth";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
@@ -18,10 +19,16 @@ import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state";
+import { hasPasswordIdentity } from "../lib/password-credentials";
 import {
   dateOfBirthSchema,
   setDateOfBirthRequestSchema,
 } from "../../packages/shared/src/profile-role-choice-schema";
+import {
+  displayNameSchema,
+  profileNameUpdateRequestSchema,
+  type ProfileNameUpdateResponse,
+} from "../../packages/shared/src/profile-name-schema";
 import {
   decideRoleChoice,
   dateOfBirthRefusal,
@@ -132,8 +139,54 @@ function outstandingLegalDocs(
   return outstanding;
 }
 
+/**
+ * @spec [student-UI register §9 OQ-26, owner ruling (Karl) 2026-10-02: `hasPassword` on
+ *        GET /api/profile; register F-38 (Google-only accounts have no password to change);
+ *        Coding Standards §12.1] | @implemented [2026-10-03]
+ *
+ * plain English: does this account sign in with a password? Answered by `hasPasswordIdentity`,
+ * the SAME predicate `POST /api/auth/change-password` (and `/update-password`) refuse with
+ * `NO_PASSWORD_IDENTITY`, so Settings hiding "Change password" and the route refusing it cannot
+ * disagree. A display hint only; the password routes still enforce.
+ *
+ * Cost: one GoTrue admin read (`auth.admin.getUserById`) per profile load — the identities are
+ * not on the request's user. It is started before the profile's own database reads and awaited
+ * at the end, so it overlaps them rather than adding a sequential round trip.
+ *
+ * Failure: `null`, logged at ERROR with the request id only. NEVER THROWS INTO THE PROFILE
+ * RESPONSE: this endpoint is the sign-in hydration path (see `outstandingLegalDocs` for the
+ * outage that posture came from), and an unreadable identity list is not a reason to refuse an
+ * account. `null` is "unknown", never a guess: `true` would offer a form the route refuses,
+ * `false` would hide a working one. Trade-off: the ruling names `boolean`; `null` is the one
+ * extra value, and only on a failed read.
+ */
+async function resolveHasPassword(
+  userId: string,
+  requestId: string | undefined,
+): Promise<boolean | null> {
+  try {
+    return await hasPasswordIdentity(userId);
+  } catch (err: unknown) {
+    logger.error(
+      "PROFILE",
+      "has_password_unavailable",
+      "Could not read the account's identities; hasPassword is null",
+      undefined,
+      {
+        requestId,
+        reason:
+          err instanceof Error && err.message === "identity_read_failed"
+            ? "identity_read_failed"
+            : "unexpected",
+      },
+    );
+    return null;
+  }
+}
+
 const profileCompletionSchema = z.object({
-  displayName: z.string().trim().min(1).max(120),
+  // OQ-28 (UI-58): the one display-name rule, shared with the Settings name save.
+  displayName: displayNameSchema,
   role: z.enum(["student", "guardian"]),
   // F-41: a real calendar date, through the shared schema (Brief 8 ruling 6). Not-in-the-future
   // and plausibility need today's date, so `dateOfBirthRefusal` applies them below.
@@ -153,6 +206,10 @@ router.get("/", async (req: Request, res: Response) => {
     if (!user) {
       return;
     }
+
+    // OQ-26: started now, awaited at the end, so the GoTrue read overlaps the database reads.
+    // Never rejects (see `resolveHasPassword`), so an early return below leaves nothing unhandled.
+    const hasPasswordRead = resolveHasPassword(user.id, req.requestId);
 
     const supabase = getSupabaseAdmin();
 
@@ -241,6 +298,7 @@ router.get("/", async (req: Request, res: Response) => {
     // OQ-29 (owner ruling 2026-10-02): the rail locks and the upgrade-vs-age choice, computed by
     // each gated route's own predicate. A display hint; every route still enforces.
     const featureAccess = await resolveFeatureAccess(user);
+    const hasPassword = await hasPasswordRead;
 
     return res.json({
       authenticated: true,
@@ -269,6 +327,9 @@ router.get("/", async (req: Request, res: Response) => {
         // documents this person owes, their current version and title from
         // legal/, and what they last accepted. The client is told, never asked.
         outstandingLegal,
+        // OQ-26 (owner ruling 2026-10-02): false for a Google-only account, so Settings hides
+        // "Change password"; null only when the identity read failed (see `resolveHasPassword`).
+        hasPassword,
       },
     });
   } catch (error: any) {
@@ -517,6 +578,90 @@ router.patch("/", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("[PROFILE] Unexpected error:", error);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * PATCH /api/profile/name — Settings → Profile: change your display name, and nothing else.
+ *
+ * @spec [student-UI register OQ-28 (owner ruling, Karl, 2026-10-02: a narrow name-only save that
+ *        leaves `marketingOptIn` alone; "exact shape goes with the Settings migration"); F-54;
+ *        UI-58; Coding Standards §8.1 (auth → parse → domain → serialize), §8.2, §12.1]
+ *        | @implemented [2026-10-03]
+ *
+ * plain English: the session's own profile row gets a new `display_name`. The body is the shared
+ * `.strict()` schema, `{ displayName }` and no other key, so the onboarding PATCH's defaults
+ * (F-54: `marketingOptIn` defaulting to false, `role` required, `profile_completed_at`
+ * re-stamped) cannot reach this write: it updates `display_name` and `updated_at` only.
+ *
+ * Student accounts only, through the canonical `requireStudentAccount` (the student-background
+ * routes' gate): the Settings page that calls it is the student's (a guardian's /profile has no
+ * name editor, and an admin is never onboarded through this surface), so any other role is
+ * refused 403 `ROLE_NOT_PERMITTED` before the body is read; and it ends in the live under-13 link
+ * gate, so an under-13 student with no active guardian link is refused 403
+ * `GUARDIAN_LINK_REQUIRED` (the route is not in the owner-approved allowed set, G2-04). The row
+ * is the session principal's (`req.user.id`); nothing in the body names whose name to change.
+ *
+ * edge cases: the name is never logged (it is personal data); a missing profile row is a 404,
+ * never an insert; a write failure is a 500 carrying the error's code only.
+ */
+router.patch("/name", requireStudentAccount, async (req: Request, res: Response) => {
+  // 1. Auth: the session principal, from the server's own session (requireSupabaseAuth), already
+  //    held to a student account by `requireStudentAccount`.
+  const user = requireRequestUser(req, res);
+  if (!user) return;
+
+  // 2. Parse: the strict shared body. An extra key (marketingOptIn, role …) is a 400.
+  const parsed = profileNameUpdateRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: {
+        code: "INVALID_NAME",
+        message: "Enter a name between 1 and 120 characters.",
+        details: parsed.error.flatten(),
+      },
+    });
+  }
+
+  // 3. Domain: one column (and its timestamp) on the caller's own row.
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({
+        display_name: parsed.data.displayName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id)
+      .select("display_name")
+      .maybeSingle();
+
+    if (error) {
+      logger.error("PROFILE", "name_save_failed", "Name save failed", {
+        requestId: req.requestId,
+        code: error.code ?? "unknown",
+      });
+      return res.status(500).json({
+        error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
+      });
+    }
+    if (!data || typeof data.display_name !== "string") {
+      return res.status(404).json({
+        error: { code: "PROFILE_NOT_FOUND", message: "Profile not found" },
+      });
+    }
+
+    // 4. Serialize: the stored value, nothing else.
+    const body: ProfileNameUpdateResponse = { displayName: data.display_name };
+    return res.json(body);
+  } catch (err: unknown) {
+    logger.error("PROFILE", "name_save_exception", "Name save failed", {
+      requestId: req.requestId,
+      reason: err instanceof Error ? err.message : "unknown",
+    });
+    return res.status(500).json({
+      error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
+    });
   }
 });
 

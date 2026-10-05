@@ -2,14 +2,13 @@
  * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-24]
  * SAT Math Reference Sheet — all 12 official formulas rendered via KaTeX,
  * plus the two special right triangle diagrams (30-60-90, 45-45-90) as inline SVG.
+ *
+ * UI-53 (2026-10-03, student-UI register F-65, DESIGN.md §1): rendered in the student Modal, so
+ * the portal carries the `.lyc` root and the theme lock of the shell on screen, drawn on the
+ * student tokens. The practice runner follows the device theme; the timed exam module and the
+ * review runner are pinned light, and the sheet takes the same lock. Wording unchanged.
  */
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Modal } from "@/components/student-ui";
 import { MathRenderer } from "@/components/MathRenderer";
 
 type MathReferenceSheetProps = {
@@ -45,10 +44,10 @@ function FormulaList({
   items: { label: string; latex: string }[];
 }): React.ReactElement {
   return (
-    <ul className="space-y-3 text-sm text-foreground">
+    <ul className="space-y-3 text-lyc-body text-lyc-ink">
       {items.map((item) => (
         <li key={item.label} className="flex items-baseline gap-2">
-          <span className="text-muted-foreground shrink-0">{item.label}:</span>
+          <span className="shrink-0 text-lyc-muted">{item.label}:</span>
           <MathRenderer content={item.latex} />
         </li>
       ))}
@@ -63,7 +62,7 @@ function SpecialTriangle3060({
 }): React.ReactElement {
   return (
     <div className={className}>
-      <p className="text-xs font-semibold text-muted-foreground mb-2">
+      <p className="mb-2 text-lyc-meta font-semibold text-lyc-muted">
         30-60-90 Triangle
       </p>
       <svg
@@ -127,7 +126,7 @@ function SpecialTriangle4545({
 }): React.ReactElement {
   return (
     <div className={className}>
-      <p className="text-xs font-semibold text-muted-foreground mb-2">
+      <p className="mb-2 text-lyc-meta font-semibold text-lyc-muted">
         45-45-90 Triangle
       </p>
       <svg
@@ -188,57 +187,47 @@ export default function MathReferenceSheet({
   open,
   onOpenChange,
 }: MathReferenceSheetProps): React.ReactElement {
+  const heading =
+    "mb-3 text-lyc-meta font-semibold uppercase tracking-[0.2em] text-lyc-muted";
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-background border-border/60">
-        <DialogHeader>
-          <DialogTitle className="text-2xl tracking-tight">
-            Math Reference Sheet
-          </DialogTitle>
-          <DialogDescription>
-            Standard SAT formulas provided as a quick in-session reference.
-          </DialogDescription>
-        </DialogHeader>
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Math Reference Sheet"
+      description="Standard SAT formulas provided as a quick in-session reference."
+      className="max-h-[90vh] max-w-4xl overflow-y-auto"
+      data-testid="math-reference-sheet"
+    >
+      <div className="grid gap-6 md:grid-cols-2">
+        <section className="rounded-md bg-lyc-margin p-5">
+          <h3 className={heading}>Geometry</h3>
+          <FormulaList items={geometryFormulas} />
+        </section>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <section className="rounded-xl bg-secondary/50 p-5">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">
-              Geometry
-            </h3>
-            <FormulaList items={geometryFormulas} />
-          </section>
+        <section className="rounded-md bg-lyc-margin p-5">
+          <h3 className={heading}>Volume</h3>
+          <FormulaList items={volumeFormulas} />
+        </section>
+      </div>
 
-          <section className="rounded-xl bg-secondary/50 p-5">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">
-              Volume
-            </h3>
-            <FormulaList items={volumeFormulas} />
-          </section>
+      <section className="rounded-md bg-lyc-margin p-5 text-lyc-ink">
+        <h3 className={heading}>Special Right Triangles</h3>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <SpecialTriangle3060 />
+          <SpecialTriangle4545 />
         </div>
+      </section>
 
-        <section className="rounded-xl bg-secondary/50 p-5">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">
-            Special Right Triangles
-          </h3>
-          <div className="grid gap-6 sm:grid-cols-2">
-            <SpecialTriangle3060 />
-            <SpecialTriangle4545 />
-          </div>
-        </section>
-
-        <section className="rounded-xl bg-card border border-border/60 p-5">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">
-            Core Reminders
-          </h3>
-          <ul className="space-y-2 text-sm text-foreground">
-            {reminders.map((note) => (
-              <li key={note}>
-                <MathRenderer content={note} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      </DialogContent>
-    </Dialog>
+      <section className="rounded-md border border-lyc-rule bg-lyc-sheet p-5">
+        <h3 className={heading}>Core Reminders</h3>
+        <ul className="space-y-2 text-lyc-body text-lyc-ink">
+          {reminders.map((note) => (
+            <li key={note}>
+              <MathRenderer content={note} />
+            </li>
+          ))}
+        </ul>
+      </section>
+    </Modal>
   );
 }

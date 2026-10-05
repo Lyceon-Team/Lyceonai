@@ -1,16 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Loader2, UserRound } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FullPageLoader, Notice } from "@/components/student-ui";
+import { BareCardHeader } from "@/components/layout/BareCardShell";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +28,18 @@ import {
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
 
+/**
+ * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (profile completion);
+ *       register §8/§9 on DOB and consent (unchanged)] | @implemented [2026-10-03]
+ * plain English: UI-59 draws the page with the student tokens only, inside the Bare card. Copy,
+ * test ids, the request and every redirect are unchanged, for students and guardians alike (this
+ * one component serves both). "Complete Profile" is the one filled action; the load-error state's
+ * Retry is its filled action and "Back To Login" outline. The decorative icons (the heading's
+ * person, the button's tick and spinner) are gone: the type carries the hierarchy and motion is
+ * limited to LISA (DESIGN.md §1). The role picker keeps the shared Radix Select (its keyboard and
+ * listbox roles) in its `lyc` variant (the student field; its list portals onto <body> with its
+ * own `.lyc` root). The name and date fields gain `autocomplete` tokens (name, bday).
+ */
 interface ProfileCompletionResponse {
   success: boolean;
   profile: {
@@ -235,173 +240,160 @@ export default function ProfileComplete() {
   }
 
   if (isLoading) {
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
+    // The shared FullPageLoader (role="status", named by its label). UI-59: inside the Bare
+    // card, so it fills the card (`fill="region"`) and follows the card's theme (no lock).
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-sm text-muted-foreground">
-            Loading profile completion...
-          </p>
-        </div>
-      </div>
+      <FullPageLoader fill="region" label="Loading profile completion..." />
     );
   }
 
   if (error) {
     // Profile-load failures route through the same onboarding chokepoint (load variant) — the raw
-    // server/exception string is never rendered in the CardDescription.
+    // server/exception string is never rendered.
     const message = resolveOnboardingErrorMessage(error, "load");
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-[#0F2E48]">
-              <AlertCircle className="h-5 w-5 text-amber-700" />
-              Unable To Load
-            </CardTitle>
-            <CardDescription>{message}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button className="w-full" onClick={() => refetch()}>
-              Retry
-            </Button>
-            <Button
-              className="w-full"
-              variant="outline"
-              onClick={() => navigate("/login")}
-            >
-              Back To Login
-            </Button>
-          </CardContent>
-        </Card>
+      <div data-testid="profile-complete-load-error">
+        <BareCardHeader title="Unable To Load" description={message} />
+        <div className="flex flex-col gap-3">
+          <Button
+            variant="lyc-primary"
+            className="w-full"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
+          <Button
+            className="w-full"
+            variant="lyc-outline"
+            onClick={() => navigate("/login")}
+          >
+            Back To Login
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <UserRound className="h-5 w-5 text-primary" />
-            Complete Your Profile
-          </CardTitle>
-          <CardDescription>
-            Finish basic setup to continue into Lyceon.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {errorMessage && (
-            <Alert
-              className="border-amber-200 bg-amber-50"
-              data-testid="alert-error"
+    <div data-testid="profile-complete">
+      <BareCardHeader
+        title="Complete Your Profile"
+        description="Finish basic setup to continue into Lyceon."
+      />
+      <div className="flex flex-col gap-5">
+        {errorMessage && (
+          <Notice
+            tone="danger"
+            title={errorMessage}
+            data-testid="alert-error"
+          />
+        )}
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <Label variant="lyc" htmlFor="display-name">
+              Display Name
+            </Label>
+            <Input
+              id="display-name"
+              variant="lyc"
+              data-testid="input-display-name"
+              autoComplete="name"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="Your name"
+              maxLength={120}
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label variant="lyc" htmlFor="role-select">
+              Role
+            </Label>
+            <Select
+              value={role}
+              onValueChange={(value) =>
+                setRole(value as "student" | "guardian")
+              }
             >
-              <AlertCircle className="h-4 w-4 text-amber-700" />
-              <AlertDescription className="text-amber-800">
-                {errorMessage}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="display-name">Display Name</Label>
-              <Input
-                id="display-name"
-                data-testid="input-display-name"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="Your name"
-                maxLength={120}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="role-select">Role</Label>
-              <Select
-                value={role}
-                onValueChange={(value) =>
-                  setRole(value as "student" | "guardian")
-                }
+              <SelectTrigger
+                id="role-select"
+                variant="lyc"
+                data-testid="select-role"
               >
-                <SelectTrigger id="role-select" data-testid="select-role">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="student">Student</SelectItem>
-                  <SelectItem value="guardian">Guardian</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent variant="lyc">
+                <SelectItem value="student" variant="lyc">
+                  Student
+                </SelectItem>
+                <SelectItem value="guardian" variant="lyc">
+                  Guardian
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="date-of-birth">Date Of Birth</Label>
-                <Input
-                  id="date-of-birth"
-                  data-testid="input-date-of-birth"
-                  type="date"
-                  value={dateOfBirth}
-                  onChange={(event) => setDateOfBirth(event.target.value)}
-                  required
-                />
-                {age !== null && (
-                  <p className="text-xs text-muted-foreground">
-                    Age detected: {age}
-                  </p>
-                )}
-              </div>
-
-              {isUnder13 && (
-                <p
-                  className="text-xs text-muted-foreground"
-                  data-testid="text-under-13-next-step"
-                >
-                  Under 13: after this step you&apos;ll connect a guardian with
-                  your link code before you can start practising.
-                </p>
-              )}
-            </div>
-
-            <div className="flex items-start space-x-2 pt-1">
-              <Checkbox
-                id="marketing-opt-in"
-                data-testid="checkbox-marketing-opt-in"
-                checked={marketingOptIn}
-                onCheckedChange={(checked) =>
-                  setMarketingOptIn(Boolean(checked))
-                }
-              />
-              <Label
-                htmlFor="marketing-opt-in"
-                className="text-sm font-normal leading-5"
+          <div className="flex flex-col gap-2">
+            <Label variant="lyc" htmlFor="date-of-birth">
+              Date Of Birth
+            </Label>
+            <Input
+              id="date-of-birth"
+              variant="lyc"
+              data-testid="input-date-of-birth"
+              type="date"
+              autoComplete="bday"
+              value={dateOfBirth}
+              onChange={(event) => setDateOfBirth(event.target.value)}
+              required
+            />
+            {age !== null && (
+              <p className="m-0 text-lyc-meta-lg text-lyc-muted">
+                Age detected: {age}
+              </p>
+            )}
+            {isUnder13 && (
+              <p
+                className="m-0 text-lyc-meta-lg text-lyc-ink"
+                data-testid="text-under-13-next-step"
               >
-                Send me optional product updates and study news.
-              </Label>
-            </div>
+                Under 13: after this step you&apos;ll connect a guardian with
+                your link code before you can start practising.
+              </p>
+            )}
+          </div>
 
-            <Button
-              type="submit"
-              data-testid="button-complete-profile"
-              className="w-full"
-              disabled={completionMutation.isPending}
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="marketing-opt-in"
+              variant="lyc"
+              className="mt-0.5"
+              data-testid="checkbox-marketing-opt-in"
+              checked={marketingOptIn}
+              onCheckedChange={(checked) => setMarketingOptIn(Boolean(checked))}
+            />
+            <Label
+              htmlFor="marketing-opt-in"
+              className="text-lyc-meta-lg font-normal leading-snug text-lyc-ink"
             >
-              {completionMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Complete Profile
-                </>
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              Send me optional product updates and study news.
+            </Label>
+          </div>
+
+          <Button
+            type="submit"
+            variant="lyc-primary"
+            data-testid="button-complete-profile"
+            className="w-full"
+            disabled={completionMutation.isPending}
+          >
+            {completionMutation.isPending ? "Saving..." : "Complete Profile"}
+          </Button>
+        </form>
+      </div>
     </div>
   );
 }

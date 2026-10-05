@@ -5,6 +5,11 @@
  *        (answers, idempotency_key), §12 (module submit, Module 2 start), §15.1
  *        (state read); SCL-132, SCL-133, SCL-145, SCL-146; Doc-04C §2.3]
  *       [E7b decision log D1-D8] | @implemented [2026-09-25]
+ *       [student-UI register UI-54; DESIGN.md §2 ("The timed exam module keeps its Bluebook
+ *        layout, with no back arrow and light theme only"), §1 (nothing below 14px)]
+ *       | @implemented [2026-10-03] | plain English: typography only — the module's serif
+ *       headings use the student serif token and its 13px/12px labels the 14px meta token; the
+ *       layout, the exam colours and the light lock are unchanged.
  *
  * plain English: the page first asks the server where the session is. A URL naming
  * any other module (a submitted one, a future one) is replaced by the server's
@@ -32,10 +37,18 @@ import type {
 import { isValidGridInFormat } from "@/components/practice/NumericEntryInput";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import { FloatingPanel } from "@/components/math/FloatingPanel";
-import { CALC_COLUMN_HEIGHT_PX, CALC_DEFAULT_PCT, CALC_MIN_PX } from "@/components/math/calculator-layout";
+import {
+  CALC_COLUMN_HEIGHT_PX,
+  CALC_DEFAULT_PCT,
+  CALC_MIN_PX,
+} from "@/components/math/calculator-layout";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
+import {
+  buildExamModuleKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 import {
   examErrorCode,
   fetchExamSession,
@@ -72,7 +85,10 @@ import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
 import "../exam.css";
 
 /** A module has ended for the client when the server no longer says it is active. */
-function moduleStillActive(state: ExamSectionStateResponse, module: ExamModule): boolean {
+function moduleStillActive(
+  state: ExamSectionStateResponse,
+  module: ExamModule,
+): boolean {
   return state.state === (module === "1" ? "module1_active" : "module2_active");
 }
 
@@ -91,11 +107,20 @@ function newKey(): string {
 }
 
 function emptyWorkspace(ordinal: number): ExamWorkspaceItem {
-  return { ordinal, marked_for_review: false, eliminated_option_ids: [], highlights: [] };
+  return {
+    ordinal,
+    marked_for_review: false,
+    eliminated_option_ids: [],
+    highlights: [],
+  };
 }
 
 export default function ExamModulePage() {
-  const params = useParams<{ sessionId: string; section: string; module: string }>();
+  const params = useParams<{
+    sessionId: string;
+    section: string;
+    module: string;
+  }>();
   const sessionId = params.sessionId;
   const route = parseModuleRoute(params.section, params.module);
   const session = useQuery({
@@ -108,7 +133,13 @@ export default function ExamModulePage() {
   });
 
   if (session.isPending) return <ExamLoading />;
-  if (session.isError) return <ExamLoadError error={session.error} onRetry={() => void session.refetch()} />;
+  if (session.isError)
+    return (
+      <ExamLoadError
+        error={session.error}
+        onRetry={() => void session.refetch()}
+      />
+    );
 
   const position = examPosition(session.data);
   // PLANT "a submitted module can't be re-entered by URL": the URL only ever SHOWS
@@ -116,7 +147,13 @@ export default function ExamModulePage() {
   if (route === null || !routeMatchesPosition(route, position)) {
     return <Redirect to={pathForPosition(sessionId, position)} replace />;
   }
-  return <ModuleLoader session={session.data} section={route.section} module={route.module} />;
+  return (
+    <ModuleLoader
+      session={session.data}
+      section={route.section}
+      module={route.module}
+    />
+  );
 }
 
 function ModuleLoader({
@@ -129,7 +166,12 @@ function ModuleLoader({
   module: ExamModule;
 }) {
   const sessionId = session.session_id;
-  const common = { staleTime: 0, refetchOnMount: "always" as const, refetchOnWindowFocus: false, retry: false };
+  const common = {
+    staleTime: 0,
+    refetchOnMount: "always" as const,
+    refetchOnWindowFocus: false,
+    retry: false,
+  };
   const items = useQuery({
     queryKey: examKeys.items(sessionId, section, module),
     queryFn: () => fetchModuleItems(sessionId, section, module),
@@ -141,14 +183,25 @@ function ModuleLoader({
     ...common,
   });
   if (items.isPending || workspace.isPending) return <ExamLoading />;
-  if (items.isError) return <ExamLoadError error={items.error} onRetry={() => void items.refetch()} />;
-  if (workspace.isError) return <ExamLoadError error={workspace.error} onRetry={() => void workspace.refetch()} />;
+  if (items.isError)
+    return (
+      <ExamLoadError error={items.error} onRetry={() => void items.refetch()} />
+    );
+  if (workspace.isError)
+    return (
+      <ExamLoadError
+        error={workspace.error}
+        onRetry={() => void workspace.refetch()}
+      />
+    );
 
   const row = session.sections.find((s) => s.section === section);
   const sorted = [...items.data.items].sort((a, b) => a.ordinal - b.ordinal);
   const resume = row?.current_ordinal ?? null;
   const startOrdinal =
-    resume !== null && sorted.some((i) => i.ordinal === resume) ? resume : (sorted[0]?.ordinal ?? 0);
+    resume !== null && sorted.some((i) => i.ordinal === resume)
+      ? resume
+      : (sorted[0]?.ordinal ?? 0);
 
   return (
     <ModuleRunner
@@ -195,7 +248,10 @@ function ModuleRunner(props: {
   const [workspace, setWorkspace] = useState<Map<number, ExamWorkspaceItem>>(
     () => new Map(props.initialWorkspace.map((w) => [w.ordinal, w])),
   );
-  const [view, setView] = useState<View>({ kind: "question", ordinal: props.startOrdinal });
+  const [view, setView] = useState<View>({
+    kind: "question",
+    ordinal: props.startOrdinal,
+  });
   const [lastOrdinal, setLastOrdinal] = useState(props.startOrdinal);
   const [navOpen, setNavOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -218,8 +274,14 @@ function ModuleRunner(props: {
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
 
-  const summary = useMemo(() => summarizeModule(items, answers, workspace), [items, answers, workspace]);
-  const byOrdinal = useMemo(() => new Map(items.map((i) => [i.ordinal, i])), [items]);
+  const summary = useMemo(
+    () => summarizeModule(items, answers, workspace),
+    [items, answers, workspace],
+  );
+  const byOrdinal = useMemo(
+    () => new Map(items.map((i) => [i.ordinal, i])),
+    [items],
+  );
   const ordinals = summary.cells.map((c) => c.ordinal);
 
   // ── Leaving the module: always where the SERVER says ───────────────────────
@@ -227,7 +289,9 @@ function ModuleRunner(props: {
   const goToServerPosition = useCallback(async () => {
     if (leaving.current) return;
     leaving.current = true;
-    await queryClient.invalidateQueries({ queryKey: examKeys.session(sessionId) });
+    await queryClient.invalidateQueries({
+      queryKey: examKeys.session(sessionId),
+    });
     navigate(sessionPath(sessionId), { replace: true });
   }, [navigate, queryClient, sessionId]);
 
@@ -239,7 +303,9 @@ function ModuleRunner(props: {
         leaving.current = true;
         try {
           await startExamModule(sessionId, section, "2");
-          await queryClient.invalidateQueries({ queryKey: examKeys.session(sessionId) });
+          await queryClient.invalidateQueries({
+            queryKey: examKeys.session(sessionId),
+          });
           navigate(modulePath(sessionId, section, "2"), { replace: true });
         } catch {
           leaving.current = false;
@@ -264,7 +330,11 @@ function ModuleRunner(props: {
   const onExpire = useCallback(() => {
     // The client never ends a module; it asks the server, whose touch applies the
     // §8.4 timeout and answers with the section's new state.
-    sendExamHeartbeat(sessionId, section, view.kind === "question" ? view.ordinal : lastOrdinal)
+    sendExamHeartbeat(
+      sessionId,
+      section,
+      view.kind === "question" ? view.ordinal : lastOrdinal,
+    )
       .then((res) => onSectionStateRef.current(res.section_state))
       .catch(() => void goToServerPosition());
   }, [goToServerPosition, lastOrdinal, section, sessionId, view]);
@@ -288,7 +358,9 @@ function ModuleRunner(props: {
         void goToServerPosition();
         return;
       }
-      setSaveError("Your last change didn't save. Check your connection — it will be sent again when you make your next change.");
+      setSaveError(
+        "Your last change didn't save. Check your connection — it will be sent again when you make your next change.",
+      );
     },
     [goToServerPosition],
   );
@@ -329,17 +401,29 @@ function ModuleRunner(props: {
         })
         .catch((error: unknown) => {
           // Revert only if nothing newer replaced it meanwhile.
-          if (lastSent.current.get(ordinal) === answer) lastSent.current.delete(ordinal);
-          setAnswers((m) => (m.get(ordinal) === answer ? new Map(m).set(ordinal, previous) : m));
+          if (lastSent.current.get(ordinal) === answer)
+            lastSent.current.delete(ordinal);
+          setAnswers((m) =>
+            m.get(ordinal) === answer ? new Map(m).set(ordinal, previous) : m,
+          );
           onWriteError(error);
         });
     },
-    [byOrdinal, module, onSectionState, onWriteError, queue, section, sessionId],
+    [
+      byOrdinal,
+      module,
+      onSectionState,
+      onWriteError,
+      queue,
+      section,
+      sessionId,
+    ],
   );
 
   const saveWorkspace = useCallback(
     (next: ExamWorkspaceItem) => {
-      const previous = workspaceRef.current.get(next.ordinal) ?? emptyWorkspace(next.ordinal);
+      const previous =
+        workspaceRef.current.get(next.ordinal) ?? emptyWorkspace(next.ordinal);
       setWorkspace((m) => new Map(m).set(next.ordinal, next));
       queue
         .enqueue(() => saveItemWorkspace(sessionId, section, module, next))
@@ -348,7 +432,11 @@ function ModuleRunner(props: {
           onSectionState(res.section_state);
         })
         .catch((error: unknown) => {
-          setWorkspace((m) => (m.get(next.ordinal) === next ? new Map(m).set(next.ordinal, previous) : m));
+          setWorkspace((m) =>
+            m.get(next.ordinal) === next
+              ? new Map(m).set(next.ordinal, previous)
+              : m,
+          );
           onWriteError(error);
         });
     },
@@ -379,7 +467,8 @@ function ModuleRunner(props: {
   // ── Navigation ────────────────────────────────────────────────────────────
 
   const leaveCurrent = () => {
-    if (view.kind === "question" && drafts.has(view.ordinal)) commitGrid(view.ordinal);
+    if (view.kind === "question" && drafts.has(view.ordinal))
+      commitGrid(view.ordinal);
   };
 
   const goTo = (ordinal: number) => {
@@ -395,7 +484,8 @@ function ModuleRunner(props: {
     setView({ kind: "review" });
   };
 
-  const indexOfCurrent = view.kind === "question" ? ordinals.indexOf(view.ordinal) : ordinals.length;
+  const indexOfCurrent =
+    view.kind === "question" ? ordinals.indexOf(view.ordinal) : ordinals.length;
   const onNext = () => {
     const next = ordinals[indexOfCurrent + 1];
     if (next === undefined) goToReview();
@@ -405,6 +495,30 @@ function ModuleRunner(props: {
     const prev = ordinals[indexOfCurrent - 1];
     if (prev !== undefined) goTo(prev);
   };
+
+  /**
+   * @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3] | @implemented [2026-10-03]
+   * plain English: ← / → do exactly what the footer Back and Next buttons do, through the
+   * one shared hook. There is no Enter binding: Enter on a focused choice selects it through
+   * the button itself, and no key reaches module submit — that stays behind
+   * SubmitModuleDialog's confirmation. Suspended while the navigator or submit dialog is open
+   * or a submit is in flight; arrows typed in the grid-in box or the calculator stay there.
+   */
+  const reviewBack = ordinals[ordinals.length - 1];
+  useKeyboardShortcuts(
+    buildExamModuleKeymap({
+      onPrevious:
+        view.kind === "review"
+          ? reviewBack === undefined
+            ? null
+            : () => goTo(reviewBack)
+          : indexOfCurrent > 0
+            ? onBack
+            : null,
+      onNext: view.kind === "question" ? onNext : null,
+    }),
+    { enabled: !navOpen && !submitOpen && !submitting },
+  );
 
   const onConfirmSubmit = async () => {
     setSubmitting(true);
@@ -422,8 +536,12 @@ function ModuleRunner(props: {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const current = view.kind === "question" ? byOrdinal.get(view.ordinal) : undefined;
-  const currentCell = view.kind === "question" ? summary.cells.find((c) => c.ordinal === view.ordinal) : undefined;
+  const current =
+    view.kind === "question" ? byOrdinal.get(view.ordinal) : undefined;
+  const currentCell =
+    view.kind === "question"
+      ? summary.cells.find((c) => c.ordinal === view.ordinal)
+      : undefined;
   const isMath = section === "M";
 
   const tools = isMath ? (
@@ -435,7 +553,7 @@ function ModuleRunner(props: {
         aria-controls="exam-calculator-panel"
         onClick={() => setCalculatorOpen((o) => !o)}
         className={[
-          "min-h-[44px] rounded-lg border px-3.5 text-[13px] font-medium",
+          "min-h-[44px] rounded-lg border px-3.5 text-lyc-meta font-medium",
           calculatorOpen
             ? "border-[var(--exam-accent)] bg-[var(--exam-accent-soft)] text-[var(--exam-accent)]"
             : "border-[var(--exam-line)] bg-[var(--exam-surface)] text-[var(--exam-muted)]",
@@ -447,7 +565,7 @@ function ModuleRunner(props: {
         type="button"
         aria-haspopup="dialog"
         onClick={() => setReferenceOpen(true)}
-        className="min-h-[44px] rounded-lg border border-[var(--exam-line)] bg-[var(--exam-surface)] px-3.5 text-[13px] font-medium text-[var(--exam-muted)]"
+        className="min-h-[44px] rounded-lg border border-[var(--exam-line)] bg-[var(--exam-surface)] px-3.5 text-lyc-meta font-medium text-[var(--exam-muted)]"
       >
         Reference
       </button>
@@ -455,12 +573,22 @@ function ModuleRunner(props: {
   ) : null;
 
   return (
-    <div className="exam-root flex h-screen flex-col" data-testid="exam-module">
+    // UI-41: h-full, not h-screen: the Focus shell's top bar sits above, and its <main> is the
+    // remaining height.
+    <div className="exam-root flex h-full flex-col" data-testid="exam-module">
       <div ref={headerRef} className="shrink-0">
-        <ExamHeader section={section} module={module} timer={<ExamTimer remainingMs={clock.remainingMs} />} tools={tools} />
+        <ExamHeader
+          section={section}
+          module={module}
+          timer={<ExamTimer remainingMs={clock.remainingMs} />}
+          tools={tools}
+        />
       </div>
       {saveError !== null && (
-        <div role="alert" className="border-b border-[var(--exam-line)] bg-[#FBF1E6] px-6 py-2 text-sm">
+        <div
+          role="alert"
+          className="border-b border-[var(--exam-line)] bg-[var(--exam-warn-bg)] px-6 py-2 text-sm"
+        >
           {saveError}
         </div>
       )}
@@ -485,12 +613,23 @@ function ModuleRunner(props: {
             height={CALC_COLUMN_HEIGHT_PX}
             expandedWidthPct={CALC_DEFAULT_PCT}
           >
-            <DesmosCalculator expanded={calculatorOpen} fillHeight initialState={calculatorState} onStateChange={setCalculatorState} />
+            <DesmosCalculator
+              expanded={calculatorOpen}
+              fillHeight
+              initialState={calculatorState}
+              onStateChange={setCalculatorState}
+            />
           </FloatingPanel>
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
           {view.kind === "review" ? (
-            <ModuleReview section={section} module={module} summary={summary} onGoTo={goTo} onSubmit={() => setSubmitOpen(true)} />
+            <ModuleReview
+              section={section}
+              module={module}
+              summary={summary}
+              onGoTo={goTo}
+              onSubmit={() => setSubmitOpen(true)}
+            />
           ) : current !== undefined && currentCell !== undefined ? (
             <ExamQuestionView
               key={current.ordinal}
@@ -498,23 +637,39 @@ function ModuleRunner(props: {
               number={currentCell.number}
               answer={answers.get(current.ordinal) ?? null}
               gridDraft={drafts.get(current.ordinal) ?? ""}
-              workspace={workspace.get(current.ordinal) ?? emptyWorkspace(current.ordinal)}
+              workspace={
+                workspace.get(current.ordinal) ??
+                emptyWorkspace(current.ordinal)
+              }
               onSelect={(token) => {
                 const ws = workspaceFor(current.ordinal);
                 if (ws.eliminated_option_ids.includes(token)) {
-                  saveWorkspace({ ...ws, eliminated_option_ids: ws.eliminated_option_ids.filter((t) => t !== token) });
+                  saveWorkspace({
+                    ...ws,
+                    eliminated_option_ids: ws.eliminated_option_ids.filter(
+                      (t) => t !== token,
+                    ),
+                  });
                 }
-                if (answersRef.current.get(current.ordinal) !== token) sendAnswer(current.ordinal, token);
+                if (answersRef.current.get(current.ordinal) !== token)
+                  sendAnswer(current.ordinal, token);
               }}
               onGridChange={(text) => {
                 setDrafts((m) => new Map(m).set(current.ordinal, text));
-                if (gridTimer.current !== null) window.clearTimeout(gridTimer.current);
-                gridTimer.current = window.setTimeout(() => commitGrid(current.ordinal), GRID_SAVE_DELAY_MS);
+                if (gridTimer.current !== null)
+                  window.clearTimeout(gridTimer.current);
+                gridTimer.current = window.setTimeout(
+                  () => commitGrid(current.ordinal),
+                  GRID_SAVE_DELAY_MS,
+                );
               }}
               onGridCommit={() => commitGrid(current.ordinal)}
               onToggleMark={() => {
                 const ws = workspaceFor(current.ordinal);
-                saveWorkspace({ ...ws, marked_for_review: !ws.marked_for_review });
+                saveWorkspace({
+                  ...ws,
+                  marked_for_review: !ws.marked_for_review,
+                });
               }}
               onToggleEliminate={(token) => {
                 const ws = workspaceFor(current.ordinal);
@@ -536,7 +691,9 @@ function ModuleRunner(props: {
         </div>
       </main>
       <footer className="flex min-h-[76px] shrink-0 items-center justify-between gap-3 border-t border-[var(--exam-line)] bg-[var(--exam-surface)] px-4 md:px-7">
-        <div className="hidden w-60 truncate text-sm font-medium md:block">{user?.display_name ?? ""}</div>
+        <div className="hidden w-60 truncate text-sm font-medium md:block">
+          {user?.display_name ?? ""}
+        </div>
         <button
           type="button"
           aria-haspopup="dialog"
@@ -544,15 +701,31 @@ function ModuleRunner(props: {
           data-testid="exam-navigator-open"
           className="flex min-h-[44px] items-center gap-2 rounded-lg bg-[var(--exam-ink)] px-4 text-sm font-medium text-white"
         >
-          {view.kind === "review" ? "Review" : `Question ${currentCell?.number ?? 1} of ${summary.total}`}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {view.kind === "review"
+            ? "Review"
+            : `Question ${currentCell?.number ?? 1} of ${summary.total}`}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <path d="M18 15l-6-6-6 6" />
           </svg>
         </button>
         <div className="flex w-60 justify-end gap-2.5">
           <button
             type="button"
-            onClick={view.kind === "review" ? () => goTo(ordinals[ordinals.length - 1] ?? 0) : onBack}
+            onClick={
+              view.kind === "review"
+                ? () => goTo(ordinals[ordinals.length - 1] ?? 0)
+                : onBack
+            }
             disabled={view.kind === "question" && indexOfCurrent <= 0}
             className="min-h-[44px] rounded-full border border-[var(--exam-line)] bg-[var(--exam-surface)] px-5 text-sm font-medium disabled:opacity-40"
           >
@@ -589,7 +762,12 @@ function ModuleRunner(props: {
         submitting={submitting}
         onConfirm={() => void onConfirmSubmit()}
       />
-      {isMath && <MathReferenceSheet open={referenceOpen} onOpenChange={setReferenceOpen} />}
+      {isMath && (
+        <MathReferenceSheet
+          open={referenceOpen}
+          onOpenChange={setReferenceOpen}
+        />
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@ import {
   doItNowResponseSchema,
   guardianCalendarResponseSchema,
   launchResponseSchema,
+  profileReadResponseSchema,
   profileUpsertResponseSchema,
   streakSummarySchema,
   versionResponseSchema,
@@ -34,6 +35,7 @@ import {
   type LaunchResponse,
   type MoveBlockBody,
   type PlanMember,
+  type ProfileReadResponse,
   type ProfileUpsertResponse,
   type StreakSummary,
   type StudyProfileUpsert,
@@ -174,6 +176,23 @@ export async function fetchCalendar(
   });
   const response = await apiRequest(`${CALENDAR_ROOT}?${query.toString()}`);
   return parsed(response, calendarResponseSchema, "GET /api/calendar");
+}
+
+/**
+ * GET /api/calendar/profile — the study profile alone (test date, target score, schedule),
+ * served WITHOUT `calendar_access` (owner ruling OQ-25, 2026-10-02; SCL-130). `profile: null`
+ * is the pre-setup state. It never carries plan data: the shared response schema is
+ * `.strict()`, so a plan field arriving here is a parse failure, not a quiet extra.
+ *
+ * @spec [Doc 05F §15, §16; student-UI register OQ-25, UI-55] | @implemented [2026-10-03]
+ */
+export async function fetchStudyProfile(): Promise<ProfileReadResponse> {
+  const response = await apiRequest(`${CALENDAR_ROOT}/profile`);
+  return parsed(
+    response,
+    profileReadResponseSchema,
+    "GET /api/calendar/profile",
+  );
 }
 
 /** §15 GET /api/me/streak — INV-08-20, served without a `calendar_access` check. */

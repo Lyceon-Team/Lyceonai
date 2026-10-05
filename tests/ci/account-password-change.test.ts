@@ -20,10 +20,9 @@ import express, {
   type Response as ExpressResponse,
 } from "express";
 import request from "supertest";
-import { createClient } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createGoTrueStandIn } from "../helpers/gotrue-stand-in";
 
-const GOTRUE = "https://gotrue.test";
 const STUDENT = {
   id: "5a3c2b10-1111-4222-8333-444455556666",
   email: "student-pw@example.test",
@@ -65,141 +64,14 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
   ) => next(),
 }));
 
-// ── The GoTrue stand-in ──────────────────────────────────────────────────────────────────────
-type StandIn = {
-  password: string;
-  providers: string[];
-  sessions: Map<string, string>;
-  calls: string[];
-  updatedWithToken: string | null;
-  failTokenWith500: boolean;
-};
-const gotrue: StandIn = {
-  password: CURRENT,
-  providers: ["email"],
-  sessions: new Map(),
-  calls: [],
-  updatedWithToken: null,
-  failTokenWith500: false,
-};
-let issued = 0;
-
-function userJson() {
-  return {
-    id: STUDENT.id,
-    aud: "authenticated",
-    role: "authenticated",
-    email: STUDENT.email,
-    app_metadata: {
-      provider: gotrue.providers[0],
-      providers: gotrue.providers,
-    },
-    user_metadata: {},
-    identities: gotrue.providers.map((provider) => ({
-      id: `${provider}-identity`,
-      identity_id: `${provider}-identity`,
-      user_id: STUDENT.id,
-      provider,
-      identity_data: {},
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-01T00:00:00Z",
-    })),
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-  };
-}
-
-function json(status: number, body: unknown): Response {
-  return new Response(body === null ? null : JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-async function standInFetch(
-  input: string | URL | Request,
-  init?: RequestInit,
-): Promise<Response> {
-  const url = new URL(typeof input === "string" ? input : input.toString());
-  const method = (init?.method ?? "GET").toUpperCase();
-  const bearer = new Headers(init?.headers)
-    .get("authorization")
-    ?.replace(/^Bearer /i, "");
-  const path = url.pathname.replace(/^\/auth\/v1/, "");
-  gotrue.calls.push(`${method} ${path}${url.search}`);
-
-  if (
-    method === "POST" &&
-    path === "/token" &&
-    url.searchParams.get("grant_type") === "password"
-  ) {
-    if (gotrue.failTokenWith500)
-      return json(500, { code: "unexpected_failure", msg: "boom" });
-    const body = JSON.parse(String(init?.body ?? "{}")) as {
-      email?: string;
-      password?: string;
-    };
-    if (
-      body.email !== STUDENT.email ||
-      body.password !== gotrue.password ||
-      !gotrue.providers.includes("email")
-    ) {
-      return json(400, {
-        code: "invalid_credentials",
-        error_code: "invalid_credentials",
-        msg: "Invalid login credentials",
-      });
-    }
-    issued += 1;
-    const token = `verification-token-${issued}`;
-    gotrue.sessions.set(token, STUDENT.id);
-    return json(200, {
-      access_token: token,
-      refresh_token: `refresh-${issued}`,
-      token_type: "bearer",
-      expires_in: 3600,
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      user: userJson(),
-    });
-  }
-  if (method === "PUT" && path === "/user") {
-    if (!bearer || !gotrue.sessions.has(bearer))
-      return json(401, { code: "bad_jwt", msg: "invalid" });
-    const body = JSON.parse(String(init?.body ?? "{}")) as {
-      password?: string;
-    };
-    if (body.password) {
-      gotrue.password = body.password;
-      gotrue.updatedWithToken = bearer;
-    }
-    return json(200, userJson());
-  }
-  if (method === "POST" && path === "/logout") {
-    if (bearer) gotrue.sessions.delete(bearer);
-    return json(204, null);
-  }
-  if (method === "GET" && path === `/admin/users/${STUDENT.id}`) {
-    return json(200, userJson());
-  }
-  return json(404, { code: "not_found", msg: `${method} ${path}` });
-}
-
-const clientOptions = {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-  },
-  global: { fetch: standInFetch },
-};
+// ── The GoTrue stand-in (shared with the OQ-26 profile test: one scenario) ─────────────────────
+const harness = createGoTrueStandIn(STUDENT, CURRENT);
+const gotrue = harness.state;
 
 async function loadApp(): Promise<express.Express> {
   vi.resetModules();
   const credentials = await import("../../server/lib/password-credentials");
-  credentials.setPasswordAuthClientsForTests({
-    verifier: () => createClient(GOTRUE, "anon-key", clientOptions),
-    admin: () => createClient(GOTRUE, "service-key", clientOptions),
-  });
+  credentials.setPasswordAuthClientsForTests(harness.clients());
   const { default: authRoutes } =
     await import("../../server/routes/supabase-auth-routes");
   const app = express();
@@ -223,6 +95,7 @@ beforeEach(() => {
   gotrue.calls = [];
   gotrue.updatedWithToken = null;
   gotrue.failTokenWith500 = false;
+  gotrue.failAdminRead = false;
   signedIn.user = { ...STUDENT, role: "student" };
 });
 

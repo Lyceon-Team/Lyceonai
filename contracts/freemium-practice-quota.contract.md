@@ -7,6 +7,16 @@
 ## The rule
 
 - **Unpaid:** 40 free practice questions/day. **Paid (entitled):** unlimited.
+- **What counts (owner rulings):** a practice question counts once it is **answered or
+  skipped**, dated by `practice_session_items.occurred_at`, in the local day of
+  `practice_runtime_config.quota_reset_timezone` (America/Chicago at launch). A question served
+  and not yet answered or skipped counts nothing; an idempotent replay is the same row and
+  counts once. **Diagnostic** questions (`practice_sessions.mode = 'diagnostic'`) count nothing,
+  and the diagnostic's own next question is served past the limit. Sources: OQ-43 / F-61 (Karl,
+  2026-10-03: Doc 02B §13, Chicago midnight, one function for the 402 and the read; migration
+  `20261023000000`), OQ-50 (Karl, 2026-10-05: "skips count, diagnostic doesn't"; SCL-209;
+  migration `20261024000000`). Refusal is at session start and next question only; a question
+  already on screen can still be answered or skipped (OQ-50 (b), not ruled, kept as built).
 
 ## Consume, never hardcode (the two primitives already exist)
 

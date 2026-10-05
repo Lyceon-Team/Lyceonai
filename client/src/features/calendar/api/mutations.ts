@@ -42,6 +42,12 @@ import type {
   VersionResponse,
 } from "@lyceon/shared";
 import { calendarKeys } from "./keys";
+// @spec [student-UI register UI-44; §2 Free versus paid, Step 2 ruling 3; Doc 05F §15, §17.5]
+// | @implemented [2026-10-03] | plain English: every calendar read and write carries the inline
+// opt-out, so the app-wide upgrade modal stays closed on a calendar denial: the calendar page
+// renders its own upsell (ruling 3). Exam forms read inside the calendar sheets are the exam's
+// query, not the calendar's, and keep the modal.
+import { ENTITLEMENT_DENIAL_INLINE_META } from "@/components/billing/upgrade-modal";
 import {
   postAcknowledge,
   postDoItNow,
@@ -87,6 +93,7 @@ function useOptimisticCalendarMutation<V extends object, R>(
 ): UseMutationResult<R, Error, V, Snapshot> {
   const queryClient = useQueryClient();
   return useMutation<R, Error, V, Snapshot>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     mutationFn,
     retry: 1,
     onMutate: async (variables) => {
@@ -147,10 +154,14 @@ export function useStudyProfileMutation(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation<ProfileUpsertResponse, Error, Intent<StudyProfileFields>>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     mutationFn: putStudyProfile,
     retry: 1,
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: calendarKeys.ranges() });
+      // UI-55: the free calendar reads the profile on its own key (OQ-25), outside the
+      // range prefix, so a save names it too or the form and goal card would show the old one.
+      void queryClient.invalidateQueries({ queryKey: calendarKeys.profile() });
     },
   });
 }
@@ -238,6 +249,7 @@ export function useRegeneratePlan(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation<VersionResponse, Error, RegenerateVariables>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     mutationFn: (variables) => postRegeneratePlan(variables.idempotency_key),
     retry: 1,
     onSettled: () => {
@@ -254,6 +266,7 @@ export function useRegenerateDay(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation<VersionResponse, Error, DayScopedVariables>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     mutationFn: (variables) =>
       postRegenerateDay(variables.date, variables.idempotency_key),
     retry: 1,
@@ -271,6 +284,7 @@ export function useResetDay(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation<VersionResponse, Error, DayScopedVariables>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     mutationFn: (variables) =>
       postResetDay(variables.date, variables.idempotency_key),
     retry: 1,
@@ -306,6 +320,7 @@ export function useAcknowledge(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation<{ ok: true }, Error, AcknowledgeBody, Snapshot>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     mutationFn: postAcknowledge,
     retry: 1,
     onMutate: async () => {
@@ -348,6 +363,7 @@ export function useLaunchMutation(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation<LaunchResponse, Error, LaunchVariables>({
+    meta: ENTITLEMENT_DENIAL_INLINE_META,
     mutationFn: ({ blockId, ...body }) => postLaunch(blockId, body),
     retry: 1,
     onSettled: () => {

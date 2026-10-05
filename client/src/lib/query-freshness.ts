@@ -76,6 +76,14 @@ export const QUERY_FRESHNESS = {
 
   /** `GET /api/me/streak`. Same §17.7 rule; the streak moves at most once a day. */
   calendarStreak: { staleTime: MINUTE_MS, refetchOnWindowFocus: true },
+
+  /**
+   * `GET /api/practice/quota` (OQ-21; UI-50). The count moves with every practice question the
+   * student answers or skips (OQ-50), which happens on another page of this tab, so a page
+   * showing the quota reads it
+   * afresh each time it mounts rather than showing the morning's figure.
+   */
+  practiceQuota: { staleTime: 0 },
 } as const;
 
 export type QueryFreshnessKind = keyof typeof QUERY_FRESHNESS;

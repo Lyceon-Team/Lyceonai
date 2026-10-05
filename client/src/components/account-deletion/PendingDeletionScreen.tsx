@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
+import { BareCardHeader } from "@/components/layout/BareCardShell";
+import { Notice } from "@/components/student-ui";
 import { toast } from "@/hooks/use-toast";
 import { apiRequestRaw } from "@/lib/queryClient";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -17,6 +17,13 @@ import {
  * in-app cancel), and nothing else. In-app cancel hits the now-atomic cancel path; on success the
  * server clears the soft-delete state, so we reload and the normal app returns. This is the in-app
  * half of recovery — the emailed token link (/account/recover) is the other.
+ *
+ * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card"; §4 "Not prototyped"
+ *       (the pending-deletion screen)] | @implemented [2026-10-03]
+ * UI-59: drawn with the student tokens only, inside the Bare card App's DeletionGate renders.
+ * Copy and behaviour unchanged. "Cancel deletion & restore my account" is the one filled action;
+ * Sign out is a quiet button. The email reminder is a neutral info notice (polite status) where
+ * it was a shadcn Alert (role="alert"): it is not an error and is on screen from the first paint.
  */
 function formatDeletionDate(iso: string): string {
   const d = new Date(iso);
@@ -60,65 +67,58 @@ export function PendingDeletionScreen() {
   });
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#EAF0FF] to-white p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 space-y-5">
-        <div className="space-y-2 text-center">
-          <h1 className="text-2xl font-semibold text-neutral-800">
-            Your account is scheduled for deletion
-          </h1>
-          <p className="text-sm text-neutral-600">
-            {scheduledAt ? (
-              <>
-                Your account and all your progress will be permanently deleted
-                on{" "}
-                <span className="font-medium text-neutral-800">
-                  {formatDeletionDate(scheduledAt)}
-                </span>
-                . If you have a paid subscription, your paid access ends and you
-                will not be charged again once your account is deleted. Until
-                then your account is locked, but you can cancel and restore full
-                access right now.
-              </>
-            ) : (
-              <>
-                Your account is locked during the 7-day deletion grace period.
-                If you have a paid subscription, your paid access ends and you
-                will not be charged again at the deletion date. You can cancel
-                and restore full access right now.
-              </>
-            )}
-          </p>
-        </div>
+    <div className="flex flex-col gap-6" data-testid="pending-deletion">
+      <div>
+        <BareCardHeader title="Your account is scheduled for deletion" />
+        <p className="m-0 text-lyc-body text-lyc-ink">
+          {scheduledAt ? (
+            <>
+              Your account and all your progress will be permanently deleted on{" "}
+              <span className="font-semibold text-lyc-ink-strong">
+                {formatDeletionDate(scheduledAt)}
+              </span>
+              . If you have a paid subscription, your paid access ends and you
+              will not be charged again once your account is deleted. Until then
+              your account is locked, but you can cancel and restore full access
+              right now.
+            </>
+          ) : (
+            <>
+              Your account is locked during the 7-day deletion grace period. If
+              you have a paid subscription, your paid access ends and you will
+              not be charged again at the deletion date. You can cancel and
+              restore full access right now.
+            </>
+          )}
+        </p>
+      </div>
 
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            You can also restore your account from the link in the email we sent
-            when deletion was requested.
-          </AlertDescription>
-        </Alert>
+      <Notice
+        tone="info"
+        title="You can also restore your account from the link in the email we sent when deletion was requested."
+      />
 
-        <div className="space-y-3">
-          <Button
-            className="w-full"
-            onClick={() => cancelMutation.mutate()}
-            disabled={cancelMutation.isPending}
-            data-testid="cancel-deletion"
-          >
-            {cancelMutation.isPending
-              ? "Restoring…"
-              : "Cancel deletion & restore my account"}
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={() => void signOut()}
-            disabled={cancelMutation.isPending}
-            data-testid="pending-deletion-signout"
-          >
-            Sign out
-          </Button>
-        </div>
+      <div className="flex flex-col gap-3">
+        <Button
+          variant="lyc-primary"
+          className="w-full"
+          onClick={() => cancelMutation.mutate()}
+          disabled={cancelMutation.isPending}
+          data-testid="cancel-deletion"
+        >
+          {cancelMutation.isPending
+            ? "Restoring…"
+            : "Cancel deletion & restore my account"}
+        </Button>
+        <Button
+          variant="lyc-quiet"
+          className="w-full"
+          onClick={() => void signOut()}
+          disabled={cancelMutation.isPending}
+          data-testid="pending-deletion-signout"
+        >
+          Sign out
+        </Button>
       </div>
     </div>
   );

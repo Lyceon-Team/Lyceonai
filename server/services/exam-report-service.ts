@@ -47,6 +47,12 @@ import {
   examSectionStateSchema,
   examSessionStateSchema,
 } from "../../packages/shared/src/exam-runtime-schema";
+import {
+  EXAM_SCORED_SESSIONS_LIMIT,
+  examScoredSessionRowSchema,
+  examScoredSessionsPayloadSchema,
+  type ExamScoredSessionsPayload,
+} from "../../packages/shared/src/exam-scored-sessions-schema";
 import { callExamRpc } from "./exam-runtime-service";
 
 // ── The source row (server-side only) ───────────────────────────────────────
@@ -319,13 +325,42 @@ function serializeFailed(source: ExamReportSource): ExamReportPayload {
   });
 }
 
+type UnavailablePayload = z.infer<typeof examReportUnavailableSchema>;
+
+/**
+ * @spec [Doc-04C_V1.0, §11.5b (`resume_action: {type, url: string | null} | null`),
+ *        §12.1b step 3 (lapsed owner → 200 `unavailable`, reason `entitlement_lapsed`)]
+ *       | owner ruling OQ-34 (Karl, 2026-10-02; register student-ui-vertical §9 OQ-34,
+ *       §2 / OQ-5) | @implemented [2026-10-03]
+ *
+ * plain English: the next step a revoked requester can take, by reason. A lapsed
+ * entitlement carries `renew_entitlement` — the client opens the upgrade modal from it
+ * (OQ-5). Every other reason stays `null`, which §11.5b prescribes when no canonical
+ * action is wired; V1.0 populates only `entitlement_lapsed` anyway (§11.5b note).
+ *
+ * edge cases: `url` is `null` — there is no canonical renewal URL, and §11.5b makes the
+ * URL an optional hint that may be null. No token or identifier is ever put in it.
+ */
+export function resumeActionFor(
+  reason: UnavailablePayload["unavailable_reason"],
+): UnavailablePayload["resume_action"] {
+  switch (reason) {
+    case "entitlement_lapsed":
+      return { type: "renew_entitlement", url: null };
+    case "guardian_link_inactive":
+    case "content_takedown":
+      return null;
+  }
+}
+
 function serializeUnavailable(source: ExamReportSource): ExamReportPayload {
+  const reason = "entitlement_lapsed";
   return examReportUnavailableSchema.parse({
     report_state: "unavailable",
     ...base(source),
-    unavailable_reason: "entitlement_lapsed",
+    unavailable_reason: reason,
     unavailable_at: null, // Doc 01 does not record the lapse time here
-    resume_action: null, // no canonical renewal URL is wired (§11.5b allows null)
+    resume_action: resumeActionFor(reason),
     review_unlocked: false,
   });
 }
@@ -414,4 +449,60 @@ async function readDomainBreakdown(
     .object({ domains: examDomainBreakdownSchema })
     .strict()
     .parse(env.body).domains;
+}
+
+// ── OQ-30: the student's scored sessions ────────────────────────────────────
+
+/**
+ * @spec [Doc-04C_V1.0 §16.3, §7.1-§7.2 (scores from score_runs, never recomputed), §15.1
+ *        (no score without its disclosure), §16.7 (report_data_integrity_violation)]
+ *       [Owner ruling (Karl) 2026-10-02, OQ-30; OQ-31]
+ * @implemented [2026-10-03]
+ *
+ * plain English: one SQL read (exam_scored_sessions) returns the caller's scored sessions,
+ * newest first, already restricted to `student_id = studentId` in SQL. It asks for one row
+ * more than the cap so a student over it can be logged (`truncated`); the extra row is
+ * dropped here. A row whose disclosure is unbound throws ReportIntegrityError — the
+ * route's 500 — rather than shipping a score without it. The output is parsed against the
+ * strict wire schema, so a stray key is a thrown parse error, not a leak.
+ */
+const scoredSessionSourceSchema = z
+  .object({
+    sessions: z.array(
+      examScoredSessionRowSchema.extend({
+        disclosure: examDisclosureSchema.nullable(),
+      }),
+    ),
+  })
+  .strict();
+
+export type ExamScoredSessionsRead = {
+  payload: ExamScoredSessionsPayload;
+  truncated: boolean;
+};
+
+export async function listScoredSessions(
+  studentId: string,
+): Promise<ExamScoredSessionsRead> {
+  const env = await callExamRpc("exam_scored_sessions", {
+    p_student_id: studentId,
+    p_limit: EXAM_SCORED_SESSIONS_LIMIT + 1,
+  });
+  if (env.status !== 200) {
+    throw new Error(`exam_scored_sessions returned status ${env.status}`);
+  }
+  const source = scoredSessionSourceSchema.parse(env.body).sessions;
+  const kept = source.slice(0, EXAM_SCORED_SESSIONS_LIMIT);
+  const sessions = kept.map((row) => {
+    if (row.disclosure === null) {
+      throw new ReportIntegrityError(
+        "no score_disclosure_versions row for a scored session's scoring_model_version",
+      );
+    }
+    return { ...row, disclosure: row.disclosure };
+  });
+  return {
+    payload: examScoredSessionsPayloadSchema.parse({ sessions }),
+    truncated: source.length > EXAM_SCORED_SESSIONS_LIMIT,
+  };
 }

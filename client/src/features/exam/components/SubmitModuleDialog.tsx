@@ -50,12 +50,18 @@ export function SubmitModuleDialog(props: Props) {
         onOpenAutoFocus={focus.onOpenAutoFocus}
         onCloseAutoFocus={focus.onCloseAutoFocus}
       >
-        <AlertDialogTitle className="m-0 font-serif text-[26px] font-semibold">
+        <AlertDialogTitle className="m-0 font-lyc-serif text-[26px] font-semibold">
           Submit Module {props.module}?
         </AlertDialogTitle>
-        <dl className="m-0 flex flex-col gap-2.5" data-testid="exam-submit-counts">
+        <dl
+          className="m-0 flex flex-col gap-2.5"
+          data-testid="exam-submit-counts"
+        >
           {rows.map(([label, value]) => (
-            <div key={label} className="flex justify-between rounded-lg bg-[var(--exam-bg)] px-3.5 py-2.5 text-sm">
+            <div
+              key={label}
+              className="flex justify-between rounded-lg bg-[var(--exam-bg)] px-3.5 py-2.5 text-sm"
+            >
               <dt className="text-[var(--exam-muted)]">{label}</dt>
               <dd className="m-0 font-semibold">{value}</dd>
             </div>
@@ -65,7 +71,9 @@ export function SubmitModuleDialog(props: Props) {
           You cannot return to this module.
         </AlertDialogDescription>
         <AlertDialogFooter className="mt-1 gap-3">
-          <AlertDialogCancel className="min-h-[48px] rounded-full px-5 text-[15px]">Keep working</AlertDialogCancel>
+          <AlertDialogCancel className="min-h-[48px] rounded-full px-5 text-[15px]">
+            Keep working
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();

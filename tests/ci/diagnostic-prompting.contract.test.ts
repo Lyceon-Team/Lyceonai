@@ -10,210 +10,160 @@ function read(relativePath: string): string {
 
 describe("Diagnostic prompting contract", () => {
   /**
-   * Intent: the DiagnosticPromptModal's shouldShow prop is wired to the
-   * exact equality check estimateStatus === "no_baseline" — not a broad
-   * boolean, not a negation, not a comment.
+   * Intent: Home's diagnostic card (UI-50, which replaced the dashboard's DiagnosticPromptModal
+   * and DiagnosticCTAGate on 2026-10-03; UI-51 then removed the gate from Practice and deleted
+   * the gate and the old CTA card, so Home's card is the one diagnostic prompt) shows for exactly `estimateStatus === "no_baseline"`,
+   * and a finished diagnostic (`baseline_pending`, `baseline_only`, `computed`) never shows it.
+   * The stage function is the card's only gate (`FreeHome.tsx` renders the card under
+   * `stage === "diagnostic"`, pinned below).
    *
-   * Would fail if: shouldShow received a different condition, or the modal
-   * were rendered without the no_baseline gate.
+   * Would fail if: the card were offered on any other status, or on an unknown one.
    */
-  it("dashboard wires DiagnosticPromptModal shouldShow to estimateStatus === 'no_baseline'", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    // Structural: shouldShow prop must be wired to the exact equality check
-    const modalGatePattern =
-      /shouldShow=\{estimateData\?\.estimateStatus === "no_baseline"\}/;
-    expect(dashboard).toMatch(modalGatePattern);
+  it("Home shows the diagnostic card for estimateStatus === 'no_baseline' only", async () => {
+    const { freeHomeStage } =
+      await import("../../client/src/components/home/home-model");
+    expect(freeHomeStage("no_baseline")).toBe("diagnostic");
+    for (const status of [
+      "baseline_pending",
+      "baseline_only",
+      "computed",
+      undefined,
+    ] as const) {
+      expect(freeHomeStage(status)).not.toBe("diagnostic");
+    }
+    // Code only: the module comment names the route and the button it describes.
+    const home = read("client/src/components/home/FreeHome.tsx").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(home).toMatch(/stage === "diagnostic" \? \(\s*<section/);
+    expect(home.match(/data-testid="home-diagnostic"/g)?.length).toBe(1);
   });
 
   /**
-   * Intent: neither page may import or render the diagnostic CTA card outside
-   * the gate — regardless of aliasing, whitespace, or multiline formatting.
+   * Intent: Home is the ONE diagnostic entry. UI-51 (2026-10-03) rebuilt Practice to DESIGN.md
+   * §4 and Practice.dc.html, which have no diagnostic prompt, and deleted `DiagnosticCTAGate` and
+   * `DiagnosticCTACard` (Practice was their only surface). The gate's guard used to prove that
+   * Practice routed the old card exclusively through the gate; with no card and no gate the claim
+   * becomes "Practice offers no diagnostic entry at all, and the old card's module stays gone",
+   * checked by one validator, which the mutation proofs below exercise.
    *
-   * Structural proof (reusable validator):
-   * 1. A complete <DiagnosticCTAGate estimateStatus={...} JSX element exists
-   *    (binds the prop to an actual gate element, not a stray string).
-   * 2. Exactly one DiagnosticCTAGate JSX invocation per surface.
-   * 3. No import of the DiagnosticCTACard MODULE PATH — the path is unforgeable;
-   *    you can alias the symbol but not the path, so a path-based prohibition
-   *    catches aliased imports that a symbol-name regex would miss.
-   * 4. No <DiagnosticCTACard JSX invocation (un-aliased direct render).
-   *    Aliased renders are already blocked at the import: if the module path
-   *    can't be imported, there's no alias to render.
-   *
-   * Would fail if: the page imported the card module (aliased or not), rendered
-   * DiagnosticCTACard directly, rendered DiagnosticCTAGate without the
-   * estimateStatus prop, or duplicated the gate.
+   * Would fail if: Practice imported anything from the diagnostic components folder (aliased,
+   * multiline or not), reused the diagnostic starter, or named the diagnostic route; or if the
+   * deleted card module came back.
    */
 
-  // ── Patterns ──────────────────────────────────────────────────────────
-
-  /** Complete JSX element: <DiagnosticCTAGate estimateStatus={estimateData?.estimateStatus} */
-  const gateJsxPattern =
-    /<DiagnosticCTAGate\s[^>]*estimateStatus=\{estimateData\?\.estimateStatus\}/;
-
-  /** Any JSX invocation of DiagnosticCTAGate (counts instances) */
-  const gateInvocationPattern = /<DiagnosticCTAGate[\s/>]/g;
-
-  /**
-   * The unforgeable module path for the card component. Any import of the
-   * card — aliased or not, single-line or multiline — MUST reference this
-   * path string. Prohibiting the path catches every alias variant.
-   */
+  /** The deleted card's module path: you can alias a symbol, never a path. */
   const CARD_MODULE_PATH = "@/components/diagnostic/DiagnosticCTACard";
 
-  /** Direct <DiagnosticCTACard JSX invocation — un-aliased bypass via render */
+  /** Direct <DiagnosticCTACard JSX invocation — un-aliased render. */
   const cardJsxPattern = /<DiagnosticCTACard[\s/>]/;
 
-  // ── Reusable validator ────────────────────────────────────────────────
+  /** Code only: comments describe history and may name what the code must not use. */
+  function code(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  }
 
-  type ExclusiveRouteResult = { pass: true } | { pass: false; reason: string };
+  type NoEntryResult = { pass: true } | { pass: false; reason: string };
 
-  /**
-   * Validates that `source` routes the diagnostic CTA exclusively through
-   * DiagnosticCTAGate. Returns { pass: true } or { pass: false, reason }.
-   * The mutation proof exercises this same function.
-   */
-  function validateExclusiveGateRouting(source: string): ExclusiveRouteResult {
-    // 1. Complete JSX element with estimateStatus prop bound to gate
-    if (!gateJsxPattern.test(source)) {
+  function validateNoDiagnosticEntry(source: string): NoEntryResult {
+    const src = code(source);
+    if (src.includes("@/components/diagnostic/")) {
       return {
         pass: false,
-        reason:
-          "Missing <DiagnosticCTAGate estimateStatus={estimateData?.estimateStatus}> JSX element",
+        reason: "imports from the diagnostic components folder",
       };
     }
-
-    // 2. Exactly one gate invocation
-    const gateMatches = source.match(gateInvocationPattern);
-    if (!gateMatches || gateMatches.length !== 1) {
-      return {
-        pass: false,
-        reason: `Expected exactly 1 DiagnosticCTAGate JSX invocation, found ${gateMatches?.length ?? 0}`,
-      };
+    if (src.includes("useDiagnosticStart")) {
+      return { pass: false, reason: "reuses the diagnostic starter" };
     }
-
-    // 3. No import of the card MODULE PATH (unforgeable — catches aliases)
-    if (source.includes(CARD_MODULE_PATH)) {
-      return {
-        pass: false,
-        reason: `Page imports the card module path "${CARD_MODULE_PATH}" — bypass via import`,
-      };
+    if (src.includes("/api/practice/diagnostic")) {
+      return { pass: false, reason: "names the diagnostic route" };
     }
-
-    // 4. No direct <DiagnosticCTACard JSX invocation (un-aliased render)
-    if (cardJsxPattern.test(source)) {
-      return {
-        pass: false,
-        reason:
-          "Page contains a direct <DiagnosticCTACard> JSX invocation — bypass via render",
-      };
+    if (cardJsxPattern.test(src)) {
+      return { pass: false, reason: "renders <DiagnosticCTACard>" };
     }
-
     return { pass: true };
   }
 
-  // ── Contract assertions ───────────────────────────────────────────────
-
-  it("dashboard routes CTA exclusively through DiagnosticCTAGate", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    const result = validateExclusiveGateRouting(dashboard);
-    expect(result).toEqual({ pass: true });
+  it("Home never imports or renders the ungated DiagnosticCTACard", () => {
+    // UI-50: Home draws its own diagnostic card (DESIGN.md §4), gated by `freeHomeStage`
+    // above, so it carries no DiagnosticCTAGate; the card module must still not appear.
+    for (const file of [
+      "client/src/pages/lyceon-dashboard.tsx",
+      "client/src/components/home/FreeHome.tsx",
+      "client/src/components/home/PaidHome.tsx",
+    ]) {
+      const source = read(file);
+      expect(source, file).not.toContain(CARD_MODULE_PATH);
+      expect(cardJsxPattern.test(source), file).toBe(false);
+    }
   });
 
-  it("practice page routes CTA exclusively through DiagnosticCTAGate", () => {
+  it("Practice offers no diagnostic entry (DESIGN.md §4 Practice; UI-51)", () => {
     const practice = read("client/src/pages/practice.tsx");
-    const result = validateExclusiveGateRouting(practice);
-    expect(result).toEqual({ pass: true });
+    // Presence first: this is the rebuilt page (its filter bar and Start), not an empty file.
+    expect(code(practice)).toContain("<FilterBar");
+    expect(code(practice)).toContain('data-testid="practice-start"');
+    expect(validateNoDiagnosticEntry(practice)).toEqual({ pass: true });
+    // The deleted modules stay deleted.
+    for (const gone of [
+      "client/src/components/diagnostic/DiagnosticCTACard.tsx",
+      "client/src/components/diagnostic/DiagnosticCTAGate.tsx",
+    ]) {
+      expect(fs.existsSync(path.join(repoRoot, gone)), gone).toBe(false);
+    }
   });
 
-  // ── Mutation proofs ───────────────────────────────────────────────────
+  // ── Mutation proofs: the same validator, on Practice with an entry added back ─────────────
 
-  /**
-   * Mutation proof: exercises the SAME validator to prove it rejects every
-   * bypass variant — un-aliased, aliased (multiline), and substitution.
-   */
-  it("rejects a page that adds a direct DiagnosticCTACard bypass", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-
-    // ── Un-aliased bypass: single-line import + direct render ──
-    const unaliasedBypass =
-      dashboard +
-      `\nimport { DiagnosticCTACard } from "${CARD_MODULE_PATH}";\n<DiagnosticCTACard />`;
-    const unaliasedResult = validateExclusiveGateRouting(unaliasedBypass);
-    expect(unaliasedResult.pass).toBe(false);
-    expect(unaliasedResult).toHaveProperty(
-      "reason",
-      expect.stringContaining("card module path"),
-    );
-
-    // ── Substitute: remove gate, add bare card ──
-    const substitute =
-      dashboard
-        .replace(/<DiagnosticCTAGate[\s/>]/g, "")
-        .replace(
-          /import.*DiagnosticCTAGate.*/,
-          `import { DiagnosticCTACard } from "${CARD_MODULE_PATH}";`,
-        ) + "\n<DiagnosticCTACard />";
-    const substituteResult = validateExclusiveGateRouting(substitute);
-    expect(substituteResult.pass).toBe(false);
-  });
-
-  /**
-   * Decisive mutation: a MULTILINE ALIASED import that the previous
-   * symbol-name regex would have missed. The module path prohibition
-   * catches it because you can alias the symbol but not the path.
-   */
-  it("rejects a multiline aliased DiagnosticCTACard import", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-
-    // Multiline aliased import — the symbol name "DiagnosticCTACard" does
-    // NOT appear at the JSX call site; only the alias "UngatedCTA" does.
-    const aliasedBypass =
-      dashboard +
-      `\nimport {\n  DiagnosticCTACard as UngatedCTA\n} from "${CARD_MODULE_PATH}";\n<UngatedCTA />`;
-    const result = validateExclusiveGateRouting(aliasedBypass);
-    expect(result.pass).toBe(false);
-    expect(result).toHaveProperty(
-      "reason",
-      expect.stringContaining("card module path"),
-    );
-  });
-
-  it("practice page fetches estimateStatus via projection API", () => {
+  it("rejects Practice with the old card imported back (plain and multiline aliased)", () => {
     const practice = read("client/src/pages/practice.tsx");
-    expect(practice).toContain("fetchScoreEstimate");
-    expect(practice).toContain("EstimateResponse");
-    expect(practice).toContain("/api/progress/projection");
+    const plain = validateNoDiagnosticEntry(
+      practice +
+        `\nimport { DiagnosticCTACard } from "${CARD_MODULE_PATH}";\n<DiagnosticCTACard />`,
+    );
+    expect(plain.pass).toBe(false);
+    const aliased = validateNoDiagnosticEntry(
+      practice +
+        `\nimport {\n  DiagnosticCTACard as UngatedCTA\n} from "${CARD_MODULE_PATH}";\n<UngatedCTA />`,
+    );
+    expect(aliased).toEqual({
+      pass: false,
+      reason: "imports from the diagnostic components folder",
+    });
   });
 
-  it("both components reuse useDiagnosticStart (no forked start flow)", () => {
-    const modal = read(
-      "client/src/components/diagnostic/DiagnosticPromptModal.tsx",
-    );
-    const card = read("client/src/components/diagnostic/DiagnosticCTACard.tsx");
-    expect(modal).toContain("useDiagnosticStart");
-    expect(card).toContain("useDiagnosticStart");
+  it("rejects Practice that starts the diagnostic itself", () => {
+    const practice = read("client/src/pages/practice.tsx");
+    expect(
+      validateNoDiagnosticEntry(
+        practice +
+          `\nimport { useDiagnosticStart } from "@/hooks/useDiagnosticStart";`,
+      ),
+    ).toEqual({ pass: false, reason: "reuses the diagnostic starter" });
+    expect(
+      validateNoDiagnosticEntry(
+        practice + `\nconst url = "/api/practice/diagnostic/sessions";`,
+      ),
+    ).toEqual({ pass: false, reason: "names the diagnostic route" });
   });
 
-  it("modal uses sessionStorage for per-session dismiss (not permanent)", () => {
-    const modal = read(
-      "client/src/components/diagnostic/DiagnosticPromptModal.tsx",
-    );
-    expect(modal).toContain("sessionStorage");
-    expect(modal).not.toContain("localStorage");
+  it("the one start surface reuses useDiagnosticStart (no forked start flow)", () => {
+    // UI-50: Home's diagnostic card replaced DiagnosticPromptModal (deleted); UI-51 deleted the
+    // old CTA card, the only other caller. Code only: the module comment names the route.
+    const home = code(read("client/src/components/home/FreeHome.tsx"));
+    expect(home).toContain("useDiagnosticStart");
+    expect(home).not.toContain("/api/practice/diagnostic/sessions");
   });
 
-  it("CTA copy is action-neutral (no 'Start' or 'Resume' in button text)", () => {
-    const card = read("client/src/components/diagnostic/DiagnosticCTACard.tsx");
-    const modal = read(
-      "client/src/components/diagnostic/DiagnosticPromptModal.tsx",
-    );
-    // Button text should be "Work on Diagnostic" — action-neutral for both
-    // fresh (201) and resume (409) cases.
-    expect(card).toContain("Work on Diagnostic");
-    expect(modal).toContain("Work on Diagnostic");
-    // Must reference projected-score payoff
-    expect(card).toContain("projected SAT score");
-    expect(modal).toContain("projected SAT score");
+  it("Home's diagnostic copy names the projected-score payoff", () => {
+    // Home's card (UI-50) uses the signed-off prototype's words ("Start diagnostic",
+    // Main.dc.html; owner ruling 2026-10-03: copy from the prototype). The old card's
+    // action-neutral "Work on Diagnostic" left with the card (UI-51).
+    const home = code(read("client/src/components/home/FreeHome.tsx"));
+    expect(home).toContain("projected SAT score");
   });
 });

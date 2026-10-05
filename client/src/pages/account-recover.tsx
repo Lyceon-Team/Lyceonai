@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Button } from "@/components/ui/button";
+import { LYC_INLINE_LINK, buttonVariants } from "@/components/ui/button";
+import { BareCardHeader } from "@/components/layout/BareCardShell";
 import { apiRequestRaw } from "@/lib/queryClient";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 
@@ -11,7 +12,15 @@ import { SUPPORT_EMAIL } from "@/lib/support-contact";
  * by the token — no session needed, so a soft-locked user can recover). Distinguishes restored vs the
  * EMAIL_RECLAIMED (409, email re-registered during grace) vs invalid/expired token. Without this page
  * the email's cancel link 404s and the §40.4 7-day recovery isn't user-reachable.
+ *
+ * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card"] | @implemented [2026-10-03]
+ * UI-59: drawn with the student tokens only, inside the Bare card. Copy and behaviour unchanged.
+ * "Sign in" was a Button inside a Link (a button nested in an anchor); it is now the Link itself,
+ * drawn as the filled primary. The support address is a real inline link, so it is underlined.
  */
+const BODY = "m-0 text-lyc-body text-lyc-ink";
+/** A real inline link inside the sentence (`LYC_INLINE_LINK`). */
+const SUPPORT_LINK = LYC_INLINE_LINK;
 type RecoverState = "loading" | "success" | "invalid" | "reclaimed" | "error";
 
 export default function AccountRecover() {
@@ -44,94 +53,82 @@ export default function AccountRecover() {
     };
   }, []);
 
+  const support = (
+    <a className={SUPPORT_LINK} href={`mailto:${SUPPORT_EMAIL}`}>
+      {SUPPORT_EMAIL}
+    </a>
+  );
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#EAF0FF] to-white p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 space-y-5 text-center">
-        {state === "loading" && (
-          <>
-            <h1 className="text-2xl font-semibold text-neutral-800">
-              Restoring your account…
-            </h1>
-            <p className="text-sm text-neutral-600">
-              One moment while we cancel the scheduled deletion.
-            </p>
-          </>
-        )}
+    <div
+      className="flex flex-col items-center text-center"
+      data-testid="account-recover"
+      data-state={state}
+    >
+      {state === "loading" && (
+        <BareCardHeader
+          title="Restoring your account…"
+          description="One moment while we cancel the scheduled deletion."
+          align="center"
+        />
+      )}
 
-        {state === "success" && (
-          <>
-            <h1 className="text-2xl font-semibold text-neutral-800">
-              Your account is restored
-            </h1>
-            <p className="text-sm text-neutral-600">
-              The scheduled deletion has been cancelled. You can sign in and
-              pick up where you left off.
-            </p>
-            <Link href="/login">
-              <Button className="w-full" data-testid="recover-signin">
-                Sign in
-              </Button>
-            </Link>
-          </>
-        )}
+      {state === "success" && (
+        <>
+          <BareCardHeader
+            title="Your account is restored"
+            description="The scheduled deletion has been cancelled. You can sign in and pick up where you left off."
+            align="center"
+          />
+          <Link
+            href="/login"
+            className={buttonVariants({
+              variant: "lyc-primary",
+              className: "w-full no-underline",
+            })}
+            data-testid="recover-signin"
+          >
+            Sign in
+          </Link>
+        </>
+      )}
 
-        {state === "reclaimed" && (
-          <>
-            <h1 className="text-2xl font-semibold text-neutral-800">
-              We couldn't restore your account automatically
-            </h1>
-            <p className="text-sm text-neutral-600">
-              Your email address is no longer available, so we couldn't
-              reactivate this account. Please contact{" "}
-              <a
-                className="font-medium text-blue-600"
-                href={`mailto:${SUPPORT_EMAIL}`}
-              >
-                {SUPPORT_EMAIL}
-              </a>{" "}
-              and we'll help you recover it.
-            </p>
-          </>
-        )}
+      {state === "reclaimed" && (
+        <>
+          <BareCardHeader
+            title="We couldn't restore your account automatically"
+            align="center"
+          />
+          <p className={BODY}>
+            Your email address is no longer available, so we couldn't reactivate
+            this account. Please contact {support} and we'll help you recover
+            it.
+          </p>
+        </>
+      )}
 
-        {state === "invalid" && (
-          <>
-            <h1 className="text-2xl font-semibold text-neutral-800">
-              This recovery link is invalid or expired
-            </h1>
-            <p className="text-sm text-neutral-600">
-              The link may have already been used, or the recovery window has
-              passed. If you still need help, contact{" "}
-              <a
-                className="font-medium text-blue-600"
-                href={`mailto:${SUPPORT_EMAIL}`}
-              >
-                {SUPPORT_EMAIL}
-              </a>
-              .
-            </p>
-          </>
-        )}
+      {state === "invalid" && (
+        <>
+          <BareCardHeader
+            title="This recovery link is invalid or expired"
+            align="center"
+          />
+          <p className={BODY}>
+            The link may have already been used, or the recovery window has
+            passed. If you still need help, contact {support}.
+          </p>
+        </>
+      )}
 
-        {state === "error" && (
-          <>
-            <h1 className="text-2xl font-semibold text-neutral-800">
-              Something went wrong
-            </h1>
-            <p className="text-sm text-neutral-600">
-              We couldn't process this recovery link. Please try again, or
-              contact{" "}
-              <a
-                className="font-medium text-blue-600"
-                href={`mailto:${SUPPORT_EMAIL}`}
-              >
-                {SUPPORT_EMAIL}
-              </a>
-              .
-            </p>
-          </>
-        )}
-      </div>
+      {state === "error" && (
+        <>
+          <BareCardHeader title="Something went wrong" align="center" />
+          <p className={BODY}>
+            We couldn't process this recovery link. Please try again, or contact{" "}
+            {support}.
+          </p>
+        </>
+      )}
     </div>
   );
 }

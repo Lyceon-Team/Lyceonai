@@ -4,6 +4,7 @@ import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
+import { FullPageLoader } from "@/components/student-ui";
 import {
   loginPathWithReturn,
   onboardingPathWithReturn,
@@ -55,14 +56,10 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   });
 
   if (authLoading || (user && profileLoading)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
+    // The shared FullPageLoader (role="status", named by its label). Light-locked because this
+    // gate sits above every role's pages, and none of them is themed yet.
+    return <FullPageLoader themeLock="light" />;
   }
 
   // G2-02: the server refused this session as ROLE_UNRECOGNIZED. Not a sign-out, so not /login —

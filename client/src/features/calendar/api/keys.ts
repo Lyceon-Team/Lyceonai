@@ -38,6 +38,13 @@ export const calendarKeys = {
   range: (from: string, to: string, deviceTimezone: string) =>
     ["calendar", "range", from, to, deviceTimezone] as const,
 
+  /**
+   * GET /api/calendar/profile (OQ-25, UI-55). Outside the `range` prefix like the streak: it
+   * is ungated, so a free student reads it while every range read answers 402, and a day edit
+   * does not change it. A profile save invalidates it explicitly.
+   */
+  profile: () => ["calendar", "profile"] as const,
+
   /** §15 GET /api/me/streak. Its own key — see the module note above. */
   streak: () => ["calendar", "streak"] as const,
 

@@ -45,6 +45,20 @@ const useResumeConversationMock = vi.fn();
 let mockSearch = "";
 const mockSetLocation = vi.fn();
 
+// UI-56: the page reads the feature-access map (GET /api/profile, OQ-29) before any tutor
+// request. These tests drive the conversation with NO map, which leaves every decision to the
+// tutor routes themselves (the server's own refusal); the map's locked states are covered by
+// chat.ui56.test.tsx.
+vi.mock("@/hooks/useProfileQuery", () => ({
+  useProfileQuery: () => ({ isPending: false, data: undefined }),
+}));
+// UI-56: the history is the App shell's right panel (a portal into the shell). Without the
+// shell, draw it in place so these tests can reach New session and the list.
+vi.mock("@/components/layout/app-shell", () => ({
+  AppShellPanel: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+}));
 vi.mock("wouter", () => ({
   useLocation: () => ["/chat", mockSetLocation],
   useSearch: () => mockSearch,
@@ -274,9 +288,9 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
       fireEvent.click(endButton);
     });
 
-    expect(
-      screen.getByText(/It will close and leave your sessions list/),
-    ).toBeTruthy();
+    // UI-56: the shipped description less "It will close and leave your sessions list":
+    // ended sessions stay in the history (OQ-39 (f)).
+    expect(screen.getByText("You won't be able to reopen it.")).toBeTruthy();
 
     const confirmButtons = screen.getAllByRole("button", {
       name: /end session/i,
@@ -378,7 +392,10 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
 
     expect(sendButton).toBeDisabled();
     expect(textarea).toBeDisabled();
-    expect(screen.getByText("LISA is thinking...")).toBeTruthy();
+    // UI-56: the typing indicator is a LISA-labelled bubble of dots, named for assistive tech.
+    expect(
+      screen.getByRole("status", { name: "LISA is thinking" }),
+    ).toBeTruthy();
   });
 
   // ── Test 5: Crisis renders support card, replaces composer ─────────
@@ -453,8 +470,10 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
       expect(screen.getByText("Support")).toBeTruthy();
     });
 
-    const supportCard = container.querySelector(".bg-emerald-50");
+    // UI-56: the lanes keep distinct colours, now from token pairs (emerald, plum).
+    const supportCard = container.querySelector('[data-lane="crisis"]');
     expect(supportCard).toBeTruthy();
+    expect(supportCard?.className).toContain("bg-lyc-lv4-bg");
 
     const safeguardingResponse = {
       ...crisisResponse,
@@ -490,8 +509,9 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
     });
 
     await waitFor(() => {
-      const cards = container2.querySelectorAll(".bg-purple-50");
+      const cards = container2.querySelectorAll('[data-lane="safeguarding"]');
       expect(cards.length).toBeGreaterThan(0);
+      expect(cards[0]?.className).toContain("bg-lyc-cat-rw-bg");
     });
   });
 
@@ -671,18 +691,23 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
     const { default: ChatPage } = await import("./chat");
     render(<ChatPage />, { wrapper: createWrapper() });
 
-    expect(screen.getAllByText("Welcome to LISA").length).toBeGreaterThan(0);
+    // UI-56: no conversation open is an empty column under "New session", with the composer
+    // ready for a first message (the "Welcome to LISA" card is gone with the old page).
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "New session",
+    );
+    expect(screen.getByRole("textbox", { name: /message/i })).toBeTruthy();
     expect(screen.getByText("No sessions yet")).toBeTruthy();
     expect(
       screen.getAllByRole("button", { name: /new session/i }).length,
     ).toBeGreaterThan(0);
-    // No further page: no "Load more" control.
-    expect(screen.queryByTestId("button-load-more-sessions")).toBeNull();
+    // No further page: no "Show older" control.
+    expect(screen.queryByTestId("lisa-show-older")).toBeNull();
   });
 
   // ── UI-16: the sidebar loads the next server page on request ───────
   // @spec [Doc-03B_V4.1 §8.3, §8.5] | @implemented [2026-09-29]
-  it("9. when the server reports has_more, 'Load more sessions' fetches the next page", async () => {
+  it("9. when the server reports has_more, 'Show older' fetches the next page", async () => {
     mockSearch = "";
     useConversationMock.mockReturnValue({
       data: undefined,
@@ -709,7 +734,7 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
     const { default: ChatPage } = await import("./chat");
     render(<ChatPage />, { wrapper: createWrapper() });
 
-    const buttons = screen.getAllByTestId("button-load-more-sessions");
+    const buttons = screen.getAllByTestId("lisa-show-older");
     expect(buttons.length).toBeGreaterThan(0);
     fireEvent.click(buttons[0]!);
     expect(fetchNextPage).toHaveBeenCalledTimes(1);

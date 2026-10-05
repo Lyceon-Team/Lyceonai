@@ -50,21 +50,40 @@ describe("Feedback UX hardening contract", () => {
    * inline shape — is in the list.
    */
   it("routes every premium denial through the one CTA component", () => {
-    // W4-11: chat draws `LisaUpgradeCard`, which is the one CTA component with
-    // LISA's pitch. Pinned in two steps so neither link can quietly go.
-    expect(read("client/src/pages/chat.tsx")).toContain("LisaUpgradeCard");
+    // UI-56 (2026-10-03): chat leaves this list, as Home did under UI-50. Its one paid
+    // boundary is the locked state, whose "Unlock LISA" opens the app's one upgrade modal
+    // (UI-44; DESIGN.md §3) in place; a server refusal draws the same state. The in-review
+    // panel still draws `LisaUpgradeCard`, which is the one CTA component with LISA's pitch.
+    const chat = read("client/src/pages/chat.tsx");
+    expect(chat).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
+    expect(chat).toMatch(/if \(denied\) return <LisaLocked reason="plan" \/>;/);
+    expect(chat).not.toContain("<LisaUpgradeCard");
+    expect(read("client/src/components/tutor/ScopedTutorPanel.tsx")).toContain(
+      "<LisaUpgradeCard />",
+    );
     const surfaces = [
       "client/src/components/tutor/LisaUpgradeCard.tsx",
       // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
       // pending Doc 04 rebuild. client/src/pages/full-test.tsx is deleted, so it leaves
       // this list; every remaining surface keeps the same assertion.
-      "client/src/pages/lyceon-dashboard.tsx",
-      "client/src/pages/mastery.tsx",
+      // UI-50 (2026-10-03): Home leaves this list. Its one paid boundary is the locked mastery
+      // card, which opens the app's one upgrade modal (UI-44; DESIGN.md §3) in place.
+      // UI-57 (2026-10-03): Mastery leaves it too, for the same reason (asserted below).
       "client/src/pages/practice.tsx",
     ];
     for (const surface of surfaces) {
       expect(read(surface), surface).toContain("PremiumUpgradePrompt");
     }
+    const home = read("client/src/components/home/FreeHome.tsx");
+    expect(home).toContain("<LockedMasteryCard");
+    expect(home).toMatch(/upgrade\.open\("mastery_detail", masteryLock\)/);
+    // Comments stripped: the page's header names the component it replaced.
+    const mastery = read("client/src/pages/mastery.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    expect(mastery).toContain("<LockedMasteryCard");
+    expect(mastery).toMatch(/upgrade\.open\("mastery_detail", lockReason\)/);
+    expect(mastery).not.toContain("PremiumUpgradePrompt");
   });
 
   /**
@@ -88,6 +107,9 @@ describe("Feedback UX hardening contract", () => {
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
       "client/src/pages/UserProfile.tsx",
+      // UI-58: Settings → Billing reaches the plans page through the resolver only.
+      "client/src/pages/settings.tsx",
+      "client/src/components/settings/BillingSection.tsx",
       "client/src/components/billing/PremiumUpgradePrompt.tsx",
     ];
     for (const surface of surfaces) {
@@ -109,12 +131,29 @@ describe("Feedback UX hardening contract", () => {
 
   /**
    * Intent: ban destructive/alarming red (error banners, alert borders) on
-   * customer surfaces. Semantic difficulty colors (easy=green, medium=amber,
-   * hard=red) are a universal convention and are NOT destructive — they are
-   * allowed, but ONLY inside the Hard difficulty configuration object in
-   * practice.tsx's DIFFICULTY_OPTIONS array. Red classes anywhere else in any
-   * audited file — including the same class combination — must still fail.
+   * customer surfaces. Until UI-51 the one exemption was the Hard difficulty
+   * pill colours in practice.tsx's DIFFICULTY_OPTIONS. UI-51 (2026-10-03)
+   * rebuilt Practice on the shared filter bar, which draws difficulty with the
+   * student tokens and no colour per level, so the exemption is gone and every
+   * audited file, practice.tsx included, gets none.
    */
+  const RED_CLASSES = ["bg-red-", "text-red-", "border-red-"] as const;
+
+  function destructiveFindings(source: string): string[] {
+    const findings: string[] = [];
+    for (const variant of [
+      'variant="destructive"',
+      'variant: "destructive"',
+      "variant: 'destructive'",
+    ]) {
+      if (source.includes(variant)) findings.push(variant);
+    }
+    for (const red of RED_CLASSES) {
+      if (source.includes(red)) findings.push(red);
+    }
+    return findings;
+  }
+
   it("removes destructive alert variants from audited customer surfaces", () => {
     const auditedFiles = [
       "client/src/pages/chat.tsx",
@@ -125,72 +164,30 @@ describe("Feedback UX hardening contract", () => {
       "client/src/pages/mastery.tsx",
       "client/src/pages/practice.tsx",
       "client/src/pages/UserProfile.tsx",
+      // UI-58: the student Settings page and its sections.
+      "client/src/pages/settings.tsx",
+      "client/src/components/settings/BillingSection.tsx",
+      "client/src/components/settings/AccountSection.tsx",
       "client/src/components/guardian/CheckoutReturnPoller.tsx",
     ];
-
-    // Regex matching the Hard difficulty config object within DIFFICULTY_OPTIONS.
-    // Scoped to the value:"hard" entry — NOT a global class-string strip.
-    const HARD_DIFFICULTY_CONFIG =
-      /\{\s*value:\s*"hard",\s*label:\s*"Hard",\s*color:\s*\n?\s*"border-red-300 text-red-700 bg-red-50 hover:bg-red-100",?\s*\}/;
-
     for (const file of auditedFiles) {
-      const source = read(file);
-      expect(source).not.toContain('variant="destructive"');
-      expect(source).not.toContain('variant: "destructive"');
-      expect(source).not.toContain("variant: 'destructive'");
-
-      let sanitized = source;
-
-      // Exemption scoped to practice.tsx ONLY — the Hard difficulty config
-      // is a semantic color convention, not destructive UX. All other audited
-      // files receive NO red exemption whatsoever.
-      if (file === "client/src/pages/practice.tsx") {
-        // Assert the Hard config exists (so removal is meaningful)
-        expect(source).toMatch(HARD_DIFFICULTY_CONFIG);
-        // Remove only the matched config object for red-class checking
-        sanitized = sanitized.replace(
-          HARD_DIFFICULTY_CONFIG,
-          "/* HARD_STRIPPED */",
-        );
-      }
-
-      expect(sanitized).not.toContain("bg-red-");
-      expect(sanitized).not.toContain("text-red-");
-      expect(sanitized).not.toContain("border-red-");
+      expect(destructiveFindings(read(file)), file).toEqual([]);
     }
   });
 
   /**
-   * Intent: prove the Hard-difficulty exemption is scoped to the config
-   * object, not the class values globally. The same red class combination
-   * used outside DIFFICULTY_OPTIONS must still be caught.
-   *
-   * Mutation: inject a destructive element with the identical red classes
-   * into practice.tsx, strip the legitimate Hard config, and assert the
-   * injected red is still detected.
+   * Mutation: the same check on practice.tsx with a destructive element added
+   * back (the exact red classes the old Hard pill used) must report each class,
+   * so the check above passing on practice.tsx is the absence of red, not a
+   * check that cannot see it.
    */
-  it("Hard-difficulty red exemption does not mask destructive red elsewhere", () => {
+  it("finds destructive red injected into practice.tsx", () => {
     const practice = read("client/src/pages/practice.tsx");
-
-    const HARD_DIFFICULTY_CONFIG =
-      /\{\s*value:\s*"hard",\s*label:\s*"Hard",\s*color:\s*\n?\s*"border-red-300 text-red-700 bg-red-50 hover:bg-red-100",?\s*\}/;
-
-    // Inject a fake destructive element with the exact same red classes
+    expect(destructiveFindings(practice)).toEqual([]);
     const mutated =
       practice +
       '\n<div className="border-red-300 text-red-700 bg-red-50">Error!</div>';
-
-    // Strip the legitimate Hard config (same as the main test does)
-    const sanitized = mutated.replace(
-      HARD_DIFFICULTY_CONFIG,
-      "/* HARD_STRIPPED */",
-    );
-
-    // The injected destructive red must still be detected — proving the
-    // exemption is config-scoped, not a global class-string erasure
-    expect(sanitized).toContain("bg-red-");
-    expect(sanitized).toContain("text-red-");
-    expect(sanitized).toContain("border-red-");
+    expect(destructiveFindings(mutated)).toEqual([...RED_CLASSES]);
   });
 
   it("preserves structured API errors in guardian subscription paywall", () => {

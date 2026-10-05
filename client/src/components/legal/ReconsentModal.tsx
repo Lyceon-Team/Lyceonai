@@ -43,10 +43,14 @@
  *    screen reader should treat it as one. Being closeable does not stop it
  *    being a dialog.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { csrfFetch } from "@/lib/csrf";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
+import {
+  buildEscapeKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, FileText, X } from "lucide-react";
@@ -99,13 +103,10 @@ export function ReconsentModal({
   const queryClient = useQueryClient();
 
   // Escape closes it, for everyone. It used to be gated on `dismissible`.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onDismiss();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismiss]);
+  // @spec [student-UI register §2 Keyboard ("Esc closes the open modal or sheet"), UI-45]
+  // | @implemented [2026-10-03] | plain English: through the one shared hook — this modal is
+  // not a Radix Dialog, so nothing else closes it on Esc.
+  useKeyboardShortcuts(buildEscapeKeymap(onDismiss));
 
   const accept = useMutation({
     mutationFn: async () => {

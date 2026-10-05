@@ -3890,6 +3890,8 @@ CREATE FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, 
     AS $_$
 DECLARE
   v_now timestamptz := COALESCE(p_now, now());
+  v_tz text;
+  v_local_day date;
   v_today_start timestamptz;
   v_tomorrow_start timestamptz;
   v_daily_limit integer;
@@ -3900,6 +3902,7 @@ DECLARE
   v_account uuid := NULL;
   v_entitled boolean := false;
   v_counts_toward_limit boolean := true;
+  v_diagnostic_session boolean := false;
   v_dedupe_key text := NULL;
   v_existing_id uuid := NULL;
   v_inserted_id uuid := NULL;
@@ -3933,9 +3936,25 @@ BEGIN
   END IF;
   v_session_limit := v_config_val::integer;
 
-  -- UTC-day boundaries
-  v_today_start := date_trunc('day', v_now AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
-  v_tomorrow_start := v_today_start + interval '1 day';
+  -- Reset timezone from config (required — no hardcoded fallback). Doc 02B §13.
+  SELECT value #>> '{}' INTO v_tz
+  FROM public.practice_runtime_config
+  WHERE key = 'quota_reset_timezone';
+  IF v_tz IS NULL OR v_tz = '' THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Local-day boundaries in the configured zone (DST-correct: each boundary is a local
+  -- midnight converted to an absolute instant, never a fixed offset).
+  BEGIN
+    v_local_day := (v_now AT TIME ZONE v_tz)::date;
+  EXCEPTION WHEN invalid_parameter_value THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END;
+  v_today_start := v_local_day::timestamp AT TIME ZONE v_tz;
+  v_tomorrow_start := (v_local_day + 1)::timestamp AT TIME ZONE v_tz;
   v_reset_at := v_tomorrow_start;
 
   -- Resolve account + entitlement
@@ -3943,19 +3962,36 @@ BEGIN
   v_entitled := public._rl_has_active_entitlement(p_student_user_id);
   v_counts_toward_limit := NOT v_entitled;
 
-  -- Count today's consumed units (UTC-day window)
-  SELECT COALESCE(SUM(units), 0)::integer
-  INTO v_used
-  FROM public.usage_rate_limit_ledger l
-  WHERE l.scope = 'practice'
-    AND l.student_user_id = p_student_user_id
-    AND l.reservation_state IN ('consumed', 'finalized')
-    AND COALESCE((l.metadata->>'counts_toward_limit')::boolean, true)
-    AND l.created_at >= v_today_start
-    AND l.created_at < v_tomorrow_start;
+  -- A diagnostic serve is never refused by the free daily cap (OQ-50, Karl 2026-10-05). Read
+  -- from the student's own session row; an unknown or foreign session is not exempt.
+  IF p_session_id IS NOT NULL THEN
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.practice_sessions ps
+      WHERE ps.id = p_session_id
+        AND ps.user_id = p_student_user_id
+        AND ps.mode = 'diagnostic'
+    )
+    INTO v_diagnostic_session;
+  END IF;
 
-  -- Daily cap check (unpaid only)
-  IF v_counts_toward_limit AND v_used >= v_daily_limit THEN
+  -- Today's resolved practice questions (Doc 02B §13 as amended by SCL-209 / OQ-50): one row
+  -- per answered OR skipped item, dated by `occurred_at` (CHECK-guaranteed on both), outside
+  -- diagnostic sessions. An idempotent replay re-reads the same row; a served item that is
+  -- neither answered nor skipped counts zero.
+  SELECT count(*)::integer
+  INTO v_used
+  FROM public.practice_session_items psi
+  JOIN public.practice_sessions ps ON ps.id = psi.session_id
+  WHERE psi.user_id = p_student_user_id
+    AND psi.status IN ('answered', 'skipped')
+    AND psi.occurred_at >= v_today_start
+    AND psi.occurred_at < v_tomorrow_start
+    AND ps.mode <> 'diagnostic';
+
+  -- Daily cap check (unpaid only) — the one branch the dry run and the serve share; a
+  -- diagnostic serve passes it.
+  IF v_counts_toward_limit AND NOT v_diagnostic_session AND v_used >= v_daily_limit THEN
     RETURN jsonb_build_object(
       'allowed', false,
       'code', 'PRACTICE_FREE_DAILY_QUOTA_EXCEEDED',
@@ -3970,7 +4006,7 @@ BEGIN
     );
   END IF;
 
-  -- Per-session cap (paid users)
+  -- Per-session cap (paid users) — unchanged: counted over the session's serve ledger rows.
   IF p_session_id IS NOT NULL AND v_entitled THEN
     SELECT COALESCE(SUM(units), 0)::integer
     INTO v_session_used
@@ -4012,7 +4048,7 @@ BEGIN
     );
   END IF;
 
-  -- Idempotency: dedupe on session_item_id
+  -- Idempotency: dedupe the serve log on session_item_id
   IF p_session_item_id IS NOT NULL THEN
     v_dedupe_key := 'practice:served:' || p_session_item_id::text;
     SELECT l.id
@@ -4037,7 +4073,7 @@ BEGIN
     );
   END IF;
 
-  -- Insert ledger entry
+  -- Serve log row: feeds the paid per-session cap; the free daily count does not read it.
   INSERT INTO public.usage_rate_limit_ledger (
     scope, event_key, student_user_id, account_id,
     session_id, session_item_id, dedupe_key,
@@ -4055,9 +4091,8 @@ BEGIN
   )
   RETURNING id INTO v_inserted_id;
 
-  IF v_counts_toward_limit THEN
-    v_used := v_used + 1;
-  ELSE
+  -- A serve consumes no free quota (Doc 02B §13): only the paid session count steps.
+  IF NOT v_counts_toward_limit THEN
     v_session_used := v_session_used + 1;
   END IF;
 
@@ -6846,6 +6881,66 @@ $$;
 --
 
 COMMENT ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) IS 'The one write path for the two post-exam notices. Returns emitted | duplicate. Idempotent per (student, occasion, event type) because the type is part of notification_event_id''s hash input. The score prompt goes to the student; the renewal decision goes to the payer (the student when payer_profile_id is NULL).';
+
+
+--
+-- Name: exam_scored_sessions(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) RETURNS jsonb
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_student_id IS NULL OR p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION 'exam_scored_sessions: invalid arguments'
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'sessions', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'session_id', x.session_id,
+               'test_form_name', x.test_form_name,
+               'completed_at', x.completed_at,
+               'total_scaled', x.total_scaled,
+               'rw_scaled', x.rw_scaled,
+               'math_scaled', x.math_scaled,
+               'disclosure', x.disclosure)
+             ORDER BY x.completed_at DESC, x.session_id DESC)
+        FROM (
+          SELECT s.id AS session_id,
+                 f.name AS test_form_name,
+                 s.completed_at,
+                 r.total_scaled,
+                 r.rw_scaled,
+                 r.math_scaled,
+                 CASE WHEN d.scoring_model_version IS NULL THEN NULL
+                      ELSE jsonb_build_object(
+                             'disclosure_version', d.disclosure_version,
+                             'summary', d.summary,
+                             'full_text_url', d.full_text_url)
+                 END AS disclosure
+            FROM test_sessions s
+            JOIN test_forms f ON f.id = s.test_form_id
+            JOIN score_runs r ON r.test_session_id = s.id
+            LEFT JOIN score_disclosure_versions d
+                   ON d.scoring_model_version = r.scoring_model_version
+           WHERE s.student_id = p_student_id
+             AND s.state = 'completed'
+             AND r.total_scaled IS NOT NULL
+           ORDER BY s.completed_at DESC, s.id DESC
+           LIMIT p_limit
+        ) x), '[]'::jsonb)));
+END;
+$$;
+
+
+--
+-- Name: FUNCTION exam_scored_sessions(p_student_id uuid, p_limit integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) IS 'OQ-30 (owner ruling 2026-10-02; Doc 04C §16.3): the caller''s scored full-length sessions, newest first (completed_at DESC, id DESC), capped by p_limit (1..100). Per row: session_id, test_form_name, completed_at, total/rw/math scaled from score_runs, and the disclosure bound to the run''s scoring_model_version (null when unbound — the server refuses it). No decomposition, item or answer data.';
 
 
 --
@@ -21309,6 +21404,14 @@ GRANT ALL ON FUNCTION public.exam_score_renewal_candidates(p_offset_days integer
 
 REVOKE ALL ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor text, p_occasion_key date, p_payer_profile_id uuid, p_event_type text) TO service_role;
+
+
+--
+-- Name: FUNCTION exam_scored_sessions(p_student_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) TO service_role;
 
 
 --

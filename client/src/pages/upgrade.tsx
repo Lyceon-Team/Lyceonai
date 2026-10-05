@@ -1,13 +1,26 @@
+/**
+ * The plans page (`/upgrade`).
+ *
+ * @spec [DESIGN.md §4 "Not prototyped: the upgrade/plans page" (build to the shell spec; Karl
+ *        gets screenshots before merge), §1 (tokens only, 14px floor, one filled action, no
+ *        motion beyond the LISA dots), §2 App shell; student-UI register UI-58, OQ-49 (off the
+ *        light lock once on tokens), UI-41 (the in-body back link was interim duplication of the
+ *        shell's navigation; removed); wiring-table §13 (`GET /api/billing/plans`, checkout)]
+ *        | @implemented [2026-10-03 restyle; billing behaviour unchanged]
+ *
+ * plain English: the same three plan cards from the same live prices, and the same server-made
+ * Stripe checkout per plan; only the presentation moved onto the student tokens. The best-value
+ * card's button is the page's one filled action (the others are outline), the spinner icons are
+ * gone (no motion), and the "Back to Dashboard" link is removed (the rail is the way back). Every
+ * word is the page's shipped copy.
+ */
 import { useMemo } from "react";
-import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
-import { AppShell } from "@/components/layout/app-shell";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, Check, Loader2, Sparkles } from "lucide-react";
+import { Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   type BillingPlan,
   getBillingPlans,
@@ -124,151 +137,140 @@ export default function UpgradePage() {
   });
 
   return (
-    <AppShell showFooter>
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-6xl">
-        <div className="mb-8">
-          <Button asChild variant="ghost" className="mb-4">
-            <Link href="/dashboard">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </Link>
-          </Button>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Membership</p>
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-2">
-            Choose Your Lyceon Plan
-          </h1>
-          <p className="text-muted-foreground">
-            One secure checkout flow for monthly, quarterly, and yearly subscriptions.
-          </p>
-        </div>
+    <div className="flex flex-col gap-8" data-testid="upgrade-page">
+      <PageHeader
+        eyebrow="Membership"
+        title="Choose Your Lyceon Plan"
+        description="One secure checkout flow for monthly, quarterly, and yearly subscriptions."
+      />
 
-        {error && (
-          <Alert className="mb-6">
-            <AlertDescription className="flex items-center justify-between gap-3">
-              <span>Plan pricing is temporarily unavailable.</span>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
+      {error && (
+        <Notice
+          tone="warning"
+          title="Plan pricing is temporarily unavailable."
+          actionLabel="Retry"
+          onAction={() => void refetch()}
+        />
+      )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {plans.map((plan) => {
-            const isBestValue = bestValue === plan.plan;
-            // DERIVED HERE, FROM THE LIVE AMOUNTS. Both figures are functions of
-            // `amountCents` and the interval; neither is transmitted, so neither
-            // can disagree with the price printed above it.
-            const { equivalentMonthlyCents, savingsPercent } =
-              deriveBillingPlanPricing(plan, monthlyAmountCents);
-            const currency = plan.currency;
-            const headlinePrice =
-              plan.amountCents !== null && currency !== null
-                ? formatPrice(plan.amountCents, currency)
-                : null;
-            const equivalentMonthly =
-              equivalentMonthlyCents !== null && currency !== null
-                ? formatPrice(equivalentMonthlyCents, currency)
-                : null;
-            const savingsText =
-              savingsPercent !== null && savingsPercent > 0
-                ? `${savingsPercent.toFixed(1)}% off`
-                : null;
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        {plans.map((plan) => {
+          const isBestValue = bestValue === plan.plan;
+          // DERIVED HERE, FROM THE LIVE AMOUNTS. Both figures are functions of
+          // `amountCents` and the interval; neither is transmitted, so neither
+          // can disagree with the price printed above it.
+          const { equivalentMonthlyCents, savingsPercent } =
+            deriveBillingPlanPricing(plan, monthlyAmountCents);
+          const currency = plan.currency;
+          const headlinePrice =
+            plan.amountCents !== null && currency !== null
+              ? formatPrice(plan.amountCents, currency)
+              : null;
+          const equivalentMonthly =
+            equivalentMonthlyCents !== null && currency !== null
+              ? formatPrice(equivalentMonthlyCents, currency)
+              : null;
+          const savingsText =
+            savingsPercent !== null && savingsPercent > 0
+              ? `${savingsPercent.toFixed(1)}% off`
+              : null;
 
-            return (
-              <Card
-                key={plan.plan}
-                className={isBestValue ? "border-primary shadow-sm" : "border-border/60"}
-                data-testid={planCardTestIds[plan.plan]}
-              >
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>{plan.label}</CardTitle>
-                    {isBestValue && (
-                      <Badge className="bg-primary text-primary-foreground">
-                        <Sparkles className="h-3 w-3 mr-1" />
-                        Best value
-                      </Badge>
-                    )}
-                  </div>
-                  <CardDescription>{plan.intervalLabel}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    {headlinePrice ? (
-                      <p
-                        className="text-4xl font-semibold tracking-tight"
-                        data-testid={planPriceTestIds[plan.plan]}
-                      >
-                        {headlinePrice}
-                      </p>
-                    ) : (
-                      // NO NUMBER RATHER THAN A REMEMBERED ONE. An unconfigured
-                      // price id and a Stripe outage both land here.
-                      <p
-                        className="text-sm text-muted-foreground"
-                        data-testid={planPriceUnavailableTestIds[plan.plan]}
-                      >
-                        Price unavailable right now.
-                      </p>
-                    )}
-                    {equivalentMonthly && (
-                      <p
-                        className="text-sm text-muted-foreground"
-                        data-testid={planEquivalentTestIds[plan.plan]}
-                      >
-                        {equivalentMonthly} / month equivalent
-                      </p>
-                    )}
-                  </div>
-                  {savingsText && (
-                    <div
-                      className="inline-flex items-center rounded-full bg-secondary px-2.5 py-1 text-xs font-medium"
-                      data-testid={planSavingsTestIds[plan.plan]}
-                    >
-                      {savingsText}
-                    </div>
-                  )}
-                  <ul className="space-y-2 text-sm text-muted-foreground">
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-primary" />
-                      Full KPI + mastery + projection access
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-primary" />
-                      Premium tutor and full-test analytics
-                    </li>
-                  </ul>
-                </CardContent>
-                <CardFooter>
-                  <Button
-                    className="w-full"
-                    onClick={() => checkoutMutation.mutate(plan.plan)}
-                    disabled={checkoutMutation.isPending}
-                    data-testid={planChooseTestIds[plan.plan]}
+          return (
+            <section
+              key={plan.plan}
+              aria-label={plan.label}
+              className={cn(
+                "flex flex-col gap-4 rounded-lg bg-lyc-sheet px-6 py-6",
+                isBestValue
+                  ? "border-2 border-lyc-ink-strong"
+                  : "border border-lyc-rule",
+              )}
+              data-testid={planCardTestIds[plan.plan]}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="m-0 font-lyc-serif text-lyc-panel font-semibold tracking-normal text-lyc-ink-strong">
+                  {plan.label}
+                </h2>
+                {isBestValue && (
+                  <span className="rounded-full border border-lyc-ink-strong px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink-strong">
+                    Best value
+                  </span>
+                )}
+              </div>
+              <p className="m-0 text-lyc-meta-lg text-lyc-muted">
+                {plan.intervalLabel}
+              </p>
+              <div className="flex flex-col gap-1">
+                {headlinePrice ? (
+                  <p
+                    className="m-0 font-lyc-serif text-[36px] font-semibold leading-tight text-lyc-ink-strong"
+                    data-testid={planPriceTestIds[plan.plan]}
                   >
-                    {checkoutMutation.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Redirecting...
-                      </>
-                    ) : (
-                      "Choose plan"
-                    )}
-                  </Button>
-                </CardFooter>
-              </Card>
-            );
-          })}
-        </div>
-
-        {isLoading && (
-          <div className="mt-6 flex items-center text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Loading plan metadata...
-          </div>
-        )}
+                    {headlinePrice}
+                  </p>
+                ) : (
+                  // NO NUMBER RATHER THAN A REMEMBERED ONE. An unconfigured
+                  // price id and a Stripe outage both land here.
+                  <p
+                    className="m-0 text-lyc-body text-lyc-muted"
+                    data-testid={planPriceUnavailableTestIds[plan.plan]}
+                  >
+                    Price unavailable right now.
+                  </p>
+                )}
+                {equivalentMonthly && (
+                  <p
+                    className="m-0 text-lyc-meta-lg text-lyc-muted"
+                    data-testid={planEquivalentTestIds[plan.plan]}
+                  >
+                    {equivalentMonthly} / month equivalent
+                  </p>
+                )}
+              </div>
+              {savingsText && (
+                <span
+                  className="self-start rounded-full bg-lyc-chip px-2.5 py-1 text-lyc-meta font-semibold text-lyc-ink"
+                  data-testid={planSavingsTestIds[plan.plan]}
+                >
+                  {savingsText}
+                </span>
+              )}
+              <ul className="m-0 flex list-none flex-col gap-2 p-0 text-lyc-meta-lg text-lyc-ink">
+                <li className="flex items-start gap-2">
+                  <Check
+                    className="mt-0.5 h-4 w-4 shrink-0 text-lyc-ink-strong"
+                    aria-hidden="true"
+                  />
+                  Full KPI + mastery + projection access
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check
+                    className="mt-0.5 h-4 w-4 shrink-0 text-lyc-ink-strong"
+                    aria-hidden="true"
+                  />
+                  Premium tutor and full-test analytics
+                </li>
+              </ul>
+              <Button
+                type="button"
+                variant={isBestValue ? "lyc-primary" : "lyc-outline"}
+                className="mt-auto w-full"
+                onClick={() => checkoutMutation.mutate(plan.plan)}
+                disabled={checkoutMutation.isPending}
+                data-testid={planChooseTestIds[plan.plan]}
+              >
+                {checkoutMutation.isPending ? "Redirecting..." : "Choose plan"}
+              </Button>
+            </section>
+          );
+        })}
       </div>
-    </AppShell>
+
+      {isLoading && (
+        <p className="m-0 text-lyc-body text-lyc-muted">
+          Loading plan metadata...
+        </p>
+      )}
+    </div>
   );
 }

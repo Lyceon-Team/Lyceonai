@@ -63,9 +63,16 @@ export function HeaderUserMenu({
   signOut,
   isSigningOut,
   fallbackName,
+  leadingItems,
   items,
 }: HeaderSignOut & {
   fallbackName: string;
+  /**
+   * Shell-specific entries rendered BEFORE Settings. OQ-48 (Karl, 2026-10-03): the student
+   * avatar menu reads Calendar, Settings, Help, Sign out (OQ-4), so the App shell passes Calendar
+   * here and Help in `items`.
+   */
+  leadingItems?: React.ReactNode;
   /**
    * Shell-specific entries, rendered after Settings (G4-10: the guardian shell's "Linked
    * students & billing"). The shell that owns the page owns its menu entry; this menu stays
@@ -118,6 +125,7 @@ export function HeaderUserMenu({
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {leadingItems}
         <DropdownMenuItem
           onClick={() => navigate("/profile")}
           data-testid="menu-profile"

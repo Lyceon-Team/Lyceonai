@@ -2,8 +2,11 @@
  * Student-facing words for exam states and modes.
  *
  * @spec [Doc-04C_V1.0, §5.1 (ReportState); §2.3 (no routing language)]
- *       [E7b owner ruling 2: the card shows state words only, never a score (§15.1)]
- * @implemented [2026-09-25]
+ *       [E7b owner ruling 2 ("the card shows state words only, never a score") was SUPERSEDED
+ *        by owner ruling OQ-31 (Karl, 2026-10-02): the Full-Length card shows the completed
+ *        test's score with its §15.1 disclosure (tests-home-model.ts). These words remain for
+ *        every other state, and for a scored attempt whose score is not loaded.]
+ * @implemented [2026-09-25; OQ-31 note 2026-10-03, UI-54]
  *
  * plain English: the student's words, not the enum's. "Module 2 of 2" is the only
  * way Module 2 is ever named — no path, no difficulty (04C §2.3).
@@ -38,7 +41,9 @@ export function formCardStateLabel(
       return "Unavailable";
     case "not_completed":
       // abandoned_final is past its window with nothing scoreable (04A §14.3).
-      return latest.state === "abandoned_final" ? "Not finished" : "In progress";
+      return latest.state === "abandoned_final"
+        ? "Not finished"
+        : "In progress";
   }
 }
 
