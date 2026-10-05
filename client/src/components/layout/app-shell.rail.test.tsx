@@ -5,10 +5,12 @@
  * @spec [student-UI register UI-41; §2 Free versus paid (LISA and Full-Length open the modal in
  *        place with no navigation and no call to the gated endpoint; ruling 3: Calendar keeps the
  *        lock as a hint and navigates); OQ-29 (map on GET /api/profile, reason plan | age; under
- *        13 gets the age message); OQ-4 (five tabs; avatar menu Calendar, Settings, Help, Sign
- *        out); OQ-47 (bell in the rail above Help, ruled 2026-10-03); OQ-48 (avatar menu order,
- *        ruled 2026-10-03); DESIGN.md §1 (3px focus ring, nothing below 14px), §2; issue #829 (one anchor per
- *        nav item, with its href)] | @implemented [2026-10-03]
+ *        13 gets the age message); OQ-4 (five tabs); OQ-47 (bell in the rail above Help, ruled
+ *        2026-10-03); OQ-48 (the admin exception); owner ruling (Karl, 2026-10-05; supersedes
+ *        OQ-4's tab bar and OQ-48's menu order: tabs Home, Practice, Review, Calendar, LISA;
+ *        avatar menu Full-Length, Settings, Help, Sign out); DESIGN.md §1 (3px focus ring,
+ *        nothing below 14px), §2; issue #829 (one anchor per nav item, with its href)]
+ *        | @implemented [2026-10-03; mobile tab bar and menu 2026-10-05]
  *
  * THE MAP IS THE SERVER'S. Every fixture below is the output of `resolveFeatureAccess`, the
  * function GET /api/profile calls, with only the entitlement answers stubbed (and the real age
@@ -340,29 +342,13 @@ describe("no map (a non-student, or not loaded)", () => {
   });
 });
 
-describe("mobile (OQ-4)", () => {
-  it("the bottom bar has exactly Home, Practice, Review, Full-Length, LISA, with the same locks", async () => {
-    renderShell(await serverMap({ paid: false, under13: false }));
-    const bar = screen.getByTestId("app-tab-bar");
-    const tabs = Array.from(
-      bar.querySelectorAll('[data-testid^="tab-"]'),
-    ).filter((el) => !el.getAttribute("data-testid")?.endsWith("-lock"));
-    expect(tabs.map((el) => el.textContent)).toEqual([
-      "Home",
-      "Practice",
-      "Review",
-      "Full-Length",
-      "LISA",
-    ]);
-    expect(within(bar).getByTestId("tab-lisa").tagName).toBe("BUTTON");
-    expect(within(bar).getByTestId("tab-full-length-lock")).toBeTruthy();
-    expect(within(bar).queryByTestId("tab-calendar")).toBeNull();
-    // The bar shows below lg only.
-    expect(bar.className).toMatch(/(^|\s)lg:hidden(\s|$)/);
-    expect(screen.getByTestId("app-rail").className).toMatch(
-      /(^|\s)hidden(\s|$)/,
-    );
-  });
+describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4's tab bar and OQ-48's order)", () => {
+  /** The tab bar's entries, in the order they render (lock glyphs excluded). */
+  function tabLabels(bar: HTMLElement): (string | null)[] {
+    return Array.from(bar.querySelectorAll('[data-testid^="tab-"]'))
+      .filter((el) => !el.getAttribute("data-testid")?.endsWith("-lock"))
+      .map((el) => el.textContent);
+  }
 
   /** The open avatar menu's items, in the order they render. */
   function openMenuItemIds(): string[] {
@@ -374,23 +360,110 @@ describe("mobile (OQ-4)", () => {
       .map((el) => el.getAttribute("data-testid") ?? "");
   }
 
-  it("the avatar menu reads Calendar, Settings, Help, Sign out, in that order (OQ-48)", async () => {
+  it("the bottom bar has exactly Home, Practice, Review, Calendar, LISA, and no Full-Length", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    const bar = screen.getByTestId("app-tab-bar");
+    expect(tabLabels(bar)).toEqual([
+      "Home",
+      "Practice",
+      "Review",
+      "Calendar",
+      "LISA",
+    ]);
+    expect(within(bar).queryByTestId("tab-full-length")).toBeNull();
+    expect(bar.textContent).not.toContain("Full-Length");
+    // The bar shows below lg only; the rail is hidden below lg and keeps all six (unchanged).
+    expect(bar.className).toMatch(/(^|\s)lg:hidden(\s|$)/);
+    const rail = screen.getByTestId("app-rail");
+    expect(rail.className).toMatch(/(^|\s)hidden(\s|$)/);
+    expect(within(rail).getAllByRole("link").map((el) => el.textContent)).toEqual([
+      "Home",
+      "Practice",
+      "Review",
+      "Full-Length",
+      "Calendar",
+      "LISA",
+    ]);
+  });
+
+  it("free plan: Calendar on the bar keeps its lock as a hint and navigates; LISA opens the modal", async () => {
+    const { history } = renderShell(
+      await serverMap({ paid: false, under13: false }),
+    );
+    const bar = screen.getByTestId("app-tab-bar");
+    expect(within(bar).getByTestId("tab-lisa").tagName).toBe("BUTTON");
+    const calendar = within(bar).getByTestId("tab-calendar");
+    expect(within(bar).getByTestId("tab-calendar-lock")).toBeTruthy();
+    expect(calendar.tagName).toBe("A");
+    expect(calendar.getAttribute("href")).toBe("/calendar");
+    fireEvent.click(calendar);
+    expect(history.at(-1)).toBe("/calendar");
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+  });
+
+  it("every rail item is on the tab bar or in the avatar menu: never both, never neither", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    const bar = screen.getByTestId("app-tab-bar");
+    const menu = openMenuItemIds();
+    for (const item of RAIL_ITEMS) {
+      const onBar = within(bar).queryByTestId(`tab-${item.key}`) !== null;
+      const inMenu = menu.includes(`menu-${item.key}`);
+      expect([item.key, onBar !== inMenu]).toEqual([item.key, true]);
+    }
+  });
+
+  it("the avatar menu reads Full-Length, Settings, Help, Sign out, in that order", async () => {
     renderShell(await serverMap({ paid: true, under13: false }));
     expect(openMenuItemIds()).toEqual([
-      "menu-calendar",
+      "menu-full-length",
       "menu-profile",
       "menu-help",
       "menu-logout",
     ]);
-    expect(screen.getByTestId("menu-calendar").textContent).toBe("Calendar");
+    expect(screen.getByTestId("menu-full-length").textContent).toBe(
+      "Full-Length",
+    );
     expect(screen.getByTestId("menu-profile").textContent).toContain(
       "Settings",
     );
     expect(screen.getByTestId("menu-help").textContent).toBe("Help");
     expect(screen.getByTestId("menu-logout").textContent).toContain("Sign Out");
+    expect(screen.queryByTestId("menu-calendar")).toBeNull();
   });
 
-  it("an admin keeps the menu at every width, same order, Crisis review before Sign out", async () => {
+  it("paid: Full-Length in the menu has no lock and navigates to /tests", async () => {
+    const { history } = renderShell(
+      await serverMap({ paid: true, under13: false }),
+    );
+    openMenuItemIds();
+    const entry = screen.getByTestId("menu-full-length");
+    expect(screen.queryByTestId("menu-full-length-lock")).toBeNull();
+    expect(entry.getAttribute("aria-label")).toBe("Full-Length");
+    fireEvent.click(entry);
+    expect(history.at(-1)).toBe("/tests");
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+  });
+
+  it("free plan: Full-Length in the menu shows the lock and opens the upgrade modal in place, with no navigation and no gated request", async () => {
+    const { history } = renderShell(
+      await serverMap({ paid: false, under13: false }),
+    );
+    openMenuItemIds();
+    const entry = screen.getByTestId("menu-full-length");
+    expect(screen.getByTestId("menu-full-length-lock")).toBeTruthy();
+    expect(entry.getAttribute("aria-label")).toBe(
+      "Full-Length, included with a paid plan",
+    );
+    fireEvent.click(entry);
+    const modal = await screen.findByTestId("upgrade-modal");
+    expect(modal.textContent).toContain(
+      UPGRADE_MODAL_COPY.exam_full_length.plan.title,
+    );
+    expect(history).toEqual(["/dashboard"]);
+    expect(fetched.filter((u) => GATED_URL.test(u))).toEqual([]);
+  });
+
+  it("an admin keeps the menu at every width, same order, Crisis review before Sign out (OQ-48)", async () => {
     authState = signedIn("admin");
     renderShell(null);
     // The admin's menu is not wrapped in lg:hidden (W2-7), and no avatar link replaces it.
@@ -399,7 +472,7 @@ describe("mobile (OQ-4)", () => {
     ).toBeNull();
     expect(screen.queryByTestId("rail-account")).toBeNull();
     expect(openMenuItemIds()).toEqual([
-      "menu-calendar",
+      "menu-full-length",
       "menu-profile",
       "menu-help",
       "menu-crisis-review",
