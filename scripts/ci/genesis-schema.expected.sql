@@ -11566,6 +11566,161 @@ $$;
 
 
 --
+-- Name: sweep_tutor_conversation_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_cutoff   timestamptz := now() - make_interval(days => public.tutor_conversation_retention_days());
+  v_ids      uuid[];
+  v_students uuid[];
+  v_n        integer;
+  v_tbl      text;
+  -- Tables whose rows go with a deleted conversation (ON DELETE CASCADE on conversation_id).
+  v_cascade  CONSTANT text[] := ARRAY[
+    'tutor_messages',
+    'tutor_question_links',
+    'tutor_instruction_assignments',
+    'tutor_instruction_exposures',
+    'tutor_turn_metrics',
+    'tutor_context_resolution_log'
+  ];
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_conversation_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Expired, soft-deleted, and NOT crisis-flagged (RS-00). Locked before the check.
+  SELECT coalesce(array_agg(x.id), '{}')
+    INTO v_ids
+    FROM (
+      SELECT c.id
+        FROM public.tutor_conversations c
+       WHERE c.deleted_at IS NOT NULL
+         AND c.deleted_at < v_cutoff
+       ORDER BY c.id
+         FOR UPDATE
+    ) x
+   WHERE NOT EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = x.id)
+     AND NOT EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = x.id);
+
+  -- Memory summaries go only for students losing a conversation in this run who keep nothing:
+  -- no live conversation, none still recoverable, and none flagged (RS-00).
+  SELECT coalesce(array_agg(DISTINCT c.student_id), '{}')
+    INTO v_students
+    FROM public.tutor_conversations c
+   WHERE c.id = ANY (v_ids)
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.tutor_conversations o
+        WHERE o.student_id = c.student_id
+          AND (
+            o.deleted_at IS NULL
+            OR o.deleted_at >= v_cutoff
+            OR EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = o.id)
+            OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = o.id)
+          )
+     );
+
+  -- Counts first (they are the dry-run answer, and the live run reports the same numbers).
+  swept_table   := 'tutor_conversations';
+  deleted_count := coalesce(array_length(v_ids, 1), 0);
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  FOREACH v_tbl IN ARRAY v_cascade LOOP
+    EXECUTE format('SELECT count(*)::integer FROM public.%I WHERE conversation_id = ANY ($1)', v_tbl)
+      INTO v_n
+      USING v_ids;
+    swept_table   := v_tbl;
+    deleted_count := v_n;
+    cutoff        := v_cutoff;
+    RETURN NEXT;
+  END LOOP;
+
+  SELECT count(*)::integer INTO v_n
+    FROM public.tutor_memory_summaries s
+   WHERE s.student_id = ANY (v_students);
+  swept_table   := 'tutor_memory_summaries';
+  deleted_count := v_n;
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  IF NOT p_dry_run THEN
+    DELETE FROM public.tutor_memory_summaries s WHERE s.student_id = ANY (v_students);
+    DELETE FROM public.tutor_conversations c WHERE c.id = ANY (v_ids);
+  END IF;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner ruling 2026-10-05 RS-00: the 7d tier. Deletes conversations soft-deleted more than tutor_conversation_retention_days() ago EXCEPT any a crisis_review_cases or crisis_review_events row links to, with their cascade rows, and the memory summaries of students left with no live, recoverable or flagged conversation. p_dry_run counts without deleting. One row per table, zero counts included, with the cutoff.';
+
+
+--
+-- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz := now() - interval '90 days';
+  v_assign  integer;
+  v_expose  integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_instruction_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_assign
+      FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_expose
+      FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+    GET DIAGNOSTICS v_expose = ROW_COUNT;
+
+    DELETE FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+    GET DIAGNOSTICS v_assign = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_instruction_assignments'; deleted_count := v_assign; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_instruction_exposures';   deleted_count := v_expose; cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner rulings 2026-10-05 RS-03, RS-04: the 90d tier. Deletes instruction assignments created more than 90 days ago and exposures shown more than 90 days ago or belonging to such an assignment. p_dry_run counts the same rows without deleting. One row per table, with the cutoff.';
+
+
+--
 -- Name: sync_tutor_conversations_on_entitlement_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11605,6 +11760,25 @@ $$;
 --
 
 COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS 'Doc 03 §14.2 / INV-03-19 / owner ruling 2026-09-22 C1: stamps tutor_conversations.deleted_at when public.entitlement_active(profile_id) turns false and clears it when it turns true. Calls the canonical predicate rather than re-listing statuses. Stamps only where deleted_at IS NULL so a second inactive transition cannot push the 7-day clock out.';
+
+
+--
+-- Name: tutor_conversation_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tutor_conversation_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 7;
+$$;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.tutor_conversation_retention_days() IS 'Doc 03 §14.2: days a soft-deleted tutor conversation stays recoverable before the 7d tier deletes it. THE single definition; the sweep reads it.';
 
 
 --
@@ -22281,10 +22455,34 @@ GRANT ALL ON FUNCTION public.sweep_rate_limit_ledger_anon() TO service_role;
 
 
 --
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tutor_conversation_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.tutor_conversation_retention_days() TO service_role;
 
 
 --

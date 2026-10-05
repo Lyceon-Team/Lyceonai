@@ -242,6 +242,22 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
     this.filters.push({ op: "IN", col, val: vals });
     return this;
   }
+  /**
+   * `.not(col, "is", value)`, as supabase-js writes `IS NOT NULL` (added 2026-10-05, RS-00: the
+   * tutor retention sweep filters `.not("deleted_at", "is", null)`, and a harness without it
+   * failed the real-Postgres test before the sweep ever reached the database). Only the `is`
+   * operator is supported; any other throws, so a test cannot pass on a filter this harness
+   * silently ignored.
+   */
+  not(col: string, operator: string, val: unknown): this {
+    if (operator !== "is") {
+      throw new Error(
+        `pg-supabase harness: .not("${col}", "${operator}") is not supported`,
+      );
+    }
+    this.filters.push({ op: "IS NOT", col, val });
+    return this;
+  }
 
   /**
    * Chained `.order()` calls ACCUMULATE, as they do in supabase-js: the first is the
@@ -296,6 +312,9 @@ class PgQueryBuilder implements PromiseLike<PgSupabaseResult> {
     const parts = this.filters.map((f) => {
       if (f.op === "IS") {
         return `"${f.col}" IS ${f.val === null ? "NULL" : String(f.val)}`;
+      }
+      if (f.op === "IS NOT") {
+        return `"${f.col}" IS NOT ${f.val === null ? "NULL" : String(f.val)}`;
       }
       if (f.op === "IN") {
         const list = f.val as unknown[];
