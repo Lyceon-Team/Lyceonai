@@ -2,6 +2,7 @@ import { Link, useRoute } from "wouter";
 import { getPostBySlug, getAllPosts, formatDate } from "@/lib/blog";
 import { Calendar, User, ArrowLeft, Tag, ArrowRight } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import { SourceLinks } from "@/components/common/source-links";
 import {
   Container,
   Breadcrumb,
@@ -125,6 +126,7 @@ export default function BlogPostPage() {
             className="text-foreground"
             dangerouslySetInnerHTML={{ __html: parseMarkdown(post.content) }}
           />
+          <SourceLinks sources={post.sources} />
 
           {/* Inline CTA - positioned after main content */}
           <div className="my-8 p-6 bg-secondary border border-border rounded-xl">
@@ -132,8 +134,7 @@ export default function BlogPostPage() {
               Ready to put this into practice?
             </p>
             <p className="font-semibold mb-4">
-              Start practicing SAT questions with step-by-step guided
-              explanations.
+              Start practicing SAT questions with worked explanations.
             </p>
             <Link
               href="/practice"
@@ -184,7 +185,7 @@ export default function BlogPostPage() {
               Explore SAT Prep Resources
             </h2>
             <p className="text-muted-foreground mb-4">
-              Put these strategies into practice with our comprehensive guides.
+              Put these strategies into practice with our Digital SAT guides.
             </p>
             <div className="flex flex-wrap gap-3 justify-center">
               <Link

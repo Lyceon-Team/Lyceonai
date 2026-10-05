@@ -34,6 +34,10 @@ const routeSchema = z.union([
       dest: z.string().optional(),
       headers: z.record(z.string(), z.string()).optional(),
       continue: z.boolean().optional(),
+      // SEO Wave 1A (#1054): 301 redirects and the final 404 carry a status; the
+      // directory-index rewrite applies only when its file exists (check).
+      status: z.number().int().optional(),
+      check: z.boolean().optional(),
     })
     .strict(),
 ]);
@@ -69,7 +73,8 @@ function headersFor(
  *   - script-src theme hash: every page (the theme boot in client/index.html, F-58).
  *   - script-src https://www.desmos.com: practice, review and exam Math runners (calculator.js).
  *   - style-src 'unsafe-inline': every page (React style attributes, Radix positioning).
- *   - style-src / font-src Google Fonts: every page (Poppins and Inter, client/index.html).
+ *   - (no font host: Poppins and Inter are self-hosted under client/public/fonts/ since
+ *     2026-10-03, so style-src and font-src name no Google domain.)
  *   - font-src data:: review and LISA (KaTeX inlines a small font in MathRenderer's CSS).
  *   - img-src data:: inline SVG/data images in the bundle.
  *   - worker-src blob:: the Desmos calculator starts its worker from a blob URL.
@@ -83,8 +88,8 @@ const PAGE_CSP = [
   "object-src 'none'",
   "form-action 'self'",
   `script-src 'self' '${THEME_BOOT_SCRIPT_HASH}' https://www.desmos.com`,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' data: https://fonts.gstatic.com",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
   "img-src 'self' data:",
   "connect-src 'self'",
   "worker-src 'self' blob:",
@@ -97,6 +102,9 @@ const EXPECTED: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  // SEO Wave 1B F5 (owner answer 8, 2026-10-03): two years, subdomains included, and
+  // deliberately NO `preload` — preload-list submission is hard to undo and is not approved.
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
 };
 
 const PAGE_PATHS = [

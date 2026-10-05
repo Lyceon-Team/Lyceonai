@@ -9,6 +9,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
+import { DIGITAL_SAT_FAQS, faqParagraphs } from "@shared/seo/public-meta";
+import { SourceLinks } from "@/components/common/source-links";
 import {
   Container,
   Hero,
@@ -17,38 +19,8 @@ import {
   Section,
 } from "@/components/layout/primitives";
 
-const faqs = [
-  {
-    question: "What is the Digital SAT?",
-    answer:
-      "The Digital SAT is the computer-adaptive SAT format. It is about 2 hours long with two sections: Reading and Writing, and Math.",
-  },
-  {
-    question: "How is the Digital SAT different from the paper SAT?",
-    answer:
-      "It is shorter, adaptive by module, calculator-allowed across all Math questions, and built for digital delivery.",
-  },
-  {
-    question: "Does Lyceon include full-length exams?",
-    answer:
-      "Yes. Lyceon includes full-length timed SAT exam sessions alongside daily adaptive practice and review.",
-  },
-  {
-    question: "How does progress tracking work in Lyceon?",
-    answer:
-      "Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and progress over time.",
-  },
-  {
-    question: "How does Lisa work?",
-    answer:
-      "Lisa provides step-by-step guidance tied to SAT-style question context. Lisa is designed to support reasoning and review, not to bypass learning.",
-  },
-  {
-    question: "What is free vs paid?",
-    answer:
-      "Free includes daily limits (10 practice questions and 5 tutor messages). Paid plans remove those limits and expand guardian visibility features.",
-  },
-];
+// One copy of this FAQ: the page renders it and its FAQPage JSON-LD is built from it (F1).
+const faqs = DIGITAL_SAT_FAQS;
 
 export default function DigitalSATPage() {
   return (
@@ -60,8 +32,8 @@ export default function DigitalSATPage() {
         />
 
         <Hero
-          title="Digital SAT Prep: Study Smarter, Score Higher"
-          subtitle="Build consistency with adaptive SAT-style practice, full-length test simulation, and clear progress tracking."
+          title="Digital SAT Prep: Study smarter for the SAT"
+          subtitle="Build a steady routine with SAT-style practice and progress tracking. Full-length practice tests on paid plans."
         />
 
         <Section title="Choose Your Focus Area">
@@ -71,8 +43,8 @@ export default function DigitalSATPage() {
                 <Calculator className="w-10 h-10 text-foreground mb-4" />
                 <h3 className="text-xl font-semibold mb-2">SAT Math</h3>
                 <p className="text-muted-foreground mb-4">
-                  Algebra, geometry, data analysis, and advanced math with
-                  adaptive difficulty.
+                  Algebra, Advanced Math, Problem-Solving and Data Analysis, and
+                  Geometry and Trigonometry.
                 </p>
                 <span className="inline-flex items-center text-sm font-medium text-foreground">
                   Explore Math Prep <ArrowRight className="w-4 h-4 ml-1" />
@@ -105,10 +77,9 @@ export default function DigitalSATPage() {
                 <Target className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Adaptive Practice</h3>
+                <h3 className="font-semibold mb-1">Study Plan</h3>
                 <p className="text-muted-foreground">
-                  Question selection adjusts by performance so students can work
-                  at the right challenge level.
+                  A study plan that focuses on your weak areas (paid plans).
                 </p>
               </div>
             </div>
@@ -118,11 +89,11 @@ export default function DigitalSATPage() {
               </div>
               <div>
                 <h3 className="font-semibold mb-1">
-                  Full-Length Exam Simulation
+                  Full-Length Practice Tests (paid plans)
                 </h3>
                 <p className="text-muted-foreground">
-                  Students can run complete timed SAT sessions to validate
-                  pacing and readiness.
+                  Take timed practice tests in the same structure as the Digital
+                  SAT.
                 </p>
               </div>
             </div>
@@ -131,25 +102,22 @@ export default function DigitalSATPage() {
                 <Brain className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Tutor Guidance</h3>
+                <h3 className="font-semibold mb-1">AI Tutor (paid plans)</h3>
                 <p className="text-muted-foreground">
-                  Step-by-step explanations stay tied to SAT-style question
-                  context.
+                  AI tutor for step-by-step help.
                 </p>
               </div>
             </div>
           </div>
         </Section>
 
-        <Section title="Scoring, Progress, and Planning Clarity">
+        <Section title="Progress and Planning">
           <div className="grid sm:grid-cols-2 gap-4">
             {[
-              "Digital SAT scoring explanation and adaptive module behavior",
-              "Skill and domain performance status tracking",
-              "Guardian-linked visibility for student summaries",
-              "Calendar and planning views for ongoing prep",
-              "Daily limits on free plan with paid unlimited usage",
-              "Trust and policy pages with implementation-backed language",
+              "Progress by section (skill-level detail on paid plans)",
+              "Read-only progress view for a linked parent or guardian (paid plans)",
+              "A study plan that focuses on your weak areas (paid plans)",
+              "Free daily practice, with no daily limit on paid plans",
             ].map((topic) => (
               <div
                 key={topic}
@@ -167,7 +135,12 @@ export default function DigitalSATPage() {
             {faqs.map((faq, index) => (
               <Card key={index}>
                 <h3 className="font-semibold mb-2">{faq.question}</h3>
-                <p className="text-muted-foreground">{faq.answer}</p>
+                <div className="text-muted-foreground space-y-2">
+                  {faqParagraphs(faq.answer).map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </div>
+                <SourceLinks sources={faq.sources} />
               </Card>
             ))}
           </div>
@@ -179,8 +152,8 @@ export default function DigitalSATPage() {
               Ready to Start Practicing?
             </h2>
             <p className="text-muted-foreground mb-6 max-w-lg mx-auto">
-              Start free, track progress, and upgrade only when you need
-              unlimited usage.
+              Start free. Upgrade for full-length practice tests, the AI tutor
+              and a study plan.
             </p>
             <Link
               href="/signup"

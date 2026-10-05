@@ -16,8 +16,6 @@ import {
   ChevronRight,
   Mail,
   Scale,
-  FileCheck2,
-  BookOpen,
   UserCheck,
 } from "lucide-react";
 import Footer from "@/components/layout/Footer";
@@ -43,8 +41,8 @@ export default function TrustHub() {
               Trust &amp; Safety
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Privacy, security, and academic integrity are built into every
-              part of Lyceon. Explore our policies and commitments below.
+              Our approach to privacy, security and academic integrity. Read our
+              policies below.
             </p>
           </div>
 
@@ -61,19 +59,20 @@ export default function TrustHub() {
                     Student-first model
                   </CardTitle>
                   <CardDescription className="text-sm">
-                    Students control learning actions and plans. Guardians have
-                    read-only visibility.
+                    Parents and guardians who link to a student's account get a
+                    read-only view.
                   </CardDescription>
                 </CardHeader>
               </Card>
               <Card className="flex flex-col">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">
-                    Deletion &amp; de-identification
-                  </CardTitle>
+                  <CardTitle className="text-base">Account deletion</CardTitle>
                   <CardDescription className="text-sm">
-                    Families can request deletion; de-identified aggregates may
-                    be retained for learning improvements.
+                    You can ask us to delete your account. See the{" "}
+                    <Link href="/legal/privacy-policy" className="underline">
+                      Privacy Policy
+                    </Link>{" "}
+                    for what we keep and why.
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -91,11 +90,11 @@ export default function TrustHub() {
               <Card className="flex flex-col">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">
-                    SAT-aligned, not official
+                    Not affiliated with the College Board
                   </CardTitle>
                   <CardDescription className="text-sm">
-                    Lyceon aligns to SAT-style practice without claiming
-                    official SAT status.
+                    SAT® is a trademark registered by the College Board, which
+                    is not affiliated with, and does not endorse, this product.
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -110,61 +109,10 @@ export default function TrustHub() {
             </h2>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
+              {/* F14 / F6 (2026-10-03): the "Trust Evidence" card (its page is removed) and the
+                  "Tutor Transparency" card (it linked to the signed-in tutor) are gone; nothing
+                  from either is folded in here (owner answer 7). */}
               {/* Legal Hub */}
-              {/* Public Evidence */}
-              <Card className="flex flex-col hover:shadow-md transition-shadow border-primary/20 bg-primary/5">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-muted">
-                      <FileCheck2 className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <CardTitle className="text-base">Trust Evidence</CardTitle>
-                  <CardDescription className="text-sm">
-                    Public implementation evidence for auth, RLS, security
-                    headers, and redaction safeguards.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-0 mt-auto">
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href="/trust/evidence"
-                      className="inline-flex items-center gap-1"
-                    >
-                      View Evidence
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="flex flex-col hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-muted">
-                      <BookOpen className="h-5 w-5" />
-                    </div>
-                  </div>
-                  <CardTitle className="text-base">
-                    Tutor Transparency
-                  </CardTitle>
-                  <CardDescription className="text-sm">
-                    Boundaries, privacy, and pedagogy for the Lyceon tutor
-                    experience.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-0 mt-auto">
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href="/chat"
-                      className="inline-flex items-center gap-1"
-                    >
-                      Open the tutor
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
               <Card className="flex flex-col hover:shadow-md transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3 mb-2">

@@ -1,8 +1,12 @@
 # Route Registry
 
-**CANONICAL SOURCE OF TRUTH** for all client routes, entitlements, and backing server endpoints.
+**The canonical route inventory is `infra/route-surface-classification.yaml`** (Doc 06A §5.3.1; owner
+ruling 2026-10-03, SEO Wave 1A). Every client route is classified there — surface class, prerender,
+sitemap — and the build, the sitemap and `vercel.json` are derived from it. This document is the prose
+companion: `pnpm run route:validate` fails unless its ACTIVE routes are exactly the YAML's rows, which
+are exactly the routes `client/src/App.tsx` mounts.
 
-This document is the single authoritative registry of:
+This document records, for those routes:
 - All frontend routes in client/src/App.tsx
 - Role-based access controls
 - Entitlement levels (free/entitled/admin-only)
@@ -29,7 +33,6 @@ This document is the single authoritative registry of:
 | `/blog` | public | free | Blog | N/A (static) | ACTIVE |
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
 | `/trust` | public | free | TrustHub | N/A (static SEO) | ACTIVE |
-| `/trust/evidence` | public | free | TrustEvidence | N/A (static SEO) | ACTIVE |
 | `/tutor` | public | free | TutorPage | N/A (static SEO) | ACTIVE |
 | `/legal` | public | free | LegalHub | N/A (static content) | ACTIVE |
 | `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
@@ -85,7 +88,6 @@ This document is the single authoritative registry of:
 - `/blog`
 - `/blog/:slug` (currently: `is-digital-sat-harder`, `digital-sat-scoring-explained`, `quick-sat-study-routine`, `sat-question-bank-practice`, `common-sat-math-algebra-mistakes`)
 - `/trust`
-- `/trust/evidence`
 - `/legal`
 - `/legal/:slug` (currently: `privacy-policy`, `student-terms`, `honor-code`, `community-guidelines`, `parent-guardian-terms`, `trust-and-safety`)
 
@@ -100,9 +102,11 @@ This document is the single authoritative registry of:
 - none (legacy ingestion/admin-deprecated routes remain removed)
 
 ### SEO/Sitemap Reconciliation Notes
-- `client/public/sitemap.xml` and `server/seo-content.ts` public entries are aligned for core static pages.
-- `server/index.ts` now provides legal-slug SSR metadata fallback for public legal pages not explicitly listed in `PUBLIC_SSR_ROUTES`.
-- `client/public/robots.txt` now disallows authenticated/private app routes to prevent crawl drift.
+- 2026-10-03 (SEO Wave 1A): public pages are prerendered at build and `sitemap.xml` is generated from
+  `infra/route-surface-classification.yaml` (the hand-written sitemap and the unreachable Express SSR
+  path are deleted). See `docs/seo/SEO_SOURCE_OF_TRUTH.md`.
+- `client/public/robots.txt` disallows every authenticated route, held to the registry by
+  `tests/seo.route-registry.test.ts`.
 
 ---
 ## DEPRECATED Routes (Removed)

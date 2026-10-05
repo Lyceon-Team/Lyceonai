@@ -145,6 +145,9 @@ jobs:
       - name: Build (including the Vercel production bundle)
         run: pnpm run build:vercel
 
+      - name: SEO output gate (sitemap ↔ registry ↔ prerendered pages, F1/F3)
+        run: pnpm run gate:seo-output
+
       - name: Boot probe (production bundle must complete module load)
         run: pnpm run probe:boot
 

@@ -46,11 +46,12 @@
       "src": "^/(?!api(?:/|$)|auth/callback$).*",
       "headers": {
         "Content-Security-Policy": "frame-ancestors 'none'",
-        "Content-Security-Policy-Report-Only": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'sha256-VwLEl5LYkYRmisEJhPIWmpxw7wjpR9ShDYgf9CXNsx8=' https://www.desmos.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:",
+        "Content-Security-Policy-Report-Only": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'sha256-VwLEl5LYkYRmisEJhPIWmpxw7wjpR9ShDYgf9CXNsx8=' https://www.desmos.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:",
         "X-Frame-Options": "DENY",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        "Strict-Transport-Security": "max-age=63072000; includeSubDomains"
       },
       "continue": true
     },
@@ -63,11 +64,183 @@
       "dest": "/api/index"
     },
     {
+      "src": "^/privacy/?$",
+      "status": 301,
+      "headers": {
+        "Location": "/legal/privacy-policy"
+      }
+    },
+    {
+      "src": "^/terms/?$",
+      "status": 301,
+      "headers": {
+        "Location": "/legal/student-terms"
+      }
+    },
+    {
       "handle": "filesystem"
     },
     {
-      "src": "^/(?!api/).*",
+      "src": "^/$",
       "dest": "/index.html"
+    },
+    {
+      "src": "^/login/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/account/recover/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/signup/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/tutor/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/practice/math/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/practice/reading-writing/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/practice/random/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/math-practice/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/reading-writing-practice/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/dashboard/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/chat/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/practice/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/practice/topics/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/practice/session/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/tests/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/tests/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/tests/[^/]+/[^/]+/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/tests/[^/]+/report/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/score-report/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/calendar/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/mastery/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/upgrade/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/review/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/review/session/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/guardian-required/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/profile/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/profile/complete/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/update-password/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/notifications/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/guardian/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/guardian/students/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/guardian/[^/]+/calendar/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/guardian/[^/]+/exams/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/guardian/[^/]+/exams/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/guardian/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/admin/crisis-review/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/admin/crisis-review/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/(.+?)/?$",
+      "dest": "/$1/index.html",
+      "check": true
+    },
+    {
+      "src": "^/.*$",
+      "status": 404,
+      "dest": "/404.html"
     }
   ]
 }
