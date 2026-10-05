@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     await import("../../../server/routes/exam-runtime-routes");
   const { default: examReportRouter } =
     await import("../../../server/routes/exam-report-routes");
-  const { calendarRouter, streakRouter } =
+  const { calendarRouter } =
     await import("../../../server/routes/calendar-routes");
   const { scoreReportRouter } =
     await import("../../../server/routes/score-report-routes");
@@ -189,12 +189,6 @@ async function main(): Promise<void> {
     auth.requireSupabaseAuth,
     auth.requireStudentOrAdmin,
     calendarRouter,
-  );
-  app.use(
-    "/api/me",
-    auth.requireSupabaseAuth,
-    auth.requireStudentOrAdmin,
-    streakRouter,
   );
   app.use(
     "/api/score-report",

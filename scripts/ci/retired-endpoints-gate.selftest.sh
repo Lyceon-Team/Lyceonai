@@ -16,6 +16,8 @@ cd "$REPO_ROOT"
 
 GATE="scripts/ci/retired-endpoints-gate.mjs"
 CALLER_TARGET="client/src/lib/masteryApi.ts"
+# A file exempt from ONE row (`/api/me/streak`'s historicalRecords) and from no other.
+ROW_EXEMPT_TARGET="docs/plans/Guardian_Closure_Plan.md"
 # A directory whose name carries non-ASCII bytes, mirroring the postman collection's emoji
 # folders. `git ls-files` C-QUOTES such paths, which is what the gate used to choke on.
 NONASCII_DIR="scripts/ci/__selftest_nonascii__/🧠 Mastery"
@@ -25,11 +27,11 @@ OFFSCOPE_DIR="scripts/ci/__selftest_offscope__"
 FAILURES=0
 
 restore() {
-  git checkout -- "$CALLER_TARGET" "$GATE" 2>/dev/null || true
+  git checkout -- "$CALLER_TARGET" "$GATE" "$ROW_EXEMPT_TARGET" 2>/dev/null || true
   rm -rf "$NONASCII_DIR" "$OFFSCOPE_DIR"
 }
 
-if ! git diff --quiet -- "$CALLER_TARGET" "$GATE"; then
+if ! git diff --quiet -- "$CALLER_TARGET" "$GATE" "$ROW_EXEMPT_TARGET"; then
   echo "FAIL: the self-test's targets have uncommitted changes; refusing to stage over them." >&2
   exit 1
 fi
@@ -174,6 +176,52 @@ else
 fi
 git rm --cached -q "$OFFSCOPE_DIR/probe.json" "$OFFSCOPE_DIR/probe.sql" >/dev/null 2>&1 || true
 rm -rf "$OFFSCOPE_DIR"
+
+# 6. A PER-ROW EXEMPTION IS SCOPED TO ITS ROW (OQ-61 (a), 2026-10-05). `/api/me/streak`'s
+#    `historicalRecords` exempt dated records from THAT path only. A different retired path
+#    written into one of them must still be found — otherwise a per-row list is just a
+#    global allowlist with extra steps.
+printf '\nA new caller: GET /api/me/mastery/summary\n' >> "$ROW_EXEMPT_TARGET"
+if git diff --quiet -- "$ROW_EXEMPT_TARGET"; then
+  echo "FAIL  per-row exemption: could not stage the mutation — the case is stale, not passing." >&2
+  FAILURES=$((FAILURES + 1))
+else
+  rx_out="$(node "$GATE" 2>&1)"
+  rx_rc=$?
+  if [ "$rx_rc" -eq 0 ]; then
+    echo "FAIL  per-row exemption: gate exited 0 — a row's exemption hid a DIFFERENT retired path." >&2
+    FAILURES=$((FAILURES + 1))
+  elif ! printf '%s' "$rx_out" | grep -q "$ROW_EXEMPT_TARGET"; then
+    echo "FAIL  per-row exemption: gate went red but never named $ROW_EXEMPT_TARGET." >&2
+    printf '%s\n' "$rx_out" >&2
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "ok  per-row exemption is scoped to its row -> rc=$rx_rc, other paths still found there"
+  fi
+fi
+restore
+
+# 7. A STALE PER-ROW EXEMPTION is refused: one naming a file outside the scan hides nothing
+#    today and whatever lands at that path tomorrow.
+sed -i 's|^    historicalRecords: \[$|    historicalRecords: [\n      "docs/plans/__selftest_no_such_file__.md",|' "$GATE"
+if git diff --quiet -- "$GATE"; then
+  echo "FAIL  stale exemption: could not stage the mutation — the case is stale, not passing." >&2
+  FAILURES=$((FAILURES + 1))
+else
+  st_out="$(node "$GATE" 2>&1)"
+  st_rc=$?
+  if [ "$st_rc" -eq 0 ]; then
+    echo "FAIL  stale exemption: gate exited 0 with an exemption for a file that is not tracked." >&2
+    FAILURES=$((FAILURES + 1))
+  elif ! printf '%s' "$st_out" | grep -q "__selftest_no_such_file__"; then
+    echo "FAIL  stale exemption: gate went red but did not name the stale entry." >&2
+    printf '%s\n' "$st_out" >&2
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "ok  stale per-row exemption -> rc=$st_rc, refused and named"
+  fi
+fi
+restore
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "" >&2

@@ -985,12 +985,15 @@ b = "          {title}\n        </h1>\n      </div>"
 assert s.count(b) == 1
 s = s.replace(b, "          {title}\n        </h1>\n        <StreakFact streak={{ current: 4, longest: 11, history_complete: false }} />\n      </div>", 1)'
 
-plant "UI55-NS2" "the student page reads the streak again" \
+# OQ-61 (a) / SCL-212: §15's standalone streak route is retired and the retired-endpoints gate
+# refuses its old path anywhere in the tree, so this plant reintroduces a streak read under a
+# NEW path — the one the gate cannot see and only the page test's `streakReads()` can.
+plant "UI55-NS2" "the student page reads a streak again, under a new path" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
   'a = "  // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).\n"
 assert s.count(a) == 1
-s = s.replace(a, "  void apiRequest(\"/api/me/streak\").catch(() => undefined);\n", 1)
+s = s.replace(a, "  void apiRequest(\"/api/calendar/streak\").catch(() => undefined);\n", 1)
 b = "import { toUserFacingMessage } from \"@/lib/api-error\";\n"
 assert s.count(b) == 1
 s = s.replace(b, b + "import { apiRequest } from \"@/lib/queryClient\";\n", 1)'

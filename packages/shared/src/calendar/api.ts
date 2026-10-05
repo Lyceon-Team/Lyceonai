@@ -96,7 +96,9 @@ export const unacknowledgedChangeSchema = z
 export type UnacknowledgedChange = z.infer<typeof unacknowledgedChangeSchema>;
 
 /**
- * §15 GET `/api/me/streak`, embedded in the calendar payload. The calendar does NOT compute
+ * §14's `{ current, longest, history_complete }`, embedded in the calendar payloads (student
+ * and guardian). §15's standalone streak route is retired (SCL-212, owner ruling 2026-10-05,
+ * OQ-61 (a): no client called it), so this embed is the shape's only wire. The calendar does NOT compute
  * this — §14 puts `computeActivityStreak` in `packages/shared/src/streak.ts` and the IO in
  * `server/services/activity-streak.ts`, and the streak is served without a
  * `calendar_access` check (INV-08-20). This schema is the embed shape only; when that module

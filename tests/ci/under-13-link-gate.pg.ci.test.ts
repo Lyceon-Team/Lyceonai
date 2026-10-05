@@ -305,7 +305,6 @@ const PROFILE_INCOMPLETE = "PROFILE_INCOMPLETE";
 
 /** Learning reads a free, admitted student is served with 200 — the presence side of the gate. */
 const learningReads = (studentId: string): ReadonlyArray<string> => [
-  "/api/me/streak",
   "/api/progress/kpis",
   `/api/students/${studentId}/kpi/overall`,
   "/api/practice/topics",
@@ -417,7 +416,6 @@ describe.skipIf(!PG_AVAILABLE)(
       // student still has is the practice reference list.
       expect(has("get", "/api/practice/reference/questions")).toBe(true);
       expect(has("get", "/api/progress/kpis")).toBe(true);
-      expect(has("get", "/api/me/streak")).toBe(true);
       expect(has("get", "/api/students/:studentId/kpi/overall")).toBe(true);
       expect(has("get", "/api/students/:studentId/mastery/domains")).toBe(true);
       expect(has("get", "/api/students/:studentId/calendar")).toBe(true);
@@ -500,7 +498,7 @@ describe.skipIf(!PG_AVAILABLE)(
     describe("unlinking partway through a session", () => {
       it("a guardian unlinks: the student's very next learning request is 403, without signing in again", async () => {
         await redeemAsGuardian();
-        const before = await request(app).get("/api/me/streak");
+        const before = await request(app).get("/api/progress/kpis");
         expect(before.status).toBe(200);
 
         session.id = GUARDIAN;
@@ -509,7 +507,7 @@ describe.skipIf(!PG_AVAILABLE)(
         session.id = KID;
 
         // Same student, same session state — the only thing that changed is the link row.
-        const next = await request(app).get("/api/me/streak");
+        const next = await request(app).get("/api/progress/kpis");
         expect(next.status).toBe(403);
         expect(next.body.code).toBe(GLR);
         const write = await request(app).post("/api/practice/answer").send({});
