@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
   const { default: runtimeRouter } = await import("../../../server/routes/exam-runtime-routes");
   const { default: reportRouter } = await import("../../../server/routes/exam-report-routes");
-  const { calendarRouter, streakRouter } = await import("../../../server/routes/calendar-routes");
+  const { calendarRouter } = await import("../../../server/routes/calendar-routes");
   const { default: studentResourcesRouter } = await import("../../../server/routes/student-resources");
   const { default: guardianRouter } = await import("../../../server/routes/guardian-routes");
 
@@ -78,7 +78,6 @@ async function main(): Promise<void> {
   app.use("/api/tests", reportRouter);
   // E9b: the calendar a full-length block is launched from (Doc 05F §15, §9.4).
   app.use("/api/calendar", calendarRouter);
-  app.use("/api/me", streakRouter);
   // G2: guardian exam results, behind the real subject resolver (as server/index.ts mounts it).
   app.use("/api/students", studentResourcesRouter);
   // Item 9: the guardian shell's roster (and the rest of the guardian router), the real routes

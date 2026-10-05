@@ -18,6 +18,16 @@
  *
  * No notification bell: a focused surface carries no chrome beyond the way back (the same
  * reasoning as the runner header's exemption); listed in shells.notification-bell.test.tsx.
+ *
+ * F-69 (owner ruling 2026-10-05: fix in the shared shell): `<main>` is `relative`, so it is the
+ * containing block of every absolutely positioned descendant. Without it, an `absolute` element
+ * with no positioned ancestor (the `sr-only` choice letters in question-renderer.tsx) is placed
+ * against the initial containing block at its in-flow position, outside `<main>`'s scroll area,
+ * and makes the document taller than the `100dvh` shell: the review runner at 390x844 measured
+ * 926-942px, so a focus or scroll-into-view in the LISA panel scrolled the window and the top
+ * bar left the view. With it, the document is the viewport's height and only `<main>` scrolls.
+ * The timed exam module measured the same layout before and after at 1440, 820, 768 and 390
+ * (evidence/wave5/F-69.md).
  */
 import {
   createContext,
@@ -117,7 +127,11 @@ export function FocusShell({
           className="flex min-w-0 flex-1 items-center gap-5"
         />
       </header>
-      <main id="main" className="min-h-0 flex-1 overflow-y-auto">
+      <main
+        id="main"
+        data-testid="focus-shell-main"
+        className="relative min-h-0 flex-1 overflow-y-auto"
+      >
         <ContextSlot.Provider value={slotEl}>{children}</ContextSlot.Provider>
       </main>
     </div>

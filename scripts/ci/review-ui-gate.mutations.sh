@@ -89,6 +89,9 @@ FILES=(
   "client/src/components/layout/BareCardShell.tsx"
   "client/src/components/tutor/ScopedTutorPanel.tsx"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
+  "client/src/components/layout/FocusShell.tsx"
+  "client/src/features/exam/lib/phone-notice.ts"
+  "client/src/features/exam/components/ExamStatus.tsx"
 )
 
 snapshot_all() {
@@ -744,12 +747,14 @@ plant "OQ54-K7" "a thread turn label back to 12px legacy text" \
 assert s.count(a) == 1
 s = s.replace(a, "<span className=\"text-xs font-semibold text-lyc-muted\">\n        {isStudent", 1)'
 
-plant "OQ54-C1" "the LISA card shows the unapproved W4-11 body" \
+# OQ-61 (h): the W4-11 draft body is deleted, so this plant draws an unapproved body that still
+# exists — the billing resolver's generic sentence — in place of the approved one.
+plant "OQ54-C1" "the LISA card shows an unapproved body" \
   "$T54L" \
   "client/src/components/tutor/LisaUpgradeCard.tsx" \
   'a = "<p className=\"m-0 text-lyc-body text-lyc-ink\">{copy.body}</p>"
 assert s.count(a) == 1
-s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">{LISA_UPGRADE_PITCH.body}</p>", 1)'
+s = s.replace(a, "<p className=\"m-0 text-lyc-body text-lyc-ink\">Choose a plan to unlock LISA.</p>", 1)'
 
 plant "OQ54-C2" "Unlock LISA opens the wrong feature's modal" \
   "$T54L" \
@@ -985,12 +990,15 @@ b = "          {title}\n        </h1>\n      </div>"
 assert s.count(b) == 1
 s = s.replace(b, "          {title}\n        </h1>\n        <StreakFact streak={{ current: 4, longest: 11, history_complete: false }} />\n      </div>", 1)'
 
-plant "UI55-NS2" "the student page reads the streak again" \
+# OQ-61 (a) / SCL-212: §15's standalone streak route is retired and the retired-endpoints gate
+# refuses its old path anywhere in the tree, so this plant reintroduces a streak read under a
+# NEW path — the one the gate cannot see and only the page test's `streakReads()` can.
+plant "UI55-NS2" "the student page reads a streak again, under a new path" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
   'a = "  // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).\n"
 assert s.count(a) == 1
-s = s.replace(a, "  void apiRequest(\"/api/me/streak\").catch(() => undefined);\n", 1)
+s = s.replace(a, "  void apiRequest(\"/api/calendar/streak\").catch(() => undefined);\n", 1)
 b = "import { toUserFacingMessage } from \"@/lib/api-error\";\n"
 assert s.count(b) == 1
 s = s.replace(b, b + "import { apiRequest } from \"@/lib/queryClient\";\n", 1)'
@@ -1482,6 +1490,22 @@ plant "UI58-B3" "Manage billing never asks the portal route" \
 assert s.count(a) == 1
 s = s.replace(a, "          onClick={() => undefined}", 1)'
 
+# OQ-61 (e): the free box shows the approved Help FAQ wording from `@/lib/plan-copy`. Each plant
+# puts one line back to the Settings prototype's variant, the drift the shared constants prevent.
+plant "UI58-B4" "the Billing free box's free line drifts from the approved wording" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {PLAN_FREE_INCLUDES}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        The diagnostic, your projected score, 40 practice questions a day and unlimited review.\n", 1)'
+
+plant "UI58-B5" "the Billing free box's paid line drifts from the approved wording" \
+  "$T58" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {PLAN_PAID_ADDS}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        Paid plans add a study calendar, mastery for every domain and skill, full-length tests and LISA.\n", 1)'
+
 plant "UI58-G1" "the guardian sentence goes back to the pre-ruling words (OQ-38)" \
   "$T58 $H58" \
   "client/src/components/settings/LinkSection.tsx" \
@@ -1874,6 +1898,100 @@ plant "UI59-CL2" "the card leading at class specificity (it would override a met
   'a = "\"[:where(&)_p]:leading-[1.55]\""
 assert s.count(a) == 1
 s = s.replace(a, "\"[&_p]:leading-[1.55]\"", 1)'
+
+# ── F-69 — nothing positioned escapes the Focus shell's scroll area (2026-10-05) ─────────
+# Owner ruling (Karl, 2026-10-05): fix in the shared Focus shell. The browser measurement
+# (document vs viewport at 390x844) is the student harness's `expectFitsViewport`
+# (docs/plans/student-ui/evidence/wave5/F-69.md); these pin the two classes it depends on.
+plant "F69-S1" "the Focus shell's <main> is no longer a containing block" \
+  "client/src/components/layout/FocusShell.test.tsx" \
+  "client/src/components/layout/FocusShell.tsx" \
+  'a = "className=\"relative min-h-0 flex-1 overflow-y-auto\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"min-h-0 flex-1 overflow-y-auto\"", 1)'
+
+plant "F69-R1" "the choice's sr-only letter escapes its button" \
+  "client/src/components/question-renderer.display-letters.test.tsx" \
+  "client/src/components/question-renderer.tsx" \
+  'a = "\"relative flex w-full items-center gap-4 rounded-lg px-5"
+assert s.count(a) == 1
+s = s.replace(a, "\"flex w-full items-center gap-4 rounded-lg px-5", 1)'
+
+# ── Owner rulings (Karl, 2026-10-05): mobile tab bar, avatar menu, Full-Length naming ─────
+# Tabs Home, Practice, Review, Calendar, LISA; avatar menu Full-Length, Settings, Help, Sign out
+# (supersedes OQ-4's tab bar and OQ-48's menu order); the Full-Length home's phone notice with
+# "Continue anyway", never blocked; every student-facing "Tests" label becomes "Full-Length".
+T41_RAIL="client/src/components/layout/app-shell.rail.test.tsx"
+
+plant "FU-M1" "Full-Length back on the phone tab bar" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: false,"
+assert s.count(a) == 1
+s = s.replace(a, "    lock: { feature: \"exam_full_length\", behaviour: \"modal\" },\n    inTabBar: true,", 1)'
+
+plant "FU-M2" "Calendar off the phone tab bar (the OQ-4 bar)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: true,"
+assert s.count(a) == 1
+s = s.replace(a, "    lock: { feature: \"calendar_access\", behaviour: \"navigate\" },\n    inTabBar: false,", 1)'
+
+plant "FU-M3" "the avatar menu leads with Calendar (the OQ-48 order)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      leadingItems={RAIL_ITEMS.filter((item) => !item.inTabBar).map((item) => ("
+assert s.count(a) == 1
+s = s.replace(a, "      leadingItems={RAIL_ITEMS.filter((item) => item.key === \"calendar\").map((item) => (", 1)'
+
+plant "FU-M4" "a locked Full-Length menu entry navigates instead of opening the modal" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "if (reason !== null && lock !== null && lock.behaviour === \"modal\") {"
+assert s.count(a) == 1
+s = s.replace(a, "if (reason !== null && lock !== null && lock.behaviour === \"navigate\") {", 1)'
+
+plant "FU-N1" "no phone notice on the Full-Length home" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const held = phone && !continued;"
+assert s.count(a) == 1
+s = s.replace(a, "  const held = false;", 1)'
+
+plant "FU-N2" "the phone notice blocks: Continue anyway reveals nothing" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "    setContinued(true);"
+assert s.count(a) == 1
+s = s.replace(a, "    setContinued(false);", 1)'
+
+plant "FU-N3" "the notice drifts from the ruling's words" \
+  "$T54_HOME" \
+  "client/src/features/exam/lib/phone-notice.ts" \
+  'a = "  \"Full-length tests are built for a laptop or tablet, like test day.\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"Full-length tests work best on a laptop or tablet.\";", 1)'
+
+plant "FU-T1" "the Full-Length home's title goes back to the old label" \
+  "$T54_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "        title=\"Full-Length\""
+assert s.count(a) == 1
+s = s.replace(a, "        title=\"Full-length practice tests\"", 1)'
+
+plant "FU-T2" "the exam load error's way out says tests" \
+  "$T54_REPORT" \
+  "client/src/features/exam/components/ExamStatus.tsx" \
+  'a = "              Back to Full-Length"
+assert s.count(a) == 1
+s = s.replace(a, "              Back to tests", 1)'
+
+plant "FU-T3" "the unscored attempt points back to Tests" \
+  "$T54_REPORT" \
+  "client/src/features/exam/pages/ExamReportPage.tsx" \
+  'a = "You can start a new attempt from Full-Length."
+assert s.count(a) == 1
+s = s.replace(a, "You can start a new attempt from Tests.", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

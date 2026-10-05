@@ -668,6 +668,149 @@ $ grep -nwF -- 'CardContent' client/src/pages/login.tsx
 
 ---
 
+## OQ-61 (a): /api/me/streak
+
+Owner ruling (Karl, 2026-10-05, register §9 OQ-61 (a), verbatim): "No student page using
+/api/me/streak is fine. If the guardian calendar doesn't use it either, add it to the deletion
+sweep with grep proof." Recorded as **SCL-212** (Doc 05F §15 names the route, and INV-08-11 /
+INV-08-20 / §19 test it). Branch `claude/fu-oq61`, from `claude/student-ui-followups` at
+`76371947`.
+
+**Who called it, before the deletion.** No client code. The student client's read
+(`fetchStreak` / `useStreak`) went with SCL-211 (UI-55). The only client mention was
+`calendar.ui55.test.tsx`, as an absence assertion and a fetch-mock answer. The server, the two
+e2e harness servers, two server tests and an owner-run smoke script mounted or called it.
+
+**The guardian calendar does not call it.** Both guardian surfaces that render a streak get it
+from the guardian calendar payload:
+- `client/src/pages/guardian-student-calendar.tsx:71` `useGuardianCalendar(...)` →
+  `:138` `streak={calendar.data.streak}`;
+- `client/src/features/guardian/GuardianDashboardTab.tsx:105` `useGuardianCalendar(...)` →
+  `:137` `streak={data.streak}` (the `HeaderFacts` / `StreakFact` line);
+- `useGuardianCalendar` reads `GET /api/students/:id/calendar`
+  (`client/src/features/calendar/api/client.ts:196-211`), served by
+  `server/routes/student-resources.ts:503` `readGuardianCalendar`, which reads the streak
+  server-side at `server/services/calendar/read-service.ts:861`
+  `getStudentActivityStreak(...)`.
+
+**Removed:**
+- the handler `streakRouter.get("/streak")` and the `streakRouter` export
+  (`server/routes/calendar-routes.ts`), and its mount `app.use("/api/me", …, streakRouter)`
+  (`server/index.ts`);
+- the two route tests ("INV-08-20 — the streak carries NO calendar_access check") and the
+  `activity-streak` mock in `tests/ci/calendar.routes.contract.test.ts`;
+- the `/api/me` mounts in `tests/e2e/exam-harness/server.ts` and
+  `tests/e2e/student-harness/server.ts`;
+- `/api/me/streak` as a learning read in `tests/ci/under-13-link-gate.pg.ci.test.ts` (the
+  unlink case now uses `/api/progress/kpis`, a learning read the same file already serves);
+- step 2 of `scripts/ops/calendar-route-smoke.sh` (it now checks the streak inside the step-1
+  calendar payload);
+- the `/calendar` row's listing in `docs/route-registry.md`;
+- the fetch-mock answer in `client/src/pages/calendar.ui55.test.tsx`. Its two absence
+  assertions became `streakReads()` (any GET whose path names a streak), and plant UI55-NS2
+  now plants `/api/calendar/streak`, the case the retired-endpoints gate cannot see.
+
+**Kept, still used:** `server/services/activity-streak.ts` (`getStudentActivityStreak` from
+`read-service.ts:627` and `:861`; `currentStreakAsOfToday` from
+`canonical-runtime-views.ts`), and `streakSummarySchema` / `StreakSummary` (the `streak` field
+of both calendar payloads). **No database function** was used only by the route: it read
+`student_overall_kpi` through the service, and the calendar payloads and `kpi/overall` still do.
+Nothing to drop.
+
+**No caller can come back:** `/api/me/streak` is a row in `scripts/ci/retired-endpoints-gate.mjs`.
+The dated records that name it as history (this file, the register's OQ-61 question, the
+student-UI audits, the Lighthouse captures, the G-NEW-16 closure row, the Doc 05F Brief 3
+plant table) are exempt from **that row only** (`historicalRecords`), so they are still
+scanned for every other retired path (self-test cases 6 and 7).
+
+```text
+$ grep -rnwF -- '/api/me/streak' client/src server packages apps tests scripts
+scripts/ci/retired-endpoints-gate.selftest.sh:19:# A file exempt from ONE row (`/api/me/streak`'s historicalRecords) and from no other.
+scripts/ci/retired-endpoints-gate.selftest.sh:180:# 6. A PER-ROW EXEMPTION IS SCOPED TO ITS ROW (OQ-61 (a), 2026-10-05). `/api/me/streak`'s
+scripts/ci/retired-endpoints-gate.mjs:144:    path: "/api/me/streak",
+$ grep -rnF -- 'me/streak' client/src server packages apps tests scripts
+(the same three lines: the gate's own row and its self-test)
+$ grep -rnwF -- 'streakRouter' client/src server packages apps tests scripts
+(empty)
+$ grep -rnwF -- 'fetchStreak' client/src server packages apps tests scripts
+(empty)
+$ grep -rnwF -- 'useStreak' client/src server packages apps tests scripts
+(empty)
+$ grep -rnwF -- 'streak_read' client/src server packages apps tests scripts
+(empty)
+$ node scripts/ci/retired-endpoints-gate.mjs
+OK: retired endpoints — 3326 file(s) scanned, no caller remains for 14 retired path(s):
+```
+
+---
+
+## OQ-61 (h): `LISA_UPGRADE_PITCH.body` and the billing resolver's `pitch` option
+
+Owner ruling (Karl, 2026-10-05, register §9 OQ-61): "The remaining five points: your
+recommendations stand." The recommendation for (h) was to delete the unapproved W4-11 body,
+which no surface had rendered since OQ-57 (f), and the `pitch` option that carried it, if
+nothing but its own test used them.
+
+**Who used them, before the deletion.** `LISA_UPGRADE_PITCH.body`:
+`client/src/lib/billing-cta.pitch.test.ts` (the resolver's pitch test) and two absence
+assertions in `ScopedTutorPanel.contract.test.tsx`; plant OQ54-C1 drew it. No production
+reader. `resolveCtaCopy`'s `pitch` option and the `BillingCtaPitch` type: the same pitch test,
+plus `PremiumUpgradePrompt`'s `pitch` prop, which only forwarded it and which no caller set
+(`grep -rn 'pitch=' client/src` matched nothing but a comment).
+
+**Removed:**
+- `body` from `LISA_UPGRADE_PITCH` (`client/src/components/tutor/lisa-upgrade-pitch.ts`), now
+  an `as const` object with `title` and `actionLabel`;
+- `BillingCtaPitch` and the `pitch` option of `resolveCtaCopy` (`client/src/lib/billing-cta.ts`);
+  `student_unentitled` reads its fixed words;
+- `PremiumUpgradePrompt`'s `pitch` prop;
+- `client/src/lib/billing-cta.pitch.test.ts`. Its last case ("LISA's headline is Karl's,
+  verbatim") is already asserted in `client/src/pages/chat.ui56.test.tsx` ("free plan: the
+  shipped headline …", `toBe("A Tutor That Knows The SAT And Knows You")`);
+- the two `not.toContain(LISA_UPGRADE_PITCH.body)` assertions in
+  `ScopedTutorPanel.contract.test.tsx`. The cases still require the approved body, and the
+  second requires the card's exact text. Plant OQ54-C1 now draws a different unapproved body
+  (the resolver's own "Choose a plan to unlock LISA.") and both cases redden.
+
+**Kept, approved and used:** `LISA_UPGRADE_PITCH.title` (OQ-44's shipped headline: the upgrade
+modal's `tutor_access` title, the /chat locked card and the review runner's LISA card) and
+`.actionLabel` ("Unlock LISA", both LISA locked cards).
+
+```text
+$ grep -rnF -- 'LISA_UPGRADE_PITCH.body' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'BillingCtaPitch' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'billing-cta.pitch' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'options.pitch' client/src packages server tests scripts
+(empty)
+$ grep -rnF -- 'LISA knows which skills' client/src packages server tests scripts
+(empty)
+$ grep -rnw -- 'pitch' client/src/lib/billing-cta.ts client/src/components/billing/PremiumUpgradePrompt.tsx
+client/src/lib/billing-cta.ts:93:   * The feature's OWN benefit, not a generic pitch. A lock on the calendar and
+client/src/components/billing/PremiumUpgradePrompt.tsx:85:   * tutor", "your full mastery breakdown". Not a generic pitch: a lock on the
+$ grep -rnwF -- 'LISA_UPGRADE_PITCH' client/src --exclude='*.test.ts' --exclude='*.test.tsx'
+client/src/components/billing/upgrade-modal.ts:14: *   - LISA headline: the shipped `LISA_UPGRADE_PITCH.title` ("A Tutor That Knows The SAT And Knows
+client/src/components/billing/upgrade-modal.ts:42:import { LISA_UPGRADE_PITCH } from "@/components/tutor/lisa-upgrade-pitch";
+client/src/components/billing/upgrade-modal.ts:91: * Title source: shipped `LISA_UPGRADE_PITCH.title` (imported). Body source: prototype
+client/src/components/billing/upgrade-modal.ts:95:  title: LISA_UPGRADE_PITCH.title,
+client/src/components/tutor/LisaUpgradeCard.tsx:37:import { LISA_UPGRADE_PITCH } from "@/components/tutor/lisa-upgrade-pitch";
+client/src/components/tutor/LisaUpgradeCard.tsx:39:export { LISA_UPGRADE_PITCH };
+client/src/components/tutor/LisaUpgradeCard.tsx:79:          {LISA_UPGRADE_PITCH.actionLabel}
+client/src/components/tutor/lisa-upgrade-pitch.ts:23:export const LISA_UPGRADE_PITCH = {
+client/src/pages/chat.tsx:10: *        `LISA_UPGRADE_PITCH.title`; no new wording), OQ-49 (this route comes off the light
+client/src/pages/chat.tsx:78:  LISA_UPGRADE_PITCH,
+client/src/pages/chat.tsx:180:            {LISA_UPGRADE_PITCH.actionLabel}
+```
+
+The two remaining `pitch` hits are comments about the feature-benefit phrase, not the option.
+Every remaining `LISA_UPGRADE_PITCH` reads `.title` or `.actionLabel`. Older records that name
+the body (the register's OQ-44 / OQ-57 / OQ-61 rows, `owner-questions-OQ51-60.md`,
+`evidence/step2-wave1.md`) are history and are not edited.
+
+---
+
 ## knip
 
 **Command** (run from the repo root; the config lives outside the repo, so package.json is

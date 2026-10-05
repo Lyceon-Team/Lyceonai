@@ -6,7 +6,9 @@
  *
  * plain English: drawn inside the Focus shell (route-shells.ts), so they fill the shell's main
  * column rather than the screen, and use the student tokens (DESIGN.md §1; the timed module's
- * shell pins them light). The copy is unchanged.
+ * shell pins them light). The copy is unchanged, except that the way out names the section
+ * "Full-Length" (owner naming ruling, Karl, 2026-10-05: every student-facing "Tests" label
+ * becomes "Full-Length"; the /tests route stays).
  */
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -64,7 +66,7 @@ export function ExamLoadError({
           )}
           <Button asChild variant="lyc-outline" size="lyc">
             <Link href="/tests" className="no-underline">
-              Back to tests
+              Back to Full-Length
             </Link>
           </Button>
         </div>

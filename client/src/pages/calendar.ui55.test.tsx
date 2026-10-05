@@ -51,7 +51,6 @@ import {
   makeStudyProfileUpsertSchema,
   profileReadResponseSchema,
   profileUpsertResponseSchema,
-  streakSummarySchema,
   versionResponseSchema,
   type CalendarSetupDefaults,
   type StudyProfile,
@@ -257,18 +256,6 @@ function install(scenario: Scenario): void {
         requestId: "r",
       });
     }
-    // The server still serves the streak (INV-08-20); answered here so that a page which
-    // asked for it again would draw it, and the SCL-211 absence test below would see it.
-    if (method === "GET" && url === "/api/me/streak") {
-      return json({
-        ...streakSummarySchema.parse({
-          current: 4,
-          longest: 11,
-          history_complete: false,
-        }),
-        requestId: "r",
-      });
-    }
     return undefined;
   };
 }
@@ -333,6 +320,16 @@ async function mount(
 
 function gets(): string[] {
   return net.log.filter((l) => l.startsWith("GET ")).map((l) => l.slice(4));
+}
+
+/**
+ * Every GET whose path names a streak, under any prefix. SCL-211 / OQ-56: the student
+ * calendar reads no streak. §15's standalone streak route is retired (SCL-212, OQ-61 (a))
+ * and `scripts/ci/retired-endpoints-gate.mjs` refuses its path anywhere in the tree; this
+ * catches the read the gate cannot — a streak route under a NEW path.
+ */
+function streakReads(): string[] {
+  return gets().filter((url) => /streak/i.test(url));
 }
 
 function planReads(): string[] {
@@ -451,7 +448,7 @@ describe("paid: no streak line and no facts strip (SCL-211, OQ-56)", () => {
     expect(document.querySelector('[data-item="streak"]')).toBeNull();
     expect(document.body.textContent).not.toMatch(/day streak/);
     expect(document.body.textContent).not.toMatch(/blocks complete/);
-    expect(gets()).not.toContain("/api/me/streak");
+    expect(streakReads()).toEqual([]);
   });
 });
 
@@ -638,7 +635,7 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     // Reads: the ungated profile, and the pre-gate setup answer for its defaults (no plan).
     expect(gets()).toContain("/api/calendar/profile");
     expect(planReads()).toHaveLength(1);
-    expect(gets()).not.toContain("/api/me/streak");
+    expect(streakReads()).toEqual([]);
   });
 
   it("Save sends PUT /api/calendar/profile with a key the route accepts, then shows the saved goal", async () => {

@@ -2,9 +2,10 @@
 # ============================================================================
 # Doc 05F — route smoke against a DEPLOYED API (OWNER-RUN)
 # ============================================================================
-# @spec [Doc-05F_V1.0 §15 (API surface), §15.1 (launch, INV-08-18),
-#        INV-08-20 (the streak carries no calendar_access check)]
-# @implemented [2026-09-22]
+# @spec [Doc-05F_V1.0 §15 (API surface), §15.1 (launch, INV-08-18), §14 (the
+#        streak, served inside the calendar payload; §15's standalone streak route
+#        is retired, SCL-212, owner ruling 2026-10-05, OQ-61 (a))]
+# @implemented [2026-09-22] | amended [2026-10-05: step 2 reads the payload's streak]
 #
 # WHAT THIS IS. Three calls against a running deployment, to prove the §15
 # surface answers for a real signed-in student after scripts/ops/calendar-prod-smoke.sql
@@ -84,17 +85,14 @@ fi
 echo "    days: $(printf '%s' "$BODY" | jq -r '.days | length // 0' 2>/dev/null)"
 
 echo ""
-echo "==> 2. GET /api/me/streak  (INV-08-20: no calendar_access check)"
-split "$(call GET /api/me/streak)"
-echo "    status $STATUS   keys: $(keys "$BODY")"
-[ "$STATUS" = "200" ] && ok "200 without an entitlement gate" || bad "expected 200, got $STATUS"
-printf '%s' "$BODY" | jq -e 'has("current") and has("longest") and has("history_complete")' >/dev/null 2>&1 \
+echo "==> 2. the streak, inside the step-1 calendar payload (§14)"
+printf '%s' "$BODY" | jq -e '.streak | has("current") and has("longest") and has("history_complete")' >/dev/null 2>&1 \
   && ok "carries current / longest / history_complete" \
   || bad "missing one of current / longest / history_complete"
 
 echo ""
 echo "==> 3. POST /api/calendar/blocks/:id/launch  (today's first practice block)"
-# Re-read the calendar to pick today's first practice block: step 2 overwrote BODY.
+# Re-read the calendar to pick today's first practice block, from a fresh read.
 split "$(call GET /api/calendar)"
 TODAY="$(printf '%s' "$BODY" | jq -r '.days[0].local_date // empty')"
 BLOCK_ID="$(printf '%s' "$BODY" | jq -r '[.days[0].blocks[]? | select(.block.block_type=="practice")][0].block.block_id // empty')"
