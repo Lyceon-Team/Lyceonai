@@ -7,7 +7,8 @@
  * page (`<pre>Cannot POST …</pre>`), while a GET to the same kind of path got the API's JSON
  * 404. A client that parses JSON got HTML. This drives the real app: every method on an
  * unmatched `/api` path gets 404 with `{ error: "API endpoint not found" }` and a JSON content
- * type, and a non-`/api` GET still reaches the SPA fallback (`index.html`), while an `/api` GET
+ * type, and a non-`/api` GET still reaches the SPA fallback (`app.html` — the shell since SEO F1,
+ * 2026-10-03, when `index.html` became the prerendered homepage), while an `/api` GET
  * never does.
  *
  * Presence first: a live `/api` route still answers 200, so the catch-all cannot pass by
@@ -70,7 +71,7 @@ describe("unknown /api routes answer JSON 404 whatever the method (F-42)", () =>
     const spa = await request(app).get("/dashboard/some/client/route");
     expect(spa.status).toBe(200);
     expect(spa.text).toContain("<div id=root>");
-    expect(sent.some((f) => f.endsWith("index.html"))).toBe(true);
+    expect(sent.some((f) => f.endsWith("app.html"))).toBe(true);
 
     sent.length = 0;
     const api = await request(app).get(UNKNOWN);
