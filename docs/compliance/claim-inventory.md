@@ -53,7 +53,7 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 | Spaced-practice sentence | blog "quick-sat-study-routine" | answer 9: kept with CEPEDA_2006 |
 | 400–1600 total, 200–800 per section | blog "digital-sat-scoring-explained" | answer 4: kept, cites CB_SCORES (text confirmed) |
 | "A free SAT practice question every day — no account needed." | home QOTD slot; /sat-question-of-the-day hub and meta | plan R16 (anyone can answer, no login, ungated); wording approved by Karl 2026-10-05 (open item 4), "Digital" dropped per the keyword ruling |
-| "{n}% of students got this right." | QOTD reveal; archive pages once a day has ≥ 5 attempts (qotd_archive() returns the counts, so the prerendered page and the API agree) | plan R17 ("approved and shown only once a day's question has at least 5 attempts"); hidden below 5 by the server (`qotdStat`, CI-tested) |
+| "{n}% answered correctly." (was "{n}% of students got this right."; new wording approved by Karl 2026-10-05: it states what was counted, answers, not who gave them; the old wording is on the banned list) | QOTD reveal; archive pages once a day has ≥ 5 attempts (qotd_archive() returns the counts, so the prerendered page and the API agree) | plan R17 ("approved and shown only once a day's question has at least 5 attempts"); hidden below 5 by the server (`qotdStat`, CI-tested) |
 | "Every past question stays here with its answer and explanation" | archive pages; hub | plan R20a (the dated archive is the one public exposure of bank content) |
 
 ## F13 homepage rebuild (approved by Karl 2026-10-05)
