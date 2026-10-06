@@ -1,51 +1,14 @@
 import { Link, useRoute } from "wouter";
-import { getPostBySlug, getAllPosts, formatDate } from "@/lib/blog";
-import { Calendar, User, ArrowLeft, Tag, ArrowRight } from "lucide-react";
+import { getPostBySlug, getAllPosts } from "@/lib/blog";
+import { ArrowLeft, Tag, ArrowRight } from "lucide-react";
 import PublicLayout from "@/components/layout/PublicLayout";
-import { SourceLinks } from "@/components/common/source-links";
+import { ContentArticle } from "@/components/content/ContentArticle";
 import {
   Container,
   Breadcrumb,
   Card,
   Section,
 } from "@/components/layout/primitives";
-
-function parseMarkdown(content: string): string {
-  let html = content
-    .replace(
-      /^## (.+)$/gm,
-      '<h2 class="text-2xl font-semibold mt-10 mb-4">$1</h2>',
-    )
-    .replace(
-      /^### (.+)$/gm,
-      '<h3 class="text-xl font-semibold mt-8 mb-3">$1</h3>',
-    )
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/^- (.+)$/gm, '<li class="ml-6 list-disc">$1</li>')
-    .replace(
-      /^(\d+)\. (.+)$/gm,
-      '<li class="ml-6 list-decimal"><span class="font-semibold">$1.</span> $2</li>',
-    )
-    .replace(
-      /\[(.+?)\]\((.+?)\)/g,
-      '<a href="$2" class="underline underline-offset-2 hover:opacity-80">$1</a>',
-    )
-    .replace(/\n\n/g, '</p><p class="mb-4 leading-relaxed">')
-    .replace(/<\/li>\n<li/g, "</li><li");
-
-  html = '<p class="mb-4 leading-relaxed">' + html + "</p>";
-
-  html = html.replace(/<p class="mb-4 leading-relaxed">(<h[23])/g, "$1");
-  html = html.replace(/(<\/h[23]>)<\/p>/g, "$1");
-  html = html.replace(
-    /<p class="mb-4 leading-relaxed">(<li)/g,
-    '<ul class="mb-4 space-y-2">$1',
-  );
-  html = html.replace(/(<\/li>)<\/p>/g, "$1</ul>");
-
-  return html;
-}
 
 export default function BlogPostPage() {
   const [, params] = useRoute("/blog/:slug");
@@ -99,63 +62,24 @@ export default function BlogPostPage() {
           Back to all posts
         </Link>
 
-        <article className="pb-12">
-          <header className="mb-10">
-            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-              <span className="flex items-center gap-1">
-                <Calendar className="w-4 h-4" />
-                {formatDate(post.date)}
-              </span>
-              <span className="flex items-center gap-1">
-                <User className="w-4 h-4" />
-                {post.author}
-              </span>
-              <span className="px-2 py-0.5 bg-secondary rounded text-xs">
-                {post.category}
-              </span>
-            </div>
-            <h1 className="text-3xl md:text-4xl font-bold mb-4 leading-tight">
-              {post.title}
-            </h1>
-            <p className="text-xl text-muted-foreground leading-relaxed">
-              {post.description}
-            </p>
-          </header>
+        {/* C4 (2026-10-05): the post is a content page, drawn by the same article renderer
+            and checked by the same publish gate; it ends with the standard CTA. */}
+        <ContentArticle
+          page={post.page}
+          byline={`${post.author} · ${post.category}`}
+        />
 
-          <div
-            className="text-foreground"
-            dangerouslySetInnerHTML={{ __html: parseMarkdown(post.content) }}
-          />
-          <SourceLinks sources={post.sources} />
-
-          {/* Inline CTA - positioned after main content */}
-          <div className="my-8 p-6 bg-secondary border border-border rounded-xl">
-            <p className="text-sm text-muted-foreground mb-2">
-              Ready to put this into practice?
-            </p>
-            <p className="font-semibold mb-4">
-              Start practicing SAT questions with worked explanations.
-            </p>
-            <Link
-              href="/practice"
-              className="inline-block px-5 py-2.5 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+        <div className="flex flex-wrap gap-2 mb-8">
+          {post.tags.map((tag) => (
+            <span
+              key={tag}
+              className="flex items-center gap-1 px-3 py-1 bg-secondary rounded-full text-sm"
             >
-              Start Free Practice
-            </Link>
-          </div>
-
-          <div className="flex flex-wrap gap-2 mt-8 pt-8 border-t border-border">
-            {post.tags.map((tag) => (
-              <span
-                key={tag}
-                className="flex items-center gap-1 px-3 py-1 bg-secondary rounded-full text-sm"
-              >
-                <Tag className="w-3 h-3" />
-                {tag}
-              </span>
-            ))}
-          </div>
-        </article>
+              <Tag className="w-3 h-3" />
+              {tag}
+            </span>
+          ))}
+        </div>
 
         {relatedPosts.length > 0 && (
           <Section title="Related Posts" className="border-t border-border">
@@ -189,19 +113,19 @@ export default function BlogPostPage() {
             </p>
             <div className="flex flex-wrap gap-3 justify-center">
               <Link
-                href="/digital-sat"
+                href="/online-sat-prep"
                 className="px-4 py-2 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90"
               >
-                Digital SAT Overview
+                Online SAT Prep
               </Link>
               <Link
-                href="/digital-sat/math"
+                href="/sat-practice-questions/math"
                 className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary"
               >
                 SAT Math
               </Link>
               <Link
-                href="/digital-sat/reading-writing"
+                href="/sat-practice-questions/reading-and-writing"
                 className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-secondary"
               >
                 Reading & Writing

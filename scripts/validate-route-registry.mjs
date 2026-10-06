@@ -24,6 +24,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parseRouteRegistry } from '../shared/seo/route-registry.ts';
+import { CONTENT_PAGE_PATHS } from '../shared/content/pages/paths.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +74,16 @@ function extractAppRoutes() {
     if (found === 0) {
       throw new Error('GUARDIAN_ROUTES is mounted in App.tsx but declares no paths');
     }
+  }
+
+  // SEO Wave 3 (C2, 2026-10-05): the content pages are mounted from one list
+  // (CONTENT_PAGE_PATHS), read here as the module itself rather than by pattern. Same loud
+  // failure as the guardian table if App.tsx mounts it and it is empty.
+  if (content.includes('CONTENT_PAGE_PATHS')) {
+    if (CONTENT_PAGE_PATHS.length === 0) {
+      throw new Error('CONTENT_PAGE_PATHS is mounted in App.tsx but lists no paths');
+    }
+    for (const contentPath of CONTENT_PAGE_PATHS) routes.add(contentPath);
   }
 
   return Array.from(routes).sort();

@@ -25,7 +25,7 @@ import {
 import { SourceLinks } from "@/components/common/source-links";
 import { QotdWidget } from "@/components/qotd/QotdWidget";
 import { qotdArchiveIndexQueryOptions } from "@/lib/qotd";
-import { formatQotdDate } from "@shared/seo/public-meta";
+import { formatQotdDate } from "@shared/seo/qotd-labels";
 import { CB_MATH, CB_READING_WRITING, CB_STRUCTURE } from "@shared/seo/sources";
 
 const SECTION_NAME: Record<"M" | "RW", string> = {

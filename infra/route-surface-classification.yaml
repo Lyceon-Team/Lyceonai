@@ -37,42 +37,322 @@ routes:
     prerender: true
     indexable: true
     last_modified: 2026-10-05
+  # SEO Wave 3 decision 3 (owner, 2026-10-05): the /digital-sat pages 301 to the content pages
+  # that carry their copy.
   - path_pattern: /digital-sat
     surface_class: unauth_marketing
     clarity_allowed: false
     masking_required: false
     owning_doc: Doc-10
-    last_classified_at: 2026-10-03
+    last_classified_at: 2026-10-05
     is_internal_api: false
     requires_cloudflare_access: false
     requires_hmac: false
-    prerender: true
-    indexable: true
-    last_modified: 2026-10-03
+    prerender: false
+    indexable: false
+    redirect_to: /online-sat-prep
   - path_pattern: /digital-sat/math
     surface_class: unauth_marketing
     clarity_allowed: false
     masking_required: false
     owning_doc: Doc-10
-    last_classified_at: 2026-10-03
+    last_classified_at: 2026-10-05
     is_internal_api: false
     requires_cloudflare_access: false
     requires_hmac: false
-    prerender: true
-    indexable: true
-    last_modified: 2026-10-03
+    prerender: false
+    indexable: false
+    redirect_to: /sat-practice-questions/math
   - path_pattern: /digital-sat/reading-writing
     surface_class: unauth_marketing
     clarity_allowed: false
     masking_required: false
     owning_doc: Doc-10
-    last_classified_at: 2026-10-03
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+    redirect_to: /sat-practice-questions/reading-and-writing
+  # SEO Wave 3 content pages (C1/C2, 2026-10-05). last_modified equals each page's own
+  # `lastModified` (shared/content/pages); tests/ci/content-publish-gate.test.ts holds them equal.
+  - path_pattern: /sat-practice-questions
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
     is_internal_api: false
     requires_cloudflare_access: false
     requires_hmac: false
     prerender: true
     indexable: true
-    last_modified: 2026-10-03
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/math
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/reading-and-writing
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/math/algebra
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/math/advanced-math
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/math/problem-solving-and-data-analysis
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/math/geometry-and-trigonometry
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/reading-and-writing/information-and-ideas
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/reading-and-writing/craft-and-structure
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/reading-and-writing/expression-of-ideas
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-practice-questions/reading-and-writing/standard-english-conventions
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /what-is-a-good-sat-score
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /what-is-a-good-sat-score/1100
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /what-is-a-good-sat-score/1200
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /what-is-a-good-sat-score/1300
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /what-is-a-good-sat-score/1400
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /what-is-a-good-sat-score/1500
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /free-sat-practice-test
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /online-sat-prep
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /how-to-study-for-the-sat
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /sat-tutor-cost
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /lyceon-vs-sat-tutor
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
+  - path_pattern: /is-sat-tutoring-worth-it
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: true
+    last_modified: 2026-10-05
   - path_pattern: /blog
     surface_class: unauth_marketing
     clarity_allowed: false

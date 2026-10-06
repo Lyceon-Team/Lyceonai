@@ -58,11 +58,19 @@ function submitErrorMessage(err: unknown): string {
   return "Your answer could not be checked right now. Please try again.";
 }
 
+/**
+ * The day's success rate, once the server shows it (5 or more counted attempts, R17).
+ *
+ * @spec [plan R17; owner approval 2026-10-05: "N% answered correctly" replaces "N% of students
+ *       got this right" (claim inventory; Doc 10A follow-up)] | @implemented [2026-10-06] |
+ * plain English: states what was measured (answers, counted once per network) rather than who
+ * gave them; the server cannot know the people behind a count are students.
+ */
 export function QotdStatLine({ stat }: { stat: QotdStat }): JSX.Element | null {
   if (stat.status !== "shown") return null;
   return (
     <p className="text-sm text-muted-foreground" data-testid="qotd-stat">
-      {stat.percent_correct}% of students got this right.
+      {stat.percent_correct}% answered correctly.
     </p>
   );
 }

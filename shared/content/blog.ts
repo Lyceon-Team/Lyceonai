@@ -1,231 +1,555 @@
+/**
+ * The five blog posts, rewritten (SEO Wave 3, plan row C4).
+ *
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §5 C4, P8; owner decisions on Wave 3, 2026-10-05:
+ *       decision 6 ('Blog byline: "Lyceon Team" as JSON-LD Organization, the rewrite date shown,
+ *       URLs unchanged'); "Blog rewrites (C4): approved by Karl as drafted, with one addition: end
+ *       each of the five posts with the standard 'Start the free diagnostic' CTA"]
+ *       | @implemented [2026-10-05]
+ *
+ * plain English: each post is a content page in the Wave 3 schema (path `/blog/<slug>`), so it is
+ * rendered by the same article renderer and passes the same publish gate as every other content
+ * page: a source or claim-inventory row on every block, Karl's approval dated on or after the
+ * rewrite, meta lengths, links that resolve, one H1. The slugs are the old URLs, unchanged.
+ * `published` is each post's original date and `lastModified` the rewrite date, which the post
+ * shows ("Updated …") and the sitemap uses.
+ *
+ * edge cases: the blog routes stay the parameterised `/blog/:slug` (registry content_source
+ * `blog`), so these pages are not in CONTENT_PAGES or CONTENT_PAGE_PATHS; the prerender gates
+ * them alongside the content pages (BLOG_PAGES). Links here are literal paths, not the constants
+ * in ./pages, because ./pages/guides imports this file.
+ */
 import {
-  CB_MATH,
+  CB_BLUEBOOK_PRACTICE_TESTS,
+  CB_CALCULATOR,
+  CB_CONTENT_DOMAINS,
+  CB_MATH_OVERVIEW,
+  CB_PERCENTILES,
+  CB_PRACTICE,
   CB_READING_WRITING,
   CB_SCORES,
   CB_STRUCTURE,
+  CB_ANNUAL_REPORT_2026,
+  CB_UNDERSTANDING_SCORES_PDF,
   CEPEDA_2006,
-  type Source,
 } from "../seo/sources";
+import {
+  contentPageSchema,
+  type ContentPage,
+  type ContentPageInput,
+} from "../../packages/shared/src/seo-content-schema";
 
-/*
- * F6 (2026-10-03, owner-approved copy, Public Disclosure Doctrine §0): the posts below state
- * only facts the College Board publishes (or, for studying, published research), and each
- * post lists those sources in `sources`, which the post page renders under the article.
- * Statements about scoring the College Board does not publish (score caps, raw-score
- * conversion, which module "matters most") were removed, as were descriptions of how Lyceon
- * selects questions. Dates are unchanged here; they change with the C4 rewrite (owner
- * answer 5). Claim inventory: `docs/compliance/claim-inventory.md`.
- */
-export interface BlogPost {
+const APPROVED = { by: "Karl", date: "2026-10-05" } as const;
+const REWRITTEN = "2026-10-05";
+
+/** The byline (decision 6): the team, as a JSON-LD Organization. */
+export const BLOG_AUTHOR = "Lyceon Team";
+
+type PostSpec = {
   slug: string;
+  category: string;
+  tags: string[];
+  /** The original publish date; the rewrite date is `lastModified`. */
+  published: string;
+  page: Omit<
+    ContentPageInput,
+    "path" | "published" | "lastModified" | "approved" | "crumb"
+  >;
+};
+
+const POSTS: readonly PostSpec[] = [
+  {
+    slug: "is-digital-sat-harder",
+    category: "SAT Basics",
+    tags: ["digital-sat", "sat-prep", "test-comparison"],
+    published: "2024-12-15",
+    page: {
+      title: "Is the Digital SAT Harder Than the Paper SAT? | Lyceon",
+      description:
+        "How the digital SAT differs from the paper test: length, modules, passages and the calculator, and what those changes mean for how you practice.",
+      h1: "Is the Digital SAT Harder Than the Paper SAT?",
+      intro: [
+        {
+          type: "p",
+          text: "It isn't harder or easier. It's a different test, and it helps to practice for the one you'll take.",
+          claims: ["W20"],
+        },
+      ],
+      sections: [
+        {
+          heading: "What's different",
+          level: 2,
+          blocks: [
+            {
+              type: "ul",
+              items: [
+                "It's shorter. The test takes 2 hours and 14 minutes: 64 minutes for Reading and Writing and 70 for Math.",
+                "Each section has two modules. The second module is easier or harder depending on how you did on the first.",
+                "Passages are short. Each Reading and Writing question has its own passage of 25 to 150 words.",
+                "The calculator is allowed throughout Math. A Desmos graphing calculator is built into Bluebook, the testing app.",
+              ],
+              sources: [CB_STRUCTURE, CB_READING_WRITING, CB_CALCULATOR],
+            },
+          ],
+        },
+        {
+          heading: "What it means for your prep",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Take at least one full-length practice test in Bluebook. The College Board's practice tests are free, timed like the real test and scored, so test day won't be the first time you see the format.",
+              sources: [CB_PRACTICE, CB_BLUEBOOK_PRACTICE_TESTS],
+              claims: ["W20"],
+            },
+            {
+              type: "p",
+              text: "Don't try to read your second module. Whether it feels easy or hard, the job is the same: answer the question in front of you.",
+              claims: ["W20"],
+            },
+            {
+              type: "p",
+              text: "Get comfortable with the built-in calculator before test day, not during it.",
+              claims: ["W20"],
+            },
+          ],
+        },
+        {
+          heading: "Next steps",
+          level: 2,
+          blocks: [
+            {
+              type: "links",
+              items: [
+                {
+                  label: "Free SAT practice tests",
+                  href: "/free-sat-practice-test",
+                },
+                {
+                  label: "SAT practice questions",
+                  href: "/sat-practice-questions",
+                },
+                {
+                  label: "How to study for the SAT",
+                  href: "/how-to-study-for-the-sat",
+                },
+              ],
+            },
+            { type: "cta" },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    slug: "digital-sat-scoring-explained",
+    category: "SAT Basics",
+    tags: ["digital-sat", "sat-scoring", "sat-modules"],
+    published: "2024-12-14",
+    page: {
+      title: "How Digital SAT Scores Work | Lyceon",
+      description:
+        "How the digital SAT is scored: the 400 to 1600 scale, the two section scores, what a percentile means, and the College Board's benchmarks.",
+      h1: "How Digital SAT Scores Work",
+      intro: [
+        {
+          type: "p",
+          text: "Your SAT score report gives you three numbers that matter: a total score and two section scores. Here's what each one means.",
+          sources: [CB_SCORES],
+        },
+      ],
+      sections: [
+        {
+          heading: "The scale",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Each section, Reading and Writing and Math, is scored from 200 to 800. Your total is the sum of the two, from 400 to 1600.",
+              sources: [CB_SCORES],
+            },
+          ],
+        },
+        {
+          heading: "Two modules per section",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Each section is split into two modules of equal length. The second module is easier or harder depending on how you did on the first. The College Board doesn't publish how raw answers convert to a score, so be wary of anyone who claims to know the formula.",
+              sources: [CB_STRUCTURE],
+              claims: ["W21"],
+            },
+          ],
+        },
+        {
+          heading: "Percentiles",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "A percentile is the share of students who scored at or below you. On the College Board's table, a total of 1200 is at the 75th user percentile, and 1400 is at the 93rd.",
+              sources: [CB_PERCENTILES],
+            },
+          ],
+        },
+        {
+          heading: "The average and the benchmarks",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "The mean total score for the class of 2026 was 1045. The College Board's benchmarks are 480 for Reading and Writing and 530 for Math. Students who meet them have a 75% likelihood of a C or better in a related first-semester college course.",
+              sources: [CB_ANNUAL_REPORT_2026, CB_UNDERSTANDING_SCORES_PDF],
+            },
+            {
+              type: "links",
+              items: [
+                {
+                  label: "What is a good SAT score?",
+                  href: "/what-is-a-good-sat-score",
+                },
+                {
+                  label: "Free SAT practice tests",
+                  href: "/free-sat-practice-test",
+                },
+              ],
+            },
+            { type: "cta" },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    slug: "quick-sat-study-routine",
+    category: "Study Tips",
+    tags: ["sat-prep", "study-routine", "quick-study"],
+    published: "2024-12-13",
+    page: {
+      title: "A Quick SAT Study Routine (15 Minutes a Day) | Lyceon",
+      description:
+        "A 15-minute daily SAT routine: focused practice, then review. Why short regular sessions work, and a simple week that covers both sections.",
+      h1: "A Quick SAT Study Routine (15 Minutes a Day)",
+      intro: [
+        {
+          type: "p",
+          text: "You don't need three-hour sessions to prepare for the SAT. A short routine you keep beats a long one you skip.",
+          claims: ["W22"],
+        },
+      ],
+      sections: [
+        {
+          heading: "The 15-minute routine",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Minutes 1 to 10: practice. Do 5 to 8 questions from one content area. Stay in one area so you go deeper, not wider.",
+              claims: ["W22"],
+            },
+            {
+              type: "p",
+              text: "Minutes 11 to 15: review. This is the part that matters. For every miss, find the step that went wrong and what you'll do differently next time.",
+              claims: ["W22"],
+            },
+          ],
+        },
+        {
+          heading: "Why short sessions work",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Research on learning finds that practice spread out over time is remembered better than the same practice crammed into one sitting. And 15 minutes a day for 8 weeks adds up to 14 hours.",
+              sources: [CEPEDA_2006],
+              claims: ["W22"],
+            },
+          ],
+        },
+        {
+          heading: "A simple week",
+          level: 2,
+          blocks: [
+            {
+              type: "ul",
+              items: [
+                "Monday, Wednesday, Friday: Math, rotating through the four content areas",
+                "Tuesday, Thursday: Reading and Writing",
+                "Weekend: a longer mixed review, or a timed set",
+              ],
+              sources: [CB_CONTENT_DOMAINS],
+              claims: ["W22"],
+            },
+          ],
+        },
+        {
+          heading: "Start with a baseline",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Before you start, take a free full-length practice test in Bluebook. Your score report shows which content areas to start with.",
+              sources: [CB_BLUEBOOK_PRACTICE_TESTS, CB_CONTENT_DOMAINS],
+              claims: ["W22"],
+            },
+            {
+              type: "links",
+              items: [
+                {
+                  label: "How to study for the SAT",
+                  href: "/how-to-study-for-the-sat",
+                },
+                {
+                  label: "SAT practice questions",
+                  href: "/sat-practice-questions",
+                },
+              ],
+            },
+            { type: "cta" },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    slug: "sat-question-bank-practice",
+    category: "Study Tips",
+    tags: ["sat-practice", "question-bank", "study-tips"],
+    published: "2024-12-12",
+    page: {
+      title: "How to Use an SAT Question Bank Without Burning Out | Lyceon",
+      description:
+        "How to practice from an SAT question bank: attempt, review, log your patterns, and spot burnout early. Quality of review beats question count.",
+      h1: "How to Use an SAT Question Bank Without Burning Out",
+      intro: [
+        {
+          type: "p",
+          text: "A question bank only helps if you use it well. Twenty questions with careful review beat a hundred done in a rush.",
+          claims: ["W23"],
+        },
+      ],
+      sections: [
+        {
+          heading: "Attempt, review, log",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Attempt, timed. Give yourself about a minute or two per question so you practice the pace of the test.",
+              claims: ["W23"],
+            },
+            {
+              type: "p",
+              text: "Review, untimed. Spend at least as long reviewing as answering. For every miss: what was tested, where your reasoning went wrong, and what the right approach is.",
+              claims: ["W23"],
+            },
+            {
+              type: "p",
+              text: "Log patterns. Keep a short error log. After a few weeks you'll see the same few mistakes come up. Practice those.",
+              claims: ["W23"],
+            },
+          ],
+        },
+        {
+          heading: "Signs you're burning out",
+          level: 2,
+          blocks: [
+            {
+              type: "ul",
+              items: [
+                "Rushing to finish",
+                "Skipping review",
+                "Dreading the next session",
+              ],
+              claims: ["W23"],
+            },
+            {
+              type: "p",
+              text: "If that's you, take a day off and come back with shorter sessions.",
+              claims: ["W23"],
+            },
+          ],
+        },
+        {
+          heading: "Free question banks",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "The College Board offers free practice through Bluebook and its Student Question Bank. Lyceon posts a free SAT Question of the Day, and keeps every past one with its explanation.",
+              sources: [CB_PRACTICE],
+              claims: ["W5", "W23"],
+            },
+            {
+              type: "links",
+              items: [
+                {
+                  label: "SAT practice questions",
+                  href: "/sat-practice-questions",
+                },
+                {
+                  label: "SAT Question of the Day",
+                  href: "/sat-question-of-the-day",
+                },
+              ],
+            },
+            { type: "cta" },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    slug: "common-sat-math-algebra-mistakes",
+    category: "SAT Math",
+    tags: ["sat-math", "algebra", "common-mistakes"],
+    published: "2024-12-11",
+    page: {
+      title: "Common SAT Algebra Mistakes (And How to Fix Them) | Lyceon",
+      description:
+        "Six algebra mistakes that are easy to make on the SAT, from answering the wrong question to sign errors, and a simple fix for each one.",
+      h1: "Common SAT Algebra Mistakes (And How to Fix Them)",
+      intro: [
+        {
+          type: "p",
+          text: "Algebra is one of the four content areas in SAT Math, with 13 to 15 of the section's 44 questions. These six mistakes are easy to make and easy to fix.",
+          sources: [CB_MATH_OVERVIEW, CB_STRUCTURE],
+          claims: ["W24"],
+        },
+      ],
+      sections: [
+        {
+          heading: "1. Answering a different question",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "The question asks for 2x + 1 and you stop at x = 3. The answer is 7. Fix: underline what the question asks for, and check it before you choose.",
+              claims: ["W24"],
+            },
+          ],
+        },
+        {
+          heading: "2. Sign errors when distributing",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "−2(x − 3) is −2x + 6, not −2x − 6. Fix: write the step out whenever a negative is involved.",
+              claims: ["W24"],
+            },
+          ],
+        },
+        {
+          heading: "3. Not checking solutions",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "With a variable in a denominator or under a root, a solution can fail when you plug it back in. Fix: substitute it into the original equation.",
+              claims: ["W24"],
+            },
+          ],
+        },
+        {
+          heading: "4. Misreading word problems",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: '"3 more than twice a number" is 2x + 3, not 2(x + 3). Fix: translate one phrase at a time.',
+              claims: ["W24"],
+            },
+          ],
+        },
+        {
+          heading: "5. Flipping the slope formula",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: 'Slope is the change in y over the change in x. Fix: say "rise over run" as you write it.',
+              claims: ["W24"],
+            },
+          ],
+        },
+        {
+          heading: "6. Arithmetic slips under pressure",
+          level: 2,
+          blocks: [
+            {
+              type: "p",
+              text: "Fix: use the calculator. It's allowed for the whole Math section, and Desmos is built into Bluebook.",
+              sources: [CB_CALCULATOR],
+              claims: ["W24"],
+            },
+            {
+              type: "links",
+              items: [
+                {
+                  label: "SAT Algebra practice questions",
+                  href: "/sat-practice-questions/math/algebra",
+                },
+                {
+                  label: "SAT Math practice questions",
+                  href: "/sat-practice-questions/math",
+                },
+              ],
+            },
+            { type: "cta" },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+export type BlogPost = {
+  slug: string;
+  /** The post's own title (its H1), without the site suffix. */
   title: string;
   description: string;
+  /** The date the post shows and the sitemap uses: the rewrite date. */
   date: string;
   category: string;
   tags: string[];
   author: string;
-  content: string;
-  sources?: readonly Source[];
+  /** The post as a content page (`/blog/<slug>`), gated like every other content page. */
+  page: ContentPage;
+};
+
+function toPost(spec: PostSpec): BlogPost {
+  const parsed = contentPageSchema.safeParse({
+    ...spec.page,
+    path: `/blog/${spec.slug}`,
+    crumb: spec.page.h1,
+    parent: "/blog",
+    published: spec.published,
+    lastModified: REWRITTEN,
+    approved: APPROVED,
+  });
+  if (!parsed.success) {
+    throw new Error(
+      `blog post ${spec.slug} does not fit the content schema: ${parsed.error.issues
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join("; ")}`,
+    );
+  }
+  const page = parsed.data;
+  return {
+    slug: spec.slug,
+    title: page.h1,
+    description: page.description,
+    date: page.lastModified,
+    category: spec.category,
+    tags: spec.tags,
+    author: BLOG_AUTHOR,
+    page,
+  };
 }
 
-export const BLOG_POSTS: BlogPost[] = [
-  {
-    slug: "is-digital-sat-harder",
-    title: "Is the Digital SAT Harder Than the Paper SAT?",
-    description: "How the Digital SAT differs from the paper SAT, and what the format changes mean for your prep.",
-    date: "2024-12-15",
-    category: "SAT Basics",
-    tags: ["digital-sat", "sat-prep", "test-comparison"],
-    author: "Lyceon Team",
-    content: `The Digital SAT is a different test from the paper SAT, not simply an easier or harder one.
+export const BLOG_POSTS: readonly BlogPost[] = POSTS.map(toPost);
 
-## Key Differences at a Glance
-
-The Digital SAT takes 2 hours and 14 minutes, adapts at the module level, and uses short passages with one question each.
-
-## What Makes It Feel Different
-
-**Two modules per section.** Each section has two modules. The second module is easier or harder depending on how you did on the first.
-
-**Shorter passages.** Each Reading and Writing passage is 25 to 150 words long and is followed by a single question.
-
-## The Bottom Line
-
-Practise in the digital format so the test feels familiar on the day: work efficiently on short passages and get comfortable with the on-screen tools.
-
-## Next Steps
-
-Start practicing with digital-format questions. Explore our [Digital SAT prep guide](/digital-sat) for a complete overview, or jump directly into [SAT Math practice](/digital-sat/math) or [Reading & Writing practice](/digital-sat/reading-writing).`,
-    sources: [CB_STRUCTURE, CB_READING_WRITING],
-  },
-  {
-    slug: "digital-sat-scoring-explained",
-    title: "How Digital SAT Scores Work (Sections and Modules Explained)",
-    description: "What the Digital SAT's two modules per section mean, and how the 400–1600 score scale is made up.",
-    date: "2024-12-14",
-    category: "SAT Basics",
-    tags: ["digital-sat", "sat-scoring", "sat-modules"],
-    author: "Lyceon Team",
-    content: `The Digital SAT has two sections, Reading and Writing, and Math. Here is how the sections, modules and scores fit together.
-
-## Two Modules per Section
-
-Each section is split into two modules of equal length. The second module is easier or harder depending on how you did on the first.
-
-## The Score Scale
-
-Each section is scored from 200 to 800, and your total score is the sum of the two, from 400 to 1600.
-
-## What This Means for Your Prep
-
-1. **Practise both modules' worth of questions.** Build the stamina to stay accurate across a full section.
-2. **Don't read too much into how Module 2 feels.** Focus on the question in front of you.
-3. **Keep an eye on the clock.** Know how much time each section gives you and pace yourself.
-
-## Practical Tips
-
-- Practise with timed sets to get used to the pace of each section
-- Review every mistake so you understand the reasoning
-- Use all the time you have; rushing leads to careless errors
-
-Ready to practice? Start with our [Digital SAT overview](/digital-sat) or dive into [SAT Math prep](/digital-sat/math).`,
-    sources: [CB_STRUCTURE, CB_SCORES],
-  },
-  {
-    slug: "quick-sat-study-routine",
-    title: "A Quick SAT Study Routine (15-20 Minutes a Day)",
-    description: "Build an SAT prep habit with 15-20 minutes of daily practice. Short, regular practice is easier to keep up than occasional long sessions.",
-    date: "2024-12-13",
-    category: "Study Tips",
-    tags: ["sat-prep", "study-routine", "quick-study"],
-    author: "Lyceon Team",
-    content: `You don't need 3-hour study sessions to prepare for the SAT. Short, regular practice is easier to keep up than occasional long sessions.
-
-## The 15-Minute Daily Routine
-
-**Minutes 1-10: Focused Practice**
-Complete 5-8 questions in one topic area. Don't jump between math and reading—depth beats breadth in short sessions.
-
-**Minutes 11-15: Review Mistakes**
-This is the most important part. For every wrong answer, understand why you missed it. What concept did you misunderstand? What will you do differently next time?
-
-## Why Short Sessions Work
-
-1. **Easier to maintain.** You'll actually do it every day instead of skipping "marathon" sessions.
-2. **Better retention.** Research on spaced practice finds that spreading study out over time is remembered better than cramming it into one session (Cepeda et al., 2006).
-3. **Compounds over time.** 15 minutes daily for 8 weeks = 14 hours of quality practice.
-
-## Weekly Structure
-
-- Monday/Wednesday/Friday: Math (rotate between algebra, advanced math, data analysis)
-- Tuesday/Thursday: Reading & Writing (vocabulary, grammar, comprehension)
-- Weekend: 30-minute mixed review or a timed mini-section
-
-## Make It Stick
-
-- Same time every day (pick a time that works for you)
-- Remove distractions—phone on airplane mode
-- Track your streaks to build momentum
-
-Every practice question comes with a worked explanation. Start with our [Digital SAT overview](/digital-sat), or focus on [Math](/digital-sat/math) or [Reading & Writing](/digital-sat/reading-writing) depending on your needs.`,
-    sources: [CEPEDA_2006],
-  },
-  {
-    slug: "sat-question-bank-practice",
-    title: "SAT Question Bank: How to Practice Effectively Without Burning Out",
-    description: "Learn how to use an SAT question bank strategically without burning out.",
-    date: "2024-12-12",
-    category: "Study Tips",
-    tags: ["sat-practice", "question-bank", "study-tips"],
-    author: "Lyceon Team",
-    content: `A question bank is only useful if you know how to use it. Here's how to practice effectively without burning out.
-
-## Quality Over Quantity
-
-Doing 100 questions poorly is worse than doing 20 questions well with thorough review. After each practice session, you should be able to explain why every answer (right or wrong) is what it is.
-
-## The 3-Step Practice Method
-
-**Step 1: Attempt (Timed)**
-Set a timer. For single questions, use 1-2 minutes. For a mini-section of 10 questions, use 12-15 minutes. This builds test-day pacing.
-
-**Step 2: Review (Untimed)**
-Spend at least as much time reviewing as you did answering. For every wrong answer:
-- What concept was tested?
-- Where did your reasoning go wrong?
-- What's the correct approach?
-
-**Step 3: Log Patterns**
-Keep a simple error log. After a few weeks, you'll see patterns: "I miss comma splice questions" or "I rush through word problems." Target these weaknesses.
-
-## Signs You're Burning Out
-
-- Rushing through questions just to finish
-- Not reviewing wrong answers
-- Seeing scores plateau or drop
-- Dreading practice sessions
-
-If this happens, take a day off and reduce session length when you return.
-
-## Practise at the Right Level
-
-Mix in harder questions as easier ones start to feel routine.
-
-## Recommended Weekly Volume
-
-A smaller number of questions with careful review beats a large number done in a rush. Build up gradually and prioritize understanding over volume.
-
-Ready to start? Explore our [Digital SAT prep resources](/digital-sat), including dedicated guides for [Math](/digital-sat/math) and [Reading & Writing](/digital-sat/reading-writing).`
-  },
-  {
-    slug: "common-sat-math-algebra-mistakes",
-    title: "Common Digital SAT Algebra Mistakes (And How to Fix Them)",
-    description: "Six algebra mistakes that are easy to make, and how to avoid them.",
-    date: "2024-12-11",
-    category: "SAT Math",
-    tags: ["sat-math", "algebra", "common-mistakes"],
-    author: "Lyceon Team",
-    content: `Algebra is one of the four content areas on the Digital SAT Math section. Here are six mistakes that are easy to make, and how to fix them.
-
-## Mistake #1: Not Answering What's Asked
-
-The question asks for 2x + 1, and you solved for x. You got x = 3, so you pick 3. But the answer is 2(3) + 1 = 7.
-
-**Fix:** Circle or underline what the question asks for. Check it again before selecting your answer.
-
-## Mistake #2: Sign Errors When Distributing
-
--2(x - 3) becomes -2x - 6 instead of -2x + 6.
-
-**Fix:** Write out the distribution step by step. Don't skip steps when negatives are involved.
-
-## Mistake #3: Forgetting to Check All Solutions
-
-For equations with variables in denominators or under radicals, you might find a solution that doesn't actually work when plugged back in.
-
-**Fix:** Always verify by substituting your answer back into the original equation.
-
-## Mistake #4: Misreading Word Problems
-
-"3 more than twice a number" is 2x + 3, not 2(x + 3).
-
-**Fix:** Translate word problems phrase by phrase. Write down what each phrase means before combining.
-
-## Mistake #5: Confusing Slope Formula
-
-Getting (x₂ - x₁)/(y₂ - y₁) instead of (y₂ - y₁)/(x₂ - x₁).
-
-**Fix:** Remember: slope is "rise over run" = change in y over change in x.
-
-## Mistake #6: Arithmetic Errors Under Pressure
-
-Simple calculation mistakes when rushing: 7 × 8 = 54 instead of 56.
-
-**Fix:** Use the calculator for any arithmetic you're not 100% confident about.
-
-## Practice With Feedback
-
-Checking each answer as you go helps you catch these mistakes. Check out our [SAT Math prep guide](/digital-sat/math) for more tips and practice, or explore the full [Digital SAT overview](/digital-sat) to build a complete study plan.`,
-    sources: [CB_MATH],
-  },
-];
+/** The posts as content pages, for the publish gate. */
+export const BLOG_PAGES: readonly ContentPage[] = BLOG_POSTS.map((p) => p.page);

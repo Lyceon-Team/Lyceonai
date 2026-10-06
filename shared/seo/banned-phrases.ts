@@ -92,6 +92,10 @@ export const BANNED: readonly BannedPhrase[] = [
     why: "(d) scoring the College Board does not publish",
   },
   { pattern: /module 1 matters most/i, why: "(d) unsourced" },
+  {
+    pattern: /of students got this right/i,
+    why: '(e) superseded: the QOTD stat reads "N% answered correctly" (approved by Karl 2026-10-05)',
+  },
 ];
 
 /**
@@ -103,7 +107,7 @@ export const BANNED: readonly BannedPhrase[] = [
  *       failing on any other new outcome phrase")] | @implemented [2026-10-05]
  *
  * plain English: public copy may carry an outcome phrase only as one of the exact approved
- * sentences in APPROVED_OUTCOME_PHRASES (claim inventory X1, H34, H38, H40). Each approved
+ * sentences in APPROVED_OUTCOME_PHRASES (claim inventory X1, H34, H38, H40, W18). Each approved
  * sentence is removed from the text first; anything an outcome pattern still matches is an
  * unapproved claim and fails tests/ci/public-copy-claims.contract.test.ts. Adding an approved
  * sentence here is the code half of a written approval; the inventory row is the other half.
@@ -121,6 +125,9 @@ export const APPROVED_OUTCOME_PHRASES: readonly string[] = [
   "See real progress",
   // H40: the example parent view's label.
   "Real progress comes from the student's account",
+  // W18 (SEO Wave 3, approved by Karl 2026-10-05): the College Board's own finding, quoted with
+  // its "link, not proof" caveat on /free-sat-practice-test.
+  "students who took one, two, or three or more Bluebook practice tests scored about 25, 45 and 60 points higher than similar students who took none",
 ];
 
 export const OUTCOME_PATTERNS: readonly BannedPhrase[] = [
