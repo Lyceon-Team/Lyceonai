@@ -25,7 +25,7 @@
  * autocapture records what a visitor picked (owner ruling). Nothing is written to browser
  * storage; a reload starts the question fresh. No randomness anywhere.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import QuestionRenderer from "@/components/question-renderer";
@@ -69,8 +69,11 @@ export function QotdStatLine({ stat }: { stat: QotdStat }): JSX.Element | null {
 
 export function QotdWidget({
   showArchiveLink = true,
+  afterReveal = null,
 }: {
   showArchiveLink?: boolean;
+  /** Shown under the reveal once the visitor has answered (the homepage's signup button, F13). */
+  afterReveal?: ReactNode;
 }): JSX.Element {
   const today = useQuery(qotdTodayQueryOptions());
   const [choice, setChoice] = useState<string | null>(null);
@@ -171,8 +174,9 @@ export function QotdWidget({
       </div>
 
       {result ? (
-        <div data-testid="qotd-locked">
+        <div data-testid="qotd-locked" className="space-y-4">
           <QotdStatLine stat={result.stats} />
+          {afterReveal}
         </div>
       ) : (
         <div className="space-y-3">

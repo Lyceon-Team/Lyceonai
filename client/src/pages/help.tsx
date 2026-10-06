@@ -28,6 +28,8 @@ import { GUARDIAN_VISIBILITY_SENTENCE } from "@/components/settings/LinkSection"
 import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import { cn } from "@/lib/utils";
+import { FeedbackButton } from "@/components/product-feedback/FeedbackDialog";
+import { useFeedbackAudience } from "@/lib/product-feedback-api";
 
 export const HELP_FAQS: readonly { q: string; a: string }[] = [
   {
@@ -69,6 +71,28 @@ export const HELP_POLICIES: readonly { label: string; href: string }[] = [
 
 const H2 =
   "m-0 font-lyc-serif text-[24px] font-semibold tracking-normal text-lyc-ink-strong";
+
+function FeedbackHelpBox(): JSX.Element | null {
+  const headingId = useId();
+  if (useFeedbackAudience() === null) return null;
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-5 rounded-lg border border-lyc-rule bg-lyc-sheet px-6 py-7 sm:flex-row sm:items-center sm:justify-between sm:px-8"
+      data-testid="help-feedback"
+    >
+      <div className="flex flex-col gap-1.5">
+        <h2 id={headingId} className={H2}>
+          Have an idea or a problem?
+        </h2>
+        <p className="m-0 text-[17px] text-lyc-muted">
+          Send the Lyceon team private feedback. Only the team sees it.
+        </p>
+      </div>
+      <FeedbackButton source="help" variant="lyc" />
+    </section>
+  );
+}
 
 export default function HelpPage(): JSX.Element {
   const [open, setOpen] = useState<number>(0);
@@ -166,6 +190,11 @@ export default function HelpPage(): JSX.Element {
           Contact support
         </a>
       </section>
+
+      {/* @spec [plan R28, Q6 ("private feedback ... always available from Help and Settings");
+          owner answers 2026-10-05] | @implemented [2026-10-05] | plain English: the private
+          feedback entry, for every student at any age. */}
+      <FeedbackHelpBox />
 
       <section aria-labelledby={policiesId} className="flex flex-col gap-3">
         <h2 id={policiesId} className={H2}>

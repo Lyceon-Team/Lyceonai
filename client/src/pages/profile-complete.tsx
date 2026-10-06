@@ -24,9 +24,15 @@ import {
 } from "@/hooks/useProfileQuery";
 import { resolveOnboardingErrorMessage } from "@/lib/api-error";
 import {
+  RETURN_PATH_PARAM,
   postAuthDestination,
   returnPathFromSearch,
+  returnPathPrefersGuardian,
 } from "@lyceon/shared/return-path";
+import {
+  MARKETING_CONSENT_LABEL,
+  marketingOptInEligible,
+} from "../../../packages/shared/src/marketing-consent-schema";
 
 /**
  * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (profile completion);
@@ -122,7 +128,16 @@ export default function ProfileComplete() {
     }
 
     setDisplayName(profile.display_name ?? "");
-    setRole(profile.role === "guardian" ? "guardian" : "student");
+    // F13 (owner ruling 2026-10-05): arriving from "I'm a parent or guardian" (`next=/guardian`)
+    // makes Guardian the default. A default only: the server validates the submitted role.
+    const prefersGuardian =
+      typeof window !== "undefined" &&
+      returnPathPrefersGuardian(
+        new URLSearchParams(window.location.search).get(RETURN_PATH_PARAM),
+      );
+    setRole(
+      profile.role === "guardian" || prefersGuardian ? "guardian" : "student",
+    );
 
     // @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] | @implemented [2026-06-17] | plain English: DOB picker
     // defaults to current_date − 13y (dynamically computed at render time, never hardcoded —
@@ -136,6 +151,13 @@ export default function ProfileComplete() {
 
   const age = useMemo(() => calculateAge(dateOfBirth), [dateOfBirth]);
   const isUnder13 = role === "student" && age !== null && age < 13;
+  // @spec [plan R26, Q5; owner Step 0 answer 1 (2026-10-05)] | @implemented [2026-10-05] |
+  // plain English: the marketing checkbox is shown only to guardians and students 13+ — the
+  // shared rule the server and the database also apply. Hidden means not sent at all, so a box
+  // ticked before the date of birth changed to under-13 can never be submitted.
+  const marketingOptInOffered =
+    (role === "student" || role === "guardian") &&
+    marketingOptInEligible(dateOfBirth === "" ? null : dateOfBirth, new Date());
 
   const completionMutation = useMutation({
     mutationFn: async (): Promise<ProfileCompletionResponse> => {
@@ -146,7 +168,7 @@ export default function ProfileComplete() {
           role,
           // G1-02 (R10): guardians give their date of birth too, through the same field.
           dateOfBirth,
-          marketingOptIn,
+          ...(marketingOptInOffered ? { marketingOptIn } : {}),
         }),
       });
 
@@ -366,22 +388,26 @@ export default function ProfileComplete() {
             )}
           </div>
 
-          <div className="flex items-start gap-3">
-            <Checkbox
-              id="marketing-opt-in"
-              variant="lyc"
-              className="mt-0.5"
-              data-testid="checkbox-marketing-opt-in"
-              checked={marketingOptIn}
-              onCheckedChange={(checked) => setMarketingOptIn(Boolean(checked))}
-            />
-            <Label
-              htmlFor="marketing-opt-in"
-              className="text-lyc-meta-lg font-normal leading-snug text-lyc-ink"
-            >
-              Send me optional product updates and study news.
-            </Label>
-          </div>
+          {marketingOptInOffered && (
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="marketing-opt-in"
+                variant="lyc"
+                className="mt-0.5"
+                data-testid="checkbox-marketing-opt-in"
+                checked={marketingOptIn}
+                onCheckedChange={(checked) =>
+                  setMarketingOptIn(Boolean(checked))
+                }
+              />
+              <Label
+                htmlFor="marketing-opt-in"
+                className="text-lyc-meta-lg font-normal leading-snug text-lyc-ink"
+              >
+                {MARKETING_CONSENT_LABEL}
+              </Label>
+            </div>
+          )}
 
           <Button
             type="submit"

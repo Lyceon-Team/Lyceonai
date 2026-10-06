@@ -25,6 +25,8 @@ import { useMutation } from "@tanstack/react-query";
 import { changePasswordRequestSchema } from "@lyceon/shared/password-policy";
 import { DeleteAccountBox } from "@/components/account-deletion/DeleteAccountCard";
 import { EmailNotificationsCard } from "@/components/account/EmailNotificationsCard";
+import { MarketingEmailCard } from "@/components/account/MarketingEmailCard";
+import { FeedbackSettingsRow } from "@/components/product-feedback/FeedbackDialog";
 import { Button } from "@/components/ui/button";
 import {
   showsChangePassword,
@@ -88,6 +90,10 @@ export function AccountSection({
 
       {/* SCL-090: renders only when this address is suppressed. */}
       <EmailNotificationsCard variant="lyc" />
+      {/* Plan R26 / R28 (Q5, Q6; owner answers 2026-10-05): the marketing toggle and private
+          feedback, each self-contained and rendering nothing for an account that cannot use it. */}
+      <MarketingEmailCard variant="lyc" />
+      <FeedbackSettingsRow variant="lyc" />
       <DeleteAccountBox />
     </section>
   );

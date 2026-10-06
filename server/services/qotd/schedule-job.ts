@@ -29,7 +29,10 @@
  * prerenders yesterday's archive page.
  */
 import { CANONICAL_DOMAINS_BY_SECTION } from "../../../shared/canonical-domains";
-import { firstBannedPhrase } from "../../../shared/seo/banned-phrases";
+import {
+  firstBannedPhrase,
+  firstUnapprovedOutcome,
+} from "../../../shared/seo/banned-phrases";
 import { explanationNamesChoiceLetter } from "../../../shared/practice/letter-reference";
 import { parseCanonicalMcOptions } from "../../../shared/question-bank-contract";
 import {
@@ -141,7 +144,13 @@ async function fillDay(
         counters.skippedLetterReference += 1;
         continue;
       }
-      if (firstBannedPhrase(publicText(c)) !== null) {
+      // F13 (owner ruling 2026-10-05): "score higher" and "real progress" moved from BANNED to
+      // the outcome guard; a scheduled question becomes a public archive page, so it is screened
+      // by both, as every other public page is.
+      if (
+        firstBannedPhrase(publicText(c)) !== null ||
+        firstUnapprovedOutcome(publicText(c)) !== null
+      ) {
         counters.skippedBanned += 1;
         continue;
       }

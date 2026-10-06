@@ -47,6 +47,8 @@ import { SessionNotice } from "@/components/feedback/SessionNotice";
 import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
 import { EmailNotificationsCard } from "@/components/account/EmailNotificationsCard";
 import { CookiesAnalyticsCard } from "@/components/account/CookiesAnalyticsCard";
+import { MarketingEmailCard } from "@/components/account/MarketingEmailCard";
+import { FeedbackSettingsRow } from "@/components/product-feedback/FeedbackDialog";
 import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 
@@ -519,6 +521,9 @@ export default function UserProfile() {
                     unless this address is actually suppressed. */}
                 <EmailNotificationsCard />
                 <CookiesAnalyticsCard />
+                {/* Plan R26 / R28 (Q5, Q6; owner answers 2026-10-05). */}
+                <MarketingEmailCard />
+                <FeedbackSettingsRow />
                 <DeleteAccountCard />
               </CardContent>
             </Card>

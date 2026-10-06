@@ -160,7 +160,13 @@ describe.skipIf(!PG_AVAILABLE)(
       await pg.query(`DELETE FROM public.profiles WHERE id = ANY($1::uuid[])`, [
         [STUDENT.id, OTHER.id, GUARDIAN.id],
       ]);
-      // Opted IN and complete: the two values F-54's defaults would have overwritten.
+      // Opted IN and complete: the two values F-54's defaults would have overwritten. Since
+      // migration 20261027000000 every grant must name its source and wording (the consent log's
+      // CHECK), so the fixture declares them as set_marketing_consent does.
+      await pg.query(
+        `SELECT set_config('lyceon.marketing_consent_source', 'signup', false),
+                set_config('lyceon.marketing_consent_version', '1.0.0', false)`,
+      );
       await pg.query(
         `INSERT INTO public.profiles
            (id, email, role, display_name, date_of_birth, marketing_opt_in, profile_completed_at)

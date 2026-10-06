@@ -83,6 +83,7 @@ import { studentViewModel } from "@/features/calendar/lib/view-model";
 import { toUserFacingMessage } from "@/lib/api-error";
 import "@/features/calendar/calendar.css";
 import "@/features/calendar/calendar-student.css";
+import { ReviewPrompt } from "@/components/product-feedback/ReviewPrompt";
 
 export default function CalendarPage(): JSX.Element {
   /**
@@ -347,6 +348,12 @@ export default function CalendarPage(): JSX.Element {
 
   return (
     <>
+      {/* Plan R30 / Q6 (owner Step 0 answer 3, 2026-10-05): a completed study week — last week
+          had at least one block and every block was completed — is a success moment. The server
+          checks the week from the plan itself, then applies the cadence. */}
+      <div className="mb-6 empty:hidden">
+        <ReviewPrompt query={{ moment: "study_week" }} variant="lyc" />
+      </div>
       <CalendarView
         backHref="/dashboard"
         hideBackLink

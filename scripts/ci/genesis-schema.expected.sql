@@ -8343,6 +8343,19 @@ $$;
 
 
 --
+-- Name: marketing_opt_in_age_eligible(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marketing_opt_in_age_eligible(p_date_of_birth date) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT p_date_of_birth IS NOT NULL
+     AND p_date_of_birth <= (current_date - interval '13 years')::date;
+$$;
+
+
+--
 -- Name: mastery_min_events(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8831,6 +8844,144 @@ $$;
 
 
 --
+-- Name: product_feedback_submit(uuid, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  INSERT INTO public.product_feedback (profile_id, audience, body, source, idempotency_key)
+  VALUES (p_profile_id, p_audience, p_body, p_source, p_idempotency_key)
+  ON CONFLICT (profile_id, idempotency_key) DO NOTHING;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN jsonb_build_object('outcome', CASE WHEN v_rows = 1 THEN 'created' ELSE 'replayed' END);
+END;
+$$;
+
+
+--
+-- Name: product_review_mark_external(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_mark_external(p_profile_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via)
+  VALUES (p_profile_id, now(), 'trustpilot')
+  ON CONFLICT (profile_id) DO UPDATE
+     SET reviewed_at  = COALESCE(product_review_prompt_state.reviewed_at, now()),
+         reviewed_via = COALESCE(product_review_prompt_state.reviewed_via, 'trustpilot'),
+         updated_at   = now();
+$$;
+
+
+--
+-- Name: product_review_prompt_claim(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  INSERT INTO public.product_review_prompt_state (profile_id, last_shown_at)
+  VALUES (p_profile_id, now())
+  ON CONFLICT (profile_id) DO UPDATE
+     SET last_shown_at = now(), updated_at = now()
+   WHERE product_review_prompt_state.last_shown_at IS NOT DISTINCT FROM p_expected
+     AND product_review_prompt_state.reviewed_at IS NULL;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: product_review_prompt_dismiss(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  UPDATE public.product_review_prompt_state
+     SET dismiss_count = dismiss_count + 1, last_dismissed_at = now(), updated_at = now()
+   WHERE profile_id = p_profile_id
+     AND last_shown_at IS NOT NULL
+     AND reviewed_at IS NULL
+     AND (last_dismissed_at IS NULL OR last_dismissed_at < last_shown_at);
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: product_review_prompt_state_for(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+           'last_shown_at', s.last_shown_at,
+           'dismiss_count', s.dismiss_count,
+           'reviewed_at',   s.reviewed_at)
+    FROM public.product_review_prompt_state s
+   WHERE s.profile_id = p_profile_id;
+$$;
+
+
+--
+-- Name: product_review_submit(uuid, text, smallint, text, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_existing public.product_reviews%ROWTYPE;
+  v_rows     integer;
+BEGIN
+  INSERT INTO public.product_reviews (profile_id, audience, rating, body, quote_permission)
+  VALUES (p_profile_id, p_audience, p_rating, p_body, p_quote_permission)
+  ON CONFLICT (profile_id) DO NOTHING;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  IF v_rows = 0 THEN
+    SELECT * INTO v_existing FROM public.product_reviews WHERE profile_id = p_profile_id;
+    IF v_existing.rating = p_rating
+       AND v_existing.body IS NOT DISTINCT FROM p_body
+       AND v_existing.quote_permission = p_quote_permission THEN
+      RETURN jsonb_build_object('outcome', 'replayed');
+    END IF;
+    RETURN jsonb_build_object('outcome', 'conflict');
+  END IF;
+
+  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via)
+  VALUES (p_profile_id, now(), 'in_app')
+  ON CONFLICT (profile_id) DO UPDATE
+     SET reviewed_at  = COALESCE(product_review_prompt_state.reviewed_at, now()),
+         reviewed_via = COALESCE(product_review_prompt_state.reviewed_via, 'in_app'),
+         updated_at   = now();
+  RETURN jsonb_build_object('outcome', 'created');
+END;
+$$;
+
+
+--
 -- Name: profiles_analytics_fields_set_once(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8882,6 +9033,59 @@ BEGIN
   END IF;
 
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: profiles_marketing_consent_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_marketing_consent_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_was boolean := CASE WHEN TG_OP = 'UPDATE' THEN OLD.marketing_opt_in ELSE false END;
+BEGIN
+  IF NEW.marketing_opt_in AND NOT public.marketing_opt_in_age_eligible(NEW.date_of_birth) THEN
+    IF v_was THEN
+      -- Already opted in, and the date of birth just became ineligible (deidentify_user nulls
+      -- it during account deletion). Clear, never refuse: see the header, item 1.
+      NEW.marketing_opt_in := false;
+    ELSE
+      RAISE EXCEPTION 'marketing_opt_in requires a known date of birth at least 13 years ago (plan R26)'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: profiles_marketing_consent_log(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_marketing_consent_log() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_was     boolean := CASE WHEN TG_OP = 'UPDATE' THEN OLD.marketing_opt_in ELSE false END;
+  v_source  text    := NULLIF(current_setting('lyceon.marketing_consent_source', true), '');
+  v_version text    := NULLIF(current_setting('lyceon.marketing_consent_version', true), '');
+BEGIN
+  IF NEW.marketing_opt_in IS DISTINCT FROM v_was THEN
+    INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version)
+    VALUES (
+      NEW.id,
+      NEW.marketing_opt_in,
+      COALESCE(v_source, 'system'),
+      CASE WHEN NEW.marketing_opt_in THEN v_version ELSE NULL END
+    );
+  END IF;
+  RETURN NULL;
 END;
 $$;
 
@@ -11487,6 +11691,50 @@ $$;
 
 
 --
+-- Name: set_marketing_consent(uuid, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_dob date;
+  v_was boolean;
+BEGIN
+  IF p_source NOT IN ('signup', 'settings') THEN
+    RAISE EXCEPTION 'set_marketing_consent: unknown source %', p_source
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  SELECT date_of_birth, marketing_opt_in INTO v_dob, v_was
+    FROM public.profiles WHERE id = p_profile_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'profile_missing');
+  END IF;
+
+  IF p_granted AND NOT public.marketing_opt_in_age_eligible(v_dob) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'age_ineligible');
+  END IF;
+
+  IF v_was = p_granted THEN
+    RETURN jsonb_build_object('ok', true, 'changed', false, 'granted', p_granted);
+  END IF;
+
+  PERFORM set_config('lyceon.marketing_consent_source', p_source, true);
+  PERFORM set_config('lyceon.marketing_consent_version', COALESCE(p_consent_version, ''), true);
+  UPDATE public.profiles
+     SET marketing_opt_in = p_granted, updated_at = now()
+   WHERE id = p_profile_id;
+  PERFORM set_config('lyceon.marketing_consent_source', '', true);
+  PERFORM set_config('lyceon.marketing_consent_version', '', true);
+
+  RETURN jsonb_build_object('ok', true, 'changed', true, 'granted', p_granted);
+END;
+$$;
+
+
+--
 -- Name: set_profile_age_fields(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -13964,6 +14212,44 @@ COMMENT ON CONSTRAINT legal_acceptances_consent_source_check ON public.legal_acc
 
 
 --
+-- Name: marketing_consent_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.marketing_consent_log (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    granted boolean NOT NULL,
+    source text NOT NULL,
+    consent_version text,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT marketing_consent_log_consent_version_check CHECK (((consent_version IS NULL) OR (consent_version ~ '^\d+\.\d+\.\d+$'::text))),
+    CONSTRAINT marketing_consent_log_grant_versioned CHECK (((granted = false) OR (source = 'backfill'::text) OR (consent_version IS NOT NULL))),
+    CONSTRAINT marketing_consent_log_source_check CHECK ((source = ANY (ARRAY['signup'::text, 'settings'::text, 'backfill'::text, 'age_clear'::text, 'system'::text])))
+);
+
+
+--
+-- Name: TABLE marketing_consent_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.marketing_consent_log IS 'Doc 10 §9.21 / plan R26: one row per change of profiles.marketing_opt_in (when, where, which wording). Written only by the profiles_marketing_consent_log trigger. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: marketing_consent_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.marketing_consent_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.marketing_consent_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: mastery_constants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14463,6 +14749,109 @@ CREATE TABLE public.practice_runtime_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: product_feedback; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_feedback (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    audience text NOT NULL,
+    body text NOT NULL,
+    source text NOT NULL,
+    idempotency_key uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_feedback_audience_check CHECK ((audience = ANY (ARRAY['student'::text, 'guardian'::text]))),
+    CONSTRAINT product_feedback_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 2000))),
+    CONSTRAINT product_feedback_source_check CHECK ((source = ANY (ARRAY['prompt'::text, 'settings'::text, 'help'::text, 'menu'::text])))
+);
+
+
+--
+-- Name: TABLE product_feedback; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.product_feedback IS 'Plan R28: private feedback, stored only (owner answer 8, 2026-10-05). Never displayed, never forwarded. Written only by product_feedback_submit. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: product_feedback_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_feedback ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.product_feedback_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: product_review_prompt_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_review_prompt_state (
+    profile_id uuid NOT NULL,
+    last_shown_at timestamp with time zone,
+    last_dismissed_at timestamp with time zone,
+    dismiss_count smallint DEFAULT 0 NOT NULL,
+    reviewed_at timestamp with time zone,
+    reviewed_via text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_review_prompt_state_check CHECK (((reviewed_at IS NULL) = (reviewed_via IS NULL))),
+    CONSTRAINT product_review_prompt_state_dismiss_count_check CHECK ((dismiss_count >= 0)),
+    CONSTRAINT product_review_prompt_state_reviewed_via_check CHECK ((reviewed_via = ANY (ARRAY['in_app'::text, 'trustpilot'::text])))
+);
+
+
+--
+-- Name: TABLE product_review_prompt_state; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.product_review_prompt_state IS 'Plan R30: the review prompt''s cadence facts per profile. The decision is packages/shared/src/review-prompt.ts; these functions only record. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: product_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_reviews (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    audience text NOT NULL,
+    rating smallint NOT NULL,
+    body text,
+    quote_permission boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_reviews_audience_check CHECK ((audience = ANY (ARRAY['student'::text, 'guardian'::text]))),
+    CONSTRAINT product_reviews_body_check CHECK (((body IS NULL) OR ((char_length(body) >= 1) AND (char_length(body) <= 2000)))),
+    CONSTRAINT product_reviews_rating_check CHECK (((rating >= 1) AND (rating <= 5)))
+);
+
+
+--
+-- Name: TABLE product_reviews; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.product_reviews IS 'Plan R28/R29: in-app review, one per profile. Anonymous by construction: profile_id is for dedupe and deletion only and is never served. quote_permission is the unticked-by-default "Lyceon may quote this anonymously". Written only by product_review_submit. ON DELETE CASCADE from profiles (owner ruling 2026-10-05).';
+
+
+--
+-- Name: product_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_reviews ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.product_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -16292,6 +16681,14 @@ ALTER TABLE ONLY public.legal_acceptances
 
 
 --
+-- Name: marketing_consent_log marketing_consent_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_consent_log
+    ADD CONSTRAINT marketing_consent_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: mastery_constants_change_log mastery_constants_change_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16457,6 +16854,46 @@ ALTER TABLE ONLY public.practice_session_items
 
 ALTER TABLE ONLY public.practice_sessions
     ADD CONSTRAINT practice_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product_feedback product_feedback_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_feedback
+    ADD CONSTRAINT product_feedback_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product_feedback product_feedback_profile_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_feedback
+    ADD CONSTRAINT product_feedback_profile_id_idempotency_key_key UNIQUE (profile_id, idempotency_key);
+
+
+--
+-- Name: product_review_prompt_state product_review_prompt_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_review_prompt_state
+    ADD CONSTRAINT product_review_prompt_state_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: product_reviews product_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_reviews
+    ADD CONSTRAINT product_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product_reviews product_reviews_profile_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_reviews
+    ADD CONSTRAINT product_reviews_profile_id_key UNIQUE (profile_id);
 
 
 --
@@ -17924,6 +18361,13 @@ CREATE INDEX idx_usage_rate_limit_ledger_student_user ON public.usage_rate_limit
 
 
 --
+-- Name: marketing_consent_log_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX marketing_consent_log_profile ON public.marketing_consent_log USING btree (profile_id, captured_at);
+
+
+--
 -- Name: mastery_levels_level_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -18299,6 +18743,20 @@ CREATE TRIGGER profiles_analytics_fields_set_once BEFORE UPDATE OF analytics_use
 --
 
 CREATE TRIGGER profiles_lock_date_of_birth BEFORE UPDATE OF date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_lock_date_of_birth();
+
+
+--
+-- Name: profiles profiles_marketing_consent_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_marketing_consent_guard BEFORE INSERT OR UPDATE OF marketing_opt_in, date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_marketing_consent_guard();
+
+
+--
+-- Name: profiles profiles_marketing_consent_log; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_marketing_consent_log AFTER INSERT OR UPDATE OF marketing_opt_in, date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_marketing_consent_log();
 
 
 --
@@ -18960,6 +19418,14 @@ ALTER TABLE ONLY public.legal_acceptances
 
 
 --
+-- Name: marketing_consent_log marketing_consent_log_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_consent_log
+    ADD CONSTRAINT marketing_consent_log_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: mastery_constants_history mastery_constants_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -19093,6 +19559,30 @@ ALTER TABLE ONLY public.practice_session_items
 
 ALTER TABLE ONLY public.practice_sessions
     ADD CONSTRAINT practice_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: product_feedback product_feedback_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_feedback
+    ADD CONSTRAINT product_feedback_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: product_review_prompt_state product_review_prompt_state_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_review_prompt_state
+    ADD CONSTRAINT product_review_prompt_state_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: product_reviews product_reviews_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_reviews
+    ADD CONSTRAINT product_reviews_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -20094,6 +20584,12 @@ ALTER TABLE public.legal_acceptance_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.legal_acceptances ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: marketing_consent_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.marketing_consent_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mastery_constants; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -20234,6 +20730,24 @@ ALTER TABLE public.practice_sessions ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY practice_sessions_select_self ON public.practice_sessions FOR SELECT TO authenticated USING ((user_id = auth.uid()));
 
+
+--
+-- Name: product_feedback; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_feedback ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: product_review_prompt_state; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_review_prompt_state ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: product_reviews; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_reviews ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: profiles; Type: ROW SECURITY; Schema: public; Owner: -
@@ -22106,6 +22620,14 @@ GRANT ALL ON FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id
 
 
 --
+-- Name: FUNCTION marketing_opt_in_age_eligible(p_date_of_birth date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marketing_opt_in_age_eligible(p_date_of_birth date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marketing_opt_in_age_eligible(p_date_of_birth date) TO service_role;
+
+
+--
 -- Name: FUNCTION mastery_min_events(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -22245,6 +22767,54 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 
 
 --
+-- Name: FUNCTION product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_mark_external(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_mark_external(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_mark_external(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_dismiss(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_state_for(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION profiles_analytics_fields_set_once(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -22256,6 +22826,20 @@ REVOKE ALL ON FUNCTION public.profiles_analytics_fields_set_once() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION public.profiles_lock_date_of_birth() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION profiles_marketing_consent_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_marketing_consent_guard() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION profiles_marketing_consent_log(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_marketing_consent_log() FROM PUBLIC;
 
 
 --
@@ -22646,6 +23230,14 @@ GRANT ALL ON FUNCTION public.select_diagnostic_pool(p_per_domain integer, p_excl
 --
 
 GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_domains text[], p_skills text[], p_difficulties integer[], p_exclude_ids text[], p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text) TO service_role;
 
 
 --
@@ -23625,6 +24217,13 @@ GRANT ALL ON TABLE public.legal_acceptances TO service_role;
 
 
 --
+-- Name: TABLE marketing_consent_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.marketing_consent_log TO service_role;
+
+
+--
 -- Name: TABLE mastery_constants; Type: ACL; Schema: public; Owner: -
 --
 
@@ -24015,6 +24614,27 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_runtime_config TO ser
 --
 
 GRANT ALL ON TABLE public.practice_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE product_feedback; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.product_feedback TO service_role;
+
+
+--
+-- Name: TABLE product_review_prompt_state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.product_review_prompt_state TO service_role;
+
+
+--
+-- Name: TABLE product_reviews; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.product_reviews TO service_role;
 
 
 --

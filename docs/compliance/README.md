@@ -46,6 +46,11 @@ Spec departures in these drafts are recorded in SCL-208. Open owner actions:
 - Cookie Policy publication: the banner's "Cookie Policy" link opens the Privacy Policy until then — on publication, `COOKIE_POLICY_HREF` in `client/src/components/consent/CookieConsentRoot.tsx` becomes `/legal/cookie-policy`;
 - session replay (F15): the PostHog project keeps recording off until F15's evidence is taken; it is then enabled through the PostHog connector (owner decision 4, 2026-10-05).
 
+### Counsel checklist: marketing claims
+
+Claims on public pages that counsel should see alongside the legal drafts (the claim inventory holds each one's support):
+- **"Study Smarter, Score Higher"** (slogan; claim inventory X1, H43): approved by Karl 2026-10-05. It is an implied score-improvement claim; test-prep score claims are the kind regulators expect substantiation for. Counsel to confirm it is acceptable as a slogan, or tighten it.
+
 The drafts describe the service at launch (owner ruling, 2026-10-05), including PostHog, Cloudflare Turnstile and Trustpilot.
 
 Resolved: error monitoring is not configured on Vercel, verified 2026-10-03 (Karl), so it is omitted from Privacy Policy v5 and the Sub-Processor List.
