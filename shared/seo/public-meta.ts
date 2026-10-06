@@ -1,11 +1,9 @@
 import { BLOG_POSTS } from "../content/blog";
-import {
-  CB_CALCULATOR,
-  CB_MATH,
-  CB_READING_WRITING,
-  CB_STRUCTURE,
-  type Source,
-} from "./sources";
+import { CONTENT_PAGES } from "../content/pages";
+import { plainText } from "./content-gate";
+import { HOME_FAQS } from "./faqs";
+import { formatQotdDate, qotdTopic } from "./qotd-labels";
+import type { ContentPage } from "../../packages/shared/src/seo-content-schema";
 import type { QotdArchiveResponse } from "../../packages/shared/src/qotd-schema";
 import {
   BASE_URL,
@@ -17,6 +15,11 @@ import {
   organizationJsonLd,
   websiteJsonLd,
 } from "./structured-data";
+
+// Re-exported from their light modules (split out 2026-10-05 so client pages import them without
+// pulling every page's metadata into their bundle).
+export { HOME_FAQS, faqParagraphs, type FaqItem } from "./faqs";
+export { formatQotdDate, qotdTopic } from "./qotd-labels";
 
 export interface PublicMeta {
   title: string;
@@ -41,157 +44,6 @@ export interface LegalMeta {
   canonical: string;
   ogImage?: string;
 }
-
-/**
- * @spec [docs/plans/seo/seo-marketing-vertical.md §5 F1 — "FAQ schema = visible FAQ"] |
- * @implemented [2026-10-03] | plain English: each FAQ list below is the ONE copy of that FAQ.
- * The page renders it and the FAQPage JSON-LD is built from it, so what search engines quote
- * is exactly what a visitor reads. Before this, the homepage JSON-LD carried four questions
- * the page never showed, and the Digital SAT page rendered a free-tier answer that the
- * metadata had already corrected (owner ruling 2026-09-03, see "What is free vs paid?").
- *
- * An answer may hold several paragraphs, separated by a blank line ("\n\n"): the page renders
- * one <p> per paragraph (`faqParagraphs`), and the JSON-LD joins them with a space.
- *
- * F1 carried the copy over unchanged except for the Digital SAT free-tier answer, which had
- * drifted from the 2026-09-03 owner ruling; the copy was then rewritten under F6 (below).
- */
-/*
- * F6 (2026-10-03, owner-approved copy, Public Disclosure Doctrine §0): every answer below was
- * rewritten to industry-standard wording. Paid features say so; nothing describes how
- * practice is selected or how the tutor works; every statement about the SAT names its
- * College Board source in `sources`, which the page renders under the answer (the JSON-LD
- * carries the answer text only). The approved claim inventory is
- * `docs/compliance/claim-inventory.md`; `tests/ci/public-copy-claims.contract.test.ts` keeps
- * the removed phrasings out.
- */
-export type FaqItem = { question: string; answer: string; sources?: readonly Source[] };
-
-export function faqParagraphs(answer: string): string[] {
-  return answer.split("\n\n");
-}
-
-export const HOME_FAQS: readonly FaqItem[] = [
-  {
-    question: "What does the AI tutor do?",
-    answer:
-      "On paid plans, the AI tutor answers questions about SAT practice problems with step-by-step explanations.",
-  },
-  {
-    question: "Do I need to add a credit card to start?",
-    answer: "No. The free tier is available without entering card details.",
-  },
-  {
-    question: "What can parents and guardians see?",
-    answer:
-      "Parents and guardians can link to a student's account and see a read-only progress summary while the student is on a paid plan.",
-  },
-  {
-    question: "Do you include full-length practice tests and daily practice?",
-    answer: "Yes. Daily practice is free. Full-length timed practice tests are on paid plans.",
-  },
-];
-
-export const DIGITAL_SAT_FAQS: readonly FaqItem[] = [
-  {
-    question: "What is the Digital SAT?",
-    answer:
-      "The Digital SAT has two sections, Reading and Writing, and Math, and takes 2 hours and 14 minutes. Each section has two modules; the second module is easier or harder depending on how you did on the first.",
-    sources: [CB_STRUCTURE],
-  },
-  {
-    question: "How is the Digital SAT different from the paper SAT?",
-    answer: "It is shorter, it is taken on a computer, and each section adapts at the module level.",
-    sources: [CB_STRUCTURE],
-  },
-  {
-    question: "Does Lyceon include full-length practice tests?",
-    answer: "Yes, on paid plans. Daily practice and review are free.",
-  },
-  {
-    question: "Can I track my progress?",
-    answer: "Yes. You can see your progress by section, with skill-level detail on paid plans.",
-  },
-  {
-    /*
-      CORRECTED 2026-09-03 (owner ruling), REWORDED 2026-10-03 (F6, owner-approved). The
-      2026-09-03 ruling replaced "Free includes daily limits (10 practice questions and 5 tutor
-      messages)", which understated the practice allowance by a factor of four and advertised a
-      PREMIUM feature as free (`server/routes/tutor-runtime.ts` denies every non-entitled profile
-      with `entitlement_required`). F6 then named review (free for every tier, SCL-110), dropped
-      "expanded guardian visibility" (a guardian sees nothing unless the student is on a paid
-      plan) and names the free tier's score a "diagnostic score estimate" (wording confirmed by
-      Karl, 2026-10-03).
-
-      THIS COPY IS THE ONE SEARCH ENGINES QUOTE: it feeds the FAQ structured data. The number
-      must match the free card in `home.tsx` (`FREE_DAILY_PRACTICE_QUESTIONS`, from
-      `practice_runtime_config.daily_quota_free` per Doc 02B "Quota Contract");
-      `tests/ci/homepage-pricing.contract.test.ts` fails if they drift apart.
-    */
-    question: "What is free vs paid?",
-    answer:
-      "Free includes 40 practice questions per day, a worked explanation after every question, review of your past answers, and a full diagnostic test and your diagnostic score estimate. The AI tutor, full-length practice tests, skill-level progress, the study plan and the parent/guardian progress view are on paid plans.",
-  },
-];
-
-export const DIGITAL_SAT_MATH_FAQS: readonly FaqItem[] = [
-  {
-    question: "What math topics are on the Digital SAT?",
-    answer:
-      "The Digital SAT Math section covers Algebra, Advanced Math, Problem-Solving and Data Analysis, and Geometry and Trigonometry.",
-    sources: [CB_MATH],
-  },
-  {
-    question: "Can I use a calculator on SAT Math?",
-    answer:
-      "Yes. You can use a calculator at any point in the Math section, and a Desmos calculator is built into Bluebook, the College Board's testing app.\n\nLyceon practice includes a built-in Desmos calculator on every Math question.",
-    sources: [CB_CALCULATOR],
-  },
-  {
-    question: "How many math questions are on the Digital SAT?",
-    answer: "The Math section has 44 questions in two equal-length modules, with 70 minutes in total.",
-    sources: [CB_STRUCTURE],
-  },
-  {
-    question: "What are common SAT Math mistakes?",
-    answer:
-      "Common slips include solving for the wrong expression, sign errors, rushing word-problem setup, and skipping answer checks.",
-  },
-  {
-    question: "How does Lyceon support math review?",
-    answer:
-      "Every practice question comes with a worked explanation. On paid plans, the AI tutor can walk through a problem step by step.",
-  },
-];
-
-export const DIGITAL_SAT_READING_WRITING_FAQS: readonly FaqItem[] = [
-  {
-    question: "What is tested on SAT Reading and Writing?",
-    answer:
-      "The section covers Craft and Structure, Information and Ideas, Standard English Conventions, and Expression of Ideas.",
-    sources: [CB_READING_WRITING],
-  },
-  {
-    question: "How is Digital SAT Reading different from the paper test?",
-    answer: "Each Reading and Writing question has its own short passage of 25 to 150 words.",
-    sources: [CB_READING_WRITING],
-  },
-  {
-    question: "How many Reading and Writing questions are on the Digital SAT?",
-    answer:
-      "The Reading and Writing section has 54 questions in two equal-length modules, with 64 minutes in total.",
-    sources: [CB_STRUCTURE],
-  },
-  {
-    question: "What vocabulary should I study for the SAT?",
-    answer: "Focus on academic vocabulary in context and how meaning changes with passage usage.",
-  },
-  {
-    question: "How can I improve SAT Reading speed?",
-    answer:
-      "Practice evidence-based elimination, transition-word awareness, and short-passage pacing drills.",
-  },
-];
 
 export const LEGAL_META: Record<string, LegalMeta> = {
   "privacy-policy": {
@@ -275,52 +127,6 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
       createFaqJsonLd(HOME_FAQS),
     ],
   },
-  "/digital-sat": {
-    title: "Digital SAT Prep | Lyceon",
-    description:
-      "Prepare for the Digital SAT: how the test is structured, what each section covers, and SAT-style practice.",
-    canonical: `${BASE_URL}/digital-sat`,
-    ogImage: DEFAULT_OG_IMAGE,
-    jsonLd: [
-      organizationJsonLd,
-      websiteJsonLd,
-      createBreadcrumbJsonLd([
-        { name: "Home", url: BASE_URL },
-        { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
-      ]),
-      createFaqJsonLd(DIGITAL_SAT_FAQS),
-    ],
-  },
-  "/digital-sat/math": {
-    title: "Digital SAT Math Prep - Algebra, Geometry & Data Analysis | Lyceon",
-    description:
-      "Prepare for Digital SAT Math: the four content areas, common mistakes, and practice with worked explanations.",
-    canonical: `${BASE_URL}/digital-sat/math`,
-    ogImage: DEFAULT_OG_IMAGE,
-    jsonLd: [
-      createBreadcrumbJsonLd([
-        { name: "Home", url: BASE_URL },
-        { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
-        { name: "Math", url: `${BASE_URL}/digital-sat/math` },
-      ]),
-      createFaqJsonLd(DIGITAL_SAT_MATH_FAQS),
-    ],
-  },
-  "/digital-sat/reading-writing": {
-    title: "Digital SAT Reading & Writing Prep - Vocabulary, Grammar & Comprehension | Lyceon",
-    description:
-      "Prepare for Digital SAT Reading and Writing: the four content areas, grammar rules, and practice with worked explanations.",
-    canonical: `${BASE_URL}/digital-sat/reading-writing`,
-    ogImage: DEFAULT_OG_IMAGE,
-    jsonLd: [
-      createBreadcrumbJsonLd([
-        { name: "Home", url: BASE_URL },
-        { name: "Digital SAT", url: `${BASE_URL}/digital-sat` },
-        { name: "Reading & Writing", url: `${BASE_URL}/digital-sat/reading-writing` },
-      ]),
-      createFaqJsonLd(DIGITAL_SAT_READING_WRITING_FAQS),
-    ],
-  },
   "/blog": {
     title: "SAT Prep Blog - Tips, Strategies & Study Guides",
     description:
@@ -394,48 +200,98 @@ for (const [slug, meta] of Object.entries(LEGAL_META)) {
   };
 }
 
+/**
+ * @spec [docs/plans/seo/seo-marketing-vertical.md §5 C1 ("prerendered, in the route registry and
+ *       sitemap, with JSON-LD (Article, FAQPage, BreadcrumbList)"); owner decision 6, 2026-10-05
+ *       (author "Lyceon Team" as an Organization)] | @implemented [2026-10-05]
+ *
+ * plain English: each content page's head comes from the same object the page renders
+ * (shared/content/pages): its title, description and self-canonical; a BreadcrumbList that
+ * follows the page's `parent` chain from Home; an Article dated by `published` and
+ * `lastModified`; and, where the page has an FAQ, the FAQPage built from exactly that FAQ.
+ */
+function contentBreadcrumb(page: ContentPage): { name: string; url: string }[] {
+  const trail: { name: string; url: string }[] = [];
+  let current: ContentPage | undefined = page;
+  const seen = new Set<string>();
+  while (current) {
+    if (seen.has(current.path))
+      throw new Error(`content page ${current.path}: parent chain loops`);
+    seen.add(current.path);
+    trail.unshift({ name: current.crumb, url: `${BASE_URL}${current.path}` });
+    const parentPath: string | undefined = current.parent;
+    if (parentPath === undefined) break;
+    current = CONTENT_PAGES.find((p) => p.path === parentPath);
+    if (!current)
+      throw new Error(`content page ${page.path}: parent ${parentPath} is not a content page`);
+  }
+  return [{ name: "Home", url: BASE_URL }, ...trail];
+}
+
+export function contentPageMeta(page: ContentPage): PublicMeta {
+  const canonical = `${BASE_URL}${page.path}`;
+  return {
+    title: page.title,
+    description: page.description,
+    canonical,
+    ogImage: DEFAULT_OG_IMAGE,
+    jsonLd: [
+      createBreadcrumbJsonLd(contentBreadcrumb(page)),
+      createArticleJsonLd({
+        title: page.h1,
+        description: page.description,
+        url: canonical,
+        image: DEFAULT_OG_IMAGE,
+        datePublished: page.published,
+        dateModified: page.lastModified,
+        author: "Lyceon Team",
+      }),
+      ...(page.faq.length > 0
+        ? [
+            createFaqJsonLd(
+              page.faq.map((item) => ({
+                question: item.question,
+                answer: plainText(item.answer),
+              })),
+            ),
+          ]
+        : []),
+    ],
+  };
+}
+
+for (const page of CONTENT_PAGES) {
+  if (PUBLIC_META[page.path])
+    throw new Error(`content page ${page.path} collides with a static meta entry`);
+  PUBLIC_META[page.path] = contentPageMeta(page);
+}
+
+// C4 (2026-10-05): each post's head comes from its content page: its own title, the original
+// publish date and the rewrite date, and the "Lyceon Team" Organization byline (decision 6).
 for (const post of blogPosts) {
-  PUBLIC_META[`/blog/${post.slug}`] = {
-    title: `${post.title} | Lyceon`,
-    description: post.description,
+  const page = post.page;
+  PUBLIC_META[page.path] = {
+    title: page.title,
+    description: page.description,
     canonical: post.canonical,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
       createBreadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
         { name: "Blog", url: `${BASE_URL}/blog` },
-        { name: post.title, url: post.canonical },
+        { name: page.h1, url: post.canonical },
       ]),
       createArticleJsonLd({
-        title: post.title,
-        description: post.description,
+        title: page.h1,
+        description: page.description,
         url: post.canonical,
         image: DEFAULT_OG_IMAGE,
-        datePublished: post.date,
+        datePublished: page.published,
+        dateModified: page.lastModified,
         author: post.author,
       }),
     ],
   };
-}
-
-const SECTION_NAME: Record<"M" | "RW", string> = {
-  M: "Math",
-  RW: "Reading and Writing",
-};
-
-/** "2026-10-04" -> "October 4, 2026" (UTC, so the label never shifts with the build machine's zone). */
-export function formatQotdDate(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-/** The section and domain line a past day is labelled with, e.g. "Math: Algebra". */
-export function qotdTopic(day: QotdArchiveResponse): string {
-  return `${SECTION_NAME[day.question.section_code]}: ${day.question.domain}`;
 }
 
 /**

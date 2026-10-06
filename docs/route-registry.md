@@ -13,7 +13,7 @@ This document records, for those routes:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-10-05 (OQ-61 (a), SCL-212 — `/calendar`'s backing endpoints no longer list the retired standalone streak read; no client called it, and the streak reaches the calendar inside `GET /api/calendar`.) · 2026-10-01 (guardian closeout — Guardian Endpoints rows corrected: `POST /api/guardian/link` is `POST /api/guardian/link/redeem`; the student-resource rows a guardian reads are listed with their real gates; admins are not admitted to guardian routes; `SubscriptionPaywall` replaced by the guardian state matrix.) · 2026-09-27 (G1 — a guardian reads a linked student's full-length practice test results at `/students/:studentId/tests` and `/students/:studentId/tests/:sessionId`, linked per student from the guardian dashboard. Gated server-side on the link AND the STUDENT's entitlement and `exam_full_length` feature; read-only. SCL-180/181.) · 2026-09-25 (E7b — the full-length exam shell: `/tests`, `/tests/:sessionId`, `/tests/:sessionId/:section/:module`, `/tests/:sessionId/report`, and a Tests tab in the student navigation. Client only: every backing endpoint is E6/E7a's, entitlement is enforced there.) · 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; the streak was served on its own route with no `calendar_access` check at all (INV-08-20) — that route is retired 2026-10-05, SCL-212.) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
+**Last Updated:** 2026-10-05 (SEO Wave 3 — 23 public content pages rendered by `ContentPage` from `shared/content/pages`, mounted from `CONTENT_PAGE_PATHS`; the three `/digital-sat*` pages now 301 to `/online-sat-prep` and the two section pages, owner decision 3.) · 2026-10-05 (OQ-61 (a), SCL-212 — `/calendar`'s backing endpoints no longer list the retired standalone streak read; no client called it, and the streak reaches the calendar inside `GET /api/calendar`.) · 2026-10-01 (guardian closeout — Guardian Endpoints rows corrected: `POST /api/guardian/link` is `POST /api/guardian/link/redeem`; the student-resource rows a guardian reads are listed with their real gates; admins are not admitted to guardian routes; `SubscriptionPaywall` replaced by the guardian state matrix.) · 2026-09-27 (G1 — a guardian reads a linked student's full-length practice test results at `/students/:studentId/tests` and `/students/:studentId/tests/:sessionId`, linked per student from the guardian dashboard. Gated server-side on the link AND the STUDENT's entitlement and `exam_full_length` feature; read-only. SCL-180/181.) · 2026-09-25 (E7b — the full-length exam shell: `/tests`, `/tests/:sessionId`, `/tests/:sessionId/:section/:module`, `/tests/:sessionId/report`, and a Tests tab in the student navigation. Client only: every backing endpoint is E6/E7a's, entitlement is enforced there.) · 2026-09-23 (Doc 05F study calendar rebuilt — `/calendar` ACTIVE again, and the guardian read at `/students/:studentId/calendar` added. §16 makes the calendar premium for the SUBJECT, so the guardian route is gated on the STUDENT's entitlement, not the guardian's; the streak was served on its own route with no `calendar_access` check at all (INV-08-20) — that route is retired 2026-10-05, SCL-212.) · 2026-09-22 (Brief 6 — the calendar is REACHABLE: a Calendar tab in the student shell's top navigation, shown to free students too because the page's own 402 renders `PremiumUpgradePrompt` and a hidden tab is a dead end rather than a paywall; and a per-student Calendar link on the guardian dashboard to `/students/:studentId/calendar`. No route is added or retired by this change — both already existed and neither was linked from anywhere.)
 **Last Updated:** 2026-09-22 (R4 — the two review CLIENT routes R3 reserved are now real and listed below. Both are `free`: review is free and unlimited, ruling 10, so unlike `/practice/session/:sessionId` neither carries `entitled†`. The loop behind `/review/session/:sessionId` is the SAME component practice uses, pointed at `/api/review/*` by an engine config.)
 
 ---
@@ -27,9 +27,32 @@ This document records, for those routes:
 | `/signup` | public | free | Redirect→`/login` | N/A | ACTIVE |
 | `/update-password` | public | free | UpdatePassword | `/api/auth/update-password` | ACTIVE |
 | `/account/recover` | public | free | AccountRecover | `/api/account/recover-deletion` | ACTIVE |
-| `/digital-sat` | public | free | DigitalSAT | N/A (static SEO) | ACTIVE |
-| `/digital-sat/math` | public | free | DigitalSATMath | N/A (static SEO) | ACTIVE |
-| `/digital-sat/reading-writing` | public | free | DigitalSATReadingWriting | N/A (static SEO) | ACTIVE |
+| `/digital-sat` | public | free | Redirect→`/online-sat-prep` (301 at the edge) | N/A | ACTIVE |
+| `/digital-sat/math` | public | free | Redirect→`/sat-practice-questions/math` (301 at the edge) | N/A | ACTIVE |
+| `/digital-sat/reading-writing` | public | free | Redirect→`/sat-practice-questions/reading-and-writing` (301 at the edge) | N/A | ACTIVE |
+| `/sat-practice-questions` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/math` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/reading-and-writing` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/math/algebra` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/math/advanced-math` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/math/problem-solving-and-data-analysis` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/math/geometry-and-trigonometry` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/reading-and-writing/information-and-ideas` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/reading-and-writing/craft-and-structure` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/reading-and-writing/expression-of-ideas` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/sat-practice-questions/reading-and-writing/standard-english-conventions` | public | free | ContentPage | `/api/public/qotd/archive`, `/api/public/qotd/:date` | ACTIVE |
+| `/what-is-a-good-sat-score` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/what-is-a-good-sat-score/1100` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/what-is-a-good-sat-score/1200` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/what-is-a-good-sat-score/1300` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/what-is-a-good-sat-score/1400` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/what-is-a-good-sat-score/1500` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/free-sat-practice-test` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/online-sat-prep` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/how-to-study-for-the-sat` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/sat-tutor-cost` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
+| `/lyceon-vs-sat-tutor` | public | free | ContentPage | `/api/public/pricing` | ACTIVE |
+| `/is-sat-tutoring-worth-it` | public | free | ContentPage | N/A (static SEO) | ACTIVE |
 | `/blog` | public | free | Blog | N/A (static) | ACTIVE |
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
 | `/sat-question-of-the-day` | public | free | QotdHub | `/api/public/qotd/today`, `/api/public/qotd/today/answer` | ACTIVE |

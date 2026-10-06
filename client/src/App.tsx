@@ -23,6 +23,7 @@ import { BareCard, BareCardHeader } from "@/components/layout/BareCardShell";
 import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
 import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
+import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
@@ -149,11 +150,9 @@ function ProfileRoute(): JSX.Element {
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 const GuardianRequired = lazy(() => import("@/pages/guardian-required"));
 
-const DigitalSAT = lazy(() => import("@/pages/digital-sat"));
-const DigitalSATMath = lazy(() => import("@/pages/digital-sat-math"));
-const DigitalSATReadingWriting = lazy(
-  () => import("@/pages/digital-sat-reading-writing"),
-);
+// SEO Wave 3 (C2): every content page renders through one component, mounted at each path in
+// CONTENT_PAGE_PATHS (the light path list; the copy loads with the page's own chunk).
+const ContentPage = lazy(() => import("@/pages/content-page"));
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
 const SatQuestionOfTheDay = lazy(
@@ -198,12 +197,24 @@ export function Router() {
         <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
 
         {/* SEO Content Pages */}
-        <Route path="/digital-sat" component={DigitalSAT} />
-        <Route path="/digital-sat/math" component={DigitalSATMath} />
-        <Route
-          path="/digital-sat/reading-writing"
-          component={DigitalSATReadingWriting}
-        />
+        {/* @spec [owner decision 3 on SEO Wave 3 Step 0, 2026-10-05: the three /digital-sat*
+            301s] | @implemented [2026-10-05] | plain English: the edge answers these with a 301
+            (vercel.json, from the registry's redirect_to); these routes only cover an in-app
+            navigation that reaches the old path. */}
+        <Route path="/digital-sat">
+          {() => <Redirect to="/online-sat-prep" replace />}
+        </Route>
+        <Route path="/digital-sat/math">
+          {() => <Redirect to="/sat-practice-questions/math" replace />}
+        </Route>
+        <Route path="/digital-sat/reading-writing">
+          {() => (
+            <Redirect to="/sat-practice-questions/reading-and-writing" replace />
+          )}
+        </Route>
+        {CONTENT_PAGE_PATHS.map((path) => (
+          <Route key={path} path={path} component={ContentPage} />
+        ))}
         <Route path="/blog" component={Blog} />
         <Route path="/blog/:slug" component={BlogPost} />
         <Route

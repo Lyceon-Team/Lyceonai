@@ -27,6 +27,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
+import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import {
   NOT_FOUND_ROUTE,
@@ -159,7 +160,7 @@ function declaredInApp(): Declared {
       const tag = node.tagName.getText(sf);
       if (tag === "Route") {
         const p = attr(node, "path");
-        // `path={path}` is the GUARDIAN_ROUTES map: not a literal, checked below.
+        // `path={path}` is the GUARDIAN_ROUTES or CONTENT_PAGE_PATHS map: not a literal, checked below.
         if (p === undefined) routes.push(NOT_FOUND_ROUTE);
         else if (p !== null) routes.push(p);
       } else if (tag === "StudentRouteFrame") {
@@ -219,6 +220,15 @@ describe("the route table is complete against App.tsx (UI-41)", () => {
       ).toHaveLength(1);
     }
     expect(declared.frames.filter((f) => !tableKeys.includes(f))).toEqual([]);
+  });
+
+  it("content pages are excluded as a set (public pages in PublicLayout), never in the table", () => {
+    expect(CONTENT_PAGE_PATHS.length).toBeGreaterThan(20);
+    for (const p of CONTENT_PAGE_PATHS) {
+      expect(tableKeys).not.toContain(p);
+      expect(excludedKeys).not.toContain(p);
+      expect(declared.routes).not.toContain(p);
+    }
   });
 
   it("guardian routes are excluded as a set (their own GuardianShell), never in the table", () => {
