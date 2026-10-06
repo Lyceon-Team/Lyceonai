@@ -401,16 +401,44 @@ describe("robots.txt", () => {
   const blocks = (path: string): boolean =>
     disallowed.some((prefix) => path.startsWith(prefix));
 
-  it("disallows every signed-in route", () => {
-    const authenticated = registry.filter((r) =>
-      r.surface_class.startsWith("authenticated_"),
+  /**
+   * INV-10A-05 (Doc 10A draft, SEO launch hardening 2026-10-06): a path whose page carries
+   * `noindex` must not also be disallowed, or crawlers never fetch it and never see the noindex.
+   * Every route the SPA shell answers (the signed-in app, /login, …) is served app.html, which is
+   * noindex; so none of them may be disallowed, and Disallow is left for server endpoints only.
+   */
+  it("serves every non-prerendered route the noindex shell, and disallows none of them", () => {
+    expect(site.shellHtml).toContain(
+      '<meta name="robots" content="noindex" />',
     );
-    expect(authenticated.length).toBeGreaterThan(20);
-    for (const row of authenticated)
+    const shellRoutes = registry.filter((r) => !r.prerender && !r.redirect_to);
+    // Presence first: the signed-in app is in this set, so the check below is not vacuous.
+    expect(
+      shellRoutes.filter((r) => r.surface_class.startsWith("authenticated_"))
+        .length,
+    ).toBeGreaterThan(20);
+    expect(shellRoutes.map((r) => r.path_pattern)).toContain("/login");
+    for (const row of shellRoutes)
       expect(
         blocks(row.path_pattern.replace(/:[A-Za-z]+/g, "x")),
-        row.path_pattern,
-      ).toBe(true);
+        `${row.path_pattern} is noindex and must stay crawlable`,
+      ).toBe(false);
+  });
+
+  it("disallows only server endpoints, never a page path", () => {
+    expect(disallowed.length).toBeGreaterThan(0);
+    for (const prefix of disallowed) {
+      expect(["/api/", "/auth/"], prefix).toContain(prefix);
+      for (const row of registry)
+        expect(
+          row.path_pattern.startsWith(prefix),
+          `${prefix} would block the page ${row.path_pattern}`,
+        ).toBe(false);
+    }
+    // The 404 page, the other noindex page, is reached at any unknown path: also not blocked.
+    expect(site.notFoundHtml).toContain(
+      '<meta name="robots" content="noindex" />',
+    );
   });
 
   it("disallows no page in the sitemap, and names no route that does not exist", () => {
