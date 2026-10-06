@@ -64,6 +64,17 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
+
+  // Product analytics (Doc 07A §7.1, §9; SCL-201). Read at:
+  //   POSTHOG_API_KEY   server/lib/analytics/emit-event.ts (the PostHog project key, `phc_…`)
+  //   POSTHOG_HOST      server/lib/analytics/emit-event.ts (US region ingestion host)
+  //   ANALYTICS_SALT    server/lib/analytics/analytics-user-id.ts (server-only HMAC key; one
+  //                     per environment, never shared between environments — §7.1)
+  // Optional in the shape: until they are set, emitEvent refuses with
+  // `analytics_not_configured` and the product runs without analytics.
+  POSTHOG_API_KEY: z.string().min(1).optional(),
+  POSTHOG_HOST: z.string().url().optional(),
+  ANALYTICS_SALT: z.string().min(32).optional(),
 });
 
 /**
@@ -77,6 +88,14 @@ export const notificationEnvSchema = envSchema.pick({
   NOTIFICATION_FROM_EMAIL: true,
 });
 export type NotificationEnv = z.infer<typeof notificationEnvSchema>;
+
+/** The analytics lane's variables, parsed by the emission wrapper (Doc 07A §9). */
+export const analyticsEnvSchema = envSchema.pick({
+  POSTHOG_API_KEY: true,
+  POSTHOG_HOST: true,
+  ANALYTICS_SALT: true,
+});
+export type AnalyticsEnv = z.infer<typeof analyticsEnvSchema>;
 
 /**
  * The Stripe variable names this codebase reads, derived from the canonical

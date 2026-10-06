@@ -8,7 +8,7 @@
 # Applies every migration to a THROWAWAY Postgres (no prod creds) and runs
 # scripts/ci/exam-seams-gates.sql: whole exams walked through the E6 runtime
 # functions, scored and their seams consumed as the API does, then every E9
-# plant (S1-S8, see the .sql header).
+# plant (S1-S9, see the .sql header).
 # Every expected check id must print "ok   [ID ...]"; anything else is red.
 # ============================================================================
 set -euo pipefail
@@ -23,7 +23,7 @@ DB=exam_seams_gate_ci
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-EXPECTED_IDS="S1 S2 S3 S4 S5 S6 S7 S8"
+EXPECTED_IDS="S1 S2 S3 S4 S5 S6 S7 S8 S9"
 
 psql_db() { psql -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
 

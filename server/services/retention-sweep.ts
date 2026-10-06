@@ -1,6 +1,7 @@
 /**
- * @spec [Doc-03_V1.1 §14.2, INV-03-19]
- * @implemented 2026-08-21
+ * @spec [Doc-03_V1.1 §14.2, INV-03-19; owner rulings 2026-10-05 RS-00, RS-04, RS-05]
+ * @implemented 2026-08-21 (7d tier moved into SQL, 90d shown_at, 180d crisis cases removed:
+ *   2026-10-05)
  *
  * plain English: Retention sweep tier functions for LISA data. Each function
  * deletes only rows that have crossed the retention boundary for its tier,
@@ -17,7 +18,8 @@
  *
  * trade-offs:
  *  - Client injection is the same pattern as server/lib/stale-session-sweep.ts.
- *    The route handler passes supabaseServer; tests pass a filtering mock.
+ *    The route handler passes supabaseServer; the real-Postgres suite passes
+ *    the PG harness.
  *  - 90d/180d tiers delete outright. They used to export every expired row
  *    to BigQuery first and refuse to delete when they could not; the owner
  *    ruling of 2026-09-22 removed the archive (Doc 07B §5.4 — the exported
@@ -25,32 +27,42 @@
  *    minors). Nothing was ever archived, so nothing was migrated. Neither
  *    tier can decline any more.
  *  - 365d tier is a structured no-op until tables are provisioned.
- *  - 7d tier: memory summaries are only purged when a student has zero
- *    remaining active conversations (conservative — spec says "cascade
- *    from account / entitlement").
- *  - 180d crisis: only RESOLVED cases are swept. Open/in-review cases are
- *    retained regardless of age (safety review ongoing). Spec: "hard delete
- *    at 180 days or on closure, whichever is later." The crisis_review_cases
- *    CHECK constraint allows ('open', 'in_review', 'resolved') — there is
- *    no 'closed' status.
+ *  - 7d tier (RS-00, 2026-10-05): one SQL function,
+ *    `sweep_tutor_conversation_retention`. It never deletes a crisis-flagged
+ *    conversation (any crisis_review_cases / crisis_review_events row links to
+ *    it — Doc 03 §14.2 keeps those for manual purge), and purges a student's
+ *    memory summaries only when no live, recoverable or flagged conversation
+ *    remains. Tests run it against real Postgres
+ *    (tests/ci/retention-sweep.pg.ci.test.ts), not the filtering mock.
+ *  - 180d tier (RS-05, 2026-10-05): tutor_injection_log only. Crisis cases
+ *    and their audit rows are manual purge (Doc 03 §14.2); no tier deletes
+ *    them. Tests run against real Postgres.
  *
  * edge cases:
  *  - Duplicate delivery: DELETE is idempotent — already-deleted rows don't
  *    match the WHERE clause.
  *  - Empty result: normal for tiers with no expired rows. Returns
  *    { ok: true, deleted_count: 0 }.
- *  - 180d crisis: open cases older than 180 days are retained (safety review
- *    ongoing). The dual condition (status=resolved AND created_at<cutoff)
- *    naturally implements "hard delete at 180 days or on closure, whichever
- *    is later" — both conditions must be met.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
+import { retentionSweepRowSchema } from "../../packages/shared/src/retention-schema";
 import { logger } from "../logger";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
+/** Rows per table a tier deleted (or, in a dry run, would delete). */
+export type SweepTableCount = { table: string; count: number };
+
 export type SweepResult =
-  | { ok: true; deleted_count: number; tier: string; dry_run: boolean }
+  | {
+      ok: true;
+      deleted_count: number;
+      tier: string;
+      dry_run: boolean;
+      /** Per-table counts, cascades included (RS-03). Every tier that runs reports them. */
+      per_table?: SweepTableCount[];
+    }
   | { ok: false; reason: string; tier: string };
 
 export type SweepOpts = {
@@ -68,23 +80,6 @@ export type TierHandler = (
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * crisis_review_cases status lifecycle: open → in_review → resolved.
- * Source of truth: migration 20260813000000_crisis_review_queue.sql,
- * CHECK (status IN ('open', 'in_review', 'resolved')).
- *
- * Exported so tests derive valid status values from the code that uses
- * them rather than hardcoding strings that can silently drift (LISA-GCP-002).
- */
-export const CRISIS_STATUS = {
-  /** Initial state when a crisis case is created. */
-  OPEN: "open" as const,
-  /** Reviewer has claimed the case. */
-  IN_REVIEW: "in_review" as const,
-  /** Terminal: incident resolved by reviewer. Only resolved cases are swept. */
-  RESOLVED: "resolved" as const,
-};
-
-/**
  * Pure. Returns ISO cutoff timestamp for a given number of days before now.
  * Separated from IO so the boundary itself is testable — an off-by-one in
  * the window is the failure mode that would quietly sweep live data or
@@ -97,128 +92,94 @@ export function retentionCutoff(now: Date, days: number): string {
 // ── 7-day tier ────────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03_V1.1 §14.2, INV-03-19]
+ * @spec [Doc-03_V1.1 §14.2, INV-03-19; owner ruling 2026-10-05 RS-00 (crisis-flagged
+ *       conversations are never swept: manual purge only)] | @implemented [2026-08-20;
+ *       crisis hold 2026-10-05]
  *
- * Hard-delete tutor_conversations where deleted_at expired (soft-deleted
- * 7+ days ago). FK cascade handles tutor_messages and tutor_question_links.
- * Separate cleanup for tutor_memory_summaries (linked by student_id, not
- * conversation FK).
+ * plain English: the 7d tier is ONE SQL function,
+ * `sweep_tutor_conversation_retention(p_dry_run)` (migration 20261025000000). It deletes
+ * conversations soft-deleted more than 7 days ago — except any a `crisis_review_cases` or
+ * `crisis_review_events` row links to — with their cascade rows, and the memory summaries of
+ * students left with no live, recoverable or flagged conversation. The check and the delete are
+ * one transaction, so a flag cannot land between them; PostgREST could not say that in one
+ * statement, which is why the rule moved out of this file.
  *
- * Measure: deleted_at column (set when entitlement lapses).
- * Condition: deleted_at IS NOT NULL AND deleted_at < now() − 7 days.
+ * Measure: `deleted_at` (set when entitlement lapses). The cutoff is the function's own `now()`,
+ * not `opts.now`: the database clock decides, as for every other SQL-owned sweep.
+ *
+ * edge cases: an RPC error or an unparsable answer is `ok: false` (the route logs it and answers
+ * 200 with the reason, as for every declined tier); nothing is deleted on a dry run.
  */
 export async function sweep7d(
   client: SupabaseClient,
   dryRun: boolean,
-  opts: SweepOpts,
+  _opts: SweepOpts,
 ): Promise<SweepResult> {
-  const tier = "7d";
-  const cutoff = retentionCutoff(opts.now, 7);
+  return sweepByRpc(
+    client,
+    "sweep_tutor_conversation_retention",
+    "7d",
+    dryRun,
+    (perTable) =>
+      perTable.find((r) => r.table === "tutor_conversations")?.count ?? 0,
+  );
+}
 
-  if (dryRun) {
-    const { count, error } = await client
-      .from("tutor_conversations")
-      .select("id", { count: "exact", head: true })
-      .not("deleted_at", "is", null)
-      .lt("deleted_at", cutoff);
-
-    if (error) {
-      return { ok: false, reason: `count_failed: ${error.message}`, tier };
-    }
-    return { ok: true, deleted_count: count ?? 0, tier, dry_run: true };
+/**
+ * Shared body of the SQL-owned tiers (7d, 90d): call the function, parse its rows with
+ * the shared schema, and return them as `per_table`. An RPC error or an unparsable or empty answer
+ * is `ok: false`; nothing in TypeScript decides what is deleted. `headline` picks the
+ * `deleted_count` the route logs (7d: conversations; 90d: every row).
+ */
+async function sweepByRpc(
+  client: SupabaseClient,
+  fn: string,
+  tier: string,
+  dryRun: boolean,
+  headline: (perTable: SweepTableCount[]) => number,
+): Promise<SweepResult> {
+  const { data, error } = await client.rpc(fn, { p_dry_run: dryRun });
+  if (error) {
+    return { ok: false, reason: `rpc_failed: ${error.message}`, tier };
   }
-
-  // Hard-delete expired soft-deleted conversations (FK cascades messages + question_links)
-  const { data: deletedConvos, error: deleteConvosError } = await client
-    .from("tutor_conversations")
-    .delete()
-    .not("deleted_at", "is", null)
-    .lt("deleted_at", cutoff)
-    .select("id, student_id");
-
-  if (deleteConvosError) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${deleteConvosError.message}`,
-      tier,
-    };
+  const parsed = z.array(retentionSweepRowSchema).safeParse(data);
+  if (!parsed.success || parsed.data.length === 0) {
+    return { ok: false, reason: "rpc_malformed", tier };
   }
-
-  const deletedCount = deletedConvos?.length ?? 0;
-
-  // Also clean up memory summaries for affected students.
-  // tutor_memory_summaries links by student_id, not conversation FK.
-  //
-  // Purge ONLY when a student has:
-  //   (a) zero active conversations (deleted_at IS NULL), AND
-  //   (b) zero soft-deleted conversations still inside the 7-day recovery
-  //       window (deleted_at >= cutoff).
-  //
-  // Without (b), a student with ALL conversations soft-deleted — some only
-  // 2 days old — would lose memory summaries even though the spec promises
-  // "LISA data is recovered with conversation history intact" during the
-  // 7-day window (§14.2, INV-03-19). The summaries are per-student, not
-  // per-conversation, so they must survive as long as ANY conversation is
-  // still recoverable.
-  if (deletedConvos && deletedConvos.length > 0) {
-    const studentIds = [
-      ...new Set(
-        deletedConvos.map((c) => (c as { student_id: string }).student_id),
-      ),
-    ];
-    for (const sid of studentIds) {
-      // (a) any active conversations?
-      const { count: activeConvos } = await client
-        .from("tutor_conversations")
-        .select("id", { count: "exact", head: true })
-        .eq("student_id", sid)
-        .is("deleted_at", null);
-
-      if ((activeConvos ?? 0) > 0) continue;
-
-      // (b) any soft-deleted conversations still within the recovery window?
-      // Those have deleted_at >= cutoff (i.e. deleted less than 7 days ago).
-      const { count: recoverableConvos } = await client
-        .from("tutor_conversations")
-        .select("id", { count: "exact", head: true })
-        .eq("student_id", sid)
-        .not("deleted_at", "is", null)
-        .gte("deleted_at", cutoff);
-
-      if ((recoverableConvos ?? 0) > 0) continue;
-
-      const { error: memError } = await client
-        .from("tutor_memory_summaries")
-        .delete()
-        .eq("student_id", sid);
-
-      if (memError) {
-        logger.error(
-          "RETENTION_SWEEP",
-          "memory_summary_delete_failed",
-          "Failed to delete memory summaries for student with no remaining conversations",
-          { studentId: sid, dbError: memError.message },
-        );
-        return {
-          ok: false,
-          reason: `memory_summary_delete_failed: student=${sid}, conversations_purged=${deletedCount}, error=${memError.message}`,
-          tier,
-        };
-      }
-    }
-  }
-
-  return { ok: true, deleted_count: deletedCount, tier, dry_run: false };
+  const per_table = parsed.data.map((r) => ({
+    table: r.swept_table,
+    count: r.deleted_count,
+  }));
+  return {
+    ok: true,
+    deleted_count: headline(per_table),
+    tier,
+    dry_run: dryRun,
+    per_table,
+  };
 }
 
 // ── 90-day tier ───────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03_V1.1 §14.2; owner ruling 2026-09-22 (Doc 07B §5.4)]
- * @implemented [2026-09-22]
+ * @spec [Doc-03_V1.1 §14.2 ("90 days from creation" for both tables); owner ruling 2026-09-22
+ *       (Doc 07B §5.4); owner rulings 2026-10-05 RS-04 (exposures measured by shown_at) and
+ *       RS-03 (the dry run counts exactly what the live run removes)]
+ * @implemented [2026-09-22; shown_at and SQL 2026-10-05]
  *
  * Delete tutor_instruction_assignments and tutor_instruction_exposures older
- * than 90 days from creation.
+ * than 90 days from creation. Creation is `created_at` for assignments and
+ * `shown_at` for exposures, which have no `created_at` column: until RS-04
+ * every run, dry or live, failed with "column does not exist" and the mock
+ * tests could not see it (tests/ci/retention-sweep.pg.ci.test.ts now runs
+ * this tier against real Postgres).
+ *
+ * ONE SQL FUNCTION (RS-03): `sweep_tutor_instruction_retention(p_dry_run)`
+ * (migration 20261025000001). Deleting an assignment cascades every exposure
+ * of it, including one shown inside the window; PostgREST could neither
+ * count nor report those, so the dry run under-counted the live run. The
+ * function counts and deletes with one predicate and returns per-table rows.
+ * The cutoff is the database clock, not `opts.now`.
  *
  * plain English: the rows go. Nothing is copied anywhere first.
  *
@@ -248,114 +209,49 @@ export async function sweep7d(
 export async function sweep90d(
   client: SupabaseClient,
   dryRun: boolean,
-  opts: SweepOpts,
+  _opts: SweepOpts,
 ): Promise<SweepResult> {
-  const tier = "90d";
-  const cutoff = retentionCutoff(opts.now, 90);
-
-  if (dryRun) {
-    const { count: assignmentCount, error: e1 } = await client
-      .from("tutor_instruction_assignments")
-      .select("id", { count: "exact", head: true })
-      .lt("created_at", cutoff);
-
-    const { count: exposureCount, error: e2 } = await client
-      .from("tutor_instruction_exposures")
-      .select("id", { count: "exact", head: true })
-      .lt("created_at", cutoff);
-
-    if (e1 || e2) {
-      return {
-        ok: false,
-        reason: `count_failed: ${e1?.message ?? e2?.message}`,
-        tier,
-      };
-    }
-    return {
-      ok: true,
-      deleted_count: (assignmentCount ?? 0) + (exposureCount ?? 0),
-      tier,
-      dry_run: true,
-    };
-  }
-
-  let totalDeleted = 0;
-
-  const { data: deletedAssign, error: delAssignErr } = await client
-    .from("tutor_instruction_assignments")
-    .delete()
-    .lt("created_at", cutoff)
-    .select("id");
-
-  if (delAssignErr) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${delAssignErr.message}`,
-      tier,
-    };
-  }
-  totalDeleted += deletedAssign?.length ?? 0;
-
-  const { data: deletedExpose, error: delExposeErr } = await client
-    .from("tutor_instruction_exposures")
-    .delete()
-    .lt("created_at", cutoff)
-    .select("id");
-
-  if (delExposeErr) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${delExposeErr.message}`,
-      tier,
-    };
-  }
-  totalDeleted += deletedExpose?.length ?? 0;
-
-  logger.info(
-    "RETENTION_SWEEP",
-    "sweep_90d_delete",
-    `90d sweep: deleted ${totalDeleted} rows`,
-    {
-      assignmentsDeleted: deletedAssign?.length ?? 0,
-      exposuresDeleted: deletedExpose?.length ?? 0,
-      totalDeleted,
-    },
+  const result = await sweepByRpc(
+    client,
+    "sweep_tutor_instruction_retention",
+    "90d",
+    dryRun,
+    (perTable) => perTable.reduce((n, r) => n + r.count, 0),
   );
-
-  return { ok: true, deleted_count: totalDeleted, tier, dry_run: false };
+  if (result.ok && !dryRun) {
+    logger.info(
+      "RETENTION_SWEEP",
+      "sweep_90d_delete",
+      `90d sweep: deleted ${result.deleted_count} rows`,
+      { perTable: result.per_table, totalDeleted: result.deleted_count },
+    );
+  }
+  return result;
 }
 // ── 180-day tier ──────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03_V1.1 §14.2; owner ruling 2026-09-22 (Doc 07B §5.4)]
- * @implemented [2026-09-22]
+ * @spec [Doc-03_V1.1 §14.2 ("Crisis-flagged conversations | 180 days (extended for safety
+ *       review) | Manual purge by safety review queue owner after incident closure");
+ *       owner ruling 2026-09-22 (Doc 07B §5.4); owner ruling 2026-10-05 RS-05 (the 180d tier
+ *       stops deleting crisis_review_cases: cases and their audit rows are manual purge only;
+ *       it keeps deleting tutor_injection_log past 180 days)]
+ * @implemented [2026-09-22; crisis cases removed 2026-10-05]
  *
- * Delete resolved crisis review cases and injection logs older than 180 days.
+ * plain English: delete tutor_injection_log rows detected more than 180 days ago. Nothing else.
  *
- * Crisis review cases: only RESOLVED cases older than 180 days from created_at
- * (the crisis flag timestamp). Open/in-review cases are retained regardless of
- * age — safety review ongoing. Spec: "hard delete at 180 days or on closure,
- * whichever is later" — the dual condition (status=resolved AND
- * created_at<cutoff) naturally implements this.
+ * WHY CRISIS CASES ARE NOT HERE ANY MORE. Until RS-05 this tier also deleted resolved crisis
+ * cases older than 180 days. That was wrong twice over: the spec makes their purge manual (the
+ * safety review queue owner, after incident closure), and every resolved case carries the
+ * `disposition_set` audit row SCL-025 requires, which references it ON DELETE RESTRICT — so the
+ * delete failed and took the whole tier down with it, injection logs included. The Privacy
+ * Policy's "up to ninety (90) days after resolution" for flagged content disagrees with Doc 03
+ * §14.2; that is on the counsel backlog (docs/plans/Guardian_Closure_Plan.md), not decided here.
  *
- * Note: the crisis_review_cases CHECK constraint allows ('open', 'in_review',
- * 'resolved'). The terminal lifecycle state is "resolved", NOT "closed".
- * Filtering on 'closed' matched zero rows and let resolved cases accumulate
- * indefinitely (LISA-GCP-002).
+ * Archive: none (owner ruling 2026-09-22, Doc 07B §5.4) — the rows are deleted outright.
  *
- * Injection log: older than 180 days from detected_at.
- *
- * WHY THERE IS NO ARCHIVE STEP ANY MORE, AND WHY IT MATTERS MOST HERE. This
- * tier used to export every expired row to BigQuery first (LISA-RET-002).
- * `crisis_review_cases` is the table that ended the practice: it carries
- * `student_id`, `reviewer_id` and `review_notes` — free text written by a
- * human reviewer about a minor in crisis — and Doc 07B §5.4 bans
- * identity-bearing columns in the warehouse outright. The owner ruling of
- * 2026-09-22: "BigQuery is the worst home for those." Nothing was ever
- * archived, so nothing was migrated; the rows are simply deleted now.
- *
- * expected outcome: resolved cases past 180 days go, open and in-review cases
- * stay at any age, and the tier can no longer decline.
+ * expected outcome: injection rows past 180 days go, younger ones stay, every crisis case and
+ * audit row stays at any age; the tier cannot decline except on a database error.
  */
 export async function sweep180d(
   client: SupabaseClient,
@@ -366,52 +262,22 @@ export async function sweep180d(
   const cutoff = retentionCutoff(opts.now, 180);
 
   if (dryRun) {
-    // Crisis cases: only resolved cases older than 180 days
-    const { count: crisisCount, error: e1 } = await client
-      .from("crisis_review_cases")
-      .select("id", { count: "exact", head: true })
-      .eq("status", CRISIS_STATUS.RESOLVED)
-      .lt("created_at", cutoff);
-
-    const { count: injectionCount, error: e2 } = await client
+    const { count: injectionCount, error } = await client
       .from("tutor_injection_log")
       .select("id", { count: "exact", head: true })
       .lt("detected_at", cutoff);
 
-    if (e1 || e2) {
-      return {
-        ok: false,
-        reason: `count_failed: ${e1?.message ?? e2?.message}`,
-        tier,
-      };
+    if (error) {
+      return { ok: false, reason: `count_failed: ${error.message}`, tier };
     }
     return {
       ok: true,
-      deleted_count: (crisisCount ?? 0) + (injectionCount ?? 0),
+      deleted_count: injectionCount ?? 0,
       tier,
       dry_run: true,
+      per_table: [{ table: "tutor_injection_log", count: injectionCount ?? 0 }],
     };
   }
-
-  let totalDeleted = 0;
-
-  // Resolved AND older than 180 days. Both conditions, every time: an open
-  // case is never deleted by age alone.
-  const { data: deletedCrisis, error: delCrisisErr } = await client
-    .from("crisis_review_cases")
-    .delete()
-    .eq("status", CRISIS_STATUS.RESOLVED)
-    .lt("created_at", cutoff)
-    .select("id");
-
-  if (delCrisisErr) {
-    return {
-      ok: false,
-      reason: `delete_failed: ${delCrisisErr.message}`,
-      tier,
-    };
-  }
-  totalDeleted += deletedCrisis?.length ?? 0;
 
   const { data: deletedInjections, error: delInjErr } = await client
     .from("tutor_injection_log")
@@ -422,20 +288,22 @@ export async function sweep180d(
   if (delInjErr) {
     return { ok: false, reason: `delete_failed: ${delInjErr.message}`, tier };
   }
-  totalDeleted += deletedInjections?.length ?? 0;
+  const totalDeleted = deletedInjections?.length ?? 0;
 
   logger.info(
     "RETENTION_SWEEP",
     "sweep_180d_delete",
     `180d sweep: deleted ${totalDeleted} rows`,
-    {
-      crisisDeleted: deletedCrisis?.length ?? 0,
-      injectionsDeleted: deletedInjections?.length ?? 0,
-      totalDeleted,
-    },
+    { injectionsDeleted: totalDeleted, totalDeleted },
   );
 
-  return { ok: true, deleted_count: totalDeleted, tier, dry_run: false };
+  return {
+    ok: true,
+    deleted_count: totalDeleted,
+    tier,
+    dry_run: false,
+    per_table: [{ table: "tutor_injection_log", count: totalDeleted }],
+  };
 }
 // ── 365-day tier ──────────────────────────────────────────────────────
 
@@ -455,6 +323,59 @@ export async function sweep365d(
     reason: "365d_tables_not_provisioned",
     tier: "365d",
   };
+}
+
+// ── Completion record ─────────────────────────────────────────────────
+
+/** `audit_logs.action` for a finished live sweep. One row per tier per successful run. */
+export const SWEEP_COMPLETED_ACTION = "retention_sweep_completed" as const;
+
+/**
+ * @spec [Doc-03_V1.1 §14.2; owner ruling 2026-10-05 RS-02 (record each successful sweep's
+ *       completion time per tier in an existing ledger)] | @implemented [2026-10-05]
+ *
+ * plain English: after a live sweep succeeds, write one `audit_logs` row — action
+ * `retention_sweep_completed`, no actor, no target, context `{tier, deleted_count, per_table,
+ * request_id}`. `created_at` is the completion time. "When did the 7d tier last succeed?" is then
+ * one query instead of a log search:
+ *   SELECT context->>'tier' AS tier, max(created_at) FROM audit_logs
+ *    WHERE action = 'retention_sweep_completed' GROUP BY 1;
+ *
+ * trade-offs: `audit_logs` (append-only; existing) rather than a new table — the brief asked for
+ * an existing ledger. Counts only: no ids, no student data. A dry run, or a tier that declined,
+ * records nothing, so the row means "rows past the window were actually removed".
+ *
+ * edge cases: an insert failure returns false and is logged at ERROR
+ * (`sweep_completion_record_failed`); it does not undo or fail the sweep, which has already
+ * committed.
+ */
+export async function recordSweepCompletion(
+  client: SupabaseClient,
+  result: Extract<SweepResult, { ok: true }>,
+  requestId: string,
+): Promise<boolean> {
+  const { error } = await client.from("audit_logs").insert({
+    actor_profile_id: null,
+    target_profile_id: null,
+    action: SWEEP_COMPLETED_ACTION,
+    context: {
+      tier: result.tier,
+      deleted_count: result.deleted_count,
+      per_table: result.per_table ?? null,
+      request_id: requestId,
+    },
+  });
+  if (error) {
+    logger.error(
+      "RETENTION_SWEEP",
+      "sweep_completion_record_failed",
+      "Retention sweep succeeded but its completion row was not written",
+      undefined,
+      { tier: result.tier, requestId, error: error.message },
+    );
+    return false;
+  }
+  return true;
 }
 
 // ── Tier dispatch ─────────────────────────────────────────────────────

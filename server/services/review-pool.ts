@@ -26,6 +26,7 @@
 
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { listExamForms } from "./exam-runtime-service";
 import {
   REVIEW_POOL_SESSIONS_PAGE_SIZE,
   reviewPoolSessionsCursorSchema,
@@ -34,6 +35,8 @@ import {
   type ReviewPoolSpec,
   type ReviewPoolSummaryResponse,
   type ReviewSourceEngine,
+  type SessionCriteriaDifficulty,
+  toSessionCriteria,
 } from "@lyceon/shared";
 import {
   mapGenesisQuestionRow,
@@ -119,8 +122,12 @@ async function loadOpenQueueEntries(
  * question that was missed there, graduated, and missed again later, because the later
  * miss is the open entry while the earlier one carries the session provenance.
  * trade-offs: two reads instead of a join, because PostgREST cannot embed a view.
- * edge cases: `full_length` is a valid engine with no rows yet (ruling 6); it returns
- * an empty set and the caller lands on the ordinary empty-pool response, no special case.
+ * edge cases: `full_length` sessions select exactly like practice ones: the exam's
+ * scoring seam (`exam_apply_scored_seams`, SCL-158 as amended by SCL-205: submitted sections
+ * only) writes its wrong and blank items with
+ * `source_engine = 'full_length'` and `source_session_id` = the test session, so "review
+ * this test" is this same filter. An exam that was never scored has no entries, and the
+ * caller lands on the ordinary empty-pool response.
  */
 async function loadQuestionIdsFromSourceSession(
   studentId: string,
@@ -190,6 +197,20 @@ function difficultyTokenToInt(token: string): number {
 }
 
 /**
+ * @spec [student-UI register §9 OQ-22, owner ruling (Karl) 2026-10-02] | @implemented [2026-10-03]
+ * plain English: the label a stored review difficulty token reports as in session
+ * `criteria`, derived from `difficultyTokenToInt` above so the criteria say what the
+ * pool actually filtered on (any token other than easy/hard filters as medium) rather
+ * than a second copy of the rule.
+ */
+export function reviewDifficultyLabel(
+  token: string,
+): SessionCriteriaDifficulty {
+  const level = difficultyTokenToInt(token);
+  return level === 1 ? "easy" : level === 3 ? "hard" : "medium";
+}
+
+/**
  * `select_practice_pool_random`'s WHERE clause, expressed over one already-fetched row
  * (genesis-schema.expected.sql:6576-6580). Same four predicates, same semantics:
  * section/domain/difficulty are membership, skills is ARRAY OVERLAP (`&&`), and an
@@ -252,8 +273,9 @@ function readSkillCodes(row: CanonicalQuestionRowLike): string[] {
  *     excludes in-flight questions and review deliberately does not;
  *   - a row that is servable but cannot fill review's NOT NULL snapshot columns is
  *     dropped and logged, see `isSnapshottable`;
- *   - `full_length` source sessions are accepted and yield nothing until the exam
- *     vertical writes to the queue (ruling 6).
+ *   - `full_length` entries (an exam's scored misses and blanks, SCL-158) are part of
+ *     the queue like any other: no engine filter in queue mode, and session mode
+ *     selects them by the test session id.
  */
 export async function buildReviewPool(args: {
   studentId: string;
@@ -398,7 +420,7 @@ export function resolveTimeZone(tz: string | null | undefined): {
   }
 }
 
-function localParts(
+export function localParts(
   iso: string | null,
   timeZone: string,
 ): { date: string | null; time: string | null } {
@@ -509,6 +531,7 @@ export async function buildReviewPoolSummary(args: {
   const sessions = await describeSourceSessions(
     [...openBySource.values()],
     timeZone,
+    args.studentId,
   );
   const page = pageSourceSessions(
     sessions,
@@ -626,12 +649,28 @@ export function pageSourceSessions(
 
 /**
  * Reads the parent session rows so the picker can show when a batch of mistakes was
- * made and what it was. Practice and review sessions live in different tables and
- * full-length has none yet, hence the per-engine branch. Newest first (brief §2.4).
+ * made and what it was. Practice, review and full-length sessions live in different
+ * tables, hence the per-engine branch. Newest first (brief §2.4).
+ *
+ * FULL-LENGTH (exam → review, Doc-02B_V4 §16 "filter by original practice session or
+ * exam"; SCL-158 enqueues an exam's misses and blanks after scoring). The row's date is
+ * when the attempt ENDED (`completed_at`, else `abandoned_at`), the same instant
+ * `exam_apply_scored_seams` stamps on its queue entries — the student remembers the day
+ * they sat the test, not the day the session row was created. `mode` is null (the exam's
+ * strict/lenient is not a review filter) and `filters` carries exactly one fact, the
+ * form's stored name (the picker shows it through `displayFormName`, so a stored "Practice
+ * Test 1" reads "Full-Length Test 1"; owner ruling 2026-10-05). Nothing else from the exam
+ * leaves this function (F-52: no raw session metadata to the student).
+ *
+ * The name comes from the exam surface's own forms read (`listExamForms` →
+ * `exam_list_forms`, the same names the student sees on /tests), one call per summary,
+ * not from a direct table read. A form no longer published is not in that list, so its
+ * row carries `filters: null` and the client says "Full-length test".
  */
 async function describeSourceSessions(
   sources: Array<{ engine: string; sessionId: string; count: number }>,
   timeZone: string,
+  studentId: string,
 ): Promise<ReviewPoolSummaryResponse["sessions"]> {
   const practiceIds = sources
     .filter((s) => s.engine === "practice")
@@ -639,22 +678,39 @@ async function describeSourceSessions(
   const reviewIds = sources
     .filter((s) => s.engine === "review")
     .map((s) => s.sessionId);
+  const examIds = sources
+    .filter((s) => s.engine === "full_length")
+    .map((s) => s.sessionId);
 
   const meta = new Map<
     string,
-    { created_at: string | null; mode: string | null; filters: unknown }
+    {
+      created_at: string | null;
+      mode: string | null;
+      filters: SourceSessionRow["filters"];
+    }
   >();
 
+  // F-52 (register §8) | @implemented [2026-10-03]: the stored `filters` object is never
+  // copied out. It holds the pool size, the requested count, the selection mode, the
+  // client instance id and the idempotency key next to the student's choice. Each row
+  // carries only the four criteria arrays, built fresh by the shared `toSessionCriteria`
+  // (OQ-22), from practice's `filters.session_spec` and from review's flat `filters` —
+  // the same projections practice and review `/state` and `/sessions/open` use.
   if (practiceIds.length > 0) {
     const { data } = await supabaseServer
       .from("practice_sessions")
       .select("id, created_at, mode, filters")
       .in("id", practiceIds);
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const stored =
+        row.filters && typeof row.filters === "object"
+          ? (row.filters as Record<string, unknown>)
+          : {};
       meta.set(`practice:${String(row.id)}`, {
         created_at: typeof row.created_at === "string" ? row.created_at : null,
         mode: typeof row.mode === "string" ? row.mode : null,
-        filters: row.filters ?? null,
+        filters: toSessionCriteria(stored.session_spec),
       });
     }
   }
@@ -668,7 +724,44 @@ async function describeSourceSessions(
       meta.set(`review:${String(row.id)}`, {
         created_at: typeof row.created_at === "string" ? row.created_at : null,
         mode: typeof row.mode === "string" ? row.mode : null,
-        filters: row.filters ?? null,
+        filters: toSessionCriteria(row.filters, reviewDifficultyLabel),
+      });
+    }
+  }
+
+  if (examIds.length > 0) {
+    const { data } = await supabaseServer
+      .from("test_sessions")
+      .select("id, test_form_id, completed_at, abandoned_at")
+      .in("id", examIds);
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const formNames = new Map<string, string>();
+    const forms = await listExamForms(studentId);
+    if (forms.ok) {
+      for (const form of forms.value.forms) {
+        if (form.name.length > 0) formNames.set(form.test_form_id, form.name);
+      }
+    } else {
+      // The picker still lists the test (dated, counted); only its name is missing.
+      logger.warn(
+        COMPONENT,
+        "exam_form_names_unavailable",
+        "Exam forms read failed; full-length picker rows carry no form name",
+        { status: forms.error.status, code: forms.error.code },
+      );
+    }
+    for (const row of rows) {
+      const endedAt =
+        typeof row.completed_at === "string"
+          ? row.completed_at
+          : typeof row.abandoned_at === "string"
+            ? row.abandoned_at
+            : null;
+      const formName = formNames.get(String(row.test_form_id)) ?? null;
+      meta.set(`full_length:${String(row.id)}`, {
+        created_at: endedAt,
+        mode: null,
+        filters: formName === null ? null : { test_form_name: formName },
       });
     }
   }

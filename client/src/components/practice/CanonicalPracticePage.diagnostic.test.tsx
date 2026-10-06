@@ -4,21 +4,22 @@
  * @implemented 2026-08-14
  *
  * plain English: tests diagnostic-specific behavior on CanonicalPracticePage —
- * Skip and End Session are hidden (8×5 guarantee), completion navigates to
- * /dashboard WITHOUT calling terminateSession (no-terminate guard), and
- * non-diagnostic sessions keep default behavior (Skip + End Session visible,
- * completion calls terminateSession then navigates to /practice).
+ * Skip is hidden (8×5 guarantee), and when the server closes the session the runner goes to
+ * /dashboard (diagnostic) or /practice (regular practice).
  *
- * expected outcome: isDiagnostic=true hides Skip + End Session, isDiagnostic
- * omitted or false shows them. Behavioral completion tests prove the
- * no-terminate guard and navigation destinations.
+ * UI-53 (2026-10-03): "End Session" is gone from the runner (DESIGN.md §4 footer: Skip and
+ * Submit, then Next question), and so is the client's terminate call: "Done" asks `/next`
+ * once more, the server completes the session (409 session_closed), and the hook reports
+ * `sessionClosed: true`. Nothing in the runner can abandon a session, the diagnostic
+ * included, so the old no-terminate guard holds by construction.
  *
  * trade-offs: uses vi.mock for hooks and dependencies (consistent with existing
  * CanonicalPracticePage.test.tsx patterns).
  */
 import React from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
+import { renderRunner as render } from "@/test-support/runner.harness";
 import CanonicalPracticePage from "./CanonicalPracticePage";
 
 /* ── MockResizeObserver ── */
@@ -108,7 +109,6 @@ function buildHookState(overrides?: Record<string, unknown>) {
     submitAnswer: vi.fn(),
     nextQuestion: vi.fn(),
     handleMissingMcChoices: vi.fn(),
-    terminateSession: vi.fn(),
     calculatorState: null,
     persistCalculatorState: vi.fn(),
     submitBlocked: null,
@@ -126,178 +126,123 @@ beforeAll(() => {
   });
 });
 
-/* ── window.location.assign mock ── */
-const locationAssignMock = vi.fn();
-
 describe("CanonicalPracticePage — diagnostic mode (8×5 guarantee)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState());
-    Object.defineProperty(window, "location", {
-      value: { assign: locationAssignMock },
-      writable: true,
-    });
   });
 
   it("hides Skip button when isDiagnostic=true", () => {
     render(
       <CanonicalPracticePage
         title="Diagnostic Assessment"
-        badgeLabel="Diagnostic"
-        section="math"
-        isDiagnostic={true}
+        section="M"
+        isDiagnostic
       />,
     );
-
     expect(screen.queryByText("Skip")).toBeNull();
   });
 
-  it("hides End Session button when isDiagnostic=true", () => {
-    render(
-      <CanonicalPracticePage
-        title="Diagnostic Assessment"
-        badgeLabel="Diagnostic"
-        section="math"
-        isDiagnostic={true}
-      />,
-    );
-
-    expect(screen.queryByText("End Session")).toBeNull();
-  });
-
   it("shows Skip button when isDiagnostic is false/omitted (regular practice)", () => {
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="math"
-      />,
-    );
-
+    render(<CanonicalPracticePage title="Math" section="M" />);
     expect(screen.getByText("Skip")).not.toBeNull();
   });
 
-  it("shows End Session button when isDiagnostic is false/omitted (regular practice)", () => {
-    render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="math"
-      />,
-    );
-
-    expect(screen.getByText("End Session")).not.toBeNull();
+  it("no runner offers End Session (UI-53: DESIGN.md §4 footer)", () => {
+    render(<CanonicalPracticePage title="Math" section="M" />);
+    expect(screen.queryByText("End Session")).toBeNull();
   });
 
-  it("keeps Check Answer visible in diagnostic mode", () => {
+  it("keeps Submit visible in diagnostic mode", () => {
     render(
       <CanonicalPracticePage
         title="Diagnostic Assessment"
-        badgeLabel="Diagnostic"
-        section="math"
-        isDiagnostic={true}
+        section="M"
+        isDiagnostic
       />,
     );
-
-    expect(screen.getByText("Check Answer")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Submit" })).not.toBeNull();
   });
 
-  it("renders diagnostic title and badge correctly", () => {
+  it("names the diagnostic in the bar", () => {
     render(
       <CanonicalPracticePage
         title="Diagnostic Assessment"
-        badgeLabel="Diagnostic"
-        section="math"
-        isDiagnostic={true}
+        section="M"
+        isDiagnostic
       />,
     );
-
-    expect(screen.getByText("Diagnostic Assessment")).not.toBeNull();
-    expect(screen.getByText("Diagnostic")).not.toBeNull();
+    expect(screen.getByTestId("runner-session-name").textContent).toBe(
+      "Diagnostic Assessment",
+    );
   });
 });
 
-describe("CanonicalPracticePage — completion behavior (no-terminate guard)", () => {
-  const terminateSessionMock = vi.fn().mockResolvedValue(undefined);
-
+describe("CanonicalPracticePage — completion (F-53, UI-53)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.defineProperty(window, "location", {
-      value: { assign: locationAssignMock },
-      writable: true,
-    });
+    window.history.replaceState(null, "", "/practice/session/s-1");
   });
 
-  /**
-   * Helper: render the page in "last question answered" state so the Done
-   * button appears (showResult=true, currentIndex + 1 === totalQuestions).
-   */
-  function renderAtFinalQuestion(opts: {
-    isDiagnostic?: boolean;
-    completionHref?: string;
-  }) {
+  it("Done on the last question asks for the next item (the server then closes the session)", () => {
+    const nextQuestion = vi.fn();
     hookMock.useCanonicalPractice.mockReturnValue(
       buildHookState({
-        showResult: true,
         currentIndex: 39,
         totalQuestions: 40,
+        showResult: true,
         isCorrect: true,
         correctOptionId: "B",
-        correctAnswer: "4",
-        explanation: "2 + 2 = 4",
-        terminateSession: terminateSessionMock,
+        selectedAnswer: "B",
+        nextQuestion,
       }),
     );
-
     render(
       <CanonicalPracticePage
-        title={opts.isDiagnostic ? "Diagnostic Assessment" : "Math Practice"}
-        badgeLabel={opts.isDiagnostic ? "Diagnostic" : "Math"}
-        section="math"
-        isDiagnostic={opts.isDiagnostic}
-        completionHref={opts.completionHref}
+        title="Diagnostic Assessment"
+        section="M"
+        isDiagnostic
+        completionHref="/dashboard"
       />,
     );
-  }
-
-  it("diagnostic Done → navigates to /dashboard WITHOUT calling terminateSession", async () => {
-    renderAtFinalQuestion({
-      isDiagnostic: true,
-      completionHref: "/dashboard",
-    });
-
-    const doneButton = screen.getByText("Done");
-    expect(doneButton).not.toBeNull();
-
-    fireEvent.click(doneButton);
-
-    // Wait for the async endSession to settle
-    await vi.waitFor(() => {
-      expect(locationAssignMock).toHaveBeenCalledWith("/dashboard");
-    });
-
-    // Critical: terminateSession must NOT be called — calling it sets
-    // the session to 'abandoned', preventing baseline capture.
-    expect(terminateSessionMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(nextQuestion).toHaveBeenCalledTimes(1);
   });
 
-  it("regular-practice Done → calls terminateSession THEN navigates to /practice", async () => {
-    renderAtFinalQuestion({
-      isDiagnostic: false,
-      completionHref: "/practice",
-    });
+  it("diagnostic: a closed session goes to /dashboard", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState({ question: null, sessionClosed: true }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="Diagnostic Assessment"
+        section="M"
+        isDiagnostic
+        completionHref="/dashboard"
+      />,
+    );
+    expect(window.location.pathname).toBe("/dashboard");
+  });
 
-    const doneButton = screen.getByText("Done");
-    expect(doneButton).not.toBeNull();
+  it("regular practice: a closed session goes to /practice", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState({ question: null, sessionClosed: true }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="Math"
+        section="M"
+        completionHref="/practice"
+      />,
+    );
+    expect(window.location.pathname).toBe("/practice");
+  });
 
-    fireEvent.click(doneButton);
-
-    // Wait for the async endSession to settle
-    await vi.waitFor(() => {
-      expect(locationAssignMock).toHaveBeenCalledWith("/practice");
-    });
-
-    // Regular practice must call terminateSession before navigating.
-    expect(terminateSessionMock).toHaveBeenCalledTimes(1);
+  it("an open session stays put", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState({ sessionClosed: false }),
+    );
+    render(<CanonicalPracticePage title="Math" section="M" />);
+    expect(window.location.pathname).toBe("/practice/session/s-1");
   });
 });

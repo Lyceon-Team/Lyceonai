@@ -240,10 +240,14 @@ BEGIN
 
   v_cutoff := now() - make_interval(days => public.audit_logs_retention_days());
 
+  -- Guardian-link consent rows are never purged by age (D01:222; owner ruling 2026-10-05 C-02).
+  -- The three actions are exactly those guardian_link_audit writes; strip_identity still severs
+  -- their actor/target at account deletion.
   DELETE FROM public.audit_logs a
    WHERE a.id IN (
      SELECT b.id FROM public.audit_logs b
       WHERE b.created_at < v_cutoff
+        AND b.action NOT IN ('guardian_link_initiated', 'guardian_link_accepted', 'guardian_link_revoked')
       ORDER BY b.created_at
       LIMIT p_batch_size
    );
@@ -3890,6 +3894,8 @@ CREATE FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, 
     AS $_$
 DECLARE
   v_now timestamptz := COALESCE(p_now, now());
+  v_tz text;
+  v_local_day date;
   v_today_start timestamptz;
   v_tomorrow_start timestamptz;
   v_daily_limit integer;
@@ -3900,6 +3906,7 @@ DECLARE
   v_account uuid := NULL;
   v_entitled boolean := false;
   v_counts_toward_limit boolean := true;
+  v_diagnostic_session boolean := false;
   v_dedupe_key text := NULL;
   v_existing_id uuid := NULL;
   v_inserted_id uuid := NULL;
@@ -3933,9 +3940,25 @@ BEGIN
   END IF;
   v_session_limit := v_config_val::integer;
 
-  -- UTC-day boundaries
-  v_today_start := date_trunc('day', v_now AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
-  v_tomorrow_start := v_today_start + interval '1 day';
+  -- Reset timezone from config (required — no hardcoded fallback). Doc 02B §13.
+  SELECT value #>> '{}' INTO v_tz
+  FROM public.practice_runtime_config
+  WHERE key = 'quota_reset_timezone';
+  IF v_tz IS NULL OR v_tz = '' THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Local-day boundaries in the configured zone (DST-correct: each boundary is a local
+  -- midnight converted to an absolute instant, never a fixed offset).
+  BEGIN
+    v_local_day := (v_now AT TIME ZONE v_tz)::date;
+  EXCEPTION WHEN invalid_parameter_value THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key quota_reset_timezone'
+      USING ERRCODE = 'P0002';
+  END;
+  v_today_start := v_local_day::timestamp AT TIME ZONE v_tz;
+  v_tomorrow_start := (v_local_day + 1)::timestamp AT TIME ZONE v_tz;
   v_reset_at := v_tomorrow_start;
 
   -- Resolve account + entitlement
@@ -3943,19 +3966,36 @@ BEGIN
   v_entitled := public._rl_has_active_entitlement(p_student_user_id);
   v_counts_toward_limit := NOT v_entitled;
 
-  -- Count today's consumed units (UTC-day window)
-  SELECT COALESCE(SUM(units), 0)::integer
-  INTO v_used
-  FROM public.usage_rate_limit_ledger l
-  WHERE l.scope = 'practice'
-    AND l.student_user_id = p_student_user_id
-    AND l.reservation_state IN ('consumed', 'finalized')
-    AND COALESCE((l.metadata->>'counts_toward_limit')::boolean, true)
-    AND l.created_at >= v_today_start
-    AND l.created_at < v_tomorrow_start;
+  -- A diagnostic serve is never refused by the free daily cap (OQ-50, Karl 2026-10-05). Read
+  -- from the student's own session row; an unknown or foreign session is not exempt.
+  IF p_session_id IS NOT NULL THEN
+    SELECT EXISTS (
+      SELECT 1
+      FROM public.practice_sessions ps
+      WHERE ps.id = p_session_id
+        AND ps.user_id = p_student_user_id
+        AND ps.mode = 'diagnostic'
+    )
+    INTO v_diagnostic_session;
+  END IF;
 
-  -- Daily cap check (unpaid only)
-  IF v_counts_toward_limit AND v_used >= v_daily_limit THEN
+  -- Today's resolved practice questions (Doc 02B §13 as amended by SCL-209 / OQ-50): one row
+  -- per answered OR skipped item, dated by `occurred_at` (CHECK-guaranteed on both), outside
+  -- diagnostic sessions. An idempotent replay re-reads the same row; a served item that is
+  -- neither answered nor skipped counts zero.
+  SELECT count(*)::integer
+  INTO v_used
+  FROM public.practice_session_items psi
+  JOIN public.practice_sessions ps ON ps.id = psi.session_id
+  WHERE psi.user_id = p_student_user_id
+    AND psi.status IN ('answered', 'skipped')
+    AND psi.occurred_at >= v_today_start
+    AND psi.occurred_at < v_tomorrow_start
+    AND ps.mode <> 'diagnostic';
+
+  -- Daily cap check (unpaid only) — the one branch the dry run and the serve share; a
+  -- diagnostic serve passes it.
+  IF v_counts_toward_limit AND NOT v_diagnostic_session AND v_used >= v_daily_limit THEN
     RETURN jsonb_build_object(
       'allowed', false,
       'code', 'PRACTICE_FREE_DAILY_QUOTA_EXCEEDED',
@@ -3970,7 +4010,7 @@ BEGIN
     );
   END IF;
 
-  -- Per-session cap (paid users)
+  -- Per-session cap (paid users) — unchanged: counted over the session's serve ledger rows.
   IF p_session_id IS NOT NULL AND v_entitled THEN
     SELECT COALESCE(SUM(units), 0)::integer
     INTO v_session_used
@@ -4012,7 +4052,7 @@ BEGIN
     );
   END IF;
 
-  -- Idempotency: dedupe on session_item_id
+  -- Idempotency: dedupe the serve log on session_item_id
   IF p_session_item_id IS NOT NULL THEN
     v_dedupe_key := 'practice:served:' || p_session_item_id::text;
     SELECT l.id
@@ -4037,7 +4077,7 @@ BEGIN
     );
   END IF;
 
-  -- Insert ledger entry
+  -- Serve log row: feeds the paid per-session cap; the free daily count does not read it.
   INSERT INTO public.usage_rate_limit_ledger (
     scope, event_key, student_user_id, account_id,
     session_id, session_item_id, dedupe_key,
@@ -4055,9 +4095,8 @@ BEGIN
   )
   RETURNING id INTO v_inserted_id;
 
-  IF v_counts_toward_limit THEN
-    v_used := v_used + 1;
-  ELSE
+  -- A serve consumes no free quota (Doc 02B §13): only the paid session count steps.
+  IF NOT v_counts_toward_limit THEN
     v_session_used := v_session_used + 1;
   END IF;
 
@@ -4528,8 +4567,8 @@ DECLARE
   v_gate_passed       boolean;
   v_weighted_mastery  numeric;
   v_mastery_term      numeric;
-  v_fl1_score         integer;     -- State A: always NULL (no full-lengths pre-WS-4)
-  v_fl2_score         integer;     -- State A: always NULL (no full-lengths pre-WS-4)
+  v_fl1_score         integer;     -- most recent completed full-length, this section (§5.7)
+  v_fl2_score         integer;     -- second most recent completed full-length, this section
   v_fl_count_used     integer;
   v_blend_numerator   numeric;
   v_blend_denominator integer;
@@ -4641,22 +4680,42 @@ BEGIN
     v_mastery_term :=
         v_section_min + (v_weighted_mastery * (v_section_max - v_section_min));
 
-    -- §5.7 resolve the full-length terms and compute the blend (INV-05C-13).
-    -- ┌─ NAMED FORWARD-REF (WS-4, BLOCKING_UPSTREAM_GAP — 04B object unnamed) ────────────────────┐
-    -- │ States B/C read the 04B completed-full-length section-score surface (the two most recent  │
-    -- │ completed full-lengths by completed_at, tiebreak id desc), adding fl1/fl2 to the numerator │
-    -- │ and 1/2 to the denominator. Doc 05C §5.7 / §11.C mark that object BLOCKING_UPSTREAM_GAP    │
-    -- │ until Doc 04B names it (columns student_id, section, section_scaled_score, is_complete,    │
-    -- │ completed_at, id; "completed = both modules submitted and scored"). State A has NO 04B     │
-    -- │ dependency, so NO full_length_section_scores read appears here — it is added in WS-4. The  │
-    -- │ blend numerator ALWAYS seeds with v_mastery_term (INV-05C-13), so the WS-4 addition is     │
-    -- │ purely additive (denominator 1 -> 2 -> 3) with no body restructure.                        │
-    -- └───────────────────────────────────────────────────────────────────────────────────────────┘
-    v_fl1_score         := NULL;   -- State A
-    v_fl2_score         := NULL;   -- State A
-    v_blend_numerator   := v_mastery_term;                 -- mastery term always present (INV-05C-13)
-    v_blend_denominator := 1;                              -- State A (no full-lengths pre-WS-4)
-    v_fl_count_used     := v_blend_denominator - 1;        -- 0 in State A
+    -- §5.7 resolve the full-length terms and compute the blend (INV-05C-13). The two most recent
+    -- COMPLETED full-lengths for this section, by completed_at, tiebreak id desc — §5.7 verbatim,
+    -- bound to the 04B surface SCL-157 named (full_length_section_scores; is_complete = the session
+    -- completed, so a partial/abandoned test never contributes, P5). A third, older one is never
+    -- read (P4). No staleness rule in V1.0 (Q1 State D).
+    SELECT fl.section_scaled_score
+    INTO   v_fl1_score
+    FROM   public.full_length_section_scores fl
+    WHERE  fl.student_id  = p_student_id
+      AND  fl.section     = p_section
+      AND  fl.is_complete = true
+    ORDER BY fl.completed_at DESC, fl.id DESC
+    LIMIT 1;
+
+    SELECT fl.section_scaled_score
+    INTO   v_fl2_score
+    FROM   public.full_length_section_scores fl
+    WHERE  fl.student_id  = p_student_id
+      AND  fl.section     = p_section
+      AND  fl.is_complete = true
+    ORDER BY fl.completed_at DESC, fl.id DESC
+    OFFSET 1 LIMIT 1;
+
+    -- The denominator adapts to how many full-lengths exist (States A/B/C). The mastery term is
+    -- ALWAYS present (INV-05C-13): the projection is never the full-length alone, never a clamp.
+    v_blend_numerator   := v_mastery_term;
+    v_blend_denominator := 1;
+    IF v_fl1_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl1_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    IF v_fl2_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl2_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    v_fl_count_used     := v_blend_denominator - 1;        -- 0, 1 or 2
     v_blended_raw       := v_blend_numerator / v_blend_denominator;
 
     -- §5.8 bounded range. relevant_question_count = 05B student_section_kpi.events_total (the same
@@ -5689,7 +5748,7 @@ BEGIN
 
   v_at := COALESCE(v_s.completed_at, v_s.abandoned_at, v_run.computed_at);
 
-  -- R4 — review: served items of submitted modules, wrong or blank.
+  -- R4 — review: served items of SUBMITTED SECTIONS (SCL-205), wrong or blank.
   FOR it IN
     SELECT i.section, i.module, i.ordinal, i.question_id, a.answer
       FROM test_session_items i
@@ -5699,8 +5758,7 @@ BEGIN
         ON a.test_session_id = i.test_session_id AND a.section = i.section
        AND a.module = i.module AND a.ordinal = i.ordinal
      WHERE i.test_session_id = v_s.id
-       AND (   (i.module = '1' AND sec.state IN ('module1_submitted', 'module2_active', 'submitted'))
-            OR (i.module <> '1' AND sec.state = 'submitted'))
+       AND sec.state = 'submitted'   -- SCL-205: both modules submitted, or nothing
        AND NOT is_answer_correct(a.answer, i.question_id)
      ORDER BY CASE i.section WHEN 'RW' THEN 1 ELSE 2 END, i.module, i.ordinal
   LOOP
@@ -6830,6 +6888,66 @@ COMMENT ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor t
 
 
 --
+-- Name: exam_scored_sessions(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) RETURNS jsonb
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_student_id IS NULL OR p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION 'exam_scored_sessions: invalid arguments'
+      USING ERRCODE = '22023';
+  END IF;
+
+  RETURN jsonb_build_object('status', 200, 'body', jsonb_build_object(
+    'sessions', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+               'session_id', x.session_id,
+               'test_form_name', x.test_form_name,
+               'completed_at', x.completed_at,
+               'total_scaled', x.total_scaled,
+               'rw_scaled', x.rw_scaled,
+               'math_scaled', x.math_scaled,
+               'disclosure', x.disclosure)
+             ORDER BY x.completed_at DESC, x.session_id DESC)
+        FROM (
+          SELECT s.id AS session_id,
+                 f.name AS test_form_name,
+                 s.completed_at,
+                 r.total_scaled,
+                 r.rw_scaled,
+                 r.math_scaled,
+                 CASE WHEN d.scoring_model_version IS NULL THEN NULL
+                      ELSE jsonb_build_object(
+                             'disclosure_version', d.disclosure_version,
+                             'summary', d.summary,
+                             'full_text_url', d.full_text_url)
+                 END AS disclosure
+            FROM test_sessions s
+            JOIN test_forms f ON f.id = s.test_form_id
+            JOIN score_runs r ON r.test_session_id = s.id
+            LEFT JOIN score_disclosure_versions d
+                   ON d.scoring_model_version = r.scoring_model_version
+           WHERE s.student_id = p_student_id
+             AND s.state = 'completed'
+             AND r.total_scaled IS NOT NULL
+           ORDER BY s.completed_at DESC, s.id DESC
+           LIMIT p_limit
+        ) x), '[]'::jsonb)));
+END;
+$$;
+
+
+--
+-- Name: FUNCTION exam_scored_sessions(p_student_id uuid, p_limit integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) IS 'OQ-30 (owner ruling 2026-10-02; Doc 04C §16.3): the caller''s scored full-length sessions, newest first (completed_at DESC, id DESC), capped by p_limit (1..100). Per row: session_id, test_form_name, completed_at, total/rw/math scaled from score_runs, and the disclosure bound to the run''s scoring_model_version (null when unbound — the server refuses it). No decomposition, item or answer data.';
+
+
+--
 -- Name: exam_section_state_json(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7745,6 +7863,34 @@ BEGIN
   END IF;
 
   -- ========================================================================
+  -- CRISIS HOLD (C-01, owner ruling 2026-10-05; both modes)
+  -- ========================================================================
+  -- A crisis-flagged conversation survives the deletion de-linked from the student, with
+  -- every message, until the safety owner purges it by hand (Doc 03 §14.2, D03:1255).
+  -- "Flagged" is the RS-00 definition, the same predicate the 7d retention sweep holds by:
+  -- any crisis_review_cases or crisis_review_events row names the conversation. NULLing
+  -- student_id here, before the profile DELETE below, is what keeps the profile FK CASCADE
+  -- off these rows. crisis_flagged is set on the way so the table's CHECK
+  -- (tutor_conversations_null_student_only_flagged) can see why the row has no student.
+  -- De-linked, not anonymous: the transcript is the student's own words.
+  UPDATE public.tutor_conversations c
+     SET student_id = NULL,
+         crisis_flagged = true
+   WHERE c.student_id = p_profile_id
+     AND (EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = c.id)
+       OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = c.id));
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('tutor_conversations_crisis_held', v_count);
+
+  UPDATE public.tutor_messages m
+     SET student_id = NULL
+   WHERE m.student_id = p_profile_id
+     AND EXISTS (SELECT 1 FROM public.tutor_conversations c
+                  WHERE c.id = m.conversation_id AND c.student_id IS NULL AND c.crisis_flagged);
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('tutor_messages_crisis_held', v_count);
+
+  -- ========================================================================
   -- PROFILE + AUTH DELETE (shared — both modes destroy the profile row)
   -- ========================================================================
   -- §3 Rule 4: "Linkage destroyed at anonymization." The profile row
@@ -8193,6 +8339,19 @@ CREATE FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id uuid,
      AND recipient_profile_id = p_recipient_id
      AND channel = 'in_app'
   RETURNING *;
+$$;
+
+
+--
+-- Name: marketing_opt_in_age_eligible(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marketing_opt_in_age_eligible(p_date_of_birth date) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT p_date_of_birth IS NOT NULL
+     AND p_date_of_birth <= (current_date - interval '13 years')::date;
 $$;
 
 
@@ -8685,6 +8844,168 @@ $$;
 
 
 --
+-- Name: product_feedback_submit(uuid, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  INSERT INTO public.product_feedback (profile_id, audience, body, source, idempotency_key)
+  VALUES (p_profile_id, p_audience, p_body, p_source, p_idempotency_key)
+  ON CONFLICT (profile_id, idempotency_key) DO NOTHING;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN jsonb_build_object('outcome', CASE WHEN v_rows = 1 THEN 'created' ELSE 'replayed' END);
+END;
+$$;
+
+
+--
+-- Name: product_review_mark_external(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_mark_external(p_profile_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via)
+  VALUES (p_profile_id, now(), 'trustpilot')
+  ON CONFLICT (profile_id) DO UPDATE
+     SET reviewed_at  = COALESCE(product_review_prompt_state.reviewed_at, now()),
+         reviewed_via = COALESCE(product_review_prompt_state.reviewed_via, 'trustpilot'),
+         updated_at   = now();
+$$;
+
+
+--
+-- Name: product_review_prompt_claim(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  INSERT INTO public.product_review_prompt_state (profile_id, last_shown_at)
+  VALUES (p_profile_id, now())
+  ON CONFLICT (profile_id) DO UPDATE
+     SET last_shown_at = now(), updated_at = now()
+   WHERE product_review_prompt_state.last_shown_at IS NOT DISTINCT FROM p_expected
+     AND product_review_prompt_state.reviewed_at IS NULL;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: product_review_prompt_dismiss(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  UPDATE public.product_review_prompt_state
+     SET dismiss_count = dismiss_count + 1, last_dismissed_at = now(), updated_at = now()
+   WHERE profile_id = p_profile_id
+     AND last_shown_at IS NOT NULL
+     AND reviewed_at IS NULL
+     AND (last_dismissed_at IS NULL OR last_dismissed_at < last_shown_at);
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: product_review_prompt_state_for(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+           'last_shown_at', s.last_shown_at,
+           'dismiss_count', s.dismiss_count,
+           'reviewed_at',   s.reviewed_at)
+    FROM public.product_review_prompt_state s
+   WHERE s.profile_id = p_profile_id;
+$$;
+
+
+--
+-- Name: product_review_submit(uuid, text, smallint, text, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_existing public.product_reviews%ROWTYPE;
+  v_rows     integer;
+BEGIN
+  INSERT INTO public.product_reviews (profile_id, audience, rating, body, quote_permission)
+  VALUES (p_profile_id, p_audience, p_rating, p_body, p_quote_permission)
+  ON CONFLICT (profile_id) DO NOTHING;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  IF v_rows = 0 THEN
+    SELECT * INTO v_existing FROM public.product_reviews WHERE profile_id = p_profile_id;
+    IF v_existing.rating = p_rating
+       AND v_existing.body IS NOT DISTINCT FROM p_body
+       AND v_existing.quote_permission = p_quote_permission THEN
+      RETURN jsonb_build_object('outcome', 'replayed');
+    END IF;
+    RETURN jsonb_build_object('outcome', 'conflict');
+  END IF;
+
+  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via)
+  VALUES (p_profile_id, now(), 'in_app')
+  ON CONFLICT (profile_id) DO UPDATE
+     SET reviewed_at  = COALESCE(product_review_prompt_state.reviewed_at, now()),
+         reviewed_via = COALESCE(product_review_prompt_state.reviewed_via, 'in_app'),
+         updated_at   = now();
+  RETURN jsonb_build_object('outcome', 'created');
+END;
+$$;
+
+
+--
+-- Name: profiles_analytics_fields_set_once(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_analytics_fields_set_once() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.analytics_user_id IS NOT NULL
+     AND NEW.analytics_user_id IS DISTINCT FROM OLD.analytics_user_id THEN
+    RAISE EXCEPTION 'profiles.analytics_user_id is immutable once set (Doc 07A §7.1)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.signup_source IS NOT NULL
+     AND NEW.signup_source IS DISTINCT FROM OLD.signup_source THEN
+    RAISE EXCEPTION 'profiles.signup_source is immutable once set (SCL-201 IS 6)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: profiles_lock_date_of_birth(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8717,6 +9038,326 @@ $$;
 
 
 --
+-- Name: profiles_marketing_consent_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_marketing_consent_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_was boolean := CASE WHEN TG_OP = 'UPDATE' THEN OLD.marketing_opt_in ELSE false END;
+BEGIN
+  IF NEW.marketing_opt_in AND NOT public.marketing_opt_in_age_eligible(NEW.date_of_birth) THEN
+    IF v_was THEN
+      -- Already opted in, and the date of birth just became ineligible (deidentify_user nulls
+      -- it during account deletion). Clear, never refuse: see the header, item 1.
+      NEW.marketing_opt_in := false;
+    ELSE
+      RAISE EXCEPTION 'marketing_opt_in requires a known date of birth at least 13 years ago (plan R26)'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: profiles_marketing_consent_log(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_marketing_consent_log() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_was     boolean := CASE WHEN TG_OP = 'UPDATE' THEN OLD.marketing_opt_in ELSE false END;
+  v_source  text    := NULLIF(current_setting('lyceon.marketing_consent_source', true), '');
+  v_version text    := NULLIF(current_setting('lyceon.marketing_consent_version', true), '');
+BEGIN
+  IF NEW.marketing_opt_in IS DISTINCT FROM v_was THEN
+    INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version)
+    VALUES (
+      NEW.id,
+      NEW.marketing_opt_in,
+      COALESCE(v_source, 'system'),
+      CASE WHEN NEW.marketing_opt_in THEN v_version ELSE NULL END
+    );
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_after_exam(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_session uuid;
+  v_id      bigint;
+BEGIN
+  SELECT aggregate_id INTO v_session FROM public.exam_runtime_outbox
+   WHERE id = p_seams_outbox_event_id
+     AND event_type = 'test_session_scored'
+     AND status = 'published';
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('outcome', 'seams_not_published');
+  END IF;
+
+  SELECT outbox_id INTO v_id FROM public.projection_refresh_outbox
+   WHERE test_session_id = v_session
+     AND processed_at IS NULL
+   FOR UPDATE SKIP LOCKED;
+  IF NOT FOUND THEN
+    -- a partial session (no row), an anonymised student (no row), or already refreshed
+    RETURN jsonb_build_object('outcome', 'nothing_pending');
+  END IF;
+
+  PERFORM public.projection_refresh_outbox_process(v_id);
+  RETURN jsonb_build_object('outcome', 'refreshed');
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_outbox_drain(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_outbox_drain(p_limit integer DEFAULT 50) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r        record;
+  v_done   integer := 0;
+  v_failed integer := 0;
+  v_state  text;
+BEGIN
+  IF p_limit IS NULL OR p_limit < 1 THEN
+    RAISE EXCEPTION 'PROJECTION_DRAIN_INVALID_LIMIT: %', p_limit;
+  END IF;
+
+  FOR r IN
+    SELECT o.outbox_id
+      FROM public.projection_refresh_outbox o
+     WHERE o.processed_at IS NULL
+     ORDER BY o.requested_at, o.outbox_id
+     LIMIT p_limit
+     FOR UPDATE SKIP LOCKED
+  LOOP
+    BEGIN
+      IF public.projection_refresh_outbox_process(r.outbox_id) THEN
+        v_done := v_done + 1;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      -- The row stays unprocessed for the next run; the others still drain. SQLSTATE only:
+      -- projection messages carry the student id.
+      GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE;
+      RAISE WARNING 'PROJECTION_REFRESH_FAILED: outbox_id % sqlstate %', r.outbox_id, v_state;
+      v_failed := v_failed + 1;
+    END;
+  END LOOP;
+
+  RETURN jsonb_build_object('processed', v_done, 'failed', v_failed);
+END;
+$$;
+
+
+--
+-- Name: projection_refresh_outbox_process(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.projection_refresh_outbox%ROWTYPE;
+BEGIN
+  SELECT * INTO v_row FROM public.projection_refresh_outbox
+   WHERE outbox_id = p_outbox_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_row.processed_at IS NOT NULL THEN
+    RETURN false;   -- unknown or already processed: a replay writes nothing
+  END IF;
+
+  PERFORM public.compute_section_projection(v_row.student_id, 'M',  now());
+  PERFORM public.compute_section_projection(v_row.student_id, 'RW', now());
+
+  -- The refresh just happened, so the throttle counter restarts (§8.3 step 2, §8.4).
+  INSERT INTO public.student_projection_refresh_state (student_id, events_since_refresh, last_refresh_at)
+  VALUES (v_row.student_id, 0, now())
+  ON CONFLICT (student_id) DO UPDATE
+     SET events_since_refresh = 0,
+         last_refresh_at      = now();
+
+  UPDATE public.projection_refresh_outbox
+     SET processed_at = now()
+   WHERE outbox_id = p_outbox_id;
+  RETURN true;
+END;
+$$;
+
+
+--
+-- Name: qotd_archive(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  -- Counts included so an archive page built from this shows the same stat the API does.
+  SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
+         q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+    FROM public.qotd_schedule s
+    JOIN public.questions q ON q.id = s.question_id
+    LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
+   WHERE s.qotd_date < public.qotd_today()
+     AND q.status = 'published'
+     AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
+   ORDER BY s.qotd_date
+$$;
+
+
+--
+-- Name: qotd_question_for(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
+         q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+    FROM public.qotd_schedule s
+    JOIN public.questions q ON q.id = s.question_id
+    LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
+   WHERE s.qotd_date = COALESCE(p_date, public.qotd_today())
+     AND s.qotd_date <= public.qotd_today()
+     AND q.status = 'published'
+     AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
+$$;
+
+
+--
+-- Name: qotd_question_is_eligible(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_question_is_eligible(p_question_id text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.questions q
+     WHERE q.id = p_question_id
+       AND q.status = 'published'
+       AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
+       AND (q.assets IS NULL OR q.assets IN ('[]'::jsonb, '{}'::jsonb, 'null'::jsonb))
+       AND NOT EXISTS (SELECT 1 FROM public.test_form_items t WHERE t.question_id = q.id)
+       AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)
+  )
+$$;
+
+
+--
+-- Name: qotd_record_attempt(date, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean) RETURNS TABLE(attempts integer, correct integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_date > public.qotd_today()
+     OR NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.qotd_date = p_date) THEN
+    RAISE EXCEPTION 'qotd_record_attempt: % is not a scheduled day that has arrived', p_date
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  INSERT INTO public.qotd_daily_stats AS d (qotd_date, attempts, correct)
+  VALUES (p_date, 1, CASE WHEN p_correct THEN 1 ELSE 0 END)
+  ON CONFLICT (qotd_date) DO UPDATE
+    SET attempts = d.attempts + 1,
+        correct  = d.correct + CASE WHEN p_correct THEN 1 ELSE 0 END
+  RETURNING d.attempts, d.correct;
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_candidates(text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_candidates(p_section text, p_domain text, p_limit integer) RETURNS TABLE(question_id text, stem text, passage text, options jsonb, explanation text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT q.id, q.stem, q.passage, q.options, q.explanation
+    FROM public.questions q
+   WHERE q.section = p_section
+     AND q.domain = p_domain
+     AND public.qotd_question_is_eligible(q.id)
+   ORDER BY q.id
+   LIMIT GREATEST(p_limit, 0)
+$$;
+
+
+--
+-- Name: qotd_schedule_insert(date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows integer;
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.qotd_schedule WHERE qotd_date = p_date) THEN
+    RETURN 'exists';
+  END IF;
+  IF NOT public.qotd_question_is_eligible(p_question_id) THEN
+    RETURN 'ineligible';
+  END IF;
+  INSERT INTO public.qotd_schedule (qotd_date, question_id)
+  VALUES (p_date, p_question_id)
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 1 THEN
+    RETURN 'inserted';
+  END IF;
+  -- A concurrent run took the date or the question between the checks and the insert.
+  IF EXISTS (SELECT 1 FROM public.qotd_schedule WHERE qotd_date = p_date) THEN
+    RETURN 'exists';
+  END IF;
+  RETURN 'taken';
+END
+$$;
+
+
+--
+-- Name: qotd_today(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_today() RETURNS date
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date
+$$;
+
+
+--
 -- Name: rate_limit_check_and_increment(uuid, text, integer, timestamp with time zone, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8741,6 +9382,38 @@ BEGIN
   SELECT l.used_count INTO v_used FROM public.rate_limit_ledger AS l
    WHERE l.profile_id = p_profile_id AND l.bucket_key = p_bucket_key AND l.window_start = p_window_start;
   allowed := FALSE; used := COALESCE(v_used, 0); remaining := GREATEST(p_limit - COALESCE(v_used, 0), 0);
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: rate_limit_check_and_increment_anon(bytea, text, integer, timestamp with time zone, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) RETURNS TABLE(allowed boolean, remaining integer, used integer)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_used integer;
+BEGIN
+  INSERT INTO public.rate_limit_ledger_anon AS l
+    (subject_hmac, bucket_key, window_start, window_end, used_count, limit_count)
+  VALUES (p_subject_hmac, p_bucket_key, p_window_start, p_window_end, p_cost, p_limit)
+  ON CONFLICT (subject_hmac, bucket_key, window_start) DO UPDATE
+    SET used_count = l.used_count + p_cost, updated_at = now()
+    WHERE l.used_count + p_cost <= p_limit
+  RETURNING l.used_count INTO v_used;
+
+  IF FOUND THEN
+    allowed := TRUE; used := v_used; remaining := p_limit - v_used; RETURN NEXT; RETURN;
+  END IF;
+
+  SELECT l.used_count INTO v_used FROM public.rate_limit_ledger_anon AS l
+   WHERE l.subject_hmac = p_subject_hmac AND l.bucket_key = p_bucket_key
+     AND l.window_start = p_window_start;
+  allowed := FALSE; used := COALESCE(v_used, 0);
+  remaining := GREATEST(p_limit - COALESCE(v_used, 0), 0);
   RETURN NEXT;
 END;
 $$;
@@ -11018,6 +11691,50 @@ $$;
 
 
 --
+-- Name: set_marketing_consent(uuid, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_dob date;
+  v_was boolean;
+BEGIN
+  IF p_source NOT IN ('signup', 'settings') THEN
+    RAISE EXCEPTION 'set_marketing_consent: unknown source %', p_source
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  SELECT date_of_birth, marketing_opt_in INTO v_dob, v_was
+    FROM public.profiles WHERE id = p_profile_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'profile_missing');
+  END IF;
+
+  IF p_granted AND NOT public.marketing_opt_in_age_eligible(v_dob) THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'age_ineligible');
+  END IF;
+
+  IF v_was = p_granted THEN
+    RETURN jsonb_build_object('ok', true, 'changed', false, 'granted', p_granted);
+  END IF;
+
+  PERFORM set_config('lyceon.marketing_consent_source', p_source, true);
+  PERFORM set_config('lyceon.marketing_consent_version', COALESCE(p_consent_version, ''), true);
+  UPDATE public.profiles
+     SET marketing_opt_in = p_granted, updated_at = now()
+   WHERE id = p_profile_id;
+  PERFORM set_config('lyceon.marketing_consent_source', '', true);
+  PERFORM set_config('lyceon.marketing_consent_version', '', true);
+
+  RETURN jsonb_build_object('ok', true, 'changed', true, 'granted', p_granted);
+END;
+$$;
+
+
+--
 -- Name: set_profile_age_fields(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11365,6 +12082,178 @@ COMMENT ON FUNCTION public.sweep_operational_log_retention(p_batch_size integer)
 
 
 --
+-- Name: sweep_rate_limit_ledger_anon(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_rate_limit_ledger_anon() RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE v_deleted integer;
+BEGIN
+  DELETE FROM public.rate_limit_ledger_anon WHERE window_end <= now();
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END;
+$$;
+
+
+--
+-- Name: sweep_tutor_conversation_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_cutoff   timestamptz := now() - make_interval(days => public.tutor_conversation_retention_days());
+  v_ids      uuid[];
+  v_students uuid[];
+  v_n        integer;
+  v_tbl      text;
+  -- Tables whose rows go with a deleted conversation (ON DELETE CASCADE on conversation_id).
+  v_cascade  CONSTANT text[] := ARRAY[
+    'tutor_messages',
+    'tutor_question_links',
+    'tutor_instruction_assignments',
+    'tutor_instruction_exposures',
+    'tutor_turn_metrics',
+    'tutor_context_resolution_log'
+  ];
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_conversation_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Expired, soft-deleted, and NOT crisis-flagged (RS-00). Locked before the check.
+  SELECT coalesce(array_agg(x.id), '{}')
+    INTO v_ids
+    FROM (
+      SELECT c.id
+        FROM public.tutor_conversations c
+       WHERE c.deleted_at IS NOT NULL
+         AND c.deleted_at < v_cutoff
+       ORDER BY c.id
+         FOR UPDATE
+    ) x
+   WHERE NOT EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = x.id)
+     AND NOT EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = x.id);
+
+  -- Memory summaries go only for students losing a conversation in this run who keep nothing:
+  -- no live conversation, none still recoverable, and none flagged (RS-00).
+  SELECT coalesce(array_agg(DISTINCT c.student_id), '{}')
+    INTO v_students
+    FROM public.tutor_conversations c
+   WHERE c.id = ANY (v_ids)
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.tutor_conversations o
+        WHERE o.student_id = c.student_id
+          AND (
+            o.deleted_at IS NULL
+            OR o.deleted_at >= v_cutoff
+            OR EXISTS (SELECT 1 FROM public.crisis_review_cases k  WHERE k.conversation_id = o.id)
+            OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = o.id)
+          )
+     );
+
+  -- Counts first (they are the dry-run answer, and the live run reports the same numbers).
+  swept_table   := 'tutor_conversations';
+  deleted_count := coalesce(array_length(v_ids, 1), 0);
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  FOREACH v_tbl IN ARRAY v_cascade LOOP
+    EXECUTE format('SELECT count(*)::integer FROM public.%I WHERE conversation_id = ANY ($1)', v_tbl)
+      INTO v_n
+      USING v_ids;
+    swept_table   := v_tbl;
+    deleted_count := v_n;
+    cutoff        := v_cutoff;
+    RETURN NEXT;
+  END LOOP;
+
+  SELECT count(*)::integer INTO v_n
+    FROM public.tutor_memory_summaries s
+   WHERE s.student_id = ANY (v_students);
+  swept_table   := 'tutor_memory_summaries';
+  deleted_count := v_n;
+  cutoff        := v_cutoff;
+  RETURN NEXT;
+
+  IF NOT p_dry_run THEN
+    DELETE FROM public.tutor_memory_summaries s WHERE s.student_id = ANY (v_students);
+    DELETE FROM public.tutor_conversations c WHERE c.id = ANY (v_ids);
+  END IF;
+END;
+$_$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner ruling 2026-10-05 RS-00: the 7d tier. Deletes conversations soft-deleted more than tutor_conversation_retention_days() ago EXCEPT any a crisis_review_cases or crisis_review_events row links to, with their cascade rows, and the memory summaries of students left with no live, recoverable or flagged conversation. p_dry_run counts without deleting. One row per table, zero counts included, with the cutoff.';
+
+
+--
+-- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff  timestamptz := now() - interval '90 days';
+  v_assign  integer;
+  v_expose  integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_instruction_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_assign
+      FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_expose
+      FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_instruction_exposures e
+     WHERE e.shown_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_instruction_assignments a
+                    WHERE a.id = e.assignment_id AND a.created_at < v_cutoff);
+    GET DIAGNOSTICS v_expose = ROW_COUNT;
+
+    DELETE FROM public.tutor_instruction_assignments a
+     WHERE a.created_at < v_cutoff;
+    GET DIAGNOSTICS v_assign = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_instruction_assignments'; deleted_count := v_assign; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_instruction_exposures';   deleted_count := v_expose; cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner rulings 2026-10-05 RS-03, RS-04: the 90d tier. Deletes instruction assignments created more than 90 days ago and exposures shown more than 90 days ago or belonging to such an assignment. p_dry_run counts the same rows without deleting. One row per table, with the cutoff.';
+
+
+--
 -- Name: sync_tutor_conversations_on_entitlement_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11404,6 +12293,45 @@ $$;
 --
 
 COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS 'Doc 03 §14.2 / INV-03-19 / owner ruling 2026-09-22 C1: stamps tutor_conversations.deleted_at when public.entitlement_active(profile_id) turns false and clears it when it turns true. Calls the canonical predicate rather than re-listing statuses. Stamps only where deleted_at IS NULL so a second inactive transition cannot push the 7-day clock out.';
+
+
+--
+-- Name: tutor_conversation_retention_days(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tutor_conversation_retention_days() RETURNS integer
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT 7;
+$$;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.tutor_conversation_retention_days() IS 'Doc 03 §14.2: days a soft-deleted tutor conversation stays recoverable before the 7d tier deletes it. THE single definition; the sweep reads it.';
+
+
+--
+-- Name: tutor_messages_null_student_only_flagged(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tutor_messages_null_student_only_flagged() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.student_id IS NULL AND NOT EXISTS (
+       SELECT 1 FROM public.tutor_conversations c
+        WHERE c.id = NEW.conversation_id AND c.student_id IS NULL AND c.crisis_flagged) THEN
+    RAISE EXCEPTION 'tutor_messages_null_student_only_flagged: a message may lose its student only inside a de-linked crisis-flagged conversation'
+      USING ERRCODE = '23514', CONSTRAINT = 'tutor_messages_null_student_only_flagged';
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
 
 --
@@ -12411,6 +13339,43 @@ CREATE TABLE public.consent_runtime_config_history (
 
 
 --
+-- Name: cookie_consent_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cookie_consent_log (
+    id bigint NOT NULL,
+    consent_id uuid NOT NULL,
+    analytics boolean NOT NULL,
+    banner_version text NOT NULL,
+    source text NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cookie_consent_log_banner_version_check CHECK ((banner_version ~ '^[0-9]+$'::text)),
+    CONSTRAINT cookie_consent_log_source_check CHECK ((source = ANY (ARRAY['banner'::text, 'settings'::text])))
+);
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.cookie_consent_log IS 'Doc 10 §9.11: cookie consent log (timestamp + category + banner version). consent_id is the random id in the visitor''s consent cookie; no user id and no IP are stored.';
+
+
+--
+-- Name: cookie_consent_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.cookie_consent_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: crisis_review_audit_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13135,60 +14100,6 @@ CREATE TABLE public.guardian_consent_requests (
 
 
 --
--- Name: idempotency_records; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_records (
-    scope text NOT NULL,
-    client_key text NOT NULL,
-    content_hash text NOT NULL,
-    result jsonb,
-    status text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    completed_at timestamp with time zone,
-    expires_at timestamp with time zone NOT NULL,
-    CONSTRAINT idempotency_records_status_check CHECK ((status = ANY (ARRAY['completed'::text, 'in_progress'::text, 'failed'::text])))
-);
-
-
---
--- Name: idempotency_runtime_config; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_runtime_config (
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    value_type text NOT NULL,
-    min_value jsonb,
-    max_value jsonb,
-    allowed_values jsonb,
-    owner text NOT NULL,
-    description text NOT NULL,
-    environment text DEFAULT 'all'::text NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_by_profile_id uuid,
-    CONSTRAINT idempotency_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
-    CONSTRAINT idempotency_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
-);
-
-
---
--- Name: idempotency_runtime_config_history; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.idempotency_runtime_config_history (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    table_name text NOT NULL,
-    key text NOT NULL,
-    old_value jsonb,
-    new_value jsonb NOT NULL,
-    changed_by_profile_id uuid,
-    change_reason text,
-    changed_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: internal_service_auth_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13298,6 +14209,44 @@ COMMENT ON COLUMN public.legal_acceptances.source_reference IS 'Identifier issue
 --
 
 COMMENT ON CONSTRAINT legal_acceptances_consent_source_check ON public.legal_acceptances IS 'Where the acceptance was collected. guardian_link_redeem: a guardian accepting Parent / Guardian Terms while redeeming a student link code. stripe_checkout: auto-renewal consent taken in Checkout per Cal. Bus. & Prof. Code § 17602, separate from Terms of Use acceptance at signup. reconsent_prompt: an existing user accepting a newly published version through the blocking modal shown at next sign-in.';
+
+
+--
+-- Name: marketing_consent_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.marketing_consent_log (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    granted boolean NOT NULL,
+    source text NOT NULL,
+    consent_version text,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT marketing_consent_log_consent_version_check CHECK (((consent_version IS NULL) OR (consent_version ~ '^\d+\.\d+\.\d+$'::text))),
+    CONSTRAINT marketing_consent_log_grant_versioned CHECK (((granted = false) OR (source = 'backfill'::text) OR (consent_version IS NOT NULL))),
+    CONSTRAINT marketing_consent_log_source_check CHECK ((source = ANY (ARRAY['signup'::text, 'settings'::text, 'backfill'::text, 'age_clear'::text, 'system'::text])))
+);
+
+
+--
+-- Name: TABLE marketing_consent_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.marketing_consent_log IS 'Doc 10 §9.21 / plan R26: one row per change of profiles.marketing_opt_in (when, where, which wording). Written only by the profiles_marketing_consent_log trigger. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: marketing_consent_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.marketing_consent_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.marketing_consent_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
 
 --
@@ -13804,6 +14753,109 @@ CREATE TABLE public.practice_runtime_config_history (
 
 
 --
+-- Name: product_feedback; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_feedback (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    audience text NOT NULL,
+    body text NOT NULL,
+    source text NOT NULL,
+    idempotency_key uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_feedback_audience_check CHECK ((audience = ANY (ARRAY['student'::text, 'guardian'::text]))),
+    CONSTRAINT product_feedback_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 2000))),
+    CONSTRAINT product_feedback_source_check CHECK ((source = ANY (ARRAY['prompt'::text, 'settings'::text, 'help'::text, 'menu'::text])))
+);
+
+
+--
+-- Name: TABLE product_feedback; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.product_feedback IS 'Plan R28: private feedback, stored only (owner answer 8, 2026-10-05). Never displayed, never forwarded. Written only by product_feedback_submit. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: product_feedback_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_feedback ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.product_feedback_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: product_review_prompt_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_review_prompt_state (
+    profile_id uuid NOT NULL,
+    last_shown_at timestamp with time zone,
+    last_dismissed_at timestamp with time zone,
+    dismiss_count smallint DEFAULT 0 NOT NULL,
+    reviewed_at timestamp with time zone,
+    reviewed_via text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_review_prompt_state_check CHECK (((reviewed_at IS NULL) = (reviewed_via IS NULL))),
+    CONSTRAINT product_review_prompt_state_dismiss_count_check CHECK ((dismiss_count >= 0)),
+    CONSTRAINT product_review_prompt_state_reviewed_via_check CHECK ((reviewed_via = ANY (ARRAY['in_app'::text, 'trustpilot'::text])))
+);
+
+
+--
+-- Name: TABLE product_review_prompt_state; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.product_review_prompt_state IS 'Plan R30: the review prompt''s cadence facts per profile. The decision is packages/shared/src/review-prompt.ts; these functions only record. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: product_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_reviews (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    audience text NOT NULL,
+    rating smallint NOT NULL,
+    body text,
+    quote_permission boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_reviews_audience_check CHECK ((audience = ANY (ARRAY['student'::text, 'guardian'::text]))),
+    CONSTRAINT product_reviews_body_check CHECK (((body IS NULL) OR ((char_length(body) >= 1) AND (char_length(body) <= 2000)))),
+    CONSTRAINT product_reviews_rating_check CHECK (((rating >= 1) AND (rating <= 5)))
+);
+
+
+--
+-- Name: TABLE product_reviews; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.product_reviews IS 'Plan R28/R29: in-app review, one per profile. Anonymous by construction: profile_id is for dedupe and deletion only and is never served. quote_permission is the unticked-by-default "Lyceon may quote this anonymously". Written only by product_review_submit. ON DELETE CASCADE from profiles (owner ruling 2026-10-05).';
+
+
+--
+-- Name: product_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_reviews ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.product_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13822,13 +14874,15 @@ CREATE TABLE public.profiles (
     guardian_profile_id uuid,
     student_link_code text,
     student_link_code_issued_at timestamp with time zone,
-    last_login_at timestamp with time zone,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     profile_completed_at timestamp with time zone,
     marketing_opt_in boolean DEFAULT false NOT NULL,
-    actor_id uuid DEFAULT gen_random_uuid() NOT NULL
+    actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    analytics_user_id uuid,
+    signup_source text,
+    CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
 
@@ -13837,6 +14891,20 @@ CREATE TABLE public.profiles (
 --
 
 COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
+
+
+--
+-- Name: COLUMN profiles.analytics_user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA256(ANALYTICS_SALT, profile id), UUID-shaped. Written once by the server at onboarding completion; immutable (profiles_analytics_fields_set_once).';
+
+
+--
+-- Name: COLUMN profiles.signup_source; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
 
 
 --
@@ -13895,6 +14963,45 @@ COMMENT ON TABLE public.psi_occurred_at_backfill_log IS 'One row per practice_se
 
 
 --
+-- Name: qotd_daily_stats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qotd_daily_stats (
+    qotd_date date NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    correct integer DEFAULT 0 NOT NULL,
+    CONSTRAINT qotd_daily_stats_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT qotd_daily_stats_correct_check CHECK ((correct >= 0)),
+    CONSTRAINT qotd_daily_stats_correct_le_attempts CHECK ((correct <= attempts))
+);
+
+
+--
+-- Name: TABLE qotd_daily_stats; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.qotd_daily_stats IS 'QOTD (plan R17): aggregate counters per day, atomic increments, no per-person rows.';
+
+
+--
+-- Name: qotd_schedule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qotd_schedule (
+    qotd_date date NOT NULL,
+    question_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE qotd_schedule; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18): one question per America/Chicago day. qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+
+
+--
 -- Name: rate_limit_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13907,6 +15014,29 @@ CREATE TABLE public.rate_limit_ledger (
     limit_count integer NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: rate_limit_ledger_anon; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rate_limit_ledger_anon (
+    subject_hmac bytea NOT NULL,
+    bucket_key text NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    window_end timestamp with time zone NOT NULL,
+    used_count integer DEFAULT 0 NOT NULL,
+    limit_count integer NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rate_limit_ledger_anon_subject_hmac_check CHECK ((octet_length(subject_hmac) = 32))
+);
+
+
+--
+-- Name: TABLE rate_limit_ledger_anon; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.rate_limit_ledger_anon IS 'SCL-202: Doc 01A §41 ledger for public endpoints with no authenticated caller. subject_hmac = HMAC-SHA256(server secret, client IP); the raw IP is never stored. Rows are deleted once their window ends (sweep_rate_limit_ledger_anon).';
 
 
 --
@@ -14278,21 +15408,6 @@ CREATE VIEW public.servable_questions WITH (security_invoker='true') AS
     correct_variants
    FROM public.questions
   WHERE ((status = 'published'::text) AND ((issue_flags IS NULL) OR (array_length(issue_flags, 1) IS NULL)));
-
-
---
--- Name: service_auth_secrets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.service_auth_secrets (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    caller_service text NOT NULL,
-    callee_service text NOT NULL,
-    secret_material text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    active_until timestamp with time zone NOT NULL,
-    revoked_at timestamp with time zone
-);
 
 
 --
@@ -14757,7 +15872,7 @@ CREATE TABLE public.tutor_context_runtime_config_history (
 
 CREATE TABLE public.tutor_conversations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     entry_mode text NOT NULL,
     source_surface text NOT NULL,
     source_session_id uuid,
@@ -14784,6 +15899,7 @@ CREATE TABLE public.tutor_conversations (
     ended_at timestamp with time zone,
     CONSTRAINT tutor_conversations_assignment_mode_check CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text]))),
     CONSTRAINT tutor_conversations_entry_mode_check CHECK ((entry_mode = ANY (ARRAY['scoped_question'::text, 'scoped_session'::text, 'general'::text]))),
+    CONSTRAINT tutor_conversations_null_student_only_flagged CHECK (((student_id IS NOT NULL) OR crisis_flagged)),
     CONSTRAINT tutor_conversations_policy_variant_check CHECK ((policy_variant = ANY (ARRAY['concise'::text, 'scaffolded'::text, 'socratic'::text, 'strategy_first'::text]))),
     CONSTRAINT tutor_conversations_source_surface_check CHECK ((source_surface = ANY (ARRAY['practice'::text, 'review'::text, 'test_review'::text, 'dashboard'::text]))),
     CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text, 'ended'::text]))),
@@ -14950,7 +16066,7 @@ COMMENT ON TABLE public.tutor_memory_summaries IS 'Durable compact summaries wit
 CREATE TABLE public.tutor_messages (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     conversation_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     role text NOT NULL,
     content_kind text DEFAULT 'message'::text NOT NULL,
     message text NOT NULL,
@@ -15341,6 +16457,14 @@ ALTER TABLE ONLY public.consent_runtime_config
 
 
 --
+-- Name: cookie_consent_log cookie_consent_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cookie_consent_log
+    ADD CONSTRAINT cookie_consent_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: crisis_review_audit_log crisis_review_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15517,30 +16641,6 @@ ALTER TABLE ONLY public.guardian_links
 
 
 --
--- Name: idempotency_records idempotency_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_records
-    ADD CONSTRAINT idempotency_records_pkey PRIMARY KEY (scope, client_key);
-
-
---
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_pkey PRIMARY KEY (id);
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_pkey PRIMARY KEY (key);
-
-
---
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15578,6 +16678,14 @@ ALTER TABLE ONLY public.legal_acceptances
 
 ALTER TABLE ONLY public.legal_acceptances
     ADD CONSTRAINT legal_acceptances_unique_doc UNIQUE (user_id, doc_key, doc_version, actor_type);
+
+
+--
+-- Name: marketing_consent_log marketing_consent_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_consent_log
+    ADD CONSTRAINT marketing_consent_log_pkey PRIMARY KEY (id);
 
 
 --
@@ -15749,6 +16857,54 @@ ALTER TABLE ONLY public.practice_sessions
 
 
 --
+-- Name: product_feedback product_feedback_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_feedback
+    ADD CONSTRAINT product_feedback_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product_feedback product_feedback_profile_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_feedback
+    ADD CONSTRAINT product_feedback_profile_id_idempotency_key_key UNIQUE (profile_id, idempotency_key);
+
+
+--
+-- Name: product_review_prompt_state product_review_prompt_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_review_prompt_state
+    ADD CONSTRAINT product_review_prompt_state_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: product_reviews product_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_reviews
+    ADD CONSTRAINT product_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: product_reviews product_reviews_profile_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_reviews
+    ADD CONSTRAINT product_reviews_profile_id_key UNIQUE (profile_id);
+
+
+--
+-- Name: profiles profiles_analytics_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_analytics_user_id_key UNIQUE (analytics_user_id);
+
+
+--
 -- Name: profiles profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15781,11 +16937,43 @@ ALTER TABLE ONLY public.psi_occurred_at_backfill_log
 
 
 --
+-- Name: qotd_daily_stats qotd_daily_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_daily_stats
+    ADD CONSTRAINT qotd_daily_stats_pkey PRIMARY KEY (qotd_date);
+
+
+--
+-- Name: qotd_schedule qotd_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_schedule
+    ADD CONSTRAINT qotd_schedule_pkey PRIMARY KEY (qotd_date);
+
+
+--
+-- Name: qotd_schedule qotd_schedule_question_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_schedule
+    ADD CONSTRAINT qotd_schedule_question_id_key UNIQUE (question_id);
+
+
+--
 -- Name: questions questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.questions
     ADD CONSTRAINT questions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rate_limit_ledger_anon rate_limit_ledger_anon_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_ledger_anon
+    ADD CONSTRAINT rate_limit_ledger_anon_pkey PRIMARY KEY (subject_hmac, bucket_key, window_start);
 
 
 --
@@ -15922,22 +17110,6 @@ ALTER TABLE ONLY public.scoring_model_versions
 
 ALTER TABLE ONLY public.sections
     ADD CONSTRAINT sections_pkey PRIMARY KEY (code);
-
-
---
--- Name: service_auth_secrets service_auth_secrets_caller_service_callee_service_created__key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_auth_secrets
-    ADD CONSTRAINT service_auth_secrets_caller_service_callee_service_created__key UNIQUE (caller_service, callee_service, created_at);
-
-
---
--- Name: service_auth_secrets service_auth_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.service_auth_secrets
-    ADD CONSTRAINT service_auth_secrets_pkey PRIMARY KEY (id);
 
 
 --
@@ -16440,6 +17612,13 @@ CREATE INDEX idx_calendar_block_launches_student ON public.calendar_block_launch
 
 
 --
+-- Name: idx_cookie_consent_log_consent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cookie_consent_log_consent_id ON public.cookie_consent_log USING btree (consent_id, recorded_at);
+
+
+--
 -- Name: idx_crisis_audit_log_case; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16549,20 +17728,6 @@ CREATE INDEX idx_guardian_links_guardian ON public.guardian_links USING btree (g
 --
 
 CREATE INDEX idx_guardian_links_student ON public.guardian_links USING btree (student_profile_id) WHERE (status = 'active'::text);
-
-
---
--- Name: idx_idempotency_expires; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_idempotency_expires ON public.idempotency_records USING btree (expires_at);
-
-
---
--- Name: idx_idempotency_scope_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_idempotency_scope_status ON public.idempotency_records USING btree (scope, status);
 
 
 --
@@ -16734,6 +17899,13 @@ CREATE INDEX idx_questions_status ON public.questions USING btree (status);
 
 
 --
+-- Name: idx_ratelimit_anon_window_end; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ratelimit_anon_window_end ON public.rate_limit_ledger_anon USING btree (window_end);
+
+
+--
 -- Name: idx_ratelimit_window_end; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16864,13 +18036,6 @@ CREATE INDEX idx_score_runs_form ON public.score_runs USING btree (test_form_id,
 --
 
 CREATE INDEX idx_score_runs_student ON public.score_runs USING btree (student_id, computed_at DESC);
-
-
---
--- Name: idx_service_auth_active; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_service_auth_active ON public.service_auth_secrets USING btree (caller_service, callee_service) WHERE (revoked_at IS NULL);
 
 
 --
@@ -17196,6 +18361,13 @@ CREATE INDEX idx_usage_rate_limit_ledger_student_user ON public.usage_rate_limit
 
 
 --
+-- Name: marketing_consent_log_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX marketing_consent_log_profile ON public.marketing_consent_log USING btree (profile_id, captured_at);
+
+
+--
 -- Name: mastery_levels_level_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -17490,20 +18662,6 @@ CREATE TRIGGER entitlements_sync_tutor_conversations AFTER INSERT OR UPDATE OF s
 
 
 --
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER idempotency_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.idempotency_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER idempotency_runtime_config_notify AFTER INSERT OR UPDATE ON public.idempotency_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
-
-
---
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -17574,10 +18732,31 @@ CREATE TRIGGER practice_runtime_config_notify AFTER INSERT OR UPDATE ON public.p
 
 
 --
+-- Name: profiles profiles_analytics_fields_set_once; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_analytics_fields_set_once BEFORE UPDATE OF analytics_user_id, signup_source ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_analytics_fields_set_once();
+
+
+--
 -- Name: profiles profiles_lock_date_of_birth; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER profiles_lock_date_of_birth BEFORE UPDATE OF date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_lock_date_of_birth();
+
+
+--
+-- Name: profiles profiles_marketing_consent_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_marketing_consent_guard BEFORE INSERT OR UPDATE OF marketing_opt_in, date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_marketing_consent_guard();
+
+
+--
+-- Name: profiles profiles_marketing_consent_log; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_marketing_consent_log AFTER INSERT OR UPDATE OF marketing_opt_in, date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_marketing_consent_log();
 
 
 --
@@ -17741,6 +18920,13 @@ CREATE TRIGGER tutor_memory_summaries_updated_at BEFORE UPDATE ON public.tutor_m
 --
 
 CREATE TRIGGER tutor_memory_summaries_validate_schema BEFORE INSERT OR UPDATE ON public.tutor_memory_summaries FOR EACH ROW EXECUTE FUNCTION public.validate_memory_summary_schema();
+
+
+--
+-- Name: tutor_messages tutor_messages_null_student_only_flagged; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER tutor_messages_null_student_only_flagged AFTER INSERT OR UPDATE OF student_id ON public.tutor_messages NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION public.tutor_messages_null_student_only_flagged();
 
 
 --
@@ -18208,22 +19394,6 @@ ALTER TABLE ONLY public.guardian_links
 
 
 --
--- Name: idempotency_runtime_config_history idempotency_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config_history
-    ADD CONSTRAINT idempotency_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
--- Name: idempotency_runtime_config idempotency_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.idempotency_runtime_config
-    ADD CONSTRAINT idempotency_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
-
-
---
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18245,6 +19415,14 @@ ALTER TABLE ONLY public.internal_service_auth_config
 
 ALTER TABLE ONLY public.legal_acceptances
     ADD CONSTRAINT legal_acceptances_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: marketing_consent_log marketing_consent_log_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_consent_log
+    ADD CONSTRAINT marketing_consent_log_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -18384,6 +19562,30 @@ ALTER TABLE ONLY public.practice_sessions
 
 
 --
+-- Name: product_feedback product_feedback_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_feedback
+    ADD CONSTRAINT product_feedback_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: product_review_prompt_state product_review_prompt_state_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_review_prompt_state
+    ADD CONSTRAINT product_review_prompt_state_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: product_reviews product_reviews_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_reviews
+    ADD CONSTRAINT product_reviews_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: profiles profiles_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18397,6 +19599,22 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.profiles
     ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: qotd_daily_stats qotd_daily_stats_qotd_date_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_daily_stats
+    ADD CONSTRAINT qotd_daily_stats_qotd_date_fkey FOREIGN KEY (qotd_date) REFERENCES public.qotd_schedule(qotd_date);
+
+
+--
+-- Name: qotd_schedule qotd_schedule_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_schedule
+    ADD CONSTRAINT qotd_schedule_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
 
 
 --
@@ -19146,6 +20364,12 @@ ALTER TABLE public.consent_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consent_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: cookie_consent_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cookie_consent_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: crisis_review_audit_log crisis_review_admin insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -19336,24 +20560,6 @@ ALTER TABLE public.guardian_consent_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardian_links ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: idempotency_records; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_records ENABLE ROW LEVEL SECURITY;
-
---
--- Name: idempotency_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_runtime_config ENABLE ROW LEVEL SECURITY;
-
---
--- Name: idempotency_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.idempotency_runtime_config_history ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: internal_service_auth_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19376,6 +20582,12 @@ ALTER TABLE public.legal_acceptance_outbox ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.legal_acceptances ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: marketing_consent_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.marketing_consent_log ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: mastery_constants; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19520,6 +20732,24 @@ CREATE POLICY practice_sessions_select_self ON public.practice_sessions FOR SELE
 
 
 --
+-- Name: product_feedback; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_feedback ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: product_review_prompt_state; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_review_prompt_state ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: product_reviews; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.product_reviews ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: profiles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19545,6 +20775,18 @@ ALTER TABLE public.projection_refresh_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: qotd_daily_stats; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.qotd_daily_stats ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: qotd_schedule; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.qotd_schedule ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -19562,6 +20804,12 @@ CREATE POLICY questions_scoring_owner_read ON public.questions FOR SELECT TO lyc
 --
 
 ALTER TABLE public.rate_limit_ledger ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: rate_limit_ledger_anon; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rate_limit_ledger_anon ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: rate_limit_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
@@ -19763,12 +21011,6 @@ ALTER TABLE public.sections ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY sections_read ON public.sections FOR SELECT TO anon, authenticated USING (true);
 
-
---
--- Name: service_auth_secrets; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.service_auth_secrets ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: crisis_review_audit_log service_role_crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
@@ -21178,6 +22420,14 @@ GRANT ALL ON FUNCTION public.exam_score_renewal_emit(p_student_id uuid, p_anchor
 
 
 --
+-- Name: FUNCTION exam_scored_sessions(p_student_id uuid, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.exam_scored_sessions(p_student_id uuid, p_limit integer) TO service_role;
+
+
+--
 -- Name: FUNCTION exam_section_state_json(p_session_id uuid, p_section text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21370,6 +22620,14 @@ GRANT ALL ON FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id
 
 
 --
+-- Name: FUNCTION marketing_opt_in_age_eligible(p_date_of_birth date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marketing_opt_in_age_eligible(p_date_of_birth date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marketing_opt_in_age_eligible(p_date_of_birth date) TO service_role;
+
+
+--
 -- Name: FUNCTION mastery_min_events(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21509,6 +22767,61 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 
 
 --
+-- Name: FUNCTION product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_mark_external(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_mark_external(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_mark_external(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_expected timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_dismiss(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_state_for(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_submit(p_profile_id uuid, p_audience text, p_rating smallint, p_body text, p_quote_permission boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION profiles_analytics_fields_set_once(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_analytics_fields_set_once() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION profiles_lock_date_of_birth(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21516,10 +22829,112 @@ REVOKE ALL ON FUNCTION public.profiles_lock_date_of_birth() FROM PUBLIC;
 
 
 --
+-- Name: FUNCTION profiles_marketing_consent_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_marketing_consent_guard() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION profiles_marketing_consent_log(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_marketing_consent_log() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION projection_refresh_after_exam(p_seams_outbox_event_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_after_exam(p_seams_outbox_event_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION projection_refresh_outbox_drain(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_outbox_drain(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_outbox_drain(p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION projection_refresh_outbox_process(p_outbox_id bigint); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_refresh_outbox_process(p_outbox_id bigint) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_archive(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_archive() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_archive() TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_question_for(p_date date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_question_for(p_date date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_question_for(p_date date) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_question_is_eligible(p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_question_is_eligible(p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_question_is_eligible(p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_record_attempt(p_date date, p_correct boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_schedule_candidates(p_section text, p_domain text, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_candidates(p_section text, p_domain text, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_schedule_candidates(p_section text, p_domain text, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_schedule_insert(p_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_today(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_today() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_today() TO service_role;
+
+
+--
 -- Name: FUNCTION rate_limit_check_and_increment(p_profile_id uuid, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.rate_limit_check_and_increment(p_profile_id uuid, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.rate_limit_check_and_increment_anon(p_subject_hmac bytea, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) TO service_role;
 
 
 --
@@ -21818,6 +23233,14 @@ GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_do
 
 
 --
+-- Name: FUNCTION set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_marketing_consent(p_profile_id uuid, p_granted boolean, p_source text, p_consent_version text) TO service_role;
+
+
+--
 -- Name: FUNCTION set_profile_age_fields(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -21873,10 +23296,49 @@ GRANT ALL ON FUNCTION public.sweep_operational_log_retention(p_batch_size intege
 
 
 --
+-- Name: FUNCTION sweep_rate_limit_ledger_anon(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_rate_limit_ledger_anon() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_rate_limit_ledger_anon() TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_conversation_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sync_tutor_conversations_on_entitlement_change(); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION tutor_conversation_retention_days(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tutor_conversation_retention_days() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.tutor_conversation_retention_days() TO service_role;
+
+
+--
+-- Name: FUNCTION tutor_messages_null_student_only_flagged(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tutor_messages_null_student_only_flagged() FROM PUBLIC;
 
 
 --
@@ -22229,6 +23691,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config TO serv
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.consent_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE cookie_consent_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.cookie_consent_log TO service_role;
 
 
 --
@@ -22720,27 +24189,6 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_consent_requests TO s
 
 
 --
--- Name: TABLE idempotency_records; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_records TO service_role;
-
-
---
--- Name: TABLE idempotency_runtime_config; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_runtime_config TO service_role;
-
-
---
--- Name: TABLE idempotency_runtime_config_history; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_runtime_config_history TO service_role;
-
-
---
 -- Name: TABLE internal_service_auth_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -22766,6 +24214,13 @@ GRANT ALL ON TABLE public.legal_acceptance_outbox TO service_role;
 --
 
 GRANT ALL ON TABLE public.legal_acceptances TO service_role;
+
+
+--
+-- Name: TABLE marketing_consent_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.marketing_consent_log TO service_role;
 
 
 --
@@ -23162,6 +24617,27 @@ GRANT ALL ON TABLE public.practice_runtime_config_history TO service_role;
 
 
 --
+-- Name: TABLE product_feedback; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.product_feedback TO service_role;
+
+
+--
+-- Name: TABLE product_review_prompt_state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.product_review_prompt_state TO service_role;
+
+
+--
+-- Name: TABLE product_reviews; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.product_reviews TO service_role;
+
+
+--
 -- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
 --
 
@@ -23191,10 +24667,31 @@ GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role
 
 
 --
+-- Name: TABLE qotd_daily_stats; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.qotd_daily_stats TO service_role;
+
+
+--
+-- Name: TABLE qotd_schedule; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.qotd_schedule TO service_role;
+
+
+--
 -- Name: TABLE rate_limit_ledger; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_ledger TO service_role;
+
+
+--
+-- Name: TABLE rate_limit_ledger_anon; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_ledger_anon TO service_role;
 
 
 --
@@ -23543,13 +25040,6 @@ GRANT SELECT ON TABLE public.sections TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.servable_questions TO service_role;
-
-
---
--- Name: TABLE service_auth_secrets; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.service_auth_secrets TO service_role;
 
 
 --

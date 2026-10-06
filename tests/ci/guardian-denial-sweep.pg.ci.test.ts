@@ -136,6 +136,7 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
   "/api/auth/",
   "/api/billing/", // guardians pay for linked students
   "/api/csrf-token",
+  "/api/feedback/", // plan Q6 (owner, 2026-10-05): own review prompt + feedback; no learning state
   "/api/guardian/", // guardian-role gated
   "/api/health",
   "/api/internal/", // server-to-server (CRON_SECRET / OIDC)

@@ -33,6 +33,7 @@
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { emitEvent } from "../lib/analytics/emit-event";
 import {
   buildServedOptions,
   buildStudentSafeOptionsFromStoredMap,
@@ -181,9 +182,11 @@ const outboxConsumerResultSchema = z
   })
   .passthrough();
 
+type OutboxConsumed = { ok: boolean; followupOutboxId: string | null };
+
 async function consumeOutboxEvent(
   outboxEventId: string,
-): Promise<string | null> {
+): Promise<OutboxConsumed> {
   const env = await supabaseServer.rpc("exam_score_outbox_event", {
     p_outbox_event_id: outboxEventId,
   });
@@ -192,7 +195,7 @@ async function consumeOutboxEvent(
       outboxEventId,
       reason: env.error.message,
     });
-    return null;
+    return { ok: false, followupOutboxId: null };
   }
   const parsed = outboxConsumerResultSchema.safeParse(env.data);
   if (!parsed.success || !parsed.data.ok) {
@@ -205,18 +208,63 @@ async function consumeOutboxEvent(
         sqlstate: parsed.success ? parsed.data.sqlstate : "unparsed",
       },
     );
-    return null;
+    return { ok: false, followupOutboxId: null };
   }
-  return parsed.data.followup_outbox_id ?? null;
+  return { ok: true, followupOutboxId: parsed.data.followup_outbox_id ?? null };
+}
+
+/**
+ * @spec [Doc-05C_V1 §8.3 step 3 (the allowed read-through); SCL-206] | @implemented [2026-10-03]
+ * plain English: once a session's seams event has committed, its projection-refresh row
+ * exists (completed sessions only). Refreshing it here, in the request that finished the
+ * exam, means the projection already includes this test when the student reaches the
+ * report. expected outcome: 'refreshed', or 'nothing_pending' for a partial session or a
+ * replay. trade-offs: two projection computes on the finishing request. edge cases: any
+ * failure is logged and left to the pg_cron drain (projection_refresh_outbox_drain) — the
+ * outbox row is the contract, this call only gets there sooner; nothing about the student
+ * or their scores is logged.
+ */
+const projectionRefreshResultSchema = z.object({
+  outcome: z.enum(["refreshed", "nothing_pending", "seams_not_published"]),
+});
+
+async function refreshProjectionAfterExam(
+  seamsOutboxEventId: string,
+): Promise<void> {
+  const env = await supabaseServer.rpc("projection_refresh_after_exam", {
+    p_seams_outbox_event_id: seamsOutboxEventId,
+  });
+  if (env.error) {
+    logger.warn(
+      COMPONENT,
+      "projection_refresh_after_exam",
+      "projection refresh deferred to the drain",
+      // the code only: a projection error's message names the student
+      { seamsOutboxEventId, code: env.error.code },
+    );
+    return;
+  }
+  const parsed = projectionRefreshResultSchema.safeParse(env.data);
+  if (!parsed.success) {
+    logger.warn(
+      COMPONENT,
+      "projection_refresh_after_exam",
+      "projection refresh returned an unexpected shape; deferred to the drain",
+      { seamsOutboxEventId },
+    );
+  }
 }
 
 async function scoreCommittedOutboxEvents(
   ids: readonly string[] | undefined,
 ): Promise<void> {
   for (const outboxEventId of ids ?? []) {
-    const followup = await consumeOutboxEvent(outboxEventId);
+    const scored = await consumeOutboxEvent(outboxEventId);
+    if (scored.followupOutboxId === null) continue;
     // The seams event: its own call, its own transaction.
-    if (followup !== null) await consumeOutboxEvent(followup);
+    const seams = await consumeOutboxEvent(scored.followupOutboxId);
+    // Then the projection, from the refresh row the seams just wrote (SCL-206).
+    if (seams.ok) await refreshProjectionAfterExam(scored.followupOutboxId);
   }
 }
 
@@ -403,10 +451,18 @@ export async function createExamSession(
   });
   if (env.status !== 200 && env.status !== 201)
     return { ok: false, error: failureFrom(env) };
+  const session = examSessionResponseSchema.parse(env.body);
+  // Doc 07A §6.6 exam_started — 201 only: a 200 is the live session handed back, not a start.
+  if (env.status === 201) {
+    await emitEvent(studentId, "exam_started", {
+      test_session_id: session.session_id,
+      test_form_id: session.test_form_id,
+    });
+  }
   return {
     ok: true,
     status: env.status,
-    value: examSessionResponseSchema.parse(env.body),
+    value: session,
   };
 }
 
@@ -564,6 +620,50 @@ export async function submitExamAnswer(
   };
 }
 
+/**
+ * Doc 07A §6.6 exam_section_submitted, read from the canonical section row after the submit:
+ * the physical module ("1", "2A", "2B" — Doc 04A's module2_path) and the module's start-to-submit
+ * duration. If the row cannot be read the event is skipped and logged; the submit stands.
+ */
+async function emitExamSectionSubmitted(
+  studentId: string,
+  sessionId: string,
+  section: ExamSection,
+  module: ExamModule,
+): Promise<void> {
+  const { data, error } = await supabaseServer
+    .from("test_session_sections")
+    .select(
+      "module2_path, module1_started_at, module1_submitted_at, module2_started_at, module2_submitted_at",
+    )
+    .eq("test_session_id", sessionId)
+    .eq("section", section)
+    .maybeSingle();
+  const row = data as {
+    module2_path: string | null;
+    module1_started_at: string | null;
+    module1_submitted_at: string | null;
+    module2_started_at: string | null;
+    module2_submitted_at: string | null;
+  } | null;
+  const started = module === "1" ? row?.module1_started_at : row?.module2_started_at;
+  const submitted = module === "1" ? row?.module1_submitted_at : row?.module2_submitted_at;
+  const physical =
+    module === "1" ? "1" : row?.module2_path === "A" || row?.module2_path === "B" ? `2${row.module2_path}` : null;
+  if (error || !started || !submitted || physical === null) {
+    logger.warn(COMPONENT, "exam_section_event_skipped", "exam_section_submitted not emitted", {
+      code: error?.code ?? "section_row_incomplete",
+    });
+    return;
+  }
+  await emitEvent(studentId, "exam_section_submitted", {
+    test_session_id: sessionId,
+    section,
+    module: physical,
+    section_duration_ms: Math.max(0, Date.parse(submitted) - Date.parse(started)),
+  });
+}
+
 /** §12 */
 export async function submitExamModule(
   studentId: string,
@@ -578,6 +678,8 @@ export async function submitExamModule(
     p_module: module,
   });
   if (env.status !== 200) return { ok: false, error: failureFrom(env) };
+  // A re-submit is 409 `module_submitted`, so a 200 here is the one submission of this module.
+  await emitExamSectionSubmitted(studentId, sessionId, section, module);
   return {
     ok: true,
     status: 200,

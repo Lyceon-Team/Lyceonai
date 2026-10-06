@@ -20,6 +20,8 @@
  * `Date.getUTCDay()` gives (it puts Sunday at 0) — hence the `(dow + 6) % 7` shift.
  */
 
+import { startOfLocalWeek } from "@lyceon/shared/calendar/time";
+
 /** UTC midnight for a local date string. Never exported: see the module note. */
 function parse(date: string): Date {
   const [year, month, day] = date.split("-").map(Number);
@@ -41,9 +43,13 @@ export function dayOfWeek(date: string): number {
   return parse(date).getUTCDay();
 }
 
-/** R-08-30: the local ISO week starts on MONDAY. */
+/**
+ * R-08-30: the local ISO week starts on MONDAY. The rule lives once, in the shared calendar time
+ * module, so the server (the review prompt's study-week moment) and this grid cannot disagree on
+ * which week a date is in.
+ */
 export function startOfWeek(date: string): string {
-  return addDays(date, -((dayOfWeek(date) + 6) % 7));
+  return startOfLocalWeek(date);
 }
 
 /** The first of the month `date` falls in. */
@@ -185,6 +191,14 @@ export function monthName(date: string): string {
   return MONTHS[parse(date).getUTCMonth()] ?? "";
 }
 
+/**
+ * "Monday, 28 September" — Home's date line and test-day phrase (Main.dc.html; UI-50). The
+ * comma is the prototype's; `longDate` below is the calendar sheet's form without it.
+ */
+export function weekdayDayMonth(date: string): string {
+  return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""}, ${dayAndMonth(date)}`;
+}
+
 /** "Monday 21 September" — the side sheet's date line. */
 export function longDate(date: string): string {
   return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""} ${dayOfMonth(date)} ${monthName(date)}`;
@@ -219,6 +233,22 @@ export function rangeLabel(view: "week" | "month", cursor: string): string {
     return `${dayOfMonth(first)} – ${dayOfMonth(last)} ${monthName(first)}`;
   }
   return `${dayOfMonth(first)} ${monthName(first).slice(0, 3)} – ${dayOfMonth(last)} ${monthName(last).slice(0, 3)}`;
+}
+
+/**
+ * The student calendar's centred title (UI-55; DESIGN.md §4 Calendar, `M/D – M/D`):
+ * "9/28 – 10/4" in week view, as `Calendar.dc.html` formats it, and "September 2026" in month
+ * view, as `rangeLabel` does. The guardian's header keeps `rangeLabel`.
+ */
+export function numericRangeLabel(
+  view: "week" | "month",
+  cursor: string,
+): string {
+  if (view === "month") return rangeLabel("month", cursor);
+  const dates = weekDates(cursor);
+  const md = (date: string): string =>
+    `${parse(date).getUTCMonth() + 1}/${dayOfMonth(date)}`;
+  return `${md(dates[0] ?? cursor)} – ${md(dates[dates.length - 1] ?? cursor)}`;
 }
 
 /**

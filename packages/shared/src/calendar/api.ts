@@ -42,24 +42,8 @@ import { localDateSchema } from "./time.js";
 
 // ── The platform error shape (Coding Standards §8.2) ────────────────────────
 
-/**
- * `{ error: { message, code?, details? } }` — the standard's error envelope. Defined here
- * because no shared definition existed when the calendar needed one; it is deliberately NOT
- * calendar-named, and any other vertical that needs the shape should import this rather than
- * declare a second one.
- */
-export const apiErrorSchema = z
-  .object({
-    error: z
-      .object({
-        message: z.string(),
-        code: z.string().optional(),
-        details: z.unknown().optional(),
-      })
-      .strict(),
-  })
-  .strict();
-export type ApiError = z.infer<typeof apiErrorSchema>;
+// Defined in `../api-error-schema.ts`; re-exported so this module's importers are unchanged.
+export { apiErrorSchema, type ApiError } from "../api-error-schema.js";
 
 // ── Shared pieces ───────────────────────────────────────────────────────────
 
@@ -96,7 +80,9 @@ export const unacknowledgedChangeSchema = z
 export type UnacknowledgedChange = z.infer<typeof unacknowledgedChangeSchema>;
 
 /**
- * §15 GET `/api/me/streak`, embedded in the calendar payload. The calendar does NOT compute
+ * §14's `{ current, longest, history_complete }`, embedded in the calendar payloads (student
+ * and guardian). §15's standalone streak route is retired (SCL-212, owner ruling 2026-10-05,
+ * OQ-61 (a): no client called it), so this embed is the shape's only wire. The calendar does NOT compute
  * this — §14 puts `computeActivityStreak` in `packages/shared/src/streak.ts` and the IO in
  * `server/services/activity-streak.ts`, and the streak is served without a
  * `calendar_access` check (INV-08-20). This schema is the embed shape only; when that module
@@ -368,6 +354,36 @@ export const profileUpsertResponseSchema = z
   })
   .strict();
 export type ProfileUpsertResponse = z.infer<typeof profileUpsertResponseSchema>;
+
+// ── GET /api/calendar/profile ───────────────────────────────────────────────
+
+/**
+ * @spec [Doc-05F_V1.0 §15 (API surface), §7.1 `student_study_profile`; SCL-130 (setup
+ *        renders before the entitlement gate); owner ruling OQ-25 (Karl, 2026-10-02,
+ *        clarified), docs/plans/student-ui/student-ui-vertical.md §9]
+ * | @implemented [2026-10-03]
+ *
+ * plain English: the study profile on its own — what the student told us (test date,
+ * target score, schedule) — so a FREE student's goal card, setup form and Settings can
+ * show their saved answers without the paid plan read. `null` is the pre-setup state,
+ * not an error.
+ *
+ * expected outcome: `{ profile: StudyProfile | null }` and nothing else. `.strict()` and
+ * built from `studyProfileSchema` (itself `.strict()`), so no plan block, plan id, version
+ * number or any plan-derived value can ride along: a key this schema does not name fails
+ * the parse rather than reaching the wire.
+ *
+ * trade-offs: dream schools are NOT here, by owner ruling (Karl) 2026-10-03, register OQ-42:
+ * "accepted; dream schools come only from /api/profile/background" (`studentBackgroundSchema`).
+ * They are not a `student_study_profile` column, and OQ-37 keeps them hidden on the calendar
+ * until UI-S8 closes. Copying them in would fork a second read of one resource.
+ */
+export const profileReadResponseSchema = z
+  .object({
+    profile: studyProfileSchema.nullable(),
+  })
+  .strict();
+export type ProfileReadResponse = z.infer<typeof profileReadResponseSchema>;
 
 // ── POST /plan/regenerate, /days/:date/regenerate, /days/:date/reset ────────
 

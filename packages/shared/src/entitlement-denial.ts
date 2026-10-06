@@ -23,7 +23,7 @@
  * not a second declaration of the envelope.
  */
 import { z } from "zod";
-import { apiErrorSchema } from "./calendar/api.js";
+import { apiErrorSchema } from "./api-error-schema.js";
 
 /** Doc 01 §26.1 `FeatureKey`, in the order the §27.2 launch seed inserts them. */
 export const ENTITLEMENT_FEATURE_KEYS = [

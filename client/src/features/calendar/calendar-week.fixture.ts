@@ -160,8 +160,10 @@ function doneFor(
   slot: number,
   target: number,
   todayIndex: number,
+  openToday: boolean,
 ): number {
   if (dayIndex > todayIndex) return 0;
+  if (dayIndex === todayIndex && openToday) return 0;
   if (dayIndex === todayIndex) return slot === 0 ? target : 0;
   if (dayIndex === 1 && slot === 1) return 0;
   if (dayIndex === 2 && slot === 1) return Math.ceil(target / 2);
@@ -190,8 +192,14 @@ function unitsFor(
   }));
 }
 
-/** The week containing `today`, through the real read model. */
-export function calendarWeekRange(today: string): {
+/**
+ * The week containing `today`, through the real read model. `openToday` leaves every block of
+ * today not started (OQ-63: a Saturday whose one block is the full-length sitting, still to do).
+ */
+export function calendarWeekRange(
+  today: string,
+  openToday = false,
+): {
   range: CalendarRange;
   from: string;
   to: string;
@@ -221,7 +229,7 @@ export function calendarWeekRange(today: string): {
           dayIndex,
           slot,
           s,
-          doneFor(dayIndex, slot, target, todayIndex),
+          doneFor(dayIndex, slot, target, todayIndex, openToday),
         ),
       );
     });
@@ -262,14 +270,23 @@ const ESTIMATES = {
 const TARGET_SCORE = 1350;
 const TARGET_EXAM_DATE = "2026-12-06";
 
-/** The student's `GET /api/calendar` answer for that week, through its schema and envelope. */
-export function studentCalendarWeek(today: string): Record<string, unknown> {
-  const { range } = calendarWeekRange(today);
+/**
+ * The student's `GET /api/calendar` answer for that week, through its schema and envelope.
+ * `over.testDate` moves the profile's SAT date (UI-55: a date inside the week, so the test day
+ * is starred in the grid); `over.openToday` leaves today's blocks not started (OQ-63); everything
+ * else is the same payload.
+ */
+export function studentCalendarWeek(
+  today: string,
+  over: { testDate?: string | null; openToday?: boolean } = {},
+): Record<string, unknown> {
+  const { range } = calendarWeekRange(today, over.openToday ?? false);
   const payload = calendarReadyResponseSchema.parse({
     status: "ready",
     profile: {
       timezone: TIMEZONE,
-      target_exam_date: TARGET_EXAM_DATE,
+      target_exam_date:
+        over.testDate === undefined ? TARGET_EXAM_DATE : over.testDate,
       target_score: TARGET_SCORE,
       study_days_mask: 63,
       daily_minutes: 45,

@@ -1,0 +1,14 @@
+# CodeQL configuration for Lyceon.
+#
+# Read by code scanning DEFAULT SETUP once the repository property
+# `github-codeql-config-file` points here (value: `.github/codeql/codeql-config.yml`),
+# and by the manual advanced workflow (.github/workflows/codeql.yml, `config-file:`).
+# Without the property, default setup ignores this file: default setup never reads
+# a config file from the tree on its own.
+name: "Lyceon CodeQL config"
+
+paths-ignore:
+  # The signed-off student UI design prototype: standalone canvas HTML kept as a
+  # reference artifact, never built or shipped. Code-quality autofixes rewrote it
+  # 13 times and were reverted (owner ruling, Karl, 2026-10-03).
+  - docs/plans/student-ui/design/prototype/**

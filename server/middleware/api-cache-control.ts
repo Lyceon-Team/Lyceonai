@@ -30,6 +30,18 @@ export const API_CACHEABLE_ROUTES: ReadonlyArray<{
     reason:
       "The public price list shown to signed-out visitors: the same body for every viewer, no user data (server/routes/public-pricing-routes.ts).",
   },
+  {
+    method: "GET",
+    path: "/api/public/qotd/archive",
+    reason:
+      "The public list of past Question of the Day dates with section and domain: the same body for every viewer, max-age 3600 (server/routes/public-qotd-routes.ts).",
+  },
+  {
+    method: "GET",
+    path: "/api/public/qotd/:date",
+    reason:
+      "A past day's public Question of the Day for the archive: the same body for every viewer, published by design (plan R20a) (server/routes/public-qotd-routes.ts).",
+  },
 ];
 
 export function apiCacheControlDefault(

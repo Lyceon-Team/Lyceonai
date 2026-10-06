@@ -1,9 +1,11 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { runtimeRoleSchema } from "@lyceon/shared/runtime-role-schema";
 import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
+import { FullPageLoader } from "@/components/student-ui";
+import { requireRoleLoaderThemeLock } from "@/lib/route-shells";
 import {
   loginPathWithReturn,
   onboardingPathWithReturn,
@@ -15,6 +17,7 @@ import {
   dismissReconsent,
   isReconsentDismissed,
 } from "@/components/legal/reconsent-dismissal";
+import { enterSignedInSurface } from "@/lib/signed-in-surface";
 
 type UserRole = "student" | "guardian" | "admin";
 
@@ -38,6 +41,10 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     useSupabaseAuth();
   const [location] = useLocation();
 
+  // Owner ruling 2026-10-05 (SCL-213 IS 6): every role-gated page is a signed-in surface, where
+  // PostHog autocapture records no element text. Registered for exactly as long as it is mounted.
+  useEffect(() => enterSignedInSurface(), []);
+
   // Was the guardian re-consent prompt waved away? Two sources, deliberately.
   // State answers within this mount, so dismissing hides it at once. Storage
   // answers across mounts — wouter remounts RequireRole on every navigation, so
@@ -55,13 +62,16 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   });
 
   if (authLoading || (user && profileLoading)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
+    // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"; UI-59, OQ-60 (e) (owner
+    // ruling 2026-10-05)] | @implemented [2026-10-03; Bare routes 2026-10-05]
+    // The shared FullPageLoader (role="status", named by its label). This gate sits above the
+    // shell, so the loader takes its lock from the route table: a Bare route's own lock (the
+    // device theme since UI-59, so a dark device sees no light flash before the dark card), and
+    // light everywhere else (guardian, admin and still-pinned pages share this gate).
+    return requireRoleLoaderThemeLock(location) === "light" ? (
+      <FullPageLoader themeLock="light" />
+    ) : (
+      <FullPageLoader />
     );
   }
 

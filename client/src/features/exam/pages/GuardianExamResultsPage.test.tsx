@@ -43,6 +43,7 @@ import {
   scoredReport,
 } from "../test-fixtures/report-fixtures";
 import { HttpApiError } from "@/lib/api-error";
+import { domainWeightLine } from "../lib/domain-weights";
 
 const STUDENT = "11111111-1111-4111-8111-111111111111";
 const SID = FIXTURE_SESSION_ID;
@@ -139,17 +140,34 @@ describe("guardian exam result", () => {
       FIXTURE_DISCLOSURE.full_text_url,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
-    const rows = screen
-      .getAllByTestId("exam-domain-row")
-      .map((r) => r.textContent);
+    const rowEls = screen.getAllByTestId("exam-domain-row");
+    const rows = rowEls.map(
+      (r) => within(r).getByTestId("exam-domain-name").textContent,
+    );
     expect(rows).toHaveLength(8);
     // G3-02 (R4, SCL-189) / G5-11 (SCL-210): the domain and the student's seven segments; no
-    // "N of M correct" anywhere.
+    // "N of M correct" anywhere. Since the UI-54 restyle each row also carries College Board's
+    // published weight line for the domain (a fact about the SAT, the same for every student):
+    // it is checked against that table, and everything else in the row carries no digit.
     expect(rows).toContain("Algebra");
-    for (const text of rows) expect(text).not.toMatch(/\d|correct/);
+    for (const row of rowEls) {
+      const name =
+        within(row).getByTestId("exam-domain-name").textContent ?? "";
+      const weight = within(row).queryByTestId("exam-domain-weight");
+      if (weight) {
+        expect(weight.textContent).toBe(
+          domainWeightLine("RW", name) ?? domainWeightLine("M", name),
+        );
+        weight.remove();
+      }
+      expect(row.textContent).not.toMatch(/\d|correct/);
+    }
     const algebra = screen
       .getAllByTestId("exam-domain-row")
-      .find((r) => r.textContent === "Algebra");
+      .find(
+        (r) =>
+          within(r).getByTestId("exam-domain-name").textContent === "Algebra",
+      );
     // 11 of 13 → round half up of 11 × 7 / 13 = 5.92 → 6 of 7 filled, the student's rule.
     const segs = within(algebra!).getAllByTestId("exam-domain-segment");
     expect(segs).toHaveLength(7);
@@ -183,7 +201,7 @@ describe("guardian exam result", () => {
   it("pending: the student's 'Scoring your test', naming the student; no number, no disclosure, no tabs", () => {
     show(toGuardianExamReport(pendingReport));
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "Scoring your student's test",
+      "Scoring your student's full-length test",
     );
     // The student's "This page updates on its own." is dropped: this page does not poll.
     expect(screen.getByRole("status").textContent).toBe(
@@ -209,10 +227,10 @@ describe("guardian exam result", () => {
     expectNoControls();
   });
 
-  it("not_completed: the student's 'This test isn't finished'; no resume control", () => {
+  it("not_completed: the student's 'This full-length test isn't finished'; no resume control", () => {
     show(toGuardianExamReport(inProgressReport));
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "This test isn't finished",
+      "This full-length test isn't finished",
     );
     expectNoControls();
   });

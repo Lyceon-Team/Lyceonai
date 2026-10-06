@@ -11,7 +11,7 @@
  * whitespace, injected another), the source test would stay green while every page refused to
  * run it. This runs after the build and requires, for dist/public/index.html:
  *   - every inline script's sha256 appears in the page CSP's script-src in vercel.json;
- *   - every hash in that script-src belongs to an inline script of the built page (no stale one);
+ *   - every hash in that script-src belongs to an inline script of SOME built page (no stale one);
  *   - the theme script's hash equals THEME_BOOT_SCRIPT_HASH, the constant the Express CSP uses.
  *
  * usage: node scripts/ci/page-csp-built-hash-gate.mjs [built-page.html] [vercel.json]
@@ -75,7 +75,7 @@ function executable(tag) {
   return type === undefined || JS_TYPES.has(type.trim().toLowerCase());
 }
 
-const pages = builtPaths.map((file) => {
+function inspect(file) {
   const html = readFileSync(file, "utf8");
   const rel = path.relative(root, file);
   const openings = [...html.matchAll(/<script\b[^>]*>/gi)].length;
@@ -94,8 +94,20 @@ const pages = builtPaths.map((file) => {
       hash: `sha256-${createHash("sha256").update(m[2]).digest("base64")}`,
     }));
   return { rel, inline };
-});
+}
+const pages = builtPaths.map(inspect);
 const inline = pages.flatMap((p) => p.inline);
+// A hash is stale only when NO built page ships its script. Pages differ since F13 (2026-10-05):
+// the homepage alone carries the hero swap script, so checking one page on its own (the
+// selftest's mode) must still count the hashes the rest of the built site uses.
+const siteInline = [
+  ...inline,
+  ...(existsSync(publicDir) && builtArg
+    ? htmlFiles(publicDir)
+        .filter((f) => !builtPaths.includes(f))
+        .flatMap((f) => inspect(f).inline)
+    : []),
+];
 
 const vercel = JSON.parse(readFileSync(vercelPath, "utf8"));
 const route = (vercel.routes ?? []).find(
@@ -123,7 +135,7 @@ for (const page of pages) {
   }
 }
 for (const h of allowed) {
-  if (!inline.some((s) => s.hash === h)) {
+  if (!siteInline.some((s) => s.hash === h)) {
     problems.push(
       `page script-src allows ${h}, which no inline script of the built page has`,
     );

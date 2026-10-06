@@ -41,7 +41,17 @@ type Props = {
 
 function BookmarkIcon({ filled }: { filled: boolean }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -64,9 +74,9 @@ export function ExamQuestionView(props: Props) {
           data-testid="exam-mark-review"
           onClick={props.onToggleMark}
           className={[
-            "flex min-h-[44px] items-center gap-2 rounded-full border px-3.5 text-[13px]",
+            "flex min-h-[44px] items-center gap-2 rounded-full border px-3.5 text-lyc-meta",
             marked
-              ? "border-[var(--exam-marked)] bg-[#FBF1E6] text-[var(--exam-marked)]"
+              ? "border-[var(--exam-marked)] bg-[var(--exam-warn-bg)] text-[var(--exam-marked)]"
               : "border-[var(--exam-line)] bg-[var(--exam-surface)] text-[var(--exam-muted)]",
           ].join(" ")}
         >
@@ -74,7 +84,10 @@ export function ExamQuestionView(props: Props) {
           {marked ? "Marked for review" : "Mark for review"}
         </button>
       </div>
-      <div className="text-base font-semibold leading-relaxed" data-testid="exam-stem">
+      <div
+        className="text-base font-semibold leading-relaxed"
+        data-testid="exam-stem"
+      >
         <MathRenderer content={item.stem} />
       </div>
       {item.question_type === "multiple_choice" ? (
@@ -87,18 +100,27 @@ export function ExamQuestionView(props: Props) {
         />
       ) : (
         <div className="max-w-[330px]" onBlur={props.onGridCommit}>
-          <NumericEntryInput value={props.gridDraft} onChange={props.onGridChange} />
+          <NumericEntryInput
+            value={props.gridDraft}
+            onChange={props.onGridChange}
+          />
         </div>
       )}
     </div>
   );
 
   if (item.passage === null) {
-    return <div className="mx-auto w-full max-w-[760px] px-6 py-7 md:px-10">{answerArea}</div>;
+    // SCL-204 / R32: `ph-no-capture` on the exam question/answer area (Coding Standards §12).
+    return (
+      <div className="ph-no-capture mx-auto w-full max-w-[760px] px-6 py-7 md:px-10">
+        {answerArea}
+      </div>
+    );
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+    // SCL-204 / R32: `ph-no-capture` on the exam question/answer area (Coding Standards §12).
+    <div className="ph-no-capture flex min-h-0 flex-1 flex-col md:flex-row">
       <div className="min-h-0 flex-1 overflow-y-auto border-b border-[var(--exam-line)] px-6 py-7 md:border-b-0 md:border-r md:px-10">
         <PassageView
           passage={item.passage}
@@ -106,7 +128,9 @@ export function ExamQuestionView(props: Props) {
           onChange={props.onHighlightsChange}
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7 md:px-10">{answerArea}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7 md:px-10">
+        {answerArea}
+      </div>
     </div>
   );
 }

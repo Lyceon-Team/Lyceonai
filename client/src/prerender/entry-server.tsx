@@ -29,6 +29,11 @@
  *    recover from on the client) fails the build.
  *  - A route with no metadata in shared/seo/public-meta.ts fails the build.
  *  - Only published legal documents are prerendered; an unpublished one would 404.
+ *  - Question of the Day archive pages (2026-10-05, plan Q3): the past days are read once, before
+ *    `fetch` is stubbed, by qotd-archive-source.ts (or passed in by a test), and each day's
+ *    payload is put in the query cache under the key the page itself queries, as the legal
+ *    pages are. A day that is not strictly before the build's own America/Chicago date is
+ *    dropped here as well, whatever the source says, so no build can emit an answer early.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -44,7 +49,18 @@ import {
   loadLegalSlugs,
 } from "@/lib/legal-content";
 import { BLOG_POSTS } from "@shared/content/blog";
-import { getPublicMeta } from "@shared/seo/public-meta";
+import { resolvePublicMeta } from "@shared/seo/public-meta";
+import { toArchiveIndex } from "@shared/qotd/projection";
+import { qotdToday } from "../../../server/services/qotd/qotd-service";
+import {
+  qotdArchiveDayQueryOptions,
+  qotdArchiveIndexQueryOptions,
+} from "@/lib/qotd";
+import type { QotdArchiveResponse } from "../../../packages/shared/src/qotd-schema";
+import {
+  loadQotdArchiveForBuild,
+  type QotdArchiveSource,
+} from "./qotd-archive-source";
 import { BASE_URL } from "@shared/seo/structured-data";
 import {
   renderNotFoundHead,
@@ -53,6 +69,7 @@ import {
   withHead,
 } from "@shared/seo/head";
 import {
+  QOTD_HUB_PATH,
   buildSitemapXml,
   expandPrerenderPages,
   parseRouteRegistry,
@@ -77,6 +94,11 @@ export type PrerenderedSite = {
   /** dist/public/app.html — the SPA shell for every route that is not prerendered. */
   shellHtml: string;
   sitemapXml: string;
+  /** Where the Question of the Day archive came from, and the days built from it. */
+  qotdArchive: {
+    source: QotdArchiveSource["source"];
+    days: QotdArchiveResponse[];
+  };
 };
 
 export function outputFileFor(urlPath: string): string {
@@ -123,8 +145,31 @@ export function renderAppHtml(urlPath: string): Promise<string> {
 }
 
 /** Loads what a page's queries need, through the queries the page itself runs. */
-async function loadPageQueries(urlPath: string): Promise<void> {
+async function loadPageQueries(
+  urlPath: string,
+  qotdDays: readonly QotdArchiveResponse[],
+): Promise<void> {
   queryClient.clear();
+  if (urlPath === QOTD_HUB_PATH) {
+    queryClient.setQueryData(
+      qotdArchiveIndexQueryOptions().queryKey,
+      toArchiveIndex(
+        qotdDays.map((d) => ({
+          qotd_date: d.qotd_date,
+          section_code: d.question.section_code,
+          domain: d.question.domain,
+        })),
+      ),
+    );
+    return;
+  }
+  if (urlPath.startsWith(`${QOTD_HUB_PATH}/`)) {
+    const date = urlPath.slice(QOTD_HUB_PATH.length + 1);
+    const day = qotdDays.find((d) => d.qotd_date === date);
+    if (!day) throw new Error(`prerender: no archive payload for ${urlPath}`);
+    queryClient.setQueryData(qotdArchiveDayQueryOptions(date).queryKey, day);
+    return;
+  }
   if (urlPath === "/legal") {
     await queryClient.fetchQuery(legalIndexQueryOptions());
     return;
@@ -153,6 +198,9 @@ async function loadPublishedLegal(): Promise<PrerenderContent["legal"]> {
 export async function prerenderSite(options: {
   repoRoot: string;
   template: string;
+  /** Tests pass the archive in; the build reads it from the database. */
+  qotdArchive?: readonly QotdArchiveResponse[];
+  now?: Date;
 }): Promise<PrerenderedSite> {
   const registry = parseRouteRegistry(
     fs.readFileSync(
@@ -161,21 +209,30 @@ export async function prerenderSite(options: {
     ),
   );
 
+  // Read with the real fetch, before it is stubbed for the legal loader.
+  const loaded: QotdArchiveSource = options.qotdArchive
+    ? { source: "fixture", days: [...options.qotdArchive] }
+    : await loadQotdArchiveForBuild(process.env, globalThis.fetch);
+  // The one canonical QOTD day helper (America/Chicago), shared with the API.
+  const today = qotdToday(options.now);
+  const qotdDays = loaded.days.filter((d) => d.qotd_date < today);
+
   const realFetch = globalThis.fetch;
   globalThis.fetch = legalFetch(path.join(options.repoRoot, "legal"));
   try {
     const content: PrerenderContent = {
       blog: BLOG_POSTS.map((post) => ({ slug: post.slug, date: post.date })),
       legal: await loadPublishedLegal(),
+      qotd: qotdDays.map((d) => ({ date: d.qotd_date })),
     };
     const pages: PrerenderedPage[] = [];
     for (const page of expandPrerenderPages(registry, content)) {
-      const meta = getPublicMeta(page.path);
+      const meta = resolvePublicMeta(page.path, qotdDays);
       if (!meta)
         throw new Error(
           `prerender: ${page.path} has no entry in shared/seo/public-meta.ts`,
         );
-      await loadPageQueries(page.path);
+      await loadPageQueries(page.path, qotdDays);
       const body = await renderAppHtml(page.path);
       pages.push({
         ...page,
@@ -194,6 +251,7 @@ export async function prerenderSite(options: {
       ),
       shellHtml: options.template,
       sitemapXml: buildSitemapXml(pages, BASE_URL),
+      qotdArchive: { source: loaded.source, days: qotdDays },
     };
   } finally {
     globalThis.fetch = realFetch;

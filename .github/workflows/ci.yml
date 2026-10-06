@@ -18,7 +18,11 @@ jobs:
   # ---------------------------------------------------------------------------
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 45, not 20 (owner decision 2026-10-03): the review UI mutation gate runs one test
+    # file per plant, and with the student UI Wave 5 plants (197 in all) it alone takes
+    # over 15 minutes, which pushed this job past 20 and cancelled it. The gate stays in
+    # this required job so it keeps blocking merges; only the clock changed.
+    timeout-minutes: 45
 
     permissions:
       contents: read
@@ -297,6 +301,17 @@ jobs:
       # registry is current AND that the built function bundle really carries it.
       - name: Legal registry reaches every runtime (incident 2026-09-16)
         run: pnpm run gate:legal-registry
+
+      # Doc 07A §11.1 / §11.2 (launch-required, hard-fail at V1). Parity: every emitEvent name is
+      # registered, PostHog SDKs are imported only by the two permitted modules (SCL-201 IS 2),
+      # redaction keys equal property keys, and the bundled registry module is current.
+      # Conformance: every property has a runtime redaction posture and none is a forbidden
+      # identifier type.
+      - name: ci/event-schema-registry-parity (Doc 07A §11.1)
+        run: pnpm run gate:event-registry-parity
+
+      - name: ci/pii-redaction-conformance (Doc 07A §11.2)
+        run: pnpm run gate:pii-redaction
 
       # practice_sessions.mode decides event_source_kind, so accepting it as free
       # text let a client classify its own activity in the mastery record AND
@@ -692,6 +707,21 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/exam-seams-gates.sh
 
+      # SCL-206: real exams feed the score projection. The two most recent completed
+      # full-lengths, in order, never an older third or an abandoned one; NULL below the
+      # Q4 gate; the API read-through refreshes only its own session; the drain consumes
+      # the rest, survives a row whose refresh raises, and replays as a no-op.
+      # @spec [Doc-05C_V1 §5.7, §8.3, §13.1; SCL-206] | @implemented [2026-10-03]
+      - name: Projection full-length blend gates (SCL-206)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/projection-full-length-gates.sh
+
       # G1: the exam report's per-domain breakdown. Ownership (one bare 403), agreement
       # with score_runs' module counts and the served items, the ROUTING PREMISE on the
       # live forms (2A and 2B identical per domain, SCL-160), the row key allowlist,
@@ -859,6 +889,41 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/calendar-rls-gates.sql
 
+      # QOTD (SEO Wave 2, plan Q1) and the SCL-202 anonymous ledger. Runs here because this
+      # job already holds a database with the full migration pipeline applied; the gate
+      # writes only inside one transaction and rolls back, so it cannot disturb the calendar
+      # gates around it.
+      - name: QOTD + anonymous ledger schema gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/qotd-schema-gates.sql
+
+      # Plants a repeat schedule, a readable future day, two pre-submit answer leaks and an early
+      # archive page; each must turn its guarding check red on a named assertion (plan Q1-Q3).
+      - name: QOTD mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/qotd.mutations.sh
+
+      # SEO Wave 2, plans Q5/Q6: plants the opt-in reset bug, under-13 opt-ins at every layer, a
+      # lost consent source, a withdrawal emitting consent_captured, a non-atomic prompt claim,
+      # a per-click dismissal, a lost deletion cascade, each cadence rule, Trustpilot for a minor
+      # or without its URL, a prompt on the practice runner, feedback text in a log and the
+      # onboarding checkbox for an under-13. Each must turn its guarding test red on a name.
+      - name: Marketing opt-in + reviews mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/marketing-consent-reviews.mutations.sh
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost
@@ -937,6 +1002,24 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-profile-upsert.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-profile-upsert.json \
             --file tests/ci/calendar.profile-upsert.pg.ci.test.ts
+
+      # @spec [Doc 05F §15, §16; SCL-130; owner ruling OQ-25 (Karl, 2026-10-02)]
+      # | @implemented [2026-10-03]
+      # GET /api/calendar/profile against the real migrations: the ungated study-profile read,
+      # round-tripped through the real PUT for a free and a paid student, and no plan key on
+      # the wire. Through the summary gate so a skipped (no-PG) run is red, not green.
+      - name: Calendar profile read (real route, real PostgreSQL)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/calendar.profile-read.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-calendar-profile-read.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-calendar-profile-read.json \
+            --file tests/ci/calendar.profile-read.pg.ci.test.ts
 
       # REVIEW IS NO LONGER A STUB, AND THIS STEP HAD NOT NOTICED. It ran the review
       # contract with no PG environment, so `describe.skipIf(!PG_AVAILABLE)` skipped the
@@ -1266,6 +1349,49 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-admin-denied.json \
             --file tests/ci/guardian-admin-denied.pg.ci.test.ts
 
+      # @spec [student-UI register §9 OQ-29, owner ruling (Karl) 2026-10-02: the feature-access map
+      # on GET /api/profile] | @implemented [2026-10-03]
+      # The map's proof (commit 062cfc86) ran in NO job: like every *.pg.ci suite it skips
+      # without PGHOST, and the whole-suite step has none, so "green" meant 6 skipped tests.
+      # Paid all granted; free all locked for plan; paid under-13 LISA locked for age; guardian
+      # null; agrees with requireStudentOnly; the routes' own feature keys. Real route over real
+      # PG; behind the summary gate, so a skipped suite cannot read as green.
+      - name: Feature-access map (OQ-29) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/feature-access-map.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-feature-access-map.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-feature-access-map.json \
+            --file tests/ci/feature-access-map.pg.ci.test.ts
+
+      # @spec [student-UI register §8 F-62; owner ruling (Karl) 2026-10-03: wire the three LISA
+      # database proofs into CI] | @implemented [2026-10-03] | Crisis review queue, memory
+      # compaction and scope ownership, each on a disposable database. They skip without PGHOST
+      # and no step named them, so the `ci` job reported them skipped. Behind the summary gate,
+      # so a skipped file cannot read as green.
+      - name: LISA ephemeral-PG proofs (F-62) → real PG
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run \
+            tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
+            tests/ci/memory-compaction.ephemeral-pg.proof.test.ts \
+            tests/ci/scope-ownership.ephemeral-pg.proof.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-lisa-ephemeral.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-lisa-ephemeral.json \
+            --file tests/ci/crisis-review-queue.ephemeral-pg.proof.test.ts \
+            --file tests/ci/memory-compaction.ephemeral-pg.proof.test.ts \
+            --file tests/ci/scope-ownership.ephemeral-pg.proof.test.ts
+
       # @spec [Guardian_Closure_Plan G2-02; audit G-AUD-23] | @implemented [2026-09-29]
       # An unrecognised profile role ('tutor'/'teacher') is refused with 403 ROLE_UNRECOGNIZED by
       # the real session middleware, the row is never rewritten, public routes still answer. Real
@@ -1300,6 +1426,44 @@ jobs:
             --reporter=default --reporter=json --outputFile=/tmp/vitest-date-of-birth-lock.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-date-of-birth-lock.json \
             --file tests/ci/date-of-birth-lock.pg.ci.test.ts
+
+      # @spec [student-UI register OQ-26, owner ruling 2026-10-02; F-38] | @implemented [2026-10-03]
+      # GET /api/profile `user.hasPassword`: true for email/password and for Google + password,
+      # false for Google-only, null (still 200) on a failed identity read, and false exactly
+      # when POST /api/auth/change-password refuses NO_PASSWORD_IDENTITY. Real route over real
+      # PG, identities through the shared GoTrue stand-in. Behind the summary gate, so a
+      # skipped suite cannot read as green.
+      - name: Profile hasPassword (OQ-26) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/profile-has-password.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-profile-has-password.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-profile-has-password.json \
+            --file tests/ci/profile-has-password.pg.ci.test.ts
+
+      # @spec [student-UI register OQ-28, owner ruling 2026-10-02; F-54; UI-58] | @implemented [2026-10-03]
+      # PATCH /api/profile/name (Settings name save): writes display_name only; marketing_opt_in
+      # and profile_completed_at read back unchanged from real PG; a body carrying
+      # marketingOptIn (strict schema) or a blank name is a 400 with nothing written; a guardian
+      # is a 403. Real route over real PG; behind the summary gate, so a skipped suite cannot
+      # read as green.
+      - name: Profile name save (OQ-28) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/profile-name.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-profile-name.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-profile-name.json \
+            --file tests/ci/profile-name.pg.ci.test.ts
 
       # @spec [Guardian_Closure_Plan G2-05; audit G-AUD-03; R6; SCL-187] | @implemented [2026-09-29]
       # The email-consent flow is removed: an under-13 student completes the profile, no
@@ -1405,18 +1569,48 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-billing-managed-by.json \
             --file tests/ci/billing-managed-by.pg.ci.test.ts
 
-      # The G2-04 assertions are worth what their plants prove. One product-source mutation per
-      # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
-      # per student — the stored-flag design; a learning read and checkout ungated; the gate
-      # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
-      # its assertion red, each reverted byte-identically in a trap.
-      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
+      # @spec [student-UI register OQ-21, owner ruling (Karl) 2026-10-02; owner ruling (Karl)
+      #        2026-10-03 OQ-43 / F-61, Doc 02B §13; owner ruling (Karl) 2026-10-05 OQ-50,
+      #        SCL-209] | @implemented [2026-10-03; OQ-50 2026-10-05]
+      # GET /api/practice/quota on the real practice router and the real
+      # check_and_reserve_practice_quota, over sessions served, answered and skipped through the
+      # real routes: fresh (resetAt = next America/Chicago midnight), a serve consumes nothing, a
+      # skip consumes one (OQ-50), an answer consumes one and its idempotent replay nothing, the
+      # diagnostic's answers and skips consume nothing and it is served past the limit (OQ-50),
+      # limit−1 and limit (the read, the
+      # GET /next 402 and the POST /sessions 402 agree; the pre-cap equals remaining), the Chicago
+      # day boundary and DST via p_now, paid unlimited, reading consumes nothing, 401 and guardian
+      # 403. Verdict read from vitest's JSON report: a PG-backed suite that skips is a vacuous pass.
+      - name: Practice quota (OQ-21 read, OQ-43 Doc 02B §13 rule) → real PG proof
         env:
           PGHOST: localhost
           PGPORT: "5432"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: bash scripts/ci/under-13-link-gate.mutations.sh
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/practice-quota.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-practice-quota.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-quota.json \
+            --file tests/ci/practice-quota.pg.ci.test.ts
+
+      # @spec [student-UI register §8 F-64, §9 OQ-35; Doc 02B §9 next/serve] | @implemented
+      # [2026-10-03] | Concurrent GET /next on one session (pooled connections, 10 rounds × 8
+      # calls): never a 500, every 200 the same item, exactly one item served, pre-submit
+      # correct_answer and explanation null. /state `shortened` true when the stored pool count
+      # is below the requested count, and neither count on the wire. Behind the summary gate.
+      - name: Practice runner (F-64 concurrent /next, OQ-35 shortened) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/practice-runner.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-practice-runner.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-practice-runner.json \
+            --file tests/ci/practice-runner.pg.ci.test.ts
 
       # @spec [contracts/notifications.contract.md §13] | @implemented [2026-09-03]
       # The notifications rebuild's proof: every DB-touching case runs against the real
@@ -1450,16 +1644,21 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-crisis-flag-atomic.json \
             --file tests/ci/crisis-flag-atomic.pg.ci.test.ts
 
-      # A gate is worth its red proof. Nine mutations, one per assertion; M1 re-plants the
-      # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
-      # requires D1.3 to notice.
-      - name: Crisis flag atomicity self-test (proves each mutation turns it red)
+      # The tutor retention sweep on real Postgres (RS-00/RS-04/RS-05, 2026-10-05). The in-memory
+      # mock suite let a sweep on a column that does not exist pass for weeks; these run the real
+      # tier functions against the migrated schema. Verdict from vitest's JSON report.
+      - name: Tutor retention sweep (Doc 03 §14.2) → real PG proof
         env:
           PGHOST: localhost
           PGPORT: "5432"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: bash scripts/ci/crisis-flag-atomic.mutations.sh
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/retention-sweep.pg.ci.test.ts \
+            --reporter=default --reporter=json --outputFile=/tmp/vitest-retention-sweep.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-retention-sweep.json \
+            --file tests/ci/retention-sweep.pg.ci.test.ts
 
       - name: Notifications rebuild → real PG proof
         env:
@@ -1737,14 +1936,6 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-tutor-lapse.json \
             --file tests/ci/tutor-lapse-severance.pg.ci.test.ts
 
-      - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
-        env:
-          PGHOST: localhost
-          PGPORT: "5432"
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: bash scripts/ci/deletion-evidence-gate.mutations.sh
-
       - name: Guardian schema-truth conversions → real PG proof
         env:
           PGHOST: localhost
@@ -1786,8 +1977,10 @@ jobs:
 
       # @spec [brief R3 §4; ruled plan §2] Review API → real PG proof.
       # Named BY FILE here on purpose: the whole-suite `pnpm test` step in the `ci` job
-      # sets no PGHOST, so `describe.skipIf(!PG_AVAILABLE)` skips both files and exits 0.
+      # sets no PGHOST, so `describe.skipIf(!PG_AVAILABLE)` skips these files and exits 0.
       # A PG test not named in a service-backed job runs nowhere and reports green.
+      # session-criteria (OQ-22, owner ruling 2026-10-02) drives practice AND review
+      # /state and /sessions/open through the same harness, so it runs here.
       - name: Review API + queue end-to-end → real PG proof
         env:
           PGHOST: localhost
@@ -1799,10 +1992,12 @@ jobs:
           pnpm exec vitest run \
             tests/ci/review.routes.pg.ci.test.ts \
             tests/ci/review.queue-e2e.pg.ci.test.ts \
+            tests/ci/session-criteria.pg.ci.test.ts \
             --reporter=default --reporter=json --outputFile=/tmp/vitest-review.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-review.json \
             --file tests/ci/review.routes.pg.ci.test.ts \
-            --file tests/ci/review.queue-e2e.pg.ci.test.ts
+            --file tests/ci/review.queue-e2e.pg.ci.test.ts \
+            --file tests/ci/session-criteria.pg.ci.test.ts
 
       # @spec [Doc-04A_V2.2 §7-§16; E6] Exam runtime API -> real PG proof: whole exams
       # through the real /api/tests handlers (both routing paths, both modes), answers by
@@ -1820,6 +2015,44 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-runtime.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-runtime.json \
             --file tests/ci/exam-runtime.handler-pg.ci.test.ts
+
+      # @spec [Doc 07A §7.1; SCL-201 IS 6; Doc 10 §9.11] SEO F10/F11 migration -> real PG:
+      # analytics_user_id and signup_source are set-once in the database itself, signup_source
+      # takes only the five Doc 07A values, and the cookie consent log is RLS-on, service-only,
+      # insert/select only. Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Analytics identity + cookie consent log → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/analytics-identity.pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-analytics-identity.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-analytics-identity.json \
+            --file tests/ci/analytics-identity.pg.ci.test.ts
+
+      # @spec [plan R26/R28/R30, rows Q5/Q6; Doc 10 §9.21] SEO Wave 2 migration -> real PG: the
+      # under-13 opt-in guard, the consent log (source, wording version, time), the data step,
+      # one review per profile, compare-and-set prompt claims, idempotent feedback, RLS and the
+      # deletion cascade; then the opt-in through the real profile routes. Named BY FILE.
+      - name: Marketing opt-in + reviews → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/marketing-consent-reviews.pg.ci.test.ts \
+            tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            tests/ci/signup-analytics.pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-marketing-reviews.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-marketing-reviews.json \
+            --file tests/ci/marketing-consent-reviews.pg.ci.test.ts \
+            --file tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            --file tests/ci/signup-analytics.pg.ci.test.ts
 
       # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
       # student through the real /api/tests handlers to a score, then the executor's
@@ -1854,6 +2087,26 @@ jobs:
             --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-shell.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-shell.json \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts
+
+      # @spec [Doc-04C_V1.0 §16.3, §15.1; Doc-04A_V2.2 §16.2; SCL-185; owner ruling OQ-30
+      # 2026-10-02] | @implemented [2026-10-03]
+      # GET /api/tests/sessions?state=scored over real exams sat through the real /api/tests
+      # routers: only the caller's scored sessions, newest first (id DESC on a tie), each row
+      # equal to its own /report; the UI-01 403 for an unpaid caller; 400 for any other state;
+      # 401; anti-leak key scan after presence; a score without its disclosure is a 500.
+      # Named BY FILE: the `ci` job sets no PGHOST.
+      - name: Exam scored sessions list → real PG proof (OQ-30)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-scored-sessions.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-scored-sessions.json \
+            --file tests/ci/exam-scored-sessions.handler-pg.ci.test.ts
 
       # @spec [SCL-154 .. SCL-158; E9]
       # One exam through the real /api/tests handlers: the final submit's hand-off
@@ -1891,6 +2144,24 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam.json \
             --file tests/ci/guardian-exam-results.handler-pg.ci.test.ts
 
+      # Exam → review: a scored exam's wrong and blank items reach review exactly as a
+      # practice session's do — listed in the past-session picker (dated, named, counted),
+      # reviewable by session, part of the complete queue, resolved by the same triggers;
+      # a partial exam queues only what was submitted, a live one queues nothing.
+      # @spec [Doc-02B_V4 §16; SCL-154, SCL-158] | @implemented [2026-10-03]
+      - name: Exam → review (by session, complete queue) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/exam-review.handler-pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-exam-review.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-exam-review.json \
+            --file tests/ci/exam-review.handler-pg.ci.test.ts
+
       # G5-08: the guardian's exam list, detail and Dashboard card say what the student's own
       # card and report say. One real session per state (scored, partial, pending, failed,
       # abandoned, in progress) made by the real exam functions; the student's truth from the
@@ -1911,10 +2182,83 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-guardian-exam-mirror.json \
             --file tests/ci/guardian-exam-mirror.handler-pg.ci.test.tsx
 
-      # The fourteen assertions above are worth exactly as much as their plants. This
-      # mutates product source once per assertion and fails the build unless that
-      # assertion goes red. It patches the working tree and restores it in a trap, so
-      # it runs after everything that reads those files.
+  practice-integration-mutations:
+    runs-on: ubuntu-latest
+    # The planted-violation self-tests for the proofs in practice-integration, split out of
+    # that job so the two run side by side instead of end to end (the job had reached
+    # ~15m of a 20m budget). Each script asserts its own baseline green before planting,
+    # patches the working tree and restores it in a trap, so none of them depends on a
+    # step of the other job. They stay sequential HERE because they patch shared files.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The G2-04 assertions are worth what their plants prove. One product-source mutation per
+      # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
+      # per student — the stored-flag design; a learning read and checkout ungated; the gate
+      # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
+      # its assertion red, each reverted byte-identically in a trap.
+      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/under-13-link-gate.mutations.sh
+
+      # A gate is worth its red proof. Nine mutations, one per assertion; M1 re-plants the
+      # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
+      # requires D1.3 to notice.
+      - name: Crisis flag atomicity self-test (proves each mutation turns it red)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/crisis-flag-atomic.mutations.sh
+
+      - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/deletion-evidence-gate.mutations.sh
+
+      # The fourteen review-route assertions (practice-integration, "Review API + queue end-to-end")
+      # are worth exactly as much as their plants. This mutates product source once per
+      # assertion and fails the build unless that assertion goes red. It patches the working
+      # tree and restores it in a trap.
       - name: Review route assertions proven by planted violations (A1-A14)
         env:
           PGHOST: localhost
@@ -1927,8 +2271,9 @@ jobs:
       # scripts/ci/review-queue-gates.sql landed with the R2 migration and was named in
       # no workflow, so nothing ran it. It is the only cover for the review reveal
       # matrix, the cross-student RLS policies and the EXECUTE grants on the two queue
-      # functions — none of which the vitest suites above can see, because they connect
-      # as the superuser.
+      # functions — none of which the vitest suites in practice-integration can see, because
+      # they connect as the superuser. It runs the gates on correct code first, then plants
+      # each; the migrated database is built once and cloned per gate (TEMPLATE).
       - name: Review queue DB gates (reveal matrix, RLS, EXECUTE grants)
         env:
           PGHOST: localhost
@@ -2542,6 +2887,61 @@ jobs:
 
       - name: Verify GCP auth (one command proof)
         run: gcloud auth list
+
+  # SEO F10/F11/F15 (plan R11, R32; SCL-201, SCL-204; Doc 10 §9.11): the cookie banner decides
+  # whether PostHog loads, proved in a real browser against the BUILT app served with vercel.json's
+  # own headers — Reject and GPC send zero PostHog requests, Accept sends events, an under-13
+  # session sends nothing, and withdrawal clears PostHog's storage. Every *.posthog.com request is
+  # answered inside the browser; nothing leaves the runner. The key is a dummy (`phc_e2e…`).
+  analytics-consent-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build (with a dummy PostHog key so the SDK path is in the bundle)
+        env:
+          VITE_SUPABASE_URL: http://localhost:9
+          VITE_SUPABASE_ANON_KEY: ci
+          VITE_POSTHOG_KEY: phc_e2e_dummy_key_not_a_project
+        run: pnpm run build
+
+      - name: Serve dist/public with vercel.json's headers
+        run: |
+          set -euo pipefail
+          nohup node scripts/ops/page-csp-static-server.mjs 5175 > "$RUNNER_TEMP/static.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:5175/; then echo "static server up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/static.log"
+          exit 1
+
+      - name: Consent → PostHog browser proof (reject, accept, GPC, under-13, withdrawal; first-touch survives a reload)
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5175
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test tests/e2e/analytics-consent.spec.ts tests/e2e/first-touch-attribution.spec.ts --forbid-only --reporter=list
 
   # ---------------------------------------------------------------------------
   # Guardian browser proofs (guardian closeout, Part B step 3).

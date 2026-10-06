@@ -22,7 +22,14 @@
  * runs practice's component, so a test against a stub would prove nothing.
  */
 import React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  render as rtlRender,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { reviewSessionStateResponseSchema } from "@lyceon/shared/review-schema";
+import { FocusShell } from "@/components/layout/FocusShell";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // W4-4: LISA is open on every review question. This file proves the review
@@ -74,6 +81,20 @@ vi.mock("@/lib/client-instance", () => ({
 vi.mock("@/lib/api-error", () => ({ isApiError: () => false }));
 
 import ResumeReviewPage from "./resume-review";
+
+/**
+ * UI-53: the runner portals its bar (session name, "Question N of M") into the Focus shell, so
+ * the page is rendered inside the shell the router gives this route ("Review", back to /review).
+ */
+function render(ui: React.ReactElement) {
+  return rtlRender(ui, {
+    wrapper: ({ children }: { children: React.ReactNode }) => (
+      <FocusShell section="Review" sectionHome="/review">
+        {children}
+      </FocusShell>
+    ),
+  });
+}
 
 const SESSION_ID = "rev-sess-001";
 /**
@@ -173,17 +194,24 @@ function installFetchMock(): Calls {
   return calls;
 }
 
+/** A review `/state` body, parsed by the shared schema the page parses it with. */
 function activeSession(): Record<string, unknown> {
-  return {
+  return reviewSessionStateResponseSchema.parse({
     sessionId: SESSION_ID,
     section: null,
     mode: "queue",
     state: "active",
     currentOrdinal: 1,
     answeredCount: 0,
+    skippedCount: 0,
+    completedCount: 0,
     targetQuestionCount: 3,
+    calculatorState: null,
+    lastServedUnansweredItem: null,
+    clientInstanceId: "ci-review-test",
     readOnly: false,
-  };
+    criteria: { sections: [], domains: [], skills: [], difficulties: [] },
+  });
 }
 
 function findOptionButton(text: string): HTMLButtonElement | null {
@@ -217,8 +245,8 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
     // No verdict before an answer exists, and the pre-submit affordance is still the
     // one that asks for an answer rather than the one that moves on.
     expect(screen.queryByText("Correct")).toBeNull();
-    expect(screen.queryByText("Incorrect")).toBeNull();
-    expect(screen.getByText("Check Answer")).not.toBeNull();
+    expect(screen.queryByText("Not quite")).toBeNull();
+    expect(screen.getByRole("button", { name: "Submit" })).not.toBeNull();
   });
 
   it("U2: even a LEAKING /next payload is not displayed before submit", async () => {
@@ -234,7 +262,7 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
     // the screen, because the reveal is driven by the ANSWER response alone.
     expect(document.body.textContent).not.toContain(CORRECT_EXPLANATION);
     expect(screen.queryByText("Correct")).toBeNull();
-    expect(screen.getByText("Check Answer")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Submit" })).not.toBeNull();
   });
 
   it("U2: shows the correct answer and explanation after submit", async () => {
@@ -251,7 +279,7 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
       option!.click();
     });
 
-    const checkBtn = screen.getByText("Check Answer");
+    const checkBtn = screen.getByRole("button", { name: "Submit" });
     await act(async () => {
       checkBtn.click();
     });
@@ -335,19 +363,20 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
 
     // Found only by looking at a screenshot: the loop's CHROME said "practice" in
     // three places neither CanonicalPracticePage.tsx nor useCanonicalPractice.ts
-    // contains — the shell eyebrow (PracticeShell.tsx:50), the session-guidance card,
-    // and a full-length tagging hint sitting beside the word "Review". Pre-build
-    // check 1 item 7 missed them by scoping the search to the two files the brief
-    // named. They are engine config now, and this keeps them that way.
+    // contains — the shell eyebrow, the session-guidance card, and a full-length
+    // tagging hint sitting beside the word "Review". UI-53 removed that chrome; the bar
+    // now names the session by its criteria ("Review session" when none were chosen).
     const body = document.body.textContent ?? "";
-    expect(body).toContain("Review Runner");
+    expect(screen.getByTestId("runner-session-name").textContent).toBe(
+      "Review session",
+    );
     expect(body).not.toContain("Academic Practice Runner");
     expect(body).not.toContain("canonical practice endpoints");
     expect(body).not.toContain("full-length exam mode");
     expect(body.toLowerCase()).not.toContain("practice");
   });
 
-  it("R4.1: the guidance panel states the real rule, verbatim, with no jargon", async () => {
+  it("R4.1 / UI-53: no guidance card, and none of the struck wording, on the review runner", async () => {
     installFetchMock();
     render(<ResumeReviewPage />);
 
@@ -355,20 +384,15 @@ describe("review loop — U2 anti-leak, U3 URL resume", () => {
       expect(screen.getByText("Solve 2x + 3 = 7.")).not.toBeNull();
     });
 
-    // Owner copy, R4.1. Asserted EXACTLY rather than by keyword: the previous
-    // wording was a plausible-sounding paraphrase that happened to state the rule
-    // wrongly, so "contains the word queue" would not have caught it.
-    expect(document.body.textContent).toContain(
-      "These are questions you missed or skipped. Get one right and it leaves your queue. Miss or skip it and it goes to the back of the line. You can leave anytime; your place is saved.",
-    );
-
-    // The two specific defects the production walk found, forbidden by name.
-    // ONE correct review answer graduates a question —
-    // 20260921000000_review_queue_runtime.sql:392, "ruling 4: one correct review
-    // answer graduates" — so any "twice" claim on this screen is false.
-    expect(document.body.textContent).not.toContain("twice");
-    expect(document.body.textContent).not.toContain("runtime session truth");
-    expect(document.body.textContent).not.toContain("unresolved state");
+    // UI-53 (DESIGN.md §4): the runner has no side card. R4.1's two defects stay forbidden by
+    // name: ONE correct review answer graduates a question
+    // (20260921000000_review_queue_runtime.sql:392), so "twice" is false, and the jargon is
+    // not for a 13-to-18-year-old.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toContain("Session Guidance");
+    expect(body).not.toContain("twice");
+    expect(body).not.toContain("runtime session truth");
+    expect(body).not.toContain("unresolved state");
   });
 
   it("U7 (review half): an abandoned session is never playable", async () => {

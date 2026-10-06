@@ -28,7 +28,10 @@ import {
   requireStudentOrAdmin,
   requireStudentOnly,
   requireStudentAccount,
+  requireGuardianLinkForUnder13,
+  hasSsrSessionCookie,
 } from "./middleware/supabase-auth";
+import { csrfTokenResponseSchema } from "../packages/shared/src/csrf-token-schema";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import {
@@ -37,6 +40,7 @@ import {
   reportGcpCredentialStatusAtStartup,
 } from "./lib/startup-guards";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
+import { analyticsConfigProblems } from "./lib/analytics/emit-event";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
 } from "./routes/oauth-callback-routes";
@@ -47,12 +51,14 @@ import {
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
-import { calendarRouter, streakRouter } from "./routes/calendar-routes";
+import { calendarRouter } from "./routes/calendar-routes";
 import { scoreReportRouter } from "./routes/score-report-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
+import publicQotdRoutes from "./routes/public-qotd-routes";
+import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
@@ -62,6 +68,7 @@ import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
+import productFeedbackRoutes from "./routes/product-feedback-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -198,9 +205,17 @@ app.use(globalRateLimiter);
 
 // CSRF token bootstrap endpoint (stateless double-submit cookie).
 // CSRF_EXEMPT_REASON: GET-only endpoint to issue a CSRF token + cookie.
+// @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: the response also says whether
+// a session cookie came with the request, so a visitor with no session never sends the profile
+// read that would answer 401. A hint only: `hasSsrSessionCookie` checks presence, not validity.
 app.get("/api/csrf-token", (req: Request, res: Response) => {
   const csrfToken = generateToken(req, res);
-  return res.json({ csrfToken });
+  return res.json(
+    csrfTokenResponseSchema.parse({
+      csrfToken,
+      sessionCookiePresent: hasSsrSessionCookie(req),
+    }),
+  );
 });
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
@@ -242,6 +257,24 @@ const googleOAuthCallbackLimiter = rateLimit({
 // race it. A failed load logs ERROR boot_load_failed and serves defaults.
 const TUTOR_CONFIG_BOOT_WAIT_MS = 3_000;
 void TutorConfig.bootLoad();
+
+// Owner report 2026-10-05: a production signup emitted no `user_signed_up` and left no trace,
+// because a missing or malformed analytics variable made every server event a silent no-op. Said
+// once per cold start, at ERROR, naming the variable and the Zod issue code (never the value), so
+// a misconfigured deployment is visible before anyone signs up. Production only: a local or
+// preview build without analytics is a choice, not a fault.
+{
+  const analyticsProblems = analyticsConfigProblems(process.env);
+  if (analyticsProblems.length > 0 && isProductionDeployment()) {
+    logger.error(
+      "ANALYTICS",
+      "boot_not_configured",
+      "Server analytics is not configured: no server event will be sent",
+      undefined,
+      { problems: analyticsProblems },
+    );
+  }
+}
 const awaitTutorConfig: express.RequestHandler = (_req, _res, next) => {
   TutorConfig.whenBooted(TUTOR_CONFIG_BOOT_WAIT_MS).then(() => next(), next);
 };
@@ -323,6 +356,18 @@ app.use(
   profileRoutes,
 );
 
+// SEO Wave 2, plan Q6 (R28-R30). The review prompt, in-app reviews and private feedback, for
+// students and guardians alike (each route reads the caller's role and age from their profile).
+// G2-04: not in the owner-approved allowed set, so an under-13 student with no active guardian
+// link is refused here like on every other student surface; guardians and 13+ pass.
+app.use(
+  "/api/feedback",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireGuardianLinkForUnder13,
+  productFeedbackRoutes,
+);
+
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
 // principal; every read/write is a recipient-scoped SQL function.
 app.use(
@@ -358,11 +403,9 @@ app.use(
   calendarRouter,
 );
 
-// Doc 05F §15 / INV-08-20 and formula sheet §8 item 11: GET /api/me/streak is served to a
-// student of ANY tier and carries NO calendar_access check. It is mounted on its own path
-// with its own router so that gate is absent by construction and cannot be acquired by
-// someone adding middleware to the calendar mount above.
-app.use("/api/me", requireSupabaseAuth, requireStudentOrAdmin, streakRouter);
+// Doc 05F §15's standalone streak route is retired (SCL-212, owner ruling 2026-10-05, OQ-61 (a)):
+// no client called it. The streak reaches its surfaces inside the calendar payloads and
+// `kpi/overall`, each read through `server/services/activity-streak.ts`.
 
 // SCL-191. The post-exam score report and retake answer. `requireStudentOrAdmin` because every
 // route is the student answering about their OWN sitting and their OWN subscription; a paying
@@ -451,6 +494,19 @@ app.use(
 // load; the module's 15-minute memo is what bounds calls to Stripe itself.
 app.use("/api/public", publicPricingRoutes);
 
+// Public Question of the Day (UNAUTHENTICATED BY DESIGN — SEO Wave 2, plan R16-R19, Q2).
+// No auth and no CSRF: nothing reads `req.user` and no ambient credential is used; the one write
+// (POST /today/answer) is gated by Cloudflare Turnstile and the SCL-202 hashed-IP ledger, and
+// the reads are hashed-IP limited too. See server/routes/public-qotd-routes.ts.
+// CSRF_EXEMPT_REASON: no ambient credential is read; the submit is Turnstile-gated (owner Step 0 decision, 2026-10-05).
+app.use("/api/public/qotd", publicQotdRoutes);
+
+// Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
+// Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no
+// CSRF: it reads no cookie or session; the SCL-202 hashed-IP ledger bounds it.
+// CSRF_EXEMPT_REASON: no ambient credential is read; rate-limited on the anonymous ledger (owner Step 0 decision, 2026-10-05).
+app.use("/api/public/cookie-consent", cookieConsentRoutes);
+
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
 
@@ -507,8 +563,10 @@ app.use(
   examRuntimeRouter,
 );
 
-// Full-length exam score report (Doc 04C §16.1 student reads only)
-// @spec [Doc-04C_V1.0 §16.1, §16.5; E7a] | @implemented [2026-09-25]
+// Full-length exam score report (Doc 04C §16.1 student reads only) and, since OQ-30
+// (owner ruling 2026-10-02), the student's scored-sessions list (§16.3,
+// GET /api/tests/sessions?state=scored; entitlement-first, as the runtime).
+// @spec [Doc-04C_V1.0 §16.1, §16.3, §16.5; E7a; OQ-30] | @implemented [2026-09-25; 2026-10-03]
 // Same stack as the runtime. Ownership is decided before entitlement inside the
 // router (04C §16.5): a lapsed entitlement on an OWNED session is a 200
 // `unavailable` payload, a missing or foreign session a bare 403.

@@ -66,6 +66,7 @@ import {
   useGuardianReadFailure,
 } from "./GuardianStates";
 import { guardianPaths } from "./paths";
+import { ReviewPrompt } from "@/components/product-feedback/ReviewPrompt";
 
 function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
   const name = useCurrentStudentName();
@@ -103,6 +104,13 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
       <GuardianWeekPlan
         completed={data.facts.blocks_completed}
         total={data.facts.blocks_total}
+      />
+      {/* Plan R30 / Q6 (owner Step 0 answer 4, 2026-10-05): a guardian viewing a week with at
+          least one completed block is a success moment. Asked only then; the server re-derives
+          the visibility rule and the week, then applies the cadence. */}
+      <ReviewPrompt
+        query={{ moment: "guardian_week", student_id: studentId }}
+        enabled={data.facts.blocks_completed >= 1}
       />
     </div>
   );

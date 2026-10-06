@@ -3,7 +3,9 @@ import { resolveFeatureAccess } from "../lib/feature-access";
 import { z } from "zod";
 import {
   getSupabaseAdmin,
+  requireGuardianLinkForUnder13,
   requireRequestUser,
+  requireStudentAccount,
 } from "../middleware/supabase-auth";
 import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
@@ -18,10 +20,18 @@ import { resolveLegalVersion } from "../lib/legal-registry.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import { logger } from "../logger";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state";
+import { hasPasswordIdentity } from "../lib/password-credentials";
+import { emitEvent } from "../lib/analytics/emit-event";
+import { signupSourceSchema } from "../../packages/shared/src/analytics-consent-schema";
 import {
   dateOfBirthSchema,
   setDateOfBirthRequestSchema,
 } from "../../packages/shared/src/profile-role-choice-schema";
+import {
+  displayNameSchema,
+  profileNameUpdateRequestSchema,
+  type ProfileNameUpdateResponse,
+} from "../../packages/shared/src/profile-name-schema";
 import {
   decideRoleChoice,
   dateOfBirthRefusal,
@@ -35,6 +45,17 @@ import {
   type RoleChoiceFacts,
   type RoleChoiceRefusal,
 } from "../lib/role-choice";
+import {
+  emitMarketingConsentCaptured,
+  setMarketingConsent,
+  type MarketingConsentWrite,
+} from "../lib/marketing-consent";
+import {
+  MARKETING_OPT_IN_INELIGIBLE,
+  marketingConsentRequestSchema,
+  marketingConsentResponseSchema,
+  marketingOptInEligible,
+} from "../../packages/shared/src/marketing-consent-schema";
 
 const router = Router();
 
@@ -132,15 +153,63 @@ function outstandingLegalDocs(
   return outstanding;
 }
 
+/**
+ * @spec [student-UI register §9 OQ-26, owner ruling (Karl) 2026-10-02: `hasPassword` on
+ *        GET /api/profile; register F-38 (Google-only accounts have no password to change);
+ *        Coding Standards §12.1] | @implemented [2026-10-03]
+ *
+ * plain English: does this account sign in with a password? Answered by `hasPasswordIdentity`,
+ * the SAME predicate `POST /api/auth/change-password` (and `/update-password`) refuse with
+ * `NO_PASSWORD_IDENTITY`, so Settings hiding "Change password" and the route refusing it cannot
+ * disagree. A display hint only; the password routes still enforce.
+ *
+ * Cost: one GoTrue admin read (`auth.admin.getUserById`) per profile load — the identities are
+ * not on the request's user. It is started before the profile's own database reads and awaited
+ * at the end, so it overlaps them rather than adding a sequential round trip.
+ *
+ * Failure: `null`, logged at ERROR with the request id only. NEVER THROWS INTO THE PROFILE
+ * RESPONSE: this endpoint is the sign-in hydration path (see `outstandingLegalDocs` for the
+ * outage that posture came from), and an unreadable identity list is not a reason to refuse an
+ * account. `null` is "unknown", never a guess: `true` would offer a form the route refuses,
+ * `false` would hide a working one. Trade-off: the ruling names `boolean`; `null` is the one
+ * extra value, and only on a failed read.
+ */
+async function resolveHasPassword(
+  userId: string,
+  requestId: string | undefined,
+): Promise<boolean | null> {
+  try {
+    return await hasPasswordIdentity(userId);
+  } catch (err: unknown) {
+    logger.error(
+      "PROFILE",
+      "has_password_unavailable",
+      "Could not read the account's identities; hasPassword is null",
+      undefined,
+      {
+        requestId,
+        reason:
+          err instanceof Error && err.message === "identity_read_failed"
+            ? "identity_read_failed"
+            : "unexpected",
+      },
+    );
+    return null;
+  }
+}
+
 const profileCompletionSchema = z.object({
-  displayName: z.string().trim().min(1).max(120),
+  // OQ-28 (UI-58): the one display-name rule, shared with the Settings name save.
+  displayName: displayNameSchema,
   role: z.enum(["student", "guardian"]),
   // F-41: a real calendar date, through the shared schema (Brief 8 ruling 6). Not-in-the-future
   // and plausibility need today's date, so `dateOfBirthRefusal` applies them below.
   dateOfBirth: dateOfBirthSchema.optional().nullable(),
   // Guardian final purge, item 3 (owner brief 2026-10-02): `guardianEmail` is gone. It only ever
   // addressed the removed consent email (G2-05); an unknown key is stripped here, never written.
-  marketingOptIn: z.boolean().optional().default(false),
+  // Plan R26 / Q5 (the "reset bug", F-54): no default. An omitted field leaves the stored value
+  // alone; it is written only when sent, and only through `setMarketingConsent` below.
+  marketingOptIn: z.boolean().optional(),
 });
 
 /**
@@ -153,6 +222,10 @@ router.get("/", async (req: Request, res: Response) => {
     if (!user) {
       return;
     }
+
+    // OQ-26: started now, awaited at the end, so the GoTrue read overlaps the database reads.
+    // Never rejects (see `resolveHasPassword`), so an early return below leaves nothing unhandled.
+    const hasPasswordRead = resolveHasPassword(user.id, req.requestId);
 
     const supabase = getSupabaseAdmin();
 
@@ -241,6 +314,7 @@ router.get("/", async (req: Request, res: Response) => {
     // OQ-29 (owner ruling 2026-10-02): the rail locks and the upgrade-vs-age choice, computed by
     // each gated route's own predicate. A display hint; every route still enforces.
     const featureAccess = await resolveFeatureAccess(user);
+    const hasPassword = await hasPasswordRead;
 
     return res.json({
       authenticated: true,
@@ -269,6 +343,9 @@ router.get("/", async (req: Request, res: Response) => {
         // documents this person owes, their current version and title from
         // legal/, and what they last accepted. The client is told, never asked.
         outstandingLegal,
+        // OQ-26 (owner ruling 2026-10-02): false for a Google-only account, so Settings hides
+        // "Change password"; null only when the identity read failed (see `resolveHasPassword`).
+        hasPassword,
       },
     });
   } catch (error: any) {
@@ -455,6 +532,27 @@ router.patch("/", async (req: Request, res: Response) => {
       }
     }
 
+    // Plan R26: never under-13 (and never an unknown age). Refused before anything is written,
+    // with the same rule the database trigger applies. The onboarding form only shows the
+    // checkbox to guardians and students 13+, so this is reached only by a crafted request.
+    if (
+      data.marketingOptIn === true &&
+      !marketingOptInEligible(effectiveDateOfBirth, new Date())
+    ) {
+      logger.warn(
+        "PROFILE",
+        "marketing_opt_in_refused",
+        "Marketing opt-in refused: under 13 or no date of birth",
+        { code: MARKETING_OPT_IN_INELIGIBLE, requestId: req.requestId },
+      );
+      return res.status(400).json({
+        error: {
+          code: MARKETING_OPT_IN_INELIGIBLE,
+          message: "Product update emails are for ages 13 and over.",
+        },
+      });
+    }
+
     const isUnder13 =
       data.role === "student" && effectiveDateOfBirth
         ? calculateAge(effectiveDateOfBirth) < 13
@@ -474,7 +572,6 @@ router.patch("/", async (req: Request, res: Response) => {
         // G2-03: a locked date of birth is not written at all, and `is_under_13` is never
         // written — the age trigger derives it from the date of birth.
         ...(dateOfBirthLocked ? {} : { date_of_birth: effectiveDateOfBirth }),
-        marketing_opt_in: data.marketingOptIn,
         profile_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -483,6 +580,35 @@ router.patch("/", async (req: Request, res: Response) => {
     if (updateError) {
       console.error("[PROFILE] Error updating profile:", updateError);
       return res.status(500).json({ error: "Failed to update profile" });
+    }
+
+    // Plan Q5: the opt-in is written only when the body carries it, after the date of birth is
+    // stored (the database's age check reads it), and through the one logged writer. Source
+    // `signup`: this route is the onboarding step (owner answer 1), and only that form sends the
+    // field; the Settings toggle has its own route.
+    //
+    // NOT ATOMIC with the profile write above, deliberately: the consent check reads the stored
+    // date of birth, which that write sets. A refusal here is unreachable in practice (the same
+    // rule refused it before anything was written); what remains is a birthday race or an RPC
+    // error, which answers 400/500 with the profile saved and no consent recorded. The person is
+    // then simply not opted in — the safe side — and a retry of this form writes `signup` again.
+    let consentWrite: MarketingConsentWrite | null = null;
+    if (data.marketingOptIn !== undefined) {
+      consentWrite = await setMarketingConsent(
+        supabase,
+        userId,
+        data.marketingOptIn,
+        "signup",
+        req.requestId,
+      );
+      if (!consentWrite.ok) {
+        return res.status(400).json({
+          error: {
+            code: MARKETING_OPT_IN_INELIGIBLE,
+            message: "Product update emails are for ages 13 and over.",
+          },
+        });
+      }
     }
 
     // Fetch updated profile
@@ -499,6 +625,35 @@ router.patch("/", async (req: Request, res: Response) => {
 
     const guardianConnected = await hasActiveGuardianLink(supabase, userId);
     const guardianConsentRequired = isUnder13 && !guardianConnected;
+
+    // Doc 07A §6.2 / owner Step 0 decision 2 (2026-10-05): `user_signed_up` fires when onboarding
+    // completes — the date of birth, and so the under-13 exclusion, is known only now. The first
+    // completion only, and once across concurrent requests: the wrapper emits only from the call
+    // that writes the set-once analytics_user_id. Under-13 and refused outcomes are no-ops.
+    if (existingProfile.profile_completed_at === null) {
+      const parsedSource = signupSourceSchema.safeParse(
+        (profile as { signup_source?: unknown }).signup_source,
+      );
+      const signedUp = await emitEvent(
+        userId,
+        "user_signed_up",
+        { signup_source: parsedSource.success ? parsedSource.data : "unknown" },
+        { requireFirstIdentity: true },
+      );
+      // Owner report 2026-10-05: a first completion that does not emit is said here too, at the
+      // call site, with the wrapper's reason. Only an under-13 account is expected to skip it.
+      if (!signedUp.ok && signedUp.reason !== "excluded_under_13_or_age_unknown") {
+        logger.error(
+          "PROFILE",
+          "signup_event_missed",
+          "user_signed_up was not sent for a first onboarding completion",
+          undefined,
+          { reason: signedUp.reason, requestId: req.requestId },
+        );
+      }
+    }
+    // After user_signed_up, never before: see server/lib/marketing-consent.ts.
+    await emitMarketingConsentCaptured(emitEvent, userId, consentWrite);
 
     return res.json({
       success: true,
@@ -517,6 +672,216 @@ router.patch("/", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("[PROFILE] Unexpected error:", error);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * PUT /api/profile/marketing-consent — the Settings toggle for product-update emails.
+ *
+ * @spec [docs/plans/seo/seo-marketing-vertical.md R26 ("Settings toggle"), row Q5; Doc 10 §9.21
+ *        ("must be revocable"); owner Step 0 answer 2 (2026-10-05): its own endpoint, never the
+ *        onboarding PATCH] | @implemented [2026-10-05]
+ *
+ * plain English: `{ granted }` turns the opt-in on or off at any time, for a student or a
+ * guardian. Fixed order: auth (the mount) → Zod parse → load the caller's role and date of birth
+ * → refuse a grant to an admin, an unknown age or anyone under 13 (400, coded) → write through
+ * the one logged writer (source `settings`) → emit `consent_captured` for a grant → 200
+ * `{ marketingOptIn }`.
+ *
+ * Why not the PATCH: that route is onboarding. It requires a role, re-stamps
+ * `profile_completed_at` and validates the whole profile, so a toggle sent through it would carry
+ * fields it has no business writing (F-54, OQ-28). Turning the opt-in OFF is never refused —
+ * revocation must always work, whatever the account's age.
+ *
+ * Edge cases: writing the value already held answers 200 and logs nothing (the SQL function
+ * compares first). A database refusal after the route's own check (a birthday race) is the same
+ * coded 400.
+ */
+// G2-04: not in the owner-approved allowed set, so an unlinked under-13 student is refused by the
+// live link gate (they can never be opted in, so there is nothing for them to revoke here).
+router.put(
+  "/marketing-consent",
+  requireGuardianLinkForUnder13,
+  async (req: Request, res: Response) => {
+    const user = requireRequestUser(req, res);
+    if (!user) return;
+
+    const parsed = marketingConsentRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_REQUEST",
+          message: "Invalid input",
+          details: parsed.error.flatten(),
+        },
+      });
+    }
+
+    try {
+      const supabase = getSupabaseAdmin();
+      const { data: row, error: readError } = await supabase
+        .from("profiles")
+        .select("role, date_of_birth")
+        .eq("id", user.id)
+        .single();
+      if (readError || !row) {
+        logger.error(
+          "PROFILE",
+          "marketing_consent_profile_read_failed",
+          "Could not load the profile for a marketing consent change",
+          { requestId: req.requestId },
+        );
+        return res.status(500).json({
+          error: { code: "INTERNAL", message: "Something went wrong." },
+        });
+      }
+      const role = String((row as { role: unknown }).role);
+      const dateOfBirth = toIsoDate(
+        (row as { date_of_birth: string | null }).date_of_birth,
+      );
+
+      if (parsed.data.granted) {
+        const eligible =
+          (role === "student" || role === "guardian") &&
+          marketingOptInEligible(dateOfBirth, new Date());
+        if (!eligible) {
+          logger.warn(
+            "PROFILE",
+            "marketing_opt_in_refused",
+            "Marketing opt-in refused: role, under 13 or no date of birth",
+            { code: MARKETING_OPT_IN_INELIGIBLE, requestId: req.requestId },
+          );
+          return res.status(400).json({
+            error: {
+              code: MARKETING_OPT_IN_INELIGIBLE,
+              message: "Product update emails are for ages 13 and over.",
+            },
+          });
+        }
+      }
+
+      const write = await setMarketingConsent(
+        supabase,
+        user.id,
+        parsed.data.granted,
+        "settings",
+        req.requestId,
+      );
+      if (!write.ok) {
+        return res.status(400).json({
+          error: {
+            code: MARKETING_OPT_IN_INELIGIBLE,
+            message: "Product update emails are for ages 13 and over.",
+          },
+        });
+      }
+      await emitMarketingConsentCaptured(emitEvent, user.id, write);
+
+      return res
+        .status(200)
+        .json(
+          marketingConsentResponseSchema.parse({
+            marketingOptIn: write.granted,
+          }),
+        );
+    } catch (error: unknown) {
+      logger.error(
+        "PROFILE",
+        "marketing_consent_failed",
+        "Marketing consent change failed",
+        {
+          requestId: req.requestId,
+          reason: error instanceof Error ? error.message : "unknown",
+        },
+      );
+      return res.status(500).json({
+        error: { code: "INTERNAL", message: "Something went wrong." },
+      });
+    }
+  },
+);
+
+/**
+ * PATCH /api/profile/name — Settings → Profile: change your display name, and nothing else.
+ *
+ * @spec [student-UI register OQ-28 (owner ruling, Karl, 2026-10-02: a narrow name-only save that
+ *        leaves `marketingOptIn` alone; "exact shape goes with the Settings migration"); F-54;
+ *        UI-58; Coding Standards §8.1 (auth → parse → domain → serialize), §8.2, §12.1]
+ *        | @implemented [2026-10-03]
+ *
+ * plain English: the session's own profile row gets a new `display_name`. The body is the shared
+ * `.strict()` schema, `{ displayName }` and no other key, so the onboarding PATCH's defaults
+ * (F-54: `marketingOptIn` defaulting to false, `role` required, `profile_completed_at`
+ * re-stamped) cannot reach this write: it updates `display_name` and `updated_at` only.
+ *
+ * Student accounts only, through the canonical `requireStudentAccount` (the student-background
+ * routes' gate): the Settings page that calls it is the student's (a guardian's /profile has no
+ * name editor, and an admin is never onboarded through this surface), so any other role is
+ * refused 403 `ROLE_NOT_PERMITTED` before the body is read; and it ends in the live under-13 link
+ * gate, so an under-13 student with no active guardian link is refused 403
+ * `GUARDIAN_LINK_REQUIRED` (the route is not in the owner-approved allowed set, G2-04). The row
+ * is the session principal's (`req.user.id`); nothing in the body names whose name to change.
+ *
+ * edge cases: the name is never logged (it is personal data); a missing profile row is a 404,
+ * never an insert; a write failure is a 500 carrying the error's code only.
+ */
+router.patch("/name", requireStudentAccount, async (req: Request, res: Response) => {
+  // 1. Auth: the session principal, from the server's own session (requireSupabaseAuth), already
+  //    held to a student account by `requireStudentAccount`.
+  const user = requireRequestUser(req, res);
+  if (!user) return;
+
+  // 2. Parse: the strict shared body. An extra key (marketingOptIn, role …) is a 400.
+  const parsed = profileNameUpdateRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: {
+        code: "INVALID_NAME",
+        message: "Enter a name between 1 and 120 characters.",
+        details: parsed.error.flatten(),
+      },
+    });
+  }
+
+  // 3. Domain: one column (and its timestamp) on the caller's own row.
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({
+        display_name: parsed.data.displayName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id)
+      .select("display_name")
+      .maybeSingle();
+
+    if (error) {
+      logger.error("PROFILE", "name_save_failed", "Name save failed", {
+        requestId: req.requestId,
+        code: error.code ?? "unknown",
+      });
+      return res.status(500).json({
+        error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
+      });
+    }
+    if (!data || typeof data.display_name !== "string") {
+      return res.status(404).json({
+        error: { code: "PROFILE_NOT_FOUND", message: "Profile not found" },
+      });
+    }
+
+    // 4. Serialize: the stored value, nothing else.
+    const body: ProfileNameUpdateResponse = { displayName: data.display_name };
+    return res.json(body);
+  } catch (err: unknown) {
+    logger.error("PROFILE", "name_save_exception", "Name save failed", {
+      requestId: req.requestId,
+      reason: err instanceof Error ? err.message : "unknown",
+    });
+    return res.status(500).json({
+      error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
+    });
   }
 });
 

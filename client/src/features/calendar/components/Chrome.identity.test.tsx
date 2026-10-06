@@ -10,6 +10,12 @@
  * the shared fact components, and it is unchanged by the move. It covers both the populated
  * and the all-absent header, for both viewers, so any markup the extraction altered — a
  * class, a test id, an element, a word — fails here.
+ *
+ * UI-55 (2026-10-03): the two "student" snapshots were re-recorded ONCE, for one intended
+ * change: `TopBar` lost the student's Edit schedule and Refresh plan (its L2 slot is now empty
+ * for every viewer), because the student calendar moved onto the App shell with its own header
+ * (`StudentChrome.tsx`). The guardian snapshots are byte-identical before and after; the
+ * student variants still prove the absence copy and the readouts did not move.
  */
 import React from "react";
 import { render, cleanup } from "@testing-library/react";
@@ -60,9 +66,6 @@ function html(viewer: "student" | "guardian", populated: boolean): string {
         daysToTest={populated ? 69 : null}
         targetScore={populated ? 1350 : null}
         projection={populated ? ROWS : undefined}
-        {...(viewer === "student"
-          ? { onRefresh: noop, onEditSchedule: noop, refreshPending: false }
-          : {})}
       />
     </Router>,
   );

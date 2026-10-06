@@ -54,36 +54,65 @@ describe("Premium CTA wiring contract", () => {
    * that could not work for a guardian. The assertion now pins the resolver.
    */
   it("resolves the billing destination from the role, never from a literal", () => {
-    const dashboard = read("client/src/pages/lyceon-dashboard.tsx");
-    const mastery = read("client/src/pages/mastery.tsx");
+    // UI-57 (2026-10-03): Mastery names no billing destination either. Its locked card opens
+    // the one upgrade modal (`upgrade.open("mastery_detail", …)`), as Home's does.
+    const mastery = readCode("client/src/pages/mastery.tsx");
+    expect(mastery).not.toContain("PremiumUpgradePrompt");
+    expect(mastery).toContain('upgrade.open("mastery_detail"');
+    expect(mastery).not.toContain("/upgrade");
+    expect(mastery).not.toContain("startSubscriptionCheckout");
 
-    expect(dashboard).toContain("resolveCtaDestination");
-    expect(mastery).toContain("PremiumUpgradePrompt");
-    expect(dashboard).not.toContain("startSubscriptionCheckout('monthly')");
-    expect(mastery).not.toContain("startSubscriptionCheckout('monthly')");
+    // UI-50 (2026-10-03): Home names no billing destination at all. Its locked card opens the
+    // one upgrade modal, whose "See plans" goes to UPGRADE_PLANS_DESTINATION (OQ-39(e)).
+    for (const file of [
+      "client/src/pages/lyceon-dashboard.tsx",
+      "client/src/components/home/FreeHome.tsx",
+      "client/src/components/home/PaidHome.tsx",
+    ]) {
+      const source = read(file);
+      expect(source, file).not.toContain("/upgrade");
+      expect(source, file).not.toContain("startSubscriptionCheckout");
+    }
+    expect(read("client/src/components/home/FreeHome.tsx")).toContain(
+      "useUpgradeModal",
+    );
   });
 
-  it("wires UserProfile billing tab to canonical billing status + portal/upgrade actions", () => {
-    const userProfile = readCode("client/src/pages/UserProfile.tsx");
+  /**
+   * UI-58 (2026-10-03): the student's billing moved from UserProfile.tsx (now the guardian's
+   * profile only) to Settings → Billing, and its button follows `managedBy` (F-40). The same
+   * wiring rules hold there; the behaviour itself is proven in client/src/pages/settings.test.tsx.
+   */
+  it("wires Settings → Billing to canonical billing status + portal/upgrade actions", () => {
+    const billing = readCode(
+      "client/src/components/settings/BillingSection.tsx",
+    );
 
     // UI-14 (2026-09-29) and G4-09 (G-AUD-26): the page reads billing status through the ONE
     // shared, parsed hook — one key and one fetch function for every surface — rather than
     // spelling the key itself. The hook's key is pinned in
     // tests/ci/query-freshness.contract.test.ts.
-    expect(userProfile).toContain("useBillingStatusQuery");
-    expect(userProfile).not.toMatch(/\/api\/billing\/status/);
+    expect(billing).toContain("useBillingStatusQuery");
+    expect(billing).not.toMatch(/\/api\/billing\/status/);
     // One portal hook, not a fourth copy of the mutation.
-    expect(userProfile).toContain("useBillingPortal");
+    expect(billing).toContain("useBillingPortal");
     /**
      * `navigate('/upgrade')` USED to be asserted here, and it was the bug: the
      * button was enabled for a guardian with a linked student and pointed at a
      * route `RequireRole` bounces them from. The destination now comes from the
      * resolver, which cannot return `/upgrade` for a guardian.
      */
-    expect(userProfile).toContain("resolveCtaDestination");
-    expect(userProfile).not.toContain("navigate('/upgrade')");
-    expect(userProfile).toContain("Manage Subscription");
-    expect(userProfile).toContain("View Plans");
+    expect(billing).toContain("resolveCtaDestination");
+    expect(billing).not.toMatch(/["'`]\/upgrade["'`]/);
+    // F-40: the state comes from the server's `managedBy`, not a client re-derivation.
+    expect(billing).toContain('status.managedBy === "guardian"');
+    expect(billing).not.toContain("hasManageableSubscription");
+    expect(billing).toContain("Manage billing");
+    expect(billing).toContain("See plans");
+    // The guardian profile keeps no student billing card.
+    const userProfile = readCode("client/src/pages/UserProfile.tsx");
+    expect(userProfile).not.toContain("useBillingPortal");
+    expect(userProfile).not.toContain("useBillingStatusQuery");
   });
 
   /**
@@ -132,15 +161,22 @@ describe("Premium CTA wiring contract", () => {
       "client/src/components/tutor/ScopedTutorPanel.tsx",
     );
 
-    // W4-11: both LISA surfaces draw the LISA upgrade card, which is the one
-    // billing card with LISA's pitch — not a second card.
-    const lisaCard = read("client/src/components/tutor/LisaUpgradeCard.tsx");
-    expect(chat).toContain("LisaUpgradeCard");
+    // W4-11: the in-review panel draws the LISA upgrade card, which is the one
+    // billing card with LISA's pitch — not a second card. UI-56 (2026-10-03): the
+    // standalone page's denial is its locked state, which opens the app's one upgrade
+    // modal for `tutor_access` (UI-44), and still keys on the tutor's own reader.
+    // OQ-54 (a) / OQ-57 (f), owner ruling 2026-10-05: the card is /chat's locked card in the
+    // panel, and opens the app's one upgrade modal for `tutor_access`, as /chat does.
+    const lisaCard = readCode(
+      "client/src/components/tutor/LisaUpgradeCard.tsx",
+    );
+    expect(chat).toContain("isLisaEntitlementDenial(");
+    expect(chat).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
     expect(chat).toContain("useTutorTurn");
     expect(tutorTurn).toContain("mapTutorErrorToPremiumReason");
     expect(reviewPanel).toContain("LisaUpgradeCard");
     expect(reviewPanel).toContain("useTutorTurn");
-    expect(lisaCard).toContain("PremiumUpgradePrompt");
+    expect(lisaCard).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
     expect(lisaCard).toContain("mapTutorErrorToPremiumReason");
     // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
     // pending Doc 04 rebuild. The two full-test.tsx assertions (PremiumUpgradePrompt,

@@ -34,6 +34,10 @@ MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
 # the pipeline keeps. Resolved, not named, so a later redefinition (E6b: 20260930080000) cannot
 # silently turn M2/M3 into plants on an overwritten copy.
 MIGCASCADE="$(grep -l 'FUNCTION public.execute_account_deletion_cascade(' supabase/migrations/*.sql | sort | tail -1)"
+# The LATEST migration that (re)defines apply_audit_logs_retention, resolved for the same reason:
+# 20261027000000 (C-02, consent rows kept) replaced 20260917100000's body, which turned M32 into a
+# plant on an overwritten copy until it was re-pointed here.
+MIGAUDITRET="$(grep -l 'FUNCTION public.apply_audit_logs_retention(' supabase/migrations/*.sql | sort | tail -1)"
 GUARD="scripts/ci/fk-delete-action-guard.sql"
 MIG6="supabase/migrations/20260918000000_crisis_severance_and_verification.sql"
 MIG7="supabase/migrations/20260921000000_operational_log_retention.sql"
@@ -46,8 +50,6 @@ SWEEP="server/services/retention-sweep.ts"
 SCHEDTF="infra/terraform/cloud-scheduler.tf"
 RETROUTE="server/routes/internal-retention-routes.ts"
 OBSCFG="supabase/migrations/20260922020000_observability_retention_config.sql"
-ANASURF="client/src/lib/analytics-surface.ts"
-APPTSX="client/src/App.tsx"
 VERIF="supabase/migrations/20260930000000_deletion_verification_in_t3.sql"
 SENT="supabase/migrations/20261005000000_actor_id_integrity_sentinel.sql"
 CARVE="supabase/migrations/20261007000000_deletion_verification_drop_deleted_profile_id.sql"
@@ -63,6 +65,7 @@ cp "$DISPATCH" "$BACKUP/dispatch.ts"
 cp "$RECONSENT" "$BACKUP/reconsent.ts"
 cp "$MIGFK" "$BACKUP/migfk.sql"
 cp "$MIGCASCADE" "$BACKUP/migcascade.sql"
+cp "$MIGAUDITRET" "$BACKUP/migauditret.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
 cp "$MIG7" "$BACKUP/mig7.sql"
@@ -75,8 +78,6 @@ cp "$SWEEP"      "$BACKUP/retention-sweep.ts"
 cp "$SCHEDTF"    "$BACKUP/cloud-scheduler.tf"
 cp "$RETROUTE"   "$BACKUP/internal-retention-routes.ts"
 cp "$OBSCFG"     "$BACKUP/observability_retention_config.sql"
-cp "$ANASURF"    "$BACKUP/analytics-surface.ts"
-cp "$APPTSX"     "$BACKUP/App.tsx"
 cp "$VERIF"      "$BACKUP/deletion_verification_in_t3.sql"
 cp "$SENT"       "$BACKUP/actor_id_integrity_sentinel.sql"
 cp "$CARVE"      "$BACKUP/drop_deleted_profile_id.sql"
@@ -94,6 +95,7 @@ restore() {
   cp "$BACKUP/reconsent.ts" "$RECONSENT"
   cp "$BACKUP/migfk.sql" "$MIGFK"
   cp "$BACKUP/migcascade.sql" "$MIGCASCADE"
+  cp "$BACKUP/migauditret.sql" "$MIGAUDITRET"
   cp "$BACKUP/guard.sql" "$GUARD"
   cp "$BACKUP/mig6.sql" "$MIG6"
   cp "$BACKUP/mig7.sql" "$MIG7"
@@ -106,8 +108,6 @@ restore() {
   cp "$BACKUP/cloud-scheduler.tf" "$SCHEDTF"
   cp "$BACKUP/internal-retention-routes.ts" "$RETROUTE"
   cp "$BACKUP/observability_retention_config.sql" "$OBSCFG"
-  cp "$BACKUP/analytics-surface.ts" "$ANASURF"
-  cp "$BACKUP/App.tsx" "$APPTSX"
   cp "$BACKUP/deletion_verification_in_t3.sql" "$VERIF"
   cp "$BACKUP/actor_id_integrity_sentinel.sql" "$SENT"
   cp "$BACKUP/drop_deleted_profile_id.sql" "$CARVE"
@@ -293,6 +293,11 @@ echo "==> (M22) the audit purge hardcodes 365 instead of reading the configured 
 plant M22 "$MIG3" 's.replace("  RETURN v_days;", "  RETURN 365;", 1)'
 expect_red M22 "P5.5 the audit purge runs only through"
 
+# C-02: the purge keeps guardian-link consent rows. Dropping the exclusion must redden P5.7.
+echo "==> (M98) the audit purge forgets the guardian-link consent exclusion"
+plant M98 "$MIGAUDITRET" "s.replace(\"        AND b.action NOT IN ('guardian_link_initiated', 'guardian_link_accepted', 'guardian_link_revoked')\n\", \"\", 1)"
+expect_red M98 "P5.7 the audit purge keeps every guardian-link consent row"
+
 echo "==> (M23) the retry sweep never runs"
 plant M23 "$EXEC" 's.replace("  await retryFailedSuppressions(admin, requestId);", "", 1)'
 expect_red M23 "P2.4 the retry sweep re-attempts"
@@ -385,8 +390,26 @@ expect_red M31 "P6.5 a verification record is written"
 # The carve-out sweep must actually bite: if audit_logs keeps the dead profile uuid, the
 # verification record is no longer the only place it survives.
 echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
-plant M32 "$MIG3" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
+plant M32 "$MIGAUDITRET" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
 expect_red M32 "P6.6 the deleted profile's uuid survives NOWHERE"
+
+# C-01: the crisis hold on account deletion. MIGCASCADE resolves to its last definition
+# (20261027000001), which also carries the CHECK and the message trigger.
+echo "==> (M99) the cascade holds no flagged conversation"
+plant M99 "$MIGCASCADE" 's.replace("   WHERE c.student_id = p_profile_id\n     AND (EXISTS", "   WHERE false AND c.student_id = p_profile_id\n     AND (EXISTS", 1)'
+expect_red M99 "P6.8 (hard_delete)"
+
+echo "==> (M100) the hold forgets a conversation flagged only by a crisis_review_events row"
+plant M100 "$MIGCASCADE" 's.replace("\n       OR EXISTS (SELECT 1 FROM public.crisis_review_events v WHERE v.conversation_id = c.id));", ");", 1)'
+expect_red M100 "P6.8 (hard_delete)"
+
+echo "==> (M101) the conversation CHECK admits a NULL student on an unflagged row"
+plant M101 "$MIGCASCADE" 's.replace("CHECK (student_id IS NOT NULL OR crisis_flagged);", "CHECK (true);", 1)'
+expect_red M101 "P6.9 a NULL student_id is refused on an unflagged conversation"
+
+echo "==> (M102) the message trigger admits a NULL student outside a held conversation"
+plant M102 "$MIGCASCADE" 's.replace("  IF NEW.student_id IS NULL AND NOT EXISTS (", "  IF false AND NOT EXISTS (", 1)'
+expect_red M102 "P6.10 a NULL student_id is refused on a message"
 
 # =============================================================================
 # Operational-log retention (v3 §6.7 / SCL-101) — B1
@@ -538,11 +561,19 @@ expect_red M64 "F1.16 — an inline comment does not change a scalar's type"
 # The archive was invisible for a month because "returns ok: false" and "is not
 # scheduled" each explained the other. These mutations plant the two halves of
 # that back and require the suite to say so.
-SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
+#
+# M65 RE-POINTED 2026-10-05 (RS-03/RS-04, #1102). The 90d tier is an RPC now
+# (`sweepByRpc` → `sweep_tutor_instruction_retention`), so its old anchor
+# `const cutoff = retentionCutoff(opts.now, 90);` is gone, and the test it reddens
+# moved to the real-Postgres suite with the rest of the 90d cases. The anchor
+# below occurs once in retention-sweep.ts, inside sweep90d.
+SUITE="tests/ci/retention-sweep.pg.ci.test.ts"
 
 echo "==> (M65) the 90d tier declines again instead of deleting"
-plant M65 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 90);', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const cutoff = retentionCutoff(opts.now, 90);', 1)"
+plant M65 "$SWEEP" "s.replace('  const result = await sweepByRpc(', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const result = await sweepByRpc(', 1)"
 expect_red M65 "deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)"
+
+SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"
 
 echo "==> (M66) an archive call comes back into the sweep module"
 plant M66 "$SWEEP" "s.replace('  const cutoff = retentionCutoff(opts.now, 180);', '  const archiveTable = \"retention__crisis_review_cases\";\n  void archiveTable;\n  const cutoff = retentionCutoff(opts.now, 180);', 1)"
@@ -625,42 +656,9 @@ echo "==> (M81) the derivation is replaced by a literal that is correct TODAY"
 plant M81 "$OBSCFG" "s.replace('to_jsonb(public.audit_logs_retention_days())', \"to_jsonb(365)\", 1)"
 expect_red M81 "F2.8 — each seeded value is DERIVED from its enforcing function, not typed"
 
-echo "==> (29j2) the analytics student-surface block"
-SUITE="tests/ci/analytics-student-surface.contract.test.ts"
-
-echo "==> (M82) the predicate is dropped from the call site"
-plant M82 "$APPTSX" "s.replace('<Analytics beforeSend={analyticsBeforeSend} />', '<Analytics />', 1)"
-expect_red M82 "E1.10 — there is exactly one Analytics mount, and it carries the predicate"
-
-echo "==> (M83) a second Analytics mount bypasses the one predicate"
-plant M83 "$APPTSX" "s.replace('    </ErrorBoundary>', '      <Analytics />\n    </ErrorBoundary>', 1)"
-expect_red M83 "E1.10 — there is exactly one Analytics mount, and it carries the predicate"
-
-echo "==> (M84) a student surface is added to the public allowlist"
-plant M84 "$ANASURF" "s.replace('  \"/digital-sat\",', '  \"/digital-sat\",\n  \"/chat\",', 1)"
-expect_red M84 "E1.2 — every role-gated route is denied"
-
-echo "==> (M85) the predicate stops defaulting to deny"
-plant M85 "$ANASURF" "s.replace('  if (typeof pathname !== \"string\" || !pathname.startsWith(\"/\")) return false;', '  if (typeof pathname !== \"string\" || !pathname.startsWith(\"/\")) return false;\n  return true;', 1)"
-expect_red M85 "E1.3 — an unknown path is denied (defaults to deny, per Doc 06A §5.3)"
-
-echo "==> (M86) prefix matching loses its segment boundary"
-plant M86 "$ANASURF" "s.replace('const PUBLIC_PREFIXES: readonly string[] = [\"/blog/\", \"/legal/\"];', 'const PUBLIC_PREFIXES: readonly string[] = [\"/blog\", \"/legal\"];', 1)"
-expect_red M86 "E1.6 — a prefix matches at a segment boundary, not as a substring"
-
-echo "==> (M87) the verdict is taken from the whole URL instead of its path"
-plant M87 "$ANASURF" "s.replace('  const pathname = pathnameOf(event.url);\n  return pathname !== null \x26\x26 isAnalyticsAllowedPath(pathname) ? event : null;', '  return event.url.includes(\"/chat\") ? null : event;', 1)"
-expect_red M87 "E1.7 — the verdict comes from the path, not from the query string"
-
-echo "==> (M88) an empty event url resolves to the home page and is reported"
-plant M88 "$ANASURF" "s.replace('  if (typeof url !== \"string\" || url.length === 0) return null;\n  try {\n    return new URL(url).pathname;', '  if (typeof url !== \"string\") return null;\n  try {\n    return new URL(url, \"https://lyceon.ai\").pathname;', 1)"
-expect_red M88 "E1.8 — an unparseable URL is denied rather than guessed"
-
-# Re-pointed 2026-09-29 (student UI UI-04): /tutor is retired, so E1.11 now asserts it stays
-# denied with no entry anywhere; the same plant (re-adding it to the allowlist) turns it red.
-echo "==> (M89) the retired /tutor is put back on the analytics allowlist"
-plant M89 "$ANASURF" "s.replace('  \"/terms\",', '  \"/terms\",\n  \"/tutor\",', 1)"
-expect_red M89 "E1.11 — retired /tutor is neither public nor a page, and stays denied"
+# (29j2) M82–M89 guarded the Vercel Analytics allowlist (`client/src/lib/analytics-surface.ts`)
+# and its suite. Both were deleted 2026-10-05 when Vercel Analytics was retired (SEO F10,
+# SCL-201), so the plants were removed with them rather than left as dead mutations.
 
 # ── The verification record's wiring ────────────────────────────────────────────
 # These four exist because the mechanism they guard was BUILT, SHAPED CORRECTLY AND TESTED,
@@ -730,9 +728,9 @@ expect_red M97 "D1.1 the diagnostic route resolves actor_id from the profile"
 
 SUITE="tests/ci/deletion-evidence-bundle.pg.ci.test.ts"
 
-echo "==> (29k) restored: the analytics-surface suite must be green again"
+echo "==> (29k) restored: the deletion-evidence-bundle suite must be green again"
 again="$(run_suite)"
-if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: analytics-surface suite not green after restore"; fails=1; else echo "  ok   analytics-surface suite green after restore"; fi
+if printf '%s\n' "$again" | grep -q "^failed"; then echo "  FAIL: deletion-evidence-bundle suite not green after restore"; fails=1; else echo "  ok   deletion-evidence-bundle suite green after restore"; fi
 
 SUITE="tests/ci/observability-retention-config.pg.ci.test.ts"
 echo "==> (29j) restored: the observability-config suite must be green again"

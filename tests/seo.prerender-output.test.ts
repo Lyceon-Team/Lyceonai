@@ -20,6 +20,7 @@ import {
   HOME_FAQS,
   LEGAL_META,
   getPublicMeta,
+  resolvePublicMeta,
   faqParagraphs,
   type FaqItem,
 } from "../shared/seo/public-meta";
@@ -27,6 +28,14 @@ import { BASE_URL, LOGO_URL } from "../shared/seo/structured-data";
 import { HEAD_END_MARKER, HEAD_START_MARKER } from "../shared/seo/head";
 import { stripComments } from "./ci/lib/strip-comments";
 import { BLOG_POSTS } from "../shared/content/blog";
+import {
+  HERO_COPY,
+  HERO_TITLE_ID,
+} from "../client/src/lib/analytics/hero-experiment";
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 import {
   REPO_ROOT,
   bodyText,
@@ -103,7 +112,9 @@ describe("every prerendered page carries its own head and body (F1)", () => {
     );
     expect(new Set(titles).size).toBe(site.pages.length);
     for (const p of site.pages) {
-      const meta = getPublicMeta(p.path);
+      // Archive days are resolved from the build's archive content; everything else from the
+      // static table.
+      const meta = resolvePublicMeta(p.path, site.qotdArchive.days);
       expect(meta, p.path).not.toBeNull();
       const title = attr(p.html, /<title>([^<]+)<\/title>/)
         ?.replace(/&#39;/g, "'")
@@ -348,19 +359,37 @@ describe("404 page and SPA shell (F2)", () => {
   });
 });
 
-describe("homepage hero is static (F7, taken into this change)", () => {
-  it("the prerendered homepage shows the headline, not a loading placeholder", () => {
-    const text = bodyText(page("/").html);
-    expect(text).toContain("Digital SAT prep, one step at a time");
+describe("homepage hero is static (F7), Variant A prerendered (F13)", () => {
+  it("the prerendered homepage shows Variant A's headline and sub, not a loading placeholder", () => {
+    const html = page("/").html;
+    const text = bodyText(html);
+    expect(text).toContain(HERO_COPY.control.title);
+    expect(text).toContain(HERO_COPY.control.sub);
     expect(text).not.toContain("Loading...");
+    // Variant B is never prerendered as page text: it exists only inside the swap script.
+    expect(text).not.toContain(HERO_COPY.test.title);
+    expect(html).toMatch(
+      new RegExp(
+        `<h1[^>]*id="${HERO_TITLE_ID}"[^>]*>${escapeRegExp(HERO_COPY.control.title)}</h1>`,
+      ),
+    );
   });
 
-  it("home.tsx has no random variant and writes no storage", () => {
-    // Code only: the file's own comment explains what was removed.
+  it("the prerendered homepage carries the FAQPage JSON-LD built from HOME_FAQS", () => {
+    const html = page("/").html;
+    expect(html).toContain('"@type":"FAQPage"');
+    for (const faq of HOME_FAQS) {
+      expect(html).toContain(JSON.stringify(faq.question));
+    }
+  });
+
+  it("home.tsx has no random variant and writes no storage itself", () => {
+    // Code only: the file's own comment explains what was removed. The experiment's variant is
+    // read and kept by client/src/lib/analytics/hero-experiment.ts, only after consent.
     const source = stripComments(
       readFileSync(resolve(REPO_ROOT, "client/src/pages/home.tsx"), "utf8"),
     );
-    expect(source).toContain("Digital SAT prep, one step at a time");
+    expect(source).toContain("HERO_COPY");
     expect(source).not.toMatch(/Math\.random/);
     expect(source).not.toMatch(/localStorage|sessionStorage/);
     expect(source).not.toContain("landing_hero_variant");

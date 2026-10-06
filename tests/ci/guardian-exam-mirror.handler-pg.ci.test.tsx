@@ -212,10 +212,33 @@ const sentences = (s: string): string[] =>
     .map((x) => x.trim())
     .filter((x) => x.length > 0);
 
+/**
+ * Headings that title the scored layout's cards rather than an outcome panel. Since UI-54 the
+ * student's scored report opens with a "Total score" card and ends with "Knowledge and skills";
+ * neither is a state the guardian restates, so the panel reader skips them on both sides.
+ */
+const LAYOUT_HEADINGS = new Set(["Total score", "Knowledge and skills"]);
+
+/** A section score as "label + number", without its scale ("/ 800" since UI-54; was 200–800). */
+const sectionText = (e: Element): string =>
+  text(e).replace(/\s*(\/\s*800|200–800)$/, "");
+
+/**
+ * The outcome panel, title and first sentence block, read the same way on either side: the first
+ * h2 that is not a layout heading, and the first paragraph after it in its own container.
+ */
+function panelOf(root: Element): { title: string | null; body: string | null } {
+  const h2 = Array.from(root.querySelectorAll("h2")).find(
+    (h) => !LAYOUT_HEADINGS.has(text(h)),
+  );
+  if (h2 === undefined) return { title: null, body: null };
+  const body = h2.parentElement?.querySelector("p");
+  return { title: text(h2), body: body ? text(body) || null : null };
+}
+
 /** What the student's own report shows, read from the student's own components. */
 type StudentView = {
   state: string;
-  line: string;
   panelTitle: string | null;
   panelBody: string | null;
   total: string | null;
@@ -225,18 +248,16 @@ type StudentView = {
 
 function studentView(payload: ExamStudentReportPayload): StudentView {
   const { container } = render(<ReportBody payload={payload} />);
-  const panel = container.querySelector("section h2");
+  const panel = panelOf(container);
   const view: StudentView = {
     state: payload.report_state,
-    line: text(container.querySelector("p")),
-    panelTitle: panel === null ? null : text(panel),
-    panelBody:
-      panel === null ? null : text(panel.parentElement?.querySelector("p")),
+    panelTitle: panel.title,
+    panelBody: panel.body,
     total:
       text(container.querySelector('[data-testid="exam-total-score"]')) || null,
     sections: Array.from(
       container.querySelectorAll('[data-testid="exam-section-score"]'),
-    ).map((e) => text(e).replace(/\s*200–800$/, "")),
+    ).map(sectionText),
     partialSummary:
       text(container.querySelector('[data-testid="exam-partial-summary"]')) ||
       null,
@@ -647,26 +668,22 @@ describe.skipIf(!PG_AVAILABLE)(
         serve(x);
         mountApp(Router, `/guardian/${x.student}/exams/${x.sid}`);
         const root = await screen.findByTestId("guardian-exam-report");
+        const gPanel = panelOf(root);
         const guardian = {
-          line: text(root.querySelector("p")),
-          panelTitle: text(root.querySelector("section h2")) || null,
-          panelBody:
-            text(
-              root
-                .querySelector("section h2")
-                ?.parentElement?.querySelector("p"),
-            ) || null,
+          panelTitle: gPanel.title,
+          panelBody: gPanel.body,
           total:
             text(root.querySelector('[data-testid="exam-total-score"]')) ||
             null,
           sections: Array.from(
             root.querySelectorAll('[data-testid="exam-section-score"]'),
-          ).map((e) => text(e).replace(/\s*200–800$/, "")),
+          ).map(sectionText),
           partialSummary:
             text(root.querySelector('[data-testid="exam-partial-summary"]')) ||
             null,
         };
-        expect(guardian.line).toBe(own.line);
+        // No date-line comparison since UI-54: the student's report body carries no date line
+        // any more; the guardian's "Completed …" / "Ended …" is the guardian page's own header.
         expect(guardian.panelTitle).toBe(
           own.panelTitle === null ? null : namedFor(x.name, own.panelTitle),
         );
@@ -726,20 +743,24 @@ describe.skipIf(!PG_AVAILABLE)(
 
     type Drawn = { domain: string; segments: number; filled: number };
 
-    /** Renders `node`, opens Score breakdown, and reads each domain row in page order. */
-    function breakdownOf(node: ReactElement): Drawn[] {
-      const { unmount } = render(node);
-      fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
-      const rows = within(screen.getByTestId("exam-domain-breakdown"))
+    /** Reads each domain row of the breakdown on screen, in page order. */
+    function rowsOnScreen(): Drawn[] {
+      return within(screen.getByTestId("exam-domain-breakdown"))
         .getAllByTestId("exam-domain-row")
         .map((row) => {
           const segs = within(row).queryAllByTestId("exam-domain-segment");
           return {
-            domain: text(row.querySelector("span")),
+            domain: text(within(row).getByTestId("exam-domain-name")),
             segments: segs.length,
             filled: segs.filter((x) => x.dataset.filled === "true").length,
           };
         });
+    }
+
+    /** Renders the student's `ReportBody`; its breakdown is inline since UI-54 (no tab). */
+    function breakdownOf(node: ReactElement): Drawn[] {
+      const { unmount } = render(node);
+      const rows = rowsOnScreen();
       unmount();
       return rows;
     }
@@ -765,17 +786,9 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       mountApp(Router, `/guardian/${who}/exams/${sid}`);
       await screen.findByTestId("guardian-exam-report");
+      // The guardian's breakdown sits behind its Score breakdown tab.
       fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
-      const rows = within(screen.getByTestId("exam-domain-breakdown"))
-        .getAllByTestId("exam-domain-row")
-        .map((row) => {
-          const segs = within(row).queryAllByTestId("exam-domain-segment");
-          return {
-            domain: text(row.querySelector("span")),
-            segments: segs.length,
-            filled: segs.filter((x) => x.dataset.filled === "true").length,
-          };
-        });
+      const rows = rowsOnScreen();
       cleanup();
       return rows;
     }
@@ -821,7 +834,7 @@ describe.skipIf(!PG_AVAILABLE)(
         throw new Error(payload.report_state);
       }
       render(<ReportBody payload={payload} />);
-      fireEvent.click(screen.getByRole("tab", { name: "Score breakdown" }));
+      // Inline on the student's report since UI-54 (no tab).
       const studentNotes = screen
         .queryAllByTestId("exam-domain-omitted")
         .map((n) => text(n));
@@ -896,7 +909,7 @@ describe.skipIf(!PG_AVAILABLE)(
         new Set([x.sid, partialPreviousSid]),
       );
       const chip = screen.getByTestId("latest-test-change");
-      const label = section === "RW" ? "Reading and Writing" : "Math";
+      const label = section === "RW" ? "Reading & Writing" : "Math";
       expect(text(chip)).toBe(
         delta === 0
           ? `No change in ${label} since last test`

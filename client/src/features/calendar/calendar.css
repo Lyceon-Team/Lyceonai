@@ -100,22 +100,6 @@
   padding: 18px 16px;
   overflow-y: auto;
 }
-.lyceon-calendar .brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-family: serif;
-  font-weight: 600;
-  font-size: 17px;
-  letter-spacing: -0.02em;
-}
-.lyceon-calendar .brand i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--math);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
-}
 .lyceon-calendar .who {
   padding: 11px 12px;
   border-radius: var(--r);
@@ -909,52 +893,13 @@
 }
 
 /* ==========================================================================
- * §17.3 — the settings sheet, the rail's schedule card and the Edit schedule
- * button. Ported from the approved prototype; the tokens are this file's, so
- * the colours stay in one place rather than being re-typed as literals.
+ * §17.3 — the settings sheet. Ported from the approved prototype; the tokens are
+ * this file's, so the colours stay in one place rather than being re-typed as
+ * literals. (The rail's schedule card, the header's Edit schedule button, the
+ * rail wordmark, the popup's free third panel and the blurred `.app` were the
+ * student's and left with UI-55: the student page draws its own chrome on the
+ * student tokens, `calendar-student.css`.)
  * ========================================================================== */
-
-/* The rail's "Your schedule" card. Absent on the guardian surface — the whole
-   block is conditioned on a prop, not dimmed. */
-.lyceon-calendar .schedcard {
-  padding: 11px 12px;
-  border-radius: var(--r);
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 12.5px;
-  color: #c7ccdc;
-}
-.lyceon-calendar .schedcard b {
-  display: block;
-  color: #e8eaf2;
-  font-weight: 600;
-  margin-bottom: 3px;
-}
-.lyceon-calendar .schedcard button {
-  margin-top: 8px;
-  width: 100%;
-  padding: 7px;
-  border-radius: 8px;
-  background: var(--math);
-  color: #fff;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.lyceon-calendar .schedcard button:hover {
-  background: #1d4ed8;
-}
-
-/* The top bar's Edit schedule button. */
-.lyceon-calendar .btn.sched {
-  border-color: var(--math);
-  color: var(--math);
-  font-weight: 600;
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-.lyceon-calendar .btn.sched:hover {
-  background: var(--math-t);
-}
 
 /* Chip groups — study days, minute presets, practice-test day. */
 .lyceon-calendar .chips {
@@ -1379,40 +1324,6 @@
   align-items: center;
   font-size: 13px;
   color: var(--ink-2);
-}
-.lyceon-calendar .cta {
-  padding: 14px 16px;
-  border-radius: var(--r);
-  background: var(--math-t);
-  border: 1px solid #d7e2fb;
-  color: #1b3f91;
-  font-size: 13.5px;
-}
-.lyceon-calendar .cta b {
-  display: block;
-  font-family: inherit;
-  font-size: 15px;
-  margin-bottom: 3px;
-}
-.lyceon-calendar .cta button {
-  margin-top: 10px;
-  width: 100%;
-  padding: 10px;
-  border-radius: 9px;
-  background: var(--math);
-  color: #fff;
-  font-weight: 600;
-  font-size: 13.5px;
-  border: 0;
-  cursor: pointer;
-}
-
-/* The plan stays visible behind the popup — §17.5 wants a student to see what they are
-   setting up — but blurred, so it reads as context rather than as something to click. */
-.lyceon-calendar .app.blur {
-  filter: blur(3px);
-  pointer-events: none;
-  user-select: none;
 }
 
 /* ── §17.7 phone layout (Brief 11 Step 5) ─────────────────────────────────── */

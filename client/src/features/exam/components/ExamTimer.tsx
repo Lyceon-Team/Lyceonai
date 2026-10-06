@@ -45,22 +45,34 @@ export function ExamTimer({ remainingMs }: { remainingMs: number }) {
       <div
         className="font-mono text-[30px] font-medium tracking-[1px] tabular-nums"
         data-testid="exam-timer"
-        aria-label={showDigits ? `Time remaining: ${spokenClock(remainingMs)}` : "Timer hidden"}
+        aria-label={
+          showDigits
+            ? `Time remaining: ${spokenClock(remainingMs)}`
+            : "Timer hidden"
+        }
         role="timer"
       >
-        {showDigits ? formatClock(remainingMs) : <span aria-hidden="true">— : —</span>}
+        {showDigits ? (
+          formatClock(remainingMs)
+        ) : (
+          <span aria-hidden="true">— : —</span>
+        )}
       </div>
       {!forced && (
         <button
           type="button"
           onClick={() => setHidden((h) => !h)}
           aria-pressed={hidden}
-          className="min-h-[44px] rounded-full px-4 text-xs text-[var(--exam-muted)] underline-offset-2 hover:underline"
+          className="min-h-[44px] rounded-full px-4 text-lyc-meta text-[var(--exam-muted)] underline-offset-2 hover:underline"
         >
           {hidden ? "Show" : "Hide"}
         </button>
       )}
-      <div aria-live="polite" className="sr-only" data-testid="exam-timer-announcement">
+      <div
+        aria-live="polite"
+        className="sr-only"
+        data-testid="exam-timer-announcement"
+      >
         {announcement}
       </div>
     </div>

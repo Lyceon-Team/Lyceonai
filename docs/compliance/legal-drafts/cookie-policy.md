@@ -43,6 +43,7 @@ We do not use advertising cookies, cross-site tracking cookies, or cookies that 
 | Cookie consent record | Strictly necessary | LYCEON | Remembers your cookie choice | 6 months |
 | Security check | Strictly necessary | Cloudflare (Turnstile) | Protects forms against automated abuse | [●] |
 | `ph_<project>_posthog` | Analytics | PostHog | Distinguishes visits for analytics | [●] |
+| `lyceon_first_touch` (session storage) | Analytics | LYCEON | Remembers how you first arrived (for example, from an ad or a search engine) until you create an account | Until you close the tab |
 
 ---
 

@@ -33,7 +33,7 @@
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
-import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
+import { sectionDisplayLabel } from "@shared/section-display";
 import type {
   GuardianExamList,
   GuardianExamReport,
@@ -70,7 +70,7 @@ import {
   SectionCard,
   Title,
   formatDate,
-} from "./ExamReportPage";
+} from "../components/ExamReportParts";
 import "../exam.css";
 
 /**
@@ -328,8 +328,33 @@ function unscoredOmissions(
 }
 
 /** Domain-card content stays left-aligned on a phone (item 10), inside the centred detail. */
+/**
+ * The type floor for the guardian (Guardian_Closure_Plan R12: no guardian text under 16px). The
+ * student's meta sizes (14px, 15px) are raised here only; the student's report keeps its own.
+ */
+const GUARDIAN_LYC_FLOOR: React.CSSProperties & Record<`--${string}`, string> =
+  {
+    background: "transparent",
+    "--lyc-text-meta": "16px",
+    "--lyc-text-meta-lg": "16px",
+  };
+
+/**
+ * The breakdown panel. `DomainSegments` is drawn on the student tokens (UI-54), which exist only
+ * under a .lyc root, so the panel is one — light-locked, with the root's paper background
+ * suppressed so it sits on the guardian page's own surface, and the student's meta sizes raised
+ * to the guardian's 16px floor (G5-11 parity, R12; merge of PR 1069).
+ */
 function LeftAligned({ children }: { children: React.ReactNode }) {
-  return <div className="text-left">{children}</div>;
+  return (
+    <div
+      className="lyc text-left"
+      data-theme-lock="light"
+      style={GUARDIAN_LYC_FLOOR}
+    >
+      {children}
+    </div>
+  );
 }
 
 function AttemptFacts({
@@ -375,7 +400,9 @@ export function guardianOutcomeCopy(
       // guardian page does not poll (SCL-181). §12.2 keeps `estimated_ready_at` off the wire.
       return {
         line: "Test submitted",
-        title: `Scoring ${their} test`,
+        // Mirrors the student's report title (G5-08), which names the sitting a "full-length
+        // test" since OQ-62 (b) (owner ruling, Karl, 2026-10-05).
+        title: `Scoring ${their} full-length test`,
         body: "Scoring usually takes a few minutes.",
       };
     case "failed_requires_review":
@@ -404,7 +431,7 @@ export function guardianOutcomeCopy(
           }
         : {
             line: "Report",
-            title: "This test isn't finished",
+            title: "This full-length test isn't finished",
             body: `${their} score appears here once both sections are submitted.`,
           };
   }
@@ -440,8 +467,9 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
                   >
                     {report.score.total_scaled}
                   </span>
+                  {/* The student's words since UI-54 ("Total score", "out of 1600"; G5-08 mirror). */}
                   <span className="text-base text-[var(--exam-muted)]">
-                    Total score · 400–1600
+                    Total score, out of 1600
                   </span>
                 </div>
                 <AttemptFacts report={report} />
@@ -461,11 +489,11 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard
-                  label={EXAM_SECTION_LABEL.RW}
+                  label={sectionDisplayLabel("RW") ?? ""}
                   scaled={report.score.rw_scaled}
                 />
                 <SectionCard
-                  label={EXAM_SECTION_LABEL.M}
+                  label={sectionDisplayLabel("M") ?? ""}
                   scaled={report.score.math_scaled}
                 />
               </div>
@@ -507,11 +535,11 @@ export function GuardianReportBody({ report }: { report: GuardianExamReport }) {
             >
               <div className="flex flex-col gap-3 sm:flex-row">
                 <SectionCard
-                  label={EXAM_SECTION_LABEL.RW}
+                  label={sectionDisplayLabel("RW") ?? ""}
                   scaled={report.score.rw_scaled}
                 />
                 <SectionCard
-                  label={EXAM_SECTION_LABEL.M}
+                  label={sectionDisplayLabel("M") ?? ""}
                   scaled={report.score.math_scaled}
                 />
               </div>

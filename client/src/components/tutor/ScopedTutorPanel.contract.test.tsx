@@ -84,6 +84,8 @@ import tutorRuntimeRouter from "../../../../server/routes/tutor-runtime";
 import { EntitlementService } from "../../../../server/services/entitlement-service";
 import { runCrisisClassifier } from "../../../../server/services/tutor-crisis";
 import { LISA_UPGRADE_PITCH } from "./LisaUpgradeCard";
+import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
+import { UPGRADE_MODAL_COPY } from "@/components/billing/upgrade-modal";
 
 function makeApp(): express.Express {
   const app = express();
@@ -138,16 +140,8 @@ vi.mock("@/lib/queryClient", async () => {
     },
   };
 });
-// A visible stand-in for the one billing card: it shows which pitch and which
-// mode it was drawn with. Its own copy and destination are tested with the
-// resolver (billing-cta), not here.
-vi.mock("@/components/billing/PremiumUpgradePrompt", () => ({
-  PremiumUpgradePrompt: (p: { mode?: string; pitch?: { title: string } }) => (
-    <div data-testid="premium-upgrade-prompt" data-mode={p.mode}>
-      {p.pitch?.title}
-    </div>
-  ),
-}));
+// The denial card is real (2026-10-05): LISA's headline and the approved body from the upgrade
+// modal's copy table, and "Unlock LISA", which opens the app's one upgrade modal (also real).
 
 import {
   OPENER_BODY,
@@ -238,9 +232,13 @@ function renderPanel(p: Props): {
       mutations: { retry: false },
     },
   });
+  // The app root mounts the upgrade modal's provider (App.tsx). Its auto-open on a refusal is
+  // off here, so a modal on screen can only have come from the card's own button.
   const wrap = (x: Props): React.ReactElement => (
     <QueryClientProvider client={qc}>
-      <ScopedTutorPanel {...x} />
+      <UpgradeModalProvider autoOpenOnDenial={false}>
+        <ScopedTutorPanel {...x} />
+      </UpgradeModalProvider>
     </QueryClientProvider>
   );
   const r = render(wrap(p));
@@ -488,7 +486,14 @@ describe("W4-11 — upgrade card instead of a composer for an unpaid student", (
     renderPanel(props(itemId));
 
     const card = await screen.findByTestId("lisa-upgrade");
-    expect(card.textContent).toContain(LISA_UPGRADE_PITCH.title);
+    // Approved copy only (OQ-44; OQ-57 (f)): the headline and the prototype body the /chat locked
+    // card shows. (The unapproved W4-11 draft body is deleted, OQ-61 (h).)
+    const approved = UPGRADE_MODAL_COPY.tutor_access.plan;
+    expect(within(card).getByRole("heading", { level: 2 }).textContent).toBe(
+      approved.title,
+    );
+    expect(approved.title).toBe(LISA_UPGRADE_PITCH.title);
+    expect(card.textContent).toContain(approved.body);
     expect(screen.queryByLabelText("Message")).toBeNull();
     expect(screen.queryByTestId("tutor-opener")).toBeNull();
     // It was the server's refusal of THIS item's on-load lookup that drew the
@@ -509,28 +514,33 @@ describe("W4-11 — upgrade card instead of a composer for an unpaid student", (
     setEntitled(false);
     const itemId = seedReviewItem(1);
     const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
     render(
       <QueryClientProvider client={qc}>
-        <div>
-          <label>
-            Answer
-            <input aria-label="Answer" />
-          </label>
-          <div data-testid="desmos-host">
-            <input aria-label="Desmos expression" />
+        <UpgradeModalProvider autoOpenOnDenial={false}>
+          <div>
+            <label>
+              Answer
+              <input aria-label="Answer" />
+            </label>
+            <div data-testid="desmos-host">
+              <input aria-label="Desmos expression" />
+            </div>
+            <ScopedTutorPanel {...props(itemId)} />
           </div>
-          <ScopedTutorPanel {...props(itemId)} />
-        </div>
+        </UpgradeModalProvider>
       </QueryClientProvider>,
     );
     await screen.findByTestId("lisa-upgrade");
 
-    // Inline, inside the panel — never the floating, page-covering mode.
+    // Inside the panel, never page-covering: nothing modal is open until the student asks.
     const panel = screen.getByTestId("scoped-tutor-panel");
-    const prompt = within(panel).getByTestId("premium-upgrade-prompt");
-    expect(prompt.getAttribute("data-mode")).toBe("inline");
+    expect(within(panel).getByTestId("lisa-upgrade")).toBeTruthy();
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
 
     for (const label of ["Answer", "Desmos expression"]) {
       const input = screen.getByLabelText(label) as HTMLInputElement;
@@ -578,7 +588,7 @@ describe("W4-11 — upgrade card instead of a composer for an unpaid student", (
     send("How do I start?");
     await screen.findByText(TUTOR_TEXT);
     expect(screen.queryByTestId("lisa-upgrade")).toBeNull();
-    expect(screen.queryByTestId("premium-upgrade-prompt")).toBeNull();
+    expect(screen.queryByTestId("lisa-upgrade-unlock")).toBeNull();
     expect(screen.getByLabelText("Message")).toBeTruthy();
     expect(refusals()).toHaveLength(0);
   });
@@ -589,11 +599,9 @@ describe("W4-11 — upgrade card instead of a composer for an unpaid student", (
     await ready();
 
     // A 5xx from the create call — not an entitlement refusal.
-    const insert = vi
-      .spyOn(db.current, "client")
-      .mockImplementation(() => {
-        throw new Error("db down");
-      });
+    const insert = vi.spyOn(db.current, "client").mockImplementation(() => {
+      throw new Error("db down");
+    });
     send("How do I start?");
     await screen.findByText(/isn.t available right now/i);
     insert.mockRestore();
@@ -624,20 +632,16 @@ describe("W4-11 — accepted gap: the server refuses an unpaid student before cr
     const app = makeApp();
 
     const list = await request(app).get("/api/tutor/conversations");
-    const create = await request(app)
-      .post("/api/tutor/conversations")
-      .send({
-        entry_mode: "general",
-        source_surface: "dashboard",
-        idempotency_key: crypto.randomUUID(),
-      });
-    const message = await request(app)
-      .post("/api/tutor/messages")
-      .send({
-        conversation_id: conversationId,
-        message: "a message the server must refuse unread",
-        client_turn_id: crypto.randomUUID(),
-      });
+    const create = await request(app).post("/api/tutor/conversations").send({
+      entry_mode: "general",
+      source_surface: "dashboard",
+      idempotency_key: crypto.randomUUID(),
+    });
+    const message = await request(app).post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "a message the server must refuse unread",
+      client_turn_id: crypto.randomUUID(),
+    });
 
     for (const res of [list, create, message]) {
       expect(res.status).toBe(403);
@@ -647,5 +651,117 @@ describe("W4-11 — accepted gap: the server refuses an unpaid student before cr
     }
     expect(vi.mocked(runCrisisClassifier)).not.toHaveBeenCalled();
     expect(orchestrateTurn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * OQ-54 (a) / OQ-57 (f), owner ruling 2026-10-05: the review runner's LISA panel draws with the
+ * student tokens only, so the review runner can follow the device theme (route-shells.ts). A
+ * legacy utility here reads the app-wide light tokens and would leave text dark on dark.
+ *
+ * PRESENCE BEFORE ABSENCE: each state is proved on screen (and the frame proved to carry the
+ * student tokens) before the "no legacy class, no raw colour, nothing below 14px" sweep runs.
+ */
+const LEGACY_OR_SMALL =
+  /(^|\s)(text-xs|text-sm|text-base|text-(muted-|card-|primary-|secondary-)?foreground|text-primary|bg-(card|secondary|muted|background|primary|accent|popover)(\/\d+)?|border-(border|input|primary)(\/\d+)?|hover:bg-(secondary|muted|accent)|text-\[(\d|1[0-3])(\.\d+)?px\])(\s|$)/;
+const RAW_COLOUR = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/;
+
+function panelTokenFindings(): {
+  classes: string[];
+  legacy: string[];
+  rawColour: string[];
+} {
+  const panel = screen.getByTestId("scoped-tutor-panel");
+  const nodes = [panel, ...Array.from(panel.querySelectorAll("*"))];
+  const classes = nodes
+    .map((el) => el.getAttribute("class") ?? "")
+    .filter((c) => c.length > 0);
+  const legacy = classes.filter((c) => LEGACY_OR_SMALL.test(c));
+  const rawColour = nodes
+    .flatMap((el) => [el.getAttribute("class"), el.getAttribute("style")])
+    .filter((v): v is string => v !== null && RAW_COLOUR.test(v));
+  return { classes, legacy, rawColour };
+}
+
+function expectOnStudentTokens(minClasses: number): void {
+  const panel = screen.getByTestId("scoped-tutor-panel");
+  expect(panel.className).toContain("bg-lyc-sheet");
+  expect(panel.className).toContain("border-lyc-rule");
+  const chip = screen.getByTestId("tutor-question-chip");
+  expect(chip.className).toContain("bg-lyc-chip");
+  const { classes, legacy, rawColour } = panelTokenFindings();
+  expect(classes.length).toBeGreaterThan(minClasses);
+  expect(legacy).toEqual([]);
+  expect(rawColour).toEqual([]);
+}
+
+describe("OQ-54 (a) — the panel on the student tokens (ruling 2026-10-05)", () => {
+  beforeEach(() => {
+    cleanup();
+    calls.length = 0;
+    setEntitled(true);
+  });
+  afterEach(() => setEntitled(true));
+
+  it("opener and composer: frame, header, chip, opener and composer are student tokens only", async () => {
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId, "Question 1 of 10"));
+    await ready();
+    const opener = screen.getByTestId("tutor-opener");
+    expect(opener.textContent).toContain(OPENER_TITLE);
+    expect(opener.className).toContain("bg-lyc-paper");
+    expect(screen.getByTestId("tutor-question-chip").textContent).toBe(
+      "Question 1 of 10",
+    );
+    expect(screen.getByRole("button", { name: "Hide LISA" })).toBeTruthy();
+    expectOnStudentTokens(15);
+  });
+
+  it("a thread: the message list and composer are student tokens only", async () => {
+    const itemId = seedReviewItem(1);
+    seedConversation(itemId, [
+      { role: "student", message: "How do I start?" },
+      { role: "tutor", message: TUTOR_TEXT },
+    ]);
+    renderPanel(props(itemId, "Question 1 of 10"));
+    expect(await screen.findByText(TUTOR_TEXT)).toBeTruthy();
+    expect(screen.getByText("How do I start?")).toBeTruthy();
+    expect(screen.getByLabelText("Message")).toBeTruthy();
+    expectOnStudentTokens(15);
+  });
+
+  it("the composer sits on the panel inset (16px sides at every width), not the /chat column's", async () => {
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+    await ready();
+    const form = screen.getByRole("form", { name: /send a message to lisa/i });
+    const bar = form.parentElement;
+    expect(bar).not.toBeNull();
+    expect(bar!.className).toContain("px-4");
+    expect(bar!.className).not.toContain("lg:px-10");
+  });
+
+  it("unpaid: the LISA card is student tokens only, approved copy only, and Unlock LISA opens the upgrade modal for tutor_access", async () => {
+    setEntitled(false);
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+    const card = await screen.findByTestId("lisa-upgrade");
+    const approved = UPGRADE_MODAL_COPY.tutor_access.plan;
+    expect(card.textContent).toContain(approved.title);
+    expect(card.textContent).toContain(approved.body);
+    // The card's words are exactly the approved title, body and button, nothing more.
+    expect(card.textContent).toBe(
+      `${approved.title}${approved.body}${LISA_UPGRADE_PITCH.actionLabel}`,
+    );
+    expectOnStudentTokens(5);
+    expect(within(card).getByRole("heading", { level: 2 }).className).toContain(
+      "font-lyc-serif",
+    );
+
+    expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Unlock LISA" }));
+    const modal = await screen.findByTestId("upgrade-modal");
+    expect(modal.textContent).toContain(approved.title);
+    expect(modal.textContent).toContain(approved.body);
   });
 });

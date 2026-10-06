@@ -8,8 +8,10 @@ import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 /**
  * @spec [Coding Standards §11.2; student-ui register UI-14; owner ruling 2026-10-01 (Brief 10,
  *        dashboard KPI polling)] | @implemented [2026-10-01] |
- * plain English: the one read of `GET /api/progress/kpis`, shared by `/dashboard` and
- * `/practice`, and the one way to mark it out of date. It does not poll. It refetches when the
+ * plain English: the one read of `GET /api/progress/kpis`, and the one way to mark it out of
+ * date. `/dashboard` and `/practice` read it until their rebuilds (UI-50, UI-51, 2026-10-03)
+ * removed the KPI tiles DESIGN.md §4 does not have; no page reads it today, and the session
+ * runners still invalidate it, so a page that shows KPIs again reads them here. It does not poll. It refetches when the
  * window regains focus (if the cached copy is older than `QUERY_FRESHNESS.kpis.staleTime`), and
  * whenever a practice, review or exam session completes in this tab
  * (`invalidateProgressKpis`).

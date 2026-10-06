@@ -32,7 +32,7 @@ export default function DigitalSATPage() {
         />
 
         <Hero
-          title="Digital SAT Prep: Study smarter for the SAT"
+          title="Digital SAT Prep: Study Smarter, Score Higher"
           subtitle="Build a steady routine with SAT-style practice and progress tracking. Full-length practice tests on paid plans."
         />
 

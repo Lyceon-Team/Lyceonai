@@ -25,7 +25,6 @@ const fetchCalendarMock = vi.fn();
 vi.mock("./client", () => ({
   fetchCalendar: (...args: unknown[]) => fetchCalendarMock(...args),
   fetchGuardianCalendar: vi.fn(),
-  fetchStreak: vi.fn(),
 }));
 
 function readyFor(from: string): CalendarResponse {

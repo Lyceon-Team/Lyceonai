@@ -82,7 +82,15 @@ for (const row of indexableRows.filter((r) => !r.content_source)) {
       `registry row ${row.path_pattern} is indexable but not in sitemap.xml`,
     );
 }
-for (const row of indexableRows.filter((r) => r.content_source)) {
+// A database-sourced row may legitimately expand to nothing: the Question of the Day archive is
+// read at build time (client/src/prerender/qotd-archive-source.ts), so a build without database
+// credentials (local, CI) or a production build before the first day has ended has no archive
+// days. Production cannot reach this silently — the loader FAILS a Vercel production build that
+// lacks the credentials. Code-sourced rows (blog, legal) must always produce URLs.
+const DATABASE_SOURCED = new Set(["qotd"]);
+for (const row of indexableRows.filter(
+  (r) => r.content_source && !DATABASE_SOURCED.has(r.content_source),
+)) {
   const re = new RegExp(routePatternToVercelSource(row.path_pattern));
   if (!locs.some((loc) => re.test(loc.slice(BASE_URL.length)))) {
     fail(
