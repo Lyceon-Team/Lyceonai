@@ -52,8 +52,9 @@ export function MathRenderer({
       const fragment = processMixedContentSafely(content, displayMode);
       el.replaceChildren(fragment);
       setIsLoading(false);
-    } catch (error) {
-      console.warn('MathRenderer error:', error);
+    } catch {
+      // Unrenderable content falls back to its plain text (no console output, Codex audit
+      // finding 1, 2026-10-05).
       el.textContent = content;
       setIsLoading(false);
     }
@@ -113,8 +114,7 @@ function processMixedContentSafely(content: string, defaultDisplayMode: boolean)
         trust: false,
         strict: 'warn',
       });
-    } catch (e) {
-      console.warn('KaTeX rendering error:', e);
+    } catch {
       // Safe fallback: show original delimiters as text
       const wrapped =
         token.wrapper === 'slash'

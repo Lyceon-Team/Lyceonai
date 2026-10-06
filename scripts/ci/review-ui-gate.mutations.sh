@@ -2225,6 +2225,25 @@ plant "FU-C3" "the block sheet falls back under the phone tab bar (Start untappa
 assert s.count(a) == 1
 s = s.replace(a, ".lyceon-calendar.lyc-cal .sheet {\n  z-index: 9;", 1)'
 
+# ── Codex audit finding 2 (owner ruling, Karl, 2026-10-05: "split it"): the student calendar
+# draws with calendar-student.css alone; the legacy calendar.css is the guardian's. The page test
+# walks the student page's import graph, so a re-import on the page or in a shared module it
+# reaches (CalendarView) turns it red. ──
+
+plant "UI55-SPLIT1" "the student calendar page imports the legacy calendar.css again" \
+  "$T55" \
+  "client/src/pages/calendar.tsx" \
+  'a = "import \"@/features/calendar/calendar-student.css\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "import \"@/features/calendar/calendar.css\";\n" + a, 1)'
+
+plant "UI55-SPLIT2" "the shared CalendarView pulls calendar.css into the student tree" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "import { WeekGrid } from \"./components/WeekGrid\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "import \"./calendar.css\";\n" + a, 1)'
+
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \
   "client/src/components/home/PaidHome.tsx" \
