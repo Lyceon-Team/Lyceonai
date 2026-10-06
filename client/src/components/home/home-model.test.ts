@@ -14,9 +14,8 @@ import {
 } from "@lyceon/shared/calendar";
 import { toSessionCriteria } from "@lyceon/shared/session-criteria";
 import { studentCalendarWeek } from "@/features/calendar/calendar-week.fixture";
-import { RULER_TICKS, rulerFill } from "@/components/student-ui/RulerProgress";
+import { rulerFill } from "@/components/student-ui/RulerProgress";
 import {
-  aboutMinutes,
   dateLine,
   firstOpenBlock,
   freeHomeStage,
@@ -104,9 +103,20 @@ describe("today's plan rows", () => {
   });
 
   it("writes minutes and lists the prototype's way", () => {
-    expect(aboutMinutes(23)).toBe("About 23 min");
-    expect(aboutMinutes(61)).toBe("About 1 hour");
-    expect(aboutMinutes(130)).toBe("About 2 hours");
+    // Monday's Math block is 15 questions; the per-question estimate sets its minutes
+    // (15 x 92s = 23 min, 15 x 244s = 61, 15 x 520s = 130, 15 x 600s = 150).
+    const math = day("2026-09-28").blocks[0];
+    if (math === undefined) throw new Error("fixture");
+    expect(math.block.target_count).toBe(15);
+    const timeAt = (practiceSecondsPerUnit: number): string | null =>
+      planRowView(math, {
+        ...week.estimates,
+        practice_seconds_per_unit: practiceSecondsPerUnit,
+      }).time;
+    expect(timeAt(92)).toBe("About 23 min");
+    expect(timeAt(244)).toBe("About 1 hour");
+    expect(timeAt(520)).toBe("About 2 hours");
+    expect(timeAt(600)).toBe("About 3 hours"); // 150 min rounds to the nearest hour
     expect(joinList(["Algebra"])).toBe("Algebra");
     expect(joinList(["A", "B"])).toBe("A and B");
     expect(joinList(["A", "B", "C"])).toBe("A, B, and C");
@@ -168,7 +178,9 @@ describe("the free Home's stage", () => {
 
 describe("the ruler (DESIGN.md §3: 40 ticks)", () => {
   it("scales the student's own count to whole ticks, never past 40", () => {
-    expect(RULER_TICKS).toBe(40);
+    // The full ruler is 40 ticks: a complete count fills exactly 40, whatever the whole.
+    expect(rulerFill(1, 1)).toBe(40);
+    expect(rulerFill(26, 26)).toBe(40);
     expect(rulerFill(12, 40)).toBe(12);
     expect(rulerFill(7, 26)).toBe(11);
     expect(rulerFill(50, 40)).toBe(40);

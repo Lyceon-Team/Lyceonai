@@ -54,7 +54,7 @@
  * Sign out.
  *
  * F-70: the avatar menu is drawn with the student tokens inside the page's theme (and its theme
- * lock), like the student Modal and Sheet (`HeaderUserMenu`'s `tone="student"`).
+ * lock), like the student Modal (`HeaderUserMenu`'s `tone="student"`).
  */
 import {
   createContext,
@@ -107,7 +107,7 @@ import { usePublishThemeLock } from "./theme-lock";
 /** What a locked rail item does: open the upgrade modal in place, or navigate (ruling 3). */
 type LockBehaviour = "modal" | "navigate";
 
-export type RailItem = {
+type RailItem = {
   readonly key: string;
   readonly label: string;
   readonly href: string;
@@ -119,10 +119,11 @@ export type RailItem = {
 };
 
 /**
- * The rail, as data (DESIGN.md §2 order). Exported so the tests iterate the config rather than a
- * copy of it (#829): a seventh item is covered the moment it is added here.
+ * The rail, as data (DESIGN.md §2 order). The rail test lists the same items and first asserts
+ * the rendered rail is exactly that list, in order (#829): a seventh item added here fails it
+ * until the test lists it too, so every item stays covered.
  */
-export const RAIL_ITEMS: readonly RailItem[] = [
+const RAIL_ITEMS: readonly RailItem[] = [
   {
     key: "home",
     label: "Home",
@@ -172,7 +173,7 @@ export const RAIL_ITEMS: readonly RailItem[] = [
  * (the middle), Calendar, LISA. Full-Length is not on it. Keys into `RAIL_ITEMS`, so each tab is
  * the rail item itself (label, href, lock) and only the order and membership are the bar's own.
  */
-export const TAB_BAR_KEYS = [
+const TAB_BAR_KEYS = [
   "home",
   "review",
   "practice",
@@ -188,7 +189,7 @@ function railItem(key: string): RailItem {
   return item;
 }
 
-export const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
+const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
 
 const SETTINGS_PATH = "/profile";
 
@@ -319,7 +320,7 @@ export function AppShellPanel({
   return slot === null ? null : createPortal(children, slot);
 }
 
-export type AppShellProps = {
+type AppShellProps = {
   children: ReactNode;
   /** The right panel's width, or null for none (route-shells.ts). */
   panel?: RightPanelWidth | null;

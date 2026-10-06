@@ -32,8 +32,6 @@ import {
   ModalClose,
   Notice,
   PageHeader,
-  Sheet,
-  SheetClose,
 } from "@/components/student-ui";
 
 afterEach(cleanup);
@@ -341,57 +339,6 @@ describe("Modal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open LISA" }));
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
-function SheetHarness() {
-  return (
-    <Lyc>
-      <Sheet
-        title="Edit schedule"
-        side="right"
-        trigger={<Button variant="lyc-outline">Edit schedule</Button>}
-        footer={
-          <SheetClose asChild>
-            <Button variant="lyc-quiet">Done</Button>
-          </SheetClose>
-        }
-      >
-        <p>Study days</p>
-      </Sheet>
-    </Lyc>
-  );
-}
-
-describe("Sheet", () => {
-  it("opens as a labelled dialog with a hairline edge and no shadow", () => {
-    render(<SheetHarness />);
-    fireEvent.click(screen.getByRole("button", { name: "Edit schedule" }));
-    const sheet = screen.getByRole("dialog", { name: "Edit schedule" });
-    expect(sheet.closest(".lyc")).not.toBeNull();
-    expect(classesOf(sheet)).toEqual(
-      expect.arrayContaining([
-        "bg-lyc-paper",
-        "border-l",
-        "border-lyc-rule",
-        "shadow-none",
-      ]),
-    );
-    expect(classesOf(sheet)).not.toContain("shadow-lg");
-    expect(within(sheet).getByText("Study days")).toBeInTheDocument();
-    expect(belowFloor(sheet)).toEqual([]);
-  });
-
-  it("Esc closes it and focus returns to the opener", async () => {
-    render(<SheetHarness />);
-    const opener = screen.getByRole("button", { name: "Edit schedule" });
-    opener.focus();
-    fireEvent.click(opener);
-    const sheet = screen.getByRole("dialog");
-    expect(sheet.contains(document.activeElement)).toBe(true);
-    fireEvent.keyDown(document.activeElement ?? sheet, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 });
 

@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import MathRenderer from "@/components/MathRenderer";
 
-export type NumericEntryInputProps = {
+type NumericEntryInputProps = {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;

@@ -45,10 +45,12 @@ import {
   REVIEW_ENGINE_CONFIG,
   type EngineConfig,
 } from "@/lib/engine-config";
-import CanonicalPracticePage, {
-  SHORTER_SESSION_NOTE,
-} from "./CanonicalPracticePage";
+import CanonicalPracticePage from "./CanonicalPracticePage";
 import { MISS_NOTE } from "@/components/question-renderer";
+
+/** OQ-35, owner ruling (Karl) 2026-10-02: the shortened-session sentence, verbatim. */
+const SHORTER_SESSION_NOTE =
+  "Fewer questions match these filters, so this session is shorter.";
 
 vi.mock("@/contexts/SupabaseAuthContext", () => ({
   useSupabaseAuth: () => ({ user: { id: "u-1", role: "student" } }),
@@ -569,10 +571,8 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     mountRunner({ shortened: true });
     await loaded();
     const note = screen.getByTestId("runner-shorter-note");
+    // OQ-35, owner ruling (Karl) 2026-10-02: the sentence, verbatim.
     expect(note.textContent).toContain(SHORTER_SESSION_NOTE);
-    expect(SHORTER_SESSION_NOTE).toBe(
-      "Fewer questions match these filters, so this session is shorter.",
-    );
     expect(note.textContent).not.toMatch(/\d/);
   });
 

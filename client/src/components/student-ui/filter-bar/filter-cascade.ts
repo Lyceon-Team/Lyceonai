@@ -61,7 +61,7 @@ export type FilterOption<T extends string = string> = {
 
 type FilterChipKind = "domain" | "skill" | "difficulty";
 
-export type FilterChip = {
+type FilterChip = {
   kind: FilterChipKind;
   value: string;
   label: string;
@@ -176,7 +176,7 @@ export function selectSection(
 }
 
 /** Rule 4: removes a domain and that domain's skills. Idempotent. */
-export function removeDomain(
+function removeDomain(
   taxonomy: PracticeTopicsResponse,
   value: FilterBarValue,
   domain: string,
@@ -207,7 +207,7 @@ export function toggleDomain(
 }
 
 /** Removes a skill. Idempotent. */
-export function removeSkill(
+function removeSkill(
   taxonomy: PracticeTopicsResponse,
   value: FilterBarValue,
   skill: string,

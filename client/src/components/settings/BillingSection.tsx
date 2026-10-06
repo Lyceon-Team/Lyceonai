@@ -46,10 +46,10 @@ import {
   SheetBox,
 } from "./settings-ui";
 
-export type BillingView = "self" | "guardian" | "free";
+type BillingView = "self" | "guardian" | "free";
 
 /** Pure: which of the three Billing states the server's answer means. */
-export function billingView(
+function billingView(
   status: Pick<
     BillingStatus,
     "managedBy" | "effectiveAccess" | "needsPaymentUpdate"
