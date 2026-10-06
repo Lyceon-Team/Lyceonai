@@ -53,7 +53,8 @@ Differences kept, and why:
    read-only answers: existing copy, not new.
 6. **Block cards keep the shipped copy** ("Math · 5 questions", "~8 min", "Adv Math 5"), not the
    prototype's sample wording; done blocks keep the shipped strike-through.
-7. **Rest days are hatched** in week and month (shipped §14 rule); the prototype has no rest days.
+7. **Rest days are tinted** (flat margin tone, not hatched since the 2026-10-05 split below) in
+   week and month (shipped §14 rule); the prototype has no rest days.
 8. **"+ Add block"** keeps its shipped label (prototype: "Add block").
 9. **Show labels**: "Reading & Writing" (canonical section name, OQ-51 (a)) for the prototype's
    "Reading and Writing".
@@ -62,3 +63,13 @@ Differences kept, and why:
 11. **The paid setup popup at 390px** (fitted: the card shrinks to the screen and its body scrolls
     so Skip/Continue stay visible) is not captured: neither harness persona is a paid student
     without a profile.
+
+Split 2026-10-05 (Codex audit finding 2; owner ruling, Karl: "split it"): the student page no
+longer imports the guardian's legacy `calendar.css`; `calendar-student.css` is its whole
+stylesheet (every rule the student tree renders, ported on the tokens; the guardian's rail, `.top`
+header and facts strip not ported). Re-captured after the split. Against a capture of the
+pre-split tree on the same harness run, the calendar draws the same, with one intended change: rest
+days (and a blocked-out day) are flat tints instead of diagonal hatches (DESIGN.md §1, "no
+gradients"); visible in `paid-month` (the days after the test date) and on any rest-day column.
+Every other pixel difference between the two runs is plan data (block mixes and the projected
+range differ from run to run of the harness), not styling. 0px horizontal overflow in all 36 rows.

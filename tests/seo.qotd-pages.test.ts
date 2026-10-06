@@ -182,9 +182,11 @@ describe("approved QOTD wording (Karl, 2026-10-05; claim inventory open item 4)"
       expect(head, path).not.toMatch(/\bDigital\b/);
     }
     const home = bodyText(page("/").html);
+    // F13 (homepage design 2026-10-05): the QOTD slot sits between "See how it works" and
+    // "Who Lyceon is for".
     const slot = home.slice(
       home.indexOf("SAT Question of the Day"),
-      home.indexOf("How it works"),
+      home.indexOf("Who Lyceon is for"),
     );
     expect(slot.length).toBeGreaterThan(0);
     expect(slot).not.toMatch(/\bDigital\b/);
@@ -207,7 +209,7 @@ describe("Public Disclosure Doctrine §0.2 on QOTD pages", () => {
         path === "/"
           ? text.slice(
               text.indexOf("SAT Question of the Day"),
-              text.indexOf("How it works"),
+              text.indexOf("Who Lyceon is for"),
             )
           : text;
       expect(qotdPart.length, path).toBeGreaterThan(0);

@@ -24,6 +24,7 @@ import { SkipLink } from "@/components/common/skip-link";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { HeaderUserMenu, useHeaderSignOut } from "./HeaderUserMenu";
+import { useFeedbackMenuEntry } from "@/components/product-feedback/FeedbackDialog";
 import { GuardianPaymentBanner } from "@/features/guardian/GuardianPaymentBanner";
 import "@/features/guardian/guardian-surface.css";
 import "@/features/guardian/guardian-type-floor.generated.css";
@@ -136,6 +137,8 @@ function GuardianHeader({
 }) {
   const { user } = useSupabaseAuth();
   const signOut = useHeaderSignOut();
+  // Plan Q6 (owner answer 2026-10-05): guardians have no Help page, so feedback is here.
+  const feedback = useFeedbackMenuEntry();
   const [, navigate] = useLocation();
 
   return (
@@ -182,15 +185,19 @@ function GuardianHeader({
               {...signOut}
               fallbackName="Guardian"
               items={
-                <DropdownMenuItem
-                  onClick={() => navigate(guardianPaths.students)}
-                  data-testid="menu-linked-students"
-                >
-                  <Users className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Linked students &amp; billing
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem
+                    onClick={() => navigate(guardianPaths.students)}
+                    data-testid="menu-linked-students"
+                  >
+                    <Users className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Linked students &amp; billing
+                  </DropdownMenuItem>
+                  {feedback.item}
+                </>
               }
             />
+            {feedback.dialog}
           </div>
         </div>
       </div>

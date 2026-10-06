@@ -18,7 +18,8 @@
 # subscription_activated, subscription_renewed, subscription_cancelled,
 # subscription_payment_failed, practice_session_started, practice_question_submitted,
 # practice_session_completed, exam_completed, exam_section_partial_abandoned, exam_resumed,
-# mastery_event_observed, mastery_level_changed, error_caught, consent_captured.
+# mastery_event_observed, mastery_level_changed, error_caught. (consent_captured was registered
+# 2026-10-05 for the marketing opt-in, plan Q5.)
 
 schema_version: "1.0.0"
 last_updated: "2026-10-05"
@@ -210,6 +211,37 @@ events:
       tutor_session_id:    not_pii
       session_duration_ms: not_pii
       turn_count:          not_pii
+    retention_class: standard_analytics
+
+  # Registered 2026-10-05 (SEO Wave 2, plan Q5; owner Step 0 answer 5): copied from Doc 07A §6
+  # unchanged. Emitted on a marketing opt-in GRANT only (consent_type marketing_optin,
+  # consent_version "1.0.0" — the version of the opt-in wording); a withdrawal is recorded in
+  # public.marketing_consent_log, not here.
+  - event_name: consent_captured
+    schema_tier: strict
+    canonical_event_class: system
+    owner: "07A V1.0"
+    V1_active: true
+    schema_version: "1.0.0"
+    description: "Emitted when a user captures a consent event (COPPA / FERPA / general TOS acknowledgment). Does NOT include the consent body itself — only consent_type + consent_version metadata for analytics correlation."
+    json_schema:
+      type: object
+      additionalProperties: false
+      required: [event_name, timestamp, analytics_user_id, schema_version, consent_type, consent_version]
+      properties:
+        event_name:        { type: string, const: "consent_captured" }
+        timestamp:         { type: string, format: date-time }
+        analytics_user_id: { type: string, format: uuid }
+        schema_version:    { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+        consent_type:      { type: string, enum: [coppa_parental, ferpa_acknowledgment, tos, privacy_policy, marketing_optin] }
+        consent_version:   { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+    pii_redaction:
+      event_name:        not_pii
+      timestamp:         not_pii
+      analytics_user_id: opaque_id_only
+      schema_version:    not_pii
+      consent_type:      not_pii
+      consent_version:   not_pii
     retention_class: standard_analytics
 
 # Doc 07A §7 declares four Person Properties. Only analytics_user_id is used at this launch: the

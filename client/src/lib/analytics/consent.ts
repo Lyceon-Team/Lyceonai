@@ -23,6 +23,7 @@
 import {
   CONSENT_COOKIE_NAME,
   CONSENT_MAX_AGE_SECONDS,
+  consentIsCurrent,
   COOKIE_BANNER_VERSION,
   formatConsentCookieValue,
   parseConsentCookieValue,
@@ -84,8 +85,7 @@ function readStoredConsent(): StoredConsent | null {
 
 function stateFrom(stored: StoredConsent | null, gpc: boolean): ConsentState {
   if (stored !== null) {
-    const ageSeconds = Math.floor(Date.now() / 1000) - stored.decidedAtSeconds;
-    if (ageSeconds >= 0 && ageSeconds < CONSENT_MAX_AGE_SECONDS) {
+    if (consentIsCurrent(stored.decidedAtSeconds, Date.now() / 1000)) {
       return stored.analytics
         ? { status: "accepted" }
         : { status: "refused", byGpc: false };

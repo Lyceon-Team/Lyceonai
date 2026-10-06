@@ -1,31 +1,32 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
-import {
-  Brain,
-  Target,
-  TrendingUp,
-  CheckCircle2,
-  MessageSquare,
-  BarChart3,
-  Clock,
-  Shield,
-  Sparkles,
-  ChevronDown,
-  LogOut,
-  LayoutDashboard,
-} from "lucide-react";
+import { Link } from "wouter";
+import { Check } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { HOME_FAQS, faqParagraphs } from "@shared/seo/public-meta";
-import { useToast } from "@/hooks/use-toast";
-import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
+import { sectionDisplayLabel } from "@shared/section-display";
+import { loginPathWithReturn } from "@lyceon/shared/return-path";
+import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
 import PublicLayout from "@/components/layout/PublicLayout";
-import { Container, Card, Section } from "@/components/layout/primitives";
+import { HomeNav } from "@/components/marketing/HomeNav";
+import { ProductVisual } from "@/components/marketing/ProductVisual";
+import {
+  MASTERY_METER_SEGMENTS,
+  masteryMeterFill,
+} from "@/components/mastery/MasteryMeter";
 import {
   getPublicMonthlyPrice,
   formatMonthlyPrice,
 } from "@/lib/public-pricing";
 import { ctaClickHandlers } from "@/lib/cta-click";
+import {
+  HERO_COPY,
+  HERO_SUB_ID,
+  HERO_SWAP_SCRIPT,
+  HERO_TITLE_ID,
+  currentHeroVariant,
+} from "@/lib/analytics/hero-experiment";
+import { recordHeroExposure } from "@/lib/analytics/posthog-client";
 // Lazy and viewport-triggered: keeps the widget and KaTeX out of the homepage's initial script.
 import { LazyQotdWidget } from "@/components/qotd/LazyQotdWidget";
 
@@ -44,13 +45,97 @@ import { LazyQotdWidget } from "@/components/qotd/LazyQotdWidget";
  * number is therefore restated here, which is a drift risk and is named as one.
  * Changing the config without changing this line makes the homepage lie again —
  * the defect this replaces. Reported to the owner as a follow-up: a public
- * free-tier endpoint would close it properly.
+ * free-tier endpoint would close it properly. F13: the free card AND the Question of the
+ * Day's "Try 40 more questions free" button both read this one constant.
  *
  * Doc 01A Appendix A.3's example bucket map carries a THIRD number for this
  * ("practice_daily_free": 20) against a bucket that exists in neither
  * production nor Doc 02B. That divergence is reported, not resolved here.
  */
 const FREE_DAILY_PRACTICE_QUESTIONS = 40;
+
+/**
+ * Where the homepage's calls to action land (owner rulings 2026-10-05, F13 Step 0 decision 4).
+ * Signup is /login; the return path rides the shared `next` channel, which survives Google
+ * sign-in and onboarding. The diagnostic button returns to /dashboard, where the free diagnostic
+ * starts (no auto-start). The parent button returns to /guardian, which also makes Guardian the
+ * DEFAULT role on the onboarding form (profile-complete.tsx) — a default only; the server
+ * validates the chosen role exactly as before.
+ */
+const START_DIAGNOSTIC_HREF = loginPathWithReturn("/dashboard");
+const GUARDIAN_SIGNUP_HREF = loginPathWithReturn("/guardian");
+
+const TRUST_ITEMS = [
+  "Free daily practice",
+  "Worked explanation for every question",
+  "No credit card required",
+  "We don't sell student data",
+] as const;
+
+/** Approved by Karl 2026-10-05 (F13 brief; card 2 per Step 0 ruling 1). */
+const HOW_IT_WORKS = [
+  {
+    title: "Find the gaps",
+    body: "Start with a free diagnostic to see where you stand in every SAT section.",
+  },
+  {
+    title: "Practice what matters",
+    body: "Daily practice with a worked explanation after every question, and on paid plans a study calendar that adapts as you improve.",
+  },
+  {
+    title: "Get help when you're stuck",
+    body: "Ask LISA, your AI tutor, follow-up questions and get step-by-step help. On paid plans.",
+  },
+  {
+    title: "See real progress",
+    body: "Track progress by section and skill, and take timed full-length practice tests with a score report after each. On paid plans.",
+  },
+] as const;
+
+/** The example parent view: the guardian card's two sections, drawn with its five-segment rule. */
+const EXAMPLE_PROGRESS: readonly {
+  section: "RW" | "M";
+  level: MasteryLevelKey;
+}[] = [
+  { section: "RW", level: "L2" },
+  { section: "M", level: "L1" },
+];
+
+const EXAMPLE_DAY = [
+  "Practice block · Linear equations in one variable",
+  "Review missed questions",
+  "Ask LISA when you're stuck",
+] as const;
+
+const PRO_FEATURES = [
+  "A study plan that adapts and focuses on your weak areas",
+  "LISA, your AI tutor, for step-by-step help",
+  "Full-length practice tests with score reports",
+  "Skill-level progress, plus a read-only view for a linked parent or guardian",
+  "No daily limit on practice questions",
+] as const;
+
+const PRIMARY_BUTTON =
+  "inline-flex min-h-11 items-center justify-center rounded-xl bg-foreground no-underline px-6 py-3.5 text-base font-semibold text-background hover:opacity-90 transition-opacity sm:text-[17px]";
+const OUTLINE_BUTTON =
+  "inline-flex min-h-11 items-center justify-center rounded-xl border-[1.5px] no-underline border-foreground px-6 py-3 text-base font-semibold text-foreground hover:bg-card transition-colors sm:text-[17px]";
+const SECTION = "border-t border-[var(--home-rule)]";
+const CARD = "rounded-2xl border border-border bg-card";
+const INSET = "rounded-xl border border-[var(--home-rule)] bg-background";
+
+function ExampleMeter({ level }: { level: MasteryLevelKey }): JSX.Element {
+  const filled = masteryMeterFill(level);
+  return (
+    <div className="grid grid-cols-5 gap-1.5" aria-hidden="true">
+      {Array.from({ length: MASTERY_METER_SEGMENTS }, (_, i) => (
+        <div
+          key={i}
+          className={`h-2.5 rounded ${i < filled ? "bg-foreground" : "bg-border"}`}
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function HomePage() {
   /**
@@ -70,391 +155,243 @@ export default function HomePage() {
   });
   const formattedMonthlyPrice = formatMonthlyPrice(monthlyPrice ?? null);
 
-  const { isAuthenticated, isGuardian, signOut } = useSupabaseAuth();
+  const { isAuthenticated, isGuardian } = useSupabaseAuth();
   // G4-01: a signed-in guardian's home is /guardian; /dashboard is the student's.
   const homeHref = isGuardian ? "/guardian" : "/dashboard";
-  const { toast } = useToast();
-  const [, navigate] = useLocation();
-  const [isSigningOut, setIsSigningOut] = useState(false);
 
-  // @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
-  // plain English: sign-out failures route through resolveAuthErrorMessage (the auth display
-  // chokepoint) so the toast shows a human, recoverable message — never the raw error string.
-  const handleSignOut = async () => {
-    setIsSigningOut(true);
-    try {
-      await signOut();
-      toast({ title: "Signed out successfully" });
-      navigate("/login");
-    } catch (error) {
-      console.error("Sign out failed:", error);
-      toast({
-        title: "Sign out failed",
-        description: resolveAuthErrorMessage(error),
-      });
-    } finally {
-      setIsSigningOut(false);
-    }
-  };
-
-  // @spec [docs/plans/seo/seo-marketing-vertical.md R13, F7] | @implemented [2026-10-03] |
-  // plain English: the hero A/B test is gone. It picked a random variant inside an
-  // effect and stored it in localStorage, so the first render (and so the prerendered HTML)
-  // showed "Loading..." instead of the headline, and every first visit wrote to storage.
-  // Variant A's copy is the only hero now; A/B testing returns later via PostHog experiments.
+  // @spec [F13; owner rulings 2026-10-05, Step 0 decisions 5 and 6] | @implemented [2026-10-05] |
+  // plain English: the hero experiment's variant for THIS view, read once. Prerender and any
+  // visitor without analytics consent get null, which is A. The inline script below has already
+  // shown the same variant before paint, so this first render changes nothing on screen. The
+  // exposure is recorded only when a stored variant is what the visitor sees.
+  const [heroVariant] = useState(currentHeroVariant);
+  useEffect(() => {
+    if (heroVariant !== null) recordHeroExposure(heroVariant);
+  }, [heroVariant]);
+  const hero = HERO_COPY[heroVariant ?? "control"];
 
   const trackCtaClick = (ctaText: string) => {
     console.debug("hero_cta_click", { ctaText });
   };
 
   return (
-    <PublicLayout>
-      <Container size="full">
-        <section className="py-16 lg:py-24">
-          {/* F6 (owner answer 11, 2026-10-03): the scripted tutor demo that sat beside the hero
-              is removed; the hero is one column until the F13 homepage rebuild. */}
-          <div className="max-w-3xl">
-            {/* @spec [SEO plan F8] | @implemented [2026-10-05] | plain English: the hero's
-                entrance is a CSS slide only, with no fade, so the prerendered headline is
-                visible from first paint without JavaScript (it was `opacity:0` until hydration)
-                and the entry bundle no longer carries framer-motion. Reduced motion: none. */}
-            <div className="animate-in slide-in-from-bottom-5 duration-700 motion-reduce:animate-none">
-              <span className="text-xs uppercase tracking-widest text-muted-foreground mb-4 block">
-                Study smarter for the SAT
-              </span>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                Digital SAT prep, one step at a time
-              </h1>
-              <p className="text-lg mb-4">
-                Practice SAT-style questions, review step-by-step
-                explanations, and track progress over time.
-              </p>
-              <p className="text-muted-foreground mb-8">
-                Daily practice with worked explanations. Full-length practice
-                tests, an AI tutor and a study plan on paid plans.
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                {/* The hero CTA counts a middle-click and a ⌘-click as well as a plain
-                    one. Before #829 the inner anchor had no href, so a ⌘-click did not
-                    navigate but still fired onClick and was counted; with a real href,
-                    wouter hands that click to the browser and skips onClick, which would
-                    have dropped those conversions in silence. `ctaClickHandlers` covers
-                    all three paths exactly once — see its module note. */}
-                <Link
-                  href="/practice"
-                  className="px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
-                  data-testid="button-start-demo"
-                  {...ctaClickHandlers(() =>
-                    trackCtaClick("Start free practice"),
-                  )}
-                >
-                  Start free practice
-                </Link>
-                {isAuthenticated ? (
-                  <>
-                    <Link
-                      href={homeHref}
-                      className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
-                      data-testid="button-go-to-dashboard"
-                    >
-                      <LayoutDashboard className="w-4 h-4" />
-                      Go to dashboard
-                    </Link>
-                    <button
-                      onClick={handleSignOut}
-                      disabled={isSigningOut}
-                      className="px-6 py-3 bg-card border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary disabled:opacity-50"
-                      data-testid="button-sign-out"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      {isSigningOut ? "Signing out..." : "Sign out"}
-                    </button>
-                  </>
-                ) : (
-                  <Link
-                    href="/login"
-                    className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
-                    data-testid="button-sign-in-dashboard"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Sign in to your dashboard
-                  </Link>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-6 border-t border-border">
-                <div>
-                  <div className="text-2xl font-bold">Study plan</div>
-                  <div className="text-sm text-muted-foreground">
-                    A study plan that focuses on your weak areas (paid plans)
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold">Practice tests</div>
-                  <div className="text-sm text-muted-foreground">
-                    Timed full-length practice tests (paid plans)
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold">Progress tracking</div>
-                  <div className="text-sm text-muted-foreground">
-                    Track your progress by section and skill
-                  </div>
-                </div>
-              </div>
-            </div>
+    <PublicLayout
+      className="home-palette"
+      nav={<HomeNav isAuthenticated={isAuthenticated} homeHref={homeHref} />}
+      footerTone="navy"
+    >
+      <section id="top" className="px-4 sm:px-6">
+        <div className="mx-auto flex max-w-[820px] flex-col items-center gap-5 py-16 text-center sm:gap-6 sm:py-20 lg:py-24">
+          <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[var(--home-eyebrow)]">
+            SAT prep for families
+          </p>
+          <h1
+            id={HERO_TITLE_ID}
+            className="text-[2.5rem] font-extrabold leading-[1.08] tracking-[-0.02em] sm:text-5xl lg:text-[56px]"
+          >
+            {hero.title}
+          </h1>
+          <p
+            id={HERO_SUB_ID}
+            className="max-w-[640px] text-lg leading-[1.55] text-muted-foreground sm:text-[19px]"
+          >
+            {hero.sub}
+          </p>
+          {/* Shows a stored Variant B before first paint (hero-experiment.ts). Its sha256 is in
+              vercel.json's page script-src; the built-page CSP gate checks the two agree. */}
+          <script dangerouslySetInnerHTML={{ __html: HERO_SWAP_SCRIPT }} />
+          <div className="flex w-full flex-col items-stretch justify-center gap-3.5 sm:w-auto sm:flex-row sm:items-center">
+            <Link
+              href={START_DIAGNOSTIC_HREF}
+              className={PRIMARY_BUTTON}
+              data-testid="button-start-diagnostic"
+              {...ctaClickHandlers(() =>
+                trackCtaClick("Start the free diagnostic"),
+              )}
+            >
+              Start the free diagnostic
+            </Link>
+            <Link
+              href={GUARDIAN_SIGNUP_HREF}
+              className={OUTLINE_BUTTON}
+              data-testid="button-guardian-signup"
+            >
+              I'm a parent or guardian
+            </Link>
           </div>
-        </section>
-      </Container>
-
-      <section className="bg-secondary/50 border-y border-border py-6">
-        <Container size="wide">
-          <div className="grid md:grid-cols-3 gap-6 text-center md:text-left">
-            <div className="flex items-center justify-center md:justify-start gap-3">
-              <Shield className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">SAT-style practice questions</span>
-            </div>
-            <div className="flex items-center justify-center md:justify-start gap-3">
-              <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">We don't sell student data.</span>
-            </div>
-            <div className="flex items-center justify-center md:justify-start gap-3">
-              <Brain className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">
-                AI tutor for step-by-step help (paid plans)
-              </span>
-            </div>
-          </div>
-        </Container>
+          <p className="text-sm text-[var(--home-caption)]">
+            No credit card required · We don't sell student data
+          </p>
+        </div>
       </section>
 
-      {/* @spec [docs/plans/seo/seo-marketing-vertical.md R16, Q3] | @implemented [2026-10-05] |
+      <section aria-label="Highlights" className={SECTION}>
+        <ul className="mx-auto grid max-w-[1180px] grid-cols-1 gap-x-6 gap-y-3 px-4 py-7 text-[15px] font-medium text-muted-foreground sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+          {TRUST_ITEMS.map((item) => (
+            <li key={item} className="flex items-center justify-center gap-2.5">
+              <Check
+                className="h-[18px] w-[18px] flex-shrink-0 text-foreground"
+                strokeWidth={2.2}
+                aria-hidden="true"
+              />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section id="how-it-works" className={SECTION}>
+        <div className="mx-auto flex max-w-[1180px] flex-col gap-9 px-4 py-16 sm:px-6 sm:py-[72px]">
+          <div className="mx-auto flex max-w-[680px] flex-col gap-2.5 text-center">
+            <h2 className="text-3xl font-bold sm:text-4xl">See how it works</h2>
+            <p className="text-lg leading-[1.55] text-muted-foreground">
+              Practice, review and the parent view.
+            </p>
+          </div>
+          <ProductVisual />
+          <ol className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {HOW_IT_WORKS.map((step, i) => (
+              <li
+                key={step.title}
+                className={`${CARD} flex flex-col gap-2.5 p-6`}
+              >
+                <span className="text-sm font-bold text-[var(--home-eyebrow)]">
+                  {i + 1}
+                </span>
+                <h3 className="text-[22px] font-semibold leading-snug">
+                  {step.title}
+                </h3>
+                <p className="text-base leading-normal text-muted-foreground">
+                  {step.body}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* @spec [docs/plans/seo/seo-marketing-vertical.md R16, Q3, F13] | @implemented [2026-10-05] |
           plain English: today's question, answerable without an account. It is fetched in the
-          browser, so the prerendered homepage carries no question and no answer. */}
-      <Container size="narrow">
-        <Section id="question-of-the-day" className="py-16">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+          browser, so the prerendered homepage carries no question and no answer. After the
+          reveal, one full-width button to signup. */}
+      <section id="question-of-the-day" className={SECTION}>
+        <div className="mx-auto flex max-w-[1180px] flex-wrap items-start gap-10 px-4 py-16 sm:px-6 sm:py-[72px]">
+          <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-3">
+            <h2 className="text-3xl font-bold sm:text-4xl">
               SAT Question of the Day
             </h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-lg leading-[1.55] text-muted-foreground">
               A free SAT practice question every day — no account needed.
             </p>
+            <Link
+              href="/sat-question-of-the-day"
+              className="font-semibold underline underline-offset-2 hover:opacity-80"
+            >
+              See past questions
+            </Link>
           </div>
-          <Card>
-            <LazyQotdWidget />
-          </Card>
-        </Section>
-      </Container>
-
-      <Container size="wide">
-        <Section id="how-it-works" className="py-16">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              How it works
-            </h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Three simple steps to smarter SAT prep
-            </p>
+          <div className={`${CARD} min-w-0 flex-[999_1_560px] p-5 sm:p-7`}>
+            <LazyQotdWidget
+              showArchiveLink={false}
+              afterReveal={
+                <Link
+                  href={START_DIAGNOSTIC_HREF}
+                  className={`${PRIMARY_BUTTON} w-full`}
+                  data-testid="qotd-try-more"
+                >
+                  Try {FREE_DAILY_PRACTICE_QUESTIONS} more questions free
+                </Link>
+              }
+            />
           </div>
+        </div>
+      </section>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            <Card className="relative">
-              <div className="absolute -top-4 left-6 w-8 h-8 bg-foreground text-background rounded-full flex items-center justify-center font-bold text-sm">
-                1
-              </div>
-              <Target className="w-10 h-10 mb-4 mt-2" />
-              <h3 className="text-xl font-semibold mb-3">
-                Start with a diagnostic
+      <section id="for-parents" className={SECTION}>
+        <div className="mx-auto flex max-w-[1180px] flex-col gap-7 px-4 py-16 sm:px-6 sm:py-[72px]">
+          <h2 className="text-center text-3xl font-bold sm:text-4xl">
+            Who Lyceon is for
+          </h2>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div className={`${CARD} flex flex-col gap-3 p-6 sm:p-7`}>
+              <h3 className="text-[22px] font-semibold">
+                For parents and guardians
               </h3>
-              <p className="text-muted-foreground">
-                Take a diagnostic test to see where you stand.
-              </p>
-            </Card>
-
-            <Card className="relative">
-              <div className="absolute -top-4 left-6 w-8 h-8 bg-foreground text-background rounded-full flex items-center justify-center font-bold text-sm">
-                2
-              </div>
-              <MessageSquare className="w-10 h-10 mb-4 mt-2" />
-              <h3 className="text-xl font-semibold mb-3">
-                Practice and review
-              </h3>
-              <p className="text-muted-foreground">
-                Answer SAT-style questions and review a worked explanation for
-                each one.
-              </p>
-            </Card>
-
-            <Card className="relative">
-              <div className="absolute -top-4 left-6 w-8 h-8 bg-foreground text-background rounded-full flex items-center justify-center font-bold text-sm">
-                3
-              </div>
-              <TrendingUp className="w-10 h-10 mb-4 mt-2" />
-              <h3 className="text-xl font-semibold mb-3">Track your progress</h3>
-              <p className="text-muted-foreground">
-                See your progress by section, and take full-length practice
-                tests on paid plans.
-              </p>
-            </Card>
-          </div>
-        </Section>
-      </Container>
-
-      <section className="bg-secondary py-16">
-        <Container size="wide">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Built for the way you actually study
-            </h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">
-              Daily practice plus full-length test readiness
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            <Card>
-              <MessageSquare className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                AI tutor (paid plans)
-              </h3>
-              <p className="text-muted-foreground mb-4">
-                Ask follow-up questions and get step-by-step help.
-              </p>
-            </Card>
-
-            <Card>
-              <Clock className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                Practice sessions that fit life
-              </h3>
-              <p className="text-muted-foreground mb-4">
-                Practice for as long or as short as you like.
-              </p>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Section-specific practice
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Pause and pick up where you left off
-                </li>
-              </ul>
-            </Card>
-
-            <Card>
-              <BarChart3 className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">
-                Progress for parents and guardians
-              </h3>
-              <p className="text-muted-foreground mb-4">
+              <p className="leading-[1.55] text-muted-foreground">
                 Parents and guardians can link to a student's account and see a
                 read-only progress summary while the student is on a paid plan.
               </p>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Skill-level progress (paid plans)
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Read-only progress view for a linked parent or guardian
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Study plan (paid plans)
-                </li>
-              </ul>
-            </Card>
+              <figure className={`${INSET} flex flex-col gap-3 p-4`}>
+                {EXAMPLE_PROGRESS.map((row) => (
+                  <div key={row.section} className="flex flex-col gap-2">
+                    <span className="text-sm font-semibold">
+                      {sectionDisplayLabel(row.section)}
+                    </span>
+                    <ExampleMeter level={row.level} />
+                  </div>
+                ))}
+                <figcaption className="text-[13px] text-[var(--home-caption)]">
+                  Example view. Real progress comes from the student's account.
+                </figcaption>
+              </figure>
+              {/* No tutor-comparison link until that page exists (F13 brief, section 6). */}
+            </div>
+            <div className={`${CARD} flex flex-col gap-3 p-6 sm:p-7`}>
+              <h3 className="text-[22px] font-semibold">For students</h3>
+              <p className="leading-[1.55] text-muted-foreground">
+                Build a daily SAT routine with practice, review and worked
+                explanations. Upgrade for a study plan that adapts as you
+                improve, full-length practice tests and an AI tutor.
+              </p>
+              <figure className={`${INSET} flex flex-col gap-2.5 p-4`}>
+                <span className="text-sm font-semibold">Today</span>
+                <ul className="flex flex-col gap-2.5 text-sm">
+                  {EXAMPLE_DAY.map((item) => (
+                    <li key={item} className="flex items-center gap-2.5">
+                      <span
+                        className="h-2 w-2 flex-none rounded-full bg-foreground"
+                        aria-hidden="true"
+                      />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <figcaption className="text-[13px] text-[var(--home-caption)]">
+                  Example view. Your plan comes from your own practice.
+                </figcaption>
+              </figure>
+              <Link
+                href={START_DIAGNOSTIC_HREF}
+                className="mt-auto font-semibold underline underline-offset-2 hover:opacity-80"
+              >
+                Start practicing free →
+              </Link>
+            </div>
           </div>
-        </Container>
+        </div>
       </section>
 
-      <Container size="wide">
-        <Section className="py-16">
-          <div className="grid lg:grid-cols-2 gap-12">
-            <div>
-              <h2 className="text-3xl font-bold mb-8">
-                What you can track today
-              </h2>
-              <div className="space-y-6">
-                <Card className="bg-secondary">
-                  <div className="font-medium mb-1">Practice consistency</div>
-                  <div className="text-sm text-muted-foreground">
-                    Your practice history and accuracy over time.
-                  </div>
-                </Card>
-
-                <Card className="bg-secondary">
-                  <div className="font-medium mb-1">Progress snapshot</div>
-                  <div className="text-sm text-muted-foreground">
-                    Skill-level detail on paid plans.
-                  </div>
-                </Card>
-
-                <Card className="bg-secondary">
-                  <div className="font-medium mb-1">
-                    Full-length practice test results (paid plans)
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    A score report after each practice test.
-                  </div>
-                </Card>
-              </div>
-            </div>
-
-            <div>
-              <h2 className="text-3xl font-bold mb-8">Who Lyceon is for</h2>
-              <div className="space-y-6">
-                <Card className="bg-secondary">
-                  <div className="font-semibold mb-2">Students</div>
-                  <p>
-                    Build a daily SAT routine with practice, review and worked
-                    explanations. Upgrade for full-length practice tests, an AI
-                    tutor and a study plan.
-                  </p>
-                </Card>
-
-                <Card className="bg-secondary">
-                  <div className="font-semibold mb-2">Guardians</div>
-                  <p>
-                    Parents and guardians can link to a student's account and
-                    see a read-only progress summary while the student is on a
-                    paid plan.
-                  </p>
-                </Card>
-              </div>
-            </div>
-          </div>
-        </Section>
-      </Container>
-
-      <section id="pricing" className="bg-secondary py-16">
-        <Container>
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+      <section id="pricing" className={SECTION}>
+        <div className="mx-auto flex max-w-[1180px] flex-col gap-7 px-4 py-16 sm:px-6 sm:py-[72px]">
+          <div className="flex flex-col gap-2 text-center">
+            <h2 className="text-3xl font-bold sm:text-4xl">
               Start for free. Upgrade when ready.
             </h2>
-            <p className="text-muted-foreground">
-              No credit card required to get started
+            <p className="text-lg text-muted-foreground">
+              No credit card required to get started.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8">
-            <Card>
-              <div className="mb-6">
-                <h3 className="text-xl font-semibold mb-2">Free</h3>
-                <div className="text-4xl font-bold mb-1">
-                  $0
-                  <span className="text-lg text-muted-foreground">/month</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Perfect to get started
-                </p>
+          <div className="mx-auto grid w-full max-w-[900px] grid-cols-1 gap-6 md:grid-cols-2">
+            <div className={`${CARD} flex flex-col gap-4 rounded-[20px] p-7`}>
+              <h3 className="text-lg font-semibold">Free</h3>
+              <div className="text-[40px] font-extrabold leading-none">
+                $0
+                <span className="text-base font-medium text-muted-foreground">
+                  {" "}
+                  /month
+                </span>
               </div>
-
               {/*
                 EVERY LINE HERE IS ENFORCED SOMEWHERE. Corrected 2026-09-03 on
                 the owner's ruling after all four previous claims were checked
@@ -472,86 +409,57 @@ export default function HomePage() {
                 - "Progress and dashboard tracking" was true only of the single
                   overall projection; the mastery breakdown is premium.
               */}
-              <ul className="space-y-3 mb-8">
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+              <ul className="flex list-disc flex-col gap-2 pl-5 leading-[1.45]">
+                <li>
                   {FREE_DAILY_PRACTICE_QUESTIONS} practice questions per day
                 </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />A worked
-                  explanation after every question you answer
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                <li>A worked explanation after every question you answer</li>
+                <li>
                   A full diagnostic test and your diagnostic score estimate
                 </li>
               </ul>
-
               <Link
                 href="/login"
-                className="block w-full px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
+                className={`${OUTLINE_BUTTON} mt-auto w-full`}
                 data-testid="button-get-started-free"
               >
                 Get started free
               </Link>
-            </Card>
+            </div>
 
-            <Card className="bg-foreground text-background relative overflow-hidden">
-              <div className="mb-6">
-                <h3 className="text-xl font-semibold mb-2">
-                  Pro · for serious prep
-                </h3>
-                {/*
-                  THE PRICE COMES FROM STRIPE OR IT DOES NOT APPEAR.
-                  Rendered only when `formattedMonthlyPrice` is a string, which
-                  `formatMonthlyPrice` returns only for an amount that survived
-                  `publicPricingSchema`. There is no fallback constant and no
-                  placeholder: an unconfigured price id or an unreachable Stripe
-                  drops this block entirely rather than quoting a number nobody
-                  can be charged.
+            <div className="flex flex-col gap-4 rounded-[20px] border-2 border-foreground bg-card p-7">
+              <h3 className="text-lg font-semibold">
+                Pro · personalized SAT prep
+              </h3>
+              {/*
+                THE PRICE COMES FROM STRIPE OR IT DOES NOT APPEAR.
+                Rendered only when `formattedMonthlyPrice` is a string, which
+                `formatMonthlyPrice` returns only for an amount that survived
+                `publicPricingSchema`. There is no fallback constant and no
+                placeholder: an unconfigured price id or an unreachable Stripe
+                drops this block entirely rather than quoting a number nobody
+                can be charged.
 
-                  NOT THE `upgrade.tsx:92` SHAPE. That module spreads the API
-                  row over a fallback row, so a null amount from the API
-                  overwrites the fallback and reaches the formatter as `$NaN`.
-                  Nothing is merged here, so there is nothing to overwrite.
-                */}
-                {formattedMonthlyPrice !== null && (
-                  <div className="text-4xl font-bold mb-1">
-                    {formattedMonthlyPrice}
-                    <span className="text-lg opacity-70">/month</span>
-                  </div>
-                )}
-                <p className="text-sm opacity-70">Everything in Free, plus:</p>
-              </div>
-
-              <ul className="space-y-3 mb-8 opacity-90">
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>No daily limit on practice questions</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>AI tutor for step-by-step help</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>Full-length practice tests with score reports</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>
-                    Skill-level progress and a study plan that focuses on your
-                    weak areas
+                NOT THE `upgrade.tsx:92` SHAPE. That module spreads the API
+                row over a fallback row, so a null amount from the API
+                overwrites the fallback and reaches the formatter as `$NaN`.
+                Nothing is merged here, so there is nothing to overwrite.
+              */}
+              {formattedMonthlyPrice !== null && (
+                <div className="text-[40px] font-extrabold leading-none">
+                  {formattedMonthlyPrice}
+                  <span className="text-base font-medium text-muted-foreground">
+                    {" "}
+                    /month
                   </span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>
-                    Read-only progress view for a linked parent or guardian
-                  </span>
-                </li>
+                </div>
+              )}
+              <ul className="flex list-disc flex-col gap-2 pl-5 leading-[1.45]">
+                <li>Everything in Free, plus:</li>
+                {PRO_FEATURES.map((feature) => (
+                  <li key={feature}>{feature}</li>
+                ))}
               </ul>
-
               {/*
                 `/signup` redirects to `/login` (`App.tsx:71`), so this lands
                 where the free card's CTA lands, with different copy. That is
@@ -560,98 +468,74 @@ export default function HomePage() {
               */}
               <Link
                 href="/signup"
-                className="block w-full px-6 py-3 bg-background text-foreground rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
+                className={`${PRIMARY_BUTTON} mt-auto w-full`}
                 data-testid="button-get-started-paid"
               >
-                Get Started
+                Get started
               </Link>
-            </Card>
-          </div>
-        </Container>
-      </section>
-
-      <Container size="narrow">
-        <Section id="faq" className="py-16">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Frequently asked questions
-            </h2>
-          </div>
-
-          {/* One copy of this FAQ: rendered here, and the homepage FAQPage JSON-LD is built
-              from the same array (shared/seo/public-meta.ts, F1). */}
-          <div className="space-y-4">
-            {HOME_FAQS.map((faq) => (
-              <details
-                key={faq.question}
-                className="bg-secondary border border-border rounded-2xl p-6 group"
-              >
-                <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                  {faq.question}
-                  <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
-                </summary>
-                <div className="mt-4 text-muted-foreground space-y-2">
-                  {faqParagraphs(faq.answer).map((paragraph) => (
-                    <p key={paragraph}>{paragraph}</p>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </div>
-        </Section>
-      </Container>
-
-      <section className="bg-secondary border-t border-border py-16">
-        <Container>
-          <div className="text-center">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Study smarter for the SAT
-            </h2>
-            <p className="text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Start with free daily practice. Upgrade any time for full-length
-              practice tests and an AI tutor.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link
-                href="/practice"
-                className="px-8 py-4 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center text-lg"
-                data-testid="button-footer-start"
-              >
-                Start a free SAT session
-              </Link>
-              {isAuthenticated ? (
-                <>
-                  <Link
-                    href={homeHref}
-                    className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2"
-                    data-testid="button-footer-dashboard"
-                  >
-                    <LayoutDashboard className="w-5 h-5" />
-                    Go to dashboard
-                  </Link>
-                  <button
-                    onClick={handleSignOut}
-                    disabled={isSigningOut}
-                    className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2 disabled:opacity-50"
-                    data-testid="button-footer-signout"
-                  >
-                    <LogOut className="w-5 h-5" />
-                    {isSigningOut ? "Signing out..." : "Sign out"}
-                  </button>
-                </>
-              ) : (
-                <Link
-                  href="/login"
-                  className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg"
-                  data-testid="button-footer-signin"
-                >
-                  Sign in to your dashboard
-                </Link>
-              )}
             </div>
           </div>
-        </Container>
+        </div>
+      </section>
+
+      <section id="faq" className={SECTION}>
+        <div className="mx-auto flex max-w-[860px] flex-col gap-4 px-4 py-16 sm:px-6 sm:py-[72px]">
+          <h2 className="mb-2 text-center text-3xl font-bold sm:text-4xl">
+            Frequently asked questions
+          </h2>
+          {/* One copy of this FAQ: rendered here, and the homepage FAQPage JSON-LD is built
+              from the same array (shared/seo/public-meta.ts, F1). */}
+          {HOME_FAQS.map((faq) => (
+            <details key={faq.question} className={`${CARD} px-5 py-4 sm:px-6`}>
+              <summary className="min-h-11 cursor-pointer py-2 text-[17px] font-semibold">
+                {faq.question}
+              </summary>
+              <div className="mt-2 space-y-2 leading-[1.55] text-muted-foreground">
+                {faqParagraphs(faq.answer).map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section aria-label="Get started" className={SECTION}>
+        <div className="mx-auto flex max-w-[1180px] flex-col items-center gap-4 px-4 py-16 text-center sm:px-6">
+          {/* Slogan approved by Karl 2026-10-05 (F13; claim inventory X1). */}
+          <h2 className="text-3xl font-extrabold sm:text-[38px]">
+            Study Smarter, Score Higher.
+          </h2>
+          <p className="text-lg text-muted-foreground">
+            Start with the free diagnostic. No credit card required.
+          </p>
+          <div className="flex w-full flex-col items-stretch justify-center gap-3.5 sm:w-auto sm:flex-row">
+            <Link
+              href={START_DIAGNOSTIC_HREF}
+              className={PRIMARY_BUTTON}
+              data-testid="button-footer-start"
+            >
+              Start the free diagnostic
+            </Link>
+            {isAuthenticated ? (
+              <Link
+                href={homeHref}
+                className={OUTLINE_BUTTON}
+                data-testid="button-footer-dashboard"
+              >
+                Go to dashboard
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className={OUTLINE_BUTTON}
+                data-testid="button-footer-signin"
+              >
+                Sign in
+              </Link>
+            )}
+          </div>
+        </div>
       </section>
     </PublicLayout>
   );

@@ -48,7 +48,13 @@ describe("supabaseAuthMiddleware — no personal data reaches the logger (F-10)"
     const warn = vi.spyOn(logger, "warn");
     const error = vi.spyOn(logger, "error");
 
-    const req = { requestId: "req-mw-log", cookies: {}, headers: {} };
+    // `path` is always set by Express; the middleware reads it (internal routes skip the lookup).
+    const req = {
+      requestId: "req-mw-log",
+      path: "/api/profile",
+      cookies: {},
+      headers: {},
+    };
     const res = {};
     const next = vi.fn();
 

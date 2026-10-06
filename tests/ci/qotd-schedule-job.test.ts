@@ -14,7 +14,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { CANONICAL_DOMAINS_BY_SECTION } from "../../shared/canonical-domains";
-import { BANNED } from "../../shared/seo/banned-phrases";
+import {
+  BANNED,
+  firstUnapprovedOutcome,
+} from "../../shared/seo/banned-phrases";
 import {
   QOTD_DAYS_AHEAD,
   rotationFor,
@@ -176,8 +179,28 @@ describe("runQotdSchedule", () => {
       .filter((q) => q.section === first?.section && q.domain === first?.domain)
       .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
     if (!target) throw new Error("no candidate");
-    target.stem = "Practice to score higher on test day";
+    target.stem = "A SAT tutor at your finger tips";
     expect(phrase?.pattern.test(target.stem)).toBe(true);
+    const db = makeDb(pool);
+    const summary = await runQotdSchedule({
+      client: db.client,
+      now: NOW,
+      daysAhead: 0,
+    });
+    expect(summary.skippedBanned).toBe(1);
+    expect(db.schedule.get("2026-10-05")).not.toBe(target.id);
+    expect(db.schedule.get("2026-10-05")).toBeDefined();
+  });
+
+  it("F13: skips a candidate carrying an unapproved outcome phrase (an archive page is public), and takes the next", async () => {
+    const pool = makePool(2);
+    const first = rotationFor("2026-10-05")[0];
+    const target = pool
+      .filter((q) => q.section === first?.section && q.domain === first?.domain)
+      .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+    if (!target) throw new Error("no candidate");
+    target.stem = "Practice to score higher on test day";
+    expect(firstUnapprovedOutcome(target.stem)).not.toBeNull();
     const db = makeDb(pool);
     const summary = await runQotdSchedule({
       client: db.client,

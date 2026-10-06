@@ -229,6 +229,38 @@ describe("QotdWidget", () => {
     expect(screen.getByText("Not quite")).toBeTruthy();
   });
 
+  it("F13: the afterReveal slot (the homepage's signup button) appears only after the reveal", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { data: todayPayload }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { data: revealFor(tokenOf("24"), 7, 3) }),
+      );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <QotdWidget
+          showArchiveLink={false}
+          afterReveal={<a href="/login">Try 40 more questions free</a>}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.findByTestId("qotd-question-area");
+    // Before the answer: the question is there (presence), the button is not.
+    expect(screen.queryByText("Try 40 more questions free")).toBeNull();
+    fireEvent.click(screen.getByText("24"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("qotd-submit") as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId("qotd-submit"));
+    const locked = await screen.findByTestId("qotd-locked");
+    expect(locked.textContent).toContain("Try 40 more questions free");
+    expect(screen.queryByText("See past questions")).toBeNull();
+  });
+
   it("a day with no question yet says so", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(404, {

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@5.88.1/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "client/src/main.tsx!",
+        "server/index.ts!",
+        "api/**/*.{ts,js,mjs}!",
+        "scripts/**/*.{ts,mjs,js}",
+        "tests/**/*.{ts,tsx}",
+        "client/src/**/*.test.{ts,tsx}"
+      ],
+      "project": [
+        "client/src/**/*.{ts,tsx}!",
+        "server/**/*.ts!",
+        "shared/**/*.ts!",
+        "api/**/*.{ts,js,mjs}!",
+        "scripts/**/*.{ts,mjs,js}",
+        "tests/**/*.{ts,tsx}"
+      ]
+    },
+    "packages/shared": {
+      "entry": ["src/index.ts!", "src/**/*.test.ts"],
+      "project": ["src/**/*.ts!"]
+    },
+    "apps/api": { "ignore": ["**"] }
+  }
+}

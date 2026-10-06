@@ -46,13 +46,11 @@ export const CALENDAR_ROOT = "/api/calendar" as const;
 
 /**
  * Parses a response body against a shared schema. A failure THROWS, and the thrown message
- * names the resource so the ERROR that reaches the console and the error state the student
- * sees are traceable to one route.
+ * names the resource so the error state the student sees is traceable to one route.
  *
- * The client has no structured logger (`client/src/lib/` has `authLogger` and nothing
- * general), so this reports through `console.error` — the one place in this feature that
- * does. It carries the resource name and the Zod issue paths ONLY: never the body, which on
- * this surface contains a student's plan.
+ * Nothing is written to the console (Codex audit of #1073/#1108/#1113, finding 1, accepted by
+ * Karl 2026-10-05: no `console.*` in student client code, no replacement logger). The thrown
+ * message names the resource only, never the body, which on this surface holds a student's plan.
  */
 async function parsed<T>(
   response: Response,
@@ -69,14 +67,12 @@ async function parsed<T>(
 ): Promise<T> {
   // A 200 whose body is not JSON at all — a proxy or CDN error page, the classic
   // "Unexpected token <" — must take the SAME path as a body that parses but does not
-  // match. Letting `response.json()` throw raw would skip the curated message and the one
-  // ERROR log this feature has, for the failure mode most likely to hit it in production.
+  // match. Letting `response.json()` throw raw would skip the curated message, for the
+  // failure mode most likely to hit it in production.
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    // eslint-disable-next-line no-console -- the only client-side ERROR channel; see above.
-    console.error(`[CALENDAR] ${resource}: response body was not JSON.`);
     throw new Error(
       `${resource}: the server returned a body this client cannot read. This is a contract mismatch, not an empty result.`,
     );
@@ -84,13 +80,6 @@ async function parsed<T>(
   const payload = stripTransport(body, transportKeys);
   const result = schema.safeParse(payload);
   if (!result.success) {
-    const paths = result.error.issues
-      .map((issue) => issue.path.join("."))
-      .join(", ");
-    // eslint-disable-next-line no-console -- the only client-side ERROR channel; see above.
-    console.error(
-      `[CALENDAR] ${resource}: response failed schema validation at [${paths}]. This is a contract mismatch, not an empty result.`,
-    );
     throw new Error(
       `${resource}: the server returned a body this client cannot read. This is a contract mismatch, not an empty result.`,
     );

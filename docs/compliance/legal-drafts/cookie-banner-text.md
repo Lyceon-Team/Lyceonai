@@ -2,21 +2,19 @@
 
 # **LYCEON Cookie Banner Text**
 
-**Version 1** · **Effective date:** [●]
+**Version 2** · **Effective date:** [●]
 
-## **First layer**
+## **Banner**
 
-**Cookies on LYCEON**
+**We use cookies**
 
-We use cookies that are necessary for LYCEON to work. With your permission, we would also like to use analytics cookies to understand how the service is used and improve it. We do not use advertising cookies.
+We use necessary cookies to make LYCEON work. With your permission, we'd also like to use analytics cookies to understand how people use the site and improve it. We don't use advertising cookies. **Cookie Policy**
 
-**[ Reject analytics ]   [ Accept analytics ]**
+**[ Reject all ]   [ Accept all ]   [ Cookie settings ]**
 
-**Choose settings** · **Cookie Policy**
+## **Cookie settings**
 
-## **Second layer: Choose settings**
-
-**Your cookie settings**
+**Cookie settings**
 
 **Strictly necessary** — Always on
 Keep you signed in, protect your account and remember your settings.
@@ -24,11 +22,11 @@ Keep you signed in, protect your account and remember your settings.
 **Analytics** — Off
 Help us understand how LYCEON is used, including recordings of how pages are used. Provided by PostHog.
 
-**[ Reject all ]   [ Save my choices ]   [ Accept all ]**
+**[ Reject all ]   [ Save choices ]   [ Accept all ]**
 
 ## **Global Privacy Control notice**
 
-**Your browser has asked us not to use analytics.** Analytics cookies are off. You can change this in **Cookie settings**.
+Your browser sent a Global Privacy Control signal, so analytics cookies are off.
 
 **[ OK ]**
 

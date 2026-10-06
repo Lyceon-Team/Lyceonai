@@ -23,7 +23,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpApiError } from "@/lib/api-error";
 
 const calls = vi.hoisted(() => ({
@@ -178,5 +178,75 @@ describe("G1-02 guardian sign-up on /profile/complete", () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.queryByText(/couldn't save your profile/i)).toBeNull();
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * F13 (owner ruling 2026-10-05, Step 0 decision 4): the homepage's "I'm a parent or guardian"
+ * button signs up with `next=/guardian`, which makes Guardian the form's DEFAULT role. A default
+ * only: the visitor can still pick Student, and whatever is submitted is what the server judges.
+ */
+describe("F13 guardian intent from the homepage", () => {
+  function renderAt(search: string): void {
+    window.history.replaceState(null, "", `/profile/complete${search}`);
+    render(
+      <QueryClientProvider client={moduleClient as QueryClient}>
+        <ProfileComplete />
+      </QueryClientProvider>,
+    );
+  }
+
+  afterEach(() => {
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("without the intent, the form defaults to Student (presence of the control first)", async () => {
+    renderAt("");
+    const trigger = await screen.findByTestId("select-role");
+    expect(trigger.textContent).toContain("Student");
+  });
+
+  it("with next=/guardian, the form defaults to Guardian", async () => {
+    renderAt(`?next=${encodeURIComponent("/guardian")}`);
+    const trigger = await screen.findByTestId("select-role");
+    await waitFor(() => expect(trigger.textContent).toContain("Guardian"));
+  });
+
+  it("the default can be changed: choosing Student submits role student", async () => {
+    calls.patchResult = async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          profile: {
+            role: "student",
+            profileCompletedAt: "2026-10-05T00:00:00Z",
+          },
+          guardianConsentRequired: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    renderAt(`?next=${encodeURIComponent("/guardian")}`);
+    const trigger = await screen.findByTestId("select-role");
+    await waitFor(() => expect(trigger.textContent).toContain("Guardian"));
+    fireEvent.pointerDown(trigger, {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse",
+    });
+    fireEvent.click(await screen.findByRole("option", { name: "Student" }));
+    fireEvent.change(screen.getByTestId("input-display-name"), {
+      target: { value: "Sam Student" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("button-complete-profile"));
+    });
+    await waitFor(() => expect(calls.patchBody).not.toBeNull());
+    expect(calls.patchBody).toMatchObject({ role: "student" });
+  });
+
+  it("a student-only return path does not make Guardian the default", async () => {
+    renderAt(`?next=${encodeURIComponent("/dashboard")}`);
+    const trigger = await screen.findByTestId("select-role");
+    expect(trigger.textContent).toContain("Student");
   });
 });

@@ -56,17 +56,13 @@ import {
   localDayWindowUtc,
   localTodayIn,
 } from "../calendar/adapters/local-day";
+import type { RpcClient } from "../../lib/rpc-client";
 
 /** The QOTD day boundary (plan R18). The database uses the same zone (public.qotd_today()). */
 export const QOTD_TIME_ZONE = "America/Chicago";
 
 /** The subset of the Supabase client this service needs. */
-export type QotdDbClient = {
-  rpc: (
-    fn: string,
-    args?: Record<string, unknown>,
-  ) => PromiseLike<{ data: unknown; error: { message: string } | null }>;
-};
+export type QotdDbClient = RpcClient;
 
 export class QotdUnavailableError extends Error {
   constructor(message: string) {

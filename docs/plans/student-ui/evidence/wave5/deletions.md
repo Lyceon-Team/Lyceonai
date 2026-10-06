@@ -1268,3 +1268,970 @@ pre|packages/shared/src/services/rate-limit-ledger.ts|BucketDefinition|infile_li
    - `exam.css`: `.exam-focus`
 
    Not Wave 5 orphans; listed only.
+
+---
+
+## knip, committed (Codex audit finding 4, 2026-10-05)
+
+Codex's audit of #1073 + #1108 + #1113 (finding 4, LOW, accepted by Karl) asked for the knip run
+above to be reproducible from the repo. The config above is now committed as `knip.json` (same
+content, plus a `$schema` line), and two scripts run it through a pinned `pnpm dlx` (no dependency
+added, lockfile untouched):
+
+```bash
+pnpm run deadcode              # pnpm dlx knip@5.88.1 --config knip.json --no-progress --reporter compact
+pnpm run deadcode:production   # … --production --include files,exports,types
+```
+
+**Run on:** branch `claude/student-ui-audit-fixes`, code as of `71a57e3c` (cut from `cleanup` @ `a6a737ff`,
+with the four audit fixes). knip 5.88.1, Node v22.22.2. Both commands exit 1, which is knip's exit
+code whenever it lists anything; the scripts are a report, not a CI gate.
+
+| Category | `deadcode` | `deadcode:production` |
+|---|---|---|
+| Unused files | 6 | 25 |
+| Unused exports | 140 | 183 |
+| Unused exported types | 169 | 164 |
+| Duplicate exports | 10 | not run |
+| Unused dependencies | 1 | not run |
+| Unused devDependencies | 1 | not run |
+| Unlisted dependencies | 196 | not run |
+| Unresolved imports | 1 | not run |
+
+These counts are not comparable with the before/after table above: that table was measured on
+`claude/student-ui-wave4` before #1073 merged, and `cleanup` has moved since (other verticals' work
+included). This is the baseline for the committed config.
+
+Reading the production-mode file list: `client/src` entries that are test fixtures or harnesses
+(`*.fixture.ts`, `test-fixtures/`, `test-harness.tsx`, `test-support/`, `test/setupTests.ts`) are
+imported only by tests, which production mode does not count. The rest belong to other verticals
+(LISA `tutor-error-classifier.ts`, SEO `prerender/` and `shared/seo/`, billing `server/lib/stripe/`,
+the question pipeline) and are not deleted here.
+
+The student UI's own shared components appear in the production-mode exports list:
+`student-ui/Sheet.tsx` (`Sheet`, `SheetClose`, re-exported from `student-ui/index.ts`),
+`RulerProgress.tsx` (`RULER_TICKS`) and `filter-bar/filter-cascade.ts` (`removeDomain`,
+`removeSkill`), plus several exported prop types. No shipped code imports them. The audit asked for
+the script and its output, not for deletions, so this report does not delete them; they are recorded
+as register F-76 for the next student-UI round.
+
+<details><summary><code>pnpm run deadcode</code>, full output</summary>
+
+```
+Unused files (6)
+client/src/test/setupTests.ts
+server/lib/build.ts
+server/sat-pdf-processor.ts
+server/services/question-publish.ts
+server/services/questionTypes.ts
+shared/schema.ts
+Unused dependencies (1)
+package.json: @dnd-kit/utilities, @google-cloud/documentai, @napi-rs/canvas, @types/luxon, @types/uuid, bcryptjs, express-session, express-slow-down, express-validator, hpp, luxon, minimatch, multer, p-limit, pdf-lib, pdf-parse, pdf-parse-debugging-disabled, pdfjs-dist, react-icons, ws, zod-validation-error
+Unused devDependencies (1)
+package.json: @replit/vite-plugin-cartographer, @replit/vite-plugin-runtime-error-modal, @types/bcryptjs, @types/express-rate-limit, @types/express-session, @types/express-slow-down, @types/hpp, @types/katex, @types/multer, @types/pdf-parse, @types/ws, esbuild-wasm, jest, tw-animate-css
+Unlisted dependencies (196)
+client/src/components/auth/PasswordField.policy.test.tsx: @lyceon/shared
+client/src/components/auth/PasswordField.test.tsx: @lyceon/shared
+client/src/components/auth/PasswordField.tsx: @lyceon/shared
+client/src/components/auth/RequireRole.tsx: @lyceon/shared
+client/src/components/auth/SupabaseAuthForm.tsx: @lyceon/shared
+client/src/components/billing/UpgradeModal.test.tsx: @lyceon/shared
+client/src/components/billing/UpgradeModal.tsx: @lyceon/shared
+client/src/components/billing/upgrade-modal.ts: @lyceon/shared
+client/src/components/guardian/CheckoutReturnPoller.test.tsx: @lyceon/shared
+client/src/components/guardian/GuardianCta.test.tsx: @lyceon/shared
+client/src/components/home/FreeHome.tsx: @lyceon/shared
+client/src/components/home/HomePanel.tsx: @lyceon/shared
+client/src/components/home/PaidHome.tsx: @lyceon/shared
+client/src/components/home/home-model.test.ts: @lyceon/shared
+client/src/components/home/home-model.ts: @lyceon/shared
+client/src/components/layout/app-shell.rail.test.tsx: @lyceon/shared
+client/src/components/layout/app-shell.tsx: @lyceon/shared
+client/src/components/mastery/LevelPill.tsx: @lyceon/shared
+client/src/components/mastery/LockedMasteryCard.test.tsx: @lyceon/shared
+client/src/components/mastery/MasteryMeter.tsx: @lyceon/shared
+client/src/components/mastery/MasteryRow.test.tsx: @lyceon/shared
+client/src/components/mastery/MasteryRow.tsx: @lyceon/shared
+client/src/components/mastery/domain-nodes.ts: @lyceon/shared
+client/src/components/notifications/NotificationBell.tsx: @lyceon/shared
+client/src/components/practice/CanonicalPracticePage.runner.test.tsx: @lyceon/shared
+client/src/components/practice/practice-landing-model.test.ts: @lyceon/shared
+client/src/components/practice/practice-landing-model.ts: @lyceon/shared
+client/src/components/review/review-landing-model.ts: @lyceon/shared
+client/src/components/settings/AccountSection.tsx: @lyceon/shared
+client/src/components/settings/BillingSection.tsx: @lyceon/shared
+client/src/components/settings/ProfileSection.tsx: @lyceon/shared
+client/src/components/student-ui/filter-bar/FilterBar.test.tsx: @lyceon/shared
+client/src/components/student-ui/filter-bar/FilterBar.tsx: @lyceon/shared
+client/src/components/student-ui/filter-bar/filter-cascade.test.ts: @lyceon/shared
+client/src/components/student-ui/filter-bar/filter-cascade.ts: @lyceon/shared
+client/src/components/student-ui/filter-bar/topics.fixture.ts: @lyceon/shared
+client/src/contexts/SupabaseAuthContext.tsx: @lyceon/shared
+client/src/features/calendar/CalendarView.tsx: @lyceon/shared
+client/src/features/calendar/api/client.test.ts: @lyceon/shared
+client/src/features/calendar/api/client.ts: @lyceon/shared
+client/src/features/calendar/api/launch.ts: @lyceon/shared
+client/src/features/calendar/api/mutations.test.tsx: @lyceon/shared
+client/src/features/calendar/api/mutations.ts: @lyceon/shared
+client/src/features/calendar/api/optimistic.test.ts: @lyceon/shared
+client/src/features/calendar/api/optimistic.ts: @lyceon/shared
+client/src/features/calendar/api/queries.keep-previous.test.tsx: @lyceon/shared
+client/src/features/calendar/api/queries.ts: @lyceon/shared
+client/src/features/calendar/calendar-week.fixture.ts: @lyceon/shared
+client/src/features/calendar/components/BlockSheet.tsx: @lyceon/shared
+client/src/features/calendar/components/Chrome.header.test.tsx: @lyceon/shared
+client/src/features/calendar/components/Chrome.identity.test.tsx: @lyceon/shared
+client/src/features/calendar/components/Chrome.tsx: @lyceon/shared
+client/src/features/calendar/components/CreateBlockSheet.test.tsx: @lyceon/shared
+client/src/features/calendar/components/CreateBlockSheet.tsx: @lyceon/shared
+client/src/features/calendar/components/FreeCalendar.tsx: @lyceon/shared
+client/src/features/calendar/components/FullLengthFields.tsx: @lyceon/shared
+client/src/features/calendar/components/MixRows.tsx: @lyceon/shared
+client/src/features/calendar/components/SettingsSheet.test.tsx: @lyceon/shared
+client/src/features/calendar/components/SettingsSheet.tsx: @lyceon/shared
+client/src/features/calendar/components/SetupPopup.test.tsx: @lyceon/shared
+client/src/features/calendar/components/SetupPopup.tsx: @lyceon/shared
+client/src/features/calendar/components/StudentChrome.tsx: @lyceon/shared
+client/src/features/calendar/copy/banner.test.ts: @lyceon/shared
+client/src/features/calendar/copy/banner.ts: @lyceon/shared
+client/src/features/calendar/copy/exam-cadence.ts: @lyceon/shared
+client/src/features/calendar/copy/explanations.test.ts: @lyceon/shared
+client/src/features/calendar/guardian-readonly.tree.test.tsx: @lyceon/shared
+client/src/features/calendar/lib/blocks.test.ts: @lyceon/shared
+client/src/features/calendar/lib/blocks.ts: @lyceon/shared
+client/src/features/calendar/lib/members.ts: @lyceon/shared
+client/src/features/calendar/lib/projection.test.ts: @lyceon/shared
+client/src/features/calendar/lib/projection.ts: @lyceon/shared
+client/src/features/calendar/lib/setup.ts: @lyceon/shared
+client/src/features/calendar/lib/view-model.ts: @lyceon/shared
+client/src/features/calendar/mobile-390.test.tsx: @lyceon/shared
+client/src/features/calendar/rail-brand.test.tsx: @lyceon/shared
+client/src/features/exam/api/exam-api.ts: @lyceon/shared
+client/src/features/exam/api/keys.ts: @lyceon/shared
+client/src/features/exam/components/ChoiceList.tsx: @lyceon/shared
+client/src/features/exam/components/DisclosedScore.tsx: @lyceon/shared
+client/src/features/exam/components/DomainSegments.tsx: @lyceon/shared
+client/src/features/exam/components/ExamHeader.tsx: @lyceon/shared
+client/src/features/exam/components/ExamQuestionView.tsx: @lyceon/shared
+client/src/features/exam/components/ModuleReview.tsx: @lyceon/shared
+client/src/features/exam/components/NavigatorDialog.tsx: @lyceon/shared
+client/src/features/exam/components/PassageView.tsx: @lyceon/shared
+client/src/features/exam/components/SubmitModuleDialog.tsx: @lyceon/shared
+client/src/features/exam/guardian-domain-bars.test.ts: @lyceon/shared
+client/src/features/exam/hooks/useHeartbeat.ts: @lyceon/shared
+client/src/features/exam/lib/domain-weights.ts: @lyceon/shared
+client/src/features/exam/lib/exam-position.test.ts: @lyceon/shared
+client/src/features/exam/lib/exam-position.ts: @lyceon/shared
+client/src/features/exam/lib/labels.ts: @lyceon/shared
+client/src/features/exam/lib/module-summary.ts: @lyceon/shared
+client/src/features/exam/lib/passage.ts: @lyceon/shared
+client/src/features/exam/lib/tests-home-model.ts: @lyceon/shared
+client/src/features/exam/pages/ExamModulePage.calculator.test.tsx: @lyceon/shared
+client/src/features/exam/pages/ExamModulePage.test.tsx: @lyceon/shared
+client/src/features/exam/pages/ExamModulePage.tsx: @lyceon/shared
+client/src/features/exam/pages/ExamReportPage.test.tsx: @lyceon/shared
+client/src/features/exam/pages/ExamReportPage.tsx: @lyceon/shared
+client/src/features/exam/pages/ExamSessionPage.tsx: @lyceon/shared
+client/src/features/exam/pages/GuardianExamResultsPage.test.tsx: @lyceon/shared
+client/src/features/exam/pages/GuardianExamResultsPage.tsx: @lyceon/shared
+client/src/features/exam/pages/TestsHomePage.test.tsx: @lyceon/shared
+client/src/features/exam/pages/TestsHomePage.tsx: @lyceon/shared
+client/src/features/exam/pages/breakdown-parity.test.tsx: @lyceon/shared
+client/src/features/exam/test-fixtures/report-fixtures.ts: @lyceon/shared
+client/src/features/guardian/AddStudentDialog.tsx: @lyceon/shared
+client/src/features/guardian/GuardianDashboardTab.tsx: @lyceon/shared
+client/src/features/guardian/GuardianLatestTestCard.tsx: @lyceon/shared
+client/src/features/guardian/GuardianMasteryCard.tsx: @lyceon/shared
+client/src/features/guardian/GuardianScoreStrip.tsx: @lyceon/shared
+client/src/features/guardian/GuardianTemplatePreview.tsx: @lyceon/shared
+client/src/features/guardian/dashboard.endpoint-map.test.tsx: @lyceon/shared
+client/src/features/guardian/latest-test.test.tsx: @lyceon/shared
+client/src/features/guardian/level-colours.test.tsx: @lyceon/shared
+client/src/features/guardian/paths.test.ts: @lyceon/shared
+client/src/features/guardian/test-harness.tsx: @lyceon/shared
+client/src/hooks/tutor-client.ts: @lyceon/shared
+client/src/hooks/useActiveSessions.ts: @lyceon/shared
+client/src/hooks/useBillingStatusQuery.ts: @lyceon/shared
+client/src/hooks/useFeatureAccess.ts: @lyceon/shared
+client/src/hooks/useHomeProjection.ts: @lyceon/shared
+client/src/hooks/usePractice.ts: @lyceon/shared
+client/src/hooks/usePracticeQuota.ts: @lyceon/shared
+client/src/hooks/usePracticeTopics.ts: @lyceon/shared
+client/src/hooks/useReview.ts: @lyceon/shared
+client/src/lib/analytics/consent.ts: @lyceon/shared
+client/src/lib/analytics/first-touch.ts: @lyceon/shared
+client/src/lib/api-error.ts: @lyceon/shared
+client/src/lib/csrf.ts: @lyceon/shared
+client/src/lib/engine-config.ts: @lyceon/shared
+client/src/lib/guardian-link-redirect.test.tsx: @lyceon/shared
+client/src/lib/masteryApi.ts: @lyceon/shared
+client/src/lib/notificationsApi.ts: @lyceon/shared
+client/src/lib/projectionApi.ts: @lyceon/shared
+client/src/lib/review-session-picker.ts: @lyceon/shared
+client/src/lib/settings-api.ts: @lyceon/shared
+client/src/pages/calendar.setup-wire-contract.test.tsx: @lyceon/shared
+client/src/pages/calendar.tsx: @lyceon/shared
+client/src/pages/calendar.ui55.test.tsx: @lyceon/shared
+client/src/pages/chat.tsx: @lyceon/shared
+client/src/pages/chat.ui56.test.tsx: @lyceon/shared
+client/src/pages/login.tsx: @lyceon/shared
+client/src/pages/lyceon-dashboard.test.tsx: @lyceon/shared
+client/src/pages/lyceon-dashboard.tsx: @lyceon/shared
+client/src/pages/mastery.test.tsx: @lyceon/shared
+client/src/pages/mastery.tsx: @lyceon/shared
+client/src/pages/notifications.test.tsx: @lyceon/shared
+client/src/pages/notifications.tsx: @lyceon/shared
+client/src/pages/practice.test.tsx: @lyceon/shared
+client/src/pages/practice.tsx: @lyceon/shared
+client/src/pages/profile-complete.tsx: @lyceon/shared
+client/src/pages/resume-practice.readonly.test.tsx: @lyceon/shared
+client/src/pages/resume-practice.test.tsx: @lyceon/shared
+client/src/pages/resume-practice.tsx: @lyceon/shared
+client/src/pages/resume-review.test.tsx: @lyceon/shared
+client/src/pages/resume-review.tsx: @lyceon/shared
+client/src/pages/review.test.tsx: @lyceon/shared
+client/src/pages/review.tsx: @lyceon/shared
+client/src/pages/settings.test.tsx: @lyceon/shared
+client/src/pages/update-password.test.tsx: @lyceon/shared
+client/src/pages/update-password.tsx: @lyceon/shared
+client/src/review-entry-points.test.ts: @lyceon/shared
+scripts/generate-assets.js: sharp
+scripts/provisioning/rag-corpus-create.ts: @google-cloud/aiplatform
+server/routes/calendar-routes.ts: @lyceon/shared
+server/routes/review-canonical.ts: @lyceon/shared
+server/routes/student-background-routes.ts: @lyceon/shared
+server/services/activity-streak.ts: @lyceon/shared
+server/services/calendar/adapters/full-length.ts: @lyceon/shared
+server/services/calendar/adapters/index.ts: @lyceon/shared
+server/services/calendar/adapters/practice.ts: @lyceon/shared
+server/services/calendar/adapters/review.ts: @lyceon/shared
+server/services/calendar/adapters/types.ts: @lyceon/shared
+server/services/calendar/config.ts: @lyceon/shared
+server/services/calendar/launch-deps.ts: @lyceon/shared
+server/services/calendar/launch-service.ts: @lyceon/shared
+server/services/calendar/plan-service.ts: @lyceon/shared
+server/services/calendar/profile-service.ts: @lyceon/shared
+server/services/calendar/read-service.ts: @lyceon/shared
+server/services/review-pool.ts: @lyceon/shared
+server/services/student-background.ts: @lyceon/shared
+tests/ci/calendar.launch-contract.full_length.test.ts: @lyceon/shared
+tests/ci/calendar.launch-contract.practice.ci.test.ts: @lyceon/shared
+tests/ci/calendar.launch-contract.review.test.ts: @lyceon/shared
+tests/ci/calendar.launch-crash-retry.postgrest.ci.test.ts: @lyceon/shared
+tests/ci/calendar.launch-service.test.ts: @lyceon/shared
+tests/ci/guardian-checkout.contract.test.ts: @lyceon/shared
+tests/ci/review-pool.sessions-page.test.ts: @lyceon/shared
+tests/ci/signup-frontend.contract.test.ts: @lyceon/shared
+tests/ci/tutor-route-retired.contract.test.ts: @lyceon/shared
+tests/helpers/launch-landing.ts: @lyceon/shared
+tests/rls/rls.spec.ts: nanoid
+tests/specs/rls-auth-enforcement.spec.ts: nanoid
+Unresolved imports (1)
+scripts/canary-supabase-questions.ts: ../apps/api/src/lib/canonicalId
+Unused exports (140)
+client/src/components/auth/RequireRole.tsx: default
+client/src/components/consent/CookieConsentRoot.tsx: COOKIE_POLICY_HREF
+client/src/components/home/home-model.ts: greetingFor
+client/src/components/layout/app-shell.tsx: TAB_BAR_KEYS, TAB_BAR_ITEMS
+client/src/components/layout/primitives.tsx: Prose
+client/src/components/legal/ReconsentModal.tsx: default
+client/src/components/math/FloatingPanel.tsx: clampPanel
+client/src/components/math/calculator-layout.ts: CONTAINER_AT_BREAKPOINT
+client/src/components/notifications/NotificationBell.tsx: default
+client/src/components/practice/CanonicalPracticePage.tsx: TUTOR_SIDE_BY_SIDE_BREAKPOINT, questionPosition, progressSegments
+client/src/components/practice/practice-landing-model.ts: sectionLabel
+client/src/components/qotd/turnstile.tsx: TURNSTILE_TEST_SITE_KEY, turnstileSiteKey
+client/src/components/question-renderer.tsx: DISPLAY_LETTERS, QuestionRenderer
+client/src/components/settings/BillingSection.tsx: billingView
+client/src/components/student/StudentLinkCodePanel.tsx: STUDENT_LINK_CODE_QUERY_KEY, studentLinkCodeQueryKey
+client/src/components/tutor/TutorThreadParts.tsx: TutorMessageContent, LISA_DISCLAIMER, PRACTICE_HANDOFF_HREF
+client/src/components/ui/alert-dialog.tsx: AlertDialogPortal, AlertDialogOverlay
+client/src/components/ui/alert.tsx: AlertTitle
+client/src/components/ui/avatar.tsx: AvatarImage
+client/src/components/ui/badge.tsx: badgeVariants
+client/src/components/ui/dialog.tsx: DialogPortal, DialogOverlay
+client/src/components/ui/dropdown-menu.tsx: DropdownMenuRadioItem, DropdownMenuShortcut, DropdownMenuGroup, DropdownMenuPortal, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuRadioGroup
+client/src/components/ui/scroll-area.tsx: ScrollBar
+client/src/components/ui/select.tsx: SelectGroup, SelectLabel, SelectSeparator, SelectScrollUpButton, SelectScrollDownButton
+client/src/components/ui/sheet.tsx: SheetPortal, SheetOverlay, SheetHeader, SheetFooter
+client/src/components/ui/table.tsx: TableFooter, TableCaption
+client/src/components/ui/toast.tsx: ToastAction
+client/src/components/ui/tooltip.tsx: Tooltip, TooltipTrigger, TooltipContent
+client/src/features/calendar/api/index.ts: deviceTimezone, useLaunchMutation, isLaunchable, practiceStateKey, prefetchPracticeChunk, applyAcknowledge, applyBlockEdit, applyDoItNow, applyMove, applyRemoveBlock, findBlock, isProvisional, nextProvisionalId, resetProvisionalIds, PROVISIONAL_PREFIX
+client/src/features/calendar/api/launch.ts: reviewStateKey, prefetchPracticeChunk, calendarKeys
+client/src/features/calendar/api/optimistic.ts: PROVISIONAL_PREFIX, nextProvisionalId
+client/src/features/calendar/api/queries.ts: deviceTimezone
+client/src/features/calendar/calendar-week.fixture.ts: calendarWeekRange
+client/src/features/calendar/components/Chrome.tsx: TargetFact, StreakFact, CountdownFact, ProjectionFact
+client/src/features/exam/api/exam-api.ts: EXAM_ROOT
+client/src/features/exam/components/QuestionCell.tsx: cellLabel, MarkedIcon
+client/src/features/exam/hooks/useHeartbeat.ts: HEARTBEAT_INTERVAL_MS
+client/src/features/exam/lib/countdown.ts: FIVE_MINUTES_MS, ONE_MINUTE_MS
+client/src/features/exam/lib/module-summary.ts: isAnswered
+client/src/features/exam/lib/tests-home-model.ts: EXAM_IN_PROGRESS_STATES, inProgressLine
+client/src/features/exam/test-fixtures/report-fixtures.ts: FIXTURE_RW_ROWS
+client/src/features/guardian/test-harness.tsx: listFactsOf
+client/src/hooks/tutor-client.ts: tutorConversationQueryKey, tutorConversationsQueryKey
+client/src/hooks/use-toast.ts: reducer
+client/src/hooks/useBillingPortal.ts: portalErrorMessage
+client/src/hooks/useBillingStatusQuery.ts: BILLING_STATUS_PATH, fetchBillingStatus
+client/src/hooks/useProfileQuery.ts: PROFILE_PATH, fetchProfile
+client/src/hooks/useReview.ts: REVIEW_POOL_QUERY_KEY, REVIEW_OPEN_SESSIONS_QUERY_KEY, reviewPoolPath, dropClosedSessions
+client/src/hooks/useTutorTurn.ts: CLIENT_TIMEOUT_MS
+client/src/lib/analytics/consent.ts: browserSendsGpc
+client/src/lib/analytics/posthog-client.ts: analyticsConfigured
+client/src/lib/analytics/url-scrub.ts: scrubString
+client/src/lib/api-error.ts: getPremiumDenialReason, isCsrfError, isTransportError
+client/src/lib/blog.ts: getPostsByTag, getPostsByCategory, getAllTags
+client/src/lib/client-instance.ts: resetClientInstanceId
+client/src/lib/legal-content.ts: LegalNotFoundError, loadLegalManifest
+client/src/lib/link-code-prefill.ts: LINK_CODE_QUERY_PARAM
+client/src/lib/notificationsApi.ts: NOTIFICATIONS_PAGE_LIMIT
+client/src/lib/practice-filters.ts: parseDifficultiesFromSearch, parseDomainsFromSearch, appendPracticeFilters
+client/src/lib/qotd.ts: QOTD_API, fetchQotdToday, fetchQotdArchiveDay, fetchQotdArchiveIndex
+client/src/lib/settings-api.ts: PROFILE_NAME_PATH, CHANGE_PASSWORD_PATH
+client/src/lib/support-contact.ts: PRIVACY_EMAIL
+client/src/lib/theme.ts: isThemePreference
+client/src/prerender/entry-server.tsx: NOT_FOUND_RENDER_PATH, outputFileFor, renderAppHtml
+client/src/test-support/runner.harness.tsx: RunnerFrame
+packages/shared/src/billing-pricing.ts: monthsInInterval
+packages/shared/src/event-registry-schema.ts: eventRedactionMethodSchema, canonicalEventClassSchema, registryPersonPropertySchema
+packages/shared/src/exam-report-schema.ts: examIncompletenessReasonSchema, examFormSectionSummarySchema, examFormLatestSessionSchema, examFormSummarySchema
+packages/shared/src/exam-student-report-schema.ts: examStudentReportPartialSchema
+packages/shared/src/profile-role-choice-schema.ts: ROLE_CHOICE_ERROR_CODES
+packages/shared/src/qotd-schema.ts: QOTD_MIN_ATTEMPTS_FOR_STAT, qotdOptionKeySchema, qotdOptionTokenSchema, qotdServedOptionSchema, qotdPreSubmitQuestionSchema, qotdArchiveQuestionSchema
+packages/shared/src/services/rate-limit-ledger.ts: windowFor, bucketFamily, getUsage
+server/lib/account-deletion-runtime-config.ts: DELETION_GRACE_DAYS_KEY
+server/lib/account.ts: getGuardianLinkForStudent, getPracticeDailyFreeQuota, getDailyUsage, incrementUsage, checkUsageLimit, getLinkedGuardianForStudent, FREE_TIER_LIMITS
+server/lib/auth-runtime-config.ts: STUDENT_LINK_CODE_TTL_KEY
+server/lib/client-ip.ts: PUBLIC_API_PREFIX, isPublicApiRequest
+server/lib/entitlement-runtime-config.ts: EXAM_RENEWAL_CONFIG_KEYS, EXAM_RENEWAL_CONFIG_DEFAULTS
+server/lib/notifications/transport.ts: RESEND_API_BASE_URL, resendSuppressionSchema, normaliseAddress
+server/lib/password-credentials.ts: RECOVERY_GRANT_TTL_SECONDS, PASSWORD_RESET_BUCKET, PASSWORD_RESET_RESPONSE_FLOOR_MS
+server/lib/practice-quota.ts: UNLIMITED_PRACTICE_DECISION_CODES
+server/lib/role-choice.ts: LEARNING_STATE_ROOTS, MAX_PLAUSIBLE_AGE_YEARS
+server/lib/startup-guards.ts: __resetGcpStartupReportForTests
+server/lib/stripe/country-backfill.ts: BLANK_COUNTRY_SQL
+server/lib/stripe/country-denial-remediation.ts: TERMINAL_SUBSCRIPTION_STATUSES
+server/lib/stripe/dispute.ts: disputeStatusSchema, CLOSED_DISPOSITION
+server/lib/stripe/guardian-subscriptions.ts: GUARDIAN_SUBSCRIPTION_PAGE_SIZE, GUARDIAN_SUBSCRIPTION_MAX_PAGES, FUNDING_SUBSCRIPTION_STATUSES
+server/lib/stripe/purchase-idempotency.ts: PURCHASE_IDEMPOTENCY_WINDOW_MS
+server/lib/stripe/redact.ts: classifyError
+server/lib/stripe/refund.ts: REVOKING_REFUND_STATUS
+server/lib/stripe/webhook-handler.ts: StripePayloadShapeError, UnresolvableSubjectError
+server/lib/student-link-code.ts: generateStudentLinkCode
+server/lib/support-contact.ts: PRIVACY_EMAIL
+server/logger.ts: containsSecretContent, createLoggingContext
+server/middleware/api-cache-control.ts: API_CACHE_CONTROL_DEFAULT
+server/middleware/csrf-double-submit.ts: csrfCookieName
+server/middleware/final-error-handler.ts: isCsrfError, CSRF_BLOCKED
+server/middleware/supabase-auth.ts: sendUnauthenticated (authMiddleware)
+server/routes/account-deletion-routes.ts: recoverDeletionSchema, revokeSessionsAtDeletionRequest
+server/routes/calendar-routes.ts: CALENDAR_PLAN_REGENERATE_BUCKET, CALENDAR_DAY_REGENERATE_BUCKET
+server/routes/notifications.ts: encodeFeedCursor, decodeFeedCursor
+server/routes/oauth-callback-routes.ts: classifyProviderError, classifyNoCredential, classifyOtpFailure
+server/routes/practice-topics-routes.ts: default
+server/routes/public-pricing-routes.ts: __resetPublicPricingMemoForTests
+server/routes/resend-webhook.ts: processResendWebhook
+server/routes/review-canonical.ts: submitReviewAnswer, submitReviewSkip, reviewCanonicalRouter, REVIEW_COMPONENT
+server/routes/score-report-routes.ts: default
+server/routes/student-background-routes.ts: REFERENCE_SEARCH_BUCKET
+server/services/activity-streak.ts: resolveStudentTimeZone
+server/services/calendar/adapters/index.ts: adapterForBlock, ADAPTERS, localDayWindowUtc, isKnownTimeZone, localTodayIn
+server/services/calendar/adapters/types.ts: ENGINE_FAILURE_REASONS
+server/services/calendar/launch-deps.ts: engineOfBlock
+server/services/calendar/profile-service.ts: localTodayForProfile
+server/services/calendar/read-service.ts: FALLBACK_TIMEZONE
+server/services/canonical-runtime-views.ts: CANONICAL_RUNTIME_VIEW_VERSION
+server/services/cloud-tasks-enqueue.ts: CLOUD_TASKS_LOCATION
+server/services/email-reconsent-audit.ts: EMAIL_RECONSENT_ACTION
+server/services/exam-score-renewal/job.ts: EXAM_SCORE_RENEWAL_JOB, EXAM_SCORE_RENEWAL_OUTCOMES
+server/services/kpi-access.ts: resolvePaidKpiAccessForStudent
+server/services/qotd/qotd-service.ts: QOTD_TIME_ZONE, qotdTokenMapFor, qotdCorrectOptionId
+server/services/qotd/schedule-job.ts: QOTD_ROTATION_EPOCH
+server/services/retention-sweep.ts: sweep90d, sweep180d, SWEEP_COMPLETED_ACTION
+server/services/review-pool.ts: resolveTimeZone, encodeSourceSessionsCursor
+server/services/student-background.ts: StudentBackgroundReadError
+server/services/subject-access-audit.ts: SUBJECT_ACCESS_ACTION
+server/services/tutor-antileak.ts: hasAnswerLeak
+server/services/tutor-context.ts: hasAnswerLeak
+server/services/tutor-crisis.ts: UNKNOWN_COUNTRY_CRISIS_RESPONSE, UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE, resolveCrisisCountry
+server/services/tutor-display-letters.ts: DISPLAY_LETTERS
+server/services/tutor-error-codes.ts: TUTOR_UNAUTHENTICATED, TUTOR_TOKEN_EXPIRED, TUTOR_ROLE_NOT_PERMITTED, TUTOR_ENTITLEMENT_REQUIRED, TUTOR_AGE_RESTRICTED, TUTOR_REGION_NOT_SUPPORTED, TUTOR_UNAVAILABLE_DURING_LIVE_EXAM, TUTOR_ACCOUNT_UNDER_REVIEW, TUTOR_INVALID_INPUT, TUTOR_PII_IN_ENVELOPE, TUTOR_RATE_LIMITED, TUTOR_QUOTA_EXCEEDED, TUTOR_CONVERSATION_NOT_FOUND, TUTOR_CONVERSATION_CLOSED, TUTOR_CONVERSATION_ALREADY_CLOSED, TUTOR_CONVERSATION_ALREADY_ENDED, TUTOR_CONVERSATION_CRISIS_PAUSED, TUTOR_CONVERSATION_NOT_PAUSED, TUTOR_IDEMPOTENCY_CONFLICT, TUTOR_IDEMPOTENCY_IN_PROGRESS, TUTOR_IDEMPOTENCY_LOOKUP_FAILED, TUTOR_CANONICAL_WRITE_FAILED, TUTOR_ORCHESTRATION_AUTH_FAILED, TUTOR_ORCHESTRATION_FAILED, TUTOR_ORCHESTRATION_FAILED_RECOVERABLE, TUTOR_ENTITLEMENT_CHECK_UNAVAILABLE, sendTutorResultError
+server/services/tutor-injection-defense.ts: wrapWithBoundaryMarkers
+server/services/tutor-memory.ts: accumulateObservation
+server/services/tutor-model-armor.ts: MODEL_ARMOR_LOCATION, sanitizeResponseSchema, evaluateSanitization, modelArmorSanitizeUrl
+shared/qotd/projection.ts: qotdServedOptions
+shared/question-bank-contract.ts: CANONICAL_ID_PATTERN, QUESTION_LIFECYCLE, LEGACY_QUESTION_LIFECYCLE, CANONICAL_DOMAINS, DOMAIN_LOOKUP, normalizeLifecycleStatus, isPublishedLifecycleStatus, hasSingleCanonicalCorrectAnswer, isCanonicalRuntimeMcQuestion, hasCanonicalGridInVariantSet, isCanonicalRuntimeGridInQuestion, CANONICAL_ID_SUFFIX_LENGTH, generateCanonicalIdSuffix, normalizeSourceType, validateQuestionForPublish
+shared/question-ingestion-qa.ts: fingerprintCandidate
+shared/seo/head.ts: escapeHtml
+shared/seo/public-meta.ts: qotdArchiveMeta
+shared/seo/route-registry.ts: preservedVercelRoutes
+shared/tutor-orchestrator-wire.ts: resolvedScopeSchema, recentMessageSchema, memorySummarySchema, policyAssignmentSchema, masterySnapshotSchema, recentFrictionSchema, kpiStateSchema, studentLearningContextSchema, explanationFormEnum, memoryStructuredFieldsSchema, questionOptionSchema, questionContentSchema, questionLinkSchema, instructionExposureSchema, learnerObservationSchema, compactRequestSchema, compactResponseSchema
+shared/tutor-safety-constants.ts: STRUCTURAL_PREFIXES, ASSERTION_PATTERNS, POST_VALUE_ASSERTION_PATTERNS, GENERIC_LEAK_PATTERNS, fractionToDecimal, buildMcqPatterns, positionalReferenceSource, buildMcqPositionalPatterns, answerValueAppearsIn, CANONICAL_ID_SCAN_PATTERN, SYSTEM_PROMPT_LEAK_PATTERNS, PERSONA_VIOLATION_PATTERNS, INTERNAL_METADATA_PATTERNS
+Unused exported types (169)
+client/src/components/MathRenderer.tsx: MathContentToken
+client/src/components/auth/PasswordField.tsx: PasswordFieldProps
+client/src/components/billing/PremiumUpgradePrompt.tsx: PremiumUpgradePromptProps
+client/src/components/common/empty-state.tsx: EmptyStateProps
+client/src/components/layout/FocusShell.tsx: FocusShellProps
+client/src/components/layout/HeaderUserMenu.tsx: HeaderSignOut, HeaderMenuTone
+client/src/components/layout/app-shell.tsx: RailItem, AppShellProps
+client/src/components/mastery/LevelPill.tsx: LevelPillSize
+client/src/components/mastery/MasteryRow.tsx: MasteryRowVariant
+client/src/components/practice/NumericEntryInput.tsx: NumericEntryInputProps
+client/src/components/practice/RunnerStateCard.tsx: RunnerStateCardProps
+client/src/components/question-renderer.tsx: QuestionRendererProps
+client/src/components/settings/BillingSection.tsx: BillingView
+client/src/components/student-ui/FullPageLoader.tsx: FullPageLoaderProps
+client/src/components/student-ui/Modal.tsx: ModalProps
+client/src/components/student-ui/Notice.tsx: NoticeTone, NoticeProps
+client/src/components/student-ui/PageHeader.tsx: PageHeaderProps
+client/src/components/student-ui/Sheet.tsx: SheetProps
+client/src/components/student-ui/filter-bar/FilterBar.tsx: FilterBarProps
+client/src/components/student-ui/filter-bar/filter-cascade.ts: FilterChip
+client/src/components/student-ui/filter-bar/topics.fixture.ts: CatalogRow
+client/src/components/student-ui/index.ts: PageHeaderProps, FullPageLoaderProps, ModalProps, SheetProps, NoticeProps, NoticeTone, FilterBarProps
+client/src/components/tutor/TutorThreadParts.tsx: ThreadInset
+client/src/components/ui/badge.tsx: BadgeProps
+client/src/components/ui/button.tsx: ButtonProps
+client/src/components/ui/input.tsx: InputVariant
+client/src/components/ui/skeleton.tsx: SkeletonProps
+client/src/components/ui/tabs.tsx: TabsVariant
+client/src/contexts/SupabaseAuthContext.tsx: SignupOutcome, SignupResult, SignupLegalConsent
+client/src/features/calendar/CalendarView.tsx: CalendarMutations, CalendarViewProps
+client/src/features/calendar/api/client.ts: DayMembers
+client/src/features/calendar/api/index.ts: DayScopedVariables, DoItNowVariables, EditDayVariables, Intent, LaunchVariables, MoveBlockVariables, RegenerateVariables, LaunchOutcome
+client/src/features/calendar/api/mutations.ts: Intent, EditDayVariables, MoveBlockVariables, RegenerateVariables, DayScopedVariables, DoItNowVariables, LaunchVariables
+client/src/features/calendar/components/BlockCard.tsx: BlockCardProps
+client/src/features/calendar/components/BlockSheet.tsx: BlockSheetProps
+client/src/features/calendar/components/CreateBlockSheet.tsx: CreateBlockSheetProps
+client/src/features/calendar/components/DayStrip.tsx: DayStripProps
+client/src/features/calendar/components/MonthGrid.tsx: MonthGridProps
+client/src/features/calendar/components/SettingsSheet.tsx: SettingsSheetProps
+client/src/features/calendar/components/StudentChrome.tsx: RegenerateControl
+client/src/features/calendar/components/WeekGrid.tsx: WeekGridProps
+client/src/features/exam/api/exam-api.ts: ExamItemsResponse, ExamStartModuleResponse, ExamSubmitModuleResponse
+client/src/features/exam/hooks/useExamClock.ts: ExamClock
+client/src/features/exam/hooks/useWriteQueue.ts: WriteQueue
+client/src/features/exam/lib/exam-position.ts: ExamPosition, ModuleRoute
+client/src/features/exam/lib/passage.ts: PassageSegment, HighlightEdit
+client/src/hooks/tutor-client.ts: TutorEntryMode, TutorConversationStatus, TutorConversationSurface, TutorMessageRole, TutorResolvedScope, CreateConversationInput, TutorConversation, SendMessageInput, TutorConversationsList, EndConversationResponse, ResumeConversationResponse
+client/src/hooks/useBillingPortal.ts: UseBillingPortalResult
+client/src/hooks/useCanonicalPractice.ts: PracticeNextResponse, PracticeAnswerResponse, PracticeSkipResponse, PracticeSessionSpecInput
+client/src/hooks/useDiagnosticStart.ts: DiagnosticStartResult, DiagnosticStartError
+client/src/hooks/useKeyboardShortcuts.ts: ShortcutKey, ExamModuleKeymapInput, LisaComposerKeymapInput, EscapeKeymapOptions
+client/src/hooks/usePractice.ts: PracticeSessionStart
+client/src/hooks/useReview.ts: ReviewStartResult
+client/src/hooks/useTutorTurn.ts: TurnState, TutorTurn
+client/src/lib/account-deletion-errors.ts: DeletionErrorCopy
+client/src/lib/analytics/consent.ts: ConsentState
+client/src/lib/api-error.ts: PremiumDenialReason, UserFacingErrorMessage
+client/src/lib/billing-client.ts: BillingCheckoutOutcome
+client/src/lib/billing-cta.ts: BillingCtaDestination, BillingCtaAction, BillingCtaCopy
+client/src/lib/blog.ts: BlogPost
+client/src/lib/cta-click.ts: CtaClickHandlers
+client/src/lib/legal-content.ts: LegalManifest, LegalSection, LegalDocumentContent
+client/src/lib/masteryApi.ts: MasteryLevelKey, MasteryDomainsResponse, MasterySkillsResponse
+client/src/lib/practice-filters.ts: PracticeFilters
+client/src/lib/practice-topic-taxonomy.ts: PracticeTopicDomain
+client/src/lib/projectionApi.ts: ConfidenceBand, EstimateStatus
+client/src/lib/query-freshness.ts: QueryFreshnessKind
+client/src/lib/route-shells.ts: ShellKind, ShellExclusionReason
+client/src/lib/theme.ts: ResolvedTheme, SaveResult
+packages/shared/src/__fixtures__/linked-student.ts: LinkedStudentOverrides
+packages/shared/src/analytics-consent-schema.ts: CookieConsentRecord
+packages/shared/src/billing-pricing.ts: BillingPlanPricing
+packages/shared/src/csrf-token-schema.ts: CsrfTokenResponse
+packages/shared/src/event-registry-schema.ts: EventRedactionMethod
+packages/shared/src/exam-domain-segments.ts: StudentDomainSegments
+packages/shared/src/exam-report-schema.ts: ReportStateInputs
+packages/shared/src/exam-scored-sessions-schema.ts: ExamScoredSessionsQuery
+packages/shared/src/practice-schema.ts: QuestionsRow, PracticeSessionRow
+packages/shared/src/profile-name-schema.ts: ProfileNameUpdateRequest
+packages/shared/src/qotd-schema.ts: QotdServedOption, QotdPreSubmitQuestion, QotdArchiveQuestion
+packages/shared/src/retention-schema.ts: RetentionSweepRow
+packages/shared/src/review-table-schema.ts: ReviewSessionRow, ReviewScheduleRow
+packages/shared/src/services/rate-limit-ledger.ts: BucketDefinition, LedgerSubject
+server/lib/account.ts: GuardianLink, PairPremiumSource, LinkedPairPremiumAccess
+server/lib/analytics/emit-event.ts: EmitRefusal, EmitResult, EmitOptions
+server/lib/baseline-pending.ts: BaselinePendingReport
+server/lib/entitlement-display.ts: EntitlementDisplay, EntitlementDisplayInput
+server/lib/entitlement-runtime-config.ts: ExamRenewalConfig
+server/lib/gcp-credentials.ts: GcpServiceAccount, GcpAccessTokenResult
+server/lib/legal-acceptance.ts: LegalAcceptanceRecord, LegalCaptureResult
+server/lib/legal-registry.ts: ResolvedLegalVersion
+server/lib/notifications/direct-sends.ts: DirectSendResult
+server/lib/notifications/dispatch.ts: DispatchSummary, DispatchOptions
+server/lib/notifications/retention.ts: NotificationRetentionSweepSummary
+server/lib/notifications/svix.ts: SvixFailure, SvixVerification
+server/lib/notifications/templates/index.ts: EmailRender, InAppRender
+server/lib/notifications/transport.ts: SuppressionFailure, SuppressionLogContext, SuppressionTransport
+server/lib/password-credentials.ts: PasswordChangeFailure, PasswordResetDecision
+server/lib/redact.ts: ErrorClass
+server/lib/retention/sweeps.ts: RetentionSweepSummary
+server/lib/review-stale-session-sweep.ts: ReviewSessionSweepResult
+server/lib/role-choice.ts: SelfAssignableRole, RoleChoiceDecision
+server/lib/session-revoke.ts: SessionRevokeAdmin, SessionRevokeLog
+server/lib/stale-session-sweep.ts: StaleSessionSweepResult
+server/lib/startup-guards.ts: SiteUrlVerdict
+server/lib/stripe/client.ts: StripeMode
+server/lib/stripe/country-backfill.ts: CountryBackfillPlan
+server/lib/stripe/country-denial-remediation.ts: RemediationPlan, CancellationStep, RefundStep
+server/lib/stripe/country-eligibility.ts: CountryEligibility
+server/lib/stripe/dispute.ts: DisputeStatus, ClosedDisposition, DisputeEvent
+server/lib/stripe/entitlement-paths.ts: PathTrigger, EntitlementDirection
+server/lib/stripe/event-surface.ts: EventDisposition
+server/lib/stripe/guardian-checkout.ts: GuardianPurchaseSubject, GuardianPurchaseRefusal
+server/lib/stripe/guardian-subscriptions.ts: GuardianSubscriptionScan
+server/lib/stripe/purchase-eligibility.ts: PurchaseEligibility
+server/lib/stripe/redact.ts: ErrorClass
+server/lib/stripe/refund.ts: RefundEvent, RefundDecision
+server/lib/stripe/renewal-cancellation.ts: RenewalCancellationOutcome
+server/lib/stripe/subscription-item.ts: ResolvedEntitlementItem
+server/lib/stripe/webhook-handler.ts: WebhookOutcome
+server/lib/student-link-code.ts: RedeemOutcome, LiveCodeOwner
+server/lib/turnstile.ts: TurnstileResult
+server/lib/tutor-orchestrator-client.ts: OrchestrateResult, CompactResult
+server/lib/validation-log.ts: RejectedRequestContext
+server/logger.ts: LogEntry, PerformanceMetrics, LogContext
+server/middleware/supabase-auth.ts: TokenResolutionResult, DeletionStatusState, DeletionStatusResult, DeletionStatusResolver (authMiddleware)
+server/routes/oauth-callback-routes.ts: CallbackFailureCode
+server/routes/practice-canonical.ts: GradeResult, SessionItemRow, PracticeConfig, QuestionSnapshotRow
+server/routes/resend-webhook.ts: ResendWebhookOutcome
+server/services/calendar/adapters/local-day.ts: LocalDayWindow
+server/services/calendar/adapters/types.ts: EngineFailureReason
+server/services/calendar/config.ts: CalendarConfigKey
+server/services/calendar/exam-notify-job.ts: ExamNotifyOutcome, ExamNotifySummary
+server/services/calendar/launch-service.ts: LaunchRequest
+server/services/calendar/plan-service.ts: PlanInitiator, HorizonTrigger, RegenerateRequest, DayRegenerateRequest, DayEditRequest, DoItNowRequest, MoveBlockRequest
+server/services/calendar/profile-service.ts: ProfileUpsertOutcome
+server/services/calendar/read-service.ts: CalendarReadResult, GuardianReadResult, CalendarReadRequest
+server/services/calendar/weekly-job.ts: JobOutcome, WeeklyJobSummary
+server/services/canonical-runtime-views.ts: KpiExplanation, ExplainedKpiMetric, StudentKpiView, ScoreEstimate, CanonicalScoreEstimate, BaselineEstimate
+server/services/cloud-tasks-enqueue.ts: CloudTasksAccess, CloudTaskPayload
+server/services/crisis-notification.ts: CrisisNotificationPayload, BreachedCaseSummary
+server/services/crisis-resources.ts: CrisisCountryResolution
+server/services/crisis-review-queue.ts: CrisisSource, CrisisCategory, CaseStatus, CaseDisposition, AuditAction, UpdateDispositionParams, AuditLogParams
+server/services/entitlement-service.ts: EntitlementActiveResult
+server/services/exam-report-service.ts: ExamReportRead, ExamScoredSessionsRead
+server/services/exam-score-renewal/job.ts: ExamScoreRenewalOutcome, ExamScoreRenewalSummary
+server/services/kpi-access.ts: KpiEntitlementAccess
+server/services/qotd/qotd-service.ts: QotdRow
+server/services/qotd/schedule-job.ts: QotdDayOutcome, QotdScheduleSummary
+server/services/retention-sweep.ts: SweepTableCount, SweepResult, SweepOpts, TierHandler
+server/services/review-pool.ts: ReviewPoolResult
+server/services/student-background.ts: StudentBackgroundFailure
+server/services/tutor-compaction.ts: ChatCompactionContent
+server/services/tutor-context.ts: SessionTables, ResolvedScope, EnvelopeParams
+server/services/tutor-crisis.ts: NotificationPolicyResult, CrisisResult, CrisisCountryResolution
+server/services/tutor-display-letters.ts: DisplayOption, DisplayOrder
+server/services/tutor-memory-refresh.ts: MemoryRefreshParams, MemoryRefreshResult
+server/services/tutor-model-armor.ts: ModelArmorScanPoint, ModelArmorSkipReason, ModelArmorVerdict, SanitizationEvaluation
+server/services/tutor-output-serializer.ts: SerializedOutput
+server/services/tutor-pending-reconciliation.ts: PendingReconciliationResult
+server/services/tutor-policy-logger.ts: ContextResolutionLog, TurnMetricsLog
+server/services/tutor-runtime-writer.ts: InstructionAssignmentParams
+shared/legal-consent.ts: LegalDocRef
+shared/question-bank-contract.ts: CanonicalSourceType, QuestionLifecycle, StudentSafeQuestionProjection, ClientInstanceResolutionAction, ClientInstanceResolution, PublishValidationResult
+shared/question-ingestion-qa.ts: QaReasonCode, QaReason, IngestionQaResult, Rational, GridInKey
+shared/section-display.ts: SectionDisplayLabel
+shared/seo/banned-phrases.ts: BannedPhrase
+shared/seo/public-meta.ts: LegalMeta
+shared/tutor-orchestrator-wire.ts: OrchestrateResponse, CompactRequest, CompactResponse, StudentLearningContext, MemoryStructuredFields, LearnerObservation, RecentFriction, MasterySnapshot, KpiState, ExplanationForm, QuestionContent
+Duplicate exports (10)
+client/src/components/MathRenderer.tsx: MathRenderer, default
+client/src/components/auth/RequireRole.tsx: RequireRole, default
+client/src/components/legal/ReconsentModal.tsx: ReconsentModal, default
+client/src/components/math/calculator-layout.ts: CALC_MIN_PCT, CALC_DEFAULT_PCT
+client/src/components/notifications/NotificationBell.tsx: NotificationBell, default
+packages/shared/src/calendar/api.ts: versionResponseSchema, moveBlockResponseSchema
+packages/shared/src/calendar/scope.ts: calendarBlockTypeSchema, calendarEngineSchema
+packages/shared/src/calendar/scope.ts: CALENDAR_BLOCK_TYPES, CALENDAR_ENGINES
+packages/shared/src/exam-runtime-schema.ts: examWorkspaceItemSchema, examWorkspaceSaveRequestSchema
+server/routes/score-report-routes.ts: scoreReportRouter, default
+```
+
+</details>
+
+<details><summary><code>pnpm run deadcode:production</code>, full output</summary>
+
+```
+Unused files (25)
+client/src/components/student-ui/filter-bar/topics.fixture.ts
+client/src/features/calendar/calendar-week.fixture.ts
+client/src/features/exam/test-fixtures/report-fixtures.ts
+client/src/features/guardian/test-harness.tsx
+client/src/lib/tutor-error-classifier.ts
+client/src/prerender/entry-server.tsx
+client/src/prerender/qotd-archive-source.ts
+client/src/styles/wcag-contrast.ts
+client/src/test-support/runner.harness.tsx
+client/src/test/setupTests.ts
+packages/shared/src/__fixtures__/linked-student.ts
+packages/shared/src/column-disposition.ts
+server/lib/build.ts
+server/lib/stripe/country-backfill.ts
+server/lib/stripe/entitlement-paths.ts
+server/sat-pdf-processor.ts
+server/scripts/backfill-question-metadata.ts
+server/scripts/cleanup-question-stems.ts
+server/services/question-publish.ts
+server/services/questionTypes.ts
+shared/question-ingestion-qa.ts
+shared/schema.ts
+shared/seo/head.ts
+shared/seo/route-registry.ts
+shared/tutor-orchestrator-wire.ts
+Unused exports (183)
+client/src/App.tsx: Router, ErrorBoundary, DeletionGate
+client/src/components/auth/RequireRole.tsx: default
+client/src/components/consent/CookieConsentRoot.tsx: COOKIE_POLICY_HREF
+client/src/components/guardian/CheckoutReturnPoller.tsx: POLLING_TIMEOUT_MS
+client/src/components/home/FullLengthCard.tsx: FULL_LENGTH_CARD_LINE, FULL_LENGTH_CARD_ACTION
+client/src/components/home/home-model.ts: greetingFor, aboutMinutes
+client/src/components/layout/BareCardShell.tsx: BARE_CARD_PROSE_LEADING
+client/src/components/layout/app-shell.tsx: RAIL_ITEMS, TAB_BAR_KEYS, TAB_BAR_ITEMS
+client/src/components/layout/primitives.tsx: Prose
+client/src/components/legal/ReconsentModal.tsx: default
+client/src/components/math/FloatingPanel.tsx: clampPanel
+client/src/components/math/calculator-layout.ts: DESMOS_HOST_MIN_PX, CALC_PANEL_PAD_PX, CONTAINER_AT_BREAKPOINT
+client/src/components/notifications/NotificationBell.tsx: default
+client/src/components/practice/CanonicalPracticePage.tsx: CALC_MIN_PX, CALC_PANEL_PAD_PX, DESMOS_HOST_MIN_PX, QUESTION_MIN_PX, SPLIT_BREAKPOINT, TUTOR_PANEL_PX, THREE_PANEL_BREAKPOINT, TUTOR_SIDE_BY_SIDE_BREAKPOINT, SHORTER_SESSION_NOTE, questionPosition, progressSegments
+client/src/components/practice/practice-landing-model.ts: sectionLabel
+client/src/components/qotd/turnstile.tsx: TURNSTILE_TEST_SITE_KEY, turnstileSiteKey
+client/src/components/question-renderer.tsx: DISPLAY_LETTERS, MISS_NOTE, QuestionRenderer
+client/src/components/settings/BillingSection.tsx: billingView
+client/src/components/student-ui/RulerProgress.tsx: RULER_TICKS
+client/src/components/student-ui/Sheet.tsx: Sheet, SheetClose
+client/src/components/student-ui/filter-bar/filter-cascade.ts: removeDomain, removeSkill
+client/src/components/student-ui/index.ts: Sheet, SheetClose
+client/src/components/student/StudentLinkCodePanel.tsx: STUDENT_LINK_CODE_QUERY_KEY, studentLinkCodeQueryKey
+client/src/components/tutor/ScopedTutorPanel.tsx: OPENER_TITLE, OPENER_BODY
+client/src/components/tutor/TutorThreadParts.tsx: TutorMessageContent, LISA_DISCLAIMER, PRACTICE_HANDOFF_HREF
+client/src/components/ui/alert-dialog.tsx: AlertDialogPortal, AlertDialogOverlay
+client/src/components/ui/alert.tsx: AlertTitle
+client/src/components/ui/avatar.tsx: AvatarImage
+client/src/components/ui/badge.tsx: badgeVariants
+client/src/components/ui/dialog.tsx: DialogPortal, DialogOverlay
+client/src/components/ui/dropdown-menu.tsx: DropdownMenuRadioItem, DropdownMenuShortcut, DropdownMenuGroup, DropdownMenuPortal, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuRadioGroup
+client/src/components/ui/scroll-area.tsx: ScrollBar
+client/src/components/ui/select.tsx: SelectGroup, SelectLabel, SelectSeparator, SelectScrollUpButton, SelectScrollDownButton
+client/src/components/ui/sheet.tsx: SheetPortal, SheetOverlay, SheetHeader, SheetFooter
+client/src/components/ui/table.tsx: TableFooter, TableCaption
+client/src/components/ui/toast.tsx: ToastAction
+client/src/components/ui/tooltip.tsx: Tooltip, TooltipTrigger, TooltipContent
+client/src/features/calendar/api/client.ts: CALENDAR_ROOT
+client/src/features/calendar/api/index.ts: deviceTimezone, useLaunchMutation, isLaunchable, practiceStateKey, prefetchPracticeChunk, applyAcknowledge, applyBlockEdit, applyDoItNow, applyMove, applyRemoveBlock, findBlock, isProvisional, nextProvisionalId, resetProvisionalIds, PROVISIONAL_PREFIX
+client/src/features/calendar/api/launch.ts: practiceStateKey, reviewStateKey, stateKeyForEngine, isLaunchable, prefetchPracticeChunk, calendarKeys
+client/src/features/calendar/api/optimistic.ts: PROVISIONAL_PREFIX, isProvisional, nextProvisionalId, resetProvisionalIds, findBlock
+client/src/features/calendar/api/queries.ts: deviceTimezone
+client/src/features/calendar/components/Chrome.tsx: TargetFact, StreakFact, CountdownFact, ProjectionFact, SUPPRESSION_COPY_TABLE
+client/src/features/calendar/components/SettingsSheet.tsx: examPairIncomplete
+client/src/features/calendar/copy/banner.ts: BANNER_COPY_TABLE
+client/src/features/calendar/copy/explanations.ts: blockExplanation, domainExplanation, EXPLANATION_COPY_TABLES
+client/src/features/calendar/lib/blocks.ts: mixOf, isPastDate
+client/src/features/calendar/lib/dates.ts: dayOfWeek, addMonths, WEEK_LENGTH, MONTH_GRID_LENGTH
+client/src/features/exam/api/exam-api.ts: EXAM_ROOT
+client/src/features/exam/components/QuestionCell.tsx: cellLabel, MarkedIcon
+client/src/features/exam/hooks/useHeartbeat.ts: HEARTBEAT_INTERVAL_MS
+client/src/features/exam/lib/countdown.ts: FIVE_MINUTES_MS, ONE_MINUTE_MS
+client/src/features/exam/lib/module-summary.ts: isAnswered
+client/src/features/exam/lib/passage.ts: normalizeHighlights, snapRange
+client/src/features/exam/lib/tests-home-model.ts: EXAM_IN_PROGRESS_STATES, inProgressLine
+client/src/features/exam/pages/GuardianExamResultsPage.tsx: GuardianReportBody
+client/src/hooks/tutor-client.ts: tutorConversationQueryKey, tutorConversationsQueryKey
+client/src/hooks/use-toast.ts: reducer
+client/src/hooks/useBillingPortal.ts: portalErrorMessage
+client/src/hooks/useBillingStatusQuery.ts: BILLING_STATUS_PATH, BILLING_STATUS_QUERY_KEY, fetchBillingStatus, billingStatusQuery
+client/src/hooks/useCanonicalPractice.ts: normalizeAssetItem, normalizeAssets
+client/src/hooks/useProfileQuery.ts: PROFILE_PATH, fetchProfile
+client/src/hooks/useProgressKpis.ts: PROGRESS_KPIS_QUERY_KEY, useProgressKpis
+client/src/hooks/useReview.ts: REVIEW_POOL_QUERY_KEY, REVIEW_OPEN_SESSIONS_QUERY_KEY, reviewPoolPath, dropClosedSessions
+client/src/hooks/useTutorTurn.ts: CLIENT_TIMEOUT_MS
+client/src/lib/analytics/consent.ts: browserSendsGpc
+client/src/lib/analytics/posthog-client.ts: analyticsConfigured
+client/src/lib/analytics/url-scrub.ts: REDACTED, scrubString, scrubUrl
+client/src/lib/api-error.ts: getPremiumDenialReason, isCsrfError, isTransportError
+client/src/lib/blog.ts: getPostsByTag, getPostsByCategory, getAllTags
+client/src/lib/client-instance.ts: resetClientInstanceId
+client/src/lib/legal-content.ts: LegalNotFoundError, parseSections, loadLegalManifest, loadLegalDocument, loadLegalSlugs, loadLegalIndex
+client/src/lib/link-code-prefill.ts: LINK_CODE_QUERY_PARAM
+client/src/lib/notificationsApi.ts: NOTIFICATIONS_PAGE_LIMIT
+client/src/lib/practice-filters.ts: parseDifficultiesFromSearch, parseDomainsFromSearch, appendPracticeFilters
+client/src/lib/qotd.ts: QOTD_API, fetchQotdToday, fetchQotdArchiveDay, fetchQotdArchiveIndex
+client/src/lib/queryClient.ts: getQueryFn, navigation, redirectForOnboarding
+client/src/lib/route-shells.ts: NOT_FOUND_ROUTE, SHELL_EXCLUDED_ROUTES
+client/src/lib/settings-api.ts: PROFILE_NAME_PATH, CHANGE_PASSWORD_PATH
+client/src/lib/support-contact.ts: PRIVACY_EMAIL
+client/src/lib/theme.ts: THEME_STORAGE_KEY, isThemePreference
+packages/shared/src/billing-pricing.ts: monthsInInterval
+packages/shared/src/event-registry-schema.ts: EVENT_REDACTION_METHODS, eventRedactionMethodSchema, canonicalEventClassSchema, registryPersonPropertySchema, jsonSchemaPropertyKeys
+packages/shared/src/exam-domain-segments.ts: segmentsFilled
+packages/shared/src/exam-guardian-report-schema.ts: guardianExamListItemSchema
+packages/shared/src/exam-report-schema.ts: examIncompletenessReasonSchema, examFormSectionSummarySchema, examFormLatestSessionSchema, examFormSummarySchema
+packages/shared/src/exam-student-report-schema.ts: examStudentReportScoredSchema, examStudentReportPartialSchema
+packages/shared/src/profile-role-choice-schema.ts: ROLE_CHOICE_ERROR_CODES
+packages/shared/src/qotd-schema.ts: QOTD_MIN_ATTEMPTS_FOR_STAT, qotdOptionKeySchema, qotdOptionTokenSchema, qotdServedOptionSchema, qotdPreSubmitQuestionSchema, qotdArchiveQuestionSchema
+packages/shared/src/services/rate-limit-ledger.ts: softWarningThresholdPct, windowFor, bucketFamily, getUsage
+packages/shared/src/support-contact.ts: PRIVACY_EMAIL
+server/lib/account-deletion-execute.ts: buildDeletedEmail, anonymizeAccount
+server/lib/account-deletion-runtime-config.ts: DELETION_GRACE_DAYS_KEY
+server/lib/account.ts: getGuardianLinkForStudent, getPracticeDailyFreeQuota, getDailyUsage, incrementUsage, checkUsageLimit, getLinkedGuardianForStudent, FREE_TIER_LIMITS
+server/lib/analytics/emit-event.ts: EVENT_REGISTRY, emitEventWith
+server/lib/auth-runtime-config.ts: STUDENT_LINK_CODE_TTL_KEY
+server/lib/baseline-pending.ts: BASELINE_PENDING_STALE_SECONDS, selectStaleBaselinePending
+server/lib/client-ip.ts: PUBLIC_API_PREFIX, isPublicApiRequest
+server/lib/entitlement-runtime-config.ts: EXAM_RENEWAL_CONFIG_KEYS, EXAM_RENEWAL_CONFIG_DEFAULTS
+server/lib/legal-registry.ts: __resetLegalRegistryForTests
+server/lib/notifications/direct-sends.ts: ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX, GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX, ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX, guardianLinkInviteIdempotencyKey
+server/lib/notifications/transport.ts: RESEND_API_BASE_URL, createResendTransport, resendSuppressionSchema, normaliseAddress, createResendSuppressionTransport
+server/lib/password-credentials.ts: RECOVERY_GRANT_TTL_SECONDS, setPasswordAuthClientsForTests, PASSWORD_RESET_BUCKET, PASSWORD_RESET_RESPONSE_FLOOR_MS, setPasswordResetResponseFloorForTests
+server/lib/practice-quota.ts: UNLIMITED_PRACTICE_DECISION_CODES
+server/lib/role-choice.ts: LEARNING_STATE_ROOTS, MAX_PLAUSIBLE_AGE_YEARS
+server/lib/startup-guards.ts: __resetGcpStartupReportForTests
+server/lib/stripe/client.ts: getStripeMode
+server/lib/stripe/country-denial-remediation.ts: TERMINAL_SUBSCRIPTION_STATUSES
+server/lib/stripe/dispute.ts: disputeStatusSchema, CLOSED_DISPOSITION
+server/lib/stripe/event-surface.ts: SUBSCRIBED_EVENTS, EVENT_DISPOSITION
+server/lib/stripe/guardian-subscriptions.ts: GUARDIAN_SUBSCRIPTION_PAGE_SIZE, GUARDIAN_SUBSCRIPTION_MAX_PAGES, FUNDING_SUBSCRIPTION_STATUSES
+server/lib/stripe/purchase-idempotency.ts: PURCHASE_IDEMPOTENCY_WINDOW_MS
+server/lib/stripe/redact.ts: classifyError
+server/lib/stripe/refund.ts: REVOKING_REFUND_STATUS
+server/lib/stripe/webhook-handler.ts: StripePayloadShapeError, UnresolvableSubjectError
+server/lib/student-link-code.ts: generateStudentLinkCode
+server/lib/supabase-ssr.ts: cookieDomainForHost
+server/lib/support-contact.ts: PRIVACY_EMAIL
+server/lib/turnstile.ts: TURNSTILE_SITEVERIFY_URL, TURNSTILE_TEST_SECRET_ALWAYS_PASSES
+server/lib/tutor-orchestrator-client.ts: _resetOidcClientCache
+server/logger.ts: containsSecretContent, redactSensitive, createLoggingContext
+server/middleware/api-cache-control.ts: API_CACHE_CONTROL_DEFAULT, API_CACHEABLE_ROUTES
+server/middleware/csrf-double-submit.ts: csrfCookieName
+server/middleware/final-error-handler.ts: isCsrfError, CSRF_BLOCKED
+server/middleware/origin-utils.ts: resolveOriginEnvironment
+server/middleware/security-headers.ts: THEME_BOOT_SCRIPT_HASH, buildCspDirectives, serializeCsp
+server/middleware/supabase-auth.ts: sendUnauthenticated, setDeletionStatusResolverForTests
+server/routes/account-deletion-routes.ts: buildDeletedEmail, DELETION_GRACE_DAYS, isGraceWindowExpired, scheduledHardDeleteAt, buildDeletionRequestInsert, hashRecoveryToken, generateRecoveryToken, recoverDeletionSchema, revokeSessionsAtDeletionRequest, performRecovery, performInAppCancel, performDeletionRequestV2
+server/routes/calendar-routes.ts: CALENDAR_FEATURE_KEY, CALENDAR_PLAN_REGENERATE_BUCKET, CALENDAR_DAY_REGENERATE_BUCKET
+server/routes/internal-memory-routes.ts: compactionTaskSchema
+server/routes/notifications.ts: encodeFeedCursor, decodeFeedCursor
+server/routes/oauth-callback-routes.ts: classifyProviderError, classifyNoCredential, classifyOtpFailure
+server/routes/practice-canonical.ts: filterAssetsPreSubmit, captureDiagnosticBaseline, submitPracticeAnswer
+server/routes/practice-topics-routes.ts: default
+server/routes/public-pricing-routes.ts: __resetPublicPricingMemoForTests
+server/routes/resend-webhook.ts: processResendWebhook
+server/routes/review-canonical.ts: submitReviewAnswer, submitReviewSkip, reviewCanonicalRouter, REVIEW_COMPONENT
+server/routes/score-report-routes.ts: default
+server/routes/student-background-routes.ts: REFERENCE_SEARCH_BUCKET
+server/routes/student-resources.ts: requiresEntitlement
+server/services/activity-streak.ts: resolveStudentTimeZone
+server/services/calendar/adapters/index.ts: adapterForBlock, ADAPTERS, localDayWindowUtc, isKnownTimeZone, localTodayIn
+server/services/calendar/adapters/types.ts: ENGINE_FAILURE_REASONS
+server/services/calendar/config.ts: CALENDAR_CONFIG_KEYS, CalendarConfigError
+server/services/calendar/exam-notify-job.ts: EXAM_NOTIFY_JOB, EXAM_NOTIFY_OUTCOMES
+server/services/calendar/launch-deps.ts: engineOfBlock
+server/services/calendar/launch-service.ts: launchIdempotencyKey
+server/services/calendar/profile-service.ts: localTodayForProfile
+server/services/calendar/read-service.ts: FALLBACK_TIMEZONE
+server/services/calendar/weekly-job.ts: WEEKLY_JOB, JOB_OUTCOMES, weeklyIdempotencyKey
+server/services/canonical-runtime-views.ts: CANONICAL_RUNTIME_VIEW_VERSION
+server/services/cloud-tasks-enqueue.ts: CLOUD_TASKS_LOCATION
+server/services/crisis-resources.ts: UNKNOWN_COUNTRY_CRISIS_RESPONSE, UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE
+server/services/email-reconsent-audit.ts: EMAIL_RECONSENT_ACTION
+server/services/exam-report-service.ts: reportStateOf, resumeActionFor, serializeStudentReport
+server/services/exam-runtime-service.ts: toExamQuestionPayload
+server/services/exam-score-renewal/job.ts: EXAM_SCORE_RENEWAL_JOB, EXAM_SCORE_RENEWAL_OUTCOMES, noticesFor
+server/services/kpi-access.ts: resolvePaidKpiAccessForStudent
+server/services/qotd/qotd-service.ts: QOTD_TIME_ZONE, qotdTokenMapFor, qotdCorrectOptionId
+server/services/qotd/schedule-job.ts: QOTD_ROTATION_EPOCH, QOTD_DAYS_AHEAD, rotationFor
+server/services/retention-sweep.ts: retentionCutoff, sweep7d, sweep90d, sweep180d, sweep365d, SWEEP_COMPLETED_ACTION
+server/services/review-pool.ts: resolveTimeZone, localParts, compareSourceSessions, encodeSourceSessionsCursor, pageSourceSessions
+server/services/student-background.ts: StudentBackgroundReadError
+server/services/subject-access-audit.ts: SUBJECT_ACCESS_ACTION
+server/services/tutor-antileak.ts: TUTOR_ANTI_LEAK_SUBSTITUTION, hasAnswerLeak
+server/services/tutor-compaction.ts: chatCompactionContentSchema
+server/services/tutor-context.ts: detectsSelfDeprecatingLanguage, resolveScope, resolveQuestionContent, resolveLearningContext, snapshotCarriesMastery, hasAnswerLeak
+server/services/tutor-crisis.ts: UNKNOWN_COUNTRY_CRISIS_RESPONSE, UNKNOWN_COUNTRY_SAFEGUARDING_RESPONSE, resolveCrisisCountry, normalizeCrisisText, checkCrisisSignatures, classifyCrisis
+server/services/tutor-display-letters.ts: DISPLAY_LETTERS
+server/services/tutor-error-codes.ts: TUTOR_UNAUTHENTICATED, TUTOR_TOKEN_EXPIRED, TUTOR_ROLE_NOT_PERMITTED, TUTOR_ENTITLEMENT_REQUIRED, TUTOR_AGE_RESTRICTED, TUTOR_REGION_NOT_SUPPORTED, TUTOR_UNAVAILABLE_DURING_LIVE_EXAM, TUTOR_ACCOUNT_UNDER_REVIEW, TUTOR_INVALID_INPUT, TUTOR_PII_IN_ENVELOPE, TUTOR_RATE_LIMITED, TUTOR_QUOTA_EXCEEDED, TUTOR_CONVERSATION_NOT_FOUND, TUTOR_CONVERSATION_CLOSED, TUTOR_CONVERSATION_ALREADY_CLOSED, TUTOR_CONVERSATION_ALREADY_ENDED, TUTOR_CONVERSATION_CRISIS_PAUSED, TUTOR_CONVERSATION_NOT_PAUSED, TUTOR_IDEMPOTENCY_CONFLICT, TUTOR_IDEMPOTENCY_IN_PROGRESS, TUTOR_IDEMPOTENCY_LOOKUP_FAILED, TUTOR_CANONICAL_WRITE_FAILED, TUTOR_ORCHESTRATION_AUTH_FAILED, TUTOR_ORCHESTRATION_FAILED, TUTOR_ORCHESTRATION_FAILED_RECOVERABLE, TUTOR_ENTITLEMENT_CHECK_UNAVAILABLE, TUTOR_ERROR_CODES, sendTutorResultError
+server/services/tutor-injection-defense.ts: wrapWithBoundaryMarkers
+server/services/tutor-memory.ts: accumulateObservation
+server/services/tutor-model-armor.ts: MODEL_ARMOR_LOCATION, MODEL_ARMOR_ENDPOINT, MODEL_ARMOR_TIMEOUT_MS, sanitizeResponseSchema, evaluateSanitization, modelArmorSanitizeUrl
+server/services/tutor-output-serializer.ts: TUTOR_ANTI_LEAK_SUBSTITUTION
+shared/legal-consent.ts: REQUIRED_SIGNUP_LEGAL_DOCS, CONSENT_SOURCES
+shared/practice/letter-reference.ts: EXPLANATION_LETTER_REFERENCE
+shared/qotd/projection.ts: qotdServedOptions
+shared/question-bank-contract.ts: CANONICAL_ID_PATTERN, MC_OPTION_KEYS, QUESTION_LIFECYCLE, LEGACY_QUESTION_LIFECYCLE, CANONICAL_DOMAINS, DOMAIN_LOOKUP, normalizeLifecycleStatus, isPublishedLifecycleStatus, hasSingleCanonicalCorrectAnswer, isCanonicalRuntimeMcQuestion, hasCanonicalGridInVariantSet, isCanonicalRuntimeGridInQuestion, buildStudentSafeOptionTokens, CANONICAL_ID_SUFFIX_LENGTH, generateCanonicalIdSuffix, buildCanonicalId, normalizeSourceType, validateQuestionForPublish
+shared/section-display.ts: SECTION_LABEL_MATH, SECTION_LABEL_RW, isRwSection, sectionCodeFromLabel, sectionDisplayLabelOr
+shared/seo/banned-phrases.ts: BANNED
+shared/seo/public-meta.ts: NOT_FOUND_META, LEGAL_META, PUBLIC_META, qotdArchiveMeta, resolvePublicMeta, getPublicMeta
+shared/seo/structured-data.ts: LOGO_URL
+shared/tutor-safety-constants.ts: STRUCTURAL_PREFIXES, ASSERTION_PATTERNS, POST_VALUE_ASSERTION_PATTERNS, GENERIC_LEAK_PATTERNS, fractionToDecimal, buildMcqPatterns, positionalReferenceSource, buildMcqPositionalPatterns, hasGridInValueInText, answerValueAppearsIn, CANONICAL_ID_SCAN_PATTERN, SYSTEM_PROMPT_LEAK_PATTERNS, PERSONA_VIOLATION_PATTERNS, INTERNAL_METADATA_PATTERNS
+Unused exported types (164)
+client/src/components/MathRenderer.tsx: MathContentToken
+client/src/components/auth/PasswordField.tsx: PasswordFieldProps
+client/src/components/billing/PremiumUpgradePrompt.tsx: PremiumUpgradePromptProps
+client/src/components/common/empty-state.tsx: EmptyStateProps
+client/src/components/layout/FocusShell.tsx: FocusShellProps
+client/src/components/layout/HeaderUserMenu.tsx: HeaderSignOut, HeaderMenuTone
+client/src/components/layout/app-shell.tsx: RailItem, AppShellProps
+client/src/components/mastery/LevelPill.tsx: LevelPillSize
+client/src/components/mastery/MasteryRow.tsx: MasteryRowVariant
+client/src/components/practice/NumericEntryInput.tsx: NumericEntryInputProps
+client/src/components/practice/RunnerStateCard.tsx: RunnerStateCardProps
+client/src/components/question-renderer.tsx: QuestionRendererProps
+client/src/components/settings/BillingSection.tsx: BillingView
+client/src/components/student-ui/FullPageLoader.tsx: FullPageLoaderProps
+client/src/components/student-ui/Modal.tsx: ModalProps
+client/src/components/student-ui/Notice.tsx: NoticeTone, NoticeProps
+client/src/components/student-ui/PageHeader.tsx: PageHeaderProps
+client/src/components/student-ui/Sheet.tsx: SheetProps
+client/src/components/student-ui/filter-bar/FilterBar.tsx: FilterBarProps
+client/src/components/student-ui/filter-bar/filter-cascade.ts: FilterChip
+client/src/components/student-ui/index.ts: PageHeaderProps, FullPageLoaderProps, ModalProps, SheetProps, NoticeProps, NoticeTone, FilterBarProps
+client/src/components/tutor/TutorThreadParts.tsx: ThreadInset
+client/src/components/ui/badge.tsx: BadgeProps
+client/src/components/ui/button.tsx: ButtonProps
+client/src/components/ui/input.tsx: InputVariant
+client/src/components/ui/skeleton.tsx: SkeletonProps
+client/src/components/ui/tabs.tsx: TabsVariant
+client/src/contexts/SupabaseAuthContext.tsx: SignupOutcome, SignupResult, SignupLegalConsent
+client/src/features/calendar/CalendarView.tsx: CalendarMutations, CalendarViewProps
+client/src/features/calendar/api/client.ts: DayMembers
+client/src/features/calendar/api/index.ts: DayScopedVariables, DoItNowVariables, EditDayVariables, Intent, LaunchVariables, MoveBlockVariables, RegenerateVariables, LaunchOutcome
+client/src/features/calendar/api/launch.ts: LaunchOutcome
+client/src/features/calendar/api/mutations.ts: Intent, EditDayVariables, MoveBlockVariables, RegenerateVariables, DayScopedVariables, DoItNowVariables, LaunchVariables
+client/src/features/calendar/components/BlockCard.tsx: BlockCardProps
+client/src/features/calendar/components/BlockSheet.tsx: BlockSheetProps
+client/src/features/calendar/components/CreateBlockSheet.tsx: CreateBlockSheetProps
+client/src/features/calendar/components/DayStrip.tsx: DayStripProps
+client/src/features/calendar/components/MonthGrid.tsx: MonthGridProps
+client/src/features/calendar/components/SettingsSheet.tsx: SettingsSheetProps
+client/src/features/calendar/components/StudentChrome.tsx: RegenerateControl
+client/src/features/calendar/components/WeekGrid.tsx: WeekGridProps
+client/src/features/exam/api/exam-api.ts: ExamItemsResponse, ExamStartModuleResponse, ExamSubmitModuleResponse
+client/src/features/exam/hooks/useExamClock.ts: ExamClock
+client/src/features/exam/hooks/useWriteQueue.ts: WriteQueue
+client/src/features/exam/lib/exam-position.ts: ExamPosition, ModuleRoute
+client/src/features/exam/lib/passage.ts: PassageSegment, HighlightEdit
+client/src/hooks/tutor-client.ts: TutorEntryMode, TutorConversationStatus, TutorConversationSurface, TutorMessageRole, TutorResolvedScope, CreateConversationInput, TutorConversation, SendMessageInput, TutorConversationsList, EndConversationResponse, ResumeConversationResponse
+client/src/hooks/useBillingPortal.ts: UseBillingPortalResult
+client/src/hooks/useCanonicalPractice.ts: PracticeOption, PreSubmitAssetRole, PracticeAssetSvg, PracticeAssetTable, PracticeAssetItem, PracticeAssets, PracticeQuestion, PracticeNextResponse, PracticeAnswerResponse, PracticeSkipResponse, PracticeSessionSpecInput
+client/src/hooks/useDiagnosticStart.ts: DiagnosticStartResult, DiagnosticStartError
+client/src/hooks/useKeyboardShortcuts.ts: ShortcutKey, KeyBinding, Keymap, KeyboardShortcutOptions, RunnerKeymapInput, ExamModuleKeymapInput, LisaComposerKeymapInput, EscapeKeymapOptions
+client/src/hooks/usePractice.ts: PracticeSessionStart
+client/src/hooks/useReview.ts: ReviewStartResult
+client/src/hooks/useTutorTurn.ts: TurnState, TutorTurn
+client/src/lib/account-deletion-errors.ts: DeletionErrorCopy
+client/src/lib/analytics/consent.ts: ConsentState
+client/src/lib/api-error.ts: ApiError, PremiumDenialReason, UserFacingErrorMessage
+client/src/lib/billing-client.ts: BillingCheckoutOutcome
+client/src/lib/billing-cta.ts: BillingCtaDestination, BillingCtaAction, BillingCtaCopy
+client/src/lib/blog.ts: BlogPost
+client/src/lib/cta-click.ts: CtaClickHandlers
+client/src/lib/legal-content.ts: LegalManifest, LegalSection, LegalDocumentContent
+client/src/lib/masteryApi.ts: MasteryLevelKey, MasteryDomainsResponse, MasterySkillsResponse
+client/src/lib/practice-filters.ts: PracticeFilters
+client/src/lib/practice-topic-taxonomy.ts: PracticeTopicDomain
+client/src/lib/projectionApi.ts: ConfidenceBand, ScoreEstimate, BaselineEstimate, EstimateStatus, EstimateResponse
+client/src/lib/query-freshness.ts: QueryFreshnessKind
+client/src/lib/route-shells.ts: ShellKind, ShellExclusionReason
+client/src/lib/theme.ts: ResolvedTheme, SaveResult
+packages/shared/src/analytics-consent-schema.ts: CookieConsentRecord
+packages/shared/src/billing-pricing.ts: BillingPlanPricing
+packages/shared/src/csrf-token-schema.ts: CsrfTokenResponse
+packages/shared/src/event-registry-schema.ts: EventRedactionMethod
+packages/shared/src/exam-domain-segments.ts: DomainCountRow, StudentDomainSegments
+packages/shared/src/exam-report-schema.ts: ReportStateInputs
+packages/shared/src/exam-scored-sessions-schema.ts: ExamScoredSessionsQuery
+packages/shared/src/practice-schema.ts: QuestionsRow, PracticeSessionRow
+packages/shared/src/profile-name-schema.ts: ProfileNameUpdateRequest
+packages/shared/src/qotd-schema.ts: QotdServedOption, QotdPreSubmitQuestion, QotdArchiveQuestion
+packages/shared/src/retention-schema.ts: RetentionSweepRow
+packages/shared/src/review-table-schema.ts: ReviewSessionRow, ReviewScheduleRow
+packages/shared/src/services/rate-limit-ledger.ts: BucketDefinition, LedgerSubject
+server/lib/account.ts: GuardianLink, PairPremiumSource, LinkedPairPremiumAccess
+server/lib/analytics/emit-event.ts: EmitRefusal, EmitResult, EmitDeps, EmitOptions
+server/lib/baseline-pending.ts: BaselinePendingRow, BaselinePendingReport
+server/lib/entitlement-display.ts: EntitlementDisplay, EntitlementDisplayInput
+server/lib/entitlement-runtime-config.ts: ExamRenewalConfig
+server/lib/gcp-credentials.ts: GcpServiceAccount, GcpAccessTokenResult
+server/lib/legal-acceptance.ts: LegalAcceptanceRecord, LegalCaptureResult
+server/lib/legal-registry.ts: ResolvedLegalVersion
+server/lib/notifications/direct-sends.ts: DirectSendResult
+server/lib/notifications/dispatch.ts: DispatchSummary, DispatchOptions
+server/lib/notifications/retention.ts: NotificationRetentionSweepSummary
+server/lib/notifications/svix.ts: SvixFailure, SvixVerification
+server/lib/notifications/templates/index.ts: EmailRender, InAppRender, RenderContext
+server/lib/notifications/transport.ts: SuppressionFailure, SuppressionLogContext, SuppressionTransport
+server/lib/password-credentials.ts: PasswordAuthClients, PasswordChangeFailure, PasswordResetDecision
+server/lib/redact.ts: ErrorClass
+server/lib/retention/sweeps.ts: RetentionSweepSummary
+server/lib/review-stale-session-sweep.ts: ReviewSessionSweepResult
+server/lib/role-choice.ts: SelfAssignableRole, RoleChoiceDecision
+server/lib/session-revoke.ts: SessionRevokeAdmin, SessionRevokeLog
+server/lib/stale-session-sweep.ts: StaleSessionSweepResult
+server/lib/startup-guards.ts: SiteUrlVerdict
+server/lib/stripe/client.ts: StripeMode
+server/lib/stripe/country-denial-remediation.ts: RemediationPlan, CancellationStep, RefundStep
+server/lib/stripe/country-eligibility.ts: CountryEligibility
+server/lib/stripe/dispute.ts: DisputeStatus, ClosedDisposition, DisputeEvent
+server/lib/stripe/event-surface.ts: SubscribedEvent, EventDisposition
+server/lib/stripe/guardian-checkout.ts: GuardianPurchaseSubject, GuardianPurchaseRefusal
+server/lib/stripe/guardian-subscriptions.ts: GuardianSubscriptionScan
+server/lib/stripe/purchase-eligibility.ts: PurchaseEligibility
+server/lib/stripe/redact.ts: ErrorClass
+server/lib/stripe/refund.ts: RefundEvent, RefundDecision
+server/lib/stripe/renewal-cancellation.ts: RenewalCancellationOutcome
+server/lib/stripe/subscription-item.ts: ResolvedEntitlementItem
+server/lib/stripe/webhook-handler.ts: WebhookOutcome
+server/lib/student-link-code.ts: RedeemOutcome, LiveCodeOwner
+server/lib/turnstile.ts: TurnstileResult
+server/lib/tutor-orchestrator-client.ts: OrchestrateResult, CompactResult
+server/lib/validation-log.ts: RejectedRequestContext
+server/logger.ts: LogEntry, PerformanceMetrics, LogContext
+server/middleware/supabase-auth.ts: TokenResolutionResult, DeletionStatusState, DeletionStatusResult, DeletionStatusResolver
+server/routes/oauth-callback-routes.ts: CallbackFailureCode
+server/routes/practice-canonical.ts: GradeResult, SessionItemRow, PracticeConfig, QuestionSnapshotRow
+server/routes/resend-webhook.ts: ResendWebhookOutcome
+server/services/calendar/adapters/local-day.ts: LocalDayWindow
+server/services/calendar/adapters/types.ts: EngineFailureReason
+server/services/calendar/config.ts: CalendarConfigKey
+server/services/calendar/exam-notify-job.ts: ExamNotifyOutcome, ExamNotifySummary
+server/services/calendar/launch-service.ts: LaunchRequest, LaunchSuccess, LaunchResult
+server/services/calendar/plan-service.ts: PlanInitiator, HorizonTrigger, RegenerateRequest, DayRegenerateRequest, DayEditRequest, DoItNowRequest, MoveBlockRequest
+server/services/calendar/profile-service.ts: ProfileUpsertOutcome
+server/services/calendar/read-service.ts: CalendarReadResult, GuardianReadResult, CalendarReadRequest
+server/services/calendar/weekly-job.ts: JobOutcome, WeeklyJobSummary
+server/services/canonical-runtime-views.ts: KpiExplanation, ExplainedKpiMetric, StudentKpiView, ScoreEstimate, CanonicalScoreEstimate, BaselineEstimate
+server/services/cloud-tasks-enqueue.ts: CloudTasksAccess, CloudTaskPayload
+server/services/crisis-notification.ts: CrisisNotificationPayload, BreachedCaseSummary
+server/services/crisis-resources.ts: CrisisCountryResolution
+server/services/crisis-review-queue.ts: CrisisSource, CrisisCategory, CaseStatus, CaseDisposition, AuditAction, UpdateDispositionParams, AuditLogParams
+server/services/entitlement-service.ts: EntitlementActiveResult
+server/services/exam-report-service.ts: ExamReportSource, ExamReportRead, ExamScoredSessionsRead
+server/services/exam-score-renewal/job.ts: ExamScoreRenewalOutcome, ExamScoreRenewalSummary
+server/services/kpi-access.ts: KpiEntitlementAccess
+server/services/qotd/qotd-service.ts: QotdRow
+server/services/qotd/schedule-job.ts: QotdDayOutcome, QotdScheduleSummary
+server/services/retention-sweep.ts: SweepTableCount, SweepResult, SweepOpts, TierHandler
+server/services/review-pool.ts: ReviewPoolResult
+server/services/student-background.ts: StudentBackgroundFailure
+server/services/tutor-compaction.ts: ChatCompactionContent
+server/services/tutor-context.ts: SessionTables, ResolvedScope, EnvelopeParams
+server/services/tutor-crisis.ts: NotificationPolicyInput, NotificationPolicyResult, CrisisResult, CrisisCategory, CrisisCountryResolution
+server/services/tutor-display-letters.ts: DisplayOption, DisplayOrder
+server/services/tutor-memory-refresh.ts: MemoryRefreshParams, MemoryRefreshResult
+server/services/tutor-model-armor.ts: ModelArmorScanPoint, ModelArmorSkipReason, ModelArmorVerdict, SanitizationEvaluation
+server/services/tutor-output-serializer.ts: SerializedOutput
+server/services/tutor-pending-reconciliation.ts: PendingReconciliationResult
+server/services/tutor-policy-logger.ts: ContextResolutionLog, TurnMetricsLog
+server/services/tutor-runtime-writer.ts: InstructionAssignmentParams
+shared/legal-consent.ts: LegalDocRef
+shared/question-bank-contract.ts: CanonicalSourceType, QuestionLifecycle, StudentSafeQuestionProjection, ClientInstanceResolutionAction, ClientInstanceResolution, PublishValidationResult
+shared/section-display.ts: SectionDisplayLabel
+shared/seo/banned-phrases.ts: BannedPhrase
+shared/seo/public-meta.ts: PublicMeta, LegalMeta, FaqItem
+```
+
+</details>

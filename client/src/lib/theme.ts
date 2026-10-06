@@ -85,3 +85,31 @@ export function systemPrefersDark(
   if (win === null || typeof win.matchMedia !== "function") return false;
   return win.matchMedia("(prefers-color-scheme: dark)").matches;
 }
+
+/**
+ * The theme the page is actually PAINTED in, not merely the setting. <html data-theme> only
+ * reaches the student token root (`.lyc` in student-tokens.css), and a root locked to light (the
+ * timed exam) stays light whatever the setting — so the page is dark only when the setting is dark
+ * AND an unlocked `.lyc` root is on the page. A surface that themes itself to match the page (the
+ * cookie banner and its dialog) reads this, so it is never dark over a light page.
+ */
+const DARK_CAPABLE_ROOT = '.lyc:not([data-theme-lock="light"])';
+
+export function readPaintedTheme(): ResolvedTheme {
+  return document.documentElement.getAttribute("data-theme") === "dark" &&
+    document.querySelector(DARK_CAPABLE_ROOT) !== null
+    ? "dark"
+    : "light";
+}
+
+/** Fires when the theme setting changes, or a token root mounts, unmounts or (un)locks. */
+export function subscribePaintedTheme(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme", "class", "data-theme-lock"],
+    childList: true,
+    subtree: true,
+  });
+  return () => observer.disconnect();
+}
