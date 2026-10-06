@@ -34,6 +34,11 @@ function readCode(filePath: string): string {
 
 const HOME = "client/src/pages/home.tsx";
 const META = "shared/seo/public-meta.ts";
+/**
+ * Where "What is free vs paid?" lives since SEO Wave 3 (2026-10-05): the /digital-sat FAQ moved,
+ * unchanged, to /online-sat-prep with the page (owner decision 3).
+ */
+const FREE_PAID_FAQ = "shared/content/pages/guides.ts";
 
 describe("homepage paid card", () => {
   /**
@@ -105,12 +110,14 @@ describe("free-tier claims agree across every public surface", () => {
     const allowance = declaration?.[1] ?? "";
     expect(allowance).not.toBe("");
 
-    const meta = read(META);
+    const meta = read(FREE_PAID_FAQ);
     const answer = meta.match(
       /"What is free vs paid\?",\s*answer:\s*"([^"]+)"/,
     );
     expect(answer).not.toBeNull();
     expect(answer?.[1]).toContain(`${allowance} practice questions per day`);
+    // The /online-sat-prep "Free" list states the same allowance (SEO Wave 3, claim W1).
+    expect(meta).toContain(`"${allowance} practice questions a day"`);
   });
 
   /**
@@ -120,7 +127,7 @@ describe("free-tier claims agree across every public surface", () => {
    */
   it('names the free tier\'s score "diagnostic score estimate" in the page and the FAQ metadata', () => {
     expect(readCode(HOME)).toContain("your diagnostic score estimate");
-    const answer = read(META).match(
+    const answer = read(FREE_PAID_FAQ).match(
       /"What is free vs paid\?",\s*answer:\s*"([^"]+)"/,
     );
     expect(answer).not.toBeNull();
@@ -141,8 +148,11 @@ describe("free-tier claims agree across every public surface", () => {
       old claim said ("5 tutor messages"), and a scanner that cannot tell prose
       from code would force that explanation to be deleted to go green.
     */
-    const meta = readCode(META);
-    expect(meta).not.toMatch(/\d+\s+tutor\s+messages/i);
-    expect(meta).not.toMatch(/\d+\s+practice\s+questions and \d+/i);
+    for (const file of [META, FREE_PAID_FAQ]) {
+      const meta = readCode(file);
+      expect(meta.length, file).toBeGreaterThan(0);
+      expect(meta, file).not.toMatch(/\d+\s+tutor\s+messages/i);
+      expect(meta, file).not.toMatch(/\d+\s+practice\s+questions and \d+/i);
+    }
   });
 });

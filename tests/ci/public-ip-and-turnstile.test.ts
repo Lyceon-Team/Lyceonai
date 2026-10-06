@@ -10,7 +10,8 @@
  */
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { logger } from "../../server/logger";
 import {
   PublicIpSecretMissingError,
   clientIp,
@@ -170,26 +171,74 @@ describe("verifyTurnstile", () => {
     expect((await verifyTurnstile("t", throwing)).outcome).toBe("unavailable");
   });
 
-  it("posts to siteverify with the configured secret, or Cloudflare's published test secret when unset", async () => {
-    const saved = process.env.TURNSTILE_SECRET_KEY;
-    try {
-      process.env.TURNSTILE_SECRET_KEY = "configured-secret";
-      const a = verifier({ success: true });
-      await verifyTurnstile("tok", a.impl);
-      expect(a.calls[0]?.url).toBe(TURNSTILE_SITEVERIFY_URL);
-      expect(a.calls[0]?.body.get("secret")).toBe("configured-secret");
-      expect(a.calls[0]?.body.get("response")).toBe("tok");
-      expect(a.calls[0]?.body.has("remoteip")).toBe(false);
+  it("posts to siteverify with the configured secret, or (outside production only) Cloudflare's published test secret when unset", async () => {
+    const a = verifier({ success: true });
+    await verifyTurnstile("tok", a.impl, {
+      TURNSTILE_SECRET_KEY: "configured-secret",
+      NODE_ENV: "test",
+    });
+    expect(a.calls[0]?.url).toBe(TURNSTILE_SITEVERIFY_URL);
+    expect(a.calls[0]?.body.get("secret")).toBe("configured-secret");
+    expect(a.calls[0]?.body.get("response")).toBe("tok");
+    expect(a.calls[0]?.body.has("remoteip")).toBe(false);
 
-      delete process.env.TURNSTILE_SECRET_KEY;
+    // Outside production (a preview deployment, local dev, tests) the test secret stays available.
+    for (const env of [
+      { NODE_ENV: "test" },
+      { NODE_ENV: "development" },
+      { VERCEL_ENV: "preview", NODE_ENV: "production" },
+    ]) {
       const b = verifier({ success: true });
-      await verifyTurnstile("tok", b.impl);
-      expect(b.calls[0]?.body.get("secret")).toBe(
+      await verifyTurnstile("tok", b.impl, env);
+      expect(b.calls[0]?.body.get("secret"), JSON.stringify(env)).toBe(
         TURNSTILE_TEST_SECRET_ALWAYS_PASSES,
       );
+    }
+  });
+
+  /**
+   * INV-10A-09 (Doc 10A draft, SEO launch hardening 2026-10-06): the always-pass test secret must
+   * never verify a production submit. With no secret on the production deployment, every call is
+   * unavailable (the route answers 503) before Cloudflare is asked anything, token or not, and an
+   * error names the variable without any value.
+   */
+  it("production with no secret fails closed: unavailable, no siteverify call, an error naming the variable", async () => {
+    const errors = vi.spyOn(logger, "error").mockImplementation(() => {});
+    try {
+      for (const env of [
+        { VERCEL_ENV: "production" },
+        { NODE_ENV: "production" },
+        { VERCEL_ENV: "production", TURNSTILE_SECRET_KEY: "" },
+      ]) {
+        const v = verifier({ success: true });
+        for (const token of ["tok", undefined]) {
+          expect(
+            await verifyTurnstile(token, v.impl, env),
+            JSON.stringify(env),
+          ).toEqual({
+            outcome: "unavailable",
+            reason: "secret_not_configured",
+          });
+        }
+        expect(v.calls, JSON.stringify(env)).toHaveLength(0);
+      }
+      // Presence first: the error was logged, and it names the variable.
+      expect(errors).toHaveBeenCalled();
+      const logged = JSON.stringify(errors.mock.calls);
+      expect(logged).toContain("TURNSTILE_SECRET_KEY");
+      expect(logged).not.toContain(TURNSTILE_TEST_SECRET_ALWAYS_PASSES);
+
+      // A configured secret in production verifies as normal.
+      const ok = verifier({ success: true });
+      expect(
+        await verifyTurnstile("tok", ok.impl, {
+          VERCEL_ENV: "production",
+          TURNSTILE_SECRET_KEY: "real-secret",
+        }),
+      ).toEqual({ outcome: "pass" });
+      expect(ok.calls[0]?.body.get("secret")).toBe("real-secret");
     } finally {
-      if (saved === undefined) delete process.env.TURNSTILE_SECRET_KEY;
-      else process.env.TURNSTILE_SECRET_KEY = saved;
+      errors.mockRestore();
     }
   });
 });

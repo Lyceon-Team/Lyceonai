@@ -93,7 +93,7 @@ export default function BlogPage() {
               explanations.
             </p>
             <Link
-              href="/digital-sat"
+              href="/online-sat-prep"
               className="inline-block px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity"
             >
               Explore SAT Prep

@@ -67,6 +67,27 @@
       "dest": "/api/index"
     },
     {
+      "src": "^/digital-sat/?$",
+      "status": 301,
+      "headers": {
+        "Location": "/online-sat-prep"
+      }
+    },
+    {
+      "src": "^/digital-sat/math/?$",
+      "status": 301,
+      "headers": {
+        "Location": "/sat-practice-questions/math"
+      }
+    },
+    {
+      "src": "^/digital-sat/reading-writing/?$",
+      "status": 301,
+      "headers": {
+        "Location": "/sat-practice-questions/reading-and-writing"
+      }
+    },
+    {
       "src": "^/privacy/?$",
       "status": 301,
       "headers": {

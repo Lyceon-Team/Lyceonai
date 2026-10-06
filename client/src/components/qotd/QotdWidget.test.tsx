@@ -137,7 +137,7 @@ describe("QotdWidget", () => {
       "length times width",
     );
     expect(screen.getByTestId("qotd-stat").textContent).toBe(
-      "43% of students got this right.",
+      "43% answered correctly.",
     );
     expect(setItem).not.toHaveBeenCalled();
   });

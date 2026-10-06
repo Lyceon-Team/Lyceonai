@@ -26,7 +26,7 @@ import {
 import { StaticMath } from "@/components/qotd/StaticMath";
 import { QotdStatLine } from "@/components/qotd/QotdWidget";
 import { qotdArchiveDayQueryOptions } from "@/lib/qotd";
-import { formatQotdDate, qotdTopic } from "@shared/seo/public-meta";
+import { formatQotdDate, qotdTopic } from "@shared/seo/qotd-labels";
 import type { QotdArchiveResponse } from "../../../packages/shared/src/qotd-schema";
 
 const LETTERS = ["A", "B", "C", "D"] as const;

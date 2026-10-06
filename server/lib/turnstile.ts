@@ -11,12 +11,21 @@
  * with 503: an unreachable verifier is never treated as a pass. The caller's IP is NOT sent
  * (siteverify's `remoteip` is optional), so no raw IP leaves the server.
  *
- * Secret: TURNSTILE_SECRET_KEY. Until it is set, Cloudflare's published "always passes" test
- * secret is used and a warning is logged once, so the flow works end to end with the matching
- * test site key; a production key rejects test tokens, so swapping keys needs no code change.
+ * Secret: TURNSTILE_SECRET_KEY. Outside production, until it is set, Cloudflare's published
+ * "always passes" test secret is used and a warning is logged once, so the flow works end to end
+ * with the matching test site key; a production key rejects test tokens, so swapping keys needs no
+ * code change.
+ *
+ * IN PRODUCTION A MISSING SECRET FAILS CLOSED (Doc 10A INV-10A-09, SEO launch hardening
+ * 2026-10-06). The test secret passes every token, so falling back to it in production would turn
+ * the bot check off without anyone noticing. On the production deployment (`isProductionDeployment`,
+ * the repo's one answer to "is this production": VERCEL_ENV, else NODE_ENV) a missing secret makes
+ * every verification `unavailable`, which the QOTD submit route answers with 503, and logs an error
+ * that names the variable, never a value.
  */
 import { z } from "zod";
 import { logger } from "../logger";
+import { isProductionDeployment } from "./startup-guards";
 
 export const TURNSTILE_SITEVERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -39,9 +48,19 @@ export type TurnstileResult =
 
 let warnedTestKey = false;
 
-function turnstileSecret(): string {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
+/** The siteverify secret, or null when production has none (the caller fails closed). */
+function turnstileSecret(env: NodeJS.ProcessEnv): string | null {
+  const secret = env.TURNSTILE_SECRET_KEY;
   if (secret && secret.length > 0) return secret;
+  if (isProductionDeployment(env)) {
+    logger.error(
+      "TURNSTILE",
+      "secret_missing_in_production",
+      "TURNSTILE_SECRET_KEY is not set on the production deployment; refusing every verification",
+      {},
+    );
+    return null;
+  }
   if (!warnedTestKey) {
     warnedTestKey = true;
     logger.warn(
@@ -57,10 +76,15 @@ function turnstileSecret(): string {
 export async function verifyTurnstile(
   token: string | undefined,
   fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<TurnstileResult> {
+  // The secret first: with none in production, every submit is unavailable (503), token or not.
+  const secret = turnstileSecret(env);
+  if (secret === null)
+    return { outcome: "unavailable", reason: "secret_not_configured" };
   if (!token) return { outcome: "reject", codes: ["missing-input-response"] };
   const body = new URLSearchParams({
-    secret: turnstileSecret(),
+    secret,
     response: token,
   });
   let res: Response;

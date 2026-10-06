@@ -2913,7 +2913,7 @@ jobs:
   # answered inside the browser; nothing leaves the runner. The key is a dummy (`phc_e2e…`).
   analytics-consent-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
 
@@ -2936,11 +2936,14 @@ jobs:
       - name: Install Chromium (the build @playwright/test pins)
         run: pnpm exec playwright install --with-deps chromium
 
+      # A placeholder Desmos key so the calculator path is in the bundle; the page-CSP spec answers
+      # www.desmos.com's calculator.js with a stand-in (E2E_DESMOS_STUB), as CI holds no key.
       - name: Build (with a dummy PostHog key so the SDK path is in the bundle)
         env:
           VITE_SUPABASE_URL: http://localhost:9
           VITE_SUPABASE_ANON_KEY: ci
           VITE_POSTHOG_KEY: phc_e2e_dummy_key_not_a_project
+          VITE_DESMOS_API_KEY: ci-desmos-stub-key
         run: pnpm run build
 
       - name: Serve dist/public with vercel.json's headers
@@ -2960,6 +2963,34 @@ jobs:
         run: |
           set -euo pipefail
           pnpm exec playwright test tests/e2e/analytics-consent.spec.ts tests/e2e/first-touch-attribution.spec.ts --forbid-only --reporter=list
+
+      # SEO launch hardening (Doc 10A, 2026-10-06): three proofs that existed but never ran in CI,
+      # on the same built bundle and the same vercel.json headers.
+      #  - INV-10A-11: the Question of the Day answer flow (no answer in the served HTML; a
+      #    visitor answers end to end; zero CSP reports). Mocked API; Turnstile's api.js is
+      #    answered by a stand-in at its real URL (E2E_TURNSTILE_STUB), so the CSP is still
+      #    checked for it without depending on Cloudflare from CI.
+      - name: QOTD answer flow (INV-10A-11)
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5175
+          E2E_TURNSTILE_STUB: "1"
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test tests/e2e/qotd-answer-flow.spec.ts --forbid-only --reporter=list
+
+      #  - INV-10A-17: every student flow under the page CSP, zero violation reports.
+      - name: Page CSP, every student flow (INV-10A-17)
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5175
+          E2E_DESMOS_STUB: "1"
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test tests/e2e/page-csp-flows.spec.ts --forbid-only --reporter=list
+
+      #  - INV-10A-18: the crawler's-eye check of every sitemap URL (Googlebot and OAI-SearchBot,
+      #    no JavaScript): status, own title, self-canonical, JSON-LD, body text; 404s and 301s.
+      - name: Crawl check of the built site (INV-10A-18)
+        run: node scripts/seo/crawl-check.mjs http://127.0.0.1:5175
 
   # ---------------------------------------------------------------------------
   # Guardian browser proofs (guardian closeout, Part B step 3).
