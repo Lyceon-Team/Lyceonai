@@ -992,15 +992,14 @@ plant "UI55-NF1" "the student calendar draws the facts strip again" \
 assert s.count(a) == 1
 s = s.replace(a, "      {model !== null ? (", 1)'
 
+# `StreakFact` is module-private to Chrome.tsx (knip, Codex finding 4), so the plant draws
+# the streak line's own markup inline rather than importing a component it cannot reach.
 plant "UI55-NS1" "the student header draws the streak line again" \
   "$T55" \
   "client/src/features/calendar/components/StudentChrome.tsx" \
-  'a = "import { ABSENT_COPY, type ToneFilter } from \"./Chrome\";"
-assert s.count(a) == 1
-s = s.replace(a, "import { ABSENT_COPY, StreakFact, type ToneFilter } from \"./Chrome\";", 1)
-b = "          {title}\n        </h1>\n      </div>"
+  'b = "          {title}\n        </h1>\n      </div>"
 assert s.count(b) == 1
-s = s.replace(b, "          {title}\n        </h1>\n        <StreakFact streak={{ current: 4, longest: 11, history_complete: false }} />\n      </div>", 1)'
+s = s.replace(b, "          {title}\n        </h1>\n        <div className=\"item\" data-item=\"streak\"><div className=\"streakline\">🔥 <b>4</b> day streak</div></div>\n      </div>", 1)'
 
 # OQ-61 (a) / SCL-212: §15's standalone streak route is retired and the retired-endpoints gate
 # refuses its old path anywhere in the tree, so this plant reintroduces a streak read under a

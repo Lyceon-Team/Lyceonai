@@ -71,7 +71,7 @@ function openingMix(): MixEntry[] {
   return [{ domain: "Algebra", count: MIX_GRANULARITY }];
 }
 
-export type CreateBlockSheetProps = {
+type CreateBlockSheetProps = {
   open: boolean;
   date: string;
   /** From the payload — §17.2 offers exactly what V-03 accepts. */

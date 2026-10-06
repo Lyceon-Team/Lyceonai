@@ -21,7 +21,6 @@ import type {
   GuardianCalendarReadyResponse,
 } from "@lyceon/shared/calendar";
 import { CalendarView } from "./CalendarView";
-import { SUPPRESSION_COPY_TABLE } from "./components/Chrome";
 import { GoalCard } from "./components/StudentChrome";
 import { guardianViewModel, studentViewModel } from "./lib/view-model";
 
@@ -765,12 +764,25 @@ describe("the suppressed practice test (Brief 14, owner ruling 2026-09-26)", () 
   });
 
   it("the two sentences differ, and neither is the other's", () => {
-    // The copy table, read directly. A rendering test can pass with both viewers reading the
-    // same string if the component ever stops keying on `viewer`; this cannot.
-    expect(SUPPRESSION_COPY_TABLE.student).not.toBe(
-      SUPPRESSION_COPY_TABLE.guardian,
-    );
+    // Both viewers rendered, each pinned to its OWN literal sentence and refused the other's.
+    // If the component ever stops keying on `viewer`, one of the two surfaces reads the
+    // wrong sentence and fails here — the two cannot quietly converge on one string.
+    const STUDENT_SENTENCE =
+      "We couldn't fit your full-length test — the days you picked are blocked.";
+    const GUARDIAN_SENTENCE =
+      "A practice test couldn't be scheduled — the days chosen are blocked.";
+    const SELECTOR = '[data-testid="calendar-full-length-suppressed"]';
+
+    const studentNotice = renderStudent().querySelector(SELECTOR);
+    const guardianNotice = renderGuardian().querySelector(SELECTOR);
+    // Presence first: both notices rendered, so the comparisons below are about real text.
+    expect(studentNotice).not.toBeNull();
+    expect(guardianNotice).not.toBeNull();
+
+    expect(studentNotice!.textContent).toContain(STUDENT_SENTENCE);
+    expect(studentNotice!.textContent).not.toContain(GUARDIAN_SENTENCE);
+    expect(guardianNotice!.textContent).toBe(GUARDIAN_SENTENCE);
     // The guardian's is third person throughout — no "you", no "your".
-    expect(SUPPRESSION_COPY_TABLE.guardian).not.toMatch(/\byou(r)?\b/i);
+    expect(guardianNotice!.textContent).not.toMatch(/\byou(r)?\b/i);
   });
 });
