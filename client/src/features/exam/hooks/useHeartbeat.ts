@@ -26,7 +26,7 @@ import {
   type ExamSectionStateResponse,
 } from "../api/exam-api";
 
-export const HEARTBEAT_INTERVAL_MS = 5_000;
+const HEARTBEAT_INTERVAL_MS = 5_000;
 
 export function useHeartbeat(options: {
   sessionId: string;

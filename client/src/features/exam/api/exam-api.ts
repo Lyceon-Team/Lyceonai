@@ -60,13 +60,13 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { HttpApiError } from "@/lib/api-error";
 
-export const EXAM_ROOT = "/api/tests" as const;
+const EXAM_ROOT = "/api/tests" as const;
 
-export type ExamItemsResponse = z.infer<typeof examItemsResponseSchema>;
-export type ExamStartModuleResponse = z.infer<
+type ExamItemsResponse = z.infer<typeof examItemsResponseSchema>;
+type ExamStartModuleResponse = z.infer<
   typeof examStartModuleResponseSchema
 >;
-export type ExamSubmitModuleResponse = z.infer<
+type ExamSubmitModuleResponse = z.infer<
   typeof examSubmitModuleResponseSchema
 >;
 export type ExamHeartbeatResponse = z.infer<typeof examHeartbeatResponseSchema>;

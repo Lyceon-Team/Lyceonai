@@ -23,8 +23,8 @@ export type ClockAnchor = {
   at: number;
 };
 
-export const FIVE_MINUTES_MS = 5 * 60 * 1000;
-export const ONE_MINUTE_MS = 60 * 1000;
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
+const ONE_MINUTE_MS = 60 * 1000;
 
 export function anchorClock(remainingMs: number, monotonicNow: number): ClockAnchor {
   return { remainingMs: Math.max(0, remainingMs), at: monotonicNow };

@@ -6,7 +6,7 @@
  */
 import type { ModuleCell } from "../lib/module-summary";
 
-export function cellLabel(cell: ModuleCell, current: boolean): string {
+function cellLabel(cell: ModuleCell, current: boolean): string {
   return [
     `Question ${cell.number}`,
     cell.answered ? "answered" : "unanswered",
@@ -17,7 +17,7 @@ export function cellLabel(cell: ModuleCell, current: boolean): string {
     .join(", ");
 }
 
-export function MarkedIcon({ size = 15 }: { size?: number }) {
+function MarkedIcon({ size = 15 }: { size?: number }) {
   return (
     <svg
       width={size}

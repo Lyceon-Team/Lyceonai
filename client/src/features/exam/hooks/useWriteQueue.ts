@@ -12,7 +12,7 @@
  */
 import { useCallback, useRef } from "react";
 
-export type WriteQueue = {
+type WriteQueue = {
   enqueue: <T>(write: () => Promise<T>) => Promise<T>;
   drain: () => Promise<void>;
 };

@@ -17,7 +17,7 @@ import type {
   ExamSessionResponse,
 } from "@lyceon/shared/exam-runtime-schema";
 
-export type ExamPosition =
+type ExamPosition =
   | { kind: "not_started" }
   | { kind: "module"; section: ExamSection; module: ExamModule }
   /** Module 1 submitted, Module 2 not yet started (a reload between the two). */
@@ -77,7 +77,7 @@ export function pathForPosition(sessionId: string, position: ExamPosition): stri
   }
 }
 
-export type ModuleRoute = { section: ExamSection; module: ExamModule };
+type ModuleRoute = { section: ExamSection; module: ExamModule };
 
 /** Parses the two URL segments; anything else is not a module URL. */
 export function parseModuleRoute(
