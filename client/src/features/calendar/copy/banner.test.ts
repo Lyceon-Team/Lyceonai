@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { PLAN_TRIGGERS, type PlanTrigger } from "@lyceon/shared";
-import { BANNER_COPY_TABLE, bannerCopy } from "./banner";
+import { bannerCopy } from "./banner";
 
 /** §12.1's student-initiated triggers — §12.7 never surfaces a version for any of these. */
 const STUDENT_TRIGGERS: readonly PlanTrigger[] = [
@@ -44,7 +44,15 @@ describe("bannerCopy (§17.4)", () => {
   });
 
   it("carries exactly the three §17.4 sentences and nothing else", () => {
-    expect(BANNER_COPY_TABLE).toEqual(NON_STUDENT_COPY);
+    // The table read back through `bannerCopy` over every trigger the enum has: what has a
+    // sentence is exactly the three §17.4 entries, each with its own.
+    const spoken = Object.fromEntries(
+      PLAN_TRIGGERS.flatMap((trigger) => {
+        const copy = bannerCopy(trigger);
+        return copy === null ? [] : [[trigger, copy]];
+      }),
+    );
+    expect(spoken).toEqual(NON_STUDENT_COPY);
   });
 });
 

@@ -46,7 +46,7 @@ import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
  * "the device did not say" — the server treats a missing `device_timezone` as exactly that
  * and falls back to `America/Chicago` (formula sheet item 19).
  */
-export function deviceTimezone(): string {
+function deviceTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
   } catch {

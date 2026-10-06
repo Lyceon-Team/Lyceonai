@@ -45,7 +45,6 @@ import {
   useResetDay,
   useStudyProfileMutation,
 } from "./mutations";
-import { resetProvisionalIds } from "./optimistic";
 
 const csrfFetchMock = vi.fn();
 
@@ -256,7 +255,6 @@ function expectInvalidatesRanges(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  resetProvisionalIds();
 });
 
 // ── newIntent ───────────────────────────────────────────────────────────────
@@ -320,7 +318,9 @@ describe("useEditDay (§12.4)", () => {
     });
 
     await waitFor(() =>
-      expect(blockIdsOn(queryClient, TODAY)).toEqual(["provisional:1"]),
+      expect(blockIdsOn(queryClient, TODAY)).toEqual([
+        expect.stringMatching(/^provisional:\d+$/),
+      ]),
     );
   });
 
@@ -490,7 +490,7 @@ describe("useDoItNow (§12.6)", () => {
     await waitFor(() =>
       expect(blockIdsOn(queryClient, TODAY)).toEqual([
         BLOCK_TODAY,
-        "provisional:1",
+        expect.stringMatching(/^provisional:\d+$/),
       ]),
     );
     expect(blockIdsOn(queryClient, YESTERDAY)).toEqual([BLOCK_PAST]);

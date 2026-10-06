@@ -39,7 +39,7 @@ export function addDays(date: string, days: number): string {
 }
 
 /** 0 = Sunday, as `getUTCDay` gives it. Used only where the Postgres DOW convention applies. */
-export function dayOfWeek(date: string): number {
+function dayOfWeek(date: string): number {
   return parse(date).getUTCDay();
 }
 
@@ -57,12 +57,6 @@ export function startOfMonth(date: string): string {
   return `${date.slice(0, 8)}01`;
 }
 
-export function addMonths(date: string, months: number): string {
-  const value = parse(startOfMonth(date));
-  value.setUTCMonth(value.getUTCMonth() + months);
-  return format(value);
-}
-
 export function dayOfMonth(date: string): number {
   return parse(date).getUTCDate();
 }
@@ -76,9 +70,9 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((parse(to).getTime() - parse(from).getTime()) / 86_400_000);
 }
 
-export const WEEK_LENGTH = 7;
+const WEEK_LENGTH = 7;
 /** Six rows of seven — the month grid always has the same shape, so it never reflows. */
-export const MONTH_GRID_LENGTH = 42;
+const MONTH_GRID_LENGTH = 42;
 
 /** The seven local dates of the week containing `date`, Monday first. */
 export function weekDates(date: string): readonly string[] {

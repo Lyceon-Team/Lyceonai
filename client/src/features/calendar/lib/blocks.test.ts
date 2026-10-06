@@ -22,11 +22,9 @@ import {
   TONE_LABEL,
   domainsForSection,
   isDraggable,
-  isPastDate,
   isStarted,
   minutesFor,
   minutesLabel,
-  mixOf,
   primaryActionLabel,
   sectionName,
   titleOf,
@@ -202,28 +200,6 @@ describe("titleOf (§17.1 row title)", () => {
   });
 });
 
-// ── mixOf ───────────────────────────────────────────────────────────────────
-
-describe("mixOf (§17.1 domain chips)", () => {
-  it("returns the mix of a domain-level practice block, in order", () => {
-    expect([...mixOf(domainPracticeBlock("M", MATH_MIX))]).toEqual([
-      ...MATH_MIX,
-    ]);
-  });
-
-  it("returns [] for a SECTION-level block — cold start has not chosen domains yet", () => {
-    expect(mixOf(sectionPracticeBlock("RW", 20))).toEqual([]);
-    expect(mixOf(sectionPracticeBlock("M", 1))).toEqual([]);
-  });
-
-  it("returns [] for review and full_length — neither has a mix", () => {
-    expect(mixOf(reviewBlock(7))).toEqual([]);
-    expect(mixOf(fullLengthBlock())).toEqual([]);
-  });
-});
-
-// ── domainsForSection ───────────────────────────────────────────────────────
-
 describe("domainsForSection (§17.2 Domain select)", () => {
   it("offers exactly the four Math domains for M", () => {
     expect(new Set(domainsForSection("M"))).toEqual(
@@ -339,11 +315,17 @@ describe("isStarted (§12.2 protected state, derived from status not actual)", (
   });
 });
 
-describe("isPastDate (§12.2 a past day is read-only)", () => {
-  it("is true strictly before today, false on today and after", () => {
-    expect(isPastDate("2026-09-20", "2026-09-21")).toBe(true);
-    expect(isPastDate("2026-09-21", "2026-09-21")).toBe(false);
-    expect(isPastDate("2026-09-22", "2026-09-21")).toBe(false);
+describe("a past day is read-only (§12.2), read through isDraggable", () => {
+  it("refuses strictly before today, and allows today and after", () => {
+    const untouched = {
+      status: "scheduled",
+      actual: 0,
+      today: "2026-09-21",
+      readOnly: false,
+    };
+    expect(isDraggable({ ...untouched, date: "2026-09-20" })).toBe(false);
+    expect(isDraggable({ ...untouched, date: "2026-09-21" })).toBe(true);
+    expect(isDraggable({ ...untouched, date: "2026-09-22" })).toBe(true);
   });
 });
 
