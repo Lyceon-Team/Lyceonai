@@ -389,6 +389,17 @@ test.describe("cookie consent → PostHog", () => {
     // text a public page would capture; here it must not be.
     const section = page.getByRole("button", { name: "Account", exact: true });
     await expect(section).toBeVisible({ timeout: 15_000 });
+    // The full load of /profile starts PostHog again, lazily. A click before it has started is never
+    // autocaptured, so wait for this view's $pageview (the SDK running) before clicking — the same
+    // guard the public-page control above takes.
+    await expect
+      .poll(
+        () =>
+          seen.events.slice(before).filter((e) => e.event === "$pageview")
+            .length,
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(0);
     await section.click();
     await expect
       .poll(
