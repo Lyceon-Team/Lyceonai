@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * Edge cases: `titleId` lets a page point `aria-labelledby` at the H1; the actions slot holds at
  * most the page's one primary action plus outline buttons, which is the caller's to respect.
  */
-export type PageHeaderProps = {
+type PageHeaderProps = {
   title: ReactNode;
   eyebrow?: ReactNode;
   description?: ReactNode;

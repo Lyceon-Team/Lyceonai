@@ -73,7 +73,7 @@ export function levelFill(levelKey: MasteryLevelKey): string {
  * mastery row's (DESIGN.md §3; prototype Practice.dc.html 14px, Main.dc.html 15px). Nothing is
  * below 14px (DESIGN.md §1); on a guardian page `guardian-surface.css` raises all three to 16px.
  */
-export type LevelPillSize = "sm" | "compact" | "wide";
+type LevelPillSize = "sm" | "compact" | "wide";
 
 function pillSize(size: LevelPillSize): string {
   switch (size) {

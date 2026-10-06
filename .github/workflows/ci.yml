@@ -149,6 +149,16 @@ jobs:
       - name: Client — no console (blocking)
         run: pnpm run lint:no-console
 
+      # Codex re-audit of #1073 + #1108 + #1113, finding 4, ruled by Karl 2026-10-06: no unused
+      # file, export, exported type or duplicate export in the student-UI scope
+      # (scripts/ci/deadcode-student.scope.json), knip 5.88.1 in production mode. The rest of the
+      # repo's knip backlog is other verticals' (student-UI register §8 F-77), not gated here.
+      - name: Student UI — dead code (blocking)
+        run: |
+          set -euo pipefail
+          node scripts/ci/deadcode-student.mjs --selftest
+          pnpm run deadcode:student
+
       # build:vercel is a superset of build: it runs `build` and then emits
       # dist/vercel-api.cjs, the CJS bundle Vercel actually loads. CI used to
       # build only dist/index.js, so the artifact production runs was never

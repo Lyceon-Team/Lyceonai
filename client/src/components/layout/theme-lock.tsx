@@ -7,10 +7,10 @@
  *        | @implemented [2026-10-03]
  *
  * plain English: a shell pins the light token set with `data-theme-lock="light"` on its `.lyc`
- * root. A modal or sheet portals onto <body>, outside that root, and carries its own `.lyc`
+ * root. A modal portals onto <body>, outside that root, and carries its own `.lyc`
  * root, so it took the device theme instead: a dark modal over a page pinned light (F-65). The
- * shell on screen now publishes its lock here, and the student Modal and Sheet put the same
- * `data-theme-lock` on their portal root, so an overlay always matches the page under it. The
+ * shell on screen now publishes its lock here, and the student Modal puts the same
+ * `data-theme-lock` on its portal root, so an overlay always matches the page under it. The
  * upgrade modal is mounted at the app root, above every shell, which is why the lock is
  * published upward to a provider rather than read from a context the shell provides.
  *

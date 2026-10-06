@@ -32,7 +32,7 @@ import { daysBetween, weekdayDayMonth } from "@/features/calendar/lib/dates";
 type DayBlock = CalendarDay["blocks"][number];
 
 /** The shipped greeting (the old dashboard's `getGreeting`): by the student's local hour. */
-export function greetingFor(hour: number): string {
+function greetingFor(hour: number): string {
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
@@ -70,7 +70,7 @@ function questions(n: number): string {
 }
 
 /** "About 23 min"; "About 1 hour" and "About 2 hours" from an hour up (the prototype's total). */
-export function aboutMinutes(minutes: number): string {
+function aboutMinutes(minutes: number): string {
   if (minutes < 60) return `About ${minutes} min`;
   const hours = Math.round(minutes / 60);
   return `About ${hours} ${hours === 1 ? "hour" : "hours"}`;

@@ -14,7 +14,7 @@
  * exact string. A structured key here would prefetch into a slot nothing reads, the
  * prefetch would appear to work, and the spinner would come back — silently. That is
  * precisely the rot `usePracticeStatePrefetchKey` and the integration test exist to catch:
- * the key is built by one exported function, and the test asserts the page is not loading
+ * the key is built by one function, and the test asserts the page is not loading
  * after a launch, so a change to either side fails rather than degrades.
  *
  * trade-offs: the chunk prefetch fires on hover AND focus, not on mount. Prefetching every
@@ -30,15 +30,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { LaunchResponse, PlanBlock } from "@lyceon/shared/calendar";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
-import { isLaunchableBlockType } from "../lib/blocks";
-import { calendarKeys } from "./keys";
 import { useLaunchMutation } from "./mutations";
 
 /**
- * The EXACT key `resume-practice.tsx` uses. Exported so the integration test can assert the
- * two agree rather than trusting that they do.
+ * The EXACT key `resume-practice.tsx` uses. The integration test asserts the two agree — by
+ * reading the page's literal and the cache slot a launch warms — rather than trusting that
+ * they do.
  */
-export function practiceStateKey(
+function practiceStateKey(
   sessionId: string,
   clientInstanceId: string,
 ): string {
@@ -49,7 +48,7 @@ export function practiceStateKey(
  * The EXACT key `resume-review.tsx` uses (its line 65). Same rule, same reason: a
  * structured key would warm a slot nothing reads and the spinner would come back silently.
  */
-export function reviewStateKey(
+function reviewStateKey(
   sessionId: string,
   clientInstanceId: string,
 ): string {
@@ -60,7 +59,7 @@ export function reviewStateKey(
  * The state key for whichever engine this launch belongs to. One function, so a third
  * engine is a row here rather than an `if` at the call site that someone forgets.
  */
-export function stateKeyForEngine(
+function stateKeyForEngine(
   blockType: PlanBlock["block_type"],
   sessionId: string,
   clientInstanceId: string,
@@ -76,23 +75,6 @@ export function stateKeyForEngine(
 }
 
 /**
- * §15.1 + formula sheet item 12. Review joined practice on 2026-09-22 and full-length joined
- * both in E9b (2026-09-25). An engine that is still a fail-open stub reads "Coming soon", is
- * disabled, and never calls launch — asking and being refused is a worse experience than a
- * control that tells the truth up front.
- *
- * This is about the ENGINE being real, not about the flag. `enabled_block_types` decides
- * whether a review block is ever PLANNED; this decides whether one a student holds can be
- * started. A student can hold a review block from a hand-edited day with the flag off, and
- * it should work.
- */
-export function isLaunchable(block: Pick<PlanBlock, "block_type">): boolean {
-  // Delegated, not restated. See `isLaunchableBlockType` for why this rule has exactly
-  // one home.
-  return isLaunchableBlockType(block.block_type);
-}
-
-/**
  * Warms the lazy resume chunk for the engine the student is about to land on. Idempotent —
  * the browser caches the module.
  */
@@ -104,12 +86,7 @@ export function prefetchEngineChunk(blockType: PlanBlock["block_type"]): void {
     void import("@/features/exam/pages/ExamSessionPage");
 }
 
-/** @deprecated Use `prefetchEngineChunk`. Kept so no call site breaks mid-change. */
-export function prefetchPracticeChunk(): void {
-  prefetchEngineChunk("practice");
-}
-
-export type LaunchOutcome =
+type LaunchOutcome =
   | { kind: "navigated"; response: LaunchResponse }
   | { kind: "already_complete" }
   | { kind: "failed"; error: Error };
@@ -192,6 +169,3 @@ export function useLaunchBlock(navigate: (to: string) => void): {
     pendingBlockId,
   };
 }
-
-/** Re-exported so a caller invalidating after a launch names the key from one place. */
-export { calendarKeys };

@@ -12,12 +12,27 @@ import {
   BLOCK_EXPLANATION_KEYS,
   DOMAIN_EXPLANATION_KEYS,
 } from "@lyceon/shared";
-import {
-  EXPLANATION_COPY_TABLES,
-  blockExplanation,
-  domainExplanation,
-  explanationLines,
-} from "./explanations";
+import { explanationLines } from "./explanations";
+
+/**
+ * The BLOCK-level sentence for `key`, read through the module's public function: a block
+ * with no domain mix shows its own key's line, and only that line, or nothing at all.
+ */
+function blockExplanation(key: string | null): string | null {
+  const lines = explanationLines({ blockKey: key });
+  expect(lines.length).toBeLessThanOrEqual(1);
+  return lines[0] ?? null;
+}
+
+/**
+ * The PER-DOMAIN sentence for `key`, read the same way: a block with no block key and a
+ * one-domain mix shows that domain's line, and only that line, or nothing at all.
+ */
+function domainExplanation(key: string | null): string | null {
+  const lines = explanationLines({ blockKey: null, domainKeys: [key] });
+  expect(lines.length).toBeLessThanOrEqual(1);
+  return lines[0] ?? null;
+}
 
 /**
  * `weighted` is the ONE block key ruled to have no block-level copy (owner ruling
@@ -84,15 +99,49 @@ describe("every canonical key has copy (§17.6: no key renders as raw text)", ()
     expect(missing).toEqual([]);
   });
 
-  it("carries no copy for a key the generators cannot emit", () => {
-    // The retired `weak_domain`/`maintain_strength`/`post_exam_focus` vocabulary from the
-    // pre-sheet §17.6 must not linger in the tables: it would be unreachable dead copy.
-    expect(Object.keys(EXPLANATION_COPY_TABLES.block).sort()).toEqual(
-      [...BLOCK_KEYS_REQUIRING_COPY].sort(),
-    );
-    expect(Object.keys(EXPLANATION_COPY_TABLES.domain).sort()).toEqual(
-      [...DOMAIN_EXPLANATION_KEYS].sort(),
-    );
+  it("carries exactly the ruled sentence for every generator key, and none for a retired one", () => {
+    // The whole table, pinned literally key by key over both enums, so a sentence that drifts
+    // or a key that quietly loses its copy fails here.
+    expect(
+      Object.fromEntries(
+        BLOCK_EXPLANATION_KEYS.map((key) => [key, blockExplanation(key)]),
+      ),
+    ).toEqual({
+      review_due: "Questions you missed earlier are due for a retry.",
+      exam_review: "Going over what you missed on your last full-length test.",
+      exam_review_placeholder:
+        "Going over what you missed on your last full-length test.",
+      final_rehearsal: "Your last full rehearsal before test day.",
+      exam_cadence: "A full-length test every two weeks keeps you test-ready.",
+      taper: "Test week: lighter days so you arrive rested.",
+      cold_start:
+        "We're still learning where you stand — this balances the sections.",
+      weighted: null,
+      fallback: "A balanced session while we catch up on your progress data.",
+    });
+    expect(
+      Object.fromEntries(
+        DOMAIN_EXPLANATION_KEYS.map((key) => [key, domainExplanation(key)]),
+      ),
+    ).toEqual({
+      weak: "One of your weaker areas right now.",
+      exploring: "We haven't seen enough of this yet.",
+      balanced: "Keeping this one moving.",
+      strength: "You're strong here — a short set keeps it sharp.",
+      post_exam: "Your last full-length test pointed here.",
+    });
+    // The retired `weak_domain`/`maintain_strength`/`post_exam_focus`/`spacing_revisit`
+    // vocabulary from the pre-sheet §17.6 must not linger at either level: it would be copy
+    // for a key the generators cannot emit.
+    for (const retired of [
+      "weak_domain",
+      "maintain_strength",
+      "post_exam_focus",
+      "spacing_revisit",
+    ]) {
+      expect(blockExplanation(retired)).toBeNull();
+      expect(domainExplanation(retired)).toBeNull();
+    }
   });
 });
 

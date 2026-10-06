@@ -30,10 +30,10 @@ import { Button } from "@/components/ui/button";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 
 /** The Full-Length page's subtitle (prototype FullLength.dc.html; TestsHomePage). */
-export const FULL_LENGTH_CARD_LINE =
+const FULL_LENGTH_CARD_LINE =
   "Timed like test day: two modules per section, a break between sections, and a scored report at the end.";
 
-export const FULL_LENGTH_CARD_ACTION = "Start a full-length test";
+const FULL_LENGTH_CARD_ACTION = "Start a full-length test";
 
 const FULL_LENGTH_HREF = "/tests";
 

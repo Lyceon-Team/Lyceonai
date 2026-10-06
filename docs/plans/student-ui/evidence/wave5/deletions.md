@@ -2235,3 +2235,121 @@ shared/seo/public-meta.ts: PublicMeta, LegalMeta, FaqItem
 ```
 
 </details>
+
+
+---
+
+## deadcode:student (Codex re-audit finding 4, ruled by Karl 2026-10-06)
+
+**The ruling:** delete or unexport every unused file and export in student-scope code; add a
+`deadcode:student` script that exits 0 and run it as a blocking CI step; record the rest of the repo's
+backlog per vertical (register §8 F-77).
+
+**What "unused" means here:** knip 5.88.1 in **production mode** with the committed `knip.json`, which
+counts shipped code only. An export that only a test imports counts as unused. That is the mode in
+which F-76's examples (`Sheet`, `RULER_TICKS`, `removeDomain`, `removeSkill`) appear; default mode,
+which counts tests as consumers, lists none of them.
+
+**The gate:**
+- **Script:** `scripts/ci/deadcode-student.mjs`, run by `pnpm run deadcode:student`. It runs knip on
+  the whole repo and fails on any unused file, export, exported type or duplicate export inside
+  `scripts/ci/deadcode-student.scope.json`.
+- **What the scope covers:** `components/student-ui/**`, the shells, the student components, the
+  calendar and exam features, and the student pages.
+- **What the scope leaves out**, each with its reason in the file: three test-support files, and the
+  guardian's exam results page.
+- **Self-test:** `node scripts/ci/deadcode-student.mjs --selftest`.
+- **CI:** the `ci` job runs both the self-test and the gate as the step "Student UI — dead code
+  (blocking)".
+
+### Output on this branch (code as of `4e7b72f1`)
+
+```
+$ pnpm -s run deadcode:student
+DEADCODE:STUDENT (knip@5.88.1, production mode, scope scripts/ci/deadcode-student.scope.json: 34 include, 3 exclude)
+DEADCODE:STUDENT: PASS — 0 unused files, exports, types or duplicate exports in the student-UI scope
+```
+
+On `cleanup` @ `0f1d7afb`, the same gate listed **147** findings: 86 exports and 61 exported types.
+
+### The gate fails on a new finding
+
+A plant appended `export const PLANT_UNUSED = 1;` to
+`client/src/components/student-ui/RulerProgress.tsx`. The gate exited 1:
+
+```
+DEADCODE:STUDENT (knip@5.88.1, production mode, scope scripts/ci/deadcode-student.scope.json: 34 include, 3 exclude)
+  unused export    client/src/components/student-ui/RulerProgress.tsx:72 PLANT_UNUSED
+DEADCODE:STUDENT: FAIL — 1 unused file(s)/export(s)/type(s) in the student-UI scope
+```
+
+A second plant added an orphan file, `client/src/features/exam/lib/plant-orphan.ts`. The same run listed
+it as `unused file`. Both plants were removed afterwards, and `git status --porcelain` came back empty.
+
+### How the 147 findings were cleared
+
+Each symbol was first grepped as a whole word across `client/src server shared packages tests scripts`.
+Then it was handled one of four ways:
+1. **Used nowhere:** deleted.
+2. **Used only in its own file:** the `export` removed.
+3. **Used only by tests:**
+   - if no shipped code needs it, deleted together with the tests that only tested it;
+   - if shipped code reaches it through another module, the test's import was pointed there.
+4. **Used in its own file and imported by a test:** the `export` removed, and the test rewritten to
+   assert through the public behaviour or the literal value.
+
+No `@internal` tag and no knip ignore or config change was used. Every rewritten test was observed
+red under a plant at an exact line; the plants are listed in the PR.
+
+**Deleted:**
+- **Student Sheet:** `components/student-ui/Sheet.tsx`, with its `index.ts` re-exports and its two
+  `describe("Sheet")` tests. No shipped page rendered it.
+- **`components/ui/sheet.tsx`:** its users were the old app shell and `/chat`, both rebuilt in #1073,
+  and then the student Sheet. Nothing imports it now.
+- **Other components and shells:** `Prose` and `ProseProps` in `layout/primitives.tsx`.
+- **Calendar:**
+  - `api/index.ts`'s unused re-exports;
+  - `isLaunchable`, which duplicated `isLaunchableBlockType`, and the test that compared the two;
+  - `prefetchPracticeChunk`, which was deprecated and had no callers;
+  - `launch.ts`'s `calendarKeys` re-export;
+  - `isProvisional` and `resetProvisionalIds`, which only tests used;
+  - `DayMembers`;
+  - `SUPPRESSION_COPY_TABLE`, `BANNER_COPY_TABLE` and `EXPLANATION_COPY_TABLES`, which were aliases
+    for tests;
+  - `mixOf`, with its 3 tests, and `addMonths`, with its test. No shipped code called either.
+
+**Un-exported:** every other finding, 20 of them in the exam feature alone. Tests that imported one
+now assert through the public function or the literal value.
+
+**One guarantee narrowed:** `explanations.test.ts` used to compare the copy tables' keys with the
+two enums. It now pins every enum key's exact sentence and checks that the four retired keys return
+null. An unknown extra key outside both lists would no longer be caught, but such a key can never
+reach a student.
+
+### Repo-wide backlog outside the scope (register §8 F-77)
+
+Counts are from `pnpm run deadcode:production` on this branch, assigned to an owner by path:
+- `test-support`: fixtures, harnesses, `__fixtures__`, `test/setupTests`.
+- `cleanup`: `server/lib/stripe` and `question-renderer.tsx`.
+- `seo`: prerender, `shared/seo`, the public pages, `components/{marketing,legal,qotd,consent}`,
+  `lib/analytics`, qotd, the public layout and footers.
+- `lisa`: paths containing tutor, lisa, rag, crisis, memory-compaction or scope-ownership.
+- `guardian`, `calendar`, `exam`, `review`, `questions`: by path keyword.
+- Everything else falls to `cleanup`.
+
+| owner | unused files | unused exports | unused exported types | duplicate exports |
+|---|---|---|---|---|
+| test-support (not dead: only tests import them) | 7 | 0 | 0 | 0 |
+| cleanup | 6 | 224 | 176 | 4 |
+| seo | 4 | 41 | 11 | 1 |
+| lisa | 2 | 78 | 48 | 0 |
+| guardian | 0 | 3 | 0 | 0 |
+| calendar (server side) | 0 | 19 | 21 | 3 |
+| exam (server and shared schemas) | 0 | 15 | 9 | 2 |
+| review | 0 | 13 | 5 | 0 |
+| questions | 6 | 18 | 6 | 0 |
+| student-ui | 0 | 0 | 0 | 0 |
+| **total** | **25** | **411** | **276** | **10** |
+
+On `cleanup` @ `0f1d7afb`, before this branch, cleanup's row read 228 unused exports. Deleting
+`ui/sheet.tsx` removed 4 of them.

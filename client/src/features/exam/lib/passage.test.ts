@@ -6,10 +6,13 @@ import { describe, expect, it } from "vitest";
 import {
   addHighlight,
   buildPassageSegments,
-  normalizeHighlights,
   removeHighlights,
-  snapRange,
 } from "./passage";
+
+/** The range a fresh selection lands on: addHighlight snaps it, nothing to merge with. */
+function snapped(p: string, start: number, end: number): ReturnType<typeof addHighlight> {
+  return addHighlight(p, [], start, end);
+}
 
 describe("passage segments", () => {
   it("offsets are code points, not UTF-16 units", () => {
@@ -25,8 +28,8 @@ describe("passage segments", () => {
     const p = "The area is $x^2 + 1$ square units.";
     const f0 = p.indexOf("$");
     const f1 = p.lastIndexOf("$") + 1;
-    expect(snapRange(p, f0 + 3, f1 + 4)).toEqual({ start: f0, end: f1 + 4 });
-    expect(snapRange(p, 4, f0 + 2)).toEqual({ start: 4, end: f1 });
+    expect(snapped(p, f0 + 3, f1 + 4)).toEqual({ ok: true, highlights: [{ start: f0, end: f1 + 4 }] });
+    expect(snapped(p, 4, f0 + 2)).toEqual({ ok: true, highlights: [{ start: 4, end: f1 }] });
     const segs = buildPassageSegments(p, [{ start: 4, end: f1 }]);
     const math = segs.find((s) => s.kind === "math")!;
     expect(math).toMatchObject({ start: f0, end: f1, highlighted: true, source: "$x^2 + 1$" });
@@ -36,14 +39,19 @@ describe("passage segments", () => {
     const p = "It costs \\$5 today";
     const segs = buildPassageSegments(p, []);
     expect(segs.find((s) => s.kind === "escape")).toMatchObject({ start: 9, end: 11, text: "$" });
-    expect(snapRange(p, 10, 12)).toEqual({ start: 9, end: 12 });
+    expect(snapped(p, 10, 12)).toEqual({ ok: true, highlights: [{ start: 9, end: 12 }] });
   });
 
   it("adding merges overlaps; removing drops what the range touches; the cap holds", () => {
     const p = "abcdefghijklmnopqrstuvwxyz";
-    let h = normalizeHighlights([{ start: 5, end: 8 }, { start: 1, end: 3 }]);
+    // Unsorted on purpose: addHighlight sorts and merges what it is given.
+    let h = [{ start: 5, end: 8 }, { start: 1, end: 3 }];
     const added = addHighlight(p, h, 2, 6);
     expect(added).toEqual({ ok: true, highlights: [{ start: 1, end: 8 }] });
+    expect(addHighlight(p, h, 20, 22)).toEqual({
+      ok: true,
+      highlights: [{ start: 1, end: 3 }, { start: 5, end: 8 }, { start: 20, end: 22 }],
+    });
     h = [{ start: 1, end: 3 }, { start: 10, end: 12 }];
     expect(removeHighlights(h, 11, 11)).toEqual([{ start: 1, end: 3 }]);
     const many = Array.from({ length: 64 }, (_, i) => ({ start: i * 3, end: i * 3 + 1 }));
