@@ -11,13 +11,12 @@
  *   EmptyState  @/components/common/empty-state  variant "lyc"
  *   AppNotice   @/components/feedback/AppNotice  variants "lyc-*" (or Notice below)
  * Everything keyed to the student tokens renders inside the `.lyc` root the student shells
- * provide; FullPageLoader, Modal and Sheet carry their own, because they render outside a shell
+ * provide; FullPageLoader and Modal carry their own, because they render outside a shell
  * (route fallbacks, auth gates) or in a portal on <body>.
  */
 export { PageHeader, type PageHeaderProps } from "./PageHeader";
 export { FullPageLoader, type FullPageLoaderProps } from "./FullPageLoader";
 export { Modal, ModalClose, type ModalProps } from "./Modal";
-export { Sheet, SheetClose, type SheetProps } from "./Sheet";
 export { Notice, type NoticeProps, type NoticeTone } from "./Notice";
 // UI-43: the shared Practice/Review filter bar. Consumed by the Wave 5 page rows (UI-51, UI-52).
 export { FilterBar, type FilterBarProps } from "./filter-bar/FilterBar";

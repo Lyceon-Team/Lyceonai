@@ -54,7 +54,7 @@
  * Sign out.
  *
  * F-70: the avatar menu is drawn with the student tokens inside the page's theme (and its theme
- * lock), like the student Modal and Sheet (`HeaderUserMenu`'s `tone="student"`).
+ * lock), like the student Modal (`HeaderUserMenu`'s `tone="student"`).
  */
 import {
   createContext,

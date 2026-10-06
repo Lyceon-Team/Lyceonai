@@ -16,7 +16,7 @@
  * TONE (F-70). The menu portals onto <body>, outside the shell's `.lyc` root, so it used to take
  * the app-wide light tokens: a light panel over a dark student page. `tone="student"` (the App
  * shell) puts the open menu inside its own `.lyc` root carrying the shell's theme lock, the way
- * the student Modal and Sheet do since F-65, and draws it with the student `lyc-*` tokens: a
+ * the student Modal does since F-65, and draws it with the student `lyc-*` tokens: a
  * light page gets a light menu, a dark page a dark one, and a page pinned light a light one. The
  * guardian shell keeps the default `app` tone: its pages use the app-wide tokens.
  */

@@ -40,10 +40,10 @@ export type ModalProps = {
   "data-testid"?: string;
 };
 
-export const MODAL_OVERLAY_CLASS =
+const MODAL_OVERLAY_CLASS =
   "bg-lyc-scrim data-[state=open]:animate-none data-[state=closed]:animate-none";
 
-export const MODAL_CLOSE_CLASS =
+const MODAL_CLOSE_CLASS =
   "right-3.5 top-3.5 flex h-11 w-11 items-center justify-center rounded-md text-lyc-ink-strong opacity-100 hover:bg-lyc-hover focus:ring-0 focus:ring-offset-0 focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-lyc-focus data-[state=open]:bg-transparent data-[state=open]:text-lyc-ink-strong [&_svg]:h-5 [&_svg]:w-5";
 
 export function Modal({
