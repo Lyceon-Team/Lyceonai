@@ -83,16 +83,6 @@ import {
   useKeyboardShortcuts,
 } from "@/hooks/useKeyboardShortcuts";
 
-/* ── Layout pixel constraints: defined in components/math/calculator-layout (E10b);
- * re-exported here, where the practice tests import them. ── */
-export {
-  CALC_MIN_PX,
-  CALC_PANEL_PAD_PX,
-  DESMOS_HOST_MIN_PX,
-  QUESTION_MIN_PX,
-  SPLIT_BREAKPOINT,
-} from "@/components/math/calculator-layout";
-
 /*
  * W4-4 — review with LISA always open. Three panels share the width:
  *   question (≥ QUESTION_MIN_PX) | Desmos (≥ CALC_MIN_PX, when opened) | LISA.
@@ -101,9 +91,9 @@ export {
  * LISA stays mounted underneath, so its thread and turn state survive. Below
  * `lg` everything stacks: question, LISA, calculator.
  */
-export const TUTOR_PANEL_PX = 360;
+const TUTOR_PANEL_PX = 360;
 const TUTOR_GAP_PX = 24;
-export const THREE_PANEL_BREAKPOINT =
+const THREE_PANEL_BREAKPOINT =
   QUESTION_MIN_PX +
   DIVIDER_PX +
   CALC_MIN_PX +
@@ -112,14 +102,14 @@ export const THREE_PANEL_BREAKPOINT =
   APP_HORIZONTAL_PADDING +
   BREAKPOINT_EXTRA; // 1446
 /** Tailwind's `lg`: below it, the review layout is a single column. */
-export const TUTOR_SIDE_BY_SIDE_BREAKPOINT = 1024;
+const TUTOR_SIDE_BY_SIDE_BREAKPOINT = 1024;
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the sentence, verbatim, with no number. */
-export const SHORTER_SESSION_NOTE =
+const SHORTER_SESSION_NOTE =
   "Fewer questions match these filters, so this session is shorter.";
 
 /** "Question 3 of 10" (DESIGN.md §4). */
-export function questionPosition(index: number, total: number): string {
+function questionPosition(index: number, total: number): string {
   return `Question ${index + 1} of ${total}`;
 }
 
@@ -127,7 +117,7 @@ export function questionPosition(index: number, total: number): string {
  * The progress strip (Runner.dc.html): one segment per question; answered ones in --ink-strong,
  * the current one in --rule-strong, the rest in --seg-empty.
  */
-export function progressSegments(
+function progressSegments(
   index: number,
   total: number,
 ): Array<"done" | "current" | "todo"> {

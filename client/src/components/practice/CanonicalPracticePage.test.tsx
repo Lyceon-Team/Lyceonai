@@ -15,15 +15,21 @@ import {
   PRACTICE_ENGINE_CONFIG,
   REVIEW_ENGINE_CONFIG,
 } from "@/lib/engine-config";
-import CanonicalPracticePage, {
+import {
   CALC_MIN_PX,
   CALC_PANEL_PAD_PX,
   DESMOS_HOST_MIN_PX,
   QUESTION_MIN_PX,
   SPLIT_BREAKPOINT,
-  THREE_PANEL_BREAKPOINT,
-  TUTOR_PANEL_PX,
-} from "./CanonicalPracticePage";
+} from "@/components/math/calculator-layout";
+import CanonicalPracticePage from "./CanonicalPracticePage";
+
+/**
+ * W4-4 review layout widths, asserted as literals: the page keeps them private. 1446 =
+ * question 500 + divider + calculator 496 + gap 24 + LISA 360 + padding (see the boundary test).
+ */
+const THREE_PANEL_BREAKPOINT = 1446;
+const TUTOR_PANEL_PX = 360;
 
 /* ── MockResizeObserver: no-op stub (DesmosCalculator uses ResizeObserver) ── */
 class MockResizeObserver {
@@ -1145,9 +1151,18 @@ describe("W4-4 — LISA always open in review, three panels", () => {
     );
   });
 
-  it("the three-panel breakpoint is exactly question + calculator + LISA + gutters", () => {
-    expect(THREE_PANEL_BREAKPOINT).toBe(1446);
-    expect(TUTOR_PANEL_PX).toBe(360);
+  it("the three-panel breakpoint is exactly 1446px: at 1445 the calculator covers LISA, at 1446 it sits beside her", () => {
+    mockViewport(THREE_PANEL_BREAKPOINT - 1);
+    const below = renderReview();
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+    expect(screen.getByTestId("review-calc-over-tutor")).toBeTruthy();
+    below.unmount();
+
+    mockViewport(THREE_PANEL_BREAKPOINT);
+    renderReview();
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+    expect(screen.queryByTestId("review-calc-over-tutor")).toBeNull();
+    expect(screen.getByTestId("review-tutor-column").style.width).toBe("360px");
   });
 
   it("1024–1445px: opening the calculator expands Desmos over LISA's column; LISA stays mounted underneath and returns when it closes", () => {

@@ -159,7 +159,6 @@ import {
   CALC_DEFAULT_PCT,
   CALC_MIN_PX,
 } from "@/components/math/calculator-layout";
-import { CALC_MIN_PX as PRACTICE_CALC_MIN_PX } from "@/components/practice/CanonicalPracticePage";
 
 function mount(path: string): (to: string) => void {
   const { hook, navigate } = memoryLocation({ path, record: true });
@@ -330,7 +329,8 @@ describe("E10b floating calculator", () => {
   it("is practice/review's size: CALC_MIN_PX x CALC_COLUMN_HEIGHT_PX, read from the shared module", async () => {
     mount(M1);
     const p = await openCalculator();
-    expect(CALC_MIN_PX).toBe(PRACTICE_CALC_MIN_PX);
+    // The practice/review runner's calculator floor is asserted against the same module (and
+    // the same 496px literal) in components/practice/CanonicalPracticePage.test.tsx.
     expect(p.style.width).toBe(`${CALC_MIN_PX}px`);
     expect(p.style.height).toBe(`${CALC_COLUMN_HEIGHT_PX}px`);
     expect([CALC_MIN_PX, CALC_COLUMN_HEIGHT_PX]).toEqual([496, 640]);
