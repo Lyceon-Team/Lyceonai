@@ -33,7 +33,6 @@ import {
   type LaunchBody,
   type LaunchResponse,
   type MoveBlockBody,
-  type PlanMember,
   type ProfileReadResponse,
   type ProfileUpsertResponse,
   type StudyProfileUpsert,
@@ -42,7 +41,7 @@ import {
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { apiRequest } from "@/lib/queryClient";
 
-export const CALENDAR_ROOT = "/api/calendar" as const;
+const CALENDAR_ROOT = "/api/calendar" as const;
 
 /**
  * Parses a response body against a shared schema. A failure THROWS, and the thrown message
@@ -249,8 +248,6 @@ export async function putDay(
     "PUT /api/calendar/days/:date",
   );
 }
-
-export type DayMembers = readonly PlanMember[];
 
 /** §12.2/§12.4 POST /api/calendar/blocks/:id/move. */
 export async function postMoveBlock(

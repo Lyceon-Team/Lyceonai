@@ -15,7 +15,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalendarDay, DayEditBody, PlanBlock } from "@lyceon/shared";
 import {
-  CALENDAR_ROOT,
   fetchCalendar,
   fetchGuardianCalendar,
   postAcknowledge,
@@ -23,6 +22,10 @@ import {
   postMoveBlock,
   putDay,
 } from "./client";
+
+/** The calendar API's root path, as the server mounts it — a literal, so a drift in the
+ * client's own constant fails here instead of agreeing with itself. */
+const CALENDAR_ROOT = "/api/calendar";
 
 const csrfFetchMock = vi.fn();
 
