@@ -221,10 +221,15 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
 });
 
 describe("sweep — no pre-R1 review route survives outside the historical record", () => {
-  it("robots.txt names /review, not the deleted /review-errors", () => {
+  // INV-10A-05 (2026-10-06): robots.txt no longer disallows app routes at all (they are served
+  // the noindex shell, which crawlers must be able to fetch; tests/seo.route-registry.test.ts),
+  // so it no longer names /review. What this check exists for still holds: the deleted
+  // /review-errors route is named nowhere in it.
+  it("robots.txt does not name the deleted /review-errors (nor block /review, a noindex page)", () => {
     const robots = read("client/public/robots.txt");
-    expect(robots).toContain("Disallow: /review\n");
+    expect(robots).toContain("Sitemap:");
     expect(robots).not.toContain("/review-errors");
+    expect(robots).not.toMatch(/^Disallow: \/review/m);
   });
 
   /**
