@@ -4,7 +4,7 @@ import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
 import { LevelPill } from "@/components/mastery/LevelPill";
 import { MasteryMeter } from "@/components/mastery/MasteryMeter";
 
-export type MasteryRowVariant = "wide" | "compact";
+type MasteryRowVariant = "wide" | "compact";
 
 /** UI-57: the row as a show/hide button for the list with id `controls` (wide rows only). */
 type MasteryRowDisclosure = {

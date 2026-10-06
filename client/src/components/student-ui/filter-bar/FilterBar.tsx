@@ -50,7 +50,7 @@ import {
  * Section chip is omitted and every domain is offered (OQ-22: empty means no constraint).
  */
 
-export type FilterBarProps = {
+type FilterBarProps = {
   taxonomy: PracticeTopicsResponse;
   value: FilterBarValue;
   onChange: (next: FilterBarValue) => void;

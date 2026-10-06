@@ -43,12 +43,12 @@ import {
   type StudentLinkCodeView,
 } from "../../../../packages/shared/src/student-link-code-schema";
 
-export const STUDENT_LINK_CODE_QUERY_KEY = ["student-link-code"] as const;
+const STUDENT_LINK_CODE_QUERY_KEY = ["student-link-code"] as const;
 /**
  * G-NEW-11: one cache entry per student. Without the id in the key, an entry cached for one
  * student is served to whichever student mounts the panel next in the same tab.
  */
-export function studentLinkCodeQueryKey(studentId: string) {
+function studentLinkCodeQueryKey(studentId: string) {
   return [...STUDENT_LINK_CODE_QUERY_KEY, studentId] as const;
 }
 

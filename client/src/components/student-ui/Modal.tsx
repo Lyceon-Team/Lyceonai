@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
  * `footer` holds the actions: at most one `lyc-primary` button, the rest outline or quiet;
  * `ModalClose` (asChild) turns any button into a closer, e.g. "Not now".
  */
-export type ModalProps = {
+type ModalProps = {
   title: ReactNode;
   description?: ReactNode;
   children?: ReactNode;

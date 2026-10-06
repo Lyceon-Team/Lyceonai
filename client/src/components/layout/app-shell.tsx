@@ -107,7 +107,7 @@ import { usePublishThemeLock } from "./theme-lock";
 /** What a locked rail item does: open the upgrade modal in place, or navigate (ruling 3). */
 type LockBehaviour = "modal" | "navigate";
 
-export type RailItem = {
+type RailItem = {
   readonly key: string;
   readonly label: string;
   readonly href: string;
@@ -188,7 +188,7 @@ function railItem(key: string): RailItem {
   return item;
 }
 
-export const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
+const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
 
 const SETTINGS_PATH = "/profile";
 
@@ -319,7 +319,7 @@ export function AppShellPanel({
   return slot === null ? null : createPortal(children, slot);
 }
 
-export type AppShellProps = {
+type AppShellProps = {
   children: ReactNode;
   /** The right panel's width, or null for none (route-shells.ts). */
   panel?: RightPanelWidth | null;

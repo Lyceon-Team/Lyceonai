@@ -61,7 +61,7 @@ export type FilterOption<T extends string = string> = {
 
 type FilterChipKind = "domain" | "skill" | "difficulty";
 
-export type FilterChip = {
+type FilterChip = {
   kind: FilterChipKind;
   value: string;
   label: string;

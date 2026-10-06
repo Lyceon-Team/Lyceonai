@@ -57,7 +57,7 @@ export function FocusBarContext({
   return slot === null ? null : createPortal(children, slot);
 }
 
-export type FocusShellProps = {
+type FocusShellProps = {
   children: ReactNode;
   /** The section name in the bar ("Practice", "Review", "Full-Length"). */
   section: string;

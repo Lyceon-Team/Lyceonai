@@ -37,13 +37,13 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import { useActiveThemeLock } from "./theme-lock";
 
-export type HeaderSignOut = {
+type HeaderSignOut = {
   signOut: () => Promise<void>;
   isSigningOut: boolean;
 };
 
 /** Which token set the open menu draws with (F-70). */
-export type HeaderMenuTone = "app" | "student";
+type HeaderMenuTone = "app" | "student";
 
 /**
  * A student menu item: the student ink and the student hover fill, not the app-wide accent.

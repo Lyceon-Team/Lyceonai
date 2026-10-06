@@ -14,12 +14,12 @@
  * provide; FullPageLoader and Modal carry their own, because they render outside a shell
  * (route fallbacks, auth gates) or in a portal on <body>.
  */
-export { PageHeader, type PageHeaderProps } from "./PageHeader";
-export { FullPageLoader, type FullPageLoaderProps } from "./FullPageLoader";
-export { Modal, ModalClose, type ModalProps } from "./Modal";
-export { Notice, type NoticeProps, type NoticeTone } from "./Notice";
+export { PageHeader } from "./PageHeader";
+export { FullPageLoader } from "./FullPageLoader";
+export { Modal, ModalClose } from "./Modal";
+export { Notice } from "./Notice";
 // UI-43: the shared Practice/Review filter bar. Consumed by the Wave 5 page rows (UI-51, UI-52).
-export { FilterBar, type FilterBarProps } from "./filter-bar/FilterBar";
+export { FilterBar } from "./filter-bar/FilterBar";
 export { EMPTY_FILTER, type FilterBarValue } from "./filter-bar/filter-cascade";
 // UI-50: the 40-tick ruler (DESIGN.md §3 "Ruler progress"): Home's diagnostic card and free quota.
 export { RulerProgress, rulerFill } from "./RulerProgress";

@@ -12,9 +12,9 @@ import {
  * `<Notice tone="danger" title=… />` and cannot reach for a non-student variant by accident.
  * Danger is announced with role="alert"; every other tone is a polite role="status".
  */
-export type NoticeTone = "neutral" | "info" | "warning" | "danger" | "success";
+type NoticeTone = "neutral" | "info" | "warning" | "danger" | "success";
 
-export type NoticeProps = Omit<AppNoticeProps, "variant"> & {
+type NoticeProps = Omit<AppNoticeProps, "variant"> & {
   tone?: NoticeTone;
 };
 

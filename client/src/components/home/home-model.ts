@@ -32,7 +32,7 @@ import { daysBetween, weekdayDayMonth } from "@/features/calendar/lib/dates";
 type DayBlock = CalendarDay["blocks"][number];
 
 /** The shipped greeting (the old dashboard's `getGreeting`): by the student's local hour. */
-export function greetingFor(hour: number): string {
+function greetingFor(hour: number): string {
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
