@@ -80,12 +80,12 @@ const DOMAIN_COPY: Readonly<Record<string, string>> = {
  * panel. A student edit can carry any string, and a block the student built themselves does
  * not need the system to explain it back to them.
  */
-export function blockExplanation(key: string | null): string | null {
+function blockExplanation(key: string | null): string | null {
   return lookup(BLOCK_COPY, key);
 }
 
 /** The sentence for a PER-DOMAIN key, or null when there is none. */
-export function domainExplanation(key: string | null): string | null {
+function domainExplanation(key: string | null): string | null {
   return lookup(DOMAIN_COPY, key);
 }
 
@@ -136,9 +136,3 @@ export function explanationLines(input: {
   const fromBlock = blockExplanation(input.blockKey);
   return fromBlock === null ? [] : [fromBlock];
 }
-
-/** Exported for the test that proves every canonical key has copy. */
-export const EXPLANATION_COPY_TABLES = {
-  block: BLOCK_COPY,
-  domain: DOMAIN_COPY,
-} as const;
