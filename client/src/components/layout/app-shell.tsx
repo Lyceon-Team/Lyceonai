@@ -119,10 +119,11 @@ type RailItem = {
 };
 
 /**
- * The rail, as data (DESIGN.md §2 order). Exported so the tests iterate the config rather than a
- * copy of it (#829): a seventh item is covered the moment it is added here.
+ * The rail, as data (DESIGN.md §2 order). The rail test lists the same items and first asserts
+ * the rendered rail is exactly that list, in order (#829): a seventh item added here fails it
+ * until the test lists it too, so every item stays covered.
  */
-export const RAIL_ITEMS: readonly RailItem[] = [
+const RAIL_ITEMS: readonly RailItem[] = [
   {
     key: "home",
     label: "Home",
@@ -172,7 +173,7 @@ export const RAIL_ITEMS: readonly RailItem[] = [
  * (the middle), Calendar, LISA. Full-Length is not on it. Keys into `RAIL_ITEMS`, so each tab is
  * the rail item itself (label, href, lock) and only the order and membership are the bar's own.
  */
-export const TAB_BAR_KEYS = [
+const TAB_BAR_KEYS = [
   "home",
   "review",
   "practice",

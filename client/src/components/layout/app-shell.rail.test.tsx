@@ -19,7 +19,9 @@
  * gate). It reaches the shell the way production does: as the `featureAccess` field of the cached
  * profile response, parsed by `useFeatureAccess`. No hand-written map is used.
  *
- * Driven by `RAIL_ITEMS`, the array the rail renders, so an added item is covered at once.
+ * Driven by `RAIL`, the rail written out below as DESIGN.md §2 gives it (the shell keeps its
+ * `RAIL_ITEMS` private). The first rail test proves the rendered rail is exactly `RAIL`, in
+ * order, so the loops cover every item the shell draws: an added item fails it until listed.
  */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -36,11 +38,14 @@ import { memoryLocation } from "wouter/memory-location";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
+import type {
+  FeatureAccessMap,
+  LockableFeatureKey,
+} from "@lyceon/shared/feature-access";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { UPGRADE_MODAL_COPY } from "@/components/billing/upgrade-modal";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
-import { AppShell, AppShellPanel, RAIL_ITEMS } from "./app-shell";
+import { AppShell, AppShellPanel } from "./app-shell";
 import { GuardianShell } from "./GuardianShell";
 import { HELP_PATH } from "./LegalFooter";
 import { ActiveThemeLockProvider } from "./theme-lock";
@@ -201,15 +206,64 @@ function renderShell(
 
 const GATED_URL = /\/api\/(tests|tutor|calendar|exam|students\/[^/]+\/mastery)/;
 
+type RailSpec = {
+  readonly key: string;
+  readonly label: string;
+  readonly href: string;
+  readonly lock: {
+    readonly feature: LockableFeatureKey;
+    readonly behaviour: "modal" | "navigate";
+  } | null;
+};
+
+/** The rail, DESIGN.md §2 order; locks per ruling 3 (Calendar navigates, the others open the modal). */
+const RAIL: readonly RailSpec[] = [
+  { key: "home", label: "Home", href: "/dashboard", lock: null },
+  { key: "practice", label: "Practice", href: "/practice", lock: null },
+  { key: "review", label: "Review", href: "/review", lock: null },
+  {
+    key: "full-length",
+    label: "Full-Length",
+    href: "/tests",
+    lock: { feature: "exam_full_length", behaviour: "modal" },
+  },
+  {
+    key: "calendar",
+    label: "Calendar",
+    href: "/calendar",
+    lock: { feature: "calendar_access", behaviour: "navigate" },
+  },
+  {
+    key: "lisa",
+    label: "LISA",
+    href: "/chat",
+    lock: { feature: "tutor_access", behaviour: "modal" },
+  },
+];
+
 const byKey = (key: string) => {
-  const item = RAIL_ITEMS.find((i) => i.key === key);
+  const item = RAIL.find((i) => i.key === key);
   if (item === undefined) throw new Error(`no rail item ${key}`);
   return item;
 };
 
-describe("the rail, from RAIL_ITEMS (DESIGN.md §2 order)", () => {
-  it("has the six items in the design's order (negative control for the loops below)", () => {
-    expect(RAIL_ITEMS.map((i) => i.label)).toEqual([
+/** The rail's entries, in the order they render (lock glyphs excluded). */
+function railEntries(): HTMLElement[] {
+  return Array.from(
+    screen
+      .getByTestId("app-rail")
+      .querySelectorAll<HTMLElement>('[data-testid^="rail-"]'),
+  ).filter((el) => !el.getAttribute("data-testid")?.endsWith("-lock"));
+}
+
+describe("the rail (DESIGN.md §2 order)", () => {
+  it("renders exactly the six items in the design's order (negative control for the loops below)", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    const entries = railEntries();
+    expect(entries.map((el) => el.getAttribute("data-testid"))).toEqual(
+      RAIL.map((i) => `rail-${i.key}`),
+    );
+    expect(entries.map((el) => el.textContent)).toEqual([
       "Home",
       "Practice",
       "Review",
@@ -219,9 +273,24 @@ describe("the rail, from RAIL_ITEMS (DESIGN.md §2 order)", () => {
     ]);
   });
 
+  it("each lock is the one RAIL lists: a modal lock is a button, a navigate lock a link", async () => {
+    renderShell(await serverMap({ paid: false, under13: false }));
+    for (const item of RAIL) {
+      const el = screen.getByTestId(`rail-${item.key}`);
+      expect([
+        item.key,
+        screen.queryByTestId(`rail-${item.key}-lock`) !== null,
+      ]).toEqual([item.key, item.lock !== null]);
+      expect([item.key, el.tagName]).toEqual([
+        item.key,
+        item.lock?.behaviour === "modal" ? "BUTTON" : "A",
+      ]);
+    }
+  });
+
   it("paid student: every item is one anchor with its href, no lock, and clicking navigates", async () => {
     const map = await serverMap({ paid: true, under13: false });
-    for (const item of RAIL_ITEMS) {
+    for (const item of RAIL) {
       const { container, history } = renderShell(map);
       const matches = container.querySelectorAll(
         `[data-testid="rail-${item.key}"]`,
@@ -241,7 +310,7 @@ describe("the rail, from RAIL_ITEMS (DESIGN.md §2 order)", () => {
   it("marks only the active item aria-current=page", async () => {
     const map = await serverMap({ paid: true, under13: false });
     renderShell(map, { path: "/practice/topics" });
-    for (const item of RAIL_ITEMS) {
+    for (const item of RAIL) {
       const el = screen.getByTestId(`rail-${item.key}`);
       expect(el.getAttribute("aria-current")).toBe(
         item.key === "practice" ? "page" : null,
@@ -339,7 +408,7 @@ describe("under-13 (reason age, OQ-29)", () => {
 describe("no map (a non-student, or not loaded)", () => {
   it("draws no lock and every item navigates", () => {
     renderShell(null);
-    for (const item of RAIL_ITEMS) {
+    for (const item of RAIL) {
       expect(screen.queryByTestId(`rail-${item.key}-lock`)).toBeNull();
       expect(screen.getByTestId(`rail-${item.key}`).tagName).toBe("A");
     }
@@ -684,7 +753,7 @@ describe("keyboard", () => {
     const order = tabbables(container);
     const targets = [
       screen.getByTestId("logo-link"),
-      ...RAIL_ITEMS.map((i) => screen.getByTestId(`rail-${i.key}`)),
+      ...RAIL.map((i) => screen.getByTestId(`rail-${i.key}`)),
       screen.getByTestId("rail-help"),
       screen.getByTestId("rail-account"),
     ];

@@ -14,7 +14,6 @@
  */
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RAIL_ITEMS } from "@/components/layout/app-shell";
 import {
   ADA,
   billingStatus,
@@ -72,8 +71,16 @@ describe("G4-08 the guardian's /profile", () => {
     const hrefs = Array.from(document.querySelectorAll("a[href]")).map((a) =>
       a.getAttribute("href"),
     );
-    for (const item of RAIL_ITEMS) {
-      expect(hrefs).not.toContain(item.href);
+    // The student rail's destinations (app-shell's RAIL_ITEMS, DESIGN.md §2).
+    for (const href of [
+      "/dashboard",
+      "/practice",
+      "/review",
+      "/tests",
+      "/calendar",
+      "/chat",
+    ]) {
+      expect(hrefs).not.toContain(href);
     }
     // The student's own practice figures are not a guardian section.
     expect(screen.queryByTestId("tab-progress")).toBeNull();

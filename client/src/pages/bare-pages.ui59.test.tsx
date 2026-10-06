@@ -33,8 +33,10 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
-import { BARE_CARD_PROSE_LEADING } from "@/components/layout/BareCardShell";
 import type { StudentShellRoute } from "@/lib/route-shells";
+
+/** BareCardShell's card class: the 1.55 body leading at bare-`p` specificity, verbatim. */
+const BARE_CARD_PROSE_LEADING = "[:where(&)_p]:leading-[1.55]";
 
 const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const profile = vi.hoisted(() => ({ data: undefined as unknown }));
@@ -513,8 +515,6 @@ describe("OQ-60 (f): card paragraphs take the body leading, inside the Bare card
     expect(document.body.classList.contains(BARE_CARD_PROSE_LEADING)).toBe(
       false,
     );
-    // The 1.55 body leading (tailwind.config.ts `lyc-body`), at bare-`p` specificity.
-    expect(BARE_CARD_PROSE_LEADING).toBe("[:where(&)_p]:leading-[1.55]");
   });
 });
 
