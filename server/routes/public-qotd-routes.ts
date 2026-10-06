@@ -7,7 +7,7 @@
  *   POST /api/public/qotd/today/answer   grade, count once per hashed IP per day, reveal
  *
  * @spec [docs/plans/seo/seo-marketing-vertical.md R16 (anyone, no login), R17 (reveal on submit,
- *       no quota charge, aggregate stats, "% got this right" at >= 5 attempts), R18, R19, R20a,
+ *       no quota charge, aggregate stats, "N% answered correctly" at >= 5 attempts), R18, R19, R20a,
  *       Q2; SCL-202 (Turnstile on submit before any other work; HMAC-IP ledger); Coding Standards
  *       §5.2, §7.1, §8.1-§8.3, §12.1; owner Step 0 decisions 2026-10-05 (no CSRF: no ambient
  *       credential is used and Turnstile gates the write; future dates 404)]

@@ -92,6 +92,10 @@ export const BANNED: readonly BannedPhrase[] = [
     why: "(d) scoring the College Board does not publish",
   },
   { pattern: /module 1 matters most/i, why: "(d) unsourced" },
+  {
+    pattern: /of students got this right/i,
+    why: '(e) superseded: the QOTD stat reads "N% answered correctly" (approved by Karl 2026-10-05)',
+  },
 ];
 
 /**

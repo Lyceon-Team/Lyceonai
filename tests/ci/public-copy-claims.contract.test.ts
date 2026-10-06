@@ -201,6 +201,7 @@ describe("public copy: the claims F6 removed stay removed", () => {
       "~13-15 questions",
       "Here's exactly how it works",
       "Module 1 matters most",
+      "67% of students got this right.",
     ];
     for (const { pattern } of BANNED) {
       expect(
