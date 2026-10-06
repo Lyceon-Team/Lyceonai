@@ -41,6 +41,11 @@ import {
 import pg from "pg";
 import { pgConnConfig } from "../../helpers/pg-supabase";
 import { STUDENT_HARNESS_DB } from "./db";
+import {
+  CONSENT_COOKIE_NAME,
+  COOKIE_BANNER_VERSION,
+  formatConsentCookieValue,
+} from "../../../packages/shared/src/analytics-consent-schema";
 import { PAGE_GROUPS } from "./groups";
 import type {
   ExtraViewport,
@@ -466,6 +471,25 @@ async function clearCalendarProfile(persona: StudentPersona): Promise<void> {
   }
 }
 
+/**
+ * SEO Wave 2 (groups/types.ts `freshReviewPrompt`): removes the persona's review-prompt state and
+ * review, so the next page load is a never-prompted account again.
+ */
+async function clearReviewPrompt(persona: StudentPersona): Promise<void> {
+  const db = await harnessDb();
+  try {
+    await db.query(
+      "DELETE FROM public.product_review_prompt_state WHERE profile_id = $1",
+      [PERSONAS[persona].id],
+    );
+    await db.query("DELETE FROM public.product_reviews WHERE profile_id = $1", [
+      PERSONAS[persona].id,
+    ]);
+  } finally {
+    await db.end();
+  }
+}
+
 async function apiCall(
   stack: Stack,
   persona: StudentPersona,
@@ -612,6 +636,11 @@ async function shootBuilt(
       );
     await clearCalendarProfile(persona);
   }
+  if (shot.freshReviewPrompt === true) {
+    if (persona === null)
+      throw new Error(`${shot.id}: a fresh review prompt needs a seeded student`);
+    await clearReviewPrompt(persona);
+  }
   const context = await browser.newContext({
     viewport: { width: size.width, height: size.height },
     colorScheme: theme,
@@ -620,6 +649,22 @@ async function shootBuilt(
       shot.persona === "signed-out" ? {} : { [PERSONA_HEADER]: shot.persona },
   });
   try {
+    if (shot.cookieChoiceMade === true) {
+      await context.addCookies([
+        {
+          name: CONSENT_COOKIE_NAME,
+          value: encodeURIComponent(
+            formatConsentCookieValue({
+              bannerVersion: COOKIE_BANNER_VERSION,
+              consentId: "00000000-0000-4000-8000-00000000c0c0",
+              analytics: false,
+              decidedAtSeconds: Math.floor(Date.now() / 1000),
+            }),
+          ),
+          url: stack.baseUrl,
+        },
+      ]);
+    }
     await localOnly(context, fontCss);
     await context.addCookies([answeredConsentCookie(stack.baseUrl)]);
     await context.addInitScript(
@@ -978,6 +1023,14 @@ function writeIndex(
       lines.push(
         `Fresh session per capture (real create route, ended after the shot): \`${shot.freshSession.engine} ${JSON.stringify(shot.freshSession.body)}\`.`,
       );
+    if (shot.cookieChoiceMade === true)
+      lines.push(
+        "Cookie banner already answered (the real `lyceon_consent` cookie, analytics rejected, current banner version).",
+      );
+    if (shot.freshReviewPrompt === true)
+      lines.push(
+        "No review-prompt state before each capture (the persona's `product_review_prompt_state` and `product_reviews` rows are deleted from the harness database), so the real cadence shows the prompt in every viewport and theme.",
+      );
     if (shot.freshCalendarProfile === true)
       lines.push(
         "No study profile before each capture (the persona's `student_study_profile` row is deleted from the harness database), so the save is a first save in every viewport and theme.",
@@ -1109,7 +1162,10 @@ async function main(): Promise<void> {
       `usage: pnpm exec tsx tests/e2e/student-harness/capture.ts <group>; groups: ${Object.keys(PAGE_GROUPS).join(", ")}`,
     );
   }
-  const outDir = path.join(OUT_ROOT, group.id);
+  const outDir = path.join(
+    group.outRoot === undefined ? OUT_ROOT : path.join(ROOT, group.outRoot),
+    group.id,
+  );
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
   const runDir = path.join(ROOT, "test-results", "student-harness");

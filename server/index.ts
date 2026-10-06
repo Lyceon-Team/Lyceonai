@@ -28,6 +28,7 @@ import {
   requireStudentOrAdmin,
   requireStudentOnly,
   requireStudentAccount,
+  requireGuardianLinkForUnder13,
   hasSsrSessionCookie,
 } from "./middleware/supabase-auth";
 import { csrfTokenResponseSchema } from "../packages/shared/src/csrf-token-schema";
@@ -39,6 +40,7 @@ import {
   reportGcpCredentialStatusAtStartup,
 } from "./lib/startup-guards";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
+import { analyticsConfigProblems } from "./lib/analytics/emit-event";
 import oauthCallbackRoutes, {
   nativeOAuthCallbackHandler,
 } from "./routes/oauth-callback-routes";
@@ -66,6 +68,7 @@ import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
+import productFeedbackRoutes from "./routes/product-feedback-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -254,6 +257,24 @@ const googleOAuthCallbackLimiter = rateLimit({
 // race it. A failed load logs ERROR boot_load_failed and serves defaults.
 const TUTOR_CONFIG_BOOT_WAIT_MS = 3_000;
 void TutorConfig.bootLoad();
+
+// Owner report 2026-10-05: a production signup emitted no `user_signed_up` and left no trace,
+// because a missing or malformed analytics variable made every server event a silent no-op. Said
+// once per cold start, at ERROR, naming the variable and the Zod issue code (never the value), so
+// a misconfigured deployment is visible before anyone signs up. Production only: a local or
+// preview build without analytics is a choice, not a fault.
+{
+  const analyticsProblems = analyticsConfigProblems(process.env);
+  if (analyticsProblems.length > 0 && isProductionDeployment()) {
+    logger.error(
+      "ANALYTICS",
+      "boot_not_configured",
+      "Server analytics is not configured: no server event will be sent",
+      undefined,
+      { problems: analyticsProblems },
+    );
+  }
+}
 const awaitTutorConfig: express.RequestHandler = (_req, _res, next) => {
   TutorConfig.whenBooted(TUTOR_CONFIG_BOOT_WAIT_MS).then(() => next(), next);
 };
@@ -333,6 +354,18 @@ app.use(
   requireSupabaseAuth,
   doubleCsrfProtection,
   profileRoutes,
+);
+
+// SEO Wave 2, plan Q6 (R28-R30). The review prompt, in-app reviews and private feedback, for
+// students and guardians alike (each route reads the caller's role and age from their profile).
+// G2-04: not in the owner-approved allowed set, so an under-13 student with no active guardian
+// link is refused here like on every other student surface; guardians and 13+ pass.
+app.use(
+  "/api/feedback",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireGuardianLinkForUnder13,
+  productFeedbackRoutes,
 );
 
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session

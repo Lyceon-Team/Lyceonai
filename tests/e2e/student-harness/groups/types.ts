@@ -117,6 +117,18 @@ export type Shot = {
    * form). Listed in the index next to the shot.
    */
   freshCalendarProfile?: true;
+  /**
+   * SEO Wave 2, plan Q6: the persona's review-prompt state and review are deleted from the harness
+   * database before every capture, so the real cadence answers "show" in each viewport and theme
+   * (a showing is recorded, and would otherwise hold the prompt back for 120 days).
+   */
+  freshReviewPrompt?: true;
+  /**
+   * The visitor already answered the cookie banner (analytics rejected), so the banner does not
+   * cover the page's controls. Written as the real consent cookie, in the current banner version,
+   * the way the banner itself writes it. Listed in the index next to the shot.
+   */
+  cookieChoiceMade?: true;
   /** UI-53: text the page must show after `steps` (e.g. "Question 2 of 10"); the capture fails otherwise. */
   expectText?: string;
   /**
@@ -211,4 +223,9 @@ export type PageGroup = {
     | "lisa-history"
     | "mastery-skills"
     | "bare-pages";
+  /**
+   * Where the group's evidence goes, relative to the repo root. Defaults to the student-UI Wave 5
+   * evidence directory; the SEO vertical's groups write under docs/plans/seo/evidence/.
+   */
+  outRoot?: string;
 };

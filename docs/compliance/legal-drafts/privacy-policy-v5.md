@@ -19,7 +19,9 @@ This policy applies to students using LYCEON, parents or guardians connected to 
 * Date of birth
 * Account credentials, or your Google account if you sign in with Google
 * A parent's or guardian's email address, if a student asks us to send them a link code
-* Messages, responses or feedback submitted through the platform
+* Messages, responses or feedback submitted through the platform, including private feedback you send to the LYCEON team
+* Reviews you choose to leave about LYCEON: a star rating, optional text, and whether LYCEON may quote the review anonymously
+* Your choice about marketing emails, and when and where you made it
 
 ### **1.2 Learning and Usage Data**
 
@@ -51,7 +53,9 @@ We use information to:
 * monitor platform performance, reliability and security;
 * prevent abuse, cheating or misuse;
 * process payments and manage subscriptions;
-* invite customers to review LYCEON; and
+* invite customers to review LYCEON, and read the reviews and private feedback they send to improve the service;
+* quote a review anonymously, only if its author allowed it;
+* keep a record of marketing email choices, so we can honor them and show when consent was given or withdrawn; and
 * send service messages, and marketing messages only if you opt in (see the **LYCEON Marketing Communications Consent**).
 
 **We do not use personal information for targeted advertising, and we do not sell personal information.**
@@ -104,8 +108,9 @@ While a parent or guardian is connected, the information described in Section 1 
 
 * has no tutor conversations;
 * is excluded from analytics and session recording;
-* never receives marketing messages; and
-* never receives review invitations.
+* never receives marketing messages;
+* never receives review invitations and cannot leave a review; and
+* may send us private feedback, which we use only to improve the service.
 
 ### **4.4 Parent and Guardian Rights**
 
@@ -239,7 +244,7 @@ Where the GDPR or UK GDPR applies, we process personal information on the follow
 
 * **performance of a contract**, to operate your account and subscription;
 * **legitimate interests**, for platform security, abuse prevention, service improvement and review invitations;
-* **consent**, for a parent's or guardian's connection to a student account, for non-essential cookies, analytics and session recording, and for marketing messages; and
+* **consent**, for a parent's or guardian's connection to a student account, for non-essential cookies, analytics and session recording, for marketing messages, and for quoting a review; and
 * **legal obligation**, where required.
 
 You have the rights of access, rectification, erasure, restriction, portability and objection, the right to withdraw consent at any time, and the right to lodge a complaint with a supervisory authority.
@@ -317,3 +322,6 @@ LYCEON AI
 10. Confirm the change-notice wording in Section 11.
 11. Confirm that Section 5.2 and the Sub-Processor List are complete on the publication date.
 12. Insert the postal address in Section 12.
+13. Set retention periods for in-app reviews, private feedback and marketing-consent records (Sections 1.1 and 2). No period is stated in this draft. As built, each is kept until the account is deleted and is deleted with it; marketing-consent records are not otherwise expired.
+14. Confirm that accepting private feedback from users under 13 (Section 4.3) is covered by the parental notice and consent in Sections 4.1 and 4.5.
+15. Confirm the legal basis for keeping marketing-consent records after consent is withdrawn (Section 2), and for how long (item 13).

@@ -23,6 +23,16 @@
  * deletes PostHog's cookies and storage, and reloads, so no SDK instance outlives the choice.
  */
 import type { PostHog } from "posthog-js";
+import {
+  onSignedInSurface,
+  subscribeSignedInSurface,
+} from "@/lib/signed-in-surface";
+import {
+  HERO_FLAG_KEY,
+  type HeroVariant,
+  isHeroVariant,
+  storeHeroVariant,
+} from "./hero-experiment";
 import { scrubProperties } from "./url-scrub";
 
 /** PostHog's dated defaults snapshot ("standard defaults", R32). */
@@ -47,25 +57,14 @@ function config(): { key: string; host: string } | null {
 /**
  * Owner ruling 2026-10-05 (recorded in SCL-213 IS 6): on SIGNED-IN surfaces autocapture records no
  * element text (`mask_all_text: true`) — a clicked button or link there can carry a student's
- * name. Public pages keep PostHog's default. "Signed-in surface" is every page rendered through
- * `RequireRole`, which registers itself here while it is mounted; a counter, because a surface can
- * hand over to another (route change) before the first unmounts.
+ * name. Public pages keep PostHog's default. "Signed-in surface" is the shared store in
+ * `@/lib/signed-in-surface`, which every page rendered through `RequireRole` registers with.
  */
-let signedInSurfaces = 0;
-
 function applyTextMasking(): void {
-  instance?.set_config({ mask_all_text: signedInSurfaces > 0 });
+  instance?.set_config({ mask_all_text: onSignedInSurface() });
 }
 
-/** Called by RequireRole on mount; the returned function is its unmount. */
-export function enterSignedInSurface(): () => void {
-  signedInSurfaces += 1;
-  applyTextMasking();
-  return () => {
-    signedInSurfaces -= 1;
-    applyTextMasking();
-  };
-}
+subscribeSignedInSurface(applyTextMasking);
 
 export function analyticsConfigured(): boolean {
   return config() !== null;
@@ -79,15 +78,47 @@ export function startAnalytics(): Promise<void> {
       api_host: cfg.host,
       defaults: POSTHOG_DEFAULTS,
       person_profiles: "identified_only",
-      mask_all_text: signedInSurfaces > 0,
+      mask_all_text: onSignedInSurface(),
       before_send: (event) =>
         event === null
           ? null
           : { ...event, properties: scrubProperties(event.properties) },
     });
     instance = posthog;
+    // homepage-hero (owner ruling 2026-10-05, F13 decision 5): keep the assigned variant for the
+    // NEXT homepage view. `send_event: false` — reading the flag is not an exposure; the hero
+    // sends that itself, only on a view that shows the stored variant.
+    posthog.onFeatureFlags(() => {
+      const variant = posthog.getFeatureFlag(HERO_FLAG_KEY, {
+        send_event: false,
+      });
+      if (isHeroVariant(variant)) storeHeroVariant(variant);
+    });
+    if (pendingHeroExposure !== null) {
+      sendHeroExposure(posthog, pendingHeroExposure);
+      pendingHeroExposure = null;
+    }
   });
   return starting;
+}
+
+let pendingHeroExposure: HeroVariant | null = null;
+
+function sendHeroExposure(posthog: PostHog, variant: HeroVariant): void {
+  // PostHog's experiment exposure event, in the SDK's own shape.
+  posthog.capture("$feature_flag_called", {
+    $feature_flag: HERO_FLAG_KEY,
+    $feature_flag_response: variant,
+  });
+}
+
+/**
+ * The homepage shows `variant` (the stored assignment) on this view. Sent once PostHog runs;
+ * if it never does (no consent, an excluded account), nothing is ever sent.
+ */
+export function recordHeroExposure(variant: HeroVariant): void {
+  if (instance !== null) sendHeroExposure(instance, variant);
+  else pendingHeroExposure = variant;
 }
 
 const PH_STORAGE_KEY = /^(ph_|__ph)/;

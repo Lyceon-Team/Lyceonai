@@ -557,7 +557,10 @@ export function pgConnConfig(database: string): {
  * the explicit `profiles` rows a fixture needs. Edge case: `DROP DATABASE` fails if a
  * previous run left a connection open, so the caller owns `client.end()`.
  */
-export async function bootstrapPgDatabase(dbName: string): Promise<Client> {
+export async function bootstrapPgDatabase(
+  dbName: string,
+  options: { stopBefore?: string } = {},
+): Promise<Client> {
   const admin = new Client(pgConnConfig("postgres"));
   await admin.connect();
   await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
@@ -579,19 +582,42 @@ export async function bootstrapPgDatabase(dbName: string): Promise<Client> {
     CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
   `);
 
+  await applyMigrations(client, (name) =>
+    options.stopBefore === undefined ? true : name < options.stopBefore,
+  );
+
+  await client.query(
+    `DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;`,
+  );
+  return client;
+}
+
+/**
+ * Replay `supabase/migrations` in sorted order, the files `include` accepts.
+ *
+ * `bootstrapPgDatabase(db, { stopBefore })` plus `applyMigrationsFrom(client, stopBefore)` is
+ * how a suite tests a migration's DATA step: build the schema as it was, seed the rows the
+ * migration has to deal with, then apply it and the rest. @implemented [2026-10-05]
+ */
+async function applyMigrations(
+  client: Client,
+  include: (name: string) => boolean,
+): Promise<void> {
   const dir = path.resolve(
     path.dirname(new URL(import.meta.url).pathname),
     "../../supabase/migrations",
   );
   for (const f of fs
     .readdirSync(dir)
-    .filter((n) => n.endsWith(".sql"))
+    .filter((n) => n.endsWith(".sql") && include(n))
     .sort()) {
     await client.query(fs.readFileSync(path.join(dir, f), "utf8"));
   }
+}
 
-  await client.query(
-    `DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;`,
-  );
-  return client;
+export async function applyMigrationsFrom(
+  client: Client,
+  firstName: string,
+): Promise<void> {
+  await applyMigrations(client, (name) => name >= firstName);
 }

@@ -29,7 +29,14 @@ import {
   type Page,
   type Route,
 } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { gunzipSync } from "node:zlib";
+import {
+  HERO_COPY,
+  HERO_FLAG_KEY,
+  HERO_TITLE_ID,
+  HERO_VARIANT_STORAGE_KEY,
+} from "../../client/src/lib/analytics/hero-experiment";
 
 if (process.env.E2E_CHROMIUM) {
   test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
@@ -82,7 +89,13 @@ function decodeCapture(body: Buffer | null): CapturedEvent[] {
 async function instrument(
   context: BrowserContext,
   page: Page,
-  opts: { signedIn?: "under13" | "adult" } = {},
+  opts: {
+    signedIn?: "under13" | "adult";
+    /** The variant PostHog's flag response assigns for `homepage-hero` (F13). */
+    heroVariant?: "control" | "test";
+    /** Extra same-origin API answers, by path (F-72: the student calendar's data). */
+    api?: Readonly<Record<string, unknown>>;
+  } = {},
 ): Promise<Observed> {
   const seen: Observed = {
     posthog: [],
@@ -122,7 +135,7 @@ async function instrument(
         // As a real project answers: autocapture on (the project setting), replay off (R12a).
         json: {
           supportedCompression: ["gzip-js"],
-          hasFeatureFlags: false,
+          hasFeatureFlags: opts.heroVariant !== undefined,
           autocapture_opt_out: false,
           sessionRecording: false,
         },
@@ -131,7 +144,23 @@ async function instrument(
       await route.fulfill({
         status: 200,
         json: {
-          flags: {},
+          // PostHog's /flags v2 shape; empty unless a test assigns the hero experiment.
+          flags:
+            opts.heroVariant === undefined
+              ? {}
+              : {
+                  [HERO_FLAG_KEY]: {
+                    key: HERO_FLAG_KEY,
+                    enabled: true,
+                    variant: opts.heroVariant,
+                    reason: {
+                      code: "condition_match",
+                      condition_index: 0,
+                      description: "Matched condition set 1",
+                    },
+                    metadata: { id: 1, version: 1, payload: null },
+                  },
+                },
           errorsWhileComputingFlags: false,
           autocapture_opt_out: false,
           sessionRecording: false,
@@ -185,6 +214,8 @@ async function instrument(
         seen.consentPosts.push(route.request().postDataJSON());
         return route.fulfill({ status: 204, body: "" });
       }
+      const extra = opts.api?.[path];
+      if (extra !== undefined) return route.fulfill({ json: extra });
       return route.fulfill({ status: 404, json: { error: "not mocked" } });
     },
   );
@@ -195,7 +226,7 @@ async function setAcceptedCookie(context: BrowserContext): Promise<void> {
   await context.addCookies([
     {
       name: "lyceon_consent",
-      value: `1.0d3c2b1a-9f8e-4d7c-8b6a-5f4e3d2c1b0a.a.${Math.floor(Date.now() / 1000)}`,
+      value: `2.0d3c2b1a-9f8e-4d7c-8b6a-5f4e3d2c1b0a.a.${Math.floor(Date.now() / 1000)}`,
       url: BASE,
     },
   ]);
@@ -206,7 +237,14 @@ test.describe("cookie consent → PostHog", () => {
     const seen = await instrument(context, page);
     await page.goto(`${BASE}/`);
     await expect(page.getByTestId("cookie-banner")).toBeVisible();
-    await page.getByTestId("cookie-reject").click();
+    // Version 2 (owner ruling 2026-10-05): three equal buttons, in this order.
+    const banner = page.getByTestId("cookie-banner");
+    await expect(banner.getByRole("button")).toHaveText([
+      "Reject all",
+      "Accept all",
+      "Cookie settings",
+    ]);
+    await banner.getByRole("button", { name: "Reject all" }).click();
     await expect(page.getByTestId("cookie-banner")).toBeHidden();
     await expect.poll(() => seen.consentPosts.length).toBe(1);
     expect(seen.consentPosts[0]).toMatchObject({
@@ -226,7 +264,10 @@ test.describe("cookie consent → PostHog", () => {
     await expect(page.getByTestId("cookie-banner")).toBeVisible();
     await page.waitForTimeout(1500);
     expect(seen.posthog).toEqual([]);
-    await page.getByTestId("cookie-accept").click();
+    await page
+      .getByTestId("cookie-banner")
+      .getByRole("button", { name: "Accept all" })
+      .click();
     await expect
       .poll(
         () =>
@@ -290,10 +331,10 @@ test.describe("cookie consent → PostHog", () => {
       .poll(() => seen.posthog.length, { timeout: 15_000 })
       .toBeGreaterThan(0);
     await page.getByRole("button", { name: "Cookie settings" }).click();
-    await page.getByTestId("cookie-analytics-toggle").click();
+    await page.getByRole("switch", { name: "Analytics" }).click();
     await Promise.all([
       page.waitForEvent("load"),
-      page.getByTestId("cookie-save").click(),
+      page.getByRole("button", { name: "Save choices" }).click(),
     ]);
     const before = seen.posthog.length;
     await page.waitForTimeout(3000);
@@ -366,5 +407,234 @@ test.describe("cookie consent → PostHog", () => {
       );
       expect(JSON.stringify(e.properties)).not.toContain("Casey Student");
     }
+  });
+});
+
+/**
+ * F13 (owner rulings 2026-10-05, Step 0 decisions 5 and 6; SCL-213 IS 7): the homepage hero
+ * experiment. Variant A is prerendered and all a visitor without consent sees; consent lets
+ * PostHog's flag request assign a variant, which shows from the NEXT homepage view, before first
+ * paint, and is the only view that sends an exposure.
+ */
+test.describe("homepage-hero experiment", () => {
+  const heroTitle = (page: Page) => page.locator(`#${HERO_TITLE_ID}`);
+  const storedVariant = (page: Page) =>
+    page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      HERO_VARIANT_STORAGE_KEY,
+    );
+  const exposures = (seen: Observed) =>
+    seen.events.filter((e) => e.event === "$feature_flag_called");
+
+  test("no consent → Variant A, no flag request, nothing stored", async ({
+    context,
+    page,
+  }) => {
+    const seen = await instrument(context, page, { heroVariant: "test" });
+    await page.goto(`${BASE}/`);
+    await expect(page.getByTestId("cookie-banner")).toBeVisible();
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.control.title);
+    await page.waitForTimeout(2500);
+    expect(seen.posthog).toEqual([]);
+    expect(await storedVariant(page)).toBeNull();
+    // Rejecting changes nothing: still A, still no request.
+    await page.getByRole("button", { name: "Reject all" }).click();
+    await page.goto(`${BASE}/`);
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.control.title);
+    await page.waitForTimeout(1500);
+    expect(seen.posthog).toEqual([]);
+  });
+
+  test("consent → the flag assigns B; it shows from the next view, before any app script", async ({
+    context,
+    page,
+  }) => {
+    const seen = await instrument(context, page, { heroVariant: "test" });
+    await page.goto(`${BASE}/`);
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.control.title);
+    await page.getByRole("button", { name: "Accept all" }).click();
+
+    // Assigned through PostHog's own flag request, and kept for the next view.
+    await expect
+      .poll(
+        () =>
+          seen.posthog.some((u) => new URL(u).pathname.startsWith("/flags")),
+        {
+          timeout: 15_000,
+        },
+      )
+      .toBe(true);
+    await expect
+      .poll(() => storedVariant(page), { timeout: 15_000 })
+      .toBe("test");
+    // The consent view itself does not change, and sends no exposure.
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.control.title);
+    await page.waitForTimeout(1500);
+    expect(exposures(seen)).toEqual([]);
+
+    // Next view, with every app script blocked: only the inline script can have shown B, and it
+    // runs as the page is parsed, before first paint.
+    await page.route(/\/assets\/.*\.js$/, (route) => route.abort());
+    await page.goto(`${BASE}/`);
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.test.title);
+    await page.unroute(/\/assets\/.*\.js$/);
+
+    // Next view with the app: still B after React renders, and the exposure is sent once.
+    await page.goto(`${BASE}/`);
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.test.title);
+    await expect
+      .poll(() => exposures(seen).length, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    expect(exposures(seen)[0]?.properties).toMatchObject({
+      $feature_flag: HERO_FLAG_KEY,
+      $feature_flag_response: "test",
+    });
+    const csp = await page.evaluate(
+      () => (window as unknown as { __csp?: string[] }).__csp ?? [],
+    );
+    expect(csp).toEqual([]);
+  });
+
+  test("withdrawing consent deletes the stored variant: back to A", async ({
+    context,
+    page,
+  }) => {
+    await setAcceptedCookie(context);
+    const seen = await instrument(context, page, { heroVariant: "test" });
+    await page.goto(`${BASE}/`);
+    await expect
+      .poll(() => storedVariant(page), { timeout: 15_000 })
+      .toBe("test");
+    await page.goto(`${BASE}/`);
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.test.title);
+    expect(seen.posthog.length).toBeGreaterThan(0);
+
+    await page
+      .locator("footer")
+      .getByRole("button", { name: "Cookie settings" })
+      .click();
+    await page.getByRole("switch", { name: "Analytics" }).click();
+    await Promise.all([
+      page.waitForEvent("load"),
+      page.getByRole("button", { name: "Save choices" }).click(),
+    ]);
+    expect(await storedVariant(page)).toBeNull();
+    await expect(heroTitle(page)).toHaveText(HERO_COPY.control.title);
+  });
+});
+
+/**
+ * F-72 (student-UI register; owner brief 2026-10-05): on a phone the cookie banner sat over the
+ * student shell's bottom tab bar and the calendar bottom sheet's buttons until answered. Now it
+ * sits above the tab bar (its measured height plus the safe-area inset) and steps aside while a
+ * sheet is open; the calendar's sheet is drawn above the tab bar. Checked by REAL clicks and by
+ * what is on top at each control's centre, at 390px, with the banner unanswered.
+ */
+test.describe("F-72: the banner never blocks the phone tab bar or a sheet's actions", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /** Each element's centre is the element itself (or inside it): nothing covers it. */
+  async function onTop(page: Page, selector: string): Promise<boolean[]> {
+    return page.locator(selector).evaluateAll((els) =>
+      els.map((el) => {
+        const b = el.getBoundingClientRect();
+        const top = document.elementFromPoint(
+          b.left + b.width / 2,
+          b.top + b.height / 2,
+        );
+        return top !== null && (el === top || el.contains(top));
+      }),
+    );
+  }
+
+  test("signed-in /dashboard: banner up, every tab is on top, and a tap navigates", async ({
+    context,
+    page,
+  }) => {
+    await instrument(context, page, { signedIn: "adult" });
+    await page.goto(`${BASE}/dashboard`);
+    const banner = page.getByTestId("cookie-banner");
+    const tabBar = page.getByTestId("app-tab-bar");
+    await expect(banner).toBeVisible();
+    await expect(tabBar).toBeVisible();
+    // Presence first: five tabs, then none of them covered.
+    const tabs = '[data-testid="app-tab-bar"] a';
+    expect(await page.locator(tabs).count()).toBe(5);
+    expect(await onTop(page, tabs)).toEqual([true, true, true, true, true]);
+    // The banner ends where the tab bar starts.
+    const b = await banner.boundingBox();
+    const t = await tabBar.boundingBox();
+    expect(b && t && Math.round(b.y + b.height)).toBe(t && Math.round(t.y));
+    // A real tap (Playwright refuses to click a covered element), with the banner still up.
+    await tabBar.getByRole("link", { name: /Practice/ }).click();
+    await page.waitForURL(/\/practice/);
+    await expect(banner).toBeVisible();
+  });
+
+  test("signed-in /calendar: with the bottom sheet open, its buttons are on top; closing it brings the banner back", async ({
+    context,
+    page,
+  }) => {
+    const fixtures = JSON.parse(
+      execFileSync(
+        "pnpm",
+        ["exec", "tsx", "tests/e2e/guardian-harness/fixtures.ts"],
+        {
+          encoding: "utf8",
+        },
+      ),
+    ) as { studentCalendar: unknown };
+    await instrument(context, page, {
+      signedIn: "adult",
+      api: { "/api/calendar": fixtures.studentCalendar },
+    });
+    await page.clock.setFixedTime(new Date("2026-09-30T12:00:00Z"));
+    await page.goto(`${BASE}/calendar`);
+    await page.locator('[data-testid="calendar-week-grid"]').first().waitFor();
+    const banner = page.getByTestId("cookie-banner");
+    await expect(banner).toBeVisible();
+    await page.getByRole("button", { name: "+ Add block" }).first().click();
+    const footer = ".lyceon-calendar .sheet.on footer button";
+    await page.locator(footer).first().waitFor();
+    expect(await page.locator(footer).count()).toBeGreaterThan(0);
+    await expect(banner).toBeHidden();
+    expect(await onTop(page, footer)).not.toContain(false);
+    await page
+      .locator(".lyceon-calendar .sheet.on footer")
+      .getByRole("button", { name: "Cancel" })
+      .click();
+    await expect(banner).toBeVisible();
+    expect(await onTop(page, '[data-testid="app-tab-bar"] a')).not.toContain(
+      false,
+    );
+  });
+});
+
+/** Owner brief 2026-10-05: on the homepage the banner's background matches the page (#FBF6EC). */
+test("homepage: the banner's background is the page's cream; other public pages keep theirs", async ({
+  context,
+  page,
+}) => {
+  await instrument(context, page);
+  const colours = async (): Promise<{ banner: string; page: string }> =>
+    page.evaluate(() => {
+      const banner = document.querySelector('[data-testid="cookie-banner"]');
+      const shell = document.querySelector("main")?.parentElement ?? null;
+      return {
+        banner: banner ? getComputedStyle(banner).backgroundColor : "",
+        page: shell ? getComputedStyle(shell).backgroundColor : "",
+      };
+    });
+  await page.goto(`${BASE}/`);
+  await expect(page.getByTestId("cookie-banner")).toBeVisible();
+  expect(await colours()).toEqual({
+    banner: "rgb(251, 246, 236)",
+    page: "rgb(251, 246, 236)",
+  });
+  await page.goto(`${BASE}/digital-sat`);
+  await expect(page.getByTestId("cookie-banner")).toBeVisible();
+  expect(await colours()).toEqual({
+    banner: "rgb(255, 250, 239)",
+    page: "rgb(255, 250, 239)",
   });
 });

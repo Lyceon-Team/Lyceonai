@@ -919,6 +919,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/qotd.mutations.sh
 
+      # SEO Wave 2, plans Q5/Q6: plants the opt-in reset bug, under-13 opt-ins at every layer, a
+      # lost consent source, a withdrawal emitting consent_captured, a non-atomic prompt claim,
+      # a per-click dismissal, a lost deletion cascade, each cadence rule, Trustpilot for a minor
+      # or without its URL, a prompt on the practice runner, feedback text in a log and the
+      # onboarding checkbox for an under-13. Each must turn its guarding test red on a name.
+      - name: Marketing opt-in + reviews mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/marketing-consent-reviews.mutations.sh
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost
@@ -2028,6 +2041,27 @@ jobs:
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-analytics-identity.json \
             --file tests/ci/analytics-identity.pg.ci.test.ts
 
+      # @spec [plan R26/R28/R30, rows Q5/Q6; Doc 10 §9.21] SEO Wave 2 migration -> real PG: the
+      # under-13 opt-in guard, the consent log (source, wording version, time), the data step,
+      # one review per profile, compare-and-set prompt claims, idempotent feedback, RLS and the
+      # deletion cascade; then the opt-in through the real profile routes. Named BY FILE.
+      - name: Marketing opt-in + reviews → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/marketing-consent-reviews.pg.ci.test.ts \
+            tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            tests/ci/signup-analytics.pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-marketing-reviews.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-marketing-reviews.json \
+            --file tests/ci/marketing-consent-reviews.pg.ci.test.ts \
+            --file tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            --file tests/ci/signup-analytics.pg.ci.test.ts
+
       # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
       # student through the real /api/tests handlers to a score, then the executor's
       # anonymize call and the hard_delete cascade; row counts before/after and the
@@ -2910,12 +2944,12 @@ jobs:
           cat "$RUNNER_TEMP/static.log"
           exit 1
 
-      - name: Consent → PostHog browser proof (reject, accept, GPC, under-13, withdrawal)
+      - name: Consent → PostHog browser proof (reject, accept, GPC, under-13, withdrawal; first-touch survives a reload)
         env:
           E2E_BASE_URL: http://127.0.0.1:5175
         run: |
           set -euo pipefail
-          pnpm exec playwright test tests/e2e/analytics-consent.spec.ts --forbid-only --reporter=list
+          pnpm exec playwright test tests/e2e/analytics-consent.spec.ts tests/e2e/first-touch-attribution.spec.ts --forbid-only --reporter=list
 
   # ---------------------------------------------------------------------------
   # Guardian browser proofs (guardian closeout, Part B step 3).
