@@ -51,6 +51,14 @@ export default tseslint.config(
       "no-var": "error",
       // §16 — no console.log in product code (use the structured logger).
       "no-console": "error",
+      // `declare global { namespace Express { interface Request {...} } }` is the
+      // documented @types/express way to augment the request type, and it is how
+      // server/middleware/{request-id,supabase-auth,subject-resolver}.ts attach
+      // requestId / user / subject. An ambient declaration emits no code and is
+      // not the module-pattern the rule exists to stop; allowDeclarations is the
+      // rule's own option for exactly that case. Runtime `namespace` blocks are
+      // still reported.
+      "@typescript-eslint/no-namespace": ["error", { allowDeclarations: true }],
       "@typescript-eslint/no-unused-vars": [
         "error",
         {
