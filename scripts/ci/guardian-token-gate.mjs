@@ -94,8 +94,11 @@ try {
     stdio: "pipe",
   });
 } catch (err) {
+  // A non-zero exit is the staleness verdict; the generator's own stderr says which rule.
+  const detail = err && typeof err === "object" && "stderr" in err ? String(err.stderr).trim() : "";
   failures.push(
-    "client/src/features/guardian/guardian-type-floor.generated.css is stale — run node scripts/gen-guardian-type-floor.mjs",
+    "client/src/features/guardian/guardian-type-floor.generated.css is stale — run node scripts/gen-guardian-type-floor.mjs" +
+      (detail ? ` (${detail})` : ""),
   );
 }
 

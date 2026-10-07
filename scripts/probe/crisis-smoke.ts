@@ -62,9 +62,6 @@
  *   The only end-to-end proof is a human seeing the message in Slack.
  */
 
-/* eslint-disable no-console -- standalone CLI probe: console is the output
-   channel, not production logging. */
-
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 

@@ -1,0 +1,585 @@
+# THE FULL TIER (owner decisions 2026-10-07 on the CI audit, items 2-3).
+#
+# Everything the fast lane (ci.yml) does not run on every pull request runs here, once, on the
+# exact head a pull request into `main` is about to merge, and on `main` itself: the review UI
+# mutation gate's every plant, every Postgres mutation harness and self-test, the seeded
+# 3,000-plan calendar parity suite, the gate self-tests, the guardian browser specs, the page-CSP
+# flow sweep and the question-authoring test. Together with ci.yml this is the full suite.
+#
+# TRIGGER. Integration branches keep a pull request open into `main`, and every merge into the
+# branch updates it (~460 runs a month), so the full tier cannot run on every update. It runs
+# when the pull request carries the `ci:full` label — applied right before merging — and on every
+# push to `main` whose tree no passing full-tier PR run already covered.
+#
+# THE REQUIRED CHECK is the last job, `ci-full`. It is green only when, on this exact tree, the
+# full tier ran and passed (this run, or an earlier one recorded by its tree marker). On a pull
+# request into `main` without the label it is red and says so. After a run the label is removed,
+# so a later push needs a fresh `ci:full` — the full tier always covers the head being merged.
+# Owner action: make `ci-full` a required status check on `main`.
+name: CI full tier
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-full-pr-{0}', github.event.pull_request.number) || format('ci-full-run-{0}', github.run_id) }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      satisfied: ${{ steps.scope.outputs.satisfied }}
+      tree: ${{ steps.scope.outputs.tree }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Decide whether the full tier runs
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          HAS_LABEL: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:full') }}
+        run: bash scripts/ci/ci-full-scope.sh
+
+  review-ui-gate:
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" — single source of truth (Q2).
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Every plant (owner decision 2026-10-07, CI audit item 3). Sharded across the runner's
+      # cores; every plant must turn its U-test red once and every worktree end byte-identical.
+      - name: Review UI mutation gate — every plant (proves U1-U9 are load-bearing)
+        run: bash scripts/ci/review-ui-gate.parallel.sh
+
+  gate-selftests:
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" — single source of truth (Q2).
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (including the Vercel production bundle)
+        run: pnpm run build:vercel
+
+
+      - name: Boot probe self-test (proves each failure mode turns it red)
+        run: bash scripts/ci/boot-probe.selftest.sh
+
+      - name: Section vocabulary self-test (proves each mutation turns it red)
+        run: bash scripts/ci/section-vocabulary-gate.mutations.sh
+
+      - name: Fixture canonicality self-test (proves each mutation turns it red)
+        run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
+
+      # Guardian closeout, Part B step 4: no unused export and no test-only module in guardian
+      # scope (scripts/ci/guardian-dead-code-gate.mjs — the TypeScript compiler API over the
+      # repository's import graph, no new dependency). The self-test runs FIRST: it plants an
+      # unused export and a test-only module and requires the gate to name each, so a gate that
+      # has gone blind reads as a failure here rather than as a clean tree.
+      - name: Guardian dead-code gate self-test (planted findings must be named)
+        run: bash scripts/ci/guardian-dead-code-gate.selftest.sh
+
+      # Question-authoring tooling (scripts/assemble-batch.ts): no production entry imports it,
+      # so the fast lane runs this file only when the tooling changes.
+      - name: Question-authoring gate tests (tests/assemble-batch.test.ts)
+        run: pnpm exec vitest run tests/assemble-batch.test.ts
+
+  pg-mutations:
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    services:
+      # Two servers, one job (owner decision 2026-10-07, CI audit item 2: "Postgres jobs
+      # consolidated"). Every script and test creates its own database, so the eleven jobs that
+      # each started a server now share these two. pg16 (port 5432) is the pipeline's genesis
+      # major; pg17 (port 5433) is production's, which the calendar formula is proved on (Doc 05F
+      # formula sheet §6) — the calendar steps set PGPORT 5433. The two PostgREST gates run LAST
+      # on their server: each sets BYPASSRLS on service_role, which is cluster-wide.
+      postgres:
+        image: pgvector/pgvector:pg16   # genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      postgres17:
+        image: pgvector/pgvector:pg17   # prod major; the calendar parity gate requires it
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" — single source of truth (Q2).
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Ensure postgresql-client 16
+        uses: ./.github/actions/ensure-psql16
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # INV-08-18 through the REAL transport. The recorder-based launch tests prove the
+      # sequence ARITHMETIC; only this proves that calendar_link_launch and the practice
+      # engine's own idempotency ledger, reached over a wire as a real service_role JWT,
+      # agree about what a repeated key means. The gate greps its own output because a
+      # self-skipping vitest file exits 0 and reads green from the outside.
+      - name: Install PostgREST (real transport)
+        run: |
+          curl -sL -o /tmp/pgrst.tar.xz \
+            https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz
+          tar -xf /tmp/pgrst.tar.xz -C /tmp
+          sudo mv /tmp/postgrest /usr/local/bin/postgrest
+          postgrest --version
+
+      # ── pg16 (port 5432) ──────────────────────────────────────────────────────────
+
+      # @spec [Guardian_Closure_Plan G1-08; audit G-AUD-11] | @implemented [2026-09-29]
+      # GATE 0 pins the gate's body. The harness proves it bites: dropping status='active'
+      # and a one-id backdoor (which no behavioural gate's fixtures can see) must each red
+      # the gate ON GATE 0. The target migration is resolved as the LAST definer, so a
+      # newer CREATE OR REPLACE can never leave this mutation aimed at a dead body.
+      - name: guardian_view_decision gate — body-pin mutations
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/guardian-view-decision-gate.mutations.sh
+
+      # The G2-04 assertions are worth what their plants prove. One product-source mutation per
+      # property (no link read; the student-or-admin mounts lose the gate; the link answer cached
+      # per student — the stored-flag design; a learning read and checkout ungated; the gate
+      # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
+      # its assertion red, each reverted byte-identically in a trap.
+      - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/under-13-link-gate.mutations.sh
+
+      # A gate is worth its red proof. Nine mutations, one per assertion; M1 re-plants the
+      # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
+      # requires D1.3 to notice.
+      - name: Crisis flag atomicity self-test (proves each mutation turns it red)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/crisis-flag-atomic.mutations.sh
+
+      - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/deletion-evidence-gate.mutations.sh
+
+      # The fourteen review-route assertions (practice-integration, "Review API + queue end-to-end")
+      # are worth exactly as much as their plants. This mutates product source once per
+      # assertion and fails the build unless that assertion goes red. It patches the working
+      # tree and restores it in a trap.
+      - name: Review route assertions proven by planted violations (A1-A14)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/review-routes-gate.mutations.sh
+
+      - name: Negative control — rehearsal must FAIL on a broken WHERE
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/deletion-deidentify-negative-control.sh
+
+      - name: Flag-on lifecycle e2e (request -> cron -> anonymize; recover/cancel -> restored)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/deletion-lifecycle-e2e.sh
+
+      - name: Negative control — schema-proof must FAIL on missing column
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/tutor-schema-proof-negative-control.sh
+
+      # Red-before/green-after on a seeded pre-state, plus the portability case that
+      # regression-tests the hardcoded-count blocker (a migration carrying a prod row
+      # count reds every fresh apply).
+      - name: Mastery unblock migration gates (1.1 + 1.2)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-unblock-gates.sh
+
+      # Every file under scripts/prod-verify/ is pasted by hand into the Supabase
+      # SQL editor and run against production — it is NOT run with `psql -f`.
+      # This executes each one the way the operator does. Every prod-verify file
+      # shipped in #589..#595 failed at its first backslash meta-command and CI
+      # never noticed, because CI only ever ran the CI fixtures.
+      - name: prod-verify console gate (operator SQL must run in a SQL console)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/prod-verify-console-gate.sh
+
+      # captureDiagnosticBaseline is once-only with no retry and silently returns
+      # when the projection is not ready, so a student who completed a diagnostic
+      # during the mastery outage is permanently no_baseline. This guards the
+      # repair — and above all that it stays a repair, never a fabricated score.
+      - name: Baseline repair gate (BUG-1 — repair, not fabrication)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/baseline-repair-gate.sh
+
+      # Guards the two read-only files that decide whether a history repair is safe
+      # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs
+      # FIRST and must be strict: it is the only thing between a hand-applied schema
+      # and an irreversible "recorded as applied".
+      - name: Migration history gate
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/migration-history-gate.sh
+
+      - name: Migration inventory gate (applied vs pending discrimination)
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/migration-inventory-gate.sh
+
+      # Proves the gate above can fail, and fails on the assertion each mutation names.
+      # M3 is the load-bearing one: without it "counted" and "excluded" are the same test.
+      - name: KPI quarantine gate — mutation proof
+        run: bash scripts/ci/05b-kpi-quarantine-gate.mutations.sh
+        shell: bash
+
+      # ── pg17 (port 5433): calendar ────────────────────────────────────────────────
+
+      - name: Apply the migration pipeline to a throwaway database
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE calendar_parity;" >/dev/null
+          # Supabase-provided roles and auth schema; a plain Postgres has neither.
+          psql -v ON_ERROR_STOP=1 -d calendar_parity -q >/dev/null <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon')          THEN CREATE ROLE anon NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN; END IF;
+          END $$;
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb);
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
+          SQL
+          # Same sorted order scripts/ci/genesis-fresh-apply.sh uses, so the schema
+          # under test is the one the pipeline produces.
+          for f in supabase/migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -d calendar_parity -q -f "$f" >/dev/null
+          done
+
+      # Plants a repeat schedule, a readable future day, two pre-submit answer leaks and an early
+      # archive page; each must turn its guarding check red on a named assertion (plan Q1-Q3).
+      - name: QOTD mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/qotd.mutations.sh
+
+      # SEO Wave 2, plans Q5/Q6: plants the opt-in reset bug, under-13 opt-ins at every layer, a
+      # lost consent source, a withdrawal emitting consent_captured, a non-atomic prompt claim,
+      # a per-click dismissal, a lost deletion cascade, each cadence rule, Trustpilot for a minor
+      # or without its URL, a prompt on the practice runner, feedback text in a log and the
+      # onboarding checkbox for an under-13. Each must turn its guarding test red on a name.
+      - name: Marketing opt-in + reviews mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/marketing-consent-reviews.mutations.sh
+
+      # A gate that has stopped biting is indistinguishable from a passing one, so the
+      # placement gates are planted rather than trusted. Each case builds its own
+      # throwaway database, because the pipeline is not idempotent.
+      - name: Calendar placement gates — mutations (Z-70 and the override arms)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/calendar-placement-gate.mutations.sh
+
+      - name: Parity vs calendar_formula_reference.py (13 fixtures + seeded 3000 suite)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+          CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
+        run: pnpm exec tsx scripts/ci/calendar-parity.ts --suite-n 3000 --suite-seed 1
+
+      # Every fixture carried an `exam_placement` block and nothing read it, so the
+      # suppression rule had no gate of any kind. It does now, and these plants are what
+      # say so: two on the stored block, one on the database's own return.
+      - name: Parity exam_placement comparison — mutations
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: calendar_parity
+          CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
+        run: bash scripts/ci/calendar-parity-placement.mutations.sh
+
+      # ── Last: the PostgREST mutation harness (BYPASSRLS on service_role is cluster-wide) ──
+
+      # Proves the proof can fail, and that each mutation reds the assertion it names.
+      # M1 and M3 both attack case 1 and are kept apart by WHICH line they red.
+      - name: Mastery emission → REAL PostgREST proof — mutation harness
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/mastery-postgrest-gate.mutations.sh
+
+  browser:
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # A placeholder Desmos key so the calculator path is in the bundle; the page-CSP spec answers
+      # www.desmos.com's calculator.js with a stand-in (E2E_DESMOS_STUB), as CI holds no key.
+      - name: Build (with a dummy PostHog key so the SDK path is in the bundle)
+        env:
+          VITE_SUPABASE_URL: http://localhost:9
+          VITE_SUPABASE_ANON_KEY: ci
+          VITE_POSTHOG_KEY: phc_e2e_dummy_key_not_a_project
+          VITE_DESMOS_API_KEY: ci-desmos-stub-key
+        run: pnpm run build
+
+      - name: Serve dist/public with vercel.json's headers
+        run: |
+          set -euo pipefail
+          nohup node scripts/ops/page-csp-static-server.mjs 5175 > "$RUNNER_TEMP/static.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:5175/; then echo "static server up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/static.log"
+          exit 1
+
+      #  - INV-10A-17: every student flow under the page CSP, zero violation reports.
+      - name: Page CSP, every student flow (INV-10A-17)
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5175
+          E2E_DESMOS_STUB: "1"
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test tests/e2e/page-csp-flows.spec.ts --forbid-only --reporter=list
+
+      - name: Start the client (Vite; the specs answer every /api call themselves)
+        run: |
+          set -euo pipefail
+          VITE_SUPABASE_URL=http://localhost:9 VITE_SUPABASE_ANON_KEY=ci \
+            nohup pnpm exec vite --port 5173 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -sf -o /dev/null http://localhost:5173/; then echo "Vite up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/vite.log"
+          exit 1
+
+      - name: Guardian browser specs (R12 16px floor, phone centring, meter width)
+        env:
+          E2E_BASE_URL: http://localhost:5173
+          E2E_SHOT_DIR: ${{ runner.temp }}/guardian-shots
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test \
+            tests/e2e/guardian-surfaces.spec.ts \
+            tests/e2e/student-calendar.spec.ts \
+            --forbid-only --reporter=list
+
+  # The required check. Green only when the full tier passed on this exact tree.
+  ci-full:
+    runs-on: ubuntu-latest
+    needs: [scope, review-ui-gate, gate-selftests, pg-mutations, browser]
+    if: ${{ always() }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Verdict
+        env:
+          RUN: ${{ needs.scope.outputs.run }}
+          SATISFIED: ${{ needs.scope.outputs.satisfied }}
+          RESULTS: ${{ needs.review-ui-gate.result }} ${{ needs.gate-selftests.result }} ${{ needs.pg-mutations.result }} ${{ needs.browser.result }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
+        run: |
+          set -euo pipefail
+          echo "scope=$SCOPE_RESULT run=$RUN satisfied=$SATISFIED jobs: $RESULTS"
+          if [ "$SCOPE_RESULT" != success ]; then
+            echo "::error::the scope job did not succeed"; exit 1
+          fi
+          if [ "$RUN" = true ]; then
+            for r in $RESULTS; do
+              [ "$r" = success ] || { echo "::error::a full-tier job ended $r"; exit 1; }
+            done
+            echo "full tier passed on this tree"
+          elif [ "$SATISFIED" = true ]; then
+            echo "this exact tree already passed the full tier"
+          else
+            echo "::error::The full tier has not run on this head. Add the ci:full label to this pull request when it is ready to merge."
+            exit 1
+          fi
+
+      - name: Record the tree the full tier passed
+        if: ${{ needs.scope.outputs.run == 'true' }}
+        run: echo "${{ needs.scope.outputs.tree }}" > tested-tree.txt
+
+      - name: Upload the full-tier tree marker
+        if: ${{ needs.scope.outputs.run == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-full-tested-tree-${{ needs.scope.outputs.tree }}
+          path: tested-tree.txt
+          retention-days: 30
+
+      # The label means "run the full tier on this head". Once it has run, it is spent: a later
+      # push needs a fresh label, so the full tier always covers the head being merged.
+      - name: Spend the ci:full label
+        if: ${{ always() && github.event_name == 'pull_request' && needs.scope.outputs.run == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR" --repo "${{ github.repository }}" --remove-label ci:full || echo "::warning::could not remove the ci:full label"

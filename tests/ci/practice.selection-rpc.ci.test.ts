@@ -25,8 +25,7 @@ import path from "node:path";
 // ---------------------------------------------------------------------------
 // §1  REGRESSION GUARD — source-level assertion
 // ---------------------------------------------------------------------------
-// Same shape as practice.start-rpc.guard.test.ts: reads the source file and
-// asserts structural properties. No mocks needed.
+// Reads the source file and asserts structural properties. No mocks needed.
 
 describe("Practice selection RPC regression guard", () => {
   const repoRoot = path.resolve(__dirname, "..", "..");

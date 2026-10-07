@@ -20,7 +20,7 @@ describe("csrfFetch recovery", () => {
   });
 
   it("retries csrf_blocked responses up to two times with fresh tokens", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
       if (url === "/api/csrf-token") {

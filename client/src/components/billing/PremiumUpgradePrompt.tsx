@@ -112,7 +112,7 @@ type BillingStatusForCta = Pick<
  * that is where every guardian remedy lives. Never `/upgrade`.
  */
 function stateFromBilling(
-  status: BillingStatus | undefined,
+  status: BillingStatusForCta | undefined,
   isGuardian: boolean,
 ): BillingCtaState {
   if (isGuardian) {

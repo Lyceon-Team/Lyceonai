@@ -163,9 +163,11 @@ export default function HomePage() {
   }, [heroVariant]);
   const hero = HERO_COPY[heroVariant ?? "control"];
 
-  const trackCtaClick = (ctaText: string) => {
-    console.debug("hero_cta_click", { ctaText });
-  };
+  // The CTA click is not an analytics event yet: no `hero_cta_click` entry exists in the event
+  // registry, and adding one is the SEO vertical's call. This used to `console.debug` the click,
+  // which shipped a debug print to every visitor's console (Coding Standards §16); it is now the
+  // empty wiring point ctaClickHandlers already calls exactly once per activation.
+  const trackCtaClick = (_ctaText: string): void => {};
 
   return (
     <PublicLayout

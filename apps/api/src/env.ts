@@ -25,13 +25,19 @@ function resolveOCRProvider(): CanonicalOCRProvider {
     "tesseract",
   ];
   if (!validProviders.includes(canonical)) {
-    console.warn(
-      `⚠️ [OCR] Invalid OCR_PROVIDER '${envProvider}', falling back to 'auto'`,
+    logger.warn(
+      "ENV",
+      "ocr_provider_invalid",
+      "Invalid OCR_PROVIDER, falling back to 'auto'",
+      { configured: envProvider },
     );
     return "auto";
   }
 
-  console.log(`🔧 [OCR] Provider resolved: ${envProvider} -> ${canonical}`);
+  logger.info("ENV", "ocr_provider_resolved", "OCR provider resolved", {
+    configured: envProvider,
+    canonical,
+  });
   return canonical;
 }
 
@@ -96,19 +102,18 @@ export const ocrConfig = {
 
 // Startup validation - warn about missing optional keys
 export function validateEnvironment() {
-  console.log(`🔧 [ENV] Environment validation starting...`);
-
-  // Always available - these have defaults
-  console.log(
-    `✅ [ENV] Core: NODE_ENV=${env.NODE_ENV}, API_PORT=${env.API_PORT}`,
-  );
-  console.log(`✅ [ENV] OCR: OCR_PROVIDER=${env.OCR_PROVIDER}`);
-  console.log(
-    `✅ [ENV] OCR Config: DocAI chunks=${ocrConfig.docAiMaxPagesPerChunk}, max=${ocrConfig.docAiMaxTotalPages}, mathRouting=${ocrConfig.enableMathRouting}, nougatFallback=${ocrConfig.enableNougatFallback}`,
-  );
-  console.log(
-    `✅ [ENV] Embed: EMBED_PROVIDER=${env.EMBED_PROVIDER}, TOP_K=${env.TOP_K}`,
-  );
+  // Always available - these have defaults. Non-secret configuration only.
+  logger.info("ENV", "validation_start", "Environment validation starting", {
+    nodeEnv: env.NODE_ENV,
+    apiPort: env.API_PORT,
+    ocrProvider: env.OCR_PROVIDER,
+    docAiMaxPagesPerChunk: ocrConfig.docAiMaxPagesPerChunk,
+    docAiMaxTotalPages: ocrConfig.docAiMaxTotalPages,
+    mathRouting: ocrConfig.enableMathRouting,
+    nougatFallback: ocrConfig.enableNougatFallback,
+    embedProvider: env.EMBED_PROVIDER,
+    topK: env.TOP_K,
+  });
 
   // Critical MVP secrets validation
   const criticalSecrets = {
@@ -119,19 +124,39 @@ export function validateEnvironment() {
     CSRF_SECRET: env.CSRF_SECRET,
   };
 
-  let missingCritical = false;
+  // Variable NAMES only, never values.
+  const missing: string[] = [];
+  const placeholder: string[] = [];
+  const configured: string[] = [];
   for (const [name, value] of Object.entries(criticalSecrets)) {
-    if (!value) {
-      console.error(`❌ [ENV] CRITICAL: Missing ${name}`);
-      missingCritical = true;
-    } else if (value === "changeme") {
-      console.warn(
-        `⚠️ [ENV] WARNING: ${name} is set to insecure placeholder "changeme"`,
-      );
-    } else {
-      console.log(`✅ [ENV] ${name} configured`);
-    }
+    if (!value) missing.push(name);
+    else if (value === "changeme") placeholder.push(name);
+    else configured.push(name);
   }
+  const missingCritical = missing.length > 0;
+  if (missingCritical) {
+    logger.error(
+      "ENV",
+      "critical_env_missing",
+      "Critical environment variables missing",
+      undefined,
+      { missing },
+    );
+  }
+  if (placeholder.length > 0) {
+    logger.warn(
+      "ENV",
+      "critical_env_placeholder",
+      'Critical environment variables set to insecure placeholder "changeme"',
+      { placeholder },
+    );
+  }
+  logger.info(
+    "ENV",
+    "critical_env_configured",
+    "Critical environment variables configured",
+    { configured },
+  );
 
   if (missingCritical && env.NODE_ENV === "production") {
     throw new Error(
@@ -193,34 +218,52 @@ export function validateEnvironment() {
   // Feature-dependent validation
   if (env.VECTORS_ENABLED) {
     if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.warn(
-        `⚠️ [ENV] VECTORS_ENABLED=true but missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`,
+      logger.warn(
+        "ENV",
+        "feature_env_missing",
+        "VECTORS_ENABLED=true but missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
       );
     }
     if (!env.GEMINI_API_KEY) {
-      console.warn(`⚠️ [ENV] VECTORS_ENABLED=true but missing GEMINI_API_KEY`);
+      logger.warn(
+        "ENV",
+        "feature_env_missing",
+        "VECTORS_ENABLED=true but missing GEMINI_API_KEY",
+      );
     }
   }
 
   if (env.QA_LLM_ENABLED) {
     if (!env.GEMINI_API_KEY) {
-      console.warn(`⚠️ [ENV] QA_LLM_ENABLED=true but missing GEMINI_API_KEY`);
+      logger.warn(
+        "ENV",
+        "feature_env_missing",
+        "QA_LLM_ENABLED=true but missing GEMINI_API_KEY",
+      );
     }
   }
-  
+
   // OCR provider validation
   if (env.OCR_PROVIDER === 'docai') {
     if (env.DOC_AI_PROCESSOR) {
-      console.log(`✅ [ENV] Document AI processor configured`);
+      logger.info("ENV", "docai_configured", "Document AI processor configured");
     } else {
-      console.warn(`⚠️ [ENV] OCR_PROVIDER=docai but missing DOC_AI_PROCESSOR`);
+      logger.warn(
+        "ENV",
+        "feature_env_missing",
+        "OCR_PROVIDER=docai but missing DOC_AI_PROCESSOR",
+      );
     }
   }
 
   // Mathpix validation
   if (env.MATHPIX_API_ID && env.MATHPIX_API_KEY_ONLY) {
-    console.log(`✅ [ENV] Mathpix configured for selective math patching`);
+    logger.info(
+      "ENV",
+      "mathpix_configured",
+      "Mathpix configured for selective math patching",
+    );
   }
 
-  console.log(`✅ [ENV] Environment validation complete`);
+  logger.info("ENV", "validation_complete", "Environment validation complete");
 }

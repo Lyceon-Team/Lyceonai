@@ -107,10 +107,7 @@ question is answered and the new set is deliberately re-audited.
 | 6 | `1.2-post-apply.sql` | no | `OK — 1.2 applied, both constraints exact AND validated` |
 | 7 | `purge-seed-residue-preview.sql` | no | shows the 7 rows to be deleted |
 | 8 | `purge-seed-residue.sql` | **DELETES** | `OK — residue purged` |
-| 9 | `step8-preflight.sql` | no | `OK — ready to recompute` |
-| 10 | `step8-recompute.sql` | **WRITES** | `OK — recompute complete` |
-| 11 | `step8-verify.sql` | no | `OK — backfill rebuilt mastery end to end; 3f18cbe2 projects in both sections` |
-| 11a | `step8-verify-detail.sql` | no | per-student rollup |
+| 9–11a | `step8-preflight.sql`, `step8-recompute.sql`, `step8-verify.sql`, `step8-verify-detail.sql` | **WROTE** | DONE, removed 2026-10-07: confirmed in production that day by a read-only query (all 4 pinned students carry the `backfill_recompute` stamp; 3f18cbe2 projects in both sections). The files and their CI gate were deleted (owner decision 2026-10-07, CI audit item 5). |
 
 ### Priority 0 — the live event path
 
@@ -124,10 +121,8 @@ below.
 
 Run it after answering one practice question through the app.
 
-**Note:** once a live answer lands, `step8-verify.sql` will report STOP, because it
-asserts the event-time tables are EMPTY — the correct acceptance signature for a
-*pure backfill* and nothing else. That STOP is expected and is not a regression.
-After the live path is exercised, `live-event-verify.sql` is the file to run.
+**Note:** the step-8 files are gone (see rows 9–11a). `live-event-verify.sql` is the
+file to run for the event path.
 
 ### Migration inventory — do this BEFORE the seven-version reconciliation
 

@@ -18,7 +18,6 @@
  *
  * Run:  SUPABASE_ACCESS_TOKEN=sbp_… SUPABASE_PROJECT_REF=<ref> pnpm -s exec tsx scripts/provisioning/supabase-auth-config-snapshot.ts
  */
-/* eslint-disable no-console -- operator CLI; console is the output channel (same as rag-corpus-create.ts) */
 import { z } from "zod";
 import {
   PASSWORD_POLICY,

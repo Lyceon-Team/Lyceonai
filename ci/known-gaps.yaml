@@ -35,109 +35,16 @@
 #
 # To add an entry you must name a person and a date. If you cannot, it is not an
 # accepted gap — it is an unreported failure, and it belongs in the build.
+#
+# EMPTY ON PURPOSE. The list is declared empty with `entries: []` — a bare
+# `entries:` with no blocks is still refused as a possible parse failure. To add
+# an entry, replace `[]` with the first `- id:` block.
+#
+# History: eslint-legacy-tree (owner karl, expires 2026-11-01) was deleted on
+# 2026-10-07 when `pnpm run lint` reached 0 problems on the whole repository
+# (owner decision: resolve it before it expired). Lint now runs BLOCKING in the
+# required `ci` job. Its last accepted ceiling was 1906; the full entry is in
+# this file's history.
 # =============================================================================
 
-entries:
-  - id: eslint-legacy-tree
-    owner: karl
-    expires: 2026-11-01
-    command: pnpm run lint
-    count_command: pnpm run lint 2>&1 | sed -nE 's/.*[^0-9]([0-9]+) problems.*/\1/p' | tail -1
-    findings_ceiling: 1906
-    tolerance: 0
-    ceiling_source: >
-      CI run 33430471984 (job 99614305867, head a460300) reported "1906 problems
-      (1905 errors, 1 warning)" — the CI runner's own output, which is the authority
-      here; the local reading on the same tree was also 1906, so there is still no
-      environment spread and the tolerance stays 0.
-      .
-      THE CEILING WAS STALE BY 195 BEFORE THIS CHANGE TOUCHED IT. It sat at 2101 while
-      the tree had already fallen to 1919: PR D, #672 and #675 each deleted code without
-      ratcheting the ceiling down behind them. That is 195 findings of free headroom —
-      195 new violations that could have landed without the gate moving — and it is the
-      decay this field's own earlier entry warned about at a tenth the size. Two thirds
-      of this drop is therefore not this PR's work, it is arrears.
-      .
-      This PR's own contribution is 13: the dead-code deletions from the Copilot triage
-      of #631 (nine unused imports and a dead type alias in server/routes/guardian-routes.ts
-      left behind when #675 deleted the guardian read routes, an unused `beforeEach` in
-      tests/ci/full-length-exam.ci.test.ts, MASTERY_SURFACE_EXTRA_KEYS in
-      tests/ci/guardian.anti-leak.ci.test.ts, and the orphaned ACCOUNT path constant in
-      scripts/ci/guardian-link-mutation-harness.mjs). 1919 -> 1906.
-      .
-      THE NUMBER WAS WRITTEN LOCALLY FIRST, THEN CONFIRMED. Every prior value in this
-      field came from the CI runner's output, which is the stated authority; when this
-      ceiling was first committed CI had not yet run, so the field said 1906 PENDING
-      CI CONFIRMATION rather than claiming an authority it did not have. CI then
-      reported 1906 verbatim and the pending note was replaced by the citation above.
-      Recorded because the honest version of this ratchet is that the local number is a
-      proposal until the runner agrees with it.
-      .
-      Before that: CI run 32430352110 (job 96620527299, head 556e096) reported "2101 problems
-      (2100 errors, 1 warning)" — the CI runner's own output, which is the authority
-      here; the local reading on the same tree was also 2101, so there is still no
-      environment spread and the tolerance stays 0. The ceiling dropped from 2111 to
-      2101 when PR C deleted SAT_TAXONOMY, the /skills and /add-to-plan handlers and
-      buildMasterySkillTreeFromRows, and replaced the last `(req as any)` in
-      tests/ci/mastery.anti-leak.ci.test.ts with a typed request. Lowered rather than
-      left slack: ten findings of headroom is ten new violations that could land
-      without the ratchet moving, and that is how a ratchet starts decaying.
-      Before that: local Node 22.22.2 / ESLint 10.4.1 read "2111 problems", and CI run
-      32235193788 confirmed the prior 2112 verbatim on the same tree. The 2399 figure
-      before THAT was verified verbatim from
-      CI run 32232947651 ("2399 problems (2398 errors, 1 warning)"), identical to
-      the local reading on that same tree, which is what established that there is
-      no environment spread here.
-    reason: >
-      1,906 problems. The per-rule and per-area breakdown below was measured at 2,112 and
-      has not been re-derived since. The 206 findings removed between then and now came out
-      of apps/api, server/, tests/ and scripts/ (the weakness-route parse, PR C's deletions,
-      then the guardian deletions of PR D, #672 and #675, then this PR's Copilot-triage
-      deletions), so the shape is broadly unchanged but EVERY number below is the 2,112
-      reading, not the current one. Treat the breakdown as indicative only until it is
-      re-derived; the only current figure in this entry is findings_ceiling.
-      Three rules are 95% of them — 938 @typescript-eslint/no-explicit-any,
-      789 no-console, 287 no-undef. The first two are direct Coding Standards §3.2 and §16
-      violations across the legacy tree and are a genuine backlog. By area: tests/ 877,
-      server/ 380, scripts/ 337, apps/ 229, client/ 129, root 160.
-      .
-      The remaining no-undef findings are a CONFIG defect rather than real bugs: no-undef is
-      redundant on a TypeScript codebase and is conventionally disabled for .ts/.tsx.
-      Splitting that out is re_arm stage (1) and is not attempted here.
-      .
-      THE CEILING WENT DOWN, NOT UP (2026-08-19). It was briefly 2399, then measured 2408
-      once this change added lines to scripts/ci/known-gaps-gate.mjs — the ratchet fired on
-      its own enforcement code, twice. The fix was not to raise it. eslint.config.mjs now
-      declares the Node execution environment for scripts/**/*.mjs and carves out no-console
-      there, on the same reasoning as the existing apps/workers carve-out. That removed 296
-      findings, 185 of which were no-undef reporting `process`/`console`/`URL`/`fetch` as
-      undefined in files where they are defined — false findings that were being carried as
-      backlog. 2408 -> 2112. The gate script now contributes nothing to this count, so
-      editing the gate can no longer inflate its own ceiling.
-      .
-      NOT extended to scripts/**/*.ts and scripts/**/*.js — a further 335 findings on the
-      same argument. That is a wider call and it is Karl's, not this change's.
-      .
-      THE 2390-vs-2399 SPREAD, DIAGNOSED. An earlier version of this entry claimed the JSON
-      and stylish formatters count differently. That was wrong and is withdrawn. Measured on
-      one run of this tree: sum(messages[]) = 2399, errorCount + warningCount = 2399,
-      stylish summary = "2399 problems". Three ways, one number.
-      .
-      The 9 was two different TREES, not two environments. origin/cleanup measures 2390;
-      this branch measures 2399; the delta is 3 no-console and 6 no-undef in
-      scripts/ci/known-gaps-gate.mjs, added by the diff that introduced this very ceiling
-      check. The ratchet caught its own author. All 9 are the config defect already named
-      above — 'process' and 'console' undeclared for scripts/**/*.mjs, and no-console in a
-      CLI script whose job is to print — so they are not fixed by hand here; they go with
-      the no-undef config work in re_arm stage (1).
-      .
-      TOLERANCE IS 0 because there is nothing to absorb: the measurement is deterministic
-      given a tree, and local and CI agree exactly. The ceiling stays a MAXIMUM rather than
-      an equality so that a genuine reduction does not go red and train people to edit the
-      number instead of reading it. The previously committed 2368/449 were stale on arrival,
-      which is the defect this ceiling exists to prevent.
-    re_arm: >
-      Two stages. (1) Disable no-undef for TypeScript files and confirm the count drops by
-      ~287 with no real finding lost — that alone is a config change, not a backlog burn-down.
-      (2) The standing rule already in the workflow — every wave lint-cleans the files it
-      touches — carries the rest. Delete this entry when `pnpm run lint` exits 0.
+entries: []

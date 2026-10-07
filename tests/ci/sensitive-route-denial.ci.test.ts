@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { resolveTokenFromRequest } from "../../server/middleware/supabase-auth";
 
 describe("Sensitive Route Denial", () => {
@@ -24,7 +24,7 @@ describe("Sensitive Route Denial", () => {
         }
         return undefined;
       },
-    } as any;
+    } as unknown as Request;
 
     const result = resolveTokenFromRequest(req);
 

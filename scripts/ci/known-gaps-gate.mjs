@@ -85,9 +85,11 @@ function parseEntries(text) {
     lineNo += 1;
     const line = raw.replace(/\s+$/, "");
     if (!line.trim() || /^\s*#/.test(line)) continue;
-    if (/^entries:\s*$/.test(line)) continue;
+    // `entries: []` is the explicit "nothing is accepted" declaration; see
+    // EXPLICITLY_EMPTY below for why it is distinguishable from a parse failure.
+    if (/^entries:\s*(\[\])?\s*$/.test(line)) continue;
 
-    const item = line.match(/^  - ([a-z_]+):\s*(.*)$/);
+    const item = line.match(/^ {2}- ([a-z_]+):\s*(.*)$/);
     if (item) {
       const [, k, v] = item;
       // The opener MUST be `- id:`. Allowing any key to open an entry is what
@@ -107,7 +109,7 @@ function parseEntries(text) {
       else cur[k] = v;
       continue;
     }
-    const kv = line.match(/^    ([a-z_]+):\s*(.*)$/);
+    const kv = line.match(/^ {4}([a-z_]+):\s*(.*)$/);
     if (kv) {
       // An indented field with no open entry is a PARSE ERROR, not a line to
       // skip. This is the fail-open Codex found (CI-GATING-001): drop the
@@ -192,13 +194,36 @@ if (entries.length !== declaredBlocks) {
   );
   process.exit(1);
 }
-if (declaredBlocks === 0) {
+/**
+ * @spec [owner decision 2026-10-07: resolve eslint-legacy-tree; lint made blocking] |
+ * @implemented [2026-10-07] | plain English: the accept-list may be EMPTY only when it says
+ * so in the source — a line reading exactly `entries: []`. That is a statement a person
+ * wrote, counted from the TEXT, so it does not reopen the defect class above: a file whose
+ * blocks were lost still has a bare `entries:` (or nothing) and is still refused. The two
+ * forms cannot be mixed — `entries: []` alongside a `- id:` block is a contradiction and
+ * is refused too. Trade-off: one more accepted shape in a deliberately narrow parser, in
+ * exchange for the file (and this blocking gate) staying in place when the last accepted
+ * failure is resolved, so the next one has to be declared here rather than nowhere.
+ */
+const EXPLICITLY_EMPTY = /^entries:\s*\[\]\s*$/m.test(text);
+if (EXPLICITLY_EMPTY && declaredBlocks > 0) {
+  console.error(
+    `FAIL: ${LIST} declares \`entries: []\` AND ${declaredBlocks} "- id:" block(s).\n` +
+      `      A list cannot be both empty and non-empty. Remove one.`,
+  );
+  process.exit(1);
+}
+if (declaredBlocks === 0 && !EXPLICITLY_EMPTY) {
   console.error(
     `FAIL: ${LIST} declares no entries.\n` +
       `      An empty accept-list is not a pass — it is indistinguishable from a file that\n` +
-      `      failed to parse. Delete the file and the gate step together, or keep an entry.`,
+      `      failed to parse. Keep an entry, or declare the list empty in so many words:\n` +
+      `      a line reading exactly \`entries: []\`.`,
   );
   process.exit(1);
+}
+if (EXPLICITLY_EMPTY) {
+  console.log(`${LIST} declares \`entries: []\` — no accepted failures.`);
 }
 
 const failures = [];

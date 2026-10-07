@@ -70,7 +70,6 @@ describe("entitlement path matrix (§9)", () => {
       country: p.gates.includes(GATES.COUNTRY) ? "yes" : "—",
       callSite: p.callSite,
     }));
-    // eslint-disable-next-line no-console
     console.table(rows);
     expect(rows.length).toBeGreaterThan(0);
   });
@@ -110,7 +109,6 @@ describe("entitlement path matrix (§9)", () => {
         ok: cited.text !== null && cited.text.includes(p.callSiteExpect),
       };
     });
-    // eslint-disable-next-line no-console
     console.table(read);
 
     const wrong = read

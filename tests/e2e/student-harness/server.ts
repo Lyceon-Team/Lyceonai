@@ -281,7 +281,6 @@ async function main(): Promise<void> {
 
   // Anything else the client asks for is outside this harness; capture.ts lists each miss.
   app.use("/api", (req, res) => {
-    // eslint-disable-next-line no-console -- harness diagnostics: which endpoints a page wanted
     console.log(`student harness: not served ${req.method} ${req.path}`);
     res.status(404).json({
       error: {
@@ -317,11 +316,9 @@ async function main(): Promise<void> {
       })
       .then(
         (seeded) => {
-          // eslint-disable-next-line no-console -- the readiness line capture.ts waits for
           console.log(`student harness ready ${JSON.stringify(seeded)}`);
         },
         (err: unknown) => {
-          // eslint-disable-next-line no-console -- a failed seed must stop the run, loudly
           console.error("student harness seed failed:", err);
           server.close();
           process.exit(1);

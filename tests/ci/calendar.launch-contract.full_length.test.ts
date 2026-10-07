@@ -750,7 +750,6 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       expect(session).toEqual([{ test_form_id: FORM_2, mode: "lenient" }]);
 
-      // eslint-disable-next-line no-console -- evidence for the PR
       console.log(
         "E9b EVIDENCE " +
           JSON.stringify({ ...evidence, next_test: session[0] }, null, 1),

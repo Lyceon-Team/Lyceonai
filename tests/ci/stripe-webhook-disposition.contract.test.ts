@@ -385,7 +385,6 @@ describe("Stripe webhook — disposition of every subscribed event (§4.2)", () 
     ];
     // This test's product IS the printed table: §4.2 requires the disposition
     // printed as a runtime artifact, not described.
-    // eslint-disable-next-line no-console
     console.log(lines.join("\n"));
 
     expect(rows).toHaveLength(SUBSCRIBED_EVENTS.length);

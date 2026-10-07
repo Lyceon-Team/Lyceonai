@@ -1,6 +1,6 @@
 import cors from "cors";
-import type { Request } from "express";
 import { buildAllowedOrigins, normalizeOrigin } from "../../../../server/middleware/origin-utils";
+import { logger } from "../../../../server/logger";
 
 export function corsMiddleware() {
   const { raw, normalized } = buildAllowedOrigins({
@@ -9,7 +9,9 @@ export function corsMiddleware() {
     csrfOriginsCsv: process.env.CSRF_ALLOWED_ORIGINS,
   });
 
-  console.log("[CORS] Allowed origins (raw):", raw);
+  logger.info("CORS", "allowlist", "CORS allowed origins configured", {
+    origins: raw,
+  });
 
   return cors({
     credentials: true,
@@ -21,7 +23,7 @@ export function corsMiddleware() {
       const ok = normalized.has(o);
 
       if (!ok) {
-        console.warn("[CORS] blocked", {
+        logger.warn("CORS", "blocked", "CORS origin blocked", {
           origin,
           normalized: o,
           allowPreview: Array.from(normalized).slice(0, 8),

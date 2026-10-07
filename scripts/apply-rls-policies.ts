@@ -53,16 +53,17 @@ async function applyRLSPolicies() {
         await client(statement);
         successCount++;
         console.log(`  ✅ Success\n`);
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
         // Check if it's a "already exists" error (non-fatal)
         if (
-          error.message?.includes('already exists') ||
-          error.message?.includes('duplicate')
+          message.includes('already exists') ||
+          message.includes('duplicate')
         ) {
           console.log(`  ℹ️  Already exists (skipping)\n`);
           skipCount++;
         } else {
-          console.error(`  ❌ Error: ${error.message}\n`);
+          console.error(`  ❌ Error: ${message}\n`);
           throw error;
         }
       }
@@ -87,17 +88,20 @@ async function applyRLSPolicies() {
       ORDER BY tablename;
     `;
     
-    const result: any = await client(verifyQuery);
-    
-    if (result?.rows && result.rows.length > 0) {
+    const result: unknown = await client(verifyQuery);
+    // The raw client has answered both `{ rows: [...] }` and a bare array.
+    const rows: unknown[] = Array.isArray(result)
+      ? result
+      : typeof result === 'object' && result !== null && 'rows' in result && Array.isArray(result.rows)
+        ? result.rows
+        : [];
+
+    if (rows.length > 0) {
       console.log('✅ RLS enabled on the following tables:');
-      result.rows.forEach((row: any) => {
-        console.log(`   - ${row.tablename}`);
-      });
-    } else if (Array.isArray(result) && result.length > 0) {
-      console.log('✅ RLS enabled on the following tables:');
-      result.forEach((row: any) => {
-        console.log(`   - ${row.tablename}`);
+      rows.forEach((row) => {
+        const tablename =
+          typeof row === 'object' && row !== null && 'tablename' in row ? row.tablename : undefined;
+        console.log(`   - ${String(tablename)}`);
       });
     } else {
       console.log('⚠️  No tables with RLS enabled found');
@@ -105,8 +109,7 @@ async function applyRLSPolicies() {
 
     console.log('\n✅ RLS setup complete!\n');
     console.log('Next steps:');
-    console.log('  1. Run RLS tests: npm run test -- tests/specs/rls-auth-enforcement.spec.ts');
-    console.log('  2. Verify in production: Review database/RLS_SETUP.md\n');
+    console.log('  1. Verify in production: Review database/RLS_SETUP.md\n');
 
   } catch (error) {
     console.error('\n❌ Failed to apply RLS policies:', error);
