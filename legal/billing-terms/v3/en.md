@@ -1,8 +1,4 @@
-> **RETIRED 2026-10-07 — published as `legal/billing-terms/v3` (v2 plus the corrected Section 1 sentence; nothing else changed).** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
-
 # **LYCEON Billing Terms**
-
-**Version 3** · **Effective date:** [●]
 
 These Billing Terms are the Auto-Renewal Offer Terms for LYCEON subscriptions. They are presented before you complete checkout, and you are asked to agree to them separately from the LYCEON Terms of Use.
 
@@ -142,19 +138,3 @@ The version you agreed to at checkout governs your subscription until you receiv
 **support@lyceon.ai**
 
 LYCEON AI
-
----
-
-## Standard sources followed
-
-* California Automatic Renewal Law, Cal. Bus. & Prof. Code §17600–17606 (clear and conspicuous offer terms, affirmative consent, acknowledgment, online cancellation) — https://leginfo.legislature.ca.gov/
-* Restore Online Shoppers' Confidence Act (ROSCA), 15 U.S.C. §8403 — https://www.ftc.gov/legal-library/browse/statutes/restore-online-shoppers-confidence-act
-* FTC Act §5 and FTC guidance on clear and conspicuous disclosures (".com Disclosures") — https://www.ftc.gov/business-guidance/resources/com-disclosures-how-make-effective-disclosures-digital-advertising
-* Consumer Contracts (Information, Cancellation and Additional Charges) Regulations 2013 (UK) and Directive 2011/83/EU Article 9 (14-day withdrawal) — https://www.legislation.gov.uk/uksi/2013/3134
-
-## Counsel checklist
-
-1. Confirm that "practice beyond the free plan's daily limit" accurately describes the paid plan, and whether any per-session limit must be disclosed.
-2. Confirm the description of parent and guardian access in Section 1.
-3. Confirm whether the changes from version 2 require existing subscribers to consent again, or notice under Section 9.
-4. Confirm consistency with the Subscription and Auto-Renewal Notice.

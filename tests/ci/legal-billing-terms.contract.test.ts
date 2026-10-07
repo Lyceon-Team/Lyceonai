@@ -6,7 +6,7 @@
  * rests on, each written so that the obvious way to break it turns this file
  * red.
  *
- *   W1  /legal/billing-terms renders, with 1.0 and 2026-09-11 from meta.yml
+ *   W1  /legal/billing-terms renders, with 2.0 and 2026-10-07 from meta.yml (v3, SCL-221)
  *   W2  every citation to billing-terms resolves, and the corpus total is right
  *   W3  removing meta.yml fails the manifest gate
  *   W4  a version or date left in the body fails the body-purity gate
@@ -22,7 +22,9 @@
  *    other eight documents are all at v2; the `version` field records this
  *    document's own history, and it has no predecessor. Nobody should read
  *    `v2/` as "version 2.0" and go looking for a missing v1. W1 asserts the
- *    divergence explicitly so it cannot be quietly "corrected" later.
+ *    divergence explicitly so it cannot be quietly "corrected" later. It
+ *    carries forward: since 2026-10-07 (SCL-221) the current directory is
+ *    `v3/` and its version is `2.0`, superseding `1.0`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { execFileSync } from "node:child_process";
@@ -96,11 +98,11 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
     expect(doc.state).toBe("published");
   });
 
-  it("reports version 1.0 and effective date 2026-09-11 from meta.yml", async () => {
+  it("reports version 2.0 and effective date 2026-10-07 from meta.yml", async () => {
     const doc = await loadLegalDocument("billing-terms");
     if (doc.state !== "published") throw new Error("expected published");
-    expect(doc.version).toBe("1.0");
-    expect(doc.effectiveDate).toBe("2026-09-11");
+    expect(doc.version).toBe("2.0");
+    expect(doc.effectiveDate).toBe("2026-10-07");
     expect(doc.title).toBe("LYCEON Billing Terms");
   });
 
@@ -108,7 +110,7 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
     const doc = await loadLegalDocument("billing-terms");
     if (doc.state !== "published") throw new Error("expected published");
     const served = fs.readFileSync(
-      path.join(REAL_LEGAL, "billing-terms/v2/en.md"),
+      path.join(REAL_LEGAL, "billing-terms/v3/en.md"),
     );
     expect(doc.contentHash).toBe(
       `sha256:${createHash("sha256").update(served).digest("hex")}`,
@@ -126,7 +128,7 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
 
   it("keeps version and date OUT of the body — they come from meta.yml alone", () => {
     const body = fs.readFileSync(
-      path.join(REAL_LEGAL, "billing-terms/v2/en.md"),
+      path.join(REAL_LEGAL, "billing-terms/v3/en.md"),
       "utf-8",
     );
     // No frontmatter BLOCK, which is `---` as the very first line. A bare
@@ -140,7 +142,7 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
     expect(body).not.toMatch(/^supersedes:/m);
   });
 
-  it("records the v2-directory / 1.0-version divergence deliberately", () => {
+  it("records the v3-directory / 2.0-version divergence deliberately", () => {
     // The directory is positional; the version field is the document's own
     // history. Asserting both stops someone "fixing" one to match the other.
     const manifest = JSON.parse(
@@ -149,13 +151,13 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
         "utf-8",
       ),
     );
-    expect(manifest.current).toBe("v2");
+    expect(manifest.current).toBe("v3");
     const meta = fs.readFileSync(
-      path.join(REAL_LEGAL, "billing-terms/v2/meta.yml"),
+      path.join(REAL_LEGAL, "billing-terms/v3/meta.yml"),
       "utf-8",
     );
-    expect(meta).toMatch(/^version:\s*"1\.0"$/m);
-    expect(meta).toMatch(/^supersedes:\s*null$/m);
+    expect(meta).toMatch(/^version:\s*"2\.0"$/m);
+    expect(meta).toMatch(/^supersedes:\s*"1\.0 \(2026-09-11\)"$/m);
     expect(meta).toMatch(/^published:\s*true$/m);
   });
 });
@@ -184,7 +186,7 @@ describe("W2 — every citation to billing-terms resolves", () => {
       const total = /all (\d+) document references resolve/.exec(out);
       expect(total, "gate did not report a reference total").not.toBeNull();
       expect(Number(total?.[1])).toBeGreaterThanOrEqual(71);
-      expect(out).toContain("9 slugs");
+      expect(out).toContain("11 slugs");
     } finally {
       fs.rmSync(ws, { recursive: true, force: true });
     }

@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **INTERNAL TEMPLATE — NOT PUBLISHED.** Approved by Karl, the approver (there is no external counsel), 2026-10-07; SCL-221.
 
 # **LYCEON Parental Consent**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 ## **1. Connection Process**
 
@@ -47,10 +47,10 @@ Consent relies on the parent's or guardian's acceptance, the age requirement for
 * FTC, *Complying with COPPA: Frequently Asked Questions*, Section H — https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions
 * GDPR Article 8 — https://eur-lex.europa.eu/eli/reg/2016/679/oj
 
-## Counsel checklist
+## Decisions (Karl, 2026-10-07)
 
-1. Confirm whether the process in Sections 1 to 4 is a verifiable parental consent method under 16 CFR §312.5(b), or which method must be added.
-2. Confirm whether a payment-card transaction at checkout may serve as a verification method for subscribing families.
-3. Confirm the consent statement, including the 13 to 17 variant.
-4. Confirm that the consent record is adequate evidence of consent.
-5. Confirm the position for jurisdictions with a digital age of consent above 13 (for example Ireland).
+1. Consent method: the connection process in Sections 1 to 4 (an 18+ parent or guardian account, the student's link code, and the unticked consent statement) is LYCEON's consent method at launch, as ruled (R6; SCL-187, approved 2026-10-05). No additional method is added.
+2. Payment-card verification: not used at launch.
+3. Consent statement, including the 13 to 17 variant: approved as written.
+4. Consent record: adequate; kept permanently (SCL-215; Privacy Policy Section 6.2).
+5. Jurisdictions with a digital age of consent above 13: not applicable; the service is US-only at launch.

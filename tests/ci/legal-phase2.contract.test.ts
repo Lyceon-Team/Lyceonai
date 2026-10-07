@@ -338,12 +338,12 @@ describe("T4 — `current: null` is an unpublished state, not an error", () => {
 
   it("resolves a consent version for every slug that IS published", () => {
     // The other half of the same guarantee, and the one with live examples:
-    // all nine now resolve to a version and a hash.
+    // all eleven now resolve to a version and a hash.
     const slugs = fs
       .readdirSync(REAL_LEGAL, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name);
-    expect(slugs).toHaveLength(9);
+    expect(slugs).toHaveLength(11);
     for (const slug of slugs) {
       const resolved = resolveLegalVersion(slug);
       expect(resolved.version, `${slug} version`).toMatch(/^\d+\.\d+$/);

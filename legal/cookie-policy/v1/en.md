@@ -1,8 +1,4 @@
-> **RETIRED 2026-10-07 — published as `legal/cookie-policy/v1`.** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
-
 # **LYCEON Cookie Policy**
-
-**Version 1** · **Effective date:** [●]
 
 This Cookie Policy explains the cookies and similar technologies LYCEON uses, why we use them, and how you can control them. It supplements the **LYCEON Privacy Policy**.
 
@@ -22,7 +18,7 @@ These cookies are required for the service to work. They keep you signed in, pro
 
 ### **2.2 Analytics**
 
-These cookies help us understand how the service is used so that we can improve it. They are set by PostHog **only if you accept analytics cookies**. Accounts of users under 13 are excluded.
+These cookies help us understand how the service is used so that we can improve it, including session recordings of how pages are used. They are set **only if you accept analytics cookies**, and they are deleted if you later withdraw your consent. Accounts of users under 13 are excluded.
 
 ### **2.3 Cookies We Do Not Use**
 
@@ -34,16 +30,16 @@ We do not use advertising cookies, cross-site tracking cookies, or cookies that 
 
 | Name | Category | Provider | Purpose | Duration |
 |---|---|---|---|---|
-| `sb-<project>-auth-token` | Strictly necessary | LYCEON | Keeps you signed in | [●] |
-| `__Host-csrf` | Strictly necessary | LYCEON | Protects your account against forged requests | [●] |
+| `sb-<project>-auth-token` | Strictly necessary | LYCEON | Keeps you signed in | Up to 400 days, or until you sign out |
+| `__Host-csrf` | Strictly necessary | LYCEON | Protects your account against forged requests | Until you close your browser |
 | Sign-in verifier | Strictly necessary | LYCEON | Completes "Sign in with Google" securely | Until sign-in completes |
 | `lyceon-theme` (local storage) | Strictly necessary | LYCEON | Remembers your display preference | Until you clear it |
 | Device identifier (local storage) | Strictly necessary | LYCEON | Supports the operation of the service on your device | Until you clear it |
 | Notice preference (session storage) | Strictly necessary | LYCEON | Remembers that you dismissed a notice | Until you close the tab |
-| Cookie consent record | Strictly necessary | LYCEON | Remembers your cookie choice | 6 months |
-| Security check | Strictly necessary | Cloudflare (Turnstile) | Protects forms against automated abuse | [●] |
-| `ph_<project>_posthog` | Analytics | PostHog | Distinguishes visits for analytics | [●] |
+| `lyceon_consent` | Strictly necessary | LYCEON | Remembers your cookie choice | 6 months |
+| `ph_<project>_posthog` | Analytics | PostHog | Distinguishes visits for analytics | 1 year, or until you withdraw consent |
 | `lyceon_first_touch` (session storage) | Analytics | LYCEON | Remembers how you first arrived (for example, from an ad or a search engine) until you create an account | Until you close the tab |
+| `ph_lyceon_homepage_hero` (local storage) | Analytics | LYCEON | Remembers which version of the homepage you were shown | Until you withdraw consent or clear it |
 
 ---
 
@@ -61,6 +57,8 @@ We do not use advertising cookies, cross-site tracking cookies, or cookies that 
 
 Math questions include the Desmos graphing calculator, which is loaded from desmos.com. When it loads, Desmos receives technical information from your browser, such as your IP address.
 
+The Question of the Day uses Cloudflare Turnstile to tell people and automated programs apart. When it runs, Cloudflare receives technical information from your browser. It is used only for security.
+
 ---
 
 ## **6. Changes**
@@ -72,22 +70,3 @@ We will update this policy when the cookies we use change, and update the effect
 ## **7. Contact**
 
 **support@lyceon.ai**
-
----
-
-## Standard sources followed
-
-* Directive 2002/58/EC (ePrivacy Directive), Article 5(3) — https://eur-lex.europa.eu/eli/dir/2002/58/oj
-* EDPB Guidelines 05/2020 on consent — https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines/guidelines-052020-consent-under-regulation-2016679_en
-* UK ICO, *Guidance on the use of storage and access technologies* — https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-the-use-of-storage-and-access-technologies/
-* CNIL, cookies and other tracking devices — https://www.cnil.fr/en/cookies-and-other-tracking-devices
-* California CCPA regulations, 11 CCR §7025 (opt-out preference signals) — https://cppa.ca.gov/regulations/
-* Global Privacy Control specification — https://globalprivacycontrol.org/
-
-## Counsel checklist
-
-1. Complete each duration marked [●].
-2. Confirm the strictly necessary classification of each local storage and session storage item.
-3. Confirm whether Desmos, Cloudflare Turnstile or any Trustpilot content on the website stores information in the browser, and whether any of it requires consent.
-4. Confirm the 6-month duration of the cookie consent record.
-5. Confirm that the Do Not Track statement meets Cal. Bus. & Prof. Code §22575(b)(5).

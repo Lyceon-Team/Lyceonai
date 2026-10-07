@@ -1,4 +1,4 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **RETIRED 2026-10-07 — folded into the Privacy Policy, `legal/privacy-policy/v6` §4 (with §5.2 and §6).** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
 
 # **LYCEON Children's Online Privacy Notice**
 
