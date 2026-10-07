@@ -159,8 +159,8 @@ describe("U3 — every slug still renders from the real legal/ tree", () => {
     .map((e) => e.name)
     .sort();
 
-  it("finds the nine slugs Phase 1 migrated", () => {
-    expect(slugs).toHaveLength(9);
+  it("finds every slug: the nine Phase 1 migrated plus the two published 2026-10-07 (SCL-221)", () => {
+    expect(slugs).toHaveLength(11);
   });
 
   it.each(slugs)("%s renders its body, version and date", async (slug) => {

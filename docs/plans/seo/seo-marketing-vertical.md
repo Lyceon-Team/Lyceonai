@@ -86,6 +86,7 @@
 |---|---|
 | R32 | PostHog product analytics + session replay on PostHog's standard defaults (amends R11 and R12a; SCL G9 against Coding Standards §12.2, Doc 07E §10.2 and Doc 06A §5). Purpose: entry points, clicks, dead ends, drop-off. Scope: public and signed-in pages. The one standard exception: `ph-no-capture` on the question/answer area (practice, review, full-length exam) and on the LISA conversation, per Coding Standards §12 (student answers and tutor content are never captured); nothing else masked beyond defaults. Starts only after cookie consent; under-13 excluded; disclosed in the Privacy and Cookie Policies; PostHog DPA accepted. Nothing beyond industry standard. |
 | R33 | School and after-school sales are in scope, so FERPA applies. Industry standard: sign the school's student data privacy agreement (SDPC National DPA is the common template) and operate within it. |
+| R34 | Analytics retention (Karl, 2026-10-07): PostHog events are kept up to 12 months, then deleted; session recordings 30 days (PostHog project setting, read 2026-10-07). Published in Privacy Policy v6 §6.6 and registered as RPOL-ANALYTICS-03 / RPOL-ANALYTICS-05 (SCL-220). **Any PostHog plan change needs a Privacy Policy check first**: a plan's retention can differ from what §6.6 promises. The separate SEO draft `docs/compliance/legal-drafts/privacy-policy-v5.md` is retired; its launch items are in `legal/privacy-policy/v6`. |
 
 ---
 

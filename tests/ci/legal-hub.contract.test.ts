@@ -6,7 +6,7 @@
  * that the obvious way to break it turns this file red.
  *
  *   H1  the hub lists every published slug
- *   H2  a tenth manifest appears with no code change
+ *   H2  a new manifest appears with no code change
  *   H3  every hub link resolves to a rendering page
  *   H4  a slug at `current: null` does not appear
  *
@@ -105,12 +105,12 @@ describe("H1 — the hub lists every published slug", () => {
   beforeEach(() => serve(REAL_LEGAL));
   afterEach(() => vi.unstubAllGlobals());
 
-  it("enumerates all nine from the index, not a subset", async () => {
+  it("enumerates all eleven from the index, not a subset", async () => {
     // The defect: /legal listed six while nine were published, because the
     // page mapped over a hardcoded array. Six of nine is the number to guard.
     const slugs = await loadLegalSlugs();
     expect(slugs.sort()).toEqual(slugsOnDisk(REAL_LEGAL));
-    expect(slugs).toHaveLength(9);
+    expect(slugs).toHaveLength(11);
   });
 
   it("includes the three that were never listed before", async () => {
@@ -126,7 +126,7 @@ describe("H1 — the hub lists every published slug", () => {
 
   it("gives every listed document a title, description and order", async () => {
     const entries = await loadLegalIndex(await loadLegalSlugs());
-    expect(entries).toHaveLength(9);
+    expect(entries).toHaveLength(11);
     for (const e of entries) {
       expect(e.state, `${e.slug} did not publish`).toBe("published");
       if (e.state !== "published") continue;
@@ -146,18 +146,20 @@ describe("H1 — the hub lists every published slug", () => {
       )
       .map((e) => e.slug);
 
-    // Agreements, then privacy, then the billing three in the order a
-    // subscription is experienced, then conduct.
+    // Agreements, then privacy and cookies, then the billing three in the order
+    // a subscription is experienced, then conduct, then the AI disclosure.
     expect(ordered).toEqual([
       "student-terms",
       "parent-guardian-terms",
       "privacy-policy",
+      "cookie-policy",
       "billing-terms",
       "subscription-auto-renewal-notice",
       "refund-policy",
       "honor-code",
       "community-guidelines",
       "trust-and-safety",
+      "ai-content-disclosure",
     ]);
     expect(ordered).not.toEqual([...ordered].sort());
   });
@@ -185,7 +187,7 @@ describe("H1 — the hub lists every published slug", () => {
 
 // ── H2 ──────────────────────────────────────────────────────────────────
 
-describe("H2 — a tenth manifest appears with no code change", () => {
+describe("H2 — a new manifest appears with no code change", () => {
   let tmp = "";
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legal-hub-"));
@@ -197,13 +199,13 @@ describe("H2 — a tenth manifest appears with no code change", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("lists a newly published tenth document without touching client code", async () => {
-    expect(await loadLegalSlugs()).toHaveLength(9);
+  it("lists a newly published document without touching client code", async () => {
+    expect(await loadLegalSlugs()).toHaveLength(11);
 
     writeDoc(tmp, "data-processing-terms", { current: "v1", order: 35 });
 
     const slugs = await loadLegalSlugs();
-    expect(slugs).toHaveLength(10);
+    expect(slugs).toHaveLength(12);
     expect(slugs).toContain("data-processing-terms");
 
     const entries = await loadLegalIndex(slugs);
@@ -264,7 +266,7 @@ describe("H4 — a slug at `current: null` does not appear", () => {
 
     const listed = entries.filter((e) => e.state === "published");
     expect(listed.map((e) => e.slug)).not.toContain("not-yet-written");
-    expect(listed).toHaveLength(9);
+    expect(listed).toHaveLength(11);
   });
 
   it("the hub filters on published, not on index membership", () => {
