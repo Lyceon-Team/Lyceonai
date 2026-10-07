@@ -780,8 +780,10 @@ describe("QA 2026-10-07 item 5: Send is pending from the click, standalone", () 
     expect(sendButton().textContent).toBe(LISA_SEND_PENDING_LABEL);
     expect(sendButton().disabled).toBe(true);
     expect(sendButton().getAttribute("aria-busy")).toBe("true");
-    // Pending, not faded as "unavailable".
+    // Pending, not faded as "unavailable": full strength over the Button's own disabled fade.
     expect(sendButton().className).not.toContain("disabled:opacity-45");
+    expect(sendButton().className).toContain("disabled:opacity-100");
+    expect(sendButton().className).not.toContain("disabled:opacity-50");
 
     await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(1));
     turn.answer();

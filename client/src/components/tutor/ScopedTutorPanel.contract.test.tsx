@@ -893,10 +893,43 @@ describe("QA 2026-10-07 — Send is pending from the click (item 5), Show LISA r
     const panel = screen.getByTestId("scoped-tutor-panel");
     const scroll = vi.mocked(Element.prototype.scrollIntoView);
     const onPanel = scroll.mock.contexts.filter((el) => el === panel);
-    expect(onPanel).toHaveLength(1);
+    expect(onPanel.length).toBeGreaterThan(0);
     expect(scroll.mock.calls[scroll.mock.contexts.indexOf(panel)]?.[0]).toEqual(
       { behavior: "auto", block: "start" },
     );
+  });
+
+  // Measured at 390 in the harness: the runner's question column grows a frame after LISA mounts,
+  // so one scroll stopped short (the panel's header ended near the bottom of the screen).
+  it("item 8: the reveal follows the runner's late layout, frame by frame, and a scroll by the student stops it", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    const flush = (): void => {
+      const due = frames.splice(0);
+      for (const cb of due) cb(0);
+    };
+    renderPanel({ ...props(seedReviewItem(1)), revealOnOpen: true });
+    await ready();
+    const panel = screen.getByTestId("scoped-tutor-panel");
+    const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    const panelCalls = (): number =>
+      scroll.mock.contexts.filter((el) => el === panel).length;
+    const first = panelCalls();
+    expect(first).toBeGreaterThan(0);
+    flush();
+    flush();
+    // Later frames scroll again: the runner may still be growing above it.
+    const chased = panelCalls();
+    expect(chased).toBeGreaterThan(first);
+    // The student scrolls: the panel stops chasing its place.
+    window.dispatchEvent(new Event("wheel"));
+    flush();
+    flush();
+    expect(panelCalls()).toBe(chased);
+    vi.mocked(window.requestAnimationFrame).mockRestore();
   });
 
   it("item 8: LISA simply there (every question, W4-4) does not scroll the runner to itself", async () => {

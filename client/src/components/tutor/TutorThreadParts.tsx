@@ -470,7 +470,7 @@ export function Composer({
             disabled={blocked}
             className={`h-[50px] min-w-[118px] shrink-0 px-[22px] text-[17px] ${
               pending
-                ? "disabled:cursor-progress"
+                ? "disabled:cursor-progress disabled:opacity-100"
                 : "disabled:cursor-not-allowed disabled:opacity-45"
             }`}
             aria-label="Send message"

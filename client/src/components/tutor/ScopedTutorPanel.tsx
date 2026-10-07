@@ -132,10 +132,40 @@ export function ScopedTutorPanel({
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
   // Mount-only: the panel mounts when it is opened, and it is the opening that is revealed.
+  // The runner is still laying out the question above it when LISA mounts (measured at 390: its
+  // column grows a frame later, so a single scroll stopped short), so the reveal is repeated
+  // each frame until the panel holds still (at most 30 frames, ~0.5s), and stops at once if
+  // the student scrolls, touches or types. "auto", not "smooth": DESIGN.md §1 allows no motion but the LISA dots.
   useEffect(() => {
-    if (!revealOnOpen) return;
-    // "auto", not "smooth": DESIGN.md §1 allows no motion but the LISA dots.
-    sectionRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+    const el = sectionRef.current;
+    if (!revealOnOpen || !el) return;
+    let frame = 0;
+    let frames = 0;
+    let stopped = false;
+    let lastTop = Number.NaN;
+    const reveal = (): void => {
+      if (stopped) return;
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      const top = el.getBoundingClientRect().top;
+      const settled = top === lastTop;
+      lastTop = top;
+      frames += 1;
+      // At least 10 frames (~160ms: the late growth was within two), then until it holds still.
+      if (frames < 30 && (frames < 10 || !settled))
+        frame = requestAnimationFrame(reveal);
+    };
+    const stop = (): void => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+    };
+    const inputs = ["wheel", "touchstart", "keydown"] as const;
+    for (const type of inputs)
+      window.addEventListener(type, stop, { passive: true, once: true });
+    reveal();
+    return () => {
+      stop();
+      for (const type of inputs) window.removeEventListener(type, stop);
+    };
   }, []);
   // Looking is a GET. Nothing here creates a conversation on load.
   const existing = useItemConversation(sourceSurface, sessionItemId);

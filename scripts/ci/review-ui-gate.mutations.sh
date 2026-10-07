@@ -1243,6 +1243,13 @@ plant "QA5-L1" "Send reads Send, not Sending…, while a message is on its way" 
 assert s.count(a) == 1
 s = s.replace(a, "{\"Send\"}", 1)'
 
+plant "QA5-O1" "a pending Send is faded like an unavailable one (the Button's disabled fade)" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "\"disabled:cursor-progress disabled:opacity-100\""
+assert s.count(a) == 1
+s = s.replace(a, "\"disabled:cursor-progress\"", 1)'
+
 plant "QA5-F1" "a first message (no conversation open) is not pending while its conversation is created" \
   "$T56" \
   "client/src/pages/chat.tsx" \
@@ -1267,9 +1274,30 @@ s = s.replace(a, "pending={false}", 1)'
 plant "QA8-R1" "the panel ignores revealOnOpen (Show LISA on a phone stays out of view)" \
   "$TQA_PANEL" \
   "client/src/components/tutor/ScopedTutorPanel.tsx" \
-  'a = "    if (!revealOnOpen) return;"
+  'a = "    if (!revealOnOpen || !el) return;"
 assert s.count(a) == 1
 s = s.replace(a, "    return;", 1)'
+
+plant "QA8-R4" "the panel reveals itself whenever it mounts (LISA on load scrolls the runner)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "    if (!revealOnOpen || !el) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    if (!el) return;", 1)'
+
+plant "QA8-R2" "the reveal is one scroll on mount (stops short of a runner still laying out)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "      if (frames < 30 && (frames < 10 || !settled))"
+assert s.count(a) == 1
+s = s.replace(a, "      if (false)", 1)'
+
+plant "QA8-R3" "the reveal keeps chasing after the student scrolls" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "      if (stopped) return;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
 
 plant "QA8-W1" "the runner never tells the panel it was opened" \
   "$TQA_RUNNER" \
