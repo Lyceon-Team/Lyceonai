@@ -53,6 +53,7 @@ import { toSessionCriteria } from "@lyceon/shared/session-criteria";
 import { sectionProjectionsResponseSchema } from "@lyceon/shared/student-resources";
 import { examFormsResponseSchema } from "@lyceon/shared/exam-report-schema";
 import {
+  calendarReadyResponseSchema,
   calendarSetupRequiredResponseSchema,
   launchResponseSchema,
 } from "@lyceon/shared/calendar";
@@ -65,6 +66,7 @@ import { getQueryFn } from "@/lib/queryClient";
 import type { EstimateResponse } from "@/lib/projectionApi";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
 import { toPracticeQuota } from "../../../server/lib/practice-quota";
+import { practiceAdapter } from "../../../server/services/calendar/adapters/practice";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
 import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
 import LyceonDashboard from "./lyceon-dashboard";
@@ -83,6 +85,8 @@ const net = vi.hoisted(() => ({
   handlers: [] as Array<
     (url: string, init: RequestInit | undefined) => Response | undefined
   >,
+  /** QA item 5: requests matching `pattern` wait for `gate` (a slow server). */
+  hold: null as null | { pattern: RegExp; gate: Promise<void> },
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -95,6 +99,7 @@ function json(body: unknown, status = 200): Response {
 vi.mock("@/lib/csrf", () => ({
   csrfFetch: async (url: string, init?: RequestInit): Promise<Response> => {
     net.log.push(`${init?.method ?? "GET"} ${url}`);
+    if (net.hold !== null && net.hold.pattern.test(url)) await net.hold.gate;
     for (const handler of net.handlers) {
       const answer = handler(url, init);
       if (answer !== undefined) return answer;
@@ -610,6 +615,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 9, 1, 15, 0, 0));
   net.log.length = 0;
   net.handlers = [];
+  net.hold = null;
   auth.user = {
     id: STUDENT,
     email: "sam@example.test",
@@ -1149,5 +1155,183 @@ describe("phone: Home's full-length starts ask the shared pre-start check first 
     fireEvent.click(exam);
     expect(history.at(-1)).toBe(`/tests/${EXAM_SESSION_ID}`);
     expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+});
+
+// ── Owner QA list (Karl, 2026-10-07) items 4 and 5 ────────────────────────────────────────────
+
+/**
+ * Today's blocks as the fixture week serves them, each with the launch response the REAL adapter
+ * for its engine produces (`resumeHref` is what the launch service puts in `next`, Doc 05F §15.1).
+ * The session id is per block, so two rows can never satisfy each other's assertion.
+ */
+function todaysLaunches(): Array<{
+  blockId: string;
+  completed: boolean;
+  next: string;
+  body: unknown;
+}> {
+  const week = calendarReadyResponseSchema.parse(
+    Object.fromEntries(
+      Object.entries(studentCalendarWeek(TODAY)).filter(
+        ([k]) => k !== "requestId",
+      ),
+    ),
+  );
+  const day = week.days.find((d) => d.local_date === TODAY);
+  if (day === undefined) throw new Error("the fixture week has today");
+  return day.blocks.map((entry, i) => {
+    const { block } = entry;
+    const sessionId = `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, "0")}`;
+    const adapter =
+      block.block_type === "practice"
+        ? practiceAdapter
+        : block.block_type === "review"
+          ? reviewAdapter
+          : fullLengthAdapter;
+    const next = adapter.resumeHref(sessionId);
+    return {
+      blockId: block.block_id,
+      completed: entry.status === "completed",
+      next,
+      body: launchResponseSchema.parse({
+        engine: block.block_type,
+        session_id: sessionId,
+        next,
+        resumed: false,
+      }),
+    };
+  });
+}
+
+function answerLaunches(rows: ReturnType<typeof todaysLaunches>): void {
+  net.handlers.unshift((url, init) => {
+    if ((init?.method ?? "GET") !== "POST") return undefined;
+    const row = rows.find(
+      (r) => url.split("?")[0] === `/api/calendar/blocks/${r.blockId}/launch`,
+    );
+    return row === undefined ? undefined : json(row.body);
+  });
+}
+
+describe("QA item 4: every Home CTA lands on its exact destination (owner ruling: option a)", () => {
+  it("each Today's plan row's Start opens exactly the session its launch response names", async () => {
+    const rows = todaysLaunches();
+    const open = rows.filter((r) => !r.completed);
+    // Presence: today has more than one block, and at least one can be started.
+    expect(rows.length).toBeGreaterThan(1);
+    expect(open.length).toBeGreaterThan(0);
+    for (const row of open) {
+      cleanup();
+      net.log.length = 0;
+      const { history } = await mount("paid", { calendar: "ready" });
+      answerLaunches(rows);
+      const plan = await screen.findByTestId("home-plan");
+      const index = rows.indexOf(row);
+      const button = within(plan).getAllByTestId("home-plan-start")[index];
+      if (button === undefined) throw new Error(`a Start for row ${index}`);
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      await waitFor(() => expect(history.at(-1)).toBe(row.next));
+      expect(launches()).toEqual([
+        `POST /api/calendar/blocks/${row.blockId}/launch`,
+      ]);
+    }
+  });
+
+  it("'Start today's plan' opens exactly the session the first open block's launch names", async () => {
+    const rows = todaysLaunches();
+    const first = rows.find((r) => !r.completed);
+    if (first === undefined) throw new Error("an open block today");
+    const { history } = await mount("paid", { calendar: "ready" });
+    answerLaunches(rows);
+    const start = await screen.findByTestId("home-start-plan");
+    await act(async () => {
+      fireEvent.click(start);
+    });
+    await waitFor(() => expect(history.at(-1)).toBe(first.next));
+    expect(first.next).toMatch(/^\/(practice|review)\/session\/|^\/tests\//);
+  });
+});
+
+describe("QA item 5: Home's starts show a pending state from the first click", () => {
+  it("'Start today's plan': 'Starting…', disabled and busy while the launch is in flight; one launch", async () => {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern: /\/api\/calendar\/blocks\/[^/]+\/launch$/,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const { history } = await mount("paid", { calendar: "ready" });
+    const start = (await screen.findByTestId(
+      "home-start-plan",
+    )) as HTMLButtonElement;
+    expect(start.textContent).toBe("Start today's plan");
+    await act(async () => {
+      fireEvent.click(start);
+    });
+    expect(start.textContent).toBe("Starting…");
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-busy")).toBe("true");
+    expect(within(start).getByTestId("button-pending-spinner")).toBeTruthy();
+    // The rows are disabled too, and none of them claims to be the one starting.
+    for (const row of screen.getAllByTestId("home-plan-start")) {
+      expect((row as HTMLButtonElement).disabled).toBe(true);
+      expect(row.getAttribute("aria-busy")).toBeNull();
+    }
+    await act(async () => {
+      fireEvent.click(start);
+    });
+    await act(async () => {
+      release();
+    });
+    await waitFor(() =>
+      expect(history.at(-1)).toBe(`/review/session/${LAUNCHED_SESSION}`),
+    );
+    expect(launches()).toEqual([
+      `POST /api/calendar/blocks/${TODAY_REVIEW_BLOCK}/launch`,
+    ]);
+  });
+
+  it("a Today's plan row's Start: that row says 'Starting…', the primary keeps its label", async () => {
+    net.hold = {
+      pattern: /\/api\/calendar\/blocks\/[^/]+\/launch$/,
+      gate: new Promise<void>(() => undefined),
+    };
+    await mount("paid", { calendar: "ready" });
+    const plan = await screen.findByTestId("home-plan");
+    const rows = within(plan).getAllByTestId("home-plan-start");
+    const open = rows.find((b) => !(b as HTMLButtonElement).disabled);
+    if (open === undefined) throw new Error("an open row");
+    const label = open.textContent;
+    await act(async () => {
+      fireEvent.click(open);
+    });
+    expect(open.textContent).toBe("Starting…");
+    expect(open.getAttribute("aria-busy")).toBe("true");
+    expect(label).not.toBe("Starting…");
+    expect(screen.getByTestId("home-start-plan").textContent).toBe(
+      "Start today's plan",
+    );
+  });
+
+  it("'Start diagnostic' (free): 'Starting…' and disabled while the diagnostic starts", async () => {
+    net.hold = {
+      pattern: /\/api\/practice\/diagnostic\/sessions$/,
+      gate: new Promise<void>(() => undefined),
+    };
+    await mount("free", { estimateStatus: "no_baseline" });
+    const start = (await screen.findByTestId(
+      "home-start-diagnostic",
+    )) as HTMLButtonElement;
+    expect(start.textContent).toBe("Start diagnostic");
+    await act(async () => {
+      fireEvent.click(start);
+    });
+    expect(start.textContent).toBe("Starting…");
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-busy")).toBe("true");
   });
 });

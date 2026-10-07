@@ -42,6 +42,7 @@ import { MasteryRow } from "@/components/mastery/MasteryRow";
 import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { useCalendar, useLaunchBlock } from "@/features/calendar/api";
 import { primaryActionLabel } from "@/features/calendar/lib/blocks";
 import { addDays, startOfWeek } from "@/features/calendar/lib/dates";
@@ -362,6 +363,11 @@ function ReadyPlan({
   onStart: (block: Block) => void;
 }): JSX.Element {
   const first = firstOpenBlock(blocks);
+  // Which control started the pending launch: the primary and the first row launch the same
+  // block, and only the one that was pressed shows "Starting…".
+  const [startedFromPrimary, setStartedFromPrimary] = useState(false);
+  const primaryPending =
+    first !== null && pendingBlockId === first.block_id && startedFromPrimary;
   return (
     <>
       <ol className="m-0 list-none border-t border-lyc-rule p-0">
@@ -385,14 +391,22 @@ function ReadyPlan({
                 ) : null}
               </div>
               <span className="text-[17px] text-lyc-ink">{row.time ?? ""}</span>
+              {/* QA item 5 (2026-10-07): the pressed row says it is starting, from the click. */}
               <Button
                 type="button"
                 variant="lyc-outline"
                 disabled={row.completed || pendingBlockId !== null}
-                onClick={() => onStart(entry.block)}
+                pending={pendingBlockId === row.blockId && !startedFromPrimary}
+                onClick={() => {
+                  setStartedFromPrimary(false);
+                  onStart(entry.block);
+                }}
                 aria-label={`${label}: ${row.title}`}
+                data-testid="home-plan-start"
               >
-                {label}
+                {pendingBlockId === row.blockId && !startedFromPrimary
+                  ? STARTING_LABEL
+                  : label}
               </Button>
             </li>
           );
@@ -410,10 +424,14 @@ function ReadyPlan({
             variant="lyc-primary"
             size="lyc-lg"
             disabled={pendingBlockId !== null}
-            onClick={() => onStart(first)}
+            pending={primaryPending}
+            onClick={() => {
+              setStartedFromPrimary(true);
+              onStart(first);
+            }}
             data-testid="home-start-plan"
           >
-            Start today&apos;s plan
+            {primaryPending ? STARTING_LABEL : "Start today's plan"}
           </Button>
         </div>
       ) : null}

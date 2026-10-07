@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -86,17 +87,57 @@ export interface ButtonProps
     React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /**
+   * @spec [owner QA list (Karl, 2026-10-07) item 5: "immediate pressed/loading state on every
+   *        action that waits on the server"; DESIGN.md §1 "Focus and motion"]
+   *       | @implemented [2026-10-07]
+   * plain English: the action is waiting on the server. The button is disabled (a second click
+   * submits nothing), tells assistive technology (`aria-busy`), and draws a spinner before its
+   * label; the caller passes the pending label as its children ("Starting…"). Ignored with
+   * `asChild`: a Slot takes exactly one child, and a link never waits on a request.
+   */
+  pending?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      asChild = false,
+      pending = false,
+      disabled,
+      children,
+      ...props
+    },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : "button";
+    const busy = pending && !asChild;
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        disabled={busy ? true : disabled}
+        aria-busy={busy ? true : undefined}
+        data-pending={busy ? "true" : undefined}
         {...props}
-      />
+      >
+        {/* Children pass through untouched unless busy: a Slot needs its one child as is. */}
+        {busy ? (
+          <>
+            <Loader2
+              aria-hidden="true"
+              className="animate-spin"
+              data-testid="button-pending-spinner"
+            />
+            {children}
+          </>
+        ) : (
+          children
+        )}
+      </Comp>
     );
   },
 );

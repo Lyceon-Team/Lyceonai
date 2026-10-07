@@ -87,6 +87,7 @@ import { usePracticeQuota } from "@/hooks/usePracticeQuota";
 import { usePracticeTopics } from "@/hooks/usePracticeTopics";
 import { useReviewPool } from "@/hooks/useReview";
 import { fetchMasteryDomains, type MasterySection } from "@/lib/masteryApi";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { dayHeaderLabel } from "@/lib/review-session-picker";
 import { sectionDisplayLabel } from "@shared/section-display";
 
@@ -211,6 +212,7 @@ export default function Practice(): JSX.Element {
         canStart={
           topics.data !== undefined && !isStarting && !atLimit && !quotaOut
         }
+        starting={isStarting}
         onStart={() => void start()}
         quota={
           quota.data !== undefined && !quota.data.unlimited
@@ -334,6 +336,7 @@ function YourSession({
   size,
   onSize,
   canStart,
+  starting,
   onStart,
   quota,
   limitLine,
@@ -346,6 +349,8 @@ function YourSession({
   size: QuestionsPerSession;
   onSize: (size: QuestionsPerSession) => void;
   canStart: boolean;
+  /** QA item 5 (2026-10-07): Start was pressed and the create request is in flight. */
+  starting: boolean;
   onStart: () => void;
   /** Today's free quota; null for an unlimited plan (or before it is read). */
   quota: { remaining: number; limit: number } | null;
@@ -395,10 +400,11 @@ function YourSession({
           variant="lyc-primary"
           size="lyc-lg"
           disabled={!canStart}
+          pending={starting}
           onClick={onStart}
           data-testid="practice-start"
         >
-          {startLabel(size)}
+          {starting ? STARTING_LABEL : startLabel(size)}
         </Button>
       </div>
       {quota !== null ? (

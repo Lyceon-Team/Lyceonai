@@ -101,6 +101,8 @@ FILES=(
   "client/src/features/exam/components/ExamStatus.tsx"
   "client/src/features/calendar/components/FullLengthFields.tsx"
   "packages/shared/src/exam-form-display.ts"
+  "client/src/components/ui/button.tsx"
+  "client/src/pages/practice.tsx"
 )
 
 snapshot_all() {
@@ -2263,6 +2265,95 @@ plant "FU-H3" "Home's Today's plan asks the check for every block (review too)" 
   'a = "    if (block.block_type === \"full_length\")\n"
 assert s.count(a) == 1
 s = s.replace(a, "    if (true)\n", 1)'
+
+# ── QA-FLOWS — owner QA list (Karl, 2026-10-07), branch claude/qa-flows ──────────────────────
+# Items 4-7, 10, 14, 15 (flows, links, loading states). Each plant mutates the product line the
+# named test exercises (checked by line, CLAUDE.md "A plant must mutate the call site under test").
+QA_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+QA_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+QA_REVIEW="client/src/pages/review.test.tsx"
+QA_PRACTICE="client/src/pages/practice.test.tsx"
+QA_TESTS="client/src/features/exam/pages/TestsHomePage.test.tsx"
+
+# Item 5: an action that waits on the server is disabled, busy and labelled from the first click.
+plant "QA5-B1" "the shared Button stops saying it is busy" \
+  "$QA_HOME" \
+  "client/src/components/ui/button.tsx" \
+  'a = "        aria-busy={busy ? true : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        aria-busy={undefined}\n", 1)'
+
+plant "QA5-H1" "Start today's plan keeps its label while the launch is in flight" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "{primaryPending ? STARTING_LABEL : \"Start today\x27s plan\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Start today\x27s plan\"}", 1)'
+
+plant "QA5-H2" "a plan row's Start draws no pending state" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "pending={pendingBlockId === row.blockId && !startedFromPrimary}"
+assert s.count(a) == 1
+s = s.replace(a, "pending={false}", 1)'
+
+plant "QA5-H3" "Start diagnostic draws no pending state" \
+  "$QA_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "              pending={diagnostic.isStarting}\n"
+assert s.count(a) == 1
+s = s.replace(a, "              disabled={diagnostic.isStarting}\n", 1)'
+
+plant "QA5-R1" "the runner's Skip keeps its label while the skip is in flight" \
+  "$QA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "{submitKind === \"skip\" ? SKIPPING_LABEL : \"Skip\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Skip\"}", 1)'
+
+plant "QA5-R2" "the hook never records which submit is in flight" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "      setSubmitKind(opts.skipped ? \"skip\" : \"answer\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-R3" "Next question draws no pending state while the next item loads" \
+  "$QA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "            pending={isLoading}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-V1" "Start reviewing keeps its label while the create is in flight" \
+  "$QA_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "{starting === \"queue\" ? STARTING_LABEL : \"Start reviewing\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Start reviewing\"}", 1)'
+
+plant "QA5-V2" "the topic picker says it is starting when the queue was pressed" \
+  "$QA_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "              starting={starting === \"filter\"}\n"
+assert s.count(a) == 1
+s = s.replace(a, "              starting={starting !== null}\n", 1)'
+
+plant "QA5-P1" "Practice's Start draws no pending state" \
+  "$QA_PRACTICE" \
+  "client/src/pages/practice.tsx" \
+  'a = "          pending={starting}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-T1" "Full-Length's Start keeps its label while the create is in flight" \
+  "$QA_TESTS" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "        {pending ? STARTING_LABEL : label}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {label}\n", 1)'
+
+# ── END QA-FLOWS
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

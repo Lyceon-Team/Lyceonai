@@ -85,6 +85,7 @@ import {
   type ReviewStartSpec,
 } from "@/hooks/useReview";
 import { fetchMasteryDomains, type MasterySection } from "@/lib/masteryApi";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import {
   localDateKey,
   sourceFiltersLine,
@@ -132,6 +133,9 @@ export default function ReviewPage(): JSX.Element {
   const [startFailure, setStartFailure] = useState<ReviewStartFailure | null>(
     null,
   );
+  // QA item 5 (2026-10-07): which start is in flight, so only the pressed control says
+  // "Starting…" (every start is disabled meanwhile through `canStart`).
+  const [starting, setStarting] = useState<string | null>(null);
 
   // "Today" in the SAME zone the server used to compute each row's local_date.
   const todayKey = useMemo(
@@ -154,6 +158,7 @@ export default function ReviewPage(): JSX.Element {
     open.sessions.length >= open.maxConcurrentSessions;
 
   async function start(spec: ReviewStartSpec): Promise<void> {
+    setStarting(reviewStartKey(spec));
     setStartFailure(null);
     const result = await create.startSession(spec);
     if (result.ok) {
@@ -161,10 +166,11 @@ export default function ReviewPage(): JSX.Element {
       navigate(`/review/session/${result.sessionId}`);
       return;
     }
+    setStarting(null);
     setStartFailure(result.failure);
   }
 
-  const canStart = !create.isStarting && !atLimit;
+  const canStart = !create.isStarting && starting === null && !atLimit;
   const emptyQueue = (
     <EmptyState
       variant="lyc"
@@ -228,10 +234,11 @@ export default function ReviewPage(): JSX.Element {
                   size="lyc-lg"
                   className="shrink-0"
                   disabled={!canStart}
+                  pending={starting === "queue"}
                   onClick={() => void start({ mode: "queue" })}
                   data-testid="button-start-queue"
                 >
-                  Start reviewing
+                  {starting === "queue" ? STARTING_LABEL : "Start reviewing"}
                 </Button>
               </div>
             )}
@@ -277,6 +284,7 @@ export default function ReviewPage(): JSX.Element {
               bySection={bySection}
               byDomain={byDomain}
               canStart={canStart}
+              starting={starting === "filter"}
               onStart={(spec) => void start(spec)}
             />
           ) : null}
@@ -289,6 +297,7 @@ export default function ReviewPage(): JSX.Element {
               loadingMore={pool.isLoadingMoreSessions}
               onNextPage={pool.loadMoreSessions}
               canStart={canStart}
+              startingKey={starting}
               onRedo={(row) =>
                 void start({
                   mode: "session",
@@ -479,12 +488,15 @@ function ReviewByTopic({
   bySection,
   byDomain,
   canStart,
+  starting,
   onStart,
 }: {
   taxonomy: PracticeTopicsResponse;
   bySection: ReadonlyMap<string, number>;
   byDomain: ReadonlyMap<string, number>;
   canStart: boolean;
+  /** This picker's start is in flight (QA item 5). */
+  starting: boolean;
   onStart: (spec: ReviewStartSpec) => void;
 }): JSX.Element {
   const sections = sectionOptions(taxonomy);
@@ -598,6 +610,7 @@ function ReviewByTopic({
             type="button"
             variant="lyc-outline"
             disabled={!canStart || count === 0}
+            pending={starting}
             onClick={() =>
               onStart({
                 mode: "filter",
@@ -609,7 +622,7 @@ function ReviewByTopic({
             }
             data-testid="button-start-topic"
           >
-            {topicCta(count)}
+            {starting ? STARTING_LABEL : topicCta(count)}
           </Button>
         </div>
       </div>
@@ -624,6 +637,7 @@ function PastSessions({
   loadingMore,
   onNextPage,
   canStart,
+  startingKey,
   onRedo,
 }: {
   rows: readonly ReviewPoolSourceSession[];
@@ -632,6 +646,8 @@ function PastSessions({
   loadingMore: boolean;
   onNextPage: () => void;
   canStart: boolean;
+  /** The start in flight (`reviewStartKey`), so the pressed Redo says "Starting…". */
+  startingKey: string | null;
   onRedo: (row: ReviewPoolSourceSession) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
@@ -707,10 +723,13 @@ function PastSessions({
                           type="button"
                           variant="lyc-link"
                           disabled={!canStart}
+                          pending={startingKey === redoStartKey(row)}
                           onClick={() => onRedo(row)}
                           data-testid="review-past-redo"
                         >
-                          Redo
+                          {startingKey === redoStartKey(row)
+                            ? STARTING_LABEL
+                            : "Redo"}
                         </Button>
                       </span>
                     </li>
@@ -740,4 +759,26 @@ function PastSessions({
       ) : null}
     </section>
   );
+}
+
+/**
+ * QA item 5 (2026-10-07) | @implemented [2026-10-07]: a key naming one start on this page, so the
+ * pressed control (and only it) draws "Starting…": the queue, the topic picker, or one past
+ * session's Redo.
+ */
+function reviewStartKey(spec: ReviewStartSpec): string {
+  if (spec.mode === "session")
+    return sessionStartKey(
+      spec.filters.source_engine,
+      spec.filters.source_session_id,
+    );
+  return spec.mode;
+}
+
+function sessionStartKey(engine: string, sessionId: string): string {
+  return `session:${engine}:${sessionId}`;
+}
+
+function redoStartKey(row: ReviewPoolSourceSession): string {
+  return sessionStartKey(row.source_engine, row.source_session_id);
 }

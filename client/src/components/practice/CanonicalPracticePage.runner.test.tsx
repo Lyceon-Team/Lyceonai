@@ -612,3 +612,91 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     }
   });
 });
+
+/**
+ * QA item 5 (owner QA list, Karl, 2026-10-07) | @implemented [2026-10-07]. Holds every request
+ * whose path matches `pattern` until `release()` is called, over the network `installNetwork`
+ * scripted (its answers are unchanged, only delayed): a request in flight, as a slow server
+ * leaves it.
+ */
+function holdRequests(pattern: RegExp): { release: () => void } {
+  const spy = vi.mocked(globalThis.fetch);
+  const answer = spy.getMockImplementation();
+  if (answer === undefined) throw new Error("installNetwork first");
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  spy.mockImplementation(async (input, init) => {
+    if (pattern.test(pathOf(input))) await gate;
+    return answer(input, init);
+  });
+  return { release: () => open() };
+}
+
+describe("QA item 5 (2026-10-07): the runner's footer shows a pending state from the first click", () => {
+  it("Skip: 'Skipping…', disabled and busy while the skip is in flight; a second click sends nothing", async () => {
+    const net = installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const held = holdRequests(/\/skip$/);
+    await click(screen.getByRole("button", { name: "Skip" }));
+    const pending = screen.getByTestId("runner-skip") as HTMLButtonElement;
+    expect(pending.textContent).toBe("Skipping…");
+    expect(pending.disabled).toBe(true);
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    expect(within(pending).getByTestId("button-pending-spinner")).toBeTruthy();
+    // Submit is not the pressed control: it keeps its own label.
+    expect(screen.getByTestId("runner-submit").textContent).toBe("Submit");
+    await click(pending);
+    await act(async () => {
+      held.release();
+    });
+    await loaded(2);
+    // The network log records a request once it is answered: one skip, however many clicks.
+    expect(net.calls.filter((c) => /POST .*\/skip$/.test(c))).toHaveLength(1);
+    expect(screen.getByTestId("runner-skip").textContent).toBe("Skip");
+  });
+
+  it("Submit: 'Checking…', disabled and busy while the answer is checked; one request", async () => {
+    const net = installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    await click(choice(CORRECT_TEXT));
+    const held = holdRequests(/\/answer$/);
+    await click(submitButton());
+    const pending = screen.getByTestId("runner-submit") as HTMLButtonElement;
+    expect(pending.textContent).toBe("Checking…");
+    expect(pending.disabled).toBe(true);
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    await click(pending);
+    await act(async () => {
+      held.release();
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("runner-next").textContent).toBe(
+        "Next question",
+      ),
+    );
+    expect(net.answerBodies).toHaveLength(1);
+  });
+
+  it("Next question: 'Loading…' while the next item loads", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await waitFor(() => expect(screen.getByTestId("runner-next")).toBeTruthy());
+    const held = holdRequests(/\/next$/);
+    await click(screen.getByTestId("runner-next"));
+    const pending = screen.getByTestId("runner-next") as HTMLButtonElement;
+    expect(pending.textContent).toBe("Loading…");
+    expect(pending.disabled).toBe(true);
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    await act(async () => {
+      held.release();
+    });
+    await loaded(2);
+  });
+});

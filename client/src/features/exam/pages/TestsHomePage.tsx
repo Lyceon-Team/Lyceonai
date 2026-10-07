@@ -78,6 +78,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { fetchMasteryDomains, type MasterySection } from "@/lib/masteryApi";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { cn } from "@/lib/utils";
 import { sectionDisplayLabel } from "@shared/section-display";
 import {
@@ -536,12 +537,13 @@ function StartButton({
         type="button"
         variant={variant}
         size={size}
-        disabled={pending}
+        pending={pending}
         // OQ-63: the shared phone pre-start check runs before the create request.
         onClick={() => precheck.run(() => void start())}
         data-testid="tests-start"
       >
-        {label}
+        {/* QA item 5 (2026-10-07): the pressed Start says so until the sitting opens. */}
+        {pending ? STARTING_LABEL : label}
       </Button>
       {precheck.dialog}
       {error !== null ? (

@@ -263,6 +263,12 @@ export function useCanonicalPractice(
   const [freeResponseAnswer, setFreeResponseAnswer] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /**
+   * QA item 5 (2026-10-07) | @implemented [2026-10-07]: which submit is in flight, so the
+   * runner's footer labels the pressed control ("Skipping…" or "Checking…"). A skip stays
+   * "skip" until the next question has loaded, because `submitAnswer` awaits it.
+   */
+  const [submitKind, setSubmitKind] = useState<"answer" | "skip" | null>(null);
 
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
@@ -560,6 +566,7 @@ export function useCanonicalPractice(
       setSubmitBlocked(null);
 
       setIsSubmitting(true);
+      setSubmitKind(opts.skipped ? "skip" : "answer");
       setError(null);
 
       try {
@@ -657,6 +664,7 @@ export function useCanonicalPractice(
         return null;
       } finally {
         setIsSubmitting(false);
+        setSubmitKind(null);
       }
     },
     [
@@ -738,6 +746,7 @@ export function useCanonicalPractice(
     setFreeResponseAnswer,
 
     isSubmitting,
+    submitKind,
 
     showResult,
     isCorrect,

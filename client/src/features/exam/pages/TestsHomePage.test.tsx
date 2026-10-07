@@ -34,6 +34,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -71,6 +72,8 @@ const net = vi.hoisted(() => ({
   handler: null as
     | null
     | ((url: string, init: RequestInit | undefined) => Response | undefined),
+  /** QA item 5: requests matching `pattern` wait for `gate` (a slow server). */
+  hold: null as null | { pattern: RegExp; gate: Promise<void> },
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -83,6 +86,7 @@ function json(body: unknown, status = 200): Response {
 vi.mock("@/lib/csrf", () => ({
   csrfFetch: async (url: string, init?: RequestInit): Promise<Response> => {
     net.log.push(`${init?.method ?? "GET"} ${url}`);
+    if (net.hold !== null && net.hold.pattern.test(url)) await net.hold.gate;
     if (typeof init?.body === "string") {
       net.bodies.push({ url, body: JSON.parse(init.body) as unknown });
     }
@@ -503,6 +507,7 @@ beforeEach(() => {
   net.log.length = 0;
   net.bodies.length = 0;
   net.handler = null;
+  net.hold = null;
   window.sessionStorage.clear();
 });
 
@@ -977,5 +982,40 @@ describe("phone widths: the shared pre-start check (OQ-63)", () => {
         /useFullLengthPhonePrecheck|phone-notice|PHONE_LAYOUT_QUERY/,
       ).filter((f) => /Exam(Session|Module|Report)Page/.test(f)),
     ).toEqual([]);
+  });
+});
+
+// ── Owner QA list (Karl, 2026-10-07) item 5 ───────────────────────────────────────────────────
+
+describe("QA item 5: Full-Length's Start shows a pending state from the first click", () => {
+  it("'Starting…', disabled and busy while the create is in flight; one create", async () => {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern: /^\/api\/tests\/sessions$/,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const { history } = await mount("paid", {
+      inProgress: false,
+      scored: false,
+    });
+    const start = (await within(row("Full-Length Test 1")).findByRole(
+      "button",
+      { name: "Start" },
+    )) as HTMLButtonElement;
+    fireEvent.click(start);
+    expect(start.textContent).toBe("Starting…");
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-busy")).toBe("true");
+    expect(within(start).getByTestId("button-pending-spinner")).toBeTruthy();
+    fireEvent.click(start);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+    expect(
+      net.bodies.filter((b) => b.url === "/api/tests/sessions"),
+    ).toHaveLength(1);
   });
 });
