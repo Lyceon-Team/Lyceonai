@@ -1,6 +1,6 @@
 # UI-41 shells: App shell (rail lock states), Focus shell, Bare card
 
-Generated 2026-10-07T09:36:30.151Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-41` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T10:41:21.896Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-41` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -29,9 +29,9 @@ Prototype: `Main.dc.html` (Home, plan = paid).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![app-dashboard-paid desktop light](app-dashboard-paid--desktop--light--built.png)<br>`/dashboard`, 130 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
-| desktop | dark | ![app-dashboard-paid desktop dark](app-dashboard-paid--desktop--dark--built.png)<br>`/dashboard`, 131 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
-| mobile | light | ![app-dashboard-paid mobile light](app-dashboard-paid--mobile--light--built.png)<br>`/dashboard`, 56 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
+| desktop | light | ![app-dashboard-paid desktop light](app-dashboard-paid--desktop--light--built.png)<br>`/dashboard`, 132 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
+| desktop | dark | ![app-dashboard-paid desktop dark](app-dashboard-paid--desktop--dark--built.png)<br>`/dashboard`, 132 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
+| mobile | light | ![app-dashboard-paid mobile light](app-dashboard-paid--mobile--light--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
 | mobile | dark | ![app-dashboard-paid mobile dark](app-dashboard-paid--mobile--dark--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
 
 ## App shell, /calendar, free (rail lock shown, page navigates and upsells)
@@ -80,8 +80,8 @@ Prototype: none. The prototypes have no phone layout (fixed 1440x900 canvas); th
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![app-avatar-menu-paid desktop light](app-avatar-menu-paid--desktop--light--built.png)<br>`/dashboard`, 134 KB, horizontal overflow 0px | none |
-| desktop | dark | ![app-avatar-menu-paid desktop dark](app-avatar-menu-paid--desktop--dark--built.png)<br>`/dashboard`, 135 KB, horizontal overflow 0px | none |
+| desktop | light | ![app-avatar-menu-paid desktop light](app-avatar-menu-paid--desktop--light--built.png)<br>`/dashboard`, 135 KB, horizontal overflow 0px | none |
+| desktop | dark | ![app-avatar-menu-paid desktop dark](app-avatar-menu-paid--desktop--dark--built.png)<br>`/dashboard`, 136 KB, horizontal overflow 0px | none |
 | mobile | light | ![app-avatar-menu-paid mobile light](app-avatar-menu-paid--mobile--light--built.png)<br>`/dashboard`, 58 KB, horizontal overflow 0px | none |
 | mobile | dark | ![app-avatar-menu-paid mobile dark](app-avatar-menu-paid--mobile--dark--built.png)<br>`/dashboard`, 57 KB, horizontal overflow 0px | none |
 
@@ -135,10 +135,10 @@ Prototype: `Runner.dc.html` (Question runner (no plan prop)).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![focus-practice-runner desktop light](focus-practice-runner--desktop--light--built.png)<br>`/practice/session/062022d5-f152-4c90-9559-605295a3b12e`, 88 KB, horizontal overflow 0px | ![prototype light](proto--Runner--noplan--light.png), 33 KB |
-| desktop | dark | ![focus-practice-runner desktop dark](focus-practice-runner--desktop--dark--built.png)<br>`/practice/session/062022d5-f152-4c90-9559-605295a3b12e`, 91 KB, horizontal overflow 0px | ![prototype dark](proto--Runner--noplan--dark.png), 33 KB |
-| mobile | light | ![focus-practice-runner mobile light](focus-practice-runner--mobile--light--built.png)<br>`/practice/session/062022d5-f152-4c90-9559-605295a3b12e`, 73 KB, horizontal overflow 0px | ![prototype light](proto--Runner--noplan--light.png)<br>desktop prototype (no phone layout), 33 KB |
-| mobile | dark | ![focus-practice-runner mobile dark](focus-practice-runner--mobile--dark--built.png)<br>`/practice/session/062022d5-f152-4c90-9559-605295a3b12e`, 76 KB, horizontal overflow 0px | ![prototype dark](proto--Runner--noplan--dark.png)<br>desktop prototype (no phone layout), 33 KB |
+| desktop | light | ![focus-practice-runner desktop light](focus-practice-runner--desktop--light--built.png)<br>`/practice/session/e9f70bf7-ce80-4d03-943b-a401a9d01e45`, 86 KB, horizontal overflow 0px | ![prototype light](proto--Runner--noplan--light.png), 33 KB |
+| desktop | dark | ![focus-practice-runner desktop dark](focus-practice-runner--desktop--dark--built.png)<br>`/practice/session/e9f70bf7-ce80-4d03-943b-a401a9d01e45`, 89 KB, horizontal overflow 0px | ![prototype dark](proto--Runner--noplan--dark.png), 33 KB |
+| mobile | light | ![focus-practice-runner mobile light](focus-practice-runner--mobile--light--built.png)<br>`/practice/session/e9f70bf7-ce80-4d03-943b-a401a9d01e45`, 71 KB, horizontal overflow 0px | ![prototype light](proto--Runner--noplan--light.png)<br>desktop prototype (no phone layout), 33 KB |
+| mobile | dark | ![focus-practice-runner mobile dark](focus-practice-runner--mobile--dark--built.png)<br>`/practice/session/e9f70bf7-ce80-4d03-943b-a401a9d01e45`, 74 KB, horizontal overflow 0px | ![prototype dark](proto--Runner--noplan--dark.png)<br>desktop prototype (no phone layout), 33 KB |
 
 ## Bare card, /login, signed out
 
@@ -171,9 +171,9 @@ Prototype: none. The prototypes draw no bell (OQ-47 placed it after sign-off); c
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![qa-bell-unread-badge-paid desktop light](qa-bell-unread-badge-paid--desktop--light--built.png)<br>`/dashboard`, 130 KB, horizontal overflow 0px | none |
-| desktop | dark | ![qa-bell-unread-badge-paid desktop dark](qa-bell-unread-badge-paid--desktop--dark--built.png)<br>`/dashboard`, 131 KB, horizontal overflow 0px | none |
-| mobile | light | ![qa-bell-unread-badge-paid mobile light](qa-bell-unread-badge-paid--mobile--light--built.png)<br>`/dashboard`, 56 KB, horizontal overflow 0px | none |
+| desktop | light | ![qa-bell-unread-badge-paid desktop light](qa-bell-unread-badge-paid--desktop--light--built.png)<br>`/dashboard`, 132 KB, horizontal overflow 0px | none |
+| desktop | dark | ![qa-bell-unread-badge-paid desktop dark](qa-bell-unread-badge-paid--desktop--dark--built.png)<br>`/dashboard`, 132 KB, horizontal overflow 0px | none |
+| mobile | light | ![qa-bell-unread-badge-paid mobile light](qa-bell-unread-badge-paid--mobile--light--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
 | mobile | dark | ![qa-bell-unread-badge-paid mobile dark](qa-bell-unread-badge-paid--mobile--dark--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
 
 ## QA 13: the notifications popover while its feed loads (GET /api/notifications held): the skeleton, not 'Loading…'
@@ -202,7 +202,7 @@ Prototype: none. The prototypes draw no bell (OQ-47 placed it after sign-off); c
 | desktop | light | ![qa-notifications-popover-paid desktop light](qa-notifications-popover-paid--desktop--light--built.png)<br>`/dashboard`, 149 KB, horizontal overflow 0px | none |
 | desktop | dark | ![qa-notifications-popover-paid desktop dark](qa-notifications-popover-paid--desktop--dark--built.png)<br>`/dashboard`, 150 KB, horizontal overflow 0px | none |
 | mobile | light | ![qa-notifications-popover-paid mobile light](qa-notifications-popover-paid--mobile--light--built.png)<br>`/dashboard`, 65 KB, horizontal overflow 0px | none |
-| mobile | dark | ![qa-notifications-popover-paid mobile dark](qa-notifications-popover-paid--mobile--dark--built.png)<br>`/dashboard`, 66 KB, horizontal overflow 0px | none |
+| mobile | dark | ![qa-notifications-popover-paid mobile dark](qa-notifications-popover-paid--mobile--dark--built.png)<br>`/dashboard`, 65 KB, horizontal overflow 0px | none |
 
 ## QA 5/12: Home → 'See every skill' with the Mastery page's code chunk held: what shows while the route loads
 
@@ -242,10 +242,10 @@ Prototype: none. Runner.dc.html has a Reference button but no sheet; the figures
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![qa-reference-sheet desktop light](qa-reference-sheet--desktop--light--built.png)<br>`/practice/session/2a2e3a11-cad1-493f-a7fc-ff087de7e432`, 78 KB, horizontal overflow 0px | none |
-| desktop | dark | ![qa-reference-sheet desktop dark](qa-reference-sheet--desktop--dark--built.png)<br>`/practice/session/8e78ab07-d3e5-4f23-a1a0-cc84f515f600`, 79 KB, horizontal overflow 0px | none |
-| mobile | light | ![qa-reference-sheet mobile light](qa-reference-sheet--mobile--light--built.png)<br>`/practice/session/e3c607a0-0b10-4f97-8682-097951fbb745`, 52 KB, horizontal overflow 0px | none |
-| mobile | dark | ![qa-reference-sheet mobile dark](qa-reference-sheet--mobile--dark--built.png)<br>`/practice/session/393f754b-dbc4-4398-bcec-19d18947dcc0`, 52 KB, horizontal overflow 0px | none |
+| desktop | light | ![qa-reference-sheet desktop light](qa-reference-sheet--desktop--light--built.png)<br>`/practice/session/6c0f63e3-7125-4e51-bf88-95de17155bbc`, 78 KB, horizontal overflow 0px | none |
+| desktop | dark | ![qa-reference-sheet desktop dark](qa-reference-sheet--desktop--dark--built.png)<br>`/practice/session/5c50ff83-b87c-480c-a65d-f3dd48229917`, 79 KB, horizontal overflow 0px | none |
+| mobile | light | ![qa-reference-sheet mobile light](qa-reference-sheet--mobile--light--built.png)<br>`/practice/session/62669b40-d52f-4d12-9236-ec81131f7d77`, 53 KB, horizontal overflow 0px | none |
+| mobile | dark | ![qa-reference-sheet mobile dark](qa-reference-sheet--mobile--dark--built.png)<br>`/practice/session/ab9faba9-4af4-4a75-8baa-bfb6369ee416`, 53 KB, horizontal overflow 0px | none |
 
 ## QA 12: the calculator panel in the practice runner, Scientific selected (our mode switch around Desmos; Desmos itself is not loaded in the local-only harness)
 
@@ -258,10 +258,10 @@ Prototype: none. Runner.dc.html draws no calculator panel.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![qa-calculator-scientific desktop light](qa-calculator-scientific--desktop--light--built.png)<br>`/practice/session/89b3fb1a-d34e-4b77-a6a5-e4b13e7a64ac`, 42 KB, horizontal overflow 0px | none |
-| desktop | dark | ![qa-calculator-scientific desktop dark](qa-calculator-scientific--desktop--dark--built.png)<br>`/practice/session/8bbc50d4-a362-4dd5-8754-8a0f86b07efc`, 42 KB, horizontal overflow 0px | none |
-| mobile | light | ![qa-calculator-scientific mobile light](qa-calculator-scientific--mobile--light--built.png)<br>`/practice/session/c5b365aa-b003-42cc-8707-f765e514dc1e`, 34 KB, horizontal overflow 0px | none |
-| mobile | dark | ![qa-calculator-scientific mobile dark](qa-calculator-scientific--mobile--dark--built.png)<br>`/practice/session/109e3d8f-2996-4ff7-9ae3-3a2e943ddb7e`, 34 KB, horizontal overflow 0px | none |
+| desktop | light | ![qa-calculator-scientific desktop light](qa-calculator-scientific--desktop--light--built.png)<br>`/practice/session/fbd94b08-246a-4e01-873b-4de5482bb4de`, 42 KB, horizontal overflow 0px | none |
+| desktop | dark | ![qa-calculator-scientific desktop dark](qa-calculator-scientific--desktop--dark--built.png)<br>`/practice/session/a329285a-0964-4428-beb1-1e47a778f633`, 42 KB, horizontal overflow 0px | none |
+| mobile | light | ![qa-calculator-scientific mobile light](qa-calculator-scientific--mobile--light--built.png)<br>`/practice/session/9ffd68ad-e40d-4894-a96f-e533c5d4b174`, 34 KB, horizontal overflow 0px | none |
+| mobile | dark | ![qa-calculator-scientific mobile dark](qa-calculator-scientific--mobile--dark--built.png)<br>`/practice/session/add0f046-44a1-4f18-ac16-908f101c0876`, 33 KB, horizontal overflow 0px | none |
 
 ## QA 12: a grid-in answered and submitted in the practice runner: the submitted answer's contrast
 
@@ -274,13 +274,13 @@ Prototype: none. Runner.dc.html draws a multiple-choice item only.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![qa-grid-in-submitted desktop light](qa-grid-in-submitted--desktop--light--built.png)<br>`/practice/session/129e7e17-d2e0-4872-8744-1525f040d104`, 49 KB, horizontal overflow 0px | none |
-| desktop | dark | ![qa-grid-in-submitted desktop dark](qa-grid-in-submitted--desktop--dark--built.png)<br>`/practice/session/8a682903-109a-4d1f-99eb-b843a26af85f`, 50 KB, horizontal overflow 0px | none |
-| mobile | light | ![qa-grid-in-submitted mobile light](qa-grid-in-submitted--mobile--light--built.png)<br>`/practice/session/a261dd3d-3505-40ca-8eb0-3d257b673565`, 42 KB, horizontal overflow 0px | none |
-| mobile | dark | ![qa-grid-in-submitted mobile dark](qa-grid-in-submitted--mobile--dark--built.png)<br>`/practice/session/36bdd316-e167-44d3-b40f-95f7d2351839`, 43 KB, horizontal overflow 0px | none |
+| desktop | light | ![qa-grid-in-submitted desktop light](qa-grid-in-submitted--desktop--light--built.png)<br>`/practice/session/7d8b5482-5623-404e-8496-42b73fb27e99`, 49 KB, horizontal overflow 0px | none |
+| desktop | dark | ![qa-grid-in-submitted desktop dark](qa-grid-in-submitted--desktop--dark--built.png)<br>`/practice/session/76207a59-1b76-4745-b87b-0c4f0c5d9d11`, 50 KB, horizontal overflow 0px | none |
+| mobile | light | ![qa-grid-in-submitted mobile light](qa-grid-in-submitted--mobile--light--built.png)<br>`/practice/session/af998930-7ba6-46e2-a253-d17e1822939a`, 41 KB, horizontal overflow 0px | none |
+| mobile | dark | ![qa-grid-in-submitted mobile dark](qa-grid-in-submitted--mobile--dark--built.png)<br>`/practice/session/fd265d81-1732-4664-abf5-322c81a285b8`, 42 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"8eca9055-ff32-4d1c-83ee-86cd4442f0fc","openPracticeSessionId":"062022d5-f152-4c90-9559-605295a3b12e","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"80852eb9-33d0-41d2-a67b-8d12a6d16754","openPracticeSessionId":"549efc17-54c4-4f1a-a82d-056f62bb0d9e","openReviewSessionId":null,"diagnosticSessionId":"4040f09d-21bf-4453-a2b8-0728ff3d67ea","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"cdbc6a25-54ec-4302-88d8-3255daefef64","openPracticeSessionId":"e9f70bf7-ce80-4d03-943b-a401a9d01e45","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"0d275f17-fe09-4394-82d8-22de2abe00f9","openPracticeSessionId":"92dcbcc9-632a-4405-8f56-f4ab40ac4896","openReviewSessionId":null,"diagnosticSessionId":"69e5a13a-7b71-4435-b6d9-f968e23fc9cd","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none
