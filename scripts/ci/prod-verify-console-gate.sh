@@ -43,8 +43,8 @@
 #
 # EXIT CRITERIA FOR (4)
 #   A file passes if it succeeds, OR fails with SQLSTATE P0001 — a deliberate
-#   RAISE from one of our own guards. On an empty database the step8 and purge
-#   files SHOULD refuse; that is them working. Any other SQLSTATE (42601 syntax,
+#   RAISE from one of our own guards. On an empty database the purge files
+#   SHOULD refuse; that is them working. Any other SQLSTATE (42601 syntax,
 #   42703 undefined column, 42P01 undefined table, 42883 undefined function) is a
 #   real defect and fails the gate.
 # ============================================================================

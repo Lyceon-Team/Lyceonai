@@ -7,6 +7,14 @@ import { loadTutorPromptFingerprints, makeTutorConsoleGuard } from "./tests/ci/l
 // (tests/ci/lib/tutor-log-guard.ts; owner decision 2026-10-07).
 const tutorConsoleGuard = makeTutorConsoleGuard(loadTutorPromptFingerprints(__dirname))
 
+// Test files the fast lane skips unless their area changed (owner decisions 2026-10-07 on the CI
+// audit). ci.yml sets CI_SKIP_FULL_TIER_TESTS=true on a pull request that does not touch the
+// question tooling; the full tier (ci-full.yml) always runs them, and locally they always run.
+// tests/assemble-batch.test.ts: 27 s of tsx spawns over authoring tooling no production entry
+// imports (scripts/assemble-batch.ts).
+const FULL_TIER_ONLY_TESTS =
+  process.env.CI_SKIP_FULL_TIER_TESTS === 'true' ? ['tests/assemble-batch.test.ts'] : []
+
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -30,9 +38,9 @@ export default defineConfig({
     include: ['**/*.test.{ts,tsx}'],
     exclude: [
       'tests/regressions.test.ts', // Legacy file with jest syntax, tests migrated to separate files
-      'tests/auth.integration.test.ts', // Moved to tests/integration/
       'tests/integration/**', // Integration tests require real Supabase, excluded from default test run
       '**/node_modules/**',
+      ...FULL_TIER_ONLY_TESTS,
     ],
   },
   resolve: {

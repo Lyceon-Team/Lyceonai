@@ -100,6 +100,7 @@ import {
   COOKIE_BANNER_VERSION,
 } from "../../packages/shared/src/analytics-consent-schema";
 import { masterySkillsResponseSchema } from "../../packages/shared/src/mastery-levels";
+import { DESMOS_SCRIPT, DESMOS_STUBBED, stubDesmos } from "./desmos-stub";
 import type { EstimateResponse } from "../../client/src/lib/projectionApi";
 import {
   FIXTURE_SESSION_ID,
@@ -142,38 +143,6 @@ const CONVERSATION = "44444444-4444-4444-8444-444444444444";
 const NOW = "2026-10-02T12:00:00.000Z";
 const STRIPE_PORTAL_URL = "https://billing.stripe.com/p/session/test_page_csp";
 const TUTOR_REPLY = "Start by isolating x: subtract 3 from both sides.";
-const DESMOS_SCRIPT =
-  /^https:\/\/www\.desmos\.com\/api\/v1\.11[^/]*\/calculator\.js/;
-/**
- * E2E_DESMOS_STUB=1: the calculator API the app calls (DesmosCalculator.tsx), drawing the two
- * elements the flow drives (`.dcg-container`, an editable field) and firing "change" on input.
- */
-const DESMOS_STUB_JS = `(function () {
-  function make(el) {
-    var box = document.createElement("div");
-    box.className = "dcg-container";
-    var field = document.createElement("div");
-    field.className = "dcg-mq-editable-field";
-    field.setAttribute("contenteditable", "true");
-    box.appendChild(field);
-    el.appendChild(box);
-    var handlers = [];
-    var state = { expressions: { list: [] } };
-    field.addEventListener("input", function () {
-      state = { expressions: { list: [{ latex: field.textContent }] } };
-      handlers.forEach(function (h) { h(); });
-    });
-    return {
-      getState: function () { return state; },
-      setState: function (s) { state = s; },
-      observeEvent: function (_n, h) { handlers.push(h); },
-      unobserveEvent: function () { handlers = []; },
-      resize: function () {},
-      destroy: function () { box.remove(); }
-    };
-  }
-  window.Desmos = { GraphingCalculator: make, ScientificCalculator: make };
-})();`;
 const STEM = "If 2x + 3 = 11, what is the value of x?";
 
 const profileUser = {
@@ -492,15 +461,7 @@ async function startFlow(
       url: BASE_URL,
     },
   ]);
-  if (process.env.E2E_DESMOS_STUB === "1") {
-    await page.route(DESMOS_SCRIPT, (route: Route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "text/javascript",
-        body: DESMOS_STUB_JS,
-      }),
-    );
-  }
+  if (DESMOS_STUBBED) await stubDesmos(page);
 
   await page.exposeBinding("__cspReport", (source, report: CspReport) => {
     flow.reports.push({ ...report, frameURL: source.frame.url() });
