@@ -132,7 +132,7 @@ The account will be suspended, and associated personal data will be deleted in a
 
 ### **4.7 Contact for Parents and Guardians**
 
-LYCEON AI operates LYCEON. Parents and guardians can contact us at **support@lyceon.ai**, by post at [POSTAL ADDRESS], or by telephone at [TELEPHONE].
+LYCEON AI operates LYCEON. Parents and guardians can contact us at **support@lyceon.ai**, by post at 5650 Central Ave # E7, Toledo, OH 43615, or by telephone at +1 (419) 415-1885.
 
 If we make a material change to how we collect, use or disclose children's information, we will notify connected parents and guardians and, where the law requires, obtain their consent before the change takes effect.
 
