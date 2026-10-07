@@ -352,6 +352,7 @@ function ScopedThread({
     crisisLane,
     effectiveCrisisContent,
     showCrisisCard,
+    showPausedBar,
     premiumReason,
     suggestedAction,
     send,
@@ -457,7 +458,7 @@ function ScopedThread({
         <div ref={scrollAnchorRef} />
       </div>
 
-      {showCrisisCard || isPaused ? (
+      {showPausedBar || isPaused ? (
         <PausedBar
           onEnd={end}
           onContinue={resume}

@@ -45,6 +45,12 @@ export type TutorTurn = {
   crisisLane: CrisisCategory | null;
   effectiveCrisisContent: string;
   showCrisisCard: boolean;
+  /**
+   * The conversation is paused (the send path's paused turn or the server's
+   * `crisis_paused_at`): the paused bar replaces the composer. Not the same as
+   * `showCrisisCard`, which is also true for a crisis turn whose pause write failed.
+   */
+  showPausedBar: boolean;
   premiumReason: PremiumPromptReason | null;
   /**
    * The action LISA offered on the last turn (W3-2: start_practice), until
@@ -123,8 +129,20 @@ export function useTutorTurn(
 
   const effectiveCrisisContent = crisisContent || lastTutorMessage;
 
+  // @spec [Production QA 2026-10-07 item 1; student-UI register §8 F-78] | @implemented [2026-10-07]
+  // plain English: a crisis turn always shows the Support card. The send response
+  // carries `response.crisis_category` on every crisis turn; `crisis_paused` is false
+  // when the server's pause write failed (server/routes/tutor-runtime.ts, crisis branch),
+  // and the card used to need both, so that student got only the text line. Such a turn
+  // shows the card with the composer still live (no paused bar: /resume would 409
+  // `conversation_not_paused`), until the student sends again. A REPLAYED crisis
+  // response cannot be recognised on the client (stored as an ordinary tutor row) —
+  // that is the URGENT LISA-vertical handoff F-78.
+  const [unpausedCrisis, setUnpausedCrisis] = useState(false);
+
   // Derive crisis state from conversation detail or turn state
-  const showCrisisCard = turnState.kind === "paused" || isPaused;
+  const showPausedBar = turnState.kind === "paused" || isPaused;
+  const showCrisisCard = showPausedBar || unpausedCrisis;
 
   // Premium entitlement check
   const premiumReason: PremiumPromptReason | null = useMemo(() => {
@@ -156,6 +174,7 @@ export function useTutorTurn(
     setSuggestedAction(null);
     setCrisisLane(null);
     setCrisisContent("");
+    setUnpausedCrisis(false);
   }, []);
 
   // ── Send message ──────────────────────────────────────────────────────
@@ -173,6 +192,7 @@ export function useTutorTurn(
 
       setTurnState({ kind: "thinking", clientTurnId });
       setSuggestedAction(null);
+      setUnpausedCrisis(false);
       // Same id on retry → the same bubble, updated in place.
       setOptimisticTurn({
         clientTurnId,
@@ -199,13 +219,18 @@ export function useTutorTurn(
 
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-        if (response.crisis_paused && response.response.crisis_category) {
+        if (response.response.crisis_category) {
           setCrisisLane(response.response.crisis_category);
           setCrisisContent(response.response.content);
-          setTurnState({
-            kind: "paused",
-            lane: response.response.crisis_category,
-          });
+          if (response.crisis_paused) {
+            setTurnState({
+              kind: "paused",
+              lane: response.response.crisis_category,
+            });
+          } else {
+            setUnpausedCrisis(true);
+            setTurnState({ kind: "idle" });
+          }
         } else {
           setSuggestedAction(
             response.response.suggested_action.type === "none"
@@ -268,6 +293,7 @@ export function useTutorTurn(
     crisisLane,
     effectiveCrisisContent,
     showCrisisCard,
+    showPausedBar,
     premiumReason,
     suggestedAction,
     send,

@@ -1115,3 +1115,49 @@ describe("UI-56 motion: the dots pulse, and reduced motion stops them (DESIGN.md
     expect(decl(dotRule("reduced"), "animation")).toBe("none");
   });
 });
+
+// ── Production QA 2026-10-07 item 1 (register §8 F-78) ─────────────────────────────────────
+
+describe("QA 2026-10-07 item 1: a crisis turn always shows the Support card", () => {
+  it("a crisis turn whose pause write FAILED still shows the Support card (Call/Text 988), with the composer live and no paused bar", async () => {
+    // A titled conversation, so the turn's first conversation UPDATE is the pause write.
+    const convId = seedConversation({ title: "Math" });
+    await mount("paid", `?conversationId=${convId}`);
+    await conversationLoaded(convId);
+
+    crisisTurnOnce();
+    // The server's pause write fails: it answers `crisis_paused: false` and still sends
+    // the resources (server/routes/tutor-runtime.ts, crisis branch).
+    db.current.failNext("tutor_conversations", "update", {
+      message: "pause write failed",
+    });
+    fireEvent.change(composer(), { target: { value: CRISIS_WORDS } });
+    fireEvent.click(sendButton());
+
+    // Presence first: the server really did not pause the conversation.
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (c) => c.method === "POST" && c.path === "/api/tutor/messages",
+        ),
+      ).toHaveLength(1),
+    );
+    const row = db.current
+      .rows("tutor_conversations")
+      .find((r) => r.id === convId);
+    expect(row?.crisis_paused_at ?? null).toBeNull();
+
+    const card = await screen.findByTestId("crisis-support-card");
+    expect(card.getAttribute("data-lane")).toBe("crisis");
+    expect(card.textContent).toContain(CRISIS_RESOURCES);
+    expect(
+      within(card).getByRole("link", { name: /Call 988/ }).getAttribute("href"),
+    ).toBe("tel:988");
+    expect(
+      within(card).getByRole("link", { name: /Text 988/ }).getAttribute("href"),
+    ).toBe("sms:988");
+    // Not paused: no "Continue with LISA" (its /resume would 409), the composer stays.
+    expect(screen.queryByText("Tutoring is paused")).toBeNull();
+    expect(composer().disabled).toBe(false);
+  });
+});

@@ -54,6 +54,7 @@ FILES=(
   "client/src/features/calendar/CalendarView.tsx"
   "client/src/features/calendar/components/FreeCalendar.tsx"
   "client/src/pages/chat.tsx"
+  "client/src/hooks/useTutorTurn.ts"
   "client/src/components/tutor/TutorThreadParts.tsx"
   "client/src/hooks/tutor-client.ts"
   "client/src/styles/student-tokens.css"
@@ -1320,6 +1321,22 @@ plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
   'a = "  const handleNewSession = useCallback(() => {\n    navigateToConversation(\"\");\n  }, [navigateToConversation]);"
 assert s.count(a) == 1
 s = s.replace(a, "  const handleNewSession = useCallback(() => {\n    createConversation.mutate({ entry_mode: \"general\", source_surface: \"dashboard\" }, { onSuccess: (c) => navigateToConversation(c.conversation_id) });\n  }, [createConversation, navigateToConversation]);", 1)'
+
+# QA 2026-10-07 item 1 (register §8 F-78): a crisis turn whose pause write failed shows the
+# Support card from the send response's crisis_category, with no paused bar.
+plant "QA1-C1" "the Support card needs crisis_paused again (a failed pause write shows only text)" \
+  "$T56" \
+  "client/src/hooks/useTutorTurn.ts" \
+  'a = "        if (response.response.crisis_category) {"
+assert s.count(a) == 1
+s = s.replace(a, "        if (response.crisis_paused && response.response.crisis_category) {", 1)'
+
+plant "QA1-C2" "the paused bar (Continue with LISA) shows for an un-paused crisis card" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "      {showPausedBar || isPaused ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {showCrisisCard || isPaused ? (", 1)'
 
 plant "QA9-K1" "a retried first message makes a fresh idempotency key (a second conversation)" \
   "$T56" \

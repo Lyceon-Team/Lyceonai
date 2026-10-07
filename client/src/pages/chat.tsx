@@ -274,6 +274,7 @@ function LisaConversation(): JSX.Element {
     crisisLane,
     effectiveCrisisContent,
     showCrisisCard,
+    showPausedBar,
     premiumReason,
     suggestedAction,
     send,
@@ -552,7 +553,7 @@ function LisaConversation(): JSX.Element {
         <div ref={scrollAnchorRef} />
       </div>
 
-      {showCrisisCard || isPaused ? (
+      {showPausedBar || isPaused ? (
         <PausedBar
           onEnd={() => setEndModalOpen(true)}
           onContinue={handleResume}
