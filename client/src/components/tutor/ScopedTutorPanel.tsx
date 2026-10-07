@@ -135,7 +135,8 @@ export function ScopedTutorPanel({
   // The runner is still laying out the question above it when LISA mounts (measured at 390: its
   // column grows a frame later, so a single scroll stopped short), so the reveal is repeated
   // each frame until the panel holds still (at most 30 frames, ~0.5s), and stops at once if
-  // the student scrolls, touches or types. "auto", not "smooth": DESIGN.md §1 allows no motion but the LISA dots.
+  // the student scrolls, touches or types. "auto", not "smooth": DESIGN.md §1 allows no motion
+  // but the LISA dots.
   useEffect(() => {
     const el = sectionRef.current;
     if (!revealOnOpen || !el) return;
