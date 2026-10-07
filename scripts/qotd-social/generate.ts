@@ -303,6 +303,15 @@ async function main(): Promise<number> {
 
   const source = await loadSource(args);
   const { input } = source;
+  // Belt and braces: the endpoint decides "today", but a day that has not begun here is refused
+  // whatever the server said.
+  const today = localTodayIn(QOTD_TIME_ZONE);
+  if (input.qotd_date > today) {
+    err(
+      `qotd-social: refused: ${input.qotd_date} has not begun (today is ${today})`,
+    );
+    return 2;
+  }
   const copy = buildSocialCopy(input);
 
   rmSync(args.out, { recursive: true, force: true });
@@ -402,10 +411,8 @@ if (
 ) {
   main().then(
     (code) => process.exit(code),
-    (err: unknown) => {
-      err(
-        `qotd-social: failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    (e: unknown) => {
+      err(`qotd-social: failed: ${e instanceof Error ? e.message : String(e)}`);
       process.exit(1);
     },
   );
