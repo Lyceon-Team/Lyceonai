@@ -7,13 +7,12 @@
  *
  * The rail's "Your schedule" card used to carry its own "Change schedule" button, a second
  * entry point the design dropped two revisions ago while the build kept shipping it. The
- * summary has since moved from the old rail into the App shell's right panel (UI-55), and it
- * still carries no control: "Edit schedule" in the student header is the single entry point.
+ * summary then moved into the App shell's right panel (UI-55) and has since left it (Karl's
+ * ruling on production QA 2026-10-07, item 11(e); `calendar.ui55.test.tsx` asserts the panel
+ * without it): "Edit schedule" in the student header is the single entry point.
  *
- * This counts CONTROLS, not markup: it renders the header and the panel's summary together —
- * the whole student chrome that mentions the schedule — and asserts exactly one of them opens
- * the sheet. A test that only checked the panel would pass again the day someone re-added the
- * button somewhere else.
+ * This counts CONTROLS, not markup: it renders the student header and asserts exactly one
+ * control in it opens the sheet.
  */
 import React from "react";
 import { render, screen, cleanup } from "@testing-library/react";
@@ -21,7 +20,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { LeftRail, TopBar } from "./Chrome";
-import { ScheduleSummary, StudentCalendarHeader } from "./StudentChrome";
+import { StudentCalendarHeader } from "./StudentChrome";
 
 afterEach(cleanup);
 
@@ -39,7 +38,6 @@ function renderStudentChrome(over: { onEditSchedule?: () => void } = {}): void {
           ? {}
           : { onEditSchedule: over.onEditSchedule })}
       />
-      <ScheduleSummary summary="Mon–Fri · 1 hr a day" />
     </Router>,
   );
 }
@@ -64,19 +62,6 @@ describe("the settings sheet has exactly one entry point", () => {
     expect(offers[0]).toBe(opener);
     opener.click();
     expect(onEditSchedule).toHaveBeenCalledTimes(1);
-  });
-
-  it("the panel keeps the SUMMARY — and no control", () => {
-    renderStudentChrome({ onEditSchedule: vi.fn() });
-    expect(
-      screen.getByTestId("calendar-schedule-summary").textContent,
-    ).toContain("Mon–Fri");
-    // The card is there; it does not offer a second way in.
-    expect(
-      screen
-        .getByTestId("calendar-schedule-card")
-        .querySelectorAll("button, a"),
-    ).toHaveLength(0);
   });
 
   it("a guardian gets NO entry point at all — §16", () => {

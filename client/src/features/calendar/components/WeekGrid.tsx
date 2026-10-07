@@ -16,6 +16,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import { dayOfMonth, shortWeekday } from "../lib/dates";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
+import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
 import { BlockCard } from "./BlockCard";
 import { DayMenu, DayOffCard, type DayActions } from "./DayMenu";
 import { canControlDay, isBlockedOut } from "../lib/day-state";
@@ -152,7 +153,7 @@ function DayColumn({
           />
         ) : shown.length === 0 ? (
           <div className="empty">
-            {isRest ? "No study planned" : "Nothing to show"}
+            {isRest ? EMPTY_DAY_MESSAGE : "Nothing to show"}
           </div>
         ) : (
           shown.map((block) => (
@@ -166,7 +167,10 @@ function DayColumn({
           ))
         )}
       </div>
-      {onAddBlock !== undefined && date >= today ? (
+      {/* No "+ Add block" on the student's test day (production QA 2026-10-07, item 11(f)):
+          the day is the SAT, not a study day. `isTestDay` is only ever true on the student
+          calendar (the guardian grid is given no `testDate`, and has no add affordance). */}
+      {onAddBlock !== undefined && date >= today && !isTestDay ? (
         <button type="button" className="add" onClick={() => onAddBlock(date)}>
           + Add block
         </button>

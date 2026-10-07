@@ -387,24 +387,45 @@ const THREAD_INSET_X: Readonly<Record<ThreadInset, string>> = {
   panel: "px-4",
 };
 
+/** QA-5: the Send button's label while a message is on its way (the app's "Sending…" idiom). */
+export const LISA_SEND_PENDING_LABEL = "Sending…";
+
+/**
+ * @spec [student-UI register UI-56, UI-53; QA 2026-10-07 item 5 (Karl: "LISA Send shows an
+ *        immediate pressed/pending state (disabled, visible pending) from the first click,
+ *        standalone and in the runner panel"); DESIGN.md §1 (no motion but the LISA dots)]
+ *        | @implemented [2026-09-25; pending state 2026-10-07]
+ *
+ * plain English: the composer. `pending` and `disabled` are two different things. `pending`
+ * means a message the student sent is on its way (its conversation being created, or LISA's
+ * turn in flight): Send is disabled and SAYS so ("Sending…", aria-busy, full strength), in the
+ * same render as the click, because every caller sets its pending state synchronously in its
+ * submit handler. `disabled` means the thread cannot take a message at all: Send is faded. The
+ * button keeps a minimum width that fits both labels, so the textarea does not jump when the
+ * label changes. No spinner: DESIGN.md §1 allows no motion but the LISA dots.
+ */
 export function Composer({
   draft,
   onDraftChange,
   onSubmit,
   disabled,
+  pending = false,
   placeholder,
   inset = "page",
 }: {
   draft: string;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
-  /** LISA is thinking (or the thread cannot take a message): Send is disabled. */
+  /** The thread cannot take a message: Send is disabled and faded. */
   disabled: boolean;
+  /** A sent message is on its way (its conversation created, or LISA thinking): "Sending…". */
+  pending?: boolean;
   placeholder: string;
   /** See `ThreadInset`. */
   inset?: ThreadInset;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const blocked = disabled || pending;
 
   // @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3] | @implemented [2026-10-03]
   // plain English: Enter sends and Shift+Enter adds a new line, through the one shared hook
@@ -412,7 +433,7 @@ export function Composer({
   // and a held-down Enter's repeats do not send.
   useKeyboardShortcuts(
     buildLisaComposerKeymap({
-      canSend: !disabled && draft.trim().length > 0,
+      canSend: !blocked && draft.trim().length > 0,
       onSend: onSubmit,
     }),
     { target: textareaRef },
@@ -436,21 +457,27 @@ export function Composer({
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
             placeholder={placeholder}
-            disabled={disabled}
+            disabled={blocked}
             rows={2}
             className="min-h-[44px] min-w-0 flex-1 resize-none rounded-lg border border-lyc-input-bd bg-lyc-sheet px-3.5 py-3 font-lyc-sans text-[17px] leading-normal text-lyc-ink placeholder:text-lyc-muted disabled:cursor-not-allowed"
             aria-label="Message"
-            aria-busy={disabled}
+            aria-busy={pending || undefined}
           />
           <Button
             type="submit"
             variant="lyc-primary"
             size="lyc"
-            disabled={disabled}
-            className="h-[50px] shrink-0 px-[22px] text-[17px] disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={blocked}
+            className={`h-[50px] min-w-[118px] shrink-0 px-[22px] text-[17px] ${
+              pending
+                ? "disabled:cursor-progress disabled:opacity-100"
+                : "disabled:cursor-not-allowed disabled:opacity-45"
+            }`}
             aria-label="Send message"
+            aria-busy={pending || undefined}
+            data-pending={pending ? "true" : undefined}
           >
-            Send
+            {pending ? LISA_SEND_PENDING_LABEL : "Send"}
           </Button>
         </div>
         <p className="m-0 text-lyc-meta text-lyc-muted">{LISA_DISCLAIMER}</p>
@@ -463,14 +490,21 @@ export function Composer({
 // Scroll-to-bottom helper
 // ---------------------------------------------------------------------------
 
+/**
+ * Scrolls `anchorRef` into view whenever `trigger` changes. `block` is where the anchor lands:
+ * "start" (the default) for an anchor at the end of a column that scrolls inside itself; "end"
+ * for /chat on the phone layout (QA 2026-10-07 item 15), where the page scrolls and the anchor
+ * is the end of the composer, so the last turn and the composer sit at the bottom of the screen.
+ */
 export function useScrollToBottomOnChange(
   anchorRef: React.RefObject<HTMLDivElement | null>,
-  trigger: number,
+  trigger: number | string,
+  block: ScrollLogicalPosition = "start",
 ): void {
   useEffect(() => {
     // "auto", not "smooth": DESIGN.md §1 allows no motion but the LISA dots.
-    anchorRef.current?.scrollIntoView({ behavior: "auto" });
-  }, [trigger, anchorRef]);
+    anchorRef.current?.scrollIntoView({ behavior: "auto", block });
+  }, [trigger, anchorRef, block]);
 }
 
 // ---------------------------------------------------------------------------

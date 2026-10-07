@@ -25,7 +25,12 @@
  * and screen-reader path to the same mutation. Dragging is an enhancement; this is the
  * control.
  */
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  buildEscapeKeymap,
+  useKeyboardShortcuts,
+} from "@/hooks/useKeyboardShortcuts";
 import { prefetchEngineChunk } from "../api/launch";
 import { FullLengthFields } from "./FullLengthFields";
 import type {
@@ -61,7 +66,21 @@ type BlockSheetProps = {
   onClose: () => void;
   /** Undefined on the guardian surface — see the module note. */
   actions?: BlockSheetActions;
+  /**
+   * @spec [student-UI register §2 Keyboard ("Esc closes the open modal or sheet"); production
+   *        QA 2026-10-07 item 11(b)] | @implemented [2026-10-07]
+   * | plain English: the STUDENT's sheet is a modal dialog — `role="dialog"`, `aria-modal`,
+   * named by the block's title, a Close button, Esc closes it, focus moves into it on open
+   * (to Close), Tab stays inside it, and focus goes back to the block that opened it on close.
+   * The guardian calendar does not pass it and keeps its sheet as it was (guardian vertical:
+   * reported, not changed here).
+   */
+  modal?: boolean;
 };
+
+/** What Tab can reach inside the sheet, in document order. */
+const TABBABLE =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
 /**
  * The editing path's wrapper over the shared rows: it pulls the mix out of the stored block
@@ -101,8 +120,48 @@ export function BlockSheet({
   open,
   onClose,
   actions,
+  modal = false,
 }: BlockSheetProps): JSX.Element {
   const [moveDate, setMoveDate] = useState("");
+  const titleId = useId();
+  const sheetRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+
+  // Esc closes the modal sheet. Not a Radix overlay, so nothing else closes it on Esc; an open
+  // Radix dialog above it (the phone pre-start check) takes its own Esc first and marks it
+  // handled, which this listener then leaves alone.
+  useKeyboardShortcuts(buildEscapeKeymap(onClose), { enabled: modal && open });
+
+  // Focus in on open, back to the opener on close (the sheet unmounts when it closes). A DOM
+  // side effect, not derived state. An opener that is gone by then (a removed block) is skipped.
+  useEffect(() => {
+    if (!modal || !open) return undefined;
+    const active = document.activeElement;
+    const opener =
+      active instanceof HTMLElement && active !== document.body ? active : null;
+    closeRef.current?.focus();
+    return () => {
+      if (opener !== null && opener.isConnected) opener.focus();
+    };
+  }, [modal, open]);
+
+  /** Tab and Shift+Tab wrap inside the modal sheet (`aria-modal` promises nothing behind it). */
+  const keepTabInside = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    if (event.key !== "Tab" || sheetRef.current === null) return;
+    const items = Array.from(
+      sheetRef.current.querySelectorAll<HTMLElement>(TABBABLE),
+    );
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (first === undefined || last === undefined) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const isPast = day.date < today;
   const complete = block.target > 0 && block.actual >= block.target;
@@ -122,16 +181,47 @@ export function BlockSheet({
         aria-hidden="true"
       />
       <aside
+        ref={sheetRef}
         className={`sheet${open ? " on" : ""}`}
         aria-hidden={!open}
-        aria-label="Block details"
+        {...(modal
+          ? {
+              role: "dialog",
+              "aria-modal": true,
+              "aria-labelledby": titleId,
+              onKeyDown: keepTabInside,
+            }
+          : { "aria-label": "Block details" })}
         data-testid="calendar-block-sheet"
       >
         <header>
+          {modal ? (
+            <button
+              ref={closeRef}
+              type="button"
+              className="sheet-close"
+              aria-label="Close"
+              onClick={onClose}
+              data-testid="calendar-block-sheet-close"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          ) : null}
           <span className={`kind kind-${block.tone}`}>
             {TONE_LABEL[block.tone]}
           </span>
-          <h3>{block.title}</h3>
+          <h3 id={modal ? titleId : undefined}>{block.title}</h3>
           <div className="when">
             {longDate(day.date)}
             {block.minutes === null

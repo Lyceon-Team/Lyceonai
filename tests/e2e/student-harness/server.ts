@@ -32,7 +32,7 @@ import express, {
 } from "express";
 import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
-import { buildStudentHarnessDb } from "./db";
+import { buildStudentHarnessDb, seedPaidNotifications } from "./db";
 import {
   BARE_PAGE_PERSONAS,
   isBarePagePersona,
@@ -309,6 +309,9 @@ async function main(): Promise<void> {
         }
         // UI-59: the bare-page personas' current legal acceptance (seed.ts).
         if (BARE_PAGES) await seedBarePagePersonas(`http://localhost:${PORT}`);
+        // QA 2026-10-07 (UI-41): unread in-app notifications for the paid student (db.ts).
+        if (process.env.STUDENT_HARNESS_SEED === "notifications")
+          await seedPaidNotifications(pg);
         return seeded;
       })
       .then(

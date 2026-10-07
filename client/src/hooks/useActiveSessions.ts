@@ -2,6 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { csrfFetch } from "@/lib/csrf";
 import {
+  invalidateSessionReads,
+  PRACTICE_OPEN_SESSIONS_QUERY_KEY,
+} from "@/lib/session-reads";
+import {
   practiceOpenSessionsResponseSchema,
   type PracticeOpenSession,
   type PracticeOpenSessionsResponse,
@@ -29,7 +33,7 @@ export function useActiveSessions() {
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["/api/practice/sessions/open"],
+    queryKey: [PRACTICE_OPEN_SESSIONS_QUERY_KEY],
     enabled: !!user && !authLoading,
     select: (raw: unknown): PracticeOpenSessionsResponse =>
       practiceOpenSessionsResponseSchema.parse(raw),
@@ -44,10 +48,9 @@ export function useActiveSessions() {
       if (!res.ok) throw new Error("Failed to terminate session");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/practice/sessions/open"],
-      });
+    // QA item 6 (2026-10-07): ending a session changes every list it appears in.
+    onSuccess: (_body, sessionId) => {
+      invalidateSessionReads(queryClient, { engine: "practice", sessionId });
     },
   });
 

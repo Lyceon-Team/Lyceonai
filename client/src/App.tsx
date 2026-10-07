@@ -17,9 +17,10 @@ import "@/styles/accessibility.css";
 import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
-// The loader's own module, not the `student-ui` barrel: the barrel also carries the filter bar
-// (Radix menus), the modal and the notice, which only signed-in pages use (SEO plan F8).
-import { FullPageLoader } from "@/components/student-ui/FullPageLoader";
+// The route fallback's own module (it imports the loader's module, not the `student-ui` barrel:
+// the barrel also carries the filter bar (Radix menus), the modal and the notice, which only
+// signed-in pages use (SEO plan F8)).
+import { RouteLoading } from "@/components/layout/RouteSkeleton";
 import { Button } from "@/components/ui/button";
 import { BareCard, BareCardHeader } from "@/components/layout/BareCardShell";
 import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
@@ -181,15 +182,16 @@ const CrisisReviewDetail = lazy(
 );
 
 /**
- * @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
- * plain English: the route Suspense fallback is the shared FullPageLoader. It serves every
- * audience (student, guardian, admin, marketing), none of which is themed yet, so it pins the
- * light token set. The `page-loader` test id and the "Loading..." text are kept: the guardian
- * e2e (tests/e2e/guardian-surfaces.spec.ts) waits on both.
+ * @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"; production QA 2026-10-07
+ *        items 5 and 12 (Karl: page skeletons instead of the full-page cream "Loading…" flash,
+ *        which also broke dark mode)] | @implemented [2026-10-03; route-aware 2026-10-07]
+ * plain English: the route Suspense fallback. On a student route it is that route's own shell,
+ * sketched, in the route's own theme (RouteSkeleton.tsx); on every other route (guardian, admin,
+ * marketing, none of them themed) it is still the light FullPageLoader. The `page-loader` test id
+ * and the "Loading..." name are kept on both: the guardian e2e
+ * (tests/e2e/guardian-surfaces.spec.ts) waits on them. Every lazy route stays lazy.
  */
-const ROUTE_FALLBACK = (
-  <FullPageLoader themeLock="light" data-testid="page-loader" />
-);
+const ROUTE_FALLBACK = <RouteLoading data-testid="page-loader" />;
 
 /** The route switch — exported so the guardian route walk (G4-01) renders the real table. */
 export function Router() {
@@ -218,7 +220,10 @@ export function Router() {
         </Route>
         <Route path="/digital-sat/reading-writing">
           {() => (
-            <Redirect to="/sat-practice-questions/reading-and-writing" replace />
+            <Redirect
+              to="/sat-practice-questions/reading-and-writing"
+              replace
+            />
           )}
         </Route>
         {CONTENT_PAGE_PATHS.map((path) => (

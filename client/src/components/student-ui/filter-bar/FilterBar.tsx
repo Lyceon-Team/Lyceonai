@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import { ChevronDown, X } from "lucide-react";
 import type { PracticeTopicsResponse } from "@lyceon/shared/practice-reference-schema";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,7 @@ type MenuProps = {
   options: FilterOption[];
   chosen: readonly string[];
   onToggle: (value: string) => void;
+  onOpenChange: (open: boolean) => void;
 };
 
 function FilterMenu({
@@ -80,10 +81,11 @@ function FilterMenu({
   options,
   chosen,
   onToggle,
+  onOpenChange,
 }: MenuProps) {
   const active = chosen.length > 0;
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
         className={cn(
           "inline-flex h-11 items-center gap-2 rounded-full border pl-5 pr-4 text-lyc-body focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-lyc-focus",
@@ -134,9 +136,23 @@ export function FilterBar({
   const value = normalizeFilter(taxonomy, rawValue);
   const sections = sectionOptions(taxonomy);
   const chosenSection = sections.find((s) => value.sections.includes(s.value));
-  const chips = filterChips(taxonomy, value);
+  const liveChips = filterChips(taxonomy, value);
   const difficulties = difficultyOptions();
   const sectionLabelId = useId();
+  /**
+   * @spec [owner QA list (Karl, 2026-10-07) item 15: "practice filter dropdowns don't jump while
+   *        open"] | @implemented [2026-10-07]
+   * plain English: the chips row sits ABOVE the dropdowns, so a chip added while a menu is open
+   * could wrap the row onto a new line, push the trigger down and carry the open menu with it.
+   * While a menu is open the row shows the chips it had when the menu opened (the menu's own
+   * checkmarks show each choice at once); it catches up the moment the menu closes. The value
+   * itself changes on every pick, as before, so the summary and Start below are always current.
+   */
+  const [frozenChips, setFrozenChips] = useState<typeof liveChips | null>(null);
+  const chips = frozenChips ?? liveChips;
+  const onMenuOpenChange = (open: boolean): void => {
+    setFrozenChips(open ? liveChips : null);
+  };
 
   return (
     <section
@@ -239,6 +255,7 @@ export function FilterBar({
         <div className="flex flex-1 flex-wrap gap-2.5">
           <FilterMenu
             name="Domain"
+            onOpenChange={onMenuOpenChange}
             hint="Choose one or more domains."
             emptyText="Choose a section first."
             options={domainOptions(taxonomy, value.sections)}
@@ -247,6 +264,7 @@ export function FilterBar({
           />
           <FilterMenu
             name="Skill"
+            onOpenChange={onMenuOpenChange}
             hint={
               value.domains.length > 0
                 ? "Skills in the domains you chose."
@@ -259,6 +277,7 @@ export function FilterBar({
           />
           <FilterMenu
             name="Difficulty"
+            onOpenChange={onMenuOpenChange}
             hint="Choose one or more difficulty levels."
             emptyText="Choose one or more difficulty levels."
             options={difficulties}

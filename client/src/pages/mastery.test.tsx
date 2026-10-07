@@ -60,6 +60,10 @@ import {
   readSkillCatalogView,
 } from "../../../apps/api/src/services/mastery-view";
 import { MASTERY_LEVEL_FIXTURE } from "../../../tests/utils/mastery-levels-fixture";
+import {
+  masteryDomainAnchorId,
+  masteryDomainHref,
+} from "@/components/mastery/domain-nodes";
 import MasteryPage from "./mastery";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
@@ -321,9 +325,12 @@ async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
 
 // ── Mount ──────────────────────────────────────────────────────────────────────────────────
 
-async function mount(plan: "paid" | "free"): Promise<HTMLElement> {
+async function mount(
+  plan: "paid" | "free",
+  path = "/mastery",
+): Promise<HTMLElement> {
   const map = await accessMap(plan === "paid");
-  const { hook } = memoryLocation({ path: "/mastery" });
+  const { hook, searchHook } = memoryLocation({ path });
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -341,7 +348,7 @@ async function mount(plan: "paid" | "free"): Promise<HTMLElement> {
   });
   const { container } = render(
     <QueryClientProvider client={client}>
-      <Router hook={hook}>
+      <Router hook={hook} searchHook={searchHook}>
         <UpgradeModalProvider autoOpenOnDenial>
           <AppShell panel={null} footer={false}>
             <MasteryPage />
@@ -751,5 +758,50 @@ describe("Mastery, free (featureAccess locks mastery_detail)", () => {
     expect(modal.textContent).toContain(
       UPGRADE_MODAL_COPY.mastery_detail.plan.title,
     );
+  });
+});
+
+// ── Owner QA list (Karl, 2026-10-07) item 14 ──────────────────────────────────────────────────
+
+describe("QA item 14: a domain address opens that domain and scrolls to it", () => {
+  it("/mastery?domain=M:Advanced Math (Home's row link) opens Advanced Math and scrolls it into view", async () => {
+    serve({ domains: await domainsBody(), skills: await skillsBody() });
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.id);
+    };
+    try {
+      await mount(
+        "paid",
+        masteryDomainHref({ section: "M", domain: "Advanced Math" }),
+      );
+      await screen.findAllByTestId("mastery-domain");
+      // Presence: the other rows are closed, so "open" is this address's doing.
+      expect(domainRow("Algebra").getAttribute("aria-expanded")).toBe("false");
+      expect(domainRow("Advanced Math").getAttribute("aria-expanded")).toBe(
+        "true",
+      );
+      await screen.findByTestId("skill-list");
+      const block = screen
+        .getAllByTestId("mastery-domain")
+        .find((b) => b.getAttribute("data-domain") === "Advanced Math");
+      expect(block?.id).toBe(masteryDomainAnchorId("M:Advanced Math"));
+      await waitFor(() => expect(scrolled).toEqual([block?.id]));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("an unknown domain in the address opens nothing", async () => {
+    serve({ domains: await domainsBody(), skills: await skillsBody() });
+    await mount("paid", "/mastery?domain=M%3ANot%20a%20domain");
+    const rows = await screen.findAllByTestId("mastery-domain");
+    expect(rows.length).toBe(8);
+    for (const row of rows) {
+      expect(
+        within(row).getAllByRole("button")[0]?.getAttribute("aria-expanded"),
+      ).toBe("false");
+    }
   });
 });

@@ -51,6 +51,7 @@ import {
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { csrfFetch } from "@/lib/csrf";
 import { getClientInstanceId } from "@/lib/client-instance";
+import { invalidateSessionReads } from "@/lib/session-reads";
 import {
   type ReviewOpenSessionsResponse,
   type ReviewPoolSummaryResponse,
@@ -229,11 +230,10 @@ export function useActiveReviewSessions(): {
       if (!res.ok) throw new Error("Failed to terminate review session");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [REVIEW_OPEN_SESSIONS_QUERY_KEY],
-      });
-      queryClient.invalidateQueries({ queryKey: [REVIEW_POOL_QUERY_KEY] });
+    // QA item 6 (2026-10-07): ending a session changes every list it appears in. The pool's
+    // key carries `?tz=`, so the old `[REVIEW_POOL_QUERY_KEY]` prefix matched nothing.
+    onSuccess: (_body, sessionId) => {
+      invalidateSessionReads(queryClient, { engine: "review", sessionId });
     },
   });
 
@@ -368,10 +368,7 @@ export function useCreateReviewSession(): {
     },
     onSuccess: (result) => {
       if (!result.ok) return;
-      queryClient.invalidateQueries({
-        queryKey: [REVIEW_OPEN_SESSIONS_QUERY_KEY],
-      });
-      queryClient.invalidateQueries({ queryKey: [REVIEW_POOL_QUERY_KEY] });
+      invalidateSessionReads(queryClient);
     },
   });
 

@@ -66,6 +66,7 @@ import {
 import ExamReportPage, { ReportBody } from "./ExamReportPage";
 import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
 import { HttpApiError } from "@/lib/api-error";
+import { formatDate } from "@/lib/format-date";
 
 /** A report source as `exam_report_source` returns it: a completed, scored test-day sitting. */
 function source(overrides: Partial<ExamReportSource> = {}): ExamReportSource {
@@ -510,7 +511,10 @@ describe("the page in the Focus shell", () => {
     expect(title.textContent).toBe("Full-Length Test 1 report");
     const bar = screen.getByTestId("focus-context");
     expect(bar.contains(title)).toBe(true);
-    expect(bar.textContent).toContain("26 September 2026");
+    expect(bar.textContent).toContain(
+      formatDate("2026-09-26T15:00:00Z", "month-day-year") ?? "",
+    );
+    expect(bar.textContent).toContain("September 26, 2026");
     expect(screen.getAllByRole("banner")).toHaveLength(1);
     expect(screen.queryByText("Lyceon")).toBeNull();
     expect(screen.queryByText(/back to dashboard/i)).toBeNull();

@@ -17,9 +17,11 @@ import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
 import type { PracticeQuota } from "@lyceon/shared/practice-quota";
 import { BASELINE_PENDING_HEADLINE } from "@lyceon/shared/diagnostic-state";
 import { RulerProgress, rulerFill } from "@/components/student-ui";
+import { LYC_FOCUS } from "@/components/ui/button";
 import { ABSENT_COPY } from "@/features/calendar/components/Chrome";
 import { dayOfMonth, shortWeekday } from "@/features/calendar/lib/dates";
 import type { ProjectedRange } from "@/features/calendar/lib/projection";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { dayHeaderLabel, sourceEngineLabel } from "@/lib/review-session-picker";
 import { cn } from "@/lib/utils";
 import {
@@ -142,16 +144,42 @@ export function WeekSection({
 const RECENT_ROWS = 5;
 
 /**
+ * Owner ruling OQ-66 (h), Karl, 2026-10-07: "approved; make the action explicit on the row
+ * (\"Review this session\")." | @implemented [2026-10-07]
+ */
+const REVIEW_SESSION_LABEL = "Review this session";
+
+/**
  * "Recent sessions" (OQ-23: the `/api/review/pool` rows, which are the student's sessions that
  * still have questions to review): kind, when, and "N to review". The raw `filters` the row
  * carries are never read here (F-52).
+ *
+ * OQ-66 (h) (Karl, 2026-10-07): the row's action is explicit — a visible "Review this session"
+ * text link (outline style, like the panel's other links; Home keeps its one filled primary),
+ * where the whole row used to be an unlabelled button. Its accessible name carries the row
+ * ("Review this session: Practice, Today, 10:37 AM") so five rows never share one name; the
+ * visible words lead that name (label in name). Pressing it starts the same review as before,
+ * and the pressed one reads "Starting…" while the others wait.
  */
 export function RecentSessionsSection({
   sessions,
   todayKey,
+  onReview,
+  startingId,
+  failure,
 }: {
   sessions: readonly ReviewPoolSourceSession[];
   todayKey: string;
+  /**
+   * QA item 14 (owner QA list, Karl, 2026-10-07) | @implemented [2026-10-07]: a row is a button
+   * that reviews that session's open questions, the same start as Review's "Redo a past session"
+   * (`mode: "session"` with the row's source).
+   */
+  onReview: (session: ReviewPoolSourceSession) => void;
+  /** The source session whose review start is in flight (item 5: that row says "Starting…"). */
+  startingId: string | null;
+  /** Why the last start failed, in the student's words, or null. */
+  failure: string | null;
 }): JSX.Element {
   return (
     <section
@@ -164,28 +192,59 @@ export function RecentSessionsSection({
       </h2>
       {sessions.length > 0 ? (
         <ul className="m-0 list-none p-0">
-          {sessions.slice(0, RECENT_ROWS).map((s) => (
-            <li
-              key={`${s.source_engine}:${s.source_session_id}`}
-              className="flex items-baseline justify-between gap-3 border-b border-lyc-rule-soft py-[9px]"
-              data-testid="home-recent-row"
-            >
-              <span className="flex flex-col gap-0.5">
-                <span className="text-base font-semibold text-lyc-ink">
-                  {sourceEngineLabel(s.source_engine)}
+          {sessions.slice(0, RECENT_ROWS).map((s) => {
+            const when =
+              s.local_time === null
+                ? dayHeaderLabel(s.local_date, todayKey)
+                : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`;
+            const starting = startingId === s.source_session_id;
+            const kind = sourceEngineLabel(s.source_engine);
+            return (
+              <li
+                key={`${s.source_engine}:${s.source_session_id}`}
+                className="flex items-center justify-between gap-3 border-b border-lyc-rule-soft px-1 py-[9px]"
+                data-testid="home-recent-row"
+              >
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-base font-semibold text-lyc-ink">
+                    {kind}
+                  </span>
+                  <span className="text-lyc-meta text-lyc-muted">
+                    {/* Two unbreakable halves: a narrow panel wraps between them, never
+                        inside "2 to review". */}
+                    <span className="whitespace-nowrap">{when} ·</span>{" "}
+                    <span className="whitespace-nowrap">
+                      {toReviewLine(s.open_count)}
+                    </span>
+                  </span>
                 </span>
-                <span className="text-lyc-meta text-lyc-muted">
-                  {s.local_time === null
-                    ? dayHeaderLabel(s.local_date, todayKey)
-                    : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`}
-                </span>
-              </span>
-              <span className="whitespace-nowrap text-lyc-meta-lg text-lyc-muted">
-                {toReviewLine(s.open_count)}
-              </span>
-            </li>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => onReview(s)}
+                  disabled={startingId !== null}
+                  aria-busy={starting ? true : undefined}
+                  aria-label={
+                    starting
+                      ? undefined
+                      : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`
+                  }
+                  className={cn(
+                    LYC_FOCUS,
+                    "shrink-0 whitespace-nowrap rounded-sm bg-transparent p-0 text-base font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline disabled:cursor-default disabled:no-underline",
+                  )}
+                  data-testid="home-recent-review"
+                >
+                  {starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}
+                </button>
+              </li>
+            );
+          })}
         </ul>
+      ) : null}
+      {failure !== null ? (
+        <p role="alert" className="m-0 text-base text-lyc-danger">
+          {failure}
+        </p>
       ) : null}
       <Link href="/review" className={PANEL_LINK}>
         See all sessions
