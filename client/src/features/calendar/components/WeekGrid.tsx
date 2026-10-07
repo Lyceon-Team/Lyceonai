@@ -166,7 +166,10 @@ function DayColumn({
           ))
         )}
       </div>
-      {onAddBlock !== undefined && date >= today ? (
+      {/* No "+ Add block" on the student's test day (production QA 2026-10-07, item 11(f)):
+          the day is the SAT, not a study day. `isTestDay` is only ever true on the student
+          calendar (the guardian grid is given no `testDate`, and has no add affordance). */}
+      {onAddBlock !== undefined && date >= today && !isTestDay ? (
         <button type="button" className="add" onClick={() => onAddBlock(date)}>
           + Add block
         </button>

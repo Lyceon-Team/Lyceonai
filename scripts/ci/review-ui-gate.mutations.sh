@@ -2313,6 +2313,15 @@ plant "QA11-B7" "the guardian's block sheet turns into the student's modal" \
 assert s.count(a) == 1
 s = s.replace(a, "  modal = true,\n", 1)'
 
+# (f) no "+ Add block" on the student's test day.
+
+plant "QA11-F1" "the test day offers \"+ Add block\" again" \
+  "$T55" \
+  "client/src/features/calendar/components/WeekGrid.tsx" \
+  'a = "      {onAddBlock !== undefined && date >= today && !isTestDay ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {onAddBlock !== undefined && date >= today ? (", 1)'
+
 # (e) Karl's ruling: no "Your schedule" in the right panel.
 
 plant "QA11-E1" "the right panel shows \"Your schedule\" again" \

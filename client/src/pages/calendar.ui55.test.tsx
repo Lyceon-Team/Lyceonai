@@ -685,6 +685,29 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
   });
 });
 
+describe('paid: no "+ Add block" on the test day (QA 2026-10-07 item 11(f))', () => {
+  it("the other days still to come offer it; the test day does not", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    const add = (date: string): HTMLElement | null =>
+      within(screen.getByTestId(`calendar-day-${date}`)).queryByRole("button", {
+        name: "+ Add block",
+      });
+    // Presence: today and the day before the test (both to come) offer it.
+    expect(add(TODAY)).toBeTruthy();
+    expect(add("2026-10-02")).toBeTruthy();
+    // The test day (starred, so the grid knows it) does not.
+    expect(
+      within(screen.getByTestId(`calendar-day-${TEST_DATE}`)).getByTestId(
+        "calendar-test-day-card",
+      ),
+    ).toBeTruthy();
+    expect(add(TEST_DATE)).toBeNull();
+    // And the day after the test, still to come, offers it again.
+    expect(add("2026-10-04")).toBeTruthy();
+  });
+});
+
 describe('paid: the right panel has no "Your schedule" (QA 2026-10-07 item 11(e))', () => {
   it("mini month, goal card and Show, in that order; no schedule summary", async () => {
     await mount("paid");
