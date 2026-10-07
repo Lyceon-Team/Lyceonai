@@ -46,14 +46,14 @@ describe("the header", () => {
 
   it("writes the date line, and the countdown only for a test date still ahead", () => {
     expect(dateLine("2026-09-28", "2026-12-05")).toBe(
-      "Monday, 28 September. 68 days until your SAT on Saturday, 5 December.",
+      "Monday, September 28. 68 days until your SAT on Saturday, December 5.",
     );
     expect(dateLine("2026-12-04", "2026-12-05")).toBe(
-      "Friday, 4 December. 1 day until your SAT on Saturday, 5 December.",
+      "Friday, December 4. 1 day until your SAT on Saturday, December 5.",
     );
-    expect(dateLine("2026-12-05", "2026-12-05")).toBe("Saturday, 5 December.");
-    expect(dateLine("2026-12-06", "2026-12-05")).toBe("Sunday, 6 December.");
-    expect(dateLine("2026-09-28", null)).toBe("Monday, 28 September.");
+    expect(dateLine("2026-12-05", "2026-12-05")).toBe("Saturday, December 5.");
+    expect(dateLine("2026-12-06", "2026-12-05")).toBe("Sunday, December 6.");
+    expect(dateLine("2026-09-28", null)).toBe("Monday, September 28.");
   });
 });
 

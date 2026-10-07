@@ -644,7 +644,7 @@ describe("the practice-test frequency (Brief 14)", () => {
     // The figure comes from `fullLengthsBeforeTarget` — the generator's own steps — which is
     // why it is a promise the plan can keep rather than a client-side estimate.
     expect(screen.getByTestId("calendar-setup-note").textContent).toContain(
-      "about 3 full-length tests before 23 November, on Saturdays",
+      "about 3 full-length tests before November 23, on Saturdays",
     );
   });
 

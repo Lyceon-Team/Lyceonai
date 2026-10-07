@@ -1,9 +1,10 @@
 /**
- * @spec [production QA 2026-10-07 item 15 (one shared date formatter for the student UI); the
- *        prototypes' date forms; Doc_05F §8.2 (a local date is not an instant)]
+ * @spec [production QA 2026-10-07 item 15 (one shared date formatter for the student UI); owner
+ *        ruling OQ-66 (g) (US date format); Doc_05F §8.2 (a local date is not an instant)]
  *        | @implemented [2026-10-07]
  *
- * plain English: the house style, every style once; a local `YYYY-MM-DD` day never shifts with
+ * plain English: the house style (US, owner ruling OQ-66 (g), Karl, 2026-10-07: "Fri, Sep 25"),
+ * every style once; a local `YYYY-MM-DD` day never shifts with
  * the zone (checked in the zone furthest west and east of UTC); an instant is shown in the
  * viewer's zone; unparseable input is null. Plus the guard that keeps it the ONE formatter: no
  * student-scope source file formats a date by hand any more.
@@ -18,15 +19,49 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("formatDate: the house style", () => {
+describe("formatDate: the house style (US, OQ-66 (g))", () => {
   it.each([
-    ["day-month", "26 September"],
-    ["day-month-year", "26 September 2026"],
-    ["day-short-month-year", "26 Sep 2026"],
-    ["weekday-day-month", "Saturday, 26 September"],
-    ["short-weekday-day-month", "Sat 26 Sep"],
+    ["month-day", "September 26"],
+    ["month-day-year", "September 26, 2026"],
+    ["weekday-month-day", "Saturday, September 26"],
+    ["short-weekday-month-day", "Sat, Sep 26"],
   ] as const)("a local day, %s: %s", (style, expected) => {
     expect(formatDate("2026-09-26", style)).toBe(expected);
+  });
+
+  it('the ruling\'s own examples: "Fri, Sep 25", "Fri, Sep 25, 12:49 PM", "October 7, 2026", "Monday, September 28"', () => {
+    expect(formatDate("2026-09-25", "short-weekday-month-day")).toBe(
+      "Fri, Sep 25",
+    );
+    // A local day carries no clock, so the with-time form is shown on an instant (UTC here).
+    expect(formatDate("2026-09-25T12:49:00Z", "date-time")).toMatch(
+      /^Fri, Sep 25, \d{1,2}:49 [AP]M$/,
+    );
+    expect(formatDate("2026-10-07", "month-day-year")).toBe("October 7, 2026");
+    expect(formatDate("2026-09-28", "weekday-month-day")).toBe(
+      "Monday, September 28",
+    );
+  });
+
+  it("never day-first: no style puts the day number before the month name", () => {
+    const styles = [
+      "month-day",
+      "month-day-year",
+      "weekday-month-day",
+      "short-weekday-month-day",
+      "date-time",
+    ] as const;
+    for (const style of styles) {
+      const out = formatDate("2026-09-26T15:00:00Z", style) ?? "";
+      // Presence first: a real date came back.
+      expect([style, out]).toEqual([style, expect.stringMatching(/Sep/)]);
+      expect([style, out]).not.toEqual([
+        style,
+        expect.stringMatching(
+          /\b\d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/,
+        ),
+      ]);
+    }
   });
 
   it("an instant: time and date-time on a 12-hour clock, in the viewer's zone", () => {
@@ -49,9 +84,9 @@ describe("formatDate: the house style", () => {
     };
     expect(inZone("UTC", "time")).toBe("2:05 PM");
     expect(inZone("America/Los_Angeles", "time")).toBe("7:05 AM");
-    expect(inZone("UTC", "date-time")).toBe("7 October 2026, 2:05 PM");
+    expect(inZone("UTC", "date-time")).toBe("Wed, Oct 7, 2:05 PM");
     expect(inZone("Pacific/Kiritimati", "date-time")).toBe(
-      "8 October 2026, 4:05 AM",
+      "Thu, Oct 8, 4:05 AM",
     );
   });
 
@@ -66,9 +101,9 @@ describe("formatDate: the house style", () => {
         return new real(locale, { timeZone: tz, ...options });
       });
       try {
-        expect([tz, formatDate("2026-01-01", "day-month-year")]).toEqual([
+        expect([tz, formatDate("2026-01-01", "month-day-year")]).toEqual([
           tz,
-          "1 January 2026",
+          "January 1, 2026",
         ]);
       } finally {
         spy.mockRestore();
@@ -78,22 +113,23 @@ describe("formatDate: the house style", () => {
 
   it("accepts a Date", () => {
     expect(
-      formatDate(new Date("2026-03-04T12:00:00Z"), "day-short-month-year"),
-    ).toBe("4 Mar 2026");
+      formatDate(new Date("2026-03-04T12:00:00Z"), "short-weekday-month-day"),
+    ).toBe("Wed, Mar 4");
   });
 
   it.each(["", "soon", "2026-13-45", "not-a-date"])(
     "%j is not a date: null, so the caller picks its fallback",
     (bad) => {
-      expect(formatDate(bad, "day-month-year")).toBeNull();
+      expect(formatDate(bad, "month-day-year")).toBeNull();
     },
   );
 });
 
 /**
  * The student-scope files that show dates, and the patterns that would mean a date formatted by
- * hand again. Guardian, admin, calendar, LISA and public (SEO) files are other verticals' and
- * are not listed; `review-session-picker.ts` keeps one `en-CA` formatter that builds a
+ * hand again. Guardian, admin, LISA and public (SEO) files are other verticals' and are not
+ * listed (the calendar's `lib/dates.ts` sentence helpers delegate to formatDate, pinned in
+ * dates.test.ts; its compact grid labels stay); `review-session-picker.ts` keeps one `en-CA` formatter that builds a
  * `YYYY-MM-DD` grouping KEY (never shown), allowed by name below.
  */
 const STUDENT_DATE_FILES = [
@@ -105,6 +141,7 @@ const STUDENT_DATE_FILES = [
   "lib/review-session-picker.ts",
   "lib/notificationsApi.ts",
   "components/home/home-model.ts",
+  "pages/score-report.tsx",
 ];
 
 const HAND_ROLLED =

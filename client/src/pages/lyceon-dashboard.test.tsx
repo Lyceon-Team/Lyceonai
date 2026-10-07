@@ -63,6 +63,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { studentCalendarWeek } from "@/features/calendar/calendar-week.fixture";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
+import { formatDate } from "@/lib/format-date";
 import { getQueryFn } from "@/lib/queryClient";
 import type { EstimateResponse } from "@/lib/projectionApi";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
@@ -655,7 +656,13 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     ).toBeTruthy();
     expect(
       await screen.findByText(
-        "Thursday, 1 October. 66 days until your SAT on Sunday, 6 December.",
+        `${formatDate(TODAY, "weekday-month-day") ?? ""}. 66 days until your SAT on ${formatDate("2026-12-06", "weekday-month-day") ?? ""}.`,
+      ),
+    ).toBeTruthy();
+    // OQ-66 (g): the US form, month before day.
+    expect(
+      screen.getByText(
+        "Thursday, October 1. 66 days until your SAT on Sunday, December 6.",
       ),
     ).toBeTruthy();
 
@@ -725,9 +732,13 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     ).toBe("Thu1");
     expect(within(week).getByText("1 of 6 days done.")).toBeTruthy();
     const recent = await within(panel).findAllByTestId("home-recent-row");
+    // OQ-66 (g) the older day in the shared formatter's US short form; (h) each row's
+    // explicit action.
+    const sat26 = formatDate("2026-09-26", "short-weekday-month-day") ?? "";
+    expect(sat26).toBe("Sat, Sep 26");
     expect(recent.map((r) => r.textContent)).toEqual([
-      "PracticeYesterday, 2:40 PM4 to review",
-      "ReviewSat 26 Sep, 2:12 AM1 to review",
+      "PracticeYesterday, 2:40 PM · 4 to reviewReview this session",
+      `Review${sat26}, 2:12 AM · 1 to reviewReview this session`,
     ]);
 
     // The slim legal footer is on (the shell's prop).
@@ -784,7 +795,9 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     expect(primaries(container)).toEqual([setup]);
     expect(screen.queryByTestId("home-start-plan")).toBeNull();
     expect(screen.queryByTestId("home-week")).toBeNull();
-    expect(screen.getByText("Thursday, 1 October.")).toBeTruthy();
+    expect(
+      screen.getByText(`${formatDate(TODAY, "weekday-month-day") ?? ""}.`),
+    ).toBeTruthy();
   });
 });
 
@@ -1371,6 +1384,7 @@ describe("QA item 14: Home's mastery rows and recent sessions go somewhere", () 
     const rows = await within(panel).findAllByTestId("home-recent-review");
     expect(rows).toHaveLength(2);
     expect(rows[0]?.tagName).toBe("BUTTON");
+    expect(rows[0]?.textContent).toBe("Review this session");
     const first = rows[0];
     if (first === undefined) throw new Error("a recent row");
     await act(async () => {
@@ -1400,7 +1414,34 @@ describe("QA item 14: Home's mastery rows and recent sessions go somewhere", () 
     expect(first.getAttribute("aria-busy")).toBe("true");
     expect(first.textContent).toContain("Starting…");
     expect((second as HTMLButtonElement).disabled).toBe(true);
-    expect(second.textContent).toContain("1 to review");
+    expect(second.textContent).toBe("Review this session");
+    expect(second.closest("li")?.textContent).toContain("1 to review");
+  });
+
+  it("OQ-66 (h): each row names its action, 'Review this session', with the session in its accessible name", async () => {
+    await mount("paid", { calendar: "ready" });
+    const panel = screen.getByTestId("app-shell-panel");
+    const rows = await within(panel).findAllByTestId("home-recent-row");
+    // Presence: both pool rows, each with one visible action.
+    expect(rows).toHaveLength(2);
+    const sat26 = formatDate("2026-09-26", "short-weekday-month-day") ?? "";
+    const actions = within(panel).getAllByRole("button", {
+      name: /^Review this session: /,
+    });
+    expect(actions.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Review this session: Practice, Yesterday, 2:40 PM",
+      `Review this session: Review, ${sat26}, 2:12 AM`,
+    ]);
+    // The visible label is the start of the accessible name (label in name), and no two
+    // rows share one.
+    for (const [i, row] of rows.entries()) {
+      const action = within(row).getByRole("button");
+      expect(action).toBe(actions[i]);
+      expect(action.textContent).toBe("Review this session");
+    }
+    expect(new Set(actions.map((b) => b.getAttribute("aria-label"))).size).toBe(
+      2,
+    );
   });
 });
 

@@ -144,9 +144,22 @@ export function WeekSection({
 const RECENT_ROWS = 5;
 
 /**
+ * Owner ruling OQ-66 (h), Karl, 2026-10-07: "approved; make the action explicit on the row
+ * (\"Review this session\")." | @implemented [2026-10-07]
+ */
+const REVIEW_SESSION_LABEL = "Review this session";
+
+/**
  * "Recent sessions" (OQ-23: the `/api/review/pool` rows, which are the student's sessions that
  * still have questions to review): kind, when, and "N to review". The raw `filters` the row
  * carries are never read here (F-52).
+ *
+ * OQ-66 (h) (Karl, 2026-10-07): the row's action is explicit — a visible "Review this session"
+ * text link (outline style, like the panel's other links; Home keeps its one filled primary),
+ * where the whole row used to be an unlabelled button. Its accessible name carries the row
+ * ("Review this session: Practice, Today, 10:37 AM") so five rows never share one name; the
+ * visible words lead that name (label in name). Pressing it starts the same review as before,
+ * and the pressed one reads "Starting…" while the others wait.
  */
 export function RecentSessionsSection({
   sessions,
@@ -185,32 +198,38 @@ export function RecentSessionsSection({
                 ? dayHeaderLabel(s.local_date, todayKey)
                 : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`;
             const starting = startingId === s.source_session_id;
+            const kind = sourceEngineLabel(s.source_engine);
             return (
               <li
                 key={`${s.source_engine}:${s.source_session_id}`}
-                className="border-b border-lyc-rule-soft"
+                className="flex items-center justify-between gap-3 border-b border-lyc-rule-soft px-1 py-[9px]"
                 data-testid="home-recent-row"
               >
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-base font-semibold text-lyc-ink">
+                    {kind}
+                  </span>
+                  <span className="text-lyc-meta text-lyc-muted">
+                    {when} · {toReviewLine(s.open_count)}
+                  </span>
+                </span>
                 <button
                   type="button"
                   onClick={() => onReview(s)}
                   disabled={startingId !== null}
                   aria-busy={starting ? true : undefined}
+                  aria-label={
+                    starting
+                      ? undefined
+                      : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`
+                  }
                   className={cn(
                     LYC_FOCUS,
-                    "flex w-full items-baseline justify-between gap-3 rounded-sm bg-transparent px-1 py-[9px] text-left hover:bg-lyc-hover disabled:cursor-default",
+                    "shrink-0 whitespace-nowrap rounded-sm bg-transparent p-0 text-base font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline disabled:cursor-default disabled:no-underline",
                   )}
                   data-testid="home-recent-review"
                 >
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-base font-semibold text-lyc-ink">
-                      {sourceEngineLabel(s.source_engine)}
-                    </span>
-                    <span className="text-lyc-meta text-lyc-muted">{when}</span>
-                  </span>
-                  <span className="whitespace-nowrap text-lyc-meta-lg font-semibold text-lyc-ink-strong underline underline-offset-4">
-                    {starting ? STARTING_LABEL : toReviewLine(s.open_count)}
-                  </span>
+                  {starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}
                 </button>
               </li>
             );

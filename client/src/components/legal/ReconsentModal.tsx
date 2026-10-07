@@ -83,7 +83,7 @@ function ledeFor(documents: OutstandingLegalDoc[]): string {
 
 // QA 2026-10-07 item 15: the effective date is a local day, through the one student formatter.
 function formatEffectiveDate(iso: string): string {
-  return formatDate(iso, "day-month-year") ?? iso;
+  return formatDate(iso, "month-day-year") ?? iso;
 }
 
 export function ReconsentModal({

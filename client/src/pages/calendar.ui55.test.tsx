@@ -646,7 +646,7 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
     expect(card.textContent).toContain("days until your SAT");
     expect(
       within(card).getByTestId("calendar-test-date-pill").textContent,
-    ).toBe("★ Saturday, 3 October");
+    ).toBe("★ Saturday, October 3");
     expect(within(card).getByTestId("calendar-target").textContent).toBe(
       "1350",
     );
@@ -964,7 +964,7 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     );
     expect(
       within(card).getByTestId("calendar-test-date-pill").textContent,
-    ).toBe("★ Saturday, 5 December");
+    ).toBe("★ Saturday, December 5");
     // OQ-56 (b), SCL-211: the form is now read-only — the saved answers, "Edit goals in
     // Settings", and no input or Save left to press.
     const saved = screen.getByTestId("calendar-free-setup");
@@ -974,7 +974,7 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     ).toBe("1400");
     expect(
       within(saved).getByTestId("calendar-free-saved-date").textContent,
-    ).toBe("Saturday, 5 December");
+    ).toBe("Saturday, December 5");
     expect(
       within(saved).getByRole("link", { name: "Edit goals in Settings" }),
     ).toBeTruthy();
@@ -995,7 +995,7 @@ describe("free: with a profile saved (OQ-25)", () => {
     expect(form.getAttribute("data-state")).toBe("saved");
     expect(
       within(form).getByTestId("calendar-free-saved-date").textContent,
-    ).toBe("Saturday, 5 December");
+    ).toBe("Saturday, December 5");
     expect(
       within(form).getByTestId("calendar-free-saved-target").textContent,
     ).toBe(String(PROFILE_ROW.target_score));
@@ -1005,7 +1005,7 @@ describe("free: with a profile saved (OQ-25)", () => {
     );
     expect(
       within(card).getByTestId("calendar-test-date-pill").textContent,
-    ).toBe("★ Saturday, 5 December");
+    ).toBe("★ Saturday, December 5");
     // Free: Target only.
     expect(within(card).queryByTestId("calendar-projection")).toBeNull();
     expect(within(card).queryByTestId("calendar-projection-absent")).toBeNull();

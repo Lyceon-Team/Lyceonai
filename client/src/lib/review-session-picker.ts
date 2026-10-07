@@ -6,7 +6,7 @@
  *
  * plain English: turns R3's `sessions[]` facts into the two lines the picker shows —
  * "Practice, 2:40 PM" (UI-52) and "Math · Algebra" — and groups the rows under "Today",
- * "Yesterday" or "Thu 17 Sep". Expected outcome: a student sees their own days, in
+ * "Yesterday" or "Thu, Sep 17" (US style, OQ-66 (g)). Expected outcome: a student sees their own days, in
  * their own clock, without the server ever storing a display string.
  *
  * WHY EVERY FUNCTION HERE IS PURE AND TAKES `today` AS AN ARGUMENT. "Today" is the one
@@ -62,7 +62,7 @@ function previousDayKey(key: string): string | null {
 }
 
 /**
- * "Today", "Yesterday", or "Thu 17 Sep". `todayKey` is the caller's local date, which
+ * "Today", "Yesterday", or "Thu, Sep 17". `todayKey` is the caller's local date, which
  * is why this never reads the clock itself.
  */
 export function dayHeaderLabel(
@@ -74,8 +74,9 @@ export function dayHeaderLabel(
   if (localDate === previousDayKey(todayKey)) return "Yesterday";
 
   // `localDate` is already the student's own calendar day, which the one student formatter
-  // never shifts by a zone (QA 2026-10-07 item 15: "Thu 17 Sep", the prototypes' form).
-  return formatDate(localDate, "short-weekday-day-month") ?? "Earlier";
+  // never shifts by a zone (QA 2026-10-07 item 15; OQ-66 (g), Karl, 2026-10-07: US style,
+  // "Thu, Sep 17").
+  return formatDate(localDate, "short-weekday-month-day") ?? "Earlier";
 }
 
 /**
