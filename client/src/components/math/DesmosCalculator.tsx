@@ -168,7 +168,8 @@ const EXPANDED_HEIGHT_SCIENTIFIC = 400;
  */
 const MODE_TAB =
   "flex-1 rounded px-3 py-1.5 text-lyc-meta font-semibold transition-colors";
-const MODE_TAB_ON = "bg-lyc-sheet text-lyc-ink-strong shadow-sm";
+const MODE_TAB_ON =
+  "bg-lyc-sheet text-lyc-ink-strong shadow-sm ring-1 ring-inset ring-lyc-rule-strong";
 const MODE_TAB_OFF = "bg-transparent text-lyc-ink hover:bg-lyc-hover";
 
 export default function DesmosCalculator({
