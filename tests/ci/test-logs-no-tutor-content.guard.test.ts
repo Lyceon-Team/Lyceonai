@@ -114,11 +114,16 @@ describe("static rule: tests that import tutor code do not print", () => {
     expect(violations).toEqual([]);
   });
 
-  it("every exception still exists, still imports tutor code and still prints and still imports tutor code", () => {
+  // An exception must name a real file that imports tutor code (otherwise it is dead and should
+  // go). It need not still print: a file that stops printing is simply no longer an exception
+  // in use, and the claude/eslint-zero lint work removes the golden-set print.
+  it("every exception names an existing file that imports tutor code", () => {
     for (const f of NO_TUTOR_TEXT_OUTPUT.keys()) {
+      const source = readFileSync(join(ROOT, f), "utf8");
       expect(
-        findTutorConsoleWrites(readFileSync(join(ROOT, f), "utf8")).length,
-      ).toBeGreaterThan(0);
+        importedSpecifiers(source).some((s) => TUTOR_IMPORT_RE.test(s)),
+        f,
+      ).toBe(true);
     }
   });
 
