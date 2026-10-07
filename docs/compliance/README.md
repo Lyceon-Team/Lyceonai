@@ -26,7 +26,7 @@ Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not pu
 
 | Draft | File | Doc 10 | Status | Counsel sign-off |
 |---|---|---|---|---|
-| Privacy Policy v5 | `legal/privacy-policy/v5/en.md` (#1128); the draft `legal-drafts/privacy-policy-v5.md` is retired and superseded by it (Karl, 2026-10-07) | §9.2 | Awaiting counsel (SEO items being folded into #1128's v5) | — |
+| Privacy Policy v6 | `legal/privacy-policy/v6/en.md` (not yet written; cleanup/guardian session): v5 (#1128) plus the SEO items, the single final pre-launch version. The draft `legal-drafts/privacy-policy-v5.md` is retired and superseded by it (Karl, 2026-10-07) | §9.2 | Awaiting v6, then counsel | — |
 | Cookie Policy | `legal-drafts/cookie-policy.md` | §9.10 | Awaiting counsel | — |
 | Cookie banner text | `legal-drafts/cookie-banner-text.md` | §9.11 | Awaiting counsel | — |
 | Children's Online Privacy Notice | `legal-drafts/childrens-privacy-notice.md` | §9.14 | Awaiting counsel | — |

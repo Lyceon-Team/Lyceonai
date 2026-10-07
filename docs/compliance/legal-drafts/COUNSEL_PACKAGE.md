@@ -1,6 +1,6 @@
 # LYCEON — Counsel Package: Launch Legal Drafts
 
-**Internal; prepared for outside counsel.** Prepared 2026-10-07. This package covers LYCEON's **single Privacy Policy**, `legal/privacy-policy/v5` (#1128), and the 11 other launch-state legal drafts in `docs/compliance/legal-drafts/` (see that folder's `README.md`). The earlier draft `privacy-policy-v5.md` is **retired** and superseded by #1128's v5 (§2). **The legal text of the drafts is unchanged by this package.** The drafts follow in reading order after this note.
+**Internal; prepared for outside counsel.** Prepared 2026-10-07. This package covers LYCEON's **single Privacy Policy**, version 6 (`legal/privacy-policy/v6`), and the 11 other launch-state legal drafts in `docs/compliance/legal-drafts/` (see that folder's `README.md`). v6 is the single final pre-launch version; the cleanup/guardian session owns it. It carries #1128's v5 (already published and sealed) plus the SEO items. The earlier draft `privacy-policy-v5.md` is **retired** and superseded by v6 (§2). **The legal text of the drafts is unchanged by this package.** The drafts follow in reading order after this note.
 
 ---
 
@@ -70,7 +70,7 @@ Some drafts also address the EU, UK, Ireland, Australia or Canada. Those passage
 
 | # | Draft | File | Replaces |
 |---|---|---|---|
-| 1 | Privacy Policy, version 5 | `legal/privacy-policy/v5/en.md` (#1128; the SEO items are being folded in) | published v4 |
+| 1 | Privacy Policy, version 6 | `legal/privacy-policy/v6/en.md` (not yet written; owned by the cleanup/guardian session) | published v5 (#1128) |
 | 2 | Children's Online Privacy Notice | `childrens-privacy-notice.md` | new |
 | 3 | Parental Consent Mechanism | `parental-consent-mechanism.md` | new |
 | 4 | Cookie Policy | `cookie-policy.md` | new |
@@ -83,7 +83,7 @@ Some drafts also address the EU, UK, Ireland, Australia or Canada. Those passage
 | 11 | School Data Privacy Addendum | `school-data-privacy-addendum.md` | new |
 | 12 | Sub-Processor List | `sub-processor-list.md` | new |
 
-**Retired:** `privacy-policy-v5.md`, the earlier SEO Privacy Policy draft, is superseded by #1128's v5 (Karl, 2026-10-07: one Privacy Policy for counsel). It is not sent. Its 15 checklist questions are carried into v5 (§3.1).
+**Retired:** `privacy-policy-v5.md`, the earlier SEO Privacy Policy draft, is superseded by Privacy Policy v6 (Karl, 2026-10-07: one Privacy Policy for counsel; v5 is published and sealed, so the SEO items go into v6). It is not sent. Its 15 checklist questions are carried into v6 (§3.1).
 
 The order runs from the Privacy Policy, through the children's and consent documents, cookies, California notices, AI, marketing and billing, to the school and processor documents. Each draft ends with "Standard sources followed" and its own "Counsel checklist". Both sections are removed on publication.
 
@@ -93,9 +93,9 @@ The order runs from the Privacy Policy, through the children's and consent docum
 
 Each question appears once, under the draft that raises it, numbered as in that draft. Where two drafts ask the same thing, a "See also" note cross-references the other. Answering one may answer both, but neither is dropped. Questions that apply only to markets outside the United States are marked **Not applicable at launch: US only**.
 
-### 3.1 Privacy Policy, version 5 (PP, 15): carried into #1128 v5
+### 3.1 Privacy Policy, version 6 (PP, 15): carried into v6
 
-These 15 questions were raised by the retired draft `privacy-policy-v5.md` and are **carried into #1128's v5**, the single Privacy Policy, so the count stays traceable. Section numbers below are the retired draft's; check each against #1128's v5 once the SEO items are folded in.
+These 15 questions were raised by the retired draft `privacy-policy-v5.md` and are **carried into Privacy Policy v6**, the single Privacy Policy, so the count stays traceable. Section numbers below are the retired draft's. **Re-check pending:** each question is re-checked against v6 once v6 is on `seo`, its section reference mapped to v6's numbering, and any question v6 already answers marked so.
 
 
 * **PP-1.** Confirm that the parental consent method in Section 4.1 meets 16 CFR §312.5(b). *See also CN-1, PC-1.*
@@ -211,11 +211,11 @@ Every placeholder left in the drafts: each `[●]`, `[POSTAL ADDRESS]`, `[TELEPH
 
 | Placeholder | Where | Who | Checklist |
 |---|---|---|---|
-| **Postal address** | Privacy Policy (retired draft §12; check #1128 v5); Children's Notice §1; Marketing Consent §6 | LYCEON (Karl) | PP-12, CN-3, MC-3 |
+| **Postal address** | Privacy Policy (retired draft §12; re-check in v6); Children's Notice §1; Marketing Consent §6 | LYCEON (Karl) | PP-12, CN-3, MC-3 |
 | **Telephone number** | Children's Notice §1 (`[TELEPHONE]`) | LYCEON (Karl) | CN-3 |
-| **Analytics retention** (months) | Privacy Policy (retired draft §6.6; check #1128 v5) | Counsel with LYCEON | PP-4 |
-| **Session recording retention** (days) | Privacy Policy (retired draft §6.6; check #1128 v5) | Counsel with LYCEON | PP-4 |
-| **In-app review, private feedback and marketing-consent record retention** | Privacy Policy (retired draft §1.1 and §2; no period stated; check #1128 v5) | Counsel | PP-13, PP-15, MC-4 |
+| **Analytics retention** (months) | Privacy Policy (retired draft §6.6; re-check in v6) | Counsel with LYCEON | PP-4 |
+| **Session recording retention** (days) | Privacy Policy (retired draft §6.6; re-check in v6) | Counsel with LYCEON | PP-4 |
+| **In-app review, private feedback and marketing-consent record retention** | Privacy Policy (retired draft §1.1 and §2; no period stated; re-check in v6) | Counsel | PP-13, PP-15, MC-4 |
 | **Cookie consent record retention** | Banner consent record | Counsel | CB-5 |
 | **Cookie durations** (4) | Cookie Policy §3: `sb-<project>-auth-token`, `__Host-csrf`, the Turnstile security check, `ph_<project>_posthog` | Counsel with LYCEON | CP-1 |
 | **Sub-processor locations** (11) | Sub-Processor List: Supabase, Vercel, Stripe, Google Cloud, Google, Resend, Desmos, Slack, PostHog, Cloudflare, Trustpilot | Counsel with LYCEON | SP-1 |
@@ -239,4 +239,4 @@ These are on LYCEON's public pages. Karl has approved each one, and each is reco
 
 ## 6. Rebuilding this package
 
-The PDF in `out/` is generated from this file, #1128's Privacy Policy v5 and the 11 drafts by `pnpm run build:counsel-pdf`, which uses no new dependencies. Each page footer names the source commit. Regenerate the PDF before sending, so that it matches the drafts as committed.
+The PDF in `out/` is generated from this file, Privacy Policy v6 and the 11 drafts by `pnpm run build:counsel-pdf`, which uses no new dependencies. Each page footer names the source commit. Regenerate the PDF before sending, so that it matches the drafts as committed.

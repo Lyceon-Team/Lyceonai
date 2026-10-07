@@ -33,11 +33,11 @@ const OUT = join(DRAFTS, "out/lyceon-counsel-package.pdf");
 /**
  * Reading order: the same order as COUNSEL_PACKAGE.md §2. Paths are from the repo root.
  *
- * The Privacy Policy is the single published-track policy, `legal/privacy-policy/v5/en.md`
- * (#1128, with the SEO items folded in). The earlier draft `privacy-policy-v5.md` is retired and is
+ * The Privacy Policy is the single final pre-launch version, `legal/privacy-policy/v6/en.md`: #1128's
+ * v5 (published and sealed) plus the SEO items, written by the cleanup/guardian session. The earlier draft `privacy-policy-v5.md` is retired and is
  * never rendered (owner ruling, 2026-10-07).
  */
-const PRIVACY_POLICY = "legal/privacy-policy/v5/en.md";
+const PRIVACY_POLICY = "legal/privacy-policy/v6/en.md";
 const READING_ORDER = [
   PRIVACY_POLICY,
   "childrens-privacy-notice.md",
@@ -101,7 +101,7 @@ async function main() {
     ...READING_ORDER.map((f) => {
       if (!existsSync(join(ROOT, f))) {
         throw new Error(
-          `${f} is missing: the Privacy Policy is #1128's v5, so build from a checkout that has it`,
+          `${f} is missing: the Privacy Policy is v6, which is not on this checkout yet. Build once v6 is on seo`,
         );
       }
       return readFileSync(join(ROOT, f), "utf8");
