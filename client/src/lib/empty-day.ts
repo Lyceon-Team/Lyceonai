@@ -11,6 +11,8 @@
  * student's study days and a day they cleared alike, where "Rest day" is untrue of a day off.
  * Every surface that says a day has nothing planned imports it from here.
  *
+ * The calendar's week grid imports it too (QA 2026-10-07).
+ *
  * edge cases: the calendar's day HEADER labels ("Rest day", "Day off") are a different fact (which
  * kind of empty day it is) and stay the calendar's own.
  */

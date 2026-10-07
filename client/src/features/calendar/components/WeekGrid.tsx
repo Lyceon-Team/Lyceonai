@@ -16,6 +16,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import { dayOfMonth, shortWeekday } from "../lib/dates";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
+import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
 import { BlockCard } from "./BlockCard";
 import { DayMenu, DayOffCard, type DayActions } from "./DayMenu";
 import { canControlDay, isBlockedOut } from "../lib/day-state";
@@ -152,7 +153,7 @@ function DayColumn({
           />
         ) : shown.length === 0 ? (
           <div className="empty">
-            {isRest ? "No study planned" : "Nothing to show"}
+            {isRest ? EMPTY_DAY_MESSAGE : "Nothing to show"}
           </div>
         ) : (
           shown.map((block) => (

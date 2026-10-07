@@ -2932,6 +2932,13 @@ plant "QA7-H2" "the tracker records the old page again instead of the new one" \
 assert s.count(a) == 1
 s = s.replace(a, "      paths.push(paths[paths.length - 1] ?? \"\");", 1)'
 
+plant "QA15-E2" "the calendar's week grid writes the empty-day sentence by hand again" \
+  "client/src/lib/empty-day.test.ts" \
+  "client/src/features/calendar/components/WeekGrid.tsx" \
+  'a = "{isRest ? EMPTY_DAY_MESSAGE : \"Nothing to show\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{isRest ? \"No study planned\" : \"Nothing to show\"}", 1)'
+
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"
