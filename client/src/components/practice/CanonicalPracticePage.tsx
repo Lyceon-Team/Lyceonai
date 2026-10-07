@@ -43,6 +43,11 @@ import { BookOpen, Calculator, Loader2, MessageCircle } from "lucide-react";
 import QuestionRenderer from "@/components/question-renderer";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
+import {
+  CHECKING_LABEL,
+  LOADING_LABEL,
+  SKIPPING_LABEL,
+} from "@/lib/pending-copy";
 import { FocusBarContext } from "@/components/layout/FocusShell";
 import {
   useCanonicalPractice,
@@ -219,6 +224,7 @@ export default function CanonicalPracticePage(props: {
     freeResponseAnswer,
     setFreeResponseAnswer,
     isSubmitting,
+    submitKind,
     showResult,
     isCorrect,
     correctOptionId,
@@ -624,9 +630,11 @@ export default function CanonicalPracticePage(props: {
                 size="lyc"
                 className="h-12 px-[18px]"
                 disabled={runnerBusy}
+                pending={submitKind === "skip"}
                 onClick={() => void submitAnswer({ skipped: true })}
+                data-testid="runner-skip"
               >
-                Skip
+                {submitKind === "skip" ? SKIPPING_LABEL : "Skip"}
               </Button>
             ) : null}
             <Button
@@ -634,9 +642,11 @@ export default function CanonicalPracticePage(props: {
               size="lyc"
               className="h-12 px-[26px] text-[17px] disabled:opacity-45"
               disabled={runnerBusy || !canSubmit}
+              pending={submitKind === "answer"}
               onClick={() => void submitAnswer({ skipped: false })}
+              data-testid="runner-submit"
             >
-              Submit
+              {submitKind === "answer" ? CHECKING_LABEL : "Submit"}
             </Button>
           </>
         ) : (
@@ -645,9 +655,15 @@ export default function CanonicalPracticePage(props: {
             size="lyc"
             className="h-12 px-[26px] text-[17px]"
             disabled={runnerBusy}
+            pending={isLoading}
             onClick={goNext}
+            data-testid="runner-next"
           >
-            {isLastQuestion ? "Done" : "Next question"}
+            {isLoading
+              ? LOADING_LABEL
+              : isLastQuestion
+                ? "Done"
+                : "Next question"}
           </Button>
         )}
       </div>

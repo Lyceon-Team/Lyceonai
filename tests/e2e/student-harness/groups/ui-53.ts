@@ -332,5 +332,23 @@ export const UI_53: PageGroup = {
           "A click path: the screenshot is where Next landed, proven by the 'Question 2 of 10' text the capture waited for.",
       },
     },
+    {
+      id: "practice-skip-pending",
+      title:
+        "QA item 5: Skip pressed, the skip held in flight: 'Skipping…' with a spinner, Skip and Submit disabled",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      holdRequest: { method: "POST", path: "/api/practice/sessions/*/skip" },
+      steps: [both('[data-testid="runner-skip"]')],
+      expectVisible: '[data-testid="runner-skip"][aria-busy="true"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).",
+      },
+    },
   ],
 };

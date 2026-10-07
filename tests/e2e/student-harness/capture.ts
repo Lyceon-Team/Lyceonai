@@ -707,11 +707,19 @@ async function shootBuilt(
     const held: Array<() => Promise<void>> = [];
     const hold = shot.holdRequest;
     if (hold) {
+      // QA item 5 (2026-10-07): a `*` in the path stands for one segment (a block id the
+      // group cannot know ahead of the seed: `/api/calendar/blocks/*/launch`).
+      const holdPath = new RegExp(
+        `^${hold.path
+          .split("*")
+          .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+          .join("[^/]+")}$`,
+      );
       await page.route(
         (url) =>
           hold.match === "pattern"
             ? new RegExp(hold.path).test(url.pathname)
-            : url.pathname === hold.path,
+            : holdPath.test(url.pathname),
         async (route) => {
           if (route.request().method() !== hold.method) {
             await route.fallback();
@@ -822,7 +830,9 @@ async function shootBuilt(
         .first()
         .waitFor({ state: "visible", timeout: 20_000 });
     if (shot.expectPath !== undefined) {
-      const expected = new RegExp(shot.expectPath);
+      // QA item 4 (2026-10-07): a click path may name a seeded id ("{paid.openPracticeSessionId}"),
+      // so it proves the EXACT session, not just the route.
+      const expected = new RegExp(fillRoute(shot.expectPath, stack.manifest));
       await page.waitForURL((url) => expected.test(url.pathname), {
         timeout: 20_000,
       });

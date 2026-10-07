@@ -110,6 +110,12 @@ FILES=(
   "client/src/components/layout/StudentRouteFrame.tsx"
   "client/src/components/layout/RouteSkeleton.tsx"
   "client/src/lib/format-date.ts"
+  "client/src/components/ui/button.tsx"
+  "client/src/pages/practice.tsx"
+  "client/src/lib/session-reads.ts"
+  "client/src/components/home/HomePanel.tsx"
+  "client/src/components/student-ui/filter-bar/FilterBar.tsx"
+  "client/src/components/MathRenderer.tsx"
 )
 
 snapshot_all() {
@@ -2709,6 +2715,197 @@ plant "QA15-D2" "a local day shifted by the viewer's zone" \
   'a = "{ date, timeZone: \"UTC\" }"
 assert s.count(a) == 1
 s = s.replace(a, "{ date, timeZone: undefined }", 1)'
+# ── QA-FLOWS — owner QA list (Karl, 2026-10-07), branch claude/qa-flows ──────────────────────
+# Items 4-7, 10, 14, 15 (flows, links, loading states). Each plant mutates the product line the
+# named test exercises (checked by line, CLAUDE.md "A plant must mutate the call site under test").
+QA_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+QA_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+QA_REVIEW="client/src/pages/review.test.tsx"
+QA_PRACTICE="client/src/pages/practice.test.tsx"
+QA_TESTS="client/src/features/exam/pages/TestsHomePage.test.tsx"
+
+# Item 5: an action that waits on the server is disabled, busy and labelled from the first click.
+plant "QA5-B1" "the shared Button stops saying it is busy" \
+  "$QA_HOME" \
+  "client/src/components/ui/button.tsx" \
+  'a = "        aria-busy={busy ? true : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        aria-busy={undefined}\n", 1)'
+
+plant "QA5-H1" "Start today's plan keeps its label while the launch is in flight" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "{primaryPending ? STARTING_LABEL : \"Start today\x27s plan\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Start today\x27s plan\"}", 1)'
+
+plant "QA5-H2" "a plan row's Start draws no pending state" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "pending={pendingBlockId === row.blockId && !startedFromPrimary}"
+assert s.count(a) == 1
+s = s.replace(a, "pending={false}", 1)'
+
+plant "QA5-H3" "Start diagnostic draws no pending state" \
+  "$QA_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "              pending={diagnostic.isStarting}\n"
+assert s.count(a) == 1
+s = s.replace(a, "              disabled={diagnostic.isStarting}\n", 1)'
+
+plant "QA5-R1" "the runner's Skip keeps its label while the skip is in flight" \
+  "$QA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "{submitKind === \"skip\" ? SKIPPING_LABEL : \"Skip\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Skip\"}", 1)'
+
+plant "QA5-R2" "the hook never records which submit is in flight" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "      setSubmitKind(opts.skipped ? \"skip\" : \"answer\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-R3" "Next question draws no pending state while the next item loads" \
+  "$QA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "            pending={isLoading}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-V1" "Start reviewing keeps its label while the create is in flight" \
+  "$QA_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "{starting === \"queue\" ? STARTING_LABEL : \"Start reviewing\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Start reviewing\"}", 1)'
+
+plant "QA5-V2" "the topic picker says it is starting when the queue was pressed" \
+  "$QA_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "              starting={starting === \"filter\"}\n"
+assert s.count(a) == 1
+s = s.replace(a, "              starting={starting !== null}\n", 1)'
+
+plant "QA5-P1F" "Practice's Start draws no pending state" \
+  "$QA_PRACTICE" \
+  "client/src/pages/practice.tsx" \
+  'a = "          pending={starting}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-T1" "Full-Length's Start keeps its label while the create is in flight" \
+  "$QA_TESTS" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "        {pending ? STARTING_LABEL : label}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {label}\n", 1)'
+
+# Item 6: answering, skipping, ending or leaving a session marks the reads it changes stale.
+QA_READS="client/src/lib/session-reads.test.ts"
+
+plant "QA6-1" "an answer or skip marks nothing stale" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "        invalidateSessionReads(queryClient, {\n          engine: engine.domain,\n          sessionId: effectiveSessionId,\n        });\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA6-2" "leaving the runner marks nothing stale" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "      const id = leaveSession.current;\n"
+assert s.count(a) == 1
+s = s.replace(a, a + "      if (id !== null) return;\n", 1)'
+
+plant "QA6-3" "the review pool is matched by its bare prefix again (dead: the key carries ?tz=)" \
+  "$QA_READS $QA_RUNNER" \
+  "client/src/lib/session-reads.ts" \
+  'a = "    predicate: (q) => firstKeyStartsWith(q.queryKey, REVIEW_POOL_QUERY_KEY),\n"
+assert s.count(a) == 1
+s = s.replace(a, "    queryKey: [REVIEW_POOL_QUERY_KEY],\n", 1)'
+
+plant "QA6-4" "the runner's own state read is refetched under the runner" \
+  "$QA_READS" \
+  "client/src/lib/session-reads.ts" \
+  'a = "      refetchType: \"none\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# Item 14: Home's mastery rows deep-link to their domain; recent-session rows review that session.
+QA_MASTERY="client/src/pages/mastery.test.tsx"
+
+plant "QA14-H1" "Home's mastery rows go to the top of /mastery again" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "                      href={masteryDomainHref(node)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                      href=\"/mastery\"\n", 1)'
+
+plant "QA14-M1" "the Mastery page ignores the domain in its address" \
+  "$QA_MASTERY" \
+  "client/src/pages/mastery.tsx" \
+  'a = "    () => new Set(linkedDomain === null ? [] : [linkedDomain]),\n"
+assert s.count(a) == 1
+s = s.replace(a, "    () => new Set(),\n", 1)'
+
+plant "QA14-M2" "the linked domain opens but is never scrolled into view" \
+  "$QA_MASTERY" \
+  "client/src/pages/mastery.tsx" \
+  'a = "      ?.scrollIntoView({ block: \"start\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "      ?.getAttribute(\"id\");\n", 1)'
+
+plant "QA14-R1F" "a recent-session row looks pressable but does nothing" \
+  "$QA_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "                  onClick={() => onReview(s)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  onClick={() => undefined}\n", 1)'
+
+# Item 15: one empty-day sentence; timing above Start; "Not now"; menus hold still; math on one line.
+QA_FILTER="client/src/components/student-ui/filter-bar/FilterBar.test.tsx"
+QA_MATH="client/src/components/MathRenderer.wrap.test.tsx"
+
+plant "QA15-E1F" "Home's empty day says its own words again" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "          {EMPTY_DAY_MESSAGE}\n"
+assert s.count(a) == 1
+s = s.replace(a, "          Rest day\n", 1)'
+
+plant "QA15-T1" "the timing choice drops back under the list of Starts" \
+  "$QA_TESTS" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "            <TimingChoice mode={mode} onModeChange={setMode} />\n"
+b = "            <BeforeYouStart mode={mode} />\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "", 1).replace(b, b + a, 1)'
+
+plant "QA15-N1" "the phone notice's Not now does not close it" \
+  "$QA_TESTS" \
+  "client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx" \
+  'a = "          <ModalClose asChild>\n"
+b = "          </ModalClose>\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "          <span>\n", 1).replace(b, "          </span>\n", 1)'
+
+plant "QA15-F1" "the chips row above an open menu changes with every pick (the jump)" \
+  "$QA_FILTER" \
+  "client/src/components/student-ui/filter-bar/FilterBar.tsx" \
+  'a = "  const chips = frozenChips ?? liveChips;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const chips = liveChips;\n", 1)'
+
+plant "QA15-K1" "an inline math expression may wrap mid-way again" \
+  "$QA_MATH" \
+  "client/src/components/MathRenderer.tsx" \
+  'a = "      mathSpan.style.whiteSpace = \x27nowrap\x27;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# ── END QA-FLOWS
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

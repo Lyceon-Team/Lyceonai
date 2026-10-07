@@ -17,9 +17,11 @@ import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
 import type { PracticeQuota } from "@lyceon/shared/practice-quota";
 import { BASELINE_PENDING_HEADLINE } from "@lyceon/shared/diagnostic-state";
 import { RulerProgress, rulerFill } from "@/components/student-ui";
+import { LYC_FOCUS } from "@/components/ui/button";
 import { ABSENT_COPY } from "@/features/calendar/components/Chrome";
 import { dayOfMonth, shortWeekday } from "@/features/calendar/lib/dates";
 import type { ProjectedRange } from "@/features/calendar/lib/projection";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { dayHeaderLabel, sourceEngineLabel } from "@/lib/review-session-picker";
 import { cn } from "@/lib/utils";
 import {
@@ -149,9 +151,22 @@ const RECENT_ROWS = 5;
 export function RecentSessionsSection({
   sessions,
   todayKey,
+  onReview,
+  startingId,
+  failure,
 }: {
   sessions: readonly ReviewPoolSourceSession[];
   todayKey: string;
+  /**
+   * QA item 14 (owner QA list, Karl, 2026-10-07) | @implemented [2026-10-07]: a row is a button
+   * that reviews that session's open questions, the same start as Review's "Redo a past session"
+   * (`mode: "session"` with the row's source).
+   */
+  onReview: (session: ReviewPoolSourceSession) => void;
+  /** The source session whose review start is in flight (item 5: that row says "Starting…"). */
+  startingId: string | null;
+  /** Why the last start failed, in the student's words, or null. */
+  failure: string | null;
 }): JSX.Element {
   return (
     <section
@@ -164,28 +179,48 @@ export function RecentSessionsSection({
       </h2>
       {sessions.length > 0 ? (
         <ul className="m-0 list-none p-0">
-          {sessions.slice(0, RECENT_ROWS).map((s) => (
-            <li
-              key={`${s.source_engine}:${s.source_session_id}`}
-              className="flex items-baseline justify-between gap-3 border-b border-lyc-rule-soft py-[9px]"
-              data-testid="home-recent-row"
-            >
-              <span className="flex flex-col gap-0.5">
-                <span className="text-base font-semibold text-lyc-ink">
-                  {sourceEngineLabel(s.source_engine)}
-                </span>
-                <span className="text-lyc-meta text-lyc-muted">
-                  {s.local_time === null
-                    ? dayHeaderLabel(s.local_date, todayKey)
-                    : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`}
-                </span>
-              </span>
-              <span className="whitespace-nowrap text-lyc-meta-lg text-lyc-muted">
-                {toReviewLine(s.open_count)}
-              </span>
-            </li>
-          ))}
+          {sessions.slice(0, RECENT_ROWS).map((s) => {
+            const when =
+              s.local_time === null
+                ? dayHeaderLabel(s.local_date, todayKey)
+                : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`;
+            const starting = startingId === s.source_session_id;
+            return (
+              <li
+                key={`${s.source_engine}:${s.source_session_id}`}
+                className="border-b border-lyc-rule-soft"
+                data-testid="home-recent-row"
+              >
+                <button
+                  type="button"
+                  onClick={() => onReview(s)}
+                  disabled={startingId !== null}
+                  aria-busy={starting ? true : undefined}
+                  className={cn(
+                    LYC_FOCUS,
+                    "flex w-full items-baseline justify-between gap-3 rounded-sm bg-transparent px-1 py-[9px] text-left hover:bg-lyc-hover disabled:cursor-default",
+                  )}
+                  data-testid="home-recent-review"
+                >
+                  <span className="flex flex-col gap-0.5">
+                    <span className="text-base font-semibold text-lyc-ink">
+                      {sourceEngineLabel(s.source_engine)}
+                    </span>
+                    <span className="text-lyc-meta text-lyc-muted">{when}</span>
+                  </span>
+                  <span className="whitespace-nowrap text-lyc-meta-lg font-semibold text-lyc-ink-strong underline underline-offset-4">
+                    {starting ? STARTING_LABEL : toReviewLine(s.open_count)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
+      ) : null}
+      {failure !== null ? (
+        <p role="alert" className="m-0 text-base text-lyc-danger">
+          {failure}
+        </p>
       ) : null}
       <Link href="/review" className={PANEL_LINK}>
         See all sessions
