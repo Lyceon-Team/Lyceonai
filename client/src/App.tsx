@@ -17,10 +17,11 @@ import "@/styles/accessibility.css";
 import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
-import { FullPageLoader } from "@/components/student-ui";
+// The loader's own module, not the `student-ui` barrel: the barrel also carries the filter bar
+// (Radix menus), the modal and the notice, which only signed-in pages use (SEO plan F8).
+import { FullPageLoader } from "@/components/student-ui/FullPageLoader";
 import { Button } from "@/components/ui/button";
 import { BareCard, BareCardHeader } from "@/components/layout/BareCardShell";
-import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
 import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
@@ -44,6 +45,14 @@ const RequireRole = lazy(() =>
 const PendingDeletionScreen = lazy(() =>
   import("@/components/account-deletion/PendingDeletionScreen").then((m) => ({
     default: m.PendingDeletionScreen,
+  })),
+);
+// @spec [SEO plan F8; student-UI register UI-41] | @implemented [2026-10-07] | plain English: the
+// student shell frame (the App shell's rail, header menu and notification bell) only wraps signed-in
+// pages, so it loads with them, inside the same Suspense boundary, as RequireRole does.
+const StudentRouteFrame = lazy(() =>
+  import("@/components/layout/StudentRouteFrame").then((m) => ({
+    default: m.StudentRouteFrame,
   })),
 );
 const UpdatePassword = lazy(() => import("@/pages/update-password"));

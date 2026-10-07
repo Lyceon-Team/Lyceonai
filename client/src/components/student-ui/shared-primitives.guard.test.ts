@@ -72,7 +72,7 @@ describe("UI-46 guard: replaced duplicates stay gone", () => {
   it.each(REPLACED_SITES)("%s renders the shared FullPageLoader", (site) => {
     const text = read(site);
     expect(text).toMatch(
-      /import \{[^}]*\bFullPageLoader\b[^}]*\} from "@\/components\/student-ui"/,
+      /import \{[^}]*\bFullPageLoader\b[^}]*\} from "@\/components\/student-ui(?:\/FullPageLoader)?"/,
     );
     expect(text).toMatch(/<FullPageLoader\b/);
   });

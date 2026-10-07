@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Notice } from "@/components/student-ui";
+import { Notice } from "@/components/student-ui/Notice";
 import { humanAuthError } from "@/lib/auth-error-messages";
 import {
   postAuthDestination,

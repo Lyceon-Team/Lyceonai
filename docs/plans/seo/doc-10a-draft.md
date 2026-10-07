@@ -1,6 +1,6 @@
 # **Lyceon — Document 10A: Public Surfaces & Content Engine**
 
-**Version:** V0.1 **Status:** Draft for review (not locked) **Last updated:** 2026-10-05 **Owners:** Karl (founder) **Governed by:** Doc 00 (Authoritative Platform Directive); Doc 10 V1.0 (parent); the Public Disclosure Doctrine (§2).
+**Version:** V0.2 **Status:** Draft for review (not locked) **Last updated:** 2026-10-06 **Owners:** Karl (founder) **Governed by:** Doc 00 (Authoritative Platform Directive); Doc 10 V1.0 (parent); the Public Disclosure Doctrine (§2).
 
 **Where this draft lives.** Drafted at `docs/plans/seo/doc-10a-draft.md`, because `docs/Spec/` is read-only to agents (`CLAUDE.md` "Canonical truth lives in `docs/Spec`"; `.claude/hooks/block-spec-and-secrets.mjs`). Karl sends it for external review and moves it into `docs/Spec/` at lock (owner answer 1, G6 Step 0, 2026-10-05). Plan row G6 closes on the locked file being in `docs/Spec/`.
 
@@ -81,17 +81,21 @@ SCL-200's WAS list omits four further "future Doc 05" citations: D02B:79, Preamb
 
 `infra/route-surface-classification.yaml` is the one inventory of client routes (header :1-25), and CI fails on an unregistered route (`ci.yml:48`, `pnpm run route:validate`). Doc 10A owns every row with `surface_class: unauth_marketing` that serves content:
 
-| Surface | Routes | Prerendered / indexable | Today's `owning_doc` |
+| Surface | Routes | Prerendered / indexable | Owner |
 |---|---|---|---|
-| Homepage | `/` | yes / yes | Doc-10 |
-| Digital SAT guides | `/digital-sat`, `/digital-sat/math`, `/digital-sat/reading-writing` | yes / yes | Doc-10 |
-| Blog | `/blog`, `/blog/:slug` (`content_source: blog`) | yes / yes | Doc-10 |
-| QOTD hub and archive | `/sat-question-of-the-day`, `/sat-question-of-the-day/:date` (`content_source: qotd`) | yes / yes | Doc-10 |
-| Trust and legal hubs | `/trust`, `/legal`, `/legal/:slug` (`content_source: legal`) | yes / yes | Doc-10 |
-| Legacy redirects | `/privacy`, `/terms` (301 via `redirect_to`) | no / no | Doc-10 |
-| Future keyword-map pages | §8.3 page types | yes / yes when built | Doc-10A |
+| Homepage | `/` | yes / yes | Doc-10A |
+| Blog | `/blog`, `/blog/:slug` (`content_source: blog`; the five C4 posts, §8.1) | yes / yes | Doc-10A |
+| QOTD hub and archive | `/sat-question-of-the-day`, `/sat-question-of-the-day/:date` (`content_source: qotd`) | yes / yes | Doc-10A |
+| Trust and legal hubs | `/trust`, `/legal`, `/legal/:slug` (`content_source: legal`) | yes / yes | Doc-10A |
+| Practice-question pages (P2) | `/sat-practice-questions`; `/sat-practice-questions/math`, `/sat-practice-questions/reading-and-writing`; the eight domain pages `/sat-practice-questions/math/{algebra, advanced-math, problem-solving-and-data-analysis, geometry-and-trigonometry}` and `/sat-practice-questions/reading-and-writing/{information-and-ideas, craft-and-structure, expression-of-ideas, standard-english-conventions}` | yes / yes | Doc-10A |
+| Score pages (P3) | `/what-is-a-good-sat-score`; `/what-is-a-good-sat-score/{1100, 1200, 1300, 1400, 1500}` | yes / yes | Doc-10A |
+| Free practice test (P5) | `/free-sat-practice-test` | yes / yes | Doc-10A |
+| Parent pages (P6) | `/sat-tutor-cost`, `/lyceon-vs-sat-tutor`, `/is-sat-tutoring-worth-it` | yes / yes | Doc-10A |
+| Online SAT prep (P7) | `/online-sat-prep` | yes / yes | Doc-10A |
+| How to study (P8) | `/how-to-study-for-the-sat` | yes / yes | Doc-10A |
+| Redirects (301 via `redirect_to`) | `/digital-sat` → `/online-sat-prep`; `/digital-sat/math` → `/sat-practice-questions/math`; `/digital-sat/reading-writing` → `/sat-practice-questions/reading-and-writing`; `/privacy` → `/legal/privacy-policy`; `/terms` → `/legal/student-terms` | no / no | Doc-10A |
 
-Each row's `owning_doc` moves from `Doc-10` to `Doc-10A` when this document locks (plan §10 follow-up).
+The 23 Wave 3 content pages are exactly `CONTENT_PAGE_PATHS` (`shared/content/pages/paths.ts:12-36`); the router, the registry and the prerender read that one list, and `shared/content/pages/index.ts` throws at import if the list and the pages' own paths differ (§8.2). The registry rows for every surface above still read `owning_doc: Doc-10` (for example `infra/route-surface-classification.yaml:320-324`); they move to `Doc-10A` when this document locks (plan §10 FU9).
 
 Public non-content routes stay with their owners: `/login`, `/signup` and `/account/recover` (Doc-01), `/tutor` (Doc-03B), and the practice landing routes (Doc-02B). Doc 10A's consent and analytics rules (§6) still apply on them.
 
@@ -151,7 +155,7 @@ The doctrine governs every public surface and every PR that touches one (plan R7
 
 ## **2.3 Where the doctrine is enforced**
 
-* Mechanically: the claims guard (§3.4), the QOTD page test that pins "nothing describes how a day's question is chosen" (`tests/seo.qotd-pages.test.ts`; `claim-inventory.md` open item 4), and the publish gate when built (§8.4).
+* Mechanically: the claims guard (§3.4), the QOTD page test that pins "nothing describes how a day's question is chosen" (`tests/seo.qotd-pages.test.ts`; `claim-inventory.md` open item 4), and the content publish gate, which runs in the build (§8.4).
 * By approval: §3.5.
 * Proof stays internal (rule 4; R8 :40): `docs/compliance/` is never linked from the product, a public page, the sitemap or an email (`claim-inventory.md:3`).
 
@@ -168,7 +172,7 @@ Every public claim takes one of Doc 10 §11.6's four categories (:862-867): **1*
 Two further constraints sit on the categories:
 
 * **Rule 2 overrides the category.** A claim that describes a mechanism is refused whatever its category. Doc 10 §11.6's own Category 1 example (:864, "Lyceon adapts question difficulty to your mastery level") is not usable public copy: it describes selection logic (rule 2) and is true only of the paid plan (R15 :53).
-* **Rule 3 applies across the categories.** A general fact about the SAT, scores, tutoring or studying cites a source in `shared/seo/sources.ts` (:15-49), each fetched and recorded in `claim-inventory.md` "Sources" (:31-40).
+* **Rule 3 applies across the categories.** A general fact about the SAT, scores, tutoring or studying cites a source in `shared/seo/sources.ts`, each fetched and recorded in a `claim-inventory.md` Sources table ("Sources" :29; "Sources (Wave 3)" :94). The publish gate refuses a content-page source whose URL is not in the inventory (§8.3).
 
 ## **3.2 Retiring the inventory's a–e labels**
 
@@ -194,8 +198,8 @@ The inventory and the guard's messages move to the new labels at lock (plan §10
 
 | Guard | What it enforces | Where |
 |---|---|---|
-| Banned phrases | Removed phrasings cannot return; each entry names its reason | `shared/seo/banned-phrases.ts:18` (`BANNED`), `:154` (`firstBannedPhrase`) |
-| Outcome guard | Any outcome-shaped phrase must be on the approved list | `shared/seo/banned-phrases.ts:115` (`APPROVED_OUTCOME_PHRASES`), `:126` (`OUTCOME_PATTERNS`), `:146` |
+| Banned phrases | Removed phrasings cannot return; each entry names its reason | `shared/seo/banned-phrases.ts:18` (`BANNED`), `:157` (`firstBannedPhrase`) |
+| Outcome guard | Any outcome-shaped phrase must be on the approved list | `shared/seo/banned-phrases.ts:115` (`APPROVED_OUTCOME_PHRASES`), `:129` (`OUTCOME_PATTERNS`), `:149` |
 | Rendered-page scan | Every prerendered public page's body, head, OG tags and JSON-LD, plus the OG image's text, checked against both lists; presence asserted before absence | `tests/ci/public-copy-claims.contract.test.ts:1-28`, run in CI's suite (`ci.yml:122`) |
 | QOTD selection disclosure | QOTD pages say nothing about how a day's question is chosen | `tests/seo.qotd-pages.test.ts` |
 
@@ -214,7 +218,12 @@ The inventory and the guard's messages move to the new labels at lock (plan §10
 * **H32** "SAT prep that adapts to you." stays (Karl-approved; owner answer 6, 2026-10-05). It is scoped by **H33**, the sub-line naming the paid study plan (`claim-inventory.md:70-71`; R15 :53). The pair is approved as a unit: H32 does not appear without H33's scoping on the same view.
 * **P4** "SAT score calculator (Lyceon-modeled)" (keyword map `lyceon-sat-keyword-map.xlsx`, sheet "Page Map", row P4) stays **dropped** (R23 :70; owner answer 6). No public page computes, estimates or converts scores (rule 2).
 * **Public counters** (Doc 10 §6.2): none at launch (**subject to SCL-203**). The post-launch candidate is average score improvement, with real data, n≥100 and Karl's approval (R31 :82).
-* **Comparisons**: "an always-available alternative to private tutoring" is approved (H33). Named-competitor comparison pages are later, with substantiation (R24 :71; FWD-10A-B).
+* **Slogan.** "Study Smarter, Score Higher" is approved by Karl (2026-10-05, F13 Step 0 decision 3; `claim-inventory.md:51`, rows X1/H43) for visible copy; page titles stay "Lyceon | SAT Prep". It is an implied score-improvement claim, so it is on the counsel checklist (`docs/compliance/README.md:48-52`); counsel may confirm or tighten it.
+* **Standing copy direction (R3 :31).** Lyceon is positioned as a cheaper, 24/7, consistent alternative to a traditional tutor, with a guardian view and progress tracking before exam day; never "LISA replaces a tutor". New copy follows this direction and the rules above; content frames may be A/B tested later (§6.8).
+* **Comparisons** (Karl, 2026-10-06):
+  * **Category comparisons** (Lyceon against private tutoring or prep courses as a category, e.g. H33's "an always-available alternative to private tutoring", the `/lyceon-vs-sat-tutor` table) are allowed with Karl's approval (rule 5).
+  * **Cited competitor price data** is allowed with Karl's approval, each figure sourced, dated "as viewed" and recorded in the claim inventory (rule 3; `claim-inventory.md:94`). Lyceon's own price is never written into page data: it is the live Stripe price (`packages/shared/src/seo-content-schema.ts:24-26, :66`).
+  * **Head-to-head named-competitor pages** stay later, with substantiation (R24 :71; keyword map L1; FWD-10A-B).
 
 ---
 
@@ -246,10 +255,10 @@ The browser mounts with `createRoot`, which replaces the static markup with an i
 
 ## **4.3 Per-route metadata and structured data**
 
-* Each prerendered page gets its own title, description, self-canonical and Open Graph tags (`shared/seo/public-meta.ts`, `PUBLIC_META` :264, `qotdArchiveMeta` :448; head rendered by `shared/seo/head.ts:40`).
+* Each prerendered page gets its own title, description, self-canonical and Open Graph tags (`shared/seo/public-meta.ts`, `PUBLIC_META` :116, `qotdArchiveMeta` :304; content pages from their content object, §8.2; head rendered by `shared/seo/head.ts:40`).
 * JSON-LD is optional per page. A page with none gets no JSON-LD script (`head.ts:14`). Legal and trust pages carry none by design (plan :260).
-* JSON-LD types in use come from `shared/seo/structured-data.ts`: Organization (:11), WebSite (:21), BreadcrumbList (:30), FAQPage (:43; FAQ schema = the visible FAQ, F1 :171), Article (:59) and Quiz (:101). No SearchAction (F1).
-* Structured data never names a synthetic person (rule 8). Blog articles currently type the author "Lyceon Team" as a `Person` (`structured-data.ts:77-80`). That moves to `Organization` (plan §10 follow-up).
+* JSON-LD types in use come from `shared/seo/structured-data.ts`: Organization (:11), WebSite (:21), BreadcrumbList (:30), FAQPage (:43; FAQ schema = the visible FAQ, F1 :171), Article (:67) and Quiz (:110). No SearchAction (F1). Each content page carries Article and BreadcrumbList, and FAQPage exactly when it has an FAQ (`tests/ci/content-publish-gate.test.ts:5-12`).
+* Structured data never names a synthetic person (rule 8). The "Lyceon Team" byline is a JSON-LD `Organization` (`structured-data.ts:67-99`; Wave 3 decision 6, 2026-10-05), which closes plan FU6.
 
 ## **4.4 Sitemap and robots**
 
@@ -259,8 +268,11 @@ The browser mounts with `createRoot`, which replaces the static markup with an i
 
 ## **4.5 Real 404s and redirects**
 
-* An unknown path and an unknown content slug return HTTP 404 with `noindex` and no canonical (`head.ts:67`, `NOT_FOUND_META` `public-meta.ts:33`). F2 closed: production `/this-page-does-not-exist -> 404`, `/blog/no-such-post -> 404` (plan :260).
-* Moved public URLs are 301s declared as registry `redirect_to` rows (`/privacy`, `/terms`; plan :260).
+* An unknown path and an unknown content slug return HTTP 404 with `noindex` and no canonical (`head.ts:67`, `NOT_FOUND_META` `public-meta.ts:36`). F2 closed: production `/this-page-does-not-exist -> 404`, `/blog/no-such-post -> 404` (plan :260).
+* Moved public URLs are 301s declared as registry `redirect_to` rows, never prerendered or indexed (`route-registry.ts:63-103`):
+  * `/privacy` → `/legal/privacy-policy` and `/terms` → `/legal/student-terms` (plan :260);
+  * `/digital-sat` → `/online-sat-prep`, `/digital-sat/math` → `/sat-practice-questions/math`, `/digital-sat/reading-writing` → `/sat-practice-questions/reading-and-writing` (Wave 3 decision 3, 2026-10-05; `infra/route-surface-classification.yaml:40-77`). Proof: the three pages 301 and leave the sitemap (`tests/ci/content-publish-gate.test.ts:352`).
+* A content page may not link to a 301: the publish gate counts a redirect row as unresolved, so links point at the page itself (`client/src/prerender/entry-server.tsx:240-256`; plant at `content-publish-gate.test.ts:330`).
 
 ## **4.6 Security headers and CSP**
 
@@ -347,10 +359,12 @@ As built, and recorded as such (owner answer 7, 2026-10-05):
 
 ## **5.7 Public exposure of the question bank**
 
-Two places expose bank content publicly, and no others (R20a :62):
+Two places expose bank content publicly, and no others:
 
-* the dated QOTD archive;
-* up to 2 previous QOTD questions from a skill on that skill's public page (when built, §8.3).
+* the dated QOTD archive (R20a :62);
+* the practice-question pages (§8.3, P2): each of the **eight domain pages** shows **up to 2** past Questions of the Day from its own domain, and each section page up to 2 from its section, never today's and with no answer marked (`packages/shared/src/seo-content-schema.ts:107-114`; `shared/content/pages/practice-questions.ts:209, :446, :570`; `shared/content/qotd-samples.ts:1-34`).
+
+**Skill pages are never built** (Karl, 2026-10-05, Wave 3 decision 1: "No skill pages. Domain pages only"). This supersedes R20a's "each skill's public page" on this point; no page lists or anchors individual skills. Proof: exactly eight domain pages and no skill pages (`tests/ci/content-publish-gate.test.ts:124`); a domain page shows only its own past day (`:378`); today's question is on no content page (`:391`); a section page shows its newest two past days (`:404`).
 
 Every exposed item has already been a QOTD, so it passed §5.2's eligibility. No full-length test-form item can appear.
 
@@ -358,8 +372,8 @@ Every exposed item has already been a QOTD, so it passed §5.2's eligibility. No
 
 Each past day is a prerendered, indexable page (`content_source: qotd`, read at build time), with:
 
-* its own title and description (`qotdArchiveMeta`, `public-meta.ts:448`);
-* Quiz JSON-LD (`structured-data.ts:101`);
+* its own title and description (`qotdArchiveMeta`, `public-meta.ts:304`);
+* Quiz JSON-LD (`structured-data.ts:110`);
 * a sitemap entry (Q3 :193).
 
 The approved copy strings are in `claim-inventory.md` open item 4 (closed).
@@ -428,7 +442,8 @@ A browser sending GPC is treated as Refuse, and the GPC notice replaces the bann
   * the question/answer areas: practice and review (`client/src/components/question-renderer.tsx`), full-length exam (`client/src/features/exam/components/ExamQuestionView.tsx`), the QOTD (`QotdWidget.tsx:24-26`);
   * the LISA conversation (`client/src/pages/chat.tsx`, `client/src/components/tutor/ScopedTutorPanel.tsx`);
   * the review and feedback text areas (`client/src/components/product-feedback/ReviewPrompt.tsx:237`, `FeedbackDialog.tsx`).
-* **Replay is off until F15's evidence exists.** Recording follows the PostHog project setting, which stays off until F15 ships (`posthog-client.ts:20`). Replay on signed-in pages is a Doc 06A §5.2 compliance gate whose evidence is F15's proof (SCL-204 IS 3).
+* **Replay is on.** Recording follows the PostHog project setting (`posthog-client.ts:20`), which Karl enabled on 2026-10-05 after F15 shipped; recordings exist. The client comment at `posthog-client.ts:20` still reads "stays off until F15 ships" and is stale (plan §10 FU11).
+* **Open item: the gate evidence.** Replay on signed-in pages is a Doc 06A §5.2 compliance gate (**subject to SCL-204** IS 3). Its evidence is F15's masked-replay screenshot: a real practice replay with the question/answer area blank. That screenshot is not yet recorded (§11.3).
 
 ## **6.6 Server events**
 
@@ -437,6 +452,12 @@ Signed-in business events go only through the server `emitEvent` wrapper (Doc 07
 * **Launch set.** Seven registered events (**subject to SCL-213**). A deferred or unregistered event is refused at runtime, and `ci/event-schema-registry-parity` fails code that emits one (`ci.yml:310`).
 * **PII.** Redaction conformance is gated (`ci.yml:313`).
 * **Joining.** The browser SDK never calls `identify` or `alias`, so browser events are never joined to `analytics_user_id` (SCL-201 IS 1; `posthog-client.ts:15-16`).
+* **Misconfiguration is loud** (#1121; owner report 2026-10-05). Analytics that cannot send never fails silently:
+  * at startup, a missing or invalid analytics variable logs an ERROR `boot_not_configured` (`server/index.ts:267-271`);
+  * on every refused event, an ERROR `emit_not_configured` (`server/lib/analytics/emit-event.ts:189`), and a missed signup event also logs `signup_event_missed` at the call site (`server/routes/profile-routes.ts:648`);
+  * each names the **variable and an issue code only**, never a value (`analyticsConfigProblems`, `emit-event.ts:115`; `tests/ci/analytics-emit-event.contract.test.ts:303-330`).
+
+  **Production proof pending:** `user_signed_up` arriving in PostHog with `signup_source` awaits Karl's fresh signup test after deploy.
 
 ## **6.7 First-touch attribution**
 
@@ -455,7 +476,7 @@ Signed-in business events go only through the server `emitEvent` wrapper (Doc 07
 
 PostHog experiments run on PostHog's feature-flag mechanism, browser-only, after consent (P2 :223).
 
-* **The one running experiment** is `homepage-hero` (**subject to SCL-213** IS 7; R13 superseded for the hero, :51):
+* **The one experiment** is `homepage-hero`: **built; launches on the next production deploy** (**subject to SCL-213** IS 7; R13 superseded for the hero, :51):
   * Variant A is prerendered, and is all a visitor without consent ever sees;
   * an assigned variant is kept under a `ph_`-prefixed key and shown from the next view, before first paint, through a CSP-hashed inline script;
   * exposure is sent only on a view that displays the variant (`client/src/lib/analytics/hero-experiment.ts:1-12`; `posthog-client.ts:88-99`).
@@ -530,73 +551,84 @@ As built in Q5/Q6 (#1121, merged into `seo` 2026-10-05). The legal text is Doc 1
 
 ---
 
-# **§8 — Content Engine (contract for C1–C5; NOT BUILT)**
+# **§8 — Content Engine (as built, #1127)**
 
 ## **8.1 Status**
 
-Nothing in this section is built. Wave 3 starts after Doc 10A locks (plan :198). This section is the contract C1–C5 must meet; it is not a description of code. Today:
+C1–C4 are built and merged into `seo` (#1127, 2026-10-05); C5 (the AI CMO) is not built (§8.7). Karl approved the Wave 3 copy "as drafted" with decisions 1–6 (`docs/compliance/claim-inventory.md:86-92`). What is live:
 
-* blog posts are a hand-written TypeScript array with no Zod schema and no publish flag (`shared/content/blog.ts:19-31`);
-* dates and author are unchanged until C4 (`claim-inventory.md` open item 3).
+* **23 content pages** in one schema (§8.2, §8.3);
+* the **five C4 blog rewrites**, at their old URLs, as content pages in the same schema and through the same gate: `published` is the original date, `lastModified` the rewrite date, and each post ends with the "Start the free diagnostic" CTA (`shared/content/blog.ts:1-20`, `BLOG_PAGES` :555; proof `tests/ci/content-publish-gate.test.ts:196`);
+* the **in-build publish gate** (§8.4).
 
 ## **8.2 One content schema**
 
 (C1 :202)
 
-* **Single source.** All public content is defined by one Zod schema in `packages/shared`, with types inferred from it (Coding Standards §7.2). Duplicate copies of content are deleted.
-* **Required fields** at minimum:
-  * slug;
-  * page type (§8.3);
-  * title and description, within metadata length limits;
-  * the claims the page makes, with their sources (rule 3);
-  * author as an Organization or a named real person (rule 8);
-  * `datePublished` / `dateModified`;
-  * publish state;
-  * the approval record (§8.4).
-* **Indexability follows the registry.** Prerendering and indexing still come from the registry (§4.1). A content page is a registry row with a `content_source`.
+* **Single source.** Every content page is one object of `contentPageSchema` (`packages/shared/src/seo-content-schema.ts:155-180`), with types inferred from it (Coding Standards §7.2). The renderer, the head and JSON-LD, and the publish gate all read the same object, so what a visitor reads, what a search engine quotes and what the gate checked cannot drift (`seo-content-schema.ts:1-27`).
+* **Fields:** `path`, `title`, `description`, `h1`, `crumb`, `parent`, `intro`, `sections`, `faq`, `published`, `lastModified`, and `approved` (`seo-content-schema.ts:155-178`).
+* **A basis on every block.** Each block of text carries `sources` (external pages, rule 3) and/or `claims` (claim-inventory row IDs, rule 4) (`seo-content-schema.ts:43-49`). The schema allows a draft without either; the gate refuses to build it.
+* **Approval is a field.** `approved: { by: "Karl", date }` (`seo-content-schema.ts:151-153`).
+* **No price in page data.** A table cell may be `{ livePrice: true }`, read from Stripe at runtime (`seo-content-schema.ts:24-26, :66`).
+* **QOTD blocks** name a section or a canonical domain, with `limit` at most 2, past days only (`seo-content-schema.ts:107-114`; §5.7).
+* **One list of pages.** `CONTENT_PAGES` parses every page at import (`shared/content/pages/index.ts:1-57`); `CONTENT_PAGE_PATHS` (`paths.ts:12-36`) is what the router mounts, and the two must match in both directions.
+* **Indexability follows the registry.** Each content page is a prerendered, indexable registry row dated as the page is (§4.1; `tests/ci/content-publish-gate.test.ts:111`).
 
 ## **8.3 Page types**
 
-From the keyword map (`docs/marketing/keyword-map/lyceon-sat-keyword-map.xlsx`, sheet "Page Map"; C2 :203):
+From the keyword map (`docs/marketing/keyword-map/lyceon-sat-keyword-map.xlsx`, sheet "Page Map"; C2 :203), as built:
 
-| Id | Page type | Constraint |
+| Id | Page type | As built |
 |---|---|---|
 | P1 | QOTD hub and archive | Built (§5.8) |
-| P2 | Practice hubs and ~30 skill pages | A skill page may show up to 2 previous QOTD questions from that skill and nothing else from the bank (R20a) |
-| P3 | Good SAT score and score-level pages | General facts sourced to College Board (rule 3); no Lyceon score modelling (rule 2) |
+| P2 | Practice-question hub, 2 section pages, **8 domain pages** | Built (`shared/content/pages/practice-questions.ts`). Domain pages only; **no skill pages, ever** (Karl, 2026-10-05, decision 1; §5.7). Each domain page shows up to 2 past QOTD from its domain |
+| P3 | Good-SAT-score page and 5 score pages (1100–1500) | Built (`shared/content/pages/scores.ts`; decision 2). General facts sourced to College Board (rule 3); no Lyceon score modelling (rule 2) |
 | P4 | Score calculator | **Dropped** (R23; §3.6) |
-| P5 | Free practice test → free diagnostic | Every public CTA routes to the free diagnostic (Q4 :194) |
-| P6 | Parent pages (tutor cost, tutor vs Lyceon, is tutoring worth it) | Comparison claims are Lyceon-specific: Karl's approval (rule 5); costs cited (rule 3) |
-| P7 | Online SAT prep landing | Rule 2 (no mechanisms); differentiators at a high level only (C2) |
-| P8 | How-to-study guides (blog) | Research claims cited (rule 3) |
-| L1, L2 | Competitor comparison, SAT prep app | Later (R24; post-launch list :226) |
+| P5 | Free practice test → free diagnostic | Built (`shared/content/pages/guides.ts:48`). Every public CTA routes to the free diagnostic (Q4 :194) |
+| P6 | Parent pages: tutor cost, Lyceon vs a tutor, is tutoring worth it | Built (`shared/content/pages/parents.ts:35-37`). Category comparison and cited competitor prices, Karl-approved (§3.6); Lyceon's price is the live price, never in the HTML (`content-publish-gate.test.ts:413`) |
+| P7 | Online SAT prep landing | Built (`guides.ts:49`). Rule 2; differentiators at a high level only (C2) |
+| P8 | How-to-study guide, plus the blog | Built (`guides.ts:50`; C4 posts, §8.1). Research claims cited (rule 3) |
+| L1, L2 | Head-to-head competitor pages, SAT prep app | Later (R24; post-launch list :226) |
 | SKIP | Near-me / city pages, books | Never (R23; rule 8: no doorway or city pages) |
 
-No page type is a thin templated variant of another (rule 8). A page exists only if it carries content of its own.
+No page type is a thin templated variant of another (rule 8); every content page carries its own body text (`content-publish-gate.test.ts:170`).
 
 ## **8.4 The publish gate**
 
 (C3 :204)
 
-**Automated checks.** A page publishes only when every check passes:
+The gate runs **inside the build**: the prerender calls `assertContentPagesPublishable` over every content page and every blog post and throws with every problem at once, so an unapproved or unsourced page cannot deploy (`client/src/prerender/entry-server.tsx:245-277, :325`; `shared/seo/content-gate.ts:1-31`). Two pure checks:
 
-* doctrine rules 2 and 3 (no mechanism; sources present);
-* banned phrases and outcome guard (§3.4);
-* metadata lengths;
-* every link resolves;
-* the register rows exist (§3.3).
+* **On the page data** (`contentPageProblems`, `content-gate.ts:198`):
+  * Karl's approval present, and dated on or after `lastModified`;
+  * title ≤ 60 characters, description 120–160 (`content-gate.ts:39-41`);
+  * a basis (source or claim row) on every block of text;
+  * every cited claim row exists in the inventory, and every cited source URL appears in it;
+  * the banned-phrase and outcome guards (§3.4);
+  * every internal link resolves, and a link to a 301 does not count as resolving.
+* **On the rendered HTML** (`renderedPageProblems`, `content-gate.ts:317`): exactly one `<h1>`, headings that never skip a level, and every internal link in the body resolving.
 
-Proof named in C3: a planted unsourced claim and a planted proprietary claim are both blocked in CI.
+**Planted-defect proof** (`tests/ci/content-publish-gate.test.ts:246-350`, run in CI at `ci.yml:122`; the build at `ci.yml:149` runs the gate itself). The gate passes on every real page and on the page the plants start from (presence before absence), then FAILS on each plant:
+* an unsourced block;
+* an unapproved page;
+* an approval older than the last edit;
+* an unknown claim row;
+* a source missing from the inventory;
+* a banned phrase, and an unapproved outcome claim;
+* meta outside the limits;
+* a link to a 301;
+* two `<h1>`s, and a skipped heading level.
 
-**Karl's approval.** Karl approves briefs and publishing (R21 :68). The approval is recorded against the content item.
+**Karl's approval.** Karl approves briefs and publishing (R21 :68). The approval is recorded on the content object itself and quoted in the claim inventory (`claim-inventory.md:90`).
 
 ## **8.5 The automation dial**
 
 (R21 :68)
 
 * **Raising it.** Automation increases one step after **3 consecutive approvals with no pushback** for a content stream.
+* **Current position: 2 of 3** (Karl, 2026-10-06). The two counted approvals are the Wave 3 pages ("Copy: approved as drafted", 2026-10-05) and the C4 blog rewrites ("approved by Karl as drafted", 2026-10-05). The next approval without pushback moves the dial one step.
 * **Resetting it.** Any pushback resets the count.
-* **Fixed parts.** The automated checks (§8.4) never relax, and rule-5 claims always need Karl's approval, whatever the dial.
+* **Fixed parts.** The gate (§8.4) never relaxes, and rule-5 claims always need Karl's approval, whatever the dial.
 
 ## **8.6 AI-written content**
 
@@ -609,7 +641,7 @@ Proof named in C3: a planted unsourced claim and a planted proprietary claim are
 
 ## **8.7 The AI CMO in Slack**
 
-(R22 :69; C5 :206)
+(R22 :69; C5 :206) **Not built.**
 
 * **Role.** The content workflow runs with humans in Slack (Claude Tag): idea → brief → draft → approval, visible in one thread.
 * **No publishing authority.** The AI CMO only proposes. Its drafts go through §8.4 like any other content.
@@ -628,7 +660,7 @@ Direction, not contract. Each channel gets its own rules when it is built.
   * never under-13 (rule 7).
 * **Reviews** (D4 :215): Trustpilot invites to guardians and adults (§7.5), and testimonial display per §7.6.
 * **Community** (D2 :213): a Discord server and a named-human r/SAT presence. Brand intent is Doc 10 §8.3 and §8.5.
-* **Paid** (R27 :74; P1 :222): about $100 to start, not hardcoded anywhere. **Parent targeting only.** Spend is synced into PostHog.
+* **Paid** (R27 :74; P1 :222): a small initial test budget, not recorded here. **Parent targeting only.** Spend is synced into PostHog.
 * **Post-launch** (plan :226; R20 :63):
   * average score improvement (R31);
   * an owned subreddit and Reddit API;
@@ -664,8 +696,10 @@ The proof lives in the repo and the internal register, never on a public page (r
 | INV-10A-16 | Review cadence (120 days, 2 dismissals, review stops it); no gating; Trustpilot 18+ only | `tests/ci/product-feedback.contract.test.ts`; `tests/ci/marketing-consent-reviews.pg.ci.test.ts` (`ci.yml:2040`) | Gated |
 | INV-10A-17 | Page CSP holds across real page flows (QOTD, Turnstile, PostHog) | `tests/e2e/page-csp-flows.spec.ts` | **Tested, not in CI**: plan §10 follow-up |
 | INV-10A-18 | Every sitemap URL is crawlable without JavaScript (title, self-canonical, body) | `scripts/seo/crawl-check.mjs` (F1, plan :171); F1 production proof (plan :260) | **Not in CI**: plan §10 follow-up |
-| INV-10A-19 | Content publish gate blocks a planted unsourced or proprietary claim | C3 (plan :204) | **Not built** (§8) |
+| INV-10A-19 | No content page builds unless it passes the publish gate (approval, basis on every block, inventory rows and sources, guards, meta, links, headings) | `client/src/prerender/entry-server.tsx:245-277, :325` (the build, `ci.yml:149`); planted defects `tests/ci/content-publish-gate.test.ts:246-350` (`ci.yml:122`) | Gated (planted-defect proof) |
 | INV-10A-20 | Lighthouse targets (§4.7) | Manual SHOT per release | Manual by ruling (owner answer 4) |
+| INV-10A-21 | Content pages expose only past QOTD: domain pages only, at most 2 per domain or section, never today's, no answer marked; no skill pages | `tests/ci/content-publish-gate.test.ts:124, :378, :391, :404`; schema cap `seo-content-schema.ts:114` | Gated |
+| INV-10A-22 | Analytics misconfiguration logs loudly, naming the variable only | `tests/ci/analytics-emit-event.contract.test.ts:303-330` (`ci.yml:122`) | Gated; production `user_signed_up` proof pending (§6.6) |
 
 ---
 
@@ -673,7 +707,7 @@ The proof lives in the repo and the internal register, never on a public page (r
 
 ## **11.1 Forward-references (bounded)**
 
-* **FWD-10A-A**: the content engine (§8; C1–C5). Contract here, build in Wave 3.
+* **FWD-10A-A**: the AI CMO in Slack (C5; §8.7). C1–C4 are built (§8).
 * **FWD-10A-B**: competitor comparison pages, with substantiation (R24; L1).
 * **FWD-10A-C**: progress-sharing visualizations (Doc 10 §7.1). No ruling; not planned.
 * **FWD-10A-D**: public analytics surfaces (Doc 10 §6, FWD-10-D). Post-launch, n≥100, Karl's approval (SCL-203 IS; R31).
@@ -681,7 +715,7 @@ The proof lives in the repo and the internal register, never on a public page (r
 
 ## **11.2 SCL dependencies**
 
-Every entry Doc 10A rests on is PROPOSED (owner answer 2):
+Every entry Doc 10A rests on is PROPOSED (owner answer 2). **Lock requires all eight ruled: SCL-200, 201, 202, 203, 204, 208, 213 and 218** (Karl, 2026-10-06):
 
 | SCL | Doc 10A rests on it for |
 |---|---|
@@ -710,6 +744,11 @@ All four were answered by Karl on 2026-10-05:
 
 No question is open. New ones raised in external review are added here as Q-10A-5 onward.
 
+**Open items (evidence, not decisions):**
+
+* **Masked-replay screenshot.** F15's screenshot of a real practice replay with the question/answer area blank is the evidence for the SCL-204 / Doc 06A §5.2 compliance gate (§6.5). Not yet recorded.
+* **`user_signed_up` in production.** PostHog receiving `user_signed_up` with `signup_source` after Karl's fresh signup test (§6.6).
+
 ## **11.4 Follow-ups routed to the plan**
 
 The repairs found while drafting are a numbered list in plan §10, not rules here, except where a rule above names its own follow-up.
@@ -735,10 +774,10 @@ Doc 10A V1.0 is acceptable for lock when:
 2. §2 carries the doctrine by reference, plus Karl's four clarifications.
 3. §3 maps every claim category onto Doc 10 §11.6 with rule 5 layered on top (CR-10A-02), and names the register, the guards and the approval flow.
 4. §4–§7 state each rule with a citation, and every "not met" rule has a plan follow-up.
-5. §8 is marked NOT BUILT and states the contract C1–C5 must meet.
+5. §8 describes the content engine as built (#1127): the schema, the in-build publish gate with its planted-defect proof, the 23 pages and the C4 blog rewrites, each with citations; C5 is marked not built.
 6. §10 maps every invariant to a gate, test or manual proof, with an honest status.
 7. Every rule resting on a PROPOSED SCL is marked "subject to".
-8. External review is complete, every §11.3 question is answered or deferred, and SCL-218 is ruled.
+8. External review is complete, every §11.3 question is answered or deferred, and SCL-200, 201, 202, 203, 204, 208, 213 and 218 are all ruled.
 9. Karl moves the file into `docs/Spec/` (G6 proof).
 
 ---
@@ -756,7 +795,7 @@ Doc 10A V1.0 is acceptable for lock when:
 * answer 7: QOTD one-answer-per-visit as built, the stat reads "% answered correctly", tokens stable per day;
 * answer 8: Turnstile production fail-closed as a contract rule, with the code as a follow-up.
 
-Doc 10 is referenced, never restated (§8.2, §8.3, §9, §4.3). §8 is written as the not-built contract for C1–C5. Status: Draft for review.
+Doc 10 is referenced, never restated (§8.2, §8.3, §9, §4.3). §8 was written as the not-built contract for C1–C5 (superseded by CR-10A-04: §8 is now as-built). Status: Draft for review.
 
 **CR-10A-02.** Claim control adopts Doc 10 §11.6's four categories (:862-867) and layers doctrine rule 5 on top. A **Lyceon-specific** Category 1 claim needs Karl's written approval, although Doc 10 §11.6 (:871) lets Category 1 claims appear "without founder review". Generic, industry-standard Category 1 wording (rule 1) needs none. Doc 10 §11.6's Category 1 example at :864 is a mechanism (rule 2) and is not usable public copy. The inventory's a–e labels are retired via §3.2. Owner answer 5, 2026-10-05. The departure from locked Doc 10 is recorded in **SCL-218** (PROPOSED; ruled at lock).
 
@@ -767,10 +806,26 @@ Doc 10 is referenced, never restated (§8.2, §8.3, §9, §4.3). §8 is written 
 * Q-10A-3: the general-audience posture is recorded in §6.4.
 * Q-10A-4: the CSP allowances are kept with their reason in §4.6, and FU10 (CSP tightening audit) is added to the plan.
 
+**CR-10A-04.** Karl's CTO/CMO review of V0.1, 2026-10-06; V0.2:
+
+1. §8 rewritten as as-built (#1127): content schema, in-build publish gate, 23 pages, C4 blog rewrites, with citations; C5 stays not built. INV-10A-19 → gated (planted-defect proof). Acceptance criterion 5 updated.
+2. §5.7 and §8.3 P2: domain pages only (8), up to 2 past QOTD per domain; skill pages are never built (Karl, 2026-10-05; R20a superseded on this point). INV-10A-21 added.
+3. §6.5: replay is on (project setting enabled 2026-10-05 after F15; recordings exist). Open item: the masked-replay screenshot as the SCL-204 / Doc 06A §5.2 gate evidence.
+4. §1.2 and §4.5: every Wave 3 route listed with owner Doc-10A, and the three `/digital-sat*` 301s.
+5. §6.6: analytics misconfiguration logs loudly, variable name only (#1121). INV-10A-22 added; production `user_signed_up` proof pending.
+6. §11.2 and §13 #8: lock requires SCL-200–204, 208, 213 and 218 all ruled.
+7. §3.6: the slogan "Study Smarter, Score Higher" (Karl-approved; on the counsel checklist) and R3 positioning as the standing copy direction.
+8. §3.6: category comparisons and cited competitor price data allowed with Karl's approval; head-to-head named-competitor pages stay later (R24).
+9. §9: the paid figure removed ("a small initial test budget, not recorded").
+10. §6.8: `homepage-hero` is built and launches on the next production deploy.
+11. §8.5: the automation dial is at 2 of 3 approvals (Wave 3 pages, C4 blog rewrites).
+
+Line citations into files #1127 changed were re-pinned (`public-meta.ts`, `structured-data.ts`, `banned-phrases.ts`, `claim-inventory.md`). §4.3 records that the blog author is now a JSON-LD Organization (FU6 closed by #1127).
+
 ---
 
 # **§15 — Closing**
 
 Doc 10A turns the doctrine and the SEO vertical's rulings into a contract for the public side of Lyceon: what a visitor may be told, how a public page is built and found, how the Question of the Day is served without leaking, and what is measured only after consent. Most of it is already built and gated (§10). Where it is not, the gap is named with its follow-up rather than written as if it held.
 
-**End of Doc 10A V0.1 Draft.**
+**End of Doc 10A V0.2 Draft.**
