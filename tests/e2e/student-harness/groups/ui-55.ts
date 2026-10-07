@@ -71,7 +71,7 @@ export const UI_55: PageGroup = {
     {
       id: "paid-week",
       title:
-        "Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D), no streak line; Edit schedule and Regenerate plan; the starred test day; no facts strip (SCL-211); panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Your schedule, Show",
+        "Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D), no streak line; Edit schedule and Regenerate plan; the starred test day; no facts strip (SCL-211); panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Show (no \"Your schedule\": QA 2026-10-07 item 11(e))",
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,

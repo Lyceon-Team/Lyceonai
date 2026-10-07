@@ -13,9 +13,13 @@
  * STUDENT. The header carries Week/Month, Today and the arrows on the left, the visible range
  * centred (`M/D – M/D`), and Edit schedule and Regenerate plan on the right. The right panel
  * carries the navigable mini month, the goal card (days until the SAT with a ★ date pill,
- * Target and Projected side by side, Target only on the free plan, and Edit goals), the
- * "Your schedule" summary (register §2 moves it here) and the Show category filters. The
- * guardian calendar keeps `LeftRail` and `TopBar` (`Chrome.tsx`) unchanged.
+ * Target and Projected side by side, Target only on the free plan, and Edit goals) and the
+ * Show category filters. The guardian calendar keeps `LeftRail` and `TopBar` (`Chrome.tsx`)
+ * unchanged.
+ *
+ * NO "YOUR SCHEDULE" SUMMARY (Karl's ruling on production QA 2026-10-07, item 11(e): "remove
+ * 'Your schedule' from the right panel", amending SCL-211's panel list). The schedule is read
+ * and changed in the Edit schedule sheet, whose live readout is the same sentence.
  *
  * Everything here draws with the student tokens (`lyc-*`, `--cat-*`), so it follows the
  * device theme. Copy is the prototype's or already shipped (`ABSENT_COPY`).
@@ -448,27 +452,6 @@ function GoalFigure({
         </span>
       )}
     </div>
-  );
-}
-
-/** §17.3's "Your schedule" summary — register §2 moves it from the old rail into the panel. */
-export function ScheduleSummary({ summary }: { summary: string }): JSX.Element {
-  return (
-    <section
-      aria-labelledby="calendar-schedule-h"
-      className="flex flex-col gap-1.5"
-      data-testid="calendar-schedule-card"
-    >
-      <h2 id="calendar-schedule-h" className={PANEL_H2}>
-        Your schedule
-      </h2>
-      <p
-        className="m-0 text-lyc-body text-lyc-ink"
-        data-testid="calendar-schedule-summary"
-      >
-        {summary}
-      </p>
-    </section>
   );
 }
 

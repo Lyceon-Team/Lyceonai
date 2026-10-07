@@ -109,17 +109,12 @@ import {
   CalendarPanelColumn,
   GoalCard,
   MiniMonth,
-  ScheduleSummary,
   ShowFilters,
   StudentCalendarHeader,
 } from "./components/StudentChrome";
 import type { DayActions } from "./components/DayMenu";
 import { SetupPopup, type SetupAnswers } from "./components/SetupPopup";
-import {
-  SettingsSheet,
-  scheduleSummary,
-  type SettingsDraft,
-} from "./components/SettingsSheet";
+import { SettingsSheet, type SettingsDraft } from "./components/SettingsSheet";
 
 /**
  * Everything this screen can do to the server. A guardian caller passes `undefined`, which
@@ -754,21 +749,9 @@ export function CalendarView({
               targetScore={targetScore}
               projection={projection ?? []}
             />
-            {schedule === undefined ? null : (
-              <ScheduleSummary
-                // Derived from the profile and the served estimates, never stored — the
-                // same function the sheet's live readout uses, so the panel and the sheet
-                // cannot describe the same schedule differently.
-                summary={scheduleSummary(schedule.profile, schedule.estimates, {
-                  targetExamDate: schedule.profile.target_exam_date,
-                  today,
-                  // The one field the readout reads, named rather than spread: the
-                  // prefill beside it on `examPlanning` is for the frequency control,
-                  // not for this sentence.
-                  finalExamLeadDays: schedule.examPlanning.final_exam_lead_days,
-                })}
-              />
-            )}
+            {/* No "Your schedule" summary here (Karl's ruling on production QA 2026-10-07,
+                item 11(e), amending SCL-211's panel list): the schedule is read and changed
+                in the Edit schedule sheet, whose live readout is the same sentence. */}
             <ShowFilters
               filters={filters}
               onToggle={(tone, next) =>

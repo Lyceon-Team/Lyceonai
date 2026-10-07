@@ -2313,6 +2313,15 @@ plant "QA11-B7" "the guardian's block sheet turns into the student's modal" \
 assert s.count(a) == 1
 s = s.replace(a, "  modal = true,\n", 1)'
 
+# (e) Karl's ruling: no "Your schedule" in the right panel.
+
+plant "QA11-E1" "the right panel shows \"Your schedule\" again" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "                in the Edit schedule sheet, whose live readout is the same sentence. */}\n            <ShowFilters"
+assert s.count(a) == 1
+s = s.replace(a, "                in the Edit schedule sheet, whose live readout is the same sentence. */}\n            <section data-testid=\"calendar-schedule-card\"><h2>Your schedule</h2></section>\n            <ShowFilters", 1)'
+
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \
   "client/src/components/home/PaidHome.tsx" \

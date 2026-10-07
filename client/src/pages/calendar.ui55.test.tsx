@@ -685,6 +685,29 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
   });
 });
 
+describe('paid: the right panel has no "Your schedule" (QA 2026-10-07 item 11(e))', () => {
+  it("mini month, goal card and Show, in that order; no schedule summary", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    const panel = within(screen.getByTestId("app-shell-panel")).getByTestId(
+      "calendar-panel",
+    );
+    // Presence: the panel's three sections drew, and the schedule exists to summarise
+    // (Edit schedule is in the header).
+    expect(
+      Array.from(panel.children).map((el) => el.getAttribute("data-testid")),
+    ).toEqual([
+      "calendar-mini-month",
+      "calendar-goal-card",
+      "calendar-show-filters",
+    ]);
+    expect(screen.getByRole("button", { name: "Edit schedule" })).toBeTruthy();
+    // Absence.
+    expect(panel.textContent).not.toContain("Your schedule");
+    expect(screen.queryByTestId("calendar-schedule-card")).toBeNull();
+  });
+});
+
 describe("paid: the Show filters (DESIGN.md §4)", () => {
   it("hide and show a category's blocks", async () => {
     await mount("paid");
