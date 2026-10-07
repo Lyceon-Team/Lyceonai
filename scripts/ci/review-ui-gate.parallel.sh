@@ -21,6 +21,11 @@
 # byte-identity proof: a tree identical to HEAD is the tree the job's whole-suite step already ran
 # green, earlier in the same job.
 #
+# Selection (owner decision 2026-10-07): REVIEW_UI_GATE_ONLY_CHANGED=<file of changed paths> is
+# passed through to every shard, which then runs only the plants that file selects (see the
+# mutations script). Every shard must agree on how many were selected; with no selection set,
+# every plant must be selected.
+#
 # Usage:  bash scripts/ci/review-ui-gate.parallel.sh   (REVIEW_UI_GATE_SHARDS=<n>, default nproc)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -70,24 +75,30 @@ wait
 
 FAIL=0
 TOTAL=""
+SELECTED=""
 RAN_SUM=0
 RED_SUM=0
 for ((i = 0; i < SHARDS; i++)); do
   printf '\n════ shard %s/%s ════\n' "$i" "$SHARDS"
   cat "$WORK/s$i.log"
   rc="$(cat "$WORK/s$i.rc")"
-  # The script's last count line: "plant count: total=<T> ran=<R> red=<P>".
-  line="$(grep -E '^plant count: total=[0-9]+ ran=[0-9]+ red=[0-9]+$' "$WORK/s$i.log" | tail -1 || true)"
+  # The script's last count line: "plant count: total=<T> selected=<S> ran=<R> red=<P>".
+  line="$(grep -E '^plant count: total=[0-9]+ selected=[0-9]+ ran=[0-9]+ red=[0-9]+$' "$WORK/s$i.log" | tail -1 || true)"
   if [ "$rc" != 0 ] || [ -z "$line" ]; then
     echo "!! shard $i failed (exit $rc)"
     FAIL=1
     continue
   fi
   t="$(sed -E 's/.*total=([0-9]+).*/\1/' <<<"$line")"
+  sel="$(sed -E 's/.*selected=([0-9]+).*/\1/' <<<"$line")"
   r="$(sed -E 's/.*ran=([0-9]+).*/\1/' <<<"$line")"
   p="$(sed -E 's/.*red=([0-9]+).*/\1/' <<<"$line")"
   if [ -z "$TOTAL" ]; then TOTAL="$t"; elif [ "$t" != "$TOTAL" ]; then
     echo "!! shard $i counted $t plants, an earlier shard counted $TOTAL"
+    FAIL=1
+  fi
+  if [ -z "$SELECTED" ]; then SELECTED="$sel"; elif [ "$sel" != "$SELECTED" ]; then
+    echo "!! shard $i selected $sel plants, an earlier shard selected $SELECTED"
     FAIL=1
   fi
   RAN_SUM=$((RAN_SUM + r))
@@ -101,13 +112,18 @@ for ((i = 0; i < SHARDS; i++)); do
 done
 
 printf '\n────────────────────────────────\n'
-echo "plants: total=${TOTAL:-?} ran=$RAN_SUM red=$RED_SUM across $SHARDS shards in $(($(date +%s) - start))s"
+echo "plants: total=${TOTAL:-?} selected=${SELECTED:-?} ran=$RAN_SUM red=$RED_SUM across $SHARDS shards in $(($(date +%s) - start))s"
 if [ -z "$TOTAL" ] || [ "$TOTAL" -eq 0 ]; then
-  echo "!! no plant ran"
+  echo "!! no plant was counted"
   FAIL=1
-elif [ "$RAN_SUM" -ne "$TOTAL" ] || [ "$RED_SUM" -ne "$TOTAL" ]; then
-  echo "!! every plant must run exactly once and go red"
+elif [ -z "${REVIEW_UI_GATE_ONLY_CHANGED:-}" ] && [ "$SELECTED" -ne "$TOTAL" ]; then
+  echo "!! no selection is set, so every plant must be selected"
   FAIL=1
+elif [ "$RAN_SUM" -ne "$SELECTED" ] || [ "$RED_SUM" -ne "$SELECTED" ]; then
+  echo "!! every selected plant must run exactly once and go red"
+  FAIL=1
+elif [ "$SELECTED" -eq 0 ]; then
+  echo "no plant targets a file this change touches; nothing for the gate to prove here (the full tier runs all $TOTAL)"
 fi
 if ! git diff --quiet HEAD --; then
   echo "!! the main tree changed during the gate"

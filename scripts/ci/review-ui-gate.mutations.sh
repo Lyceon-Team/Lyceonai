@@ -20,6 +20,13 @@
 # byte-identical to HEAD instead. Unset, both behave as before: every plant, then the suite.
 # vitest is started with node directly, not through `pnpm exec` (same binary and config, ~0.7 s
 # less per plant).
+#
+# Selection (owner decision 2026-10-07, CI audit item 3): with REVIEW_UI_GATE_ONLY_CHANGED=<file>
+# naming a list of changed paths (one per line), only the plants whose target file or one of
+# whose test paths the change touches are run; every other plant is counted but not applied.
+# Pull requests into integration branches run that subset; the full tier (ci-full.yml) runs
+# every plant. A plant whose target or test changed is exactly the plant whose proof the change
+# can break, so the subset is the part of the gate a given change can affect.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -146,14 +153,35 @@ if ! [[ "$SHARD_I" =~ ^[0-9]+$ && "$SHARD_N" =~ ^[1-9][0-9]*$ ]] || [ "$SHARD_I"
   exit 2
 fi
 PLANT_NO=0
+SELECTED=0
 RAN=0
+ONLY_CHANGED="${REVIEW_UI_GATE_ONLY_CHANGED:-}"
+if [ -n "$ONLY_CHANGED" ] && [ ! -f "$ONLY_CHANGED" ]; then
+  echo "!! REVIEW_UI_GATE_ONLY_CHANGED=$ONLY_CHANGED is not a file"
+  exit 2
+fi
+
+# selected <file> <test-paths>: true when no selection is set, or the change touches the plant's
+# target file or any of its test paths (a test path may be a directory).
+selected() {
+  [ -z "$ONLY_CHANGED" ] && return 0
+  local target="$1" t
+  grep -qxF "$target" "$ONLY_CHANGED" && return 0
+  for t in $2; do
+    grep -qxF "$t" "$ONLY_CHANGED" && return 0
+    awk -v p="${t%/}/" 'index($0, p) == 1 { found = 1 } END { exit !found }' "$ONLY_CHANGED" && return 0
+  done
+  return 1
+}
 
 # plant <id> <description> <test-path> <file> <python-mutation>
 plant() {
   local id="$1" desc="$2" tests="$3" file="$4" mutation="$5"
 
   PLANT_NO=$((PLANT_NO + 1))
-  if [ $(((PLANT_NO - 1) % SHARD_N)) -ne "$SHARD_I" ]; then return; fi
+  if ! selected "$file" "$tests"; then return; fi
+  SELECTED=$((SELECTED + 1))
+  if [ $(((SELECTED - 1) % SHARD_N)) -ne "$SHARD_I" ]; then return; fi
   RAN=$((RAN + 1))
 
   printf '\n── %s ── %s\n' "$id" "$desc"
@@ -2289,7 +2317,7 @@ s = s.replace(a, "    if (true)\n", 1)'
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"
-echo "plant count: total=$PLANT_NO ran=$RAN red=$PASS"
+echo "plant count: total=$PLANT_NO selected=$SELECTED ran=$RAN red=$PASS"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "GATE FAILED"
