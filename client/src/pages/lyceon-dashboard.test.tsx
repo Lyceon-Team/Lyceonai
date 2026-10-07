@@ -1335,3 +1335,68 @@ describe("QA item 5: Home's starts show a pending state from the first click", (
     expect(start.getAttribute("aria-busy")).toBe("true");
   });
 });
+
+describe("QA item 14: Home's mastery rows and recent sessions go somewhere", () => {
+  it("each mastery row links to its own domain on /mastery", async () => {
+    await mount("paid", { calendar: "ready" });
+    const mastery = await screen.findByTestId("home-mastery");
+    const rows = await within(mastery).findAllByTestId("mastery-row");
+    // Presence: the eight canonical domains.
+    expect(rows).toHaveLength(8);
+    const hrefs = rows.map((r) => (r.closest("a") ?? r).getAttribute("href"));
+    expect(hrefs[0]).toBe("/mastery?domain=M%3AAlgebra");
+    expect(hrefs[4]).toBe(
+      `/mastery?domain=${encodeURIComponent("RW:Craft and Structure")}`,
+    );
+    expect(new Set(hrefs).size).toBe(8);
+    // "See every skill" still opens the whole page.
+    expect(
+      within(mastery)
+        .getByRole("link", { name: "See every skill" })
+        .getAttribute("href"),
+    ).toBe("/mastery");
+  });
+
+  it("a recent-session row reviews that session's open questions and lands in the review", async () => {
+    const { history } = await mount("paid", { calendar: "ready" });
+    net.handlers.unshift((url, init) =>
+      init?.method === "POST" && url === "/api/review/sessions"
+        ? json({ sessionId: LAUNCHED_SESSION }, 201)
+        : undefined,
+    );
+    const panel = screen.getByTestId("app-shell-panel");
+    const rows = await within(panel).findAllByTestId("home-recent-review");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.tagName).toBe("BUTTON");
+    const first = rows[0];
+    if (first === undefined) throw new Error("a recent row");
+    await act(async () => {
+      fireEvent.click(first);
+    });
+    await waitFor(() =>
+      expect(history.at(-1)).toBe(`/review/session/${LAUNCHED_SESSION}`),
+    );
+    const create = net.log.filter((l) => l === "POST /api/review/sessions");
+    expect(create).toHaveLength(1);
+  });
+
+  it("a pressed recent row says 'Starting…' and the others wait", async () => {
+    net.hold = {
+      pattern: /^\/api\/review\/sessions$/,
+      gate: new Promise<void>(() => undefined),
+    };
+    await mount("paid", { calendar: "ready" });
+    const panel = screen.getByTestId("app-shell-panel");
+    const [first, second] =
+      await within(panel).findAllByTestId("home-recent-review");
+    if (first === undefined || second === undefined)
+      throw new Error("two recent rows");
+    await act(async () => {
+      fireEvent.click(first);
+    });
+    expect(first.getAttribute("aria-busy")).toBe("true");
+    expect(first.textContent).toContain("Starting…");
+    expect((second as HTMLButtonElement).disabled).toBe(true);
+    expect(second.textContent).toContain("1 to review");
+  });
+});

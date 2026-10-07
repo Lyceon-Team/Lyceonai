@@ -35,11 +35,15 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import type { CalendarReadyResponse } from "@lyceon/shared/calendar";
+import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
 import { displayFormName } from "@lyceon/shared/exam-form-display";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
-import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import {
+  canonicalDomainNodes,
+  masteryDomainHref,
+} from "@/components/mastery/domain-nodes";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { STARTING_LABEL } from "@/lib/pending-copy";
@@ -55,7 +59,11 @@ import {
 } from "@/features/exam/lib/useFullLengthPhonePrecheck";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
-import { useActiveReviewSessions, useReviewPool } from "@/hooks/useReview";
+import {
+  useActiveReviewSessions,
+  useCreateReviewSession,
+  useReviewPool,
+} from "@/hooks/useReview";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { FullLengthCard } from "./FullLengthCard";
@@ -115,6 +123,28 @@ export function PaidHome({
   const { launch, pendingBlockId } = useLaunchBlock(navigate);
   const [launchFailed, setLaunchFailed] = useState(false);
   const precheck = useFullLengthPhonePrecheck();
+  // QA item 14 (2026-10-07): a "Recent sessions" row reviews that session's open questions,
+  // the same start as Review's "Redo a past session".
+  const createReview = useCreateReviewSession();
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviewFailure, setReviewFailure] = useState<string | null>(null);
+  const reviewRecent = async (row: ReviewPoolSourceSession): Promise<void> => {
+    setReviewing(row.source_session_id);
+    setReviewFailure(null);
+    const result = await createReview.startSession({
+      mode: "session",
+      filters: {
+        source_engine: row.source_engine,
+        source_session_id: row.source_session_id,
+      },
+    });
+    if (result.ok) {
+      navigate(`/review/session/${result.sessionId}`);
+      return;
+    }
+    setReviewing(null);
+    setReviewFailure(result.failure.message);
+  };
 
   const ready: CalendarReadyResponse | null =
     calendar.data?.status === "ready" ? calendar.data : null;
@@ -254,7 +284,7 @@ export function PaidHome({
                       levelKey={node.levelKey}
                       displayName={node.displayName}
                       variant="wide"
-                      href="/mastery"
+                      href={masteryDomainHref(node)}
                     />
                   ),
                 )}
@@ -282,6 +312,9 @@ export function PaidHome({
           <RecentSessionsSection
             sessions={pool.pool?.sessions ?? []}
             todayKey={today}
+            onReview={(row) => void reviewRecent(row)}
+            startingId={reviewing}
+            failure={reviewFailure}
           />
         </div>
       </AppShellPanel>

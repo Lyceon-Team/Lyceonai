@@ -104,6 +104,7 @@ FILES=(
   "client/src/components/ui/button.tsx"
   "client/src/pages/practice.tsx"
   "client/src/lib/session-reads.ts"
+  "client/src/components/home/HomePanel.tsx"
 )
 
 snapshot_all() {
@@ -2384,6 +2385,37 @@ plant "QA6-4" "the runner's own state read is refetched under the runner" \
   'a = "      refetchType: \"none\",\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
+
+# Item 14: Home's mastery rows deep-link to their domain; recent-session rows review that session.
+QA_MASTERY="client/src/pages/mastery.test.tsx"
+
+plant "QA14-H1" "Home's mastery rows go to the top of /mastery again" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "                      href={masteryDomainHref(node)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                      href=\"/mastery\"\n", 1)'
+
+plant "QA14-M1" "the Mastery page ignores the domain in its address" \
+  "$QA_MASTERY" \
+  "client/src/pages/mastery.tsx" \
+  'a = "    () => new Set(linkedDomain === null ? [] : [linkedDomain]),\n"
+assert s.count(a) == 1
+s = s.replace(a, "    () => new Set(),\n", 1)'
+
+plant "QA14-M2" "the linked domain opens but is never scrolled into view" \
+  "$QA_MASTERY" \
+  "client/src/pages/mastery.tsx" \
+  'a = "      ?.scrollIntoView({ block: \"start\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "      ?.getAttribute(\"id\");\n", 1)'
+
+plant "QA14-R1" "a recent-session row looks pressable but does nothing" \
+  "$QA_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "                  onClick={() => onReview(s)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  onClick={() => undefined}\n", 1)'
 
 # ── END QA-FLOWS
 

@@ -52,7 +52,10 @@ import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { MasteryMeter } from "@/components/mastery/MasteryMeter";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
-import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import {
+  canonicalDomainNodes,
+  masteryDomainHref,
+} from "@/components/mastery/domain-nodes";
 import {
   DEFAULT_QUESTIONS_PER_SESSION,
   QUESTIONS_PER_SESSION_OPTIONS,
@@ -292,7 +295,7 @@ export default function Practice(): JSX.Element {
                           levelKey={node.levelKey}
                           displayName={node.displayName}
                           variant="compact"
-                          href="/mastery"
+                          href={masteryDomainHref(node)}
                         />
                       ),
                     )}

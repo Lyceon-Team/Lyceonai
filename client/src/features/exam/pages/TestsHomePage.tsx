@@ -70,7 +70,10 @@ import {
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
-import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import {
+  canonicalDomainNodes,
+  masteryDomainHref,
+} from "@/components/mastery/domain-nodes";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -276,7 +279,7 @@ export default function TestsHomePage(): JSX.Element {
                             levelKey={node.levelKey}
                             displayName={node.displayName}
                             variant="compact"
-                            href="/mastery"
+                            href={masteryDomainHref(node)}
                           />
                         ),
                       )}

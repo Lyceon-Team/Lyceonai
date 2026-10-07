@@ -33,3 +33,45 @@ export function canonicalDomainNodes(
     ),
   );
 }
+
+/**
+ * @spec [owner QA list (Karl, 2026-10-07) item 14: "Home mastery rows deep-link to their domain on
+ *   /mastery (check /mastery supports a domain anchor/param; add an anchor id if it's a client-only
+ *   change)"] | @implemented [2026-10-07]
+ *
+ * plain English: one domain's address on the Mastery page, `/mastery?domain=M%3AAlgebra` (section
+ * code and domain name). The page opens that domain's skills and scrolls it into view. Only a
+ * canonical (section, domain) pair is honoured; anything else reads as no domain, so the page
+ * opens as it always did.
+ */
+const MASTERY_DOMAIN_PARAM = "domain";
+
+function domainKey(section: MasterySection, domain: string): string {
+  return `${section}:${domain}`;
+}
+
+export function masteryDomainHref(node: {
+  section: MasterySection;
+  domain: string;
+}): string {
+  const key = encodeURIComponent(domainKey(node.section, node.domain));
+  return `/mastery?${MASTERY_DOMAIN_PARAM}=${key}`;
+}
+
+/** The canonical domain a `/mastery` search string names, as the page's open-row key, or null. */
+export function masteryDomainFromSearch(search: string): string | null {
+  const raw = new URLSearchParams(search).get(MASTERY_DOMAIN_PARAM);
+  if (raw === null) return null;
+  const sections: readonly MasterySection[] = ["M", "RW"];
+  const known = sections.some((section) =>
+    CANONICAL_DOMAINS_BY_SECTION[section].some(
+      (domain) => domainKey(section, domain) === raw,
+    ),
+  );
+  return known ? raw : null;
+}
+
+/** The element id of one domain's block on the Mastery page (the scroll target). */
+export function masteryDomainAnchorId(key: string): string {
+  return `mastery-domain-${key.replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}`;
+}
