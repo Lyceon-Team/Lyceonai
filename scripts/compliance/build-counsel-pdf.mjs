@@ -45,7 +45,7 @@ const OUT = join(DRAFTS, "out/lyceon-counsel-package.pdf");
 const PRIVACY_POLICY = {
   pr: 1138,
   branch: "claude/privacy-policy-v6",
-  commit: "87b7f9d5b856019f8bc1799cf659d347c52e8960",
+  commit: "d16ed1d0a8af267db4da1b2225c35f7decc32da6",
   path: "legal/privacy-policy/v6/en.md",
 };
 const READING_ORDER = [
