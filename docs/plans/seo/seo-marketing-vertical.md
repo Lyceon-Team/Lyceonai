@@ -211,7 +211,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 |---|---|---|
 | D1 | QOTD to X, Instagram, TikTok, Facebook, YouTube, Threads via official APIs/schedulers | SHOT: published posts |
 | D2 | Discord server; named-human r/SAT presence | SHOT |
-| D3 | Marketing email lane: Resend broadcasts by audience bucket, one-click `List-Unsubscribe`, consent artifact live | READ/SHOT test broadcast + unsubscribe |
+| D3 | Marketing email lane: Resend broadcasts by audience bucket, one-click `List-Unsubscribe`, consent artifact live. **Sync built 2026-10-07** (owner brief "SEO vertical — email lane"): daily reconcile Lyceon → Resend segments `Marketing — students` / `Marketing — guardians`, unsubscribe + complaint back-sync by webhook, removal at deletion request and at deletion; contract §14, runbook `docs/runbooks/marketing-email-resend.md` | READ/SHOT test broadcast + unsubscribe; READ segment counts vs `marketing_email_audience()` after deploy |
 | D4 | Trustpilot invites (guardians + 18+) and testimonial display per R29 | SHOT; WALK |
 | D5 | `/brag` video — script approved by Karl before production | Karl approval + published asset |
 

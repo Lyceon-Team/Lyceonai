@@ -942,6 +942,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-consent-reviews.mutations.sh
 
+      # Marketing email lane: plants the age rule and the pending-deletion exclusion out of the
+      # audience, a lost replay dedupe, a complaint logged as an unsubscribe, a provider grant,
+      # a signature bypass, ignored unsubscribes / complaints, deletion without bringing the
+      # unsubscribe back, a kept opt-out, the wrong segment, acting on a partial read, an address
+      # in a log and account deletion keeping the contact. Each must turn its test red by name.
+      - name: Marketing email lane mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/marketing-email-sync.mutations.sh
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost
@@ -2071,6 +2084,24 @@ jobs:
             --file tests/ci/marketing-consent-reviews.pg.ci.test.ts \
             --file tests/ci/marketing-consent-routes.pg.ci.test.ts \
             --file tests/ci/signup-analytics.pg.ci.test.ts
+
+      # @spec [contracts/notifications.contract.md §14; owner brief "SEO vertical — email lane"
+      # 2026-10-07] Marketing email lane -> real PG: opt-in synced to the right segment, opt-out
+      # and pending deletion removed, under-13 / no DOB never synced, unsubscribes brought back
+      # before deletion, bad signature rejected, unsubscribe + complaint back-sync with one
+      # consent-log row, replay deduplicated, no address in any log. Named BY FILE.
+      - name: Marketing email lane (Resend sync) → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run tests/ci/marketing-email-sync.pg.ci.test.ts \
+            --reporter=verbose --reporter=json --outputFile=/tmp/vitest-marketing-email.json
+          node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-marketing-email.json \
+            --file tests/ci/marketing-email-sync.pg.ci.test.ts
 
       # @spec [Doc-05E §5.1; Doc-05D §10.5; E6b / SCL-143] Full lifecycle: one exam per
       # student through the real /api/tests handlers to a score, then the executor's

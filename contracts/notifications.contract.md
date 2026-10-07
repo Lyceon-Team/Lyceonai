@@ -24,6 +24,7 @@ Three email lanes exist. This contract governs exactly one.
 | Billing email (receipts, dunning, trial ending) | Stripe | none |
 | **Product notifications** (in-app + email from one event) | **this contract** | `notification_events`, `notification_messages`, `notification_delivery_events`, `server/lib/notifications/*`, `server/routes/notifications.ts`, `server/routes/resend-webhook.ts` |
 | **Direct transactional sends** (guardian consent request; deletion-scheduled recovery link; guardian link invite; deletion-completed notice) | **this contract, §0.4** — same transport, NOT events (owner rulings R7/R8, 2026-09-03; invite and completed notice 2026-09-15) | `server/lib/notifications/direct-sends.ts` and its four call sites (three routes + the deletion cron executor) |
+| **Marketing email** (Resend broadcasts to opted-in users 13+, by audience segment) | **this contract, §14** (added 2026-10-07, owner brief "SEO vertical — email lane"; Karl's Step 0 decisions 1–6 of the same day) — the broadcasts themselves are composed and sent in Resend, not by this codebase | `server/lib/marketing-email-sync.ts`, the contacts client in `server/lib/notifications/transport.ts`, the contact/complaint branch of `server/routes/resend-webhook.ts`, migration `20261028000000_marketing_email_sync.sql` |
 
 **C0.1** No code under `server/lib/notifications/` or `server/routes/notifications.ts` sends auth or billing mail.
 *Violated if:* a template or transport call in those paths references password reset, email change, confirmation, receipts, invoices, or trial state.
@@ -223,6 +224,8 @@ payload", and it is the plant behind gate `Z-64` in `scripts/ci/calendar-writer-
 **C7.4** Mapping: `email.delivered → delivered`, `email.bounced → bounced`, `email.complained → complained`, `email.failed → failed`. `email.opened`, `email.clicked`, `email.sent`, and unknown types are acknowledged (200) and not recorded.
 *Violated if:* an open/click event writes any row, or a listed type maps to a different status.
 
+> **Amended 2026-10-07 (marketing lane, §14):** the receiver now reads the body as an envelope first, so a `contact.*` event (which has no `email_id`) is not rejected as malformed. `contact.updated` with `unsubscribed: true` and `email.complained` are recorded by the marketing lane (C14.5, C14.6); every other `contact.*` event is acknowledged (200) and not recorded, like the other untracked types. The C7.4 status mapping itself is unchanged.
+
 **C7.5** Dedupe and effect are one transaction: `public.apply_notification_delivery_event` inserts the `provider_event_id` and applies the status change in one function call. "Claimed but not applied" is unrepresentable.
 *Violated if:* the receiver writes the event id and the status in separate statements from application code, or a `notification_delivery_events` row with `message_id IS NOT NULL` has `applied_at IS NULL`.
 
@@ -393,4 +396,46 @@ with nothing in the product to explain why.
 | C1.1, C2.2, C2.3, C5.1, C5.2, C8.1 for `guardian_unlinked` | `tests/ci/guardian-unlinked.pg.ci.test.ts` — student revoke → guardian only; guardian revoke → student only; LY003 emits nothing and is 409; non-party student is 404; rollback leaves zero rows; `revocation_reason` absent from every payload and rendered template; ids distinct from `guardian_linked` for the same row |
 | C3.2 on the client (page + shells) | `client/src/pages/notifications.test.tsx` — full title and body rendered, cursor pagination, archived items only when asked, mark-all-seen once on arrival and never read, archive moves the row to the archived view, read is explicit (item open / Mark as read / Mark all as read), heading focus, labelled controls, absolute time behind the relative label, polite live region; `client/src/components/layout/shells.notification-bell.test.tsx` gate 3 — the page renders inside GuardianShell for a guardian and AppShell for a student, is registered in App.tsx behind RequireRole, and the bell links to it |
 | C11A.1 – C11A.6 | `tests/ci/deletion-phases-235.pg.ci.test.ts` — P2.1 the notice reaches the provider before the suppression call (the sequence, against a fake that enforces its own list), P2.2 the call is made only when `suppression_requested`, P2.3 a failure records `failed_manual`, pages once and the deletion still completes, P2.4 the sweep rescues both a failed and a status-less row and stops at `applied`, P2.5 clearing calls `DELETE /suppressions/{address}`, records re-consent, and refuses a `complaint`-origin entry |
+| C14.1 – C14.9 | `tests/ci/marketing-email-sync.pg.ci.test.ts` (S1–S7, W1–W5, D1, L1) and `tests/ci/marketing-email-sync.plan.test.ts`; C14.8 also `tests/ci/deletion-completed-notice.pg.ci.test.ts` A4.1. Every guard is planted by `scripts/ci/marketing-email-sync.mutations.sh` and must turn its test red by name |
 | §0.4 invite direct send, §36.2 limits | `tests/ci/guardian-invite.pg.ci.test.ts` — idempotent key on repeated submit; 3/day per address denied; body carries code + prefilled link and no progress data; redeem without auth creates nothing; byte-identical response for an address with and without an account |
+
+---
+
+## 14. Marketing email lane
+
+> Added 2026-10-07 (owner brief "SEO vertical — email lane"; Karl's Step 0 decisions, same day:
+> 1 daily reconcile only, no new Cloud Tasks queue, unsubscribes return immediately through the
+> webhook; 2 opting out deletes the Resend contact; 3 marketing stops at the deletion REQUEST;
+> 4 a complaint turns the opt-in off, source `email_complaint`; 5 this amendment, no SCL; 6 the
+> 72 manually imported launch contacts are retired by bringing their unsubscribes back first,
+> then deleting them). Grounds: Privacy Policy v6 §9.2; Doc 10 §9.21; plan row D3, R26.
+
+**C14.1** ONE AUDIENCE DEFINITION. Who may receive marketing email is `public.marketing_email_audience()` and nothing else: `marketing_opt_in`, a known date of birth 13 or more years ago (`marketing_opt_in_age_eligible`), `deleted_at IS NULL`, no `pending` row in `account_deletion_requests`, role `student` (segment `students`) or `guardian` (segment `guardians`). (No school-provisioned account type exists in the schema; when one does, it is excluded here.)
+*Violated if:* a contact is created for a profile the function does not return; or a second definition of the audience exists in application code.
+
+**C14.2** RESEND HOLDS EXACTLY THE AUDIENCE. The daily reconcile (`GET /api/internal/marketing-email-reconcile`, CRON_SECRET-gated) leaves one Resend contact per audience member, created into that member's segment (`RESEND_SEGMENT_ID_STUDENTS` / `RESEND_SEGMENT_ID_GUARDIANS`) with `unsubscribed: false`, and DELETES every other contact in the account — an opt-out, a deletion request, a role change (re-created in the right segment) and any manually imported contact alike.
+*Violated if:* after a run, a contact exists that no audience member backs, an audience member has no contact or one outside its segment, or a contact sits in both synced segments.
+
+**C14.3** UNSUBSCRIBES COME BACK BEFORE DELETION. A contact the reconcile is about to delete that carries `unsubscribed: true` is first reported to `apply_marketing_email_optout` (event `reconcile.unsubscribed`, ledger id `reconcile:<contact id>`). If that call fails, the contact is kept for the next run.
+*Violated if:* an unsubscribed contact is deleted while the matching profile is still opted in; or a failed opt-out is followed by the deletion.
+
+**C14.4** A PARTIAL PICTURE NEVER WRITES. If the segment ids are missing or equal, a configured segment does not exist, or any read (audience, Lyceon's contact records, segments, contacts) fails, the run stops before its first write and answers 500.
+*Violated if:* any create, delete or record happens in a run where a read failed.
+
+**C14.5** UNSUBSCRIBE BACK-SYNC. A verified `contact.updated` with `unsubscribed: true` sets `marketing_opt_in = false` through `set_marketing_consent` (source `email_unsubscribe`), so the consent log gets its row from the same trigger as every other change. The provider event id and the opt-out are one SQL call (`apply_marketing_email_optout`), the C7.5 shape; a replay returns `duplicate` and writes nothing; a profile already opted out writes no log row.
+*Violated if:* an unsubscribe leaves `marketing_opt_in` true; a replay or a second event for an opted-out profile adds a consent-log row; or the event id and the opt-out are written by separate statements from application code.
+
+**C14.6** A COMPLAINT WITHDRAWS CONSENT. A verified `email.complained` withdraws marketing consent for each recipient (source `email_complaint`) in addition to its C7.4 delivery status.
+*Violated if:* a complaint leaves `marketing_opt_in` true, is logged under another source, or stops the delivery status from being recorded.
+
+**C14.7** PROVIDER SOURCES ONLY WITHDRAW. `set_marketing_consent` refuses `p_granted = true` with source `email_unsubscribe` or `email_complaint`.
+*Violated if:* any provider event can turn marketing on.
+
+**C14.8** ACCOUNT DELETION REMOVES THE CONTACT. `executeDueDeletions` deletes the Resend contact for the address it already holds for the iteration (C0.6), after the completion notice; a failure is logged and left to the reconcile, and never fails the deletion.
+*Violated if:* a completed deletion leaves the contact in Resend after the executor ran with the provider available.
+
+**C14.9** NO ADDRESS ANYWHERE BUT RESEND. No table in this lane stores an address (`marketing_email_contacts` holds the provider's contact id and the segment; `marketing_email_webhook_events` holds the event id, type and outcome, purged after 30 days). No log line carries an address, a provider payload or the API key.
+*Violated if:* a column in either table holds an address, or a captured log line from the reconcile, the webhook or the deletion step contains one.
+
+**C14.10** THE SYNCED SEGMENTS ARE THE ONLY MARKETING AUDIENCE. Marketing broadcasts target only "Marketing — students" or "Marketing — guardians". Resend cannot restrict a broadcast's target, so this is held by rule (`docs/runbooks/marketing-email-resend.md` §4) and by the reconcile: it reports any other segment (`foreign_segment_present`, error level) and deletes every contact the audience does not back, so a hand-built list empties itself at the next run.
+*Violated if:* a run completes without reporting a segment other than the two configured ones.

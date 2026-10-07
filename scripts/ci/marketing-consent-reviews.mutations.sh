@@ -23,11 +23,16 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261027000000_marketing_consent_and_product_reviews.sql"
+# set_marketing_consent was REPLACED by 20261028000000 (the marketing email lane added two
+# withdrawal-only sources). Its plants (R4, R6) are re-pointed there; every other object is still
+# last defined in $MIG. need_last checks this per plant.
+MIG_SYNC="supabase/migrations/20261028000000_marketing_email_sync.sql"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/mcr-mut.XXXX)"
 
 FILES=(
   "$MIG"
+  "$MIG_SYNC"
   "server/routes/profile-routes.ts"
   "server/lib/marketing-consent.ts"
   "server/services/product-feedback/product-feedback-service.ts"
@@ -83,8 +88,10 @@ expect_red() {
 }
 
 last_definer() { grep -ln "FUNCTION public\.$1\b" supabase/migrations/*.sql | sort | tail -1; }
+# need_last <function> <plant> [migration] — the plant's migration must be the LAST definer.
 need_last() {
-  [ "$(last_definer "$1")" = "$MIG" ] || { bad "$2 targets $MIG but $1 is last defined in $(last_definer "$1")"; exit 1; }
+  local target="${3:-$MIG}"
+  [ "$(last_definer "$1")" = "$target" ] || { bad "$2 targets $target but $1 is last defined in $(last_definer "$1")"; exit 1; }
 }
 
 # run <name> <substring> <check files...> — after a plant
@@ -129,8 +136,8 @@ if [ "$HAVE_PG" = 1 ]; then
   run "R3 age threshold" "the day before the 13th birthday is refused" "$PG_DB"
 
   echo "=== Q5 (4) the logged setter grants to an under-13 account ==="
-  need_last set_marketing_consent R4
-  plant "$MIG" \
+  need_last set_marketing_consent R4 "$MIG_SYNC"
+  plant "$MIG_SYNC" \
     "  IF p_granted AND NOT public.marketing_opt_in_age_eligible(v_dob) THEN" \
     "  IF false THEN" || { bad "R4 STALE"; exit 1; }
   run "R4 setter age check" "set_marketing_consent answers age_ineligible" "$PG_DB"
@@ -144,7 +151,8 @@ if [ "$HAVE_PG" = 1 ]; then
   run "R5 PATCH age check" "an under-13 student cannot be set true" "$PG_ROUTES"
 
   echo "=== Q5 (6) the log loses where the choice was made ==="
-  plant "$MIG" \
+  need_last set_marketing_consent R6 "$MIG_SYNC"
+  plant "$MIG_SYNC" \
     "  PERFORM set_config('lyceon.marketing_consent_source', p_source, true);" \
     "  PERFORM set_config('lyceon.marketing_consent_source', 'system', true);" || { bad "R6 STALE"; exit 1; }
   run "R6 consent source" "records source signup" "$PG_ROUTES"

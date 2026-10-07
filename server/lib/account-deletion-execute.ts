@@ -3,6 +3,7 @@ import { getStripeClient } from "./stripe/client";
 import { logger } from "../logger";
 import { sendAccountDeletionCompletedEmail } from "./notifications/direct-sends";
 import { defaultSuppressionTransport } from "./notifications/transport";
+import { removeMarketingContactForDeletion } from "./marketing-email-sync";
 
 // @spec [Doc-01 §40.5 Hard delete at T+7, Doc-05E §8 step 5 + §9; SCL-085/086/088 PROPOSED;
 // owner brief 2026-09-16 "Deletion Vertical" Parts B + C; plan v4 §3.4] account-deletion
@@ -1044,6 +1045,23 @@ export async function executeDueDeletions(
           "completion_notice_skipped",
           "No address available for the completion notice",
           { userId: pending.profile_id, requestId },
+        );
+      }
+
+      // Step 6.5 (after commit): the marketing email lane's contact for this address, removed
+      // from Resend (owner brief "SEO vertical — email lane" scope 3; contract §14).
+      // Marketing already stopped at the deletion REQUEST (marketing_email_audience excludes a
+      // pending deletion, and the daily reconcile deletes every contact no eligible profile
+      // backs); this is the cascade's own removal. It uses the address already held in
+      // `recipientEmail` for this one iteration (C0.6) and never logs it. Best-effort: a
+      // failure is logged and left to the daily reconcile; it never fails the deletion.
+      if (recipientEmail !== null) {
+        const removed = await removeMarketingContactForDeletion(recipientEmail);
+        logger.info(
+          "DELETION",
+          "marketing_contact_removal",
+          "Marketing email contact removal after deletion",
+          { userId: pending.profile_id, outcome: removed, requestId },
         );
       }
 

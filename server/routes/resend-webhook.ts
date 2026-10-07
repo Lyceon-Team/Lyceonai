@@ -15,10 +15,22 @@
  * provider retries. Replays are no-ops by the provider_event_id primary key.
  *
  * Logging carries ids and outcomes only: no addresses, no subject, no body.
+ *
+ * MARKETING LANE (§14, amended 2026-10-07; owner Step 0 decisions 4 and 6). The body is first
+ * read as an envelope, so `contact.updated` (no `email_id`) parses. An unsubscribe
+ * (`contact.updated` with `unsubscribed: true`) and a complaint (`email.complained`, in addition
+ * to its delivery status) withdraw marketing consent through `apply_marketing_email_optout`:
+ * the event id and the opt-out in one transaction, the consent-log row from the same trigger as
+ * every other change. Replays are no-ops by that function's ledger.
  */
 import type { Request, Response } from "express";
 import {
   isResendStatusEvent,
+  RESEND_CONTACT_UPDATED,
+  RESEND_EMAIL_COMPLAINED,
+  resendComplaintRecipientsSchema,
+  resendContactUpdatedDataSchema,
+  resendWebhookEnvelopeSchema,
   resendWebhookEventSchema,
 } from "../../packages/shared/src/notifications-schema";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -27,6 +39,13 @@ import {
   type SvixHeaders,
 } from "../lib/notifications/svix";
 import { logger } from "../logger";
+
+/** What the marketing back-sync did with an unsubscribe or a complaint (§14). */
+export type MarketingOptOutOutcome =
+  | "applied"
+  | "unchanged"
+  | "unmatched"
+  | "duplicate";
 
 export type ResendWebhookOutcome =
   | {
@@ -38,6 +57,8 @@ export type ResendWebhookOutcome =
         | "duplicate"
         | "acknowledged";
       providerEventId: string;
+      /** Set for an unsubscribe or a complaint; null for every other event. */
+      marketing: MarketingOptOutOutcome | null;
     }
   | {
       ok: false;
@@ -132,6 +153,99 @@ export async function processResendWebhook(
     );
     return { ok: false, reason: "bad_payload", message: "Body is not JSON." };
   }
+  const envelope = resendWebhookEnvelopeSchema.safeParse(json);
+  if (!envelope.success) {
+    logger.warn(
+      "NOTIFICATIONS",
+      "webhook_bad_shape",
+      "Resend webhook body did not match the schema",
+      {
+        requestId,
+        providerEventId: verified.value.id,
+        issues: envelope.error.issues.length,
+      },
+    );
+    return {
+      ok: false,
+      reason: "bad_payload",
+      message: "Body does not match the expected shape.",
+    };
+  }
+  const providerEventId = verified.value.id;
+  const eventType = envelope.data.type;
+
+  // ── Marketing lane: an unsubscribe in Resend withdraws consent in Lyceon (§14). ─────────
+  if (eventType === RESEND_CONTACT_UPDATED) {
+    const contact = resendContactUpdatedDataSchema.safeParse(
+      envelope.data.data,
+    );
+    if (!contact.success) {
+      logger.warn(
+        "MARKETING_EMAIL",
+        "webhook_bad_shape",
+        "Resend contact event did not match the schema",
+        { requestId, providerEventId, issues: contact.error.issues.length },
+      );
+      return {
+        ok: false,
+        reason: "bad_payload",
+        message: "Body does not match the expected shape.",
+      };
+    }
+    if (!contact.data.unsubscribed) {
+      // Our own create, or any other update: nothing to bring back.
+      logger.info(
+        "MARKETING_EMAIL",
+        "webhook_acknowledged",
+        "Resend contact update without an unsubscribe",
+        { requestId, providerEventId, contactId: contact.data.id },
+      );
+      return {
+        ok: true,
+        status: "acknowledged",
+        providerEventId,
+        marketing: null,
+      };
+    }
+    const marketing = await applyMarketingOptOut(
+      providerEventId,
+      RESEND_CONTACT_UPDATED,
+      contact.data.id,
+      contact.data.email,
+      requestId,
+    );
+    return {
+      ok: true,
+      status:
+        marketing === "duplicate" || marketing === "unmatched"
+          ? marketing
+          : "applied",
+      providerEventId,
+      marketing,
+    };
+  }
+
+  if (!isResendStatusEvent(eventType)) {
+    // email.sent / email.opened / email.clicked / email.delivery_delayed / other contact events /
+    // unknown: acknowledged, never written.
+    logger.info(
+      "NOTIFICATIONS",
+      "webhook_acknowledged",
+      "Resend event type not tracked",
+      {
+        requestId,
+        providerEventId,
+        eventType,
+      },
+    );
+    return {
+      ok: true,
+      status: "acknowledged",
+      providerEventId,
+      marketing: null,
+    };
+  }
+
   const event = resendWebhookEventSchema.safeParse(json);
   if (!event.success) {
     logger.warn(
@@ -140,7 +254,7 @@ export async function processResendWebhook(
       "Resend webhook body did not match the schema",
       {
         requestId,
-        providerEventId: verified.value.id,
+        providerEventId,
         issues: event.error.issues.length,
       },
     );
@@ -151,29 +265,41 @@ export async function processResendWebhook(
     };
   }
 
-  if (!isResendStatusEvent(event.data.type)) {
-    // email.sent / email.opened / email.clicked / email.delivery_delayed / unknown: acknowledged, never written.
-    logger.info(
-      "NOTIFICATIONS",
-      "webhook_acknowledged",
-      "Resend event type not tracked",
-      {
-        requestId,
-        providerEventId: verified.value.id,
-        eventType: event.data.type,
-      },
+  // A complaint also withdraws marketing consent (owner decision 4, 2026-10-07). Done BEFORE
+  // the status call: both are idempotent by the svix-id, so whichever fails, the provider's
+  // retry completes the other without repeating either.
+  let marketing: MarketingOptOutOutcome | null = null;
+  if (eventType === RESEND_EMAIL_COMPLAINED) {
+    const recipients = resendComplaintRecipientsSchema.safeParse(
+      event.data.data,
     );
-    return {
-      ok: true,
-      status: "acknowledged",
-      providerEventId: verified.value.id,
-    };
+    if (!recipients.success) {
+      logger.warn(
+        "MARKETING_EMAIL",
+        "webhook_complaint_no_recipient",
+        "Resend complaint carried no recipient; delivery status still applied",
+        { requestId, providerEventId },
+      );
+    } else {
+      const to = Array.isArray(recipients.data.to)
+        ? recipients.data.to
+        : [recipients.data.to];
+      for (const [index, address] of to.entries()) {
+        marketing = await applyMarketingOptOut(
+          index === 0 ? providerEventId : `${providerEventId}:${index}`,
+          RESEND_EMAIL_COMPLAINED,
+          null,
+          address,
+          requestId,
+        );
+      }
+    }
   }
 
   const { data, error } = await supabaseServer.rpc(
     "apply_notification_delivery_event",
     {
-      p_provider_event_id: verified.value.id,
+      p_provider_event_id: providerEventId,
       p_provider_message_id: event.data.data.email_id,
       p_event_type: event.data.type,
       p_occurred_at: event.data.created_at,
@@ -205,12 +331,60 @@ export async function processResendWebhook(
     "Resend delivery event processed",
     {
       requestId,
-      providerEventId: verified.value.id,
+      providerEventId,
       eventType: event.data.type,
       outcome,
     },
   );
-  return { ok: true, status: outcome, providerEventId: verified.value.id };
+  return { ok: true, status: outcome, providerEventId, marketing };
+}
+
+/**
+ * The marketing back-sync, one SQL call: the provider event id and the opt-out land in one
+ * transaction (`apply_marketing_email_optout`, the C7.5 shape). The address is a parameter for
+ * the SQL comparison only; it is not logged. Throws on a database failure, so the route answers
+ * 500 and Resend retries.
+ */
+async function applyMarketingOptOut(
+  providerEventId: string,
+  eventType: typeof RESEND_CONTACT_UPDATED | typeof RESEND_EMAIL_COMPLAINED,
+  contactId: string | null,
+  address: string,
+  requestId: string | undefined,
+): Promise<MarketingOptOutOutcome> {
+  const { data, error } = await supabaseServer.rpc(
+    "apply_marketing_email_optout",
+    {
+      p_provider_event_id: providerEventId,
+      p_event_type: eventType,
+      p_resend_contact_id: contactId,
+      p_email: address,
+    },
+  );
+  if (error) {
+    throw new Error(
+      `apply_marketing_email_optout failed: ${error.code ?? "unknown"} ${error.message}`,
+    );
+  }
+  const outcome =
+    data === "applied" ||
+    data === "unchanged" ||
+    data === "unmatched" ||
+    data === "duplicate"
+      ? data
+      : null;
+  if (!outcome) {
+    throw new Error(
+      `apply_marketing_email_optout returned an unexpected value: ${String(data)}`,
+    );
+  }
+  logger.info(
+    "MARKETING_EMAIL",
+    "webhook_optout_processed",
+    "Resend unsubscribe or complaint processed",
+    { requestId, providerEventId, eventType, contactId, outcome },
+  );
+  return outcome;
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
@@ -234,13 +408,11 @@ export async function resendWebhookHandler(
     if (!outcome.ok) {
       if (outcome.reason === "not_raw_body") {
         // A wiring defect on our side, not a bad request from the provider.
-        res
-          .status(500)
-          .json({
-            error: "Webhook misconfigured",
-            reason: outcome.reason,
-            requestId,
-          });
+        res.status(500).json({
+          error: "Webhook misconfigured",
+          reason: outcome.reason,
+          requestId,
+        });
         return;
       }
       res
