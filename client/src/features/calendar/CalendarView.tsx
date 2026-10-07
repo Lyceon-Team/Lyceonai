@@ -689,7 +689,9 @@ export function CalendarView({
         data-testid="calendar-student"
       >
         <div
-          className={`flex min-h-0 flex-1 flex-col${
+          // `lyc-cal-body`: the size container the header is laid out against (QA 2026-10-07
+          // item 11(d); calendar-student.css).
+          className={`lyc-cal-body flex min-h-0 flex-1 flex-col${
             setup === undefined
               ? ""
               : " pointer-events-none select-none blur-[3px]"

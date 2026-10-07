@@ -2322,6 +2322,53 @@ plant "QA11-F1" "the test day offers \"+ Add block\" again" \
 assert s.count(a) == 1
 s = s.replace(a, "      {onAddBlock !== undefined && date >= today ? (", 1)'
 
+# (c) nothing runs past a block card's edge; (d) the header is laid out against the calendar
+# column; (g) the projected range on one line. The layouts are measured in the browser by
+# tests/e2e/student-calendar.spec.ts ("QA 2026-10-07 item 11 layout", 390–1440); these plants
+# hold the page test's pins on the rules and wiring that layout depends on.
+
+plant "QA11-C1" "block-card text may no longer break (it runs past the card)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "     first; a word is split only when it alone is wider than the card. */\n  overflow-wrap: anywhere;\n"
+assert s.count(a) == 1
+s = s.replace(a, "     first; a word is split only when it alone is wider than the card. */\n", 1)'
+
+plant "QA11-C2" "the started tag neither drops under the title nor truncates" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyceon-calendar.lyc-cal .block .ttl {\n  flex-wrap: wrap;\n  min-width: 0;\n  row-gap: 2px;\n}\n.lyceon-calendar.lyc-cal .block .lock {\n  display: inline-block;\n  max-width: 100%;\n  min-width: 0;\n  overflow: hidden;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n"
+assert s.count(a) == 1
+s = s.replace(a, ".lyceon-calendar.lyc-cal .block .lock {\n  white-space: nowrap;\n}\n", 1)'
+
+plant "QA11-D1" "the header loses its size container (its layout falls back to the phone stack)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyc-cal-body {\n  container-type: inline-size;\n"
+assert s.count(a) == 1
+s = s.replace(a, ".lyc-cal-body {\n", 1)'
+
+plant "QA11-D2" "the calendar body is no longer the header's container" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "className={`lyc-cal-body flex min-h-0 flex-1 flex-col${"
+assert s.count(a) == 1
+s = s.replace(a, "className={`flex min-h-0 flex-1 flex-col${", 1)'
+
+plant "QA11-G1" "the projected range may wrap at the en dash" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "          className=\"whitespace-nowrap font-lyc-serif font-semibold text-lyc-ink-strong"
+assert s.count(a) == 1
+s = s.replace(a, "          className=\"font-lyc-serif font-semibold text-lyc-ink-strong", 1)'
+
+plant "QA11-G2" "the projected range is fixed at 32px (wider than its half of the card)" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = " [font-size:min(32px,calc(100cqi/(var(--lyc-figure-chars)*0.56)))]\""
+assert s.count(a) == 1
+s = s.replace(a, " text-[32px]\"", 1)'
+
 # (e) Karl's ruling: no "Your schedule" in the right panel.
 
 plant "QA11-E1" "the right panel shows \"Your schedule\" again" \

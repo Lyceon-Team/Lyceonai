@@ -661,6 +661,24 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
     ).toBe("/profile");
   });
 
+  it("keeps the projected range on one line, sized to fit its half of the card (QA 2026-10-07 item 11(g))", async () => {
+    await mount("paid");
+    const card = await screen.findByTestId("calendar-goal-card");
+    const figure = within(card).getByTestId("calendar-projection");
+    // Presence: the range is drawn.
+    expect(figure.textContent).toBe("1180–1280");
+    // One line: no wrap at the en dash. The real layout is measured in the browser
+    // (tests/e2e/student-calendar.spec.ts); here the two rules that hold it are pinned.
+    expect(figure.className.split(" ")).toContain("whitespace-nowrap");
+    expect(figure.className).toContain(
+      "[font-size:min(32px,calc(100cqi/(var(--lyc-figure-chars)*0.56)))]",
+    );
+    expect(figure.style.getPropertyValue("--lyc-figure-chars")).toBe("9");
+    expect(figure.parentElement?.className).toContain(
+      "[container-type:inline-size]",
+    );
+  });
+
   it('says "1 day until your SAT", singular, the day before the test', async () => {
     await mount("paid", {
       calendar: () => studentCalendarWeek(TODAY, { testDate: "2026-10-02" }),
@@ -681,6 +699,74 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
     expect(document.body.textContent).not.toContain("Training for");
     expect(gets().some((u) => u.startsWith("/api/profile/background"))).toBe(
       false,
+    );
+  });
+});
+
+describe("paid: the header and card layout rules (QA 2026-10-07 items 11(c), 11(d))", () => {
+  /**
+   * The layout itself is measured in a real browser at 390–1440 (`tests/e2e/student-calendar.spec.ts`,
+   * "QA 2026-10-07 item 11 layout": nothing past a card's edge, the header's groups never broken,
+   * one/two/three header rows by the column's width). jsdom lays nothing out, so this pins the
+   * wiring the browser test depends on: the header and the body carry the classes the rules
+   * select, and the rules that hold the layout are in the stylesheet the page loads.
+   */
+  function studentCss(): string {
+    return fs.readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../features/calendar/calendar-student.css",
+      ),
+      "utf8",
+    );
+  }
+
+  /** The declarations of the FIRST rule with exactly this selector. */
+  function rule(css: string, selector: string): string {
+    const at = css.indexOf(`${selector} {`);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  }
+
+  it("(d) the header is laid out against the calendar column, not the viewport", async () => {
+    await mount("paid");
+    const header = await screen.findByTestId("calendar-header");
+    expect(header.classList.contains("lyc-cal-head")).toBe(true);
+    // No viewport breakpoint decides the header's columns any more.
+    expect(header.className).not.toMatch(/\blg:/);
+    expect(
+      screen
+        .getByTestId("calendar-header-nav")
+        .classList.contains("lyc-cal-head__group"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByTestId("calendar-student-body")
+        .classList.contains("lyc-cal-body"),
+    ).toBe(true);
+    const css = studentCss();
+    expect(rule(css, ".lyc-cal-body")).toContain(
+      "container-type: inline-size;",
+    );
+    expect(css).toContain("@container lyc-cal-body (min-width: 700px) {");
+    expect(css).toContain("@container lyc-cal-body (min-width: 920px) {");
+  });
+
+  it("(c) a card's text breaks rather than overflow, and the started tag is cut", () => {
+    const css = studentCss();
+    // The QA block's `.block` rule (the first is the base card's).
+    const block = css.slice(css.indexOf("QA 2026-10-07 item 11(c)"));
+    expect(rule(block, ".lyceon-calendar.lyc-cal .block")).toContain(
+      "overflow-wrap: anywhere;",
+    );
+    expect(rule(block, ".lyceon-calendar.lyc-cal .block .ttl")).toContain(
+      "flex-wrap: wrap;",
+    );
+    const lock = rule(block, ".lyceon-calendar.lyc-cal .block .lock");
+    expect(lock).toContain("text-overflow: ellipsis;");
+    expect(lock).toContain("max-width: 100%;");
+    expect(rule(block, ".lyceon-calendar.lyc-cal .block .dom span")).toContain(
+      "max-width: 100%;",
     );
   });
 });
