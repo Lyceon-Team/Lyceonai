@@ -12,12 +12,19 @@ import type { ResolvedLegalVersion } from "./legal-registry-types.js";
 export const GENERATED_LEGAL_REGISTRY: Readonly<
   Record<string, ResolvedLegalVersion>
 > = {
+  "ai-content-disclosure": {
+    slug: "ai-content-disclosure",
+    title: "LYCEON AI Content Disclosure",
+    version: "1.0",
+    effectiveDate: "2026-10-07",
+    contentHash: "sha256:ab25004ff46371f29091af5cc5d49ebf27698d5d53250bfaf2301860108fbd53",
+  },
   "billing-terms": {
     slug: "billing-terms",
     title: "LYCEON Billing Terms",
-    version: "1.0",
-    effectiveDate: "2026-09-11",
-    contentHash: "sha256:d6f6452843f333c90f6264810085e83a85edafdaf03dbba10ecbc67bb19f18d3",
+    version: "2.0",
+    effectiveDate: "2026-10-07",
+    contentHash: "sha256:f39f920f7231aaad5fac9d008a11c68821c5ac9c5e83b3cc1eeacadff333e648",
   },
   "community-guidelines": {
     slug: "community-guidelines",
@@ -25,6 +32,13 @@ export const GENERATED_LEGAL_REGISTRY: Readonly<
     version: "2.0",
     effectiveDate: "2026-09-11",
     contentHash: "sha256:8ff8ba5c0d4a2bda82312fd266c15538941f62995a1609c650cc4b40e6952b8d",
+  },
+  "cookie-policy": {
+    slug: "cookie-policy",
+    title: "LYCEON Cookie Policy",
+    version: "1.0",
+    effectiveDate: "2026-10-07",
+    contentHash: "sha256:f9b1c8fd825d87eeac182a4e2638b74e63a9dd4ccfa90faf0c3b91b1bb645c03",
   },
   "honor-code": {
     slug: "honor-code",

@@ -1,0 +1,13 @@
+{
+  "slug": "ai-content-disclosure",
+  "title": "LYCEON AI Content Disclosure",
+  "description": "Where LYCEON uses AI, its limitations, and how to report a problem.",
+  "order": 95,
+  "current": "v1",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "AI Content Disclosure"
+  ]
+}
