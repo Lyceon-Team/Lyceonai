@@ -42,7 +42,6 @@ import { describe, it, expect, vi } from "vitest";
 
 import {
   buildSystemInstruction,
-  buildConversationMessages,
   resolveModelAlias,
 } from "../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
 import type { OrchestrateRequest } from "../../apps/workers/tutor-orchestrator/src/lib/schema";

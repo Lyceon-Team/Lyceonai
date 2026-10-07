@@ -96,7 +96,7 @@ describe("True Half-Life Mastery Edge Cases", () => {
       const priorMean = ALPHA0 / (ALPHA0 + BETA0); // = 0.5
       
       // Expected: p should be close to (1 + 2) / (1 + 2 + 2) = 0.6 (not stuck at 0.96)
-      expect(result.p).toBeGreaterThan(0.5);
+      expect(result.p).toBeGreaterThan(priorMean);
       expect(result.p).toBeLessThan(0.7);
       expect(result.masteryScore).toBeGreaterThan(50);
       expect(result.masteryScore).toBeLessThan(70);

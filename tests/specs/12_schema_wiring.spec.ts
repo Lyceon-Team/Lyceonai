@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 import { TestReporter } from '../utils/report';
 
 const reporter = new TestReporter();

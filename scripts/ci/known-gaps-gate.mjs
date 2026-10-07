@@ -87,7 +87,7 @@ function parseEntries(text) {
     if (!line.trim() || /^\s*#/.test(line)) continue;
     if (/^entries:\s*$/.test(line)) continue;
 
-    const item = line.match(/^  - ([a-z_]+):\s*(.*)$/);
+    const item = line.match(/^ {2}- ([a-z_]+):\s*(.*)$/);
     if (item) {
       const [, k, v] = item;
       // The opener MUST be `- id:`. Allowing any key to open an entry is what
@@ -107,7 +107,7 @@ function parseEntries(text) {
       else cur[k] = v;
       continue;
     }
-    const kv = line.match(/^    ([a-z_]+):\s*(.*)$/);
+    const kv = line.match(/^ {4}([a-z_]+):\s*(.*)$/);
     if (kv) {
       // An indented field with no open entry is a PARSE ERROR, not a line to
       // skip. This is the fail-open Codex found (CI-GATING-001): drop the

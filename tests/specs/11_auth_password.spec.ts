@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 import { TestReporter } from '../utils/report';
 
 const reporter = new TestReporter();
@@ -34,11 +34,15 @@ test.describe('Email/Password Authentication', () => {
 
       let foundIndicator = false;
       for (const indicator of loggedInIndicators) {
-        try {
-          await expect(indicator.first()).toBeVisible({ timeout: 2000 });
-          foundIndicator = true;
-          break;
-        } catch {}
+        // Not visible within 2s means "try the next indicator", not a failure.
+        foundIndicator = await indicator
+          .first()
+          .waitFor({ state: 'visible', timeout: 2000 })
+          .then(
+            () => true,
+            () => false,
+          );
+        if (foundIndicator) break;
       }
 
       if (foundIndicator) {
@@ -115,11 +119,15 @@ test.describe('Email/Password Authentication', () => {
 
       let loggedOut = false;
       for (const button of logoutButtons) {
-        try {
-          await button.first().click({ timeout: 2000 });
-          loggedOut = true;
-          break;
-        } catch {}
+        // Not clickable within 2s means "try the next button", not a failure.
+        loggedOut = await button
+          .first()
+          .click({ timeout: 2000 })
+          .then(
+            () => true,
+            () => false,
+          );
+        if (loggedOut) break;
       }
 
       if (loggedOut) {

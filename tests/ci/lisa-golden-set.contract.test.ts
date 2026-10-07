@@ -42,7 +42,6 @@ import {
   PURE_CLASS1_CASES,
   PURE_CLASS2_CASES,
   SPLIT_CASES,
-  SHORT_NUMBER_PRECISION_CASES,
   HEURISTIC_PERSONA_ADOPTION,
   reportCoverage,
 } from "./lisa-golden-set-helpers";
@@ -86,7 +85,7 @@ function cannedLeakText(fixture: GoldenFixture): string {
 
 // ── Canned clean text (no answer) ──────────────────────────────────────
 
-function cannedCleanText(fixture: GoldenFixture): string {
+function cannedCleanText(): string {
   return "Let's think about this step by step. What do you notice about the first part of the problem?";
 }
 
@@ -147,7 +146,7 @@ describe("Class 1 — anti-leak scanner coverage", () => {
       });
 
       it("hasAnswerLeak does NOT flag clean tutoring prose", () => {
-        const cleanText = cannedCleanText(fixture);
+        const cleanText = cannedCleanText();
         const detected = hasAnswerLeak(cleanText, fixture.correctAnswer!);
         expect(detected).toBe(false);
       });

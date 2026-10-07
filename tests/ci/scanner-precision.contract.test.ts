@@ -17,7 +17,6 @@ import { describe, it, expect, afterAll } from "vitest";
 
 import {
   hasAnswerLeak,
-  hasGridInValueInText,
 } from "../../shared/tutor-safety-constants";
 
 // ── Corpus types ─────────────────────────────────────────────────────

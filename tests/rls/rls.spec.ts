@@ -155,7 +155,7 @@ describe.skipIf(!canRunRlsTests())('RLS Isolation Tests', () => {
     });
 
     it('rejects requests with invalid JWT', async () => {
-      const res = await request(app)
+      await request(app)
         .get('/api/progress')
         .set('Authorization', 'Bearer invalid-token')
         .expect(401);

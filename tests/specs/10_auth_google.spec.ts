@@ -91,7 +91,7 @@ test.describe("Google Authentication E2E", () => {
       try {
         await page.waitForURL(/accounts\.google\.com/, { timeout: 5000 });
         reporter.addTest("Google OAuth Redirect", "PASS");
-      } catch (_redirectError) {
+      } catch {
         // If not on Google's domain in test infra, we still expect an auth-related URL change.
         const currentUrl = page.url();
         // CodeQL: check the parsed host, not a substring (a substring like

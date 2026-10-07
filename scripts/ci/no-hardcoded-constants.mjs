@@ -111,8 +111,10 @@ const SCORING_04B_STRUCTURAL_ALLOW = [
   [/\*\s*1000\s*\)/g,                                  "epoch seconds -> milliseconds for §20.1 computation_ms"],
   [/\b(?:SELECT|PERFORM)\s+1\b/gi,                     "existence probe (SELECT 1 / PERFORM 1)"],
 ];
-// v1.0 values the self-test plants into a 04B body; each must turn the guard RED.
-const SCORING_04B_LOCKED = ["0.5", "430", "800", "15", "9", "6", "200", "400", "450", "580", "10", "5"];
+// The v1.0 values the self-test plants into a 04B body (each must turn the guard RED) —
+// 0.5 430 800 15 9 6 200 400 450 580 10 5 — live in scripts/ci/guards-selftest.sh (E1c).
+// They were also declared here as an unread constant, which is a second copy that could
+// silently drift from the one the self-test actually plants.
 
 function scoring04bResidual(body) {
   let s = stripNonCode(body);

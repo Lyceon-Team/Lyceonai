@@ -21,10 +21,6 @@ import request from "supertest";
 
 import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
 
-const masteryMocks2 = vi.hoisted(() => ({
-}));
-
-
 // buildWeaknessSkillsView now labels each level from `mastery_levels`. Without this the
 // view reaches for a real Supabase client and the case hangs rather than failing.
 vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({

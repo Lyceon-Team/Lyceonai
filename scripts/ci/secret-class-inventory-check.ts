@@ -408,7 +408,6 @@ function resolveSpecFile(docId: string): string | null {
   const candidates = files.filter((f) => {
     if (!f.endsWith(".md")) return false;
     const docPattern1 = `Document ${idWithSpace}`;
-    const docPattern2 = `Doc ${idWithSpace} `;
     return (
       f.includes(docPattern1) ||
       (f.startsWith("Doc ") && f.includes(`${idWithSpace} `))
