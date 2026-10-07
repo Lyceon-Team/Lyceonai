@@ -1,6 +1,6 @@
 # UI-50 Home (/dashboard): free and paid, light and dark, 1440 and 390
 
-Generated 2026-10-07T10:40:24.669Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-50` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T21:18:31.807Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-50` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -28,10 +28,10 @@ Prototype: `Main.dc.html` (Home, plan = paid).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-paid desktop light](home-paid--desktop--light--built.png)<br>`/dashboard`, 132 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
-| desktop | dark | ![home-paid desktop dark](home-paid--desktop--dark--built.png)<br>`/dashboard`, 133 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
-| mobile | light | ![home-paid mobile light](home-paid--mobile--light--built.png)<br>`/dashboard`, 54 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
-| mobile | dark | ![home-paid mobile dark](home-paid--mobile--dark--built.png)<br>`/dashboard`, 54 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
+| desktop | light | ![home-paid desktop light](home-paid--desktop--light--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
+| desktop | dark | ![home-paid desktop dark](home-paid--desktop--dark--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
+| mobile | light | ![home-paid mobile light](home-paid--mobile--light--built.png)<br>`/dashboard`, 56 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
+| mobile | dark | ![home-paid mobile dark](home-paid--mobile--dark--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
 
 ## Home, paid, full page (on a phone the right panel stacks under the main column; the footer ends the column)
 
@@ -41,10 +41,10 @@ Prototype: `Main.dc.html` (Home, plan = paid (the canvas is a fixed 1440x900)).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-paid-full desktop light](home-paid-full--desktop--light--built.png)<br>`/dashboard`, 132 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
-| desktop | dark | ![home-paid-full desktop dark](home-paid-full--desktop--dark--built.png)<br>`/dashboard`, 133 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
-| mobile | light | ![home-paid-full mobile light](home-paid-full--mobile--light--built.png)<br>`/dashboard`, 190 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
-| mobile | dark | ![home-paid-full mobile dark](home-paid-full--mobile--dark--built.png)<br>`/dashboard`, 195 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
+| desktop | light | ![home-paid-full desktop light](home-paid-full--desktop--light--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png), 147 KB |
+| desktop | dark | ![home-paid-full desktop dark](home-paid-full--desktop--dark--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png), 147 KB |
+| mobile | light | ![home-paid-full mobile light](home-paid-full--mobile--light--built.png)<br>`/dashboard`, 198 KB, horizontal overflow 0px | ![prototype light](proto--Main--paid--light.png)<br>desktop prototype (no phone layout), 147 KB |
+| mobile | dark | ![home-paid-full mobile dark](home-paid-full--mobile--dark--built.png)<br>`/dashboard`, 201 KB, horizontal overflow 0px | ![prototype dark](proto--Main--paid--dark.png)<br>desktop prototype (no phone layout), 147 KB |
 
 ## Home, free, full page (on a phone the right panel stacks under the main column; the footer ends the column)
 
@@ -81,10 +81,10 @@ Prototype: none. A click path: the screenshot is where the click landed (the run
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-start-plan desktop light](click-paid-start-plan--desktop--light--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 62 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-paid-start-plan desktop dark](click-paid-start-plan--desktop--dark--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 19 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-start-plan mobile light](click-paid-start-plan--mobile--light--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 12 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-paid-start-plan mobile dark](click-paid-start-plan--mobile--dark--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 13 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-start-plan desktop light](click-paid-start-plan--desktop--light--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 62 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-start-plan desktop dark](click-paid-start-plan--desktop--dark--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 19 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-start-plan mobile light](click-paid-start-plan--mobile--light--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 12 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-start-plan mobile dark](click-paid-start-plan--mobile--dark--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 13 KB, horizontal overflow 0px | none |
 
 ## Click path (paid, QA item 4): a Today's plan row's own Start launches that block and lands in its session (the harness's open block today is the review block)
 
@@ -95,10 +95,10 @@ Prototype: none. A click path: the screenshot is where the click landed (the ses
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-plan-row-start desktop light](click-paid-plan-row-start--desktop--light--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 19 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-paid-plan-row-start desktop dark](click-paid-plan-row-start--desktop--dark--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 19 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-plan-row-start mobile light](click-paid-plan-row-start--mobile--light--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 12 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-paid-plan-row-start mobile dark](click-paid-plan-row-start--mobile--dark--built.png)<br>`/review/session/3af39fe3-ffbf-4102-bfc5-6ac908c8446c`, 13 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-plan-row-start desktop light](click-paid-plan-row-start--desktop--light--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 19 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-plan-row-start desktop dark](click-paid-plan-row-start--desktop--dark--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 19 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-plan-row-start mobile light](click-paid-plan-row-start--mobile--light--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 12 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-plan-row-start mobile dark](click-paid-plan-row-start--mobile--dark--built.png)<br>`/review/session/bcbded41-aefd-448c-bc95-ba154236bf20`, 13 KB, horizontal overflow 0px | none |
 
 ## Click path (paid, QA item 4): 'Pick up where you left off' → Continue opens exactly the open practice session the seed left (its id is in the path)
 
@@ -109,10 +109,10 @@ Prototype: none. A click path: the screenshot is the resumed session (Question 4
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-pickup-continue desktop light](click-paid-pickup-continue--desktop--light--built.png)<br>`/practice/session/6d0b9594-4353-4569-98c5-cb98c2c6d7e1`, 20 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-paid-pickup-continue desktop dark](click-paid-pickup-continue--desktop--dark--built.png)<br>`/practice/session/6d0b9594-4353-4569-98c5-cb98c2c6d7e1`, 20 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-pickup-continue mobile light](click-paid-pickup-continue--mobile--light--built.png)<br>`/practice/session/6d0b9594-4353-4569-98c5-cb98c2c6d7e1`, 12 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-paid-pickup-continue mobile dark](click-paid-pickup-continue--mobile--dark--built.png)<br>`/practice/session/6d0b9594-4353-4569-98c5-cb98c2c6d7e1`, 13 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-pickup-continue desktop light](click-paid-pickup-continue--desktop--light--built.png)<br>`/practice/session/6735a17f-9015-402a-9bbf-4eb27c19db36`, 20 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-pickup-continue desktop dark](click-paid-pickup-continue--desktop--dark--built.png)<br>`/practice/session/6735a17f-9015-402a-9bbf-4eb27c19db36`, 20 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-pickup-continue mobile light](click-paid-pickup-continue--mobile--light--built.png)<br>`/practice/session/6735a17f-9015-402a-9bbf-4eb27c19db36`, 12 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-pickup-continue mobile dark](click-paid-pickup-continue--mobile--dark--built.png)<br>`/practice/session/6735a17f-9015-402a-9bbf-4eb27c19db36`, 13 KB, horizontal overflow 0px | none |
 
 ## QA item 5: 'Start today's plan' pressed, the launch held in flight: the pressed control reads 'Starting…' with a spinner, and every Start is disabled
 
@@ -124,10 +124,26 @@ Prototype: none. A pending state the prototype does not draw (owner QA list, 202
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-start-plan-pending desktop light](click-paid-start-plan-pending--desktop--light--built.png)<br>`/dashboard`, 131 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-paid-start-plan-pending desktop dark](click-paid-start-plan-pending--desktop--dark--built.png)<br>`/dashboard`, 132 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-start-plan-pending mobile light](click-paid-start-plan-pending--mobile--light--built.png)<br>`/dashboard`, 45 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-paid-start-plan-pending mobile dark](click-paid-start-plan-pending--mobile--dark--built.png)<br>`/dashboard`, 46 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-start-plan-pending desktop light](click-paid-start-plan-pending--desktop--light--built.png)<br>`/dashboard`, 138 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-start-plan-pending desktop dark](click-paid-start-plan-pending--desktop--dark--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-start-plan-pending mobile light](click-paid-start-plan-pending--mobile--light--built.png)<br>`/dashboard`, 46 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-start-plan-pending mobile dark](click-paid-start-plan-pending--mobile--dark--built.png)<br>`/dashboard`, 47 KB, horizontal overflow 0px | none |
+
+## OQ-66 (h): a recent-session row's 'Review this session' pressed, the review create held in flight: that row reads 'Starting…' and the other rows' actions wait (full page: on a phone the panel stacks under the main column)
+
+Persona: `paid`. Route: `/dashboard`.
+Step: click `{"desktop":"[data-testid=\"home-recent-review\"]","mobile":"[data-testid=\"home-recent-review\"]"}`.
+Held: the browser's `POST /api/review/sessions` is left unanswered through the screenshot, then aborted (it never reaches the server).
+Must then show `[data-testid="home-recent-review"][aria-busy="true"]` (the capture fails otherwise).
+Full page: the whole document, not just the viewport.
+Prototype: none. The row's explicit action and its pending state are not drawn in the prototype (owner ruling OQ-66 (h), Karl, 2026-10-07).
+
+| Viewport | Theme (as rendered) | Built | Prototype |
+|---|---|---|---|
+| desktop | light | ![click-paid-recent-review-pending desktop light](click-paid-recent-review-pending--desktop--light--built.png)<br>`/dashboard`, 138 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-recent-review-pending desktop dark](click-paid-recent-review-pending--desktop--dark--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-recent-review-pending mobile light](click-paid-recent-review-pending--mobile--light--built.png)<br>`/dashboard`, 204 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-recent-review-pending mobile dark](click-paid-recent-review-pending--mobile--dark--built.png)<br>`/dashboard`, 208 KB, horizontal overflow 0px | none |
 
 ## Click path (paid): Home's 'Start a full-length test' card lands on the Full-Length page (owner ruling, Karl, 2026-10-05)
 
@@ -138,8 +154,8 @@ Prototype: none. A click path: the screenshot is where the click landed (the Ful
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-full-length-card desktop light](click-paid-full-length-card--desktop--light--built.png)<br>`/tests`, 142 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-paid-full-length-card desktop dark](click-paid-full-length-card--desktop--dark--built.png)<br>`/tests`, 144 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-full-length-card desktop light](click-paid-full-length-card--desktop--light--built.png)<br>`/tests`, 143 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-full-length-card desktop dark](click-paid-full-length-card--desktop--dark--built.png)<br>`/tests`, 146 KB, horizontal overflow 0px | none |
 | mobile | light | ![click-paid-full-length-card mobile light](click-paid-full-length-card--mobile--light--built.png)<br>`/tests`, 54 KB, horizontal overflow 0px | none |
 | mobile | dark | ![click-paid-full-length-card mobile dark](click-paid-full-length-card--mobile--dark--built.png)<br>`/tests`, 54 KB, horizontal overflow 0px | none |
 
@@ -167,13 +183,13 @@ Prototype: none. A click path: the screenshot is where the click landed (the dia
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-free-start-diagnostic desktop light](click-free-start-diagnostic--desktop--light--built.png)<br>`/practice/session/1771ef98-14f2-431f-9fd1-f91261ff1d74`, 35 KB, horizontal overflow 0px | none |
-| desktop | dark | ![click-free-start-diagnostic desktop dark](click-free-start-diagnostic--desktop--dark--built.png)<br>`/practice/session/1771ef98-14f2-431f-9fd1-f91261ff1d74`, 21 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-free-start-diagnostic mobile light](click-free-start-diagnostic--mobile--light--built.png)<br>`/practice/session/1771ef98-14f2-431f-9fd1-f91261ff1d74`, 12 KB, horizontal overflow 0px | none |
-| mobile | dark | ![click-free-start-diagnostic mobile dark](click-free-start-diagnostic--mobile--dark--built.png)<br>`/practice/session/1771ef98-14f2-431f-9fd1-f91261ff1d74`, 13 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-free-start-diagnostic desktop light](click-free-start-diagnostic--desktop--light--built.png)<br>`/practice/session/82064fe2-c8b2-49b7-b2fc-adc01d81c283`, 35 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-free-start-diagnostic desktop dark](click-free-start-diagnostic--desktop--dark--built.png)<br>`/practice/session/82064fe2-c8b2-49b7-b2fc-adc01d81c283`, 21 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-free-start-diagnostic mobile light](click-free-start-diagnostic--mobile--light--built.png)<br>`/practice/session/82064fe2-c8b2-49b7-b2fc-adc01d81c283`, 12 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-free-start-diagnostic mobile dark](click-free-start-diagnostic--mobile--dark--built.png)<br>`/practice/session/82064fe2-c8b2-49b7-b2fc-adc01d81c283`, 13 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"385fbe62-89ea-46e8-8e14-0eed3bbdfbc2","openPracticeSessionId":"b7455860-933c-4e72-a03f-12b1e9548dc5","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"6eb5be07-5481-4ef5-8c1c-41519f93ace8","openPracticeSessionId":"6d0b9594-4353-4569-98c5-cb98c2c6d7e1","openReviewSessionId":null,"diagnosticSessionId":"b10ae1dd-d082-4320-b05d-f715fb7888f6","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"8825ca2d-22bc-455a-8b1e-51f3593cee4a","openPracticeSessionId":"e2f5d6cd-9712-44a9-abda-8973ab7ab25a","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"d4ca3688-4faf-4728-b855-54cdf8228279","openPracticeSessionId":"6735a17f-9015-402a-9bbf-4eb27c19db36","openReviewSessionId":null,"diagnosticSessionId":"45eb35f1-6721-4226-a342-5f895e60dd0c","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none

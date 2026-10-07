@@ -1,6 +1,6 @@
 # UI-56 LISA (/chat): paid conversation, typing, New session; free locked card and Unlock LISA; light and dark, 1440 and 390
 
-Generated 2026-10-07T10:42:57.037Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-56` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T21:08:41.207Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-56` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -107,6 +107,6 @@ Prototype: `Lisa.dc.html` (LISA, plan = free, the locked LISA rail item clicked 
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"2c2110e7-f936-47a3-bf3d-c6baf5e2f1e4","openPracticeSessionId":"63e7083c-8fc0-4521-b379-684a972fee74","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"ed6a13f7-00fa-4eae-be4f-3c32a2b1cc22","openPracticeSessionId":"7890121e-fd9e-44af-8c3f-e5e3dfb94335","openReviewSessionId":null,"diagnosticSessionId":"93d0084c-084e-4e28-a224-fa9f57274b30","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":"e20e6387-6873-427e-8973-1b32af6700bb","answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"c41a8dc1-3d58-42e9-a93c-2c01467fcaf3","openPracticeSessionId":"f7e58719-ccb5-43a4-92ac-ee1dfc1317a0","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"522536fc-6248-43e5-b89c-61d1f53cfd01","openPracticeSessionId":"fad545c9-173a-46dd-8f58-533c0d616782","openReviewSessionId":null,"diagnosticSessionId":"0c0eb5fd-c78d-4c38-9a57-46b129b881f3","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":"d25e7d86-7080-4a64-80f4-80bddaa7e4bc","answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none

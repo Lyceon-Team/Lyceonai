@@ -1,6 +1,6 @@
 # UI-58 Settings (each section; paid self-billing, free, guardian-managed), Help, Notifications and the plans page (both NOT PROTOTYPED); light and dark, 1440 and 390
 
-Generated 2026-10-07T10:46:24.951Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-58` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T21:10:54.826Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-58` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -57,7 +57,7 @@ Prototype: `Settings.dc.html` (Settings, plan = paid, Guardian clicked (the canv
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
 | desktop | light | ![settings-guardian-paid desktop light](settings-guardian-paid--desktop--light--built.png)<br>`/profile`, 98 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png), 79 KB |
-| desktop | dark | ![settings-guardian-paid desktop dark](settings-guardian-paid--desktop--dark--built.png)<br>`/profile`, 101 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--paid--dark--guardian.png), 80 KB |
+| desktop | dark | ![settings-guardian-paid desktop dark](settings-guardian-paid--desktop--dark--built.png)<br>`/profile`, 100 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--paid--dark--guardian.png), 80 KB |
 | mobile | light | ![settings-guardian-paid mobile light](settings-guardian-paid--mobile--light--built.png)<br>`/profile`, 103 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png)<br>desktop prototype (no phone layout), 79 KB |
 | mobile | dark | ![settings-guardian-paid mobile dark](settings-guardian-paid--mobile--dark--built.png)<br>`/profile`, 106 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--paid--dark--guardian.png)<br>desktop prototype (no phone layout), 80 KB |
 
@@ -199,6 +199,6 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): built to the shell spec; these 
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"4716b76b-2f4b-4c33-b175-c21ed5421ea7","openPracticeSessionId":"7032a578-897d-4b73-b322-cfd3ec8dcd77","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"b54e14fb-cbf5-4782-bb05-754c4c71c8a7","openPracticeSessionId":"710a174c-23ee-4340-865f-0aa64252c262","openReviewSessionId":null,"diagnosticSessionId":"6c25cb8e-9edf-4715-88f3-4adebdcc068f","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"4fc2044e-d321-4244-8040-ef6e87b391b4","openPracticeSessionId":"6a04cdb1-2946-4699-81f3-409a9103fe07","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"ae64cf59-eea5-4868-a317-9b94dfdfb9b4","openPracticeSessionId":"4f56ddf1-7b76-420a-ab09-ea0af7671a74","openReviewSessionId":null,"diagnosticSessionId":"44f1bebf-34a7-4506-a614-662539e1abe9","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none

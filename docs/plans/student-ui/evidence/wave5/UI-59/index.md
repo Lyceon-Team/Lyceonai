@@ -1,6 +1,6 @@
 # UI-59 Bare-card pages (sign in, sign up, reset, profile completion, update password, account recovery, guardian required, 404, pending deletion, error screen), all NOT PROTOTYPED; light and dark, 1440 and 390
 
-Generated 2026-10-07T10:46:02.391Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T21:12:47.706Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -130,7 +130,7 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 122 KB, horizontal overflow 0px | none |
+| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 123 KB, horizontal overflow 0px | none |
 | desktop | dark | ![guardian-required desktop dark](guardian-required--desktop--dark--built.png)<br>`/guardian-required`, 125 KB, horizontal overflow 0px | none |
 | mobile | light | ![guardian-required mobile light](guardian-required--mobile--light--built.png)<br>`/guardian-required`, 106 KB, horizontal overflow 0px | none |
 | mobile | dark | ![guardian-required mobile dark](guardian-required--mobile--dark--built.png)<br>`/guardian-required`, 109 KB, horizontal overflow 0px | none |
@@ -170,9 +170,9 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![pending-deletion desktop light](pending-deletion--desktop--light--built.png)<br>`/dashboard`, 56 KB, horizontal overflow 0px | none |
-| desktop | dark | ![pending-deletion desktop dark](pending-deletion--desktop--dark--built.png)<br>`/dashboard`, 58 KB, horizontal overflow 0px | none |
-| mobile | light | ![pending-deletion mobile light](pending-deletion--mobile--light--built.png)<br>`/dashboard`, 47 KB, horizontal overflow 0px | none |
+| desktop | light | ![pending-deletion desktop light](pending-deletion--desktop--light--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
+| desktop | dark | ![pending-deletion desktop dark](pending-deletion--desktop--dark--built.png)<br>`/dashboard`, 57 KB, horizontal overflow 0px | none |
+| mobile | light | ![pending-deletion mobile light](pending-deletion--mobile--light--built.png)<br>`/dashboard`, 46 KB, horizontal overflow 0px | none |
 | mobile | dark | ![pending-deletion mobile dark](pending-deletion--mobile--dark--built.png)<br>`/dashboard`, 48 KB, horizontal overflow 0px | none |
 
 ## The error screen: /update-password whose code chunk fails to load (App's ErrorBoundary)
@@ -191,6 +191,6 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"c02c3b06-4401-4342-84f0-53162891ff92","openPracticeSessionId":"27f1c48b-fc3c-4562-9c3a-90523f65043e","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"e50558b7-6e9c-4173-89cc-f312309d5ba8","openPracticeSessionId":"7ab59281-75c1-47ec-9d9c-8109f474254f","openReviewSessionId":null,"diagnosticSessionId":"a464038c-d4df-456a-ad74-44e9a81a5205","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"6aa223a6-7276-43ed-b80c-2bd1b0be799c","openPracticeSessionId":"85949fc7-fe5f-4b2a-ab89-d8bf52b50398","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"f6266377-55d6-47d3-b4be-65cda1210115","openPracticeSessionId":"6839a269-eb00-4dea-ba7e-15cc6f1b78f8","openReviewSessionId":null,"diagnosticSessionId":"8f9f4a3a-5a4b-4948-b4fd-31e809f9ce15","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none

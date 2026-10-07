@@ -223,6 +223,37 @@ export const UI_50: PageGroup = {
       },
     },
     {
+      id: "click-paid-recent-review-pending",
+      title:
+        "OQ-66 (h): a recent-session row's 'Review this session' pressed, the review create held in flight: that row reads 'Starting…' and the other rows' actions wait (full page: on a phone the panel stacks under the main column)",
+      persona: "paid",
+      route: "/dashboard",
+      waitFor: {
+        desktop: '[data-testid="home-recent-review"]',
+        mobile: '[data-testid="home-recent-review"]',
+      },
+      holdRequest: {
+        method: "POST",
+        path: "/api/review/sessions",
+        match: "exact",
+      },
+      steps: [
+        {
+          click: {
+            desktop: '[data-testid="home-recent-review"]',
+            mobile: '[data-testid="home-recent-review"]',
+          },
+        },
+      ],
+      expectVisible: '[data-testid="home-recent-review"][aria-busy="true"]',
+      fullPage: true,
+      prototype: {
+        kind: "none",
+        reason:
+          "The row's explicit action and its pending state are not drawn in the prototype (owner ruling OQ-66 (h), Karl, 2026-10-07).",
+      },
+    },
+    {
       id: "click-paid-full-length-card",
       title:
         "Click path (paid): Home's 'Start a full-length test' card lands on the Full-Length page (owner ruling, Karl, 2026-10-05)",

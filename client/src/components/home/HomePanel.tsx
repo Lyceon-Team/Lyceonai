@@ -210,7 +210,12 @@ export function RecentSessionsSection({
                     {kind}
                   </span>
                   <span className="text-lyc-meta text-lyc-muted">
-                    {when} · {toReviewLine(s.open_count)}
+                    {/* Two unbreakable halves: a narrow panel wraps between them, never
+                        inside "2 to review". */}
+                    <span className="whitespace-nowrap">{when} ·</span>{" "}
+                    <span className="whitespace-nowrap">
+                      {toReviewLine(s.open_count)}
+                    </span>
                   </span>
                 </span>
                 <button
