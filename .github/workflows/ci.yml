@@ -273,10 +273,16 @@ jobs:
       - name: Shared package — lint (blocking)
         run: pnpm run lint:shared
 
+      # The whole repository lints at zero since 2026-10-07 (owner decision on the CI audit,
+      # item 7): the eslint-legacy-tree accept-list entry, due to expire 2026-11-01, is deleted
+      # and this step is blocking.
+      - name: Lint — whole repository (blocking)
+        run: pnpm run lint
+
       # Codex audit of #1073 + #1108 + #1113, finding 1 (HIGH), accepted by Karl 2026-10-05:
-      # no console.* in shipped client code. `pnpm lint` already sets no-console to error but
-      # runs in the advisory ci-known-gaps job; this step is the blocking one. One rule only,
-      # inline disable comments ignored (eslint.no-console.config.mjs explains its two SEO-owned
+      # no console.* in shipped client code. Kept beside the whole-repository lint above because
+      # it differs in one way: one rule only, with inline disable comments ignored, which the
+      # repository lint honours (eslint.no-console.config.mjs explains its two SEO-owned
       # exclusions, register F-74).
       - name: Client — no console (blocking)
         run: pnpm run lint:no-console

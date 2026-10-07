@@ -21,10 +21,6 @@ import request from "supertest";
 
 import { masteryLevelLabelsFixture } from "../utils/mastery-levels-fixture";
 
-const masteryMocks2 = vi.hoisted(() => ({
-}));
-
-
 // buildWeaknessSkillsView now labels each level from `mastery_levels`. Without this the
 // view reaches for a real Supabase client and the case hangs rather than failing.
 vi.mock("../../apps/api/src/services/mastery-levels-read", () => ({
@@ -117,7 +113,7 @@ describe("KPI summary: canonical builder path", () => {
 
     const app = express();
     app.use(express.json());
-    app.use((req: any, _res, next) => {
+    app.use((req, _res, next) => {
       req.user = { id: "student-5", role: "student" };
       req.requestId = "req-kpi-5";
       next();
@@ -179,7 +175,7 @@ describe("KPI summary: canonical builder path", () => {
 
     const app = express();
     app.use(express.json());
-    app.use((req: any, _res, next) => {
+    app.use((req, _res, next) => {
       req.user = { id: "student-6", role: "student" };
       req.requestId = "req-kpi-6";
       next();

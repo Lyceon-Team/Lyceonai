@@ -18,7 +18,7 @@ const match = html.match(/<script id="lyceon-theme-boot">([\s\S]*?)<\/script>/);
 const bootScript = match?.[1] ?? "";
 
 function runBoot(): string | null {
-  // eslint-disable-next-line no-new-func -- the point is to run the real inline script text
+  // new Function on purpose: the point is to run the real inline script text.
   new Function(bootScript)();
   return document.documentElement.getAttribute("data-theme");
 }

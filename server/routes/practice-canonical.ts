@@ -560,10 +560,10 @@ function safeParseOptions(raw: unknown): McOption[] {
   const options: McOption[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
-    const key =
-      typeof (item as any).key === "string" ? (item as any).key.trim() : "";
-    const text =
-      typeof (item as any).text === "string" ? (item as any).text : "";
+    const rawKey: unknown = "key" in item ? item.key : undefined;
+    const rawText: unknown = "text" in item ? item.text : undefined;
+    const key = typeof rawKey === "string" ? rawKey.trim() : "";
+    const text = typeof rawText === "string" ? rawText : "";
     if (!key || !text) continue;
     const normalized = normalizeAnswerKey(key);
     if (!normalized) continue;
@@ -886,16 +886,6 @@ export function buildSessionItemInsertRows(
   }));
 }
 
-function simpleHash(input: string): number {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const ch = input.charCodeAt(i);
-    hash = (hash << 5) - hash + ch;
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
 // coerceQuestionDifficulty REMOVED — difficulty filtering moved to
 // select_practice_pool_random RPC (DB-side CASE expression).
 
@@ -1050,7 +1040,11 @@ export async function hydrateSessionItemOptionTokens(
     throw new Error(`${table}_option_fetch_failed: ${error.message}`);
   }
 
-  for (const row of (data ?? []) as any[]) {
+  const rows: Pick<
+    SessionItemRow,
+    "id" | "question_options" | "option_order" | "option_token_map"
+  >[] = data ?? [];
+  for (const row of rows) {
     if (row.option_order && row.option_token_map) continue;
     const options = safeParseOptions(row.question_options);
     if (!hasCanonicalOptionSet(options)) continue;
@@ -1162,7 +1156,10 @@ async function reservePracticeQuestionQuota(args: {
       },
     };
   } catch (error: unknown) {
-    const code = (error as any)?.code;
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
     if (
       error instanceof RateLimitUnavailableError ||
       code === "RATE_LIMIT_DB_UNAVAILABLE"
@@ -1205,18 +1202,21 @@ async function getSessionStats(
     return { correct: 0, incorrect: 0, skipped: 0, total: 0, streak: 0 };
   }
 
-  const attempts = data ?? [];
+  const attempts: Pick<
+    SessionItemRow,
+    "is_correct" | "outcome" | "answered_at" | "status"
+  >[] = data ?? [];
   const correct = attempts.filter(
-    (a: any) => a.is_correct === true && a.outcome !== "skipped",
+    (a) => a.is_correct === true && a.outcome !== "skipped",
   ).length;
-  const skipped = attempts.filter((a: any) => a.outcome === "skipped").length;
+  const skipped = attempts.filter((a) => a.outcome === "skipped").length;
   const total = attempts.length;
   const incorrect = Math.max(0, total - correct - skipped);
 
   let streak = 0;
   for (const a of attempts) {
-    if ((a as any).outcome === "skipped") continue;
-    if ((a as any).is_correct) {
+    if (a.outcome === "skipped") continue;
+    if (a.is_correct) {
       streak++;
       continue;
     }
@@ -1294,10 +1294,10 @@ async function getSessionProgressCounts(sessionId: string): Promise<{
     throw new Error(`practice_session_progress_count_failed: ${error.message}`);
   }
 
-  const attempts = data ?? [];
+  const attempts: Pick<SessionItemRow, "outcome" | "status">[] = data ?? [];
   const completedCount = attempts.length;
   const skippedCount = attempts.filter(
-    (row: any) => row?.outcome === "skipped",
+    (row) => row?.outcome === "skipped",
   ).length;
   const answeredCount = Math.max(0, completedCount - skippedCount);
 
@@ -1739,7 +1739,7 @@ export async function startOrReplaySession(args: {
 
   try {
     await hydrateSessionItemOptionTokens(sessionId);
-  } catch (hydrateError: any) {
+  } catch (hydrateError: unknown) {
     await cleanupFailedSessionMaterialization(sessionId);
     return {
       ok: false,
@@ -1747,7 +1747,9 @@ export async function startOrReplaySession(args: {
       body: {
         error: "session_create_failed",
         message:
-          hydrateError?.message ?? "Unable to hydrate session item tokens",
+          hydrateError instanceof Error
+            ? hydrateError.message
+            : "Unable to hydrate session item tokens",
       },
     };
   }
@@ -1816,7 +1818,7 @@ async function loadOwnedSession(
     .single();
 
   if (error || !data) return null;
-  if ((data as any).user_id !== userId) {
+  if ((data as SessionRow).user_id !== userId) {
     if (options?.hideForbidden) return null;
     return { forbidden: true, session: data as SessionRow };
   }
@@ -1931,7 +1933,7 @@ async function serveNextForSession(args: {
   clientInstanceId: string;
   afterLostPromote?: boolean;
 }): Promise<Response> {
-  const requestId = (args.req as any).requestId;
+  const requestId = args.req.requestId;
   const config = await loadPracticeConfig();
 
   const owned = await loadOwnedSession(args.sessionId, args.userId, {
@@ -2085,7 +2087,7 @@ async function serveNextForSession(args: {
     });
   }
 
-  let nextPrebuilt = await getNextPrebuiltQueuedItem(args.sessionId);
+  const nextPrebuilt = await getNextPrebuiltQueuedItem(args.sessionId);
   if (!nextPrebuilt) {
     const existingItemCount = await countSessionItems(args.sessionId);
     if (existingItemCount === 0) {
@@ -2325,9 +2327,19 @@ router.get(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   async (req, res) => {
-    const requestId = (req as any).requestId;
-    const user = (req as any).user;
+    const requestId = req.requestId;
+    const user = req.user;
     const userId = user?.id;
+
+    // Same fail-closed guard as the sibling routes (requireSupabaseAuth already
+    // guarantees a user): never query sessions with an undefined owner id.
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
 
     const openConfig = await loadPracticeConfig();
     const { data: sessions, error } = await supabaseServer
@@ -2406,9 +2418,20 @@ router.post(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   async (req, res) => {
-    const requestId = (req as any).requestId;
-    const user = (req as any).user;
+    const requestId = req.requestId;
+    const user = req.user;
     const userId = user?.id;
+
+    // Same fail-closed guard as the sibling routes. requireSupabaseAuth already
+    // guarantees a user; this makes the typed value non-optional rather than
+    // passing `undefined` on as an owner id.
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
     const sessionId = req.params.sessionId;
     const { client_instance_id, force_takeover } = req.body || {};
 
@@ -2518,8 +2541,8 @@ router.post(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   async (req, res) => {
-    const requestId = (req as any).requestId;
-    const user = (req as any).user;
+    const requestId = req.requestId;
+    const user = req.user;
     const userId = user?.id;
 
     if (!userId) {
@@ -2593,8 +2616,8 @@ router.post(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   async (req, res) => {
-    const requestId = (req as any).requestId;
-    const user = (req as any).user;
+    const requestId = req.requestId;
+    const user = req.user;
     const userId = user?.id;
 
     if (!userId) {
@@ -2668,8 +2691,8 @@ router.post(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   async (req, res) => {
-    const requestId = (req as any).requestId;
-    const user = (req as any).user;
+    const requestId = req.requestId;
+    const user = req.user;
     const userId = user?.id;
 
     if (!userId) {
@@ -2755,8 +2778,8 @@ router.get(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   async (req, res) => {
-    const requestId = (req as any).requestId;
-    const user = (req as any).user;
+    const requestId = req.requestId;
+    const user = req.user;
     const userId = user?.id;
 
     if (!userId) {
@@ -2805,8 +2828,8 @@ router.get(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   async (req, res) => {
-    const requestId = (req as any).requestId;
-    const user = (req as any).user;
+    const requestId = req.requestId;
+    const user = req.user;
     const userId = user?.id;
 
     if (!userId) {
@@ -3232,8 +3255,8 @@ export async function captureDiagnosticBaseline(
 }
 
 export async function submitPracticeAnswer(req: Request, res: Response) {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
+  const requestId = req.requestId;
+  const user = req.user;
   const userId = user?.id;
 
   if (!userId) {
@@ -3853,8 +3876,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 }
 
 async function submitPracticeSkip(req: Request, res: Response) {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
+  const requestId = req.requestId;
+  const user = req.user;
   const userId = user?.id;
 
   if (!userId) {

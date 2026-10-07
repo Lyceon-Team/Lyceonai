@@ -409,7 +409,6 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
     );
 
     // Printed, so the reviewer reads the evidence rather than a boolean.
-    // eslint-disable-next-line no-console
     console.table(
       handled.map((e) => ({
         event: e,
@@ -566,7 +565,6 @@ describe("Stripe contract fixtures say what they appear to say", () => {
     }
 
     // Printed, so a reviewer reads the evidence rather than a boolean.
-    // eslint-disable-next-line no-console
     console.log(
       `scanned ${files.length} Stripe fixture files; ` +
         `${offences.length} duplicate-key offence(s)`,

@@ -254,7 +254,6 @@ test("Math module: calculator from the tools row, resume with it open, reference
   await page.waitForTimeout(500);
   await shot(page, "03-math-reference-sheet");
 
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "E10 EVIDENCE " +
       JSON.stringify({

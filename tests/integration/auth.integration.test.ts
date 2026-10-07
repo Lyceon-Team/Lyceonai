@@ -18,7 +18,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
-import { createClient } from '@supabase/supabase-js';
 
 /**
  * Check if Supabase environment variables are available
@@ -54,7 +53,6 @@ if (!runIntegrationTests) {
 
 describe.skipIf(!runIntegrationTests)('Integration Auth Tests', () => {
   let app: Express;
-  let supabase: ReturnType<typeof createClient>;
 
   beforeAll(async () => {
     if (!runIntegrationTests) {
@@ -67,12 +65,6 @@ describe.skipIf(!runIntegrationTests)('Integration Auth Tests', () => {
     // Import app
     const serverModule = await import('../../server/index');
     app = serverModule.default;
-
-    // Create Supabase client for test user management
-    supabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
   });
 
   describe('Real Supabase Authentication', () => {

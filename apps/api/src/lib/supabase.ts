@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { env } from '../env';
+import { logger } from '../../../../server/logger';
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -10,10 +10,10 @@ export function getSupabaseClient(): SupabaseClient {
 
     // In test mode, return placeholder client if env vars missing
     const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
-    
+
     if (!supabaseUrl || !supabaseKey) {
       if (isTestEnv) {
-        console.log('[SUPABASE] Test mode: using placeholder client');
+        logger.info('SUPABASE', 'init', 'Test mode: using placeholder client');
         supabaseClient = createClient('https://placeholder.supabase.co', 'placeholder-key', {
           auth: {
             persistSession: false,
@@ -22,7 +22,7 @@ export function getSupabaseClient(): SupabaseClient {
         });
         return supabaseClient;
       }
-      
+
       throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
     }
 
@@ -33,11 +33,13 @@ export function getSupabaseClient(): SupabaseClient {
       },
     });
 
-    console.log('✅ Supabase client initialized');
+    logger.info('SUPABASE', 'init', 'Supabase client initialized');
   }
 
   return supabaseClient;
 }
+
+const VECTOR_SETUP_HINT = 'Run the SQL setup script: database/supabase-vector-setup.sql';
 
 // Initialize Supabase vector table if needed
 // NOTE: This function checks if the table exists. If not, you need to manually create it
@@ -47,19 +49,22 @@ export async function initializeVectorTable(): Promise<void> {
 
   try {
     // Check if question_embeddings table exists
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('question_embeddings')
       .select('id')
       .limit(1);
 
     if (error && error.code === '42P01') {
       // Table doesn't exist
-      console.warn('⚠️ question_embeddings table does not exist in Supabase');
-      console.warn('⚠️ Please run the SQL setup script: database/supabase-vector-setup.sql');
-      console.warn('⚠️ Vector search will not be available until the table is created');
+      logger.warn(
+        'SUPABASE',
+        'vector_table_check',
+        'question_embeddings table does not exist in Supabase; vector search unavailable until it is created',
+        { hint: VECTOR_SETUP_HINT },
+      );
     } else if (!error) {
-      console.log('✅ question_embeddings table exists');
-      
+      logger.info('SUPABASE', 'vector_table_check', 'question_embeddings table exists');
+
       // Check if match_questions function exists by trying to call it
       const { error: funcError } = await supabase.rpc('match_questions', {
         query_embedding: Array(1536).fill(0),
@@ -68,16 +73,24 @@ export async function initializeVectorTable(): Promise<void> {
       });
 
       if (funcError && funcError.message.includes('function')) {
-        console.warn('⚠️ match_questions() function does not exist');
-        console.warn('⚠️ Please run the SQL setup script: database/supabase-vector-setup.sql');
+        logger.warn(
+          'SUPABASE',
+          'vector_function_check',
+          'match_questions() function does not exist',
+          { hint: VECTOR_SETUP_HINT },
+        );
       } else {
-        console.log('✅ match_questions() function is available');
+        logger.info('SUPABASE', 'vector_function_check', 'match_questions() function is available');
       }
     } else {
-      console.warn('⚠️ Error checking vector table:', error.message);
+      logger.warn('SUPABASE', 'vector_table_check', 'Error checking vector table', {
+        errorMessage: error.message,
+      });
     }
   } catch (err) {
-    console.warn('⚠️ Vector table initialization check failed:', err);
+    logger.warn('SUPABASE', 'vector_table_check', 'Vector table initialization check failed', {
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -87,7 +100,7 @@ export interface QuestionEmbedding {
   embedding: number[];
   stem: string;
   section: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   created_at?: string;
 }
 
@@ -97,7 +110,7 @@ export async function storeQuestionEmbedding(
   embedding: number[],
   stem: string,
   section: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 ): Promise<void> {
   const supabase = getSupabaseClient();
 
@@ -115,7 +128,7 @@ export async function storeQuestionEmbedding(
     });
 
   if (error) {
-    console.error('Error storing question embedding:', error);
+    logger.error('SUPABASE', 'store_embedding', 'Error storing question embedding', error);
     throw new Error(`Failed to store embedding: ${error.message}`);
   }
 }
@@ -144,13 +157,13 @@ export async function searchSimilarQuestions(
     const { data, error } = await query;
 
     if (error) {
-      if (!isTestEnv) console.error('Vector search error:', error);
+      if (!isTestEnv) logger.error('SUPABASE', 'vector_search', 'Vector search error', error);
       throw new Error(`Vector search failed: ${error.message}`);
     }
 
     return data || [];
   } catch (err) {
-    if (!isTestEnv) console.error('Search similar questions error:', err);
+    if (!isTestEnv) logger.error('SUPABASE', 'vector_search', 'Search similar questions error', err);
     return [];
   }
 }

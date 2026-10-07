@@ -4,9 +4,14 @@
 //        error for client/src, so CI fails on any new one."] | @implemented [2026-10-05]
 //
 // plain English: a BLOCKING lint of exactly one rule, `no-console`, over the shipped client
-// code under client/src. `pnpm lint` (eslint.config.mjs) already sets no-console to error, but
-// it runs in the advisory ci-known-gaps job, so a new console call never failed CI. This config
-// runs in the required `ci` job via `pnpm run lint:no-console`.
+// code under client/src. When this was written, `pnpm lint` (eslint.config.mjs) set no-console
+// to error but ran in the advisory ci-known-gaps job, so a new console call never failed CI.
+// This config runs in the required `ci` job via `pnpm run lint:no-console`.
+// STATUS 2026-10-07: `pnpm run lint` is now ALSO blocking in the `ci` job (eslint-legacy-tree
+// resolved). This config stays because it is stricter where it matters: `noInlineConfig` means
+// an eslint-disable comment cannot switch the rule off here. home.tsx no longer contains a
+// console call (its CTA console.debug stub was removed that day); its exclusion below is the
+// SEO vertical's to drop.
 //
 // Trade-offs and edge cases:
 // - Only no-console is checked, so the legacy tree's other advisory findings do not block here.

@@ -3,7 +3,7 @@ import request from "supertest";
 import type { Express } from "express";
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
   generateToken: () => "test-csrf-token",
 }));
 

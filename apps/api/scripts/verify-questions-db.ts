@@ -13,15 +13,10 @@ console.log("[Verify] SUPABASE_URL:", SUPABASE_URL);
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
-function hasCanonicalOptionMetadata(value: any): boolean {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    value.A &&
-    value.B &&
-    value.C &&
-    value.D
-  );
+function hasCanonicalOptionMetadata(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const meta = value as Record<string, unknown>;
+  return !!(meta.A && meta.B && meta.C && meta.D);
 }
 
 async function main() {

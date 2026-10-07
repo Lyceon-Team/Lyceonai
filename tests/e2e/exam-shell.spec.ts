@@ -448,7 +448,6 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   });
   await page.waitForTimeout(1_500);
   const strictAfter = await strictRemaining();
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "TEST-DAY NO PAUSE: remaining before hide",
     strictBefore,
@@ -490,7 +489,6 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   );
   await page.waitForTimeout(3_000);
   const t1 = await read();
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "CLOCK PLANT: timer",
     t0,
@@ -524,7 +522,6 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   // E2E_DESMOS_STUB=1 (nightly CI, no key; 2026-10-07): calculator.js is answered by the shared
   // stand-in (tests/e2e/desmos-stub.ts), so the embed mounts and the same wiring checks run —
   // still NOT G-EX-08, which needs the real Desmos runtime.
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "DESMOS REQUEST FAILURES",
     JSON.stringify(desmosFailures),
@@ -576,7 +573,6 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
     `SELECT section, module2_path FROM public.test_session_sections WHERE test_session_id = $1 ORDER BY section DESC`,
     [sid],
   );
-  // eslint-disable-next-line no-console -- evidence line
   console.log("TEST-DAY PATHS", JSON.stringify(paths.rows));
   expect(leaks).toEqual([]);
 });
@@ -638,7 +634,6 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   });
   await page.waitForTimeout(1_500);
   const after = await remaining();
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "PRACTICE PAUSE: remaining before hide",
     before,
@@ -664,7 +659,6 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
     `SELECT section, module2_path FROM public.test_session_sections WHERE test_session_id = $1 ORDER BY section DESC`,
     [sid],
   );
-  // eslint-disable-next-line no-console -- evidence line
   console.log("PRACTICE PATHS", JSON.stringify(paths.rows));
 
   await page.goto("/tests");

@@ -78,10 +78,12 @@ async function applyMigration(client: Client, filepath: string, filename: string
     await markMigrationApplied(client, filename);
     
     log(`✅ Success: ${filename}`, 'green');
-  } catch (error: any) {
+  } catch (caught: unknown) {
     log(`❌ Failed: ${filename}`, 'red');
-    log(`Error: ${error.message}`, 'red');
-    
+    log(`Error: ${caught instanceof Error ? caught.message : String(caught)}`, 'red');
+    if (!(caught instanceof pg.DatabaseError)) throw caught;
+    const error = caught;
+
     // Show more error details
     if (error.position) {
       const position = parseInt(error.position);
@@ -208,9 +210,9 @@ async function main() {
         try {
           await client.query(sql);
           log(`✅ Success: ${filename}`, 'green');
-        } catch (error: any) {
+        } catch (error: unknown) {
           // Seeds are idempotent, so errors might be expected (e.g., data already exists)
-          log(`⚠️  Seed warning: ${filename} - ${error.message}`, 'yellow');
+          log(`⚠️  Seed warning: ${filename} - ${error instanceof Error ? error.message : String(error)}`, 'yellow');
         }
       }
     }
@@ -218,9 +220,9 @@ async function main() {
     log('\n✅ Migration complete!', 'green');
     log('================================\n', 'green');
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     log('\n❌ Migration failed!', 'red');
-    log(`Error: ${error.message}`, 'red');
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`, 'red');
     log('================================\n', 'red');
     process.exit(1);
   } finally {

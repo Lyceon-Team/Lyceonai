@@ -32,7 +32,6 @@ const SESSION_ITEM_ID = "item-submit-guard";
 let submitRef: ((opts: { skipped: boolean }) => Promise<void>) | null = null;
 let freeResponseRef: ((val: string) => void) | null = null;
 let selectAnswerRef: ((val: string | null) => void) | null = null;
-let submitBlockedRef: string | null = null;
 
 function Harness() {
   const state = useCanonicalPractice("math");
@@ -42,7 +41,6 @@ function Harness() {
   }) => Promise<void>;
   freeResponseRef = state.setFreeResponseAnswer;
   selectAnswerRef = state.setSelectedAnswer as (val: string | null) => void;
-  submitBlockedRef = state.submitBlocked;
 
   return (
     <div>
@@ -132,7 +130,6 @@ describe("useCanonicalPractice unified submit guard (isSubmittableAnswer)", () =
     submitRef = null;
     freeResponseRef = null;
     selectAnswerRef = null;
-    submitBlockedRef = null;
   });
 
   describe("grid-in: action boundary blocks malformed values", () => {

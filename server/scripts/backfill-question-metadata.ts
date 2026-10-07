@@ -27,7 +27,7 @@ interface Question {
 function deriveCanonicalIdFromStem(stem: string | undefined): string | null {
   if (!stem) return null;
 
-  const match = stem.match(/Question\s+ID\s*[:\-]?\s*([a-fA-F0-9]{6,10})/i);
+  const match = stem.match(/Question\s+ID\s*[:-]?\s*([a-fA-F0-9]{6,10})/i);
   if (match && match[1]) {
     const suffix = match[1].toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6).padEnd(6, "0");
     return `SATM1${suffix}`;
@@ -97,7 +97,7 @@ async function main() {
   
   let updated = 0;
   let skipped = 0;
-  const samples: Array<{ id: string; updates: Record<string, any> }> = [];
+  const samples: Array<{ id: string; updates: Partial<Question> }> = [];
   
   for (const q of questions) {
     const updates: Partial<Question> = {};
