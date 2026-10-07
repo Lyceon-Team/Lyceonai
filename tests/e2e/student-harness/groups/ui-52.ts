@@ -123,20 +123,8 @@ export const UI_52: PageGroup = {
         note: "Review, plan = free, 'Past sessions' clicked open on the canvas",
       },
     },
-    {
-      id: "click-paid-start",
-      title: "Click path (paid): Start reviewing lands in the review runner",
-      persona: "paid",
-      route: "/review",
-      waitFor: REVIEW,
-      steps: [both('[data-testid="button-start-queue"]')],
-      expectPath: "^/review/session/[0-9a-f-]{36}$",
-      prototype: {
-        kind: "none",
-        reason:
-          "A click path: the screenshot is where the click landed (the runner), proven by its pathname.",
-      },
-    },
+    // The pending shot runs before the click path: each click-path capture leaves a real
+    // session open, and four of them reach the open-session limit that disables Start.
     {
       id: "click-paid-start-pending",
       title:
@@ -151,6 +139,20 @@ export const UI_52: PageGroup = {
         kind: "none",
         reason:
           "A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).",
+      },
+    },
+    {
+      id: "click-paid-start",
+      title: "Click path (paid): Start reviewing lands in the review runner",
+      persona: "paid",
+      route: "/review",
+      waitFor: REVIEW,
+      steps: [both('[data-testid="button-start-queue"]')],
+      expectPath: "^/review/session/[0-9a-f-]{36}$",
+      prototype: {
+        kind: "none",
+        reason:
+          "A click path: the screenshot is where the click landed (the runner), proven by its pathname.",
       },
     },
   ],

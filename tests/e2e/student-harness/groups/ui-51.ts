@@ -142,21 +142,8 @@ export const UI_51: PageGroup = {
         note: "Practice, plan = paid, the same three choices clicked on the canvas",
       },
     },
-    {
-      id: "click-paid-start",
-      title:
-        "Click path (paid): choose a domain, a skill and a difficulty, then Start lands in the practice runner",
-      persona: "paid",
-      route: "/practice",
-      waitFor: PRACTICE,
-      steps: [...CHOOSE_FILTERS, both('[data-testid="practice-start"]')],
-      expectPath: "^/practice/session/[0-9a-f-]{36}$",
-      prototype: {
-        kind: "none",
-        reason:
-          "A click path: the screenshot is where the click landed (the runner), proven by its pathname.",
-      },
-    },
+    // The pending shot runs before the click path: each click-path capture leaves a real
+    // session open, and four of them reach the open-session limit that disables Start.
     {
       id: "click-paid-start-pending",
       title:
@@ -171,6 +158,21 @@ export const UI_51: PageGroup = {
         kind: "none",
         reason:
           "A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).",
+      },
+    },
+    {
+      id: "click-paid-start",
+      title:
+        "Click path (paid): choose a domain, a skill and a difficulty, then Start lands in the practice runner",
+      persona: "paid",
+      route: "/practice",
+      waitFor: PRACTICE,
+      steps: [...CHOOSE_FILTERS, both('[data-testid="practice-start"]')],
+      expectPath: "^/practice/session/[0-9a-f-]{36}$",
+      prototype: {
+        kind: "none",
+        reason:
+          "A click path: the screenshot is where the click landed (the runner), proven by its pathname.",
       },
     },
   ],

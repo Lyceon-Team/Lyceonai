@@ -1,6 +1,6 @@
 # UI-54 Full-Length home (/tests), the exam report and the timed module: free and paid, light and dark, 1440 and 390
 
-Generated 2026-10-05T14:12:37.912Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-54` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T10:11:57.318Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-54` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -30,8 +30,8 @@ Prototype: `FullLength.dc.html` (Full-Length, plan = paid).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![tests-paid desktop light](tests-paid--desktop--light--built.png)<br>`/tests`, 175 KB, horizontal overflow 0px | ![prototype light](proto--FullLength--paid--light.png), 148 KB |
-| desktop | dark | ![tests-paid desktop dark](tests-paid--desktop--dark--built.png)<br>`/tests`, 175 KB, horizontal overflow 0px | ![prototype dark](proto--FullLength--paid--dark.png), 150 KB |
+| desktop | light | ![tests-paid desktop light](tests-paid--desktop--light--built.png)<br>`/tests`, 164 KB, horizontal overflow 0px | ![prototype light](proto--FullLength--paid--light.png), 148 KB |
+| desktop | dark | ![tests-paid desktop dark](tests-paid--desktop--dark--built.png)<br>`/tests`, 163 KB, horizontal overflow 0px | ![prototype dark](proto--FullLength--paid--dark.png), 150 KB |
 | mobile | light | ![tests-paid mobile light](tests-paid--mobile--light--built.png)<br>`/tests`, 67 KB, horizontal overflow 0px | ![prototype light](proto--FullLength--paid--light.png)<br>desktop prototype (no phone layout), 148 KB |
 | mobile | dark | ![tests-paid mobile dark](tests-paid--mobile--dark--built.png)<br>`/tests`, 66 KB, horizontal overflow 0px | ![prototype dark](proto--FullLength--paid--dark.png)<br>desktop prototype (no phone layout), 150 KB |
 
@@ -44,10 +44,10 @@ Prototype: `FullLength.dc.html` (Full-Length, plan = paid (the canvas is a fixed
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![tests-paid-full desktop light](tests-paid-full--desktop--light--built.png)<br>`/tests`, 175 KB, horizontal overflow 0px | ![prototype light](proto--FullLength--paid--light.png), 148 KB |
-| desktop | dark | ![tests-paid-full desktop dark](tests-paid-full--desktop--dark--built.png)<br>`/tests`, 175 KB, horizontal overflow 0px | ![prototype dark](proto--FullLength--paid--dark.png), 150 KB |
+| desktop | light | ![tests-paid-full desktop light](tests-paid-full--desktop--light--built.png)<br>`/tests`, 164 KB, horizontal overflow 0px | ![prototype light](proto--FullLength--paid--light.png), 148 KB |
+| desktop | dark | ![tests-paid-full desktop dark](tests-paid-full--desktop--dark--built.png)<br>`/tests`, 163 KB, horizontal overflow 0px | ![prototype dark](proto--FullLength--paid--dark.png), 150 KB |
 | mobile | light | ![tests-paid-full mobile light](tests-paid-full--mobile--light--built.png)<br>`/tests`, 198 KB, horizontal overflow 0px | ![prototype light](proto--FullLength--paid--light.png)<br>desktop prototype (no phone layout), 148 KB |
-| mobile | dark | ![tests-paid-full mobile dark](tests-paid-full--mobile--dark--built.png)<br>`/tests`, 200 KB, horizontal overflow 0px | ![prototype dark](proto--FullLength--paid--dark.png)<br>desktop prototype (no phone layout), 150 KB |
+| mobile | dark | ![tests-paid-full mobile dark](tests-paid-full--mobile--dark--built.png)<br>`/tests`, 201 KB, horizontal overflow 0px | ![prototype dark](proto--FullLength--paid--dark.png)<br>desktop prototype (no phone layout), 150 KB |
 
 ## Full-Length on a phone (OQ-63): Resume asks the shared pre-start check, "Full-length tests are built for a laptop or tablet, like test day." with Continue anyway and Close; nothing opened yet. Desktop: no tap, no notice (control)
 
@@ -58,10 +58,10 @@ Prototype: none. The prototypes have no phone layout; the notice is the owner ru
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![tests-phone-notice desktop light](tests-phone-notice--desktop--light--built.png)<br>`/tests`, 175 KB, horizontal overflow 0px | none |
-| desktop | dark | ![tests-phone-notice desktop dark](tests-phone-notice--desktop--dark--built.png)<br>`/tests`, 175 KB, horizontal overflow 0px | none |
-| mobile | light | ![tests-phone-notice mobile light](tests-phone-notice--mobile--light--built.png)<br>`/tests`, 57 KB, horizontal overflow 0px | none |
-| mobile | dark | ![tests-phone-notice mobile dark](tests-phone-notice--mobile--dark--built.png)<br>`/tests`, 55 KB, horizontal overflow 0px | none |
+| desktop | light | ![tests-phone-notice desktop light](tests-phone-notice--desktop--light--built.png)<br>`/tests`, 164 KB, horizontal overflow 0px | none |
+| desktop | dark | ![tests-phone-notice desktop dark](tests-phone-notice--desktop--dark--built.png)<br>`/tests`, 163 KB, horizontal overflow 0px | none |
+| mobile | light | ![tests-phone-notice mobile light](tests-phone-notice--mobile--light--built.png)<br>`/tests`, 65 KB, horizontal overflow 0px | none |
+| mobile | dark | ![tests-phone-notice mobile dark](tests-phone-notice--mobile--dark--built.png)<br>`/tests`, 64 KB, horizontal overflow 0px | none |
 
 ## Exam report (Focus shell), the scored Full-Length Test 1: total out of 1600, sections out of 800, the disclosure; Knowledge and skills, seven segments per domain
 
@@ -70,10 +70,10 @@ Prototype: `Report.dc.html` (Report).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![report-scored desktop light](report-scored--desktop--light--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 110 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png), 95 KB |
-| desktop | dark | ![report-scored desktop dark](report-scored--desktop--dark--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 112 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png), 96 KB |
-| mobile | light | ![report-scored mobile light](report-scored--mobile--light--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png)<br>desktop prototype (no phone layout), 95 KB |
-| mobile | dark | ![report-scored mobile dark](report-scored--mobile--dark--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 56 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png)<br>desktop prototype (no phone layout), 96 KB |
+| desktop | light | ![report-scored desktop light](report-scored--desktop--light--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 124 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png), 95 KB |
+| desktop | dark | ![report-scored desktop dark](report-scored--desktop--dark--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 111 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png), 96 KB |
+| mobile | light | ![report-scored mobile light](report-scored--mobile--light--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png)<br>desktop prototype (no phone layout), 95 KB |
+| mobile | dark | ![report-scored mobile dark](report-scored--mobile--dark--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 55 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png)<br>desktop prototype (no phone layout), 96 KB |
 
 ## Exam report, full page (on a phone the score card stacks above Knowledge and skills)
 
@@ -83,10 +83,10 @@ Prototype: `Report.dc.html` (Report (the canvas is a fixed 1440x900)).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![report-scored-full desktop light](report-scored-full--desktop--light--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 110 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png), 95 KB |
-| desktop | dark | ![report-scored-full desktop dark](report-scored-full--desktop--dark--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 112 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png), 96 KB |
-| mobile | light | ![report-scored-full mobile light](report-scored-full--mobile--light--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png)<br>desktop prototype (no phone layout), 95 KB |
-| mobile | dark | ![report-scored-full mobile dark](report-scored-full--mobile--dark--built.png)<br>`/tests/0ff0e739-6f64-499b-bd65-cb2035dd3796/report`, 56 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png)<br>desktop prototype (no phone layout), 96 KB |
+| desktop | light | ![report-scored-full desktop light](report-scored-full--desktop--light--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 110 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png), 95 KB |
+| desktop | dark | ![report-scored-full desktop dark](report-scored-full--desktop--dark--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 111 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png), 96 KB |
+| mobile | light | ![report-scored-full mobile light](report-scored-full--mobile--light--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Report--noplan--light.png)<br>desktop prototype (no phone layout), 95 KB |
+| mobile | dark | ![report-scored-full mobile dark](report-scored-full--mobile--dark--built.png)<br>`/tests/f737be56-ed1f-4dc2-abb5-95d0f6e92676/report`, 55 KB, horizontal overflow 0px | ![prototype dark](proto--Report--noplan--dark.png)<br>desktop prototype (no phone layout), 96 KB |
 
 ## The timed module (Full-Length Test 2, Reading and Writing Module 2): Bluebook layout kept, no back arrow, light only; type on the student tokens
 
@@ -97,9 +97,9 @@ Prototype: none. No prototype draws the timed module: DESIGN.md §2 keeps its sh
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![timed-module desktop light](timed-module--desktop--light--built.png)<br>`/tests/cb3898fb-ef3b-4460-b793-779d60ab29cd/RW/2`, 96 KB, horizontal overflow 0px, document 900px in a 900px viewport, scrollY 0, top bar 0..58px, `main#main` 842px of content in 842px | none |
-| mobile | light | ![timed-module mobile light](timed-module--mobile--light--built.png)<br>`/tests/cb3898fb-ef3b-4460-b793-779d60ab29cd/RW/2`, 65 KB, horizontal overflow 0px, document 844px in a 844px viewport, scrollY 0, top bar 0..58px, `main#main` 786px of content in 786px | none |
-| tablet | light | ![timed-module tablet light](timed-module--tablet--light--built.png)<br>`/tests/cb3898fb-ef3b-4460-b793-779d60ab29cd/RW/2`, 102 KB, horizontal overflow 0px, document 1180px in a 1180px viewport, scrollY 0, top bar 0..58px, `main#main` 1122px of content in 1122px | none |
+| desktop | light | ![timed-module desktop light](timed-module--desktop--light--built.png)<br>`/tests/9d433b32-28e6-4439-a48c-921b7fafaa5c/RW/2`, 97 KB, horizontal overflow 0px, document 900px in a 900px viewport, scrollY 0, top bar 0..58px, `main#main` 842px of content in 842px | none |
+| mobile | light | ![timed-module mobile light](timed-module--mobile--light--built.png)<br>`/tests/9d433b32-28e6-4439-a48c-921b7fafaa5c/RW/2`, 64 KB, horizontal overflow 0px, document 844px in a 844px viewport, scrollY 0, top bar 0..58px, `main#main` 786px of content in 786px | none |
+| tablet | light | ![timed-module tablet light](timed-module--tablet--light--built.png)<br>`/tests/9d433b32-28e6-4439-a48c-921b7fafaa5c/RW/2`, 103 KB, horizontal overflow 0px, document 1180px in a 1180px viewport, scrollY 0, top bar 0..58px, `main#main` 1122px of content in 1122px | none |
 
 ## Click path (paid): Resume, the page's one primary action (at 390 through the shared pre-start check's Continue anyway), lands on the exam session route and on to the active module
 
@@ -111,13 +111,29 @@ Prototype: none. A click path; its proof is the landing path (the prototype's Re
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![click-paid-resume desktop light](click-paid-resume--desktop--light--built.png)<br>`/tests/cb3898fb-ef3b-4460-b793-779d60ab29cd/RW/2`, 96 KB, horizontal overflow 0px | none |
-| desktop | dark requested; page pinned light (`data-theme-lock=light`, OQ-49) | ![click-paid-resume desktop dark](click-paid-resume--desktop--dark--built.png)<br>`/tests/cb3898fb-ef3b-4460-b793-779d60ab29cd/RW/2`, 97 KB, horizontal overflow 0px | none |
-| mobile | light | ![click-paid-resume mobile light](click-paid-resume--mobile--light--built.png)<br>`/tests/cb3898fb-ef3b-4460-b793-779d60ab29cd/RW/2`, 65 KB, horizontal overflow 0px | none |
-| mobile | dark requested; page pinned light (`data-theme-lock=light`, OQ-49) | ![click-paid-resume mobile dark](click-paid-resume--mobile--dark--built.png)<br>`/tests/cb3898fb-ef3b-4460-b793-779d60ab29cd/RW/2`, 66 KB, horizontal overflow 0px | none |
+| desktop | light | ![click-paid-resume desktop light](click-paid-resume--desktop--light--built.png)<br>`/tests/9d433b32-28e6-4439-a48c-921b7fafaa5c/RW/2`, 97 KB, horizontal overflow 0px | none |
+| desktop | dark requested; page pinned light (`data-theme-lock=light`, OQ-49) | ![click-paid-resume desktop dark](click-paid-resume--desktop--dark--built.png)<br>`/tests/9d433b32-28e6-4439-a48c-921b7fafaa5c/RW/2`, 97 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-resume mobile light](click-paid-resume--mobile--light--built.png)<br>`/tests/9d433b32-28e6-4439-a48c-921b7fafaa5c/RW/2`, 65 KB, horizontal overflow 0px | none |
+| mobile | dark requested; page pinned light (`data-theme-lock=light`, OQ-49) | ![click-paid-resume mobile dark](click-paid-resume--mobile--dark--built.png)<br>`/tests/9d433b32-28e6-4439-a48c-921b7fafaa5c/RW/2`, 64 KB, horizontal overflow 0px | none |
+
+## QA item 5: a test's Start pressed (at 390 after Continue anyway), the create held in flight: 'Starting…' with a spinner, disabled
+
+Persona: `paid`. Route: `/tests`.
+Step: click `{"desktop":"[data-testid=\"tests-start\"]","mobile":"[data-testid=\"tests-start\"]"}`.
+Step: click `{"desktop":null,"mobile":"[data-testid=\"full-length-phone-continue\"]"}`.
+Held: the browser's `POST /api/tests/sessions` is left unanswered through the screenshot, then aborted (it never reaches the server).
+Must then show `[data-testid="tests-start"][aria-busy="true"]` (the capture fails otherwise).
+Prototype: none. A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).
+
+| Viewport | Theme (as rendered) | Built | Prototype |
+|---|---|---|---|
+| desktop | light | ![click-paid-start-pending desktop light](click-paid-start-pending--desktop--light--built.png)<br>`/tests`, 165 KB, horizontal overflow 0px | none |
+| desktop | dark | ![click-paid-start-pending desktop dark](click-paid-start-pending--desktop--dark--built.png)<br>`/tests`, 164 KB, horizontal overflow 0px | none |
+| mobile | light | ![click-paid-start-pending mobile light](click-paid-start-pending--mobile--light--built.png)<br>`/tests`, 70 KB, horizontal overflow 0px | none |
+| mobile | dark | ![click-paid-start-pending mobile dark](click-paid-start-pending--mobile--dark--built.png)<br>`/tests`, 70 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"1a39bbe9-ef3f-4214-8475-d7074bef7c3c","openPracticeSessionId":"8fa9ef8e-9576-4c9c-977f-1e82683e501f","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"8a0a9ada-1838-4aeb-bee1-df997db6328f","openPracticeSessionId":"5476ca71-c96f-4bd6-81f6-03bf84579a5f","openReviewSessionId":null,"diagnosticSessionId":"30f6de15-cf92-4019-a8f8-d8eb6a295151","scoredExamSessionId":"0ff0e739-6f64-499b-bd65-cb2035dd3796","inProgressExamSessionId":"cb3898fb-ef3b-4460-b793-779d60ab29cd","lisaConversationId":null,"answered":178}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"e0cafbd7-23c9-4fdf-b65c-851b75857138","openPracticeSessionId":"4097a4e8-f5d9-43f8-8e94-be1617f59ef7","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"6197a9a4-1753-4758-9efc-21d9bdfc1ec4","openPracticeSessionId":"b7a88725-d886-4f86-bc50-aad2e43a7f57","openReviewSessionId":null,"diagnosticSessionId":"ffe11857-7f79-4b4b-a38c-6be2671402c3","scoredExamSessionId":"f737be56-ed1f-4dc2-abb5-95d0f6e92676","inProgressExamSessionId":"9d433b32-28e6-4439-a48c-921b7fafaa5c","lisaConversationId":null,"answered":178}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none
