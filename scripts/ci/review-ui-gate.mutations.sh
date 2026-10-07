@@ -101,6 +101,13 @@ FILES=(
   "client/src/features/exam/components/ExamStatus.tsx"
   "client/src/features/calendar/components/FullLengthFields.tsx"
   "packages/shared/src/exam-form-display.ts"
+  "client/src/components/math/MathReferenceSheet.tsx"
+  "client/src/components/math/DesmosCalculator.tsx"
+  "client/src/components/practice/NumericEntryInput.tsx"
+  "client/src/components/notifications/NotificationBell.tsx"
+  "client/src/components/layout/StudentRouteFrame.tsx"
+  "client/src/components/layout/RouteSkeleton.tsx"
+  "client/src/lib/format-date.ts"
 )
 
 snapshot_all() {
@@ -1881,19 +1888,21 @@ s = s.replace(a, "<h2>Your account is scheduled for deletion</h2>", 1)'
 # OQ-60 (e) (Karl, 2026-10-05): RequireRole's loader follows the device theme on Bare routes.
 L60="client/src/components/auth/RequireRole.loader-theme.test.tsx"
 
+# Re-pointed 2026-10-07 (QA item 5): RequireRole now renders RouteLoading, which takes the
+# route's shell and lock from the table in layout/RouteSkeleton.tsx.
 plant "UI59-RL1" "the route guard's loader pinned light on every route again" \
   "$L60" \
-  "client/src/components/auth/RequireRole.tsx" \
-  'a = "    return requireRoleLoaderThemeLock(location) === \"light\" ? ("
+  "client/src/components/layout/RouteSkeleton.tsx" \
+  'a = "  const spec = user?.role === \"guardian\" ? null : studentShellAt(location);"
 assert s.count(a) == 1
-s = s.replace(a, "    return true ? (", 1)'
+s = s.replace(a, "  const spec = user?.role === \"guardian\" ? null : null;", 1)'
 
-plant "UI59-RL2" "the loader unlocks on every table route, not only the Bare ones" \
+plant "UI59-RL2" "the skeleton drops the route's lock (a page pinned light loads dark)" \
   "$L60" \
-  "client/src/lib/route-shells.ts" \
-  'a = "  return spec?.shell === \"bare\" ? spec.themeLock : \"light\";"
+  "client/src/components/layout/RouteSkeleton.tsx" \
+  'a = "    \"data-theme-lock\": spec.themeLock ?? undefined,"
 assert s.count(a) == 1
-s = s.replace(a, "  return spec !== undefined ? spec.themeLock : \"light\";", 1)'
+s = s.replace(a, "    \"data-theme-lock\": undefined,", 1)'
 
 # OQ-60 (f) (Karl, 2026-10-05): tighter paragraph leading inside the Bare card only.
 plant "UI59-CL1" "the card's paragraphs fall back to the global 1.75 leading" \
@@ -1957,9 +1966,11 @@ s = s.replace(a, "  \"practice\",\n  \"review\",\n", 1)'
 plant "FU-M3" "Full-Length back in the avatar menu (#1108's menu)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      items={<MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" />}"
-assert s.count(a) == 1
-s = s.replace(a, "      items={<><MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" /><MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" /></>}", 1)'
+  'a = "      items={\n        <MenuLink\n"
+b = "          icon={CircleHelp}\n        />\n      }\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "      items={\n        <>\n        <MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" icon={CircleHelp} />\n        <MenuLink\n", 1)
+s = s.replace(b, "          icon={CircleHelp}\n        />\n        </>\n      }\n", 1)'
 
 plant "FU-M4" "Calendar off the phone tab bar" \
   "$T41_RAIL" \
@@ -2263,6 +2274,142 @@ plant "FU-H3" "Home's Today's plan asks the check for every block (review too)" 
   'a = "    if (block.block_type === \"full_length\")\n"
 assert s.count(a) == 1
 s = s.replace(a, "    if (true)\n", 1)'
+
+# ── Production QA 2026-10-07 (Karl's walkthrough), UI shell items 2, 3, 5, 12–15 ────────────
+QA2_REF="client/src/components/math/MathReferenceSheet.test.tsx"
+QA12_CALC="client/src/components/math/DesmosCalculator.mode-switch.test.tsx"
+QA12_GRID="client/src/components/practice/NumericEntryInput.test.tsx"
+QA13_BELL="client/src/components/notifications/NotificationBell.test.tsx"
+QA5_FRAME="client/src/components/layout/StudentRouteFrame.suspense.test.tsx"
+QA15_DATE="client/src/lib/format-date.test.ts"
+
+plant "QA2-R1" "the 30-60-90 labels x and x√3 swapped onto the wrong legs again" \
+  "$QA2_REF" \
+  "client/src/components/math/MathReferenceSheet.tsx" \
+  'a = "        <FigureText x={22} y={100} anchor=\"end\">\n          x\n"
+b = "        <FigureText x={108} y={158} anchor=\"middle\">\n          x√3\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "        <FigureText x={22} y={100} anchor=\"end\">\n          x√3\n", 1)
+s = s.replace(b, "        <FigureText x={108} y={158} anchor=\"middle\">\n          x\n", 1)'
+
+plant "QA2-R2" "the 30-60-90 drawn at the wrong angles (a 4:3 triangle) again" \
+  "$QA2_REF" \
+  "client/src/components/math/MathReferenceSheet.tsx" \
+  'a = "          points=\"30,140 186,140 30,50\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "          points=\"30,140 186,140 30,20\"\n", 1)'
+
+plant "QA2-R3" "a formula off the College Board sheet (Pythagorean in the other order)" \
+  "$QA2_REF" \
+  "client/src/components/math/MathReferenceSheet.tsx" \
+  'a = "latex: \"$c^2 = a^2 + b^2$\""
+assert s.count(a) == 1
+s = s.replace(a, "latex: \"$a^2 + b^2 = c^2$\"", 1)'
+
+plant "QA3-M1" "the avatar menu hidden on desktop again (desktop has no sign-out)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "            className=\"flex justify-center lg:pb-1 lg:pt-1.5\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "            className=\"flex justify-center lg:hidden\"\n", 1)'
+
+plant "QA3-M2" "Sign out back in title case" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "{isSigningOut ? \"Signing out...\" : \"Sign out\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{isSigningOut ? \"Signing out...\" : \"Sign Out\"}", 1)'
+
+plant "QA3-M3" "the desktop menu opens under the rail's avatar instead of beside the rail" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      side={phoneLayout ? \"bottom\" : \"right\"}\n"
+assert s.count(a) == 1
+s = s.replace(a, "      side=\"bottom\"\n", 1)'
+
+plant "QA14-R1" "/mastery lights no rail item" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "  \"/mastery\": \"/dashboard\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA14-R2" "the bell not current on /notifications" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "<NotificationBell tone=\"student\" current={notificationsActive} />"
+assert s.count(a) == 1
+s = s.replace(a, "<NotificationBell tone=\"student\" />", 1)'
+
+plant "QA14-R3" "the avatar menu's Help entry without its icon" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      <Icon aria-hidden=\"true\" className=\"mr-2 h-4 w-4\" />\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-S1" "a page's chunk wait falls through the App shell to the full-page fallback" \
+  "$QA5_FRAME" \
+  "client/src/components/layout/StudentRouteFrame.tsx" \
+  'a = "            fallback={<PageSkeleton padded={spec.content === \"full\"} />}\n"
+assert s.count(a) == 1
+s = s.replace(a, "            fallback={null}\n", 1)'
+
+plant "QA5-S2" "a page's chunk wait falls through the Focus shell" \
+  "$QA5_FRAME" \
+  "client/src/components/layout/StudentRouteFrame.tsx" \
+  'a = "          <Suspense fallback={<PageSkeleton padded />}>{children}</Suspense>\n"
+assert s.count(a) == 1
+s = s.replace(a, "          {children}\n", 1)'
+
+plant "QA12-C1" "the unselected calculator tab back to the muted ink" \
+  "$QA12_CALC" \
+  "client/src/components/math/DesmosCalculator.tsx" \
+  'a = "const MODE_TAB_OFF = \"bg-transparent text-lyc-ink hover:bg-lyc-hover\";"
+assert s.count(a) == 1
+s = s.replace(a, "const MODE_TAB_OFF = \"bg-transparent text-lyc-muted hover:bg-lyc-hover\";", 1)'
+
+plant "QA12-G1" "the submitted grid-in answer faded and shrunk again" \
+  "$QA12_GRID" \
+  "client/src/components/practice/NumericEntryInput.tsx" \
+  'a = " disabled:cursor-default disabled:opacity-100 md:text-[19px] "
+assert s.count(a) == 1
+s = s.replace(a, " ", 1)'
+
+plant "QA13-B1" "the popover says Loading… again" \
+  "$QA13_BELL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "            <FeedSkeleton t={t} />\n"
+assert s.count(a) == 1
+s = s.replace(a, "            <p data-testid=\"notifications-loading\">Loading…</p>\n", 1)'
+
+plant "QA13-B2" "the popover off the page theme (no .lyc root)" \
+  "$QA13_BELL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "              portalClassName: \"lyc contents\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "              portalClassName: \"contents\",\n", 1)'
+
+plant "QA13-B3" "the unread badge below 14px again" \
+  "$QA13_BELL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "font-lyc-sans text-lyc-meta font-semibold"
+assert s.count(a) == 1
+s = s.replace(a, "font-lyc-sans text-[0.65rem] font-semibold", 1)'
+
+plant "QA15-D1" "a student date formatted by hand again" \
+  "$QA15_DATE" \
+  "client/src/components/student/StudentGuardiansPanel.tsx" \
+  'a = "Linked {formatDate(link.linked_at, \"day-month-year\") ?? \"\"}"
+assert s.count(a) == 1
+s = s.replace(a, "Linked {new Date(link.linked_at).toLocaleDateString()} {formatDate(\"\", \"day-month\")}", 1)'
+
+plant "QA15-D2" "a local day shifted by the viewer's zone" \
+  "$QA15_DATE" \
+  "client/src/lib/format-date.ts" \
+  'a = "{ date, timeZone: \"UTC\" }"
+assert s.count(a) == 1
+s = s.replace(a, "{ date, timeZone: undefined }", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

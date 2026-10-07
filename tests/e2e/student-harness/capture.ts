@@ -516,7 +516,10 @@ function itemsTable(engine: FreshSession["engine"]): string {
     : "practice_session_items";
 }
 
-/** Starts a session through the real create route; retries when its first item is a grid-in. */
+/**
+ * Starts a session through the real create route; retries when its first item is a grid-in
+ * (`mcqFirst`), or is not one (`gridInFirst`, which allows more tries: grid-ins are the minority).
+ */
 async function startFreshSession(
   stack: Stack,
   persona: StudentPersona,
@@ -524,7 +527,8 @@ async function startFreshSession(
 ): Promise<string> {
   const db = await harnessDb();
   try {
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    const attempts = fresh.gridInFirst === true ? 20 : 6;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       freshCounter += 1;
       const created = await apiCall(
         stack,
@@ -540,16 +544,20 @@ async function startFreshSession(
       const id = created.sessionId;
       if (typeof id !== "string")
         throw new Error("fresh session: no sessionId");
-      if (fresh.mcqFirst !== true) return id;
+      if (fresh.mcqFirst !== true && fresh.gridInFirst !== true) return id;
       const first = await db.query<{ question_item_type: string }>(
         `SELECT question_item_type FROM public.${itemsTable(fresh.engine)}
           WHERE session_id = $1 ORDER BY ordinal LIMIT 1`,
         [id],
       );
-      if (first.rows[0]?.question_item_type !== "grid_in") return id;
+      const leadsWithGridIn = first.rows[0]?.question_item_type === "grid_in";
+      // QA 2026-10-07: `gridInFirst` keeps the start that opens on a grid-in instead.
+      if (leadsWithGridIn === (fresh.gridInFirst === true)) return id;
       await endFreshSession(stack, persona, fresh, id);
     }
-    throw new Error("fresh session: six starts in a row opened on a grid-in");
+    throw new Error(
+      `fresh session: ${attempts} starts in a row opened on ${fresh.gridInFirst === true ? "a multiple-choice item" : "a grid-in"}`,
+    );
   } finally {
     await db.end();
   }
@@ -638,7 +646,9 @@ async function shootBuilt(
   }
   if (shot.freshReviewPrompt === true) {
     if (persona === null)
-      throw new Error(`${shot.id}: a fresh review prompt needs a seeded student`);
+      throw new Error(
+        `${shot.id}: a fresh review prompt needs a seeded student`,
+      );
     await clearReviewPrompt(persona);
   }
   const context = await browser.newContext({
@@ -698,7 +708,10 @@ async function shootBuilt(
     const hold = shot.holdRequest;
     if (hold) {
       await page.route(
-        (url) => url.pathname === hold.path,
+        (url) =>
+          hold.match === "pattern"
+            ? new RegExp(hold.path).test(url.pathname)
+            : url.pathname === hold.path,
         async (route) => {
           if (route.request().method() !== hold.method) {
             await route.fallback();
@@ -747,7 +760,13 @@ async function shootBuilt(
       `${stack.baseUrl}${fillRoute(shot.route, stack.manifest, sessionId)}`,
       { waitUntil: "domcontentloaded" },
     );
-    await settle(page);
+    // QA 2026-10-07: a code chunk held by pattern may be one the first paint needs (a cold load of
+    // the route whose loading state is shot), so the network never goes idle: settle on the
+    // window's load event and a fixed wait instead.
+    if (hold?.match === "pattern") {
+      await page.waitForLoadState("load", { timeout: 20_000 });
+      await page.waitForTimeout(2_000);
+    } else await settle(page);
     if (shot.waitFor)
       await page
         .locator(shot.waitFor[viewport])
@@ -1181,8 +1200,16 @@ async function main(): Promise<void> {
     built: BuiltResult;
     proto: ProtoResult;
   }> = [];
+  // QA 2026-10-07: `STUDENT_HARNESS_ONLY=<RegExp source>` shoots only the shots whose id matches
+  // (a before/after pair of a few states, without re-shooting the whole group). The output
+  // directory is still replaced, so it holds only those shots: never commit such a run.
+  const only = process.env.STUDENT_HARNESS_ONLY;
+  const shots =
+    only === undefined || only === ""
+      ? group.shots
+      : group.shots.filter((s) => new RegExp(only).test(s.id));
   try {
-    for (const shot of group.shots) {
+    for (const shot of shots) {
       // F-69: a shot may name sizes beyond desktop and phone (the exam module at tablet width).
       const sizes: Size[] = [
         standardSize("desktop"),
