@@ -502,17 +502,13 @@ function checkCanonicalOwners(entries: ManifestEntry[]): string[] {
 // ── Main ───────────────────────────────────────────────────────────
 
 function main(): void {
-  // eslint-disable-next-line no-console
   console.log("secret-class-inventory-check: loading manifest...");
   const data = loadManifest();
   const entries = allEntries(data);
-  // eslint-disable-next-line no-console
   console.log(`  ${entries.length} entries loaded`);
 
-  // eslint-disable-next-line no-console
   console.log("secret-class-inventory-check: scanning source for env reads...");
   const codeReads = scanEnvReads();
-  // eslint-disable-next-line no-console
   console.log(`  ${codeReads.size} distinct env vars found in source`);
 
   const violations: string[] = [];
@@ -526,35 +522,28 @@ function main(): void {
   violations.push(...undocumented);
 
   // Check 3: canonical_owner format + existence
-  // eslint-disable-next-line no-console
   console.log(
     "secret-class-inventory-check: validating canonical_owner citations...",
   );
   const ownerViolations = checkCanonicalOwners(entries);
   violations.push(...ownerViolations);
-  // eslint-disable-next-line no-console
   console.log(
     `  ${entries.length - ownerViolations.length} canonical_owner citations valid`,
   );
 
   // Report
   if (violations.length === 0) {
-    // eslint-disable-next-line no-console
     console.log("\n✅ secret-class-inventory-check PASSED");
-    // eslint-disable-next-line no-console
     console.log(
       `  ${entries.filter((e) => e.required).length} required entries verified`,
     );
-    // eslint-disable-next-line no-console
     console.log(`  ${codeReads.size} code env reads covered by manifest`);
     process.exit(0);
   } else {
-    // eslint-disable-next-line no-console
     console.error(
       `\n❌ secret-class-inventory-check FAILED (${violations.length} violations)\n`,
     );
     for (const v of violations) {
-      // eslint-disable-next-line no-console
       console.error(`  • ${v}`);
     }
     process.exit(1);

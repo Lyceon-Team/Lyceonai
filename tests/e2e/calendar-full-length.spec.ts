@@ -147,7 +147,6 @@ test("Start launches a real exam session and records the launch", async ({
   expect(links).toEqual([
     { launch_sequence: 1, engine: "full_length", engine_session_id: sessionId },
   ]);
-  // eslint-disable-next-line no-console -- evidence for the PR
   console.log(
     "E9b UI EVIDENCE " +
       JSON.stringify({

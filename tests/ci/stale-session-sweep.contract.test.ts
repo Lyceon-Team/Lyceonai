@@ -44,7 +44,6 @@ function recordingClient(rows: Array<{ id: string }>) {
   return {
     calls,
     table: () => table,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for SupabaseClient
     client: {
       from: (t: string) => {
         table = t;

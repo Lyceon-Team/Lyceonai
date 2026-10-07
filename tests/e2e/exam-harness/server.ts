@@ -88,7 +88,6 @@ async function main(): Promise<void> {
   app.use("/api", (_req, res) => res.status(404).json({ error: { code: "not_in_harness", message: "Not served by the exam harness." } }));
 
   app.listen(PORT, () => {
-    // eslint-disable-next-line no-console -- harness startup line
     console.log(`exam e2e harness listening on :${PORT}`);
   });
 }

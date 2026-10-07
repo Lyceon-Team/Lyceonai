@@ -134,7 +134,6 @@ test("the score screen carries the summary and no link, for the student and the 
   });
   await guardianContext.close();
 
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "G2 EVIDENCE " +
       JSON.stringify({
