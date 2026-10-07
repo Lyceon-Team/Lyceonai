@@ -1,3 +1,5 @@
+> **RETIRED (2026-10-07).** Superseded by Privacy Policy v6 (`legal/privacy-policy/v6`), the single final pre-launch Privacy Policy counsel receives: #1128's v5 (published and sealed) plus the SEO items. This draft is kept for traceability and is not sent to counsel. Its counsel questions are carried into v6 (`COUNSEL_PACKAGE.md` §3.1).
+
 > **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
 
 # **LYCEON Privacy Policy**

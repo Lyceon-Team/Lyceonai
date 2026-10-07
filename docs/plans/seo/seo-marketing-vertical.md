@@ -203,7 +203,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | C2 | Keyword-map pages: practice hubs/skill pages (each skill page shows up to 2 previous QOTD questions from that skill, nothing else from the bank), good-SAT-score + score-level pages, free practice test → diagnostic, parent pages, online prep landing, how-to guides | GSC: each page indexed (SHOT/READ) |
 | C3 | Publish gate: automated checks (doctrine rules, sources present, banned phrases, meta lengths, links resolve) + Karl approval; automation dial per R21 | CI: planted unsourced/proprietary claim is blocked |
 | C4 | Rewrite the 5 existing posts | HTTP live + passes gate |
-| C5 | AI CMO in Slack (Claude Tag) | SHOT: idea → brief → draft → approval thread |
+| C5 | AI CMO in Slack (Claude Tag). **Moved to post-launch by Karl's ruling, 2026-10-07**; its working instructions are committed as the `ai-cmo` skill (`.claude/skills/ai-cmo/SKILL.md`) | SHOT: idea → brief → draft → approval thread |
 
 ### Wave 4 — Distribution
 
@@ -223,7 +223,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | P2 | PostHog experiments when traffic supports a readable result. **The homepage hero experiment started early by Karl's ruling, 2026-10-05 (F13 decision 6; SCL-213 IS 7); further experiments stay here.** | SHOT experiment config + result |
 
 ### Post-launch (parked)
-Average score improvement (R31) · owned subreddit + Reddit API approval · LISA public presence · AI agents on social · competitor comparison pages · SAT prep app page · on-camera video.
+AI CMO in Slack (C5; Karl, 2026-10-07) · Average score improvement (R31) · owned subreddit + Reddit API approval · LISA public presence · AI agents on social · competitor comparison pages · SAT prep app page · on-camera video.
 
 ---
 

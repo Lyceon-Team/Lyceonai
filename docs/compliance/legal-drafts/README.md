@@ -10,7 +10,7 @@ Each draft describes the service as at launch. It starts with the **DRAFT — NO
 
 | # | File | Doc 10 | Replaces |
 |---|---|---|---|
-| 1 | `privacy-policy-v5.md` | §9.2 | `legal/privacy-policy/v4` |
+| 1 | `privacy-policy-v5.md`: **retired 2026-10-07**, superseded by Privacy Policy v6 (`legal/privacy-policy/v6`) | §9.2 | `legal/privacy-policy/v4` |
 | 2 | `cookie-policy.md` | §9.10 | — (new) |
 | 3 | `cookie-banner-text.md` | §9.11 | — (new) |
 | 4 | `childrens-privacy-notice.md` | §9.14 | — (new) |
