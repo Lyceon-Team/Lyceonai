@@ -137,12 +137,19 @@ export function importedSpecifiers(source: string): string[] {
 
 /**
  * The static rule: a file that imports tutor code must not write to the console or to
- * stdout/stderr. Returns one finding per write, as "line N: <call>".
+ * stdout/stderr. Returns one finding per write, as "line N: <call>". Calls written inside a
+ * string literal are text, not writes, and are not counted.
  */
 export function findTutorConsoleWrites(source: string): string[] {
   if (!importedSpecifiers(source).some((s) => TUTOR_IMPORT_RE.test(s)))
     return [];
-  const code = stripComments(source, { keepLines: true });
+  // Comments removed and string-literal contents blanked (newlines kept, so line numbers
+  // stay true): a call written inside a string is text, not a write.
+  const code = stripComments(source, { keepLines: true }).replace(
+    LITERAL_RE,
+    (lit) =>
+      lit[0] + lit.slice(1, -1).replace(/[^\n]/g, " ") + lit[lit.length - 1],
+  );
   const findings: string[] = [];
   for (const m of code.matchAll(CONSOLE_WRITE_RE)) {
     const line = code.slice(0, m.index).split("\n").length;

@@ -159,6 +159,18 @@ describe("static rule: tests that import tutor code do not print", () => {
         `import { y } from "./calendar";\nconsole.log(y);`,
       ),
     ).toEqual([]);
+    // A call written inside a string literal is text, not a write (this file's own plants).
+    expect(
+      findTutorConsoleWrites(
+        `${tutorImport}const plant = "console.log(systemInstruction)";`,
+      ),
+    ).toEqual([]);
+    // ...while a real call on the same line as a string is still named, on its true line.
+    expect(
+      findTutorConsoleWrites(
+        `${tutorImport}/**\n * doc\n */\nconsole.log("x", si);`,
+      ),
+    ).toEqual(["line 5: console.log("]);
   });
 });
 
