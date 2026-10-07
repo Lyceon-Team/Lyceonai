@@ -41,7 +41,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - **Left rail,** 96px, `--rail` background:
   - top: logo mark with the "Lyceon" wordmark under it;
   - then Home, Practice, Review, Full-Length, Calendar, LISA, with icon above label;
-  - bottom: Help, then the account avatar (opens Settings).
+  - bottom: Help, then the account avatar. The avatar opens the account menu (**Settings, Help, Sign out**) at every width, desktop included (owner QA list, Karl, 2026-10-07, item 3; it used to open Settings directly, which left desktop with no Sign out in the shell).
 - **Middle column:** the only part that scrolls. Content max-width 800px, padding 56px 72px.
 - **Right panel,** 360px (Calendar 340px, LISA 320px), `--margin` background, hairline left rule. Its content depends on the page.
 - **Fit to screen:** the rail and the right panel are fixed to the viewport height. The right panel scrolls on its own only when its content is taller than the screen. Only the middle column scrolls the page.
