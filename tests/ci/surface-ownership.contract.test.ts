@@ -117,7 +117,7 @@ describe("KPI summary: canonical builder path", () => {
 
     const app = express();
     app.use(express.json());
-    app.use((req: any, _res, next) => {
+    app.use((req, _res, next) => {
       req.user = { id: "student-5", role: "student" };
       req.requestId = "req-kpi-5";
       next();
@@ -179,7 +179,7 @@ describe("KPI summary: canonical builder path", () => {
 
     const app = express();
     app.use(express.json());
-    app.use((req: any, _res, next) => {
+    app.use((req, _res, next) => {
       req.user = { id: "student-6", role: "student" };
       req.requestId = "req-kpi-6";
       next();

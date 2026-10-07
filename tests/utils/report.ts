@@ -5,7 +5,7 @@ export interface TestResult {
   testName: string;
   status: 'PASS' | 'FAIL';
   error?: string;
-  details?: any;
+  details?: unknown;
 }
 
 export interface ReportSection {
@@ -20,7 +20,7 @@ export class TestReporter {
     this.results.push({ section, tests: [] });
   }
 
-  addTest(testName: string, status: 'PASS' | 'FAIL', error?: string, details?: any) {
+  addTest(testName: string, status: 'PASS' | 'FAIL', error?: string, details?: unknown) {
     const currentSection = this.results[this.results.length - 1];
     if (currentSection) {
       currentSection.tests.push({ testName, status, error, details });

@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
-import express, { Express } from "express";
-// @ts-ignore
+import express, {
+  Express,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import practiceCanonicalRouter from "../../server/routes/practice-canonical";
 import guardianRoutes from "../../server/routes/guardian-routes";
+import type { SupabaseUser } from "../../server/middleware/supabase-auth";
 
 // HOISTED MOCKS
 // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
@@ -21,17 +26,20 @@ const accountMocks = vi.hoisted(() => ({
   getAnyGuardianLinkForPair: vi.fn(),
 }));
 
+// The mocked users carry only the fields these routes read; the casts are the
+// mock's statement that they stand in for a SupabaseUser.
 const authMocks = vi.hoisted(() => ({
-  requireSupabaseAuth: (req: any, res: any, next: any) => {
-    req.user = req.user || { id: "test-user", role: "student" };
+  requireSupabaseAuth: (req: Request, _res: Response, next: NextFunction) => {
+    req.user = req.user || ({ id: "test-user", role: "student" } as SupabaseUser);
     next();
   },
-  requireGuardianRole: () => (req: any, res: any, next: any) => {
-    req.user = { id: "guardian-1", role: "guardian" };
-    next();
-  },
-  requireRequestUser: (req: any) =>
-    req.user || { id: "test-user", role: "student" },
+  requireGuardianRole:
+    () => (req: Request, _res: Response, next: NextFunction) => {
+      req.user = { id: "guardian-1", role: "guardian" } as SupabaseUser;
+      next();
+    },
+  requireRequestUser: (req: Request) =>
+    req.user || ({ id: "test-user", role: "student" } as SupabaseUser),
 }));
 
 // Apply mocks before any imports
@@ -46,18 +54,38 @@ vi.mock("../../server/lib/account", () => ({
   getAccountIdForUser: vi.fn(),
 }));
 
-vi.mock("../../server/middleware/supabase-auth", () => ({
-  requireSupabaseAuth: authMocks.requireSupabaseAuth,
-  requireStudentOrAdmin: (req: any, res: any, next: any) => next(),
-  requireSupabaseAdmin: (req: any, res: any, next: any) => next(),
-  requireProfileComplete: (_req: any, _res: any, next: any) => next(),
-  requireGuardianLinkForUnder13: (_req: any, _res: any, next: any) => next(),
-  getSupabaseAdmin: vi.fn(
-    () => require("../../apps/api/src/lib/supabase-server").supabaseServer,
-  ),
-  requireRequestUser: authMocks.requireRequestUser,
-  sendForbidden: (res: any) => res.status(403).json({ error: "forbidden" }),
-}));
+vi.mock("../../server/middleware/supabase-auth", async () => {
+  // The supabase-server module is mocked below; importing it here yields that mock.
+  const { supabaseServer } = await import(
+    "../../apps/api/src/lib/supabase-server"
+  );
+  return {
+    requireSupabaseAuth: authMocks.requireSupabaseAuth,
+    requireStudentOrAdmin: (_req: Request, _res: Response, next: NextFunction) =>
+      next(),
+    requireSupabaseAdmin: (_req: Request, _res: Response, next: NextFunction) =>
+      next(),
+    requireProfileComplete: (
+      _req: Request,
+      _res: Response,
+      next: NextFunction,
+    ) => next(),
+    requireGuardianLinkForUnder13: (
+      _req: Request,
+      _res: Response,
+      next: NextFunction,
+    ) => next(),
+    getSupabaseAdmin: vi.fn(() => supabaseServer),
+    requireRequestUser: authMocks.requireRequestUser,
+    sendForbidden: (res: Response) =>
+      res.status(403).json({ error: "forbidden" }),
+  };
+});
+
+type ChainResult = { data: unknown; error: null };
+type QueryChain = Record<string, unknown> & {
+  then: (resolve: (value: ChainResult) => unknown) => unknown;
+};
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => {
   const configRows = [
@@ -68,9 +96,9 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
     { key: "answer_rate_limit_window_ms", value: 60000 },
     { key: "answer_rate_limit_max", value: 30 },
   ];
-  const makeChain = (data: any[]) => {
-    const chain: any = {
-      then: (resolve: any) => resolve({ data, error: null }),
+  const makeChain = (data: unknown[]) => {
+    const chain: QueryChain = {
+      then: (resolve) => resolve({ data, error: null }),
     };
     const identity = () => chain;
     Object.assign(chain, {
@@ -106,8 +134,8 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
 });
 
 vi.mock("../../apps/api/src/lib/supabase-admin", () => {
-  const chain: any = {
-    then: (resolve: any) => resolve({ data: [], error: null }),
+  const chain: QueryChain = {
+    then: (resolve) => resolve({ data: [], error: null }),
   };
   const identity = () => chain;
   Object.assign(chain, {
@@ -143,14 +171,15 @@ vi.mock("../../server/logger", () => ({
 }));
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) =>
+    next(),
   generateToken: () => "test-csrf-token",
 }));
 
 function buildApp(): Express {
   const app = express();
   app.use(express.json());
-  app.use((req: any, res, next) => {
+  app.use((req, _res, next) => {
     req.requestId = "test-req-id";
     next();
   });
@@ -158,8 +187,8 @@ function buildApp(): Express {
   app.use("/api/practice", practiceCanonicalRouter);
   app.use(
     "/api/guardian",
-    (req: any, _res, next) => {
-      req.user = { id: "guardian-1", role: "guardian" };
+    (req, _res, next) => {
+      req.user = { id: "guardian-1", role: "guardian" } as SupabaseUser;
       next();
     },
     guardianRoutes,

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { NextFunction, Request, Response } from "express";
 
 const resolvePaidKpiAccessForUser = vi.fn();
 const buildStudentKpiViewFromCanonical = vi.fn();
@@ -52,7 +53,7 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
 
   return {
     ...actual,
-    requireSupabaseAuth: (req: any, _res: any, next: any) => {
+    requireSupabaseAuth: (req: Request, _res: Response, next: NextFunction) => {
       req.user = {
         id: "student-1",
         role: "student",
@@ -66,7 +67,8 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
 });
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) =>
+    next(),
   generateToken: () => "test-csrf-token",
 }));
 
@@ -83,14 +85,14 @@ vi.mock("../../apps/api/src/lib/supabase-admin", () => ({
 
 function createRes() {
   let statusCode = 200;
-  let body: any = null;
+  let body: unknown = null;
 
-  const res: any = {
+  const res = {
     status(code: number) {
       statusCode = code;
       return this;
     },
-    json(payload: any) {
+    json(payload: unknown) {
       body = payload;
       return this;
     },
@@ -196,7 +198,7 @@ describe("KPI Gating Contract", () => {
     const { getScoreEstimate } =
       await import("../../server/routes/legacy/progress");
 
-    const req: any = {
+    const req = {
       user: {
         id: "student-1",
         role: "student",
@@ -207,7 +209,7 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getStatus, getBody } = createRes();
 
-    await getScoreEstimate(req, res as any);
+    await getScoreEstimate(req as unknown as Request, res as unknown as Response);
 
     expect(getStatus()).toBe(200);
     const payload = getBody();
@@ -245,7 +247,7 @@ describe("KPI Gating Contract", () => {
     const { getScoreEstimate } =
       await import("../../server/routes/legacy/progress");
 
-    const req: any = {
+    const req = {
       user: {
         id: "student-1",
         role: "student",
@@ -256,7 +258,7 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getBody, getStatus } = createRes();
 
-    await getScoreEstimate(req, res as any);
+    await getScoreEstimate(req as unknown as Request, res as unknown as Response);
 
     expect(getStatus()).toBe(200);
     const payload = getBody();
@@ -294,7 +296,7 @@ describe("KPI Gating Contract", () => {
     const { getScoreEstimate } =
       await import("../../server/routes/legacy/progress");
 
-    const req: any = {
+    const req = {
       user: {
         id: "student-1",
         role: "student",
@@ -305,7 +307,7 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getBody, getStatus } = createRes();
 
-    await getScoreEstimate(req, res as any);
+    await getScoreEstimate(req as unknown as Request, res as unknown as Response);
 
     // MUST NOT 500 — must degrade to unpaid view.
     expect(getStatus()).toBe(200);
@@ -329,7 +331,7 @@ describe("KPI Gating Contract", () => {
     const { getRecencyKpis } =
       await import("../../server/routes/legacy/progress");
 
-    const req: any = {
+    const req = {
       user: {
         id: "student-1",
         role: "student",
@@ -340,7 +342,7 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getBody } = createRes();
 
-    await getRecencyKpis(req, res as any);
+    await getRecencyKpis(req as unknown as Request, res as unknown as Response);
 
     const payload = getBody();
     expect(payload.recency).toBeNull();
@@ -380,7 +382,7 @@ describe("KPI Gating Contract", () => {
     const { getRecencyKpis } =
       await import("../../server/routes/legacy/progress");
 
-    const req: any = {
+    const req = {
       user: {
         id: "student-1",
         role: "student",
@@ -391,7 +393,7 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getBody, getStatus } = createRes();
 
-    await getRecencyKpis(req, res as any);
+    await getRecencyKpis(req as unknown as Request, res as unknown as Response);
 
     // MUST NOT 500 — must degrade to hiding historical trends.
     expect(getStatus()).toBe(200);

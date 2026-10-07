@@ -189,10 +189,10 @@ describe.skipIf(!canRunRlsTests())('RLS Isolation Tests', () => {
         .expect(200);
 
       // User A should only see their progress
-      expect(resA.body.data.every((p: any) => p.user_id === userA.id)).toBe(true);
+      expect(resA.body.data.every((p: { user_id: string }) => p.user_id === userA.id)).toBe(true);
       
       // User B should only see their progress
-      expect(resB.body.data.every((p: any) => p.user_id === userB.id)).toBe(true);
+      expect(resB.body.data.every((p: { user_id: string }) => p.user_id === userB.id)).toBe(true);
     });
   });
 });

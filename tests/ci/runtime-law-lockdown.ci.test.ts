@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
+import type { Express } from "express";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,7 +10,7 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..", "..");
 
 describe("Runtime cutover API enforcement", () => {
-  let app: any;
+  let app: Express;
 
   beforeAll(async () => {
     process.env.VITEST = "true";

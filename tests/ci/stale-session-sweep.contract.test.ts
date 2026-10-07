@@ -14,6 +14,7 @@
  *   it would break production.
  */
 import { describe, it, expect } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   sweepStalePracticeSessions,
   staleSessionCutoff,
@@ -49,7 +50,7 @@ function recordingClient(rows: Array<{ id: string }>) {
         table = t;
         return chain;
       },
-    } as any,
+    } as unknown as SupabaseClient,
   };
 }
 
@@ -121,8 +122,7 @@ describe("stale practice-session sweep (step 10)", () => {
           Promise.resolve({ data: null, error: { message: "boom" } });
         return chain;
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double
-    } as any;
+    } as unknown as SupabaseClient;
 
     await expect(
       sweepStalePracticeSessions(failing, { now: NOW }),

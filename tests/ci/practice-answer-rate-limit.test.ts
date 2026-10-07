@@ -20,9 +20,10 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import type { Express, Request, Response, NextFunction } from "express";
+import type { SupabaseUser } from "../../server/middleware/supabase-auth";
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
   generateToken: () => "test-csrf-token",
 }));
 
@@ -39,12 +40,13 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
     const chainTerminal = {
       single: async () => ({ data: null, error: null }),
       maybeSingle: async () => ({ data: null, error: null }),
-      then: (resolve: any) => resolve({ data, error: null }),
+      then: (resolve: (value: { data: unknown[]; error: null }) => unknown) =>
+        resolve({ data, error: null }),
     };
-    const chain: any = new Proxy(chainTerminal, {
+    const chain: object = new Proxy(chainTerminal, {
       get(target, prop) {
-        if (prop in target) return (target as any)[prop];
-        return (..._args: any[]) => chain;
+        if (prop in target) return Reflect.get(target, prop);
+        return (..._args: unknown[]) => chain;
       },
     });
     return chain;
@@ -72,21 +74,22 @@ describe("Practice Answer Rate Limiter", () => {
 
     vi.spyOn(authModule, "supabaseAuthMiddleware").mockImplementation(
       (req: Request, res: Response, next: NextFunction) => {
-        (req as any).user = {
+        req.user = {
           id: "test-user-id-123",
           email: "test@example.com",
           role: "student",
           isAdmin: false,
           isGuardian: false,
           display_name: "Test User",
-        };
+          // The mocked user carries only the fields these routes read.
+        } as SupabaseUser;
         next();
       },
     );
 
     vi.spyOn(authModule, "requireSupabaseAuth").mockImplementation(
       (req: Request, res: Response, next: NextFunction) => {
-        if (!(req as any).user) {
+        if (!req.user) {
           return res.status(401).json({ error: "auth_required" });
         }
         next();

@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-import { TEST } from '../utils/testEnv';
+import { test, expect, type ConsoleMessage } from '@playwright/test';
 
 test('User-side: click through all buttons/links on each page', async ({ page }) => {
   // Add or adjust routes if your app differs
@@ -21,16 +20,17 @@ test('User-side: click through all buttons/links on each page', async ({ page })
       if (/delete|remove|reset|wipe/i.test(text)) continue;
       
       // Click and ensure no console error and page still responsive
-      const [consoleErr] = await Promise.allSettled([
+      // NOTE: the settled result is not asserted, so a console error does not fail this spec.
+      await Promise.allSettled([
         new Promise<void>((res, rej) => {
-          const listener = (msg: any) => { 
+          const listener = (msg: ConsoleMessage) => { 
             if (msg.type() === 'error') { 
               rej(new Error(msg.text())); 
             } 
           };
-          (page as any).on('console', listener);
+          page.on('console', listener);
           setTimeout(() => { 
-            (page as any).off('console', listener); 
+            page.off('console', listener); 
             res(); 
           }, 500);
         }),
