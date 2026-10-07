@@ -6,7 +6,7 @@
 
 > **Reading rule.** Where this document names a mechanism another document owns, it says *"defined in Doc XX §Y; that file is canonical"* and adds only the public-surface contract. A line here that restates a body owned elsewhere is a defect. Every rule carries its source: a ruling (plan `docs/plans/seo/seo-marketing-vertical.md` §1, cited **R**n, or an owner answer with its date), an SCL, or a test or gate (`file:line`). File references are to `origin/seo` @ `bf5c989c` unless stated.
 >
-> **SCL footing.** SCL-200 to SCL-217 are all PROPOSED. A rule resting on one is marked **(subject to SCL-NNN)**: it is the operative direction now, pending Karl's ruling on that entry (owner answer 2, 2026-10-05). If the ruling changes the entry, the rule changes with it.
+> **SCL footing.** Every SCL Doc 10A rests on (SCL-200, 201, 202, 203, 204, 208, 213 and 218) was **ruled by Karl on 2026-10-07 and is OPEN**: accepted, and owed into the amended documents. V0.1 and V0.2 marked each rule resting on one "subject to SCL-NNN" while the entries were PROPOSED (owner answer 2, 2026-10-05); with the ruling, those markers are removed and each rule cites its SCL directly (CR-10A-05).
 
 **What this document is.** Doc 10A is the contract for everything Lyceon publishes to someone who is not signed in, and for the machinery that publishes it. That covers:
 
@@ -17,7 +17,7 @@
 - the content engine;
 - distribution direction.
 
-It takes the "future Doc 05 (Trust, Growth, Compliance)" role for public and marketing surfaces that four locked documents cite (**subject to SCL-200**; plan R6 :38). Doc 10 holds the brand-and-trust direction and the legal-document program. Doc 10A holds the operational rules for the public surfaces that carry them. Doc 10A is **not** a copy deck: copy is governed by the rules here (§2, §3) and stays out of spec lock, as Doc 10 :58 and §11.9 (:929-957) already establish.
+It takes the "future Doc 05 (Trust, Growth, Compliance)" role for public and marketing surfaces that four locked documents cite (SCL-200; plan R6 :38). Doc 10 holds the brand-and-trust direction and the legal-document program. Doc 10A holds the operational rules for the public surfaces that carry them. Doc 10A is **not** a copy deck: copy is governed by the rules here (§2, §3) and stays out of spec lock, as Doc 10 :58 and §11.9 (:929-957) already establish.
 
 **Depends on:**
 
@@ -31,9 +31,9 @@ It takes the "future Doc 05 (Trust, Growth, Compliance)" role for public and mar
   * §11.9 brand-design track (:929).
 
   Referenced, never restated.
-* **Doc 01A §39–§47** (RateLimitLedger: canonical limiter), as amended for anonymous buckets (**subject to SCL-202**)
-* **Doc 06A §5.2–§5.3.1** (replay compliance gate; route-surface-classification registry), as amended (**subject to SCL-204**)
-* **Doc 07A §6, §7.1, §9** (event schemas, `analytics_user_id`, the `emitEvent` wrapper), as amended (**subject to SCL-201, SCL-213**)
+* **Doc 01A §39–§47** (RateLimitLedger: canonical limiter), as amended for anonymous buckets (SCL-202)
+* **Doc 06A §5.2–§5.3.1** (replay compliance gate; route-surface-classification registry), as amended (SCL-204)
+* **Doc 07A §6, §7.1, §9** (event schemas, `analytics_user_id`, the `emitEvent` wrapper), as amended (SCL-201, SCL-213)
 * **Doc 07E §10** (under-13 cascade, including `delete_recordings`; never restated)
 * **Coding Standards §5.2** (pre-submit nulls), **§12** (never-log list; minimal collection on student surfaces)
 * **Plan §0 and §1** (doctrine; rulings R1–R33): the operative direction until this document locks (SCL-200 IS bullet 2)
@@ -63,7 +63,7 @@ It takes the "future Doc 05 (Trust, Growth, Compliance)" role for public and mar
 
 ## **1.1 Role**
 
-Four locked documents send public and marketing surfaces to a "future Doc 05" that was never written. The name "Doc 05" was then reused for the Mastery family. SCL-200 assigns that role to Doc 10A (**subject to SCL-200**). The citations are:
+Four locked documents send public and marketing surfaces to a "future Doc 05" that was never written. The name "Doc 05" was then reused for the Mastery family. SCL-200 assigns that role to Doc 10A (SCL-200). The citations are:
 
 * D01:45;
 * D02A:80;
@@ -116,13 +116,13 @@ Doc 10 keeps its direction. Doc 10A references it, and records where the as-buil
 | Doc 10 | Relationship in Doc 10A |
 |---|---|
 | §4.3 brand voice (:268) | Referenced. Copy follows it. |
-| §6.2 four public counters (:324-334) | Parked (**subject to SCL-203**; R31 :82). Doc 10A ships none (§3.6). |
-| §7.1 progress-sharing visualizations (:370-378); §7.2 written testimonials (:380-390) | Testimonials only from opted-in, anonymous in-app reviews (R29 :80; §7.6; **subject to SCL-218**). Progress-sharing visualizations: not built, no ruling; FWD-10A-C. |
-| §8.2 QOTD brand intent (:412-421) | Referenced. One departure: :419 "LISA's explanation of each QOTD". The QOTD reveals the **pre-written** explanation, not LISA (R17 :59; §5.3). **Subject to SCL-218.** |
+| §6.2 four public counters (:324-334) | Parked (SCL-203; R31 :82). Doc 10A ships none (§3.6). |
+| §7.1 progress-sharing visualizations (:370-378); §7.2 written testimonials (:380-390) | Testimonials only from opted-in, anonymous in-app reviews (R29 :80; §7.6; SCL-218). Progress-sharing visualizations: not built, no ruling; FWD-10A-C. |
+| §8.2 QOTD brand intent (:412-421) | Referenced. One departure: :419 "LISA's explanation of each QOTD". The QOTD reveals the **pre-written** explanation, not LISA (R17 :59; §5.3; SCL-218). |
 | §8.3 Discord (:423-430); §8.5 V1 community (:443-454) | Referenced. Distribution direction only (§9). |
 | §9 legal inventory (:456); §9.11 banner (:581); §9.21 marketing consent (:681) | Referenced. Doc 10A owns the operational surfaces (§6.2, §7.1), not the legal text. |
-| §11.6 claim control (:858-877) | Adopted, with doctrine rule 5 layered on top (CR-10A-02; §3.1; **subject to SCL-218**). |
-| §2.4 under-13 hard-delete (:199) | Superseded for the launch posture by SCL-187/SCL-208 (**subject to SCL-208**). Doc 10A's under-13 rule is doctrine rule 7 (§6.4, §7). |
+| §11.6 claim control (:858-877) | Adopted, with doctrine rule 5 layered on top (CR-10A-02; §3.1; SCL-218). |
+| §2.4 under-13 hard-delete (:199) | Superseded for the launch posture by SCL-187/SCL-208 (SCL-208). Doc 10A's under-13 rule is doctrine rule 7 (§6.4, §7). |
 | FWD-10-D brand/trust analytics surfaces (:35) | Lands in Doc 10A when introduced (SCL-200 IS bullet 1; FWD-10A-D). |
 
 ## **1.5 Copy is governed, not locked**
@@ -148,7 +148,7 @@ The doctrine governs every public surface and every PR that touches one (plan R7
 
 ## **2.2 Karl's clarifications (G6 brief, 2026-10-05)**
 
-* **C1.** Rule 2 (no mechanisms) governs legal and explanatory text as well as marketing. The AI Content Disclosure already follows it (**subject to SCL-208**, IS 1).
+* **C1.** Rule 2 (no mechanisms) governs legal and explanatory text as well as marketing. The AI Content Disclosure already follows it (SCL-208, IS 1).
 * **C2.** Marketing may name a differentiator at a high level ("an adaptive study plan", "a progress view for parents"), never how it works.
 * **C3.** A claim must be true **as shipped**: true of the product a visitor can buy on the day the claim is live, for the plan it names. A claim true only of a paid plan names the plan or is scoped by adjacent copy (H32/H33, §3.6).
 * **C4.** Anything Lyceon-specific needs Karl's written approval (rule 5), whatever its Doc 10 §11.6 category (§3.1).
@@ -217,7 +217,7 @@ The inventory and the guard's messages move to the new labels at lock (plan §10
 
 * **H32** "SAT prep that adapts to you." stays (Karl-approved; owner answer 6, 2026-10-05). It is scoped by **H33**, the sub-line naming the paid study plan (`claim-inventory.md:70-71`; R15 :53). The pair is approved as a unit: H32 does not appear without H33's scoping on the same view.
 * **P4** "SAT score calculator (Lyceon-modeled)" (keyword map `lyceon-sat-keyword-map.xlsx`, sheet "Page Map", row P4) stays **dropped** (R23 :70; owner answer 6). No public page computes, estimates or converts scores (rule 2).
-* **Public counters** (Doc 10 §6.2): none at launch (**subject to SCL-203**). The post-launch candidate is average score improvement, with real data, n≥100 and Karl's approval (R31 :82).
+* **Public counters** (Doc 10 §6.2): none at launch (SCL-203). The post-launch candidate is average score improvement, with real data, n≥100 and Karl's approval (R31 :82).
 * **Slogan.** "Study Smarter, Score Higher" is approved by Karl (2026-10-05, F13 Step 0 decision 3; `claim-inventory.md:51`, rows X1/H43) for visible copy; page titles stay "Lyceon | SAT Prep". It is an implied score-improvement claim, so it is on the counsel checklist (`docs/compliance/README.md:48-52`); counsel may confirm or tighten it.
 * **Standing copy direction (R3 :31).** Lyceon is positioned as a cheaper, 24/7, consistent alternative to a traditional tutor, with a guardian view and progress tracking before exam day; never "LISA replaces a tutor". New copy follows this direction and the rules above; content frames may be A/B tested later (§6.8).
 * **Comparisons** (Karl, 2026-10-06):
@@ -380,7 +380,7 @@ The approved copy strings are in `claim-inventory.md` open item 4 (closed).
 
 ## **5.9 Abuse protection**
 
-(**subject to SCL-202**)
+(SCL-202)
 
 * **Order on submit.** Turnstile is verified server-side before any other work. Missing or invalid → 403. Verifier unreachable → 503, never a pass (`public-qotd-routes.ts:182-207`; `server/lib/turnstile.ts:1-12`).
 * **Submit limiter.** The anonymous ledger bucket `qotd_submit_ip` allows 30 per hour per hashed IP (`20261020010000_rate_limit_ledger_anon.sql:26, :112`).
@@ -427,29 +427,29 @@ A browser sending GPC is treated as Refuse, and the GPC notice replaces the bann
 
 ## **6.4 Under-13 and unknown-age exclusion**
 
-(Rule 7; **subject to SCL-201**)
+(Rule 7; SCL-201)
 
 * **Signed-in accounts.** The browser SDK starts only for an account known to be 13 or over (`is_under_13 === false`). Under-13 and unknown age are excluded (`CookieConsentRoot.tsx:122-132`).
 * **Late exclusion.** An excluded account that signs in on a running tab stops the SDK.
 * **Server events.** The server wrapper refuses events for the same accounts (`excluded_under_13_or_age_unknown`, SCL-213 IS 5(a)).
 * **Signed-out visitors** have no age on record and are not age-gated. This is the **standard general-audience posture**: a public page cannot know a visitor's age, so rule 7 applies once age is known. Signed-in under-13 and unknown-age accounts are excluded as above (Karl, 2026-10-05, answer to Q-10A-3).
-* **Later detection.** A recording made for a user later found to be under 13 is removed by Doc 07E §10's cascade (`delete_recordings`; **subject to SCL-204** IS 2).
+* **Later detection.** A recording made for a user later found to be under 13 is removed by Doc 07E §10's cascade (`delete_recordings`; SCL-204 IS 2).
 
 ## **6.5 Masking and session replay**
 
-* **Signed-in pages.** Autocapture records no element text there: `mask_all_text: true` while a `RequireRole` surface is mounted (**subject to SCL-213** IS 6; `posthog-client.ts:18-19, :64, :81`). Public pages keep PostHog's default.
-* **Replay** (**subject to SCL-204**; R32 :87). On PostHog's defaults, after consent, never for under-13. `ph-no-capture` covers:
+* **Signed-in pages.** Autocapture records no element text there: `mask_all_text: true` while a `RequireRole` surface is mounted (SCL-213 IS 6; `posthog-client.ts:18-19, :64, :81`). Public pages keep PostHog's default.
+* **Replay** (SCL-204; R32 :87). On PostHog's defaults, after consent, never for under-13. `ph-no-capture` covers:
   * the question/answer areas: practice and review (`client/src/components/question-renderer.tsx`), full-length exam (`client/src/features/exam/components/ExamQuestionView.tsx`), the QOTD (`QotdWidget.tsx:24-26`);
   * the LISA conversation (`client/src/pages/chat.tsx`, `client/src/components/tutor/ScopedTutorPanel.tsx`);
   * the review and feedback text areas (`client/src/components/product-feedback/ReviewPrompt.tsx:237`, `FeedbackDialog.tsx`).
 * **Replay is on.** Recording follows the PostHog project setting (`posthog-client.ts:20`), which Karl enabled on 2026-10-05 after F15 shipped; recordings exist. The client comment at `posthog-client.ts:20` still reads "stays off until F15 ships" and is stale (plan §10 FU11).
-* **Open item: the gate evidence.** Replay on signed-in pages is a Doc 06A §5.2 compliance gate (**subject to SCL-204** IS 3). Its evidence is F15's masked-replay screenshot: a real practice replay with the question/answer area blank. That screenshot is not yet recorded (§11.3).
+* **Open item: the gate evidence.** Replay on signed-in pages is a Doc 06A §5.2 compliance gate (SCL-204 IS 3). Its evidence is F15's masked-replay screenshot: a real practice replay with the question/answer area blank. That screenshot is not yet recorded (§11.3).
 
 ## **6.6 Server events**
 
-Signed-in business events go only through the server `emitEvent` wrapper (Doc 07A §9; **subject to SCL-201** IS 1(a)).
+Signed-in business events go only through the server `emitEvent` wrapper (Doc 07A §9; SCL-201 IS 1(a)).
 
-* **Launch set.** Seven registered events (**subject to SCL-213**). A deferred or unregistered event is refused at runtime, and `ci/event-schema-registry-parity` fails code that emits one (`ci.yml:310`).
+* **Launch set.** Seven registered events (SCL-213). A deferred or unregistered event is refused at runtime, and `ci/event-schema-registry-parity` fails code that emits one (`ci.yml:310`).
 * **PII.** Redaction conformance is gated (`ci.yml:313`).
 * **Joining.** The browser SDK never calls `identify` or `alias`, so browser events are never joined to `analytics_user_id` (SCL-201 IS 1; `posthog-client.ts:15-16`).
 * **Misconfiguration is loud** (#1121; owner report 2026-10-05). Analytics that cannot send never fails silently:
@@ -461,7 +461,7 @@ Signed-in business events go only through the server `emitEvent` wrapper (Doc 07
 
 ## **6.7 First-touch attribution**
 
-`user_signed_up.signup_source` comes from the visitor's first touch (**subject to SCL-201** IS 6).
+`user_signed_up.signup_source` comes from the visitor's first touch (SCL-201 IS 6).
 
 * **Derivation.** The landing address and referrer reduce to one of five words: `direct`, `referral`, `paid_ad`, `organic_search`, `unknown` (`analytics-consent-schema.ts:99-106, :144`). No campaign name, click id or URL is kept.
 * **Storage under the consent rule** (owner report 2026-10-05; `client/src/lib/analytics/first-touch.ts:1-28`):
@@ -476,7 +476,7 @@ Signed-in business events go only through the server `emitEvent` wrapper (Doc 07
 
 PostHog experiments run on PostHog's feature-flag mechanism, browser-only, after consent (P2 :223).
 
-* **The one experiment** is `homepage-hero`: **built; launches on the next production deploy** (**subject to SCL-213** IS 7; R13 superseded for the hero, :51):
+* **The one experiment** is `homepage-hero`: **built; launches on the next production deploy** (SCL-213 IS 7; R13 superseded for the hero, :51):
   * Variant A is prerendered, and is all a visitor without consent ever sees;
   * an assigned variant is kept under a `ph_`-prefixed key and shown from the next view, before first paint, through a CSP-hashed inline script;
   * exposure is sent only on a view that displays the variant (`client/src/lib/analytics/hero-experiment.ts:1-12`; `posthog-client.ts:88-99`).
@@ -641,7 +641,7 @@ The gate runs **inside the build**: the prerender calls `assertContentPagesPubli
 
 ## **8.7 The AI CMO in Slack**
 
-(R22 :69; C5 :206) **Not built.**
+(R22 :69; C5 :206) **Not built; post-launch** (Karl, 2026-10-07). Its working instructions are committed as the `ai-cmo` skill (`.claude/skills/ai-cmo/SKILL.md`), ready for when it starts.
 
 * **Role.** The content workflow runs with humans in Slack (Claude Tag): idea → brief → draft → approval, visible in one thread.
 * **No publishing authority.** The AI CMO only proposes. Its drafts go through §8.4 like any other content.
@@ -707,7 +707,7 @@ The proof lives in the repo and the internal register, never on a public page (r
 
 ## **11.1 Forward-references (bounded)**
 
-* **FWD-10A-A**: the AI CMO in Slack (C5; §8.7). C1–C4 are built (§8).
+* **FWD-10A-A**: the AI CMO in Slack (C5; §8.7), post-launch (Karl, 2026-10-07). C1–C4 are built (§8).
 * **FWD-10A-B**: competitor comparison pages, with substantiation (R24; L1).
 * **FWD-10A-C**: progress-sharing visualizations (Doc 10 §7.1). No ruling; not planned.
 * **FWD-10A-D**: public analytics surfaces (Doc 10 §6, FWD-10-D). Post-launch, n≥100, Karl's approval (SCL-203 IS; R31).
@@ -715,7 +715,7 @@ The proof lives in the repo and the internal register, never on a public page (r
 
 ## **11.2 SCL dependencies**
 
-Every entry Doc 10A rests on is PROPOSED (owner answer 2). **Lock requires all eight ruled: SCL-200, 201, 202, 203, 204, 208, 213 and 218** (Karl, 2026-10-06):
+Lock required all eight ruled: SCL-200, 201, 202, 203, 204, 208, 213 and 218 (Karl, 2026-10-06). **All eight were ruled by Karl on 2026-10-07 and are OPEN** (`docs/SpecAudit/SPEC_CHANGES_LOG.md`, each entry's "Status: OPEN. Ruled by Karl, 2026-10-07" line):
 
 | SCL | Doc 10A rests on it for |
 |---|---|
@@ -759,7 +759,7 @@ The repairs found while drafting are a numbered list in plan §10, not rules her
 
 * **Reading rule** (header): reference other documents by name and section; never restate.
 * **Traceability:** every rule cites a ruling, an SCL, or a `file:line`. A rule with no citation is a defect.
-* **"Subject to SCL-NNN"** marks a rule resting on a PROPOSED entry. It is dropped when the entry is ruled.
+* **"Subject to SCL-NNN"** marked a rule resting on a PROPOSED entry, and is dropped when the entry is ruled. All eight were ruled on 2026-10-07, so no rule carries the marker (CR-10A-05).
 * **Ids:** INV-10A-NN (§10), FWD-10A-X (§11.1), Q-10A-N (§11.3), CR-10A-NN (§14). Doc 10 declined forced id scaffolding (:12). Doc 10A uses ids because it does assert executable rules, which Doc 10 does not (:967, :969).
 * **Annotations that describe a status** (CLAUDE.md, "An annotation that describes its own status must be updated when that status changes") are updated with the ruling and its date when the status changes. The R11/R12a/F8 annotations in the plan are the first instances.
 * **Copy stays out of lock** (§1.5).
@@ -776,8 +776,8 @@ Doc 10A V1.0 is acceptable for lock when:
 4. §4–§7 state each rule with a citation, and every "not met" rule has a plan follow-up.
 5. §8 describes the content engine as built (#1127): the schema, the in-build publish gate with its planted-defect proof, the 23 pages and the C4 blog rewrites, each with citations; C5 is marked not built.
 6. §10 maps every invariant to a gate, test or manual proof, with an honest status.
-7. Every rule resting on a PROPOSED SCL is marked "subject to".
-8. External review is complete, every §11.3 question is answered or deferred, and SCL-200, 201, 202, 203, 204, 208, 213 and 218 are all ruled.
+7. Every rule cites the SCL it rests on; none rests on a PROPOSED entry (all eight OPEN, ruled 2026-10-07).
+8. External review is complete, every §11.3 question is answered or deferred, and SCL-200, 201, 202, 203, 204, 208, 213 and 218 are all ruled (done 2026-10-07).
 9. Karl moves the file into `docs/Spec/` (G6 proof).
 
 ---
@@ -821,6 +821,8 @@ Doc 10 is referenced, never restated (§8.2, §8.3, §9, §4.3). §8 was written
 11. §8.5: the automation dial is at 2 of 3 approvals (Wave 3 pages, C4 blog rewrites).
 
 Line citations into files #1127 changed were re-pinned (`public-meta.ts`, `structured-data.ts`, `banned-phrases.ts`, `claim-inventory.md`). §4.3 records that the blog author is now a JSON-LD Organization (FU6 closed by #1127).
+
+**CR-10A-05.** Karl ruled SCL-200, 201, 202, 203, 204, 208, 213 and 218 on 2026-10-07; each is OPEN in the register. The "subject to SCL-NNN" markers are removed and each rule cites its SCL directly (header, §11.2, §12, §13 #7–#8). The AI CMO in Slack (§8.7, FWD-10A-A) is post-launch (Karl, 2026-10-07); its working instructions are committed as the `ai-cmo` skill (`.claude/skills/ai-cmo/SKILL.md`).
 
 ---
 

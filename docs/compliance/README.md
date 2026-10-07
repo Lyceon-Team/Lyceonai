@@ -44,7 +44,7 @@ Spec departures in these drafts are recorded in SCL-208. Open owner actions:
 - postal address and telephone, for the Privacy Policy, the children's notice and marketing emails: Karl will supply them; placeholders stay flagged in the counsel checklists until then.
 - cookie consent record (`cookie_consent_log`, SEO F11): its retention period is set by the retention work on the `guardian` branch (owner, 2026-10-05); no retention-registry row or sweep is added here;
 - Cookie Policy publication: the banner's "Cookie Policy" link opens the Privacy Policy until then — on publication, `COOKIE_POLICY_HREF` in `client/src/components/consent/CookieConsentRoot.tsx` becomes `/legal/cookie-policy`;
-- session replay (F15): the PostHog project keeps recording off until F15's evidence is taken; it is then enabled through the PostHog connector (owner decision 4, 2026-10-05).
+- session replay (F15): **recording is on**. Karl enabled the PostHog project setting on 2026-10-05 after F15 shipped (owner decision 4, 2026-10-05; Doc 10A draft §6.5). Still owed: F15's masked-replay screenshot, the evidence for the SCL-204 / Doc 06A §5.2 compliance gate.
 
 ### Counsel checklist: marketing claims
 
