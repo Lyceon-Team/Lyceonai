@@ -18,16 +18,19 @@
  *   LISA-AUDIT-003 (HIGH): retention-sweep returns ok:true when memory-summary
  *     purge fails → now returns ok:false with reason string.
  *
- * Karl's proof requirements (runtime values, not descriptions). These were PRINTED
- * to stdout for the original audit; the prints were removed 2026-10-07 (eslint
- * zero, owner decision) because they wrote the full tutor systemInstruction into
- * every CI log (Coding Standards §12.1). The assertions below carry each proof:
+ * Karl's proof requirements (asserted on the runtime values):
  *   1. Full systemInstruction for PRE-SUBMIT on active question — explanation PRESENT
  *   2. Full systemInstruction for pre-submit with unanswered same-skill item —
  *      that item's explanation ABSENT
  *   3. Full systemInstruction for POST-SUBMIT — explanation + correct answer present
  *   4. Policy family/variant sent to worker and written to audit row, side by side, matching
  *   5. Plant memory-summary purge failure → confirm sweep returns ok:false with partial state
+ *
+ * PRINTING REMOVED (owner decision 2026-10-07, CI audit item 1). Requirements 1-4 were first
+ * met by printing each systemInstruction and policy value to stdout. CI logs on this repository
+ * are public, so that published LISA's full system instruction on every run from 2026-08-28.
+ * Every proof is now carried by the assertions alone, which were already present beside each
+ * print; nothing is printed. tests/ci/test-logs-no-tutor-content.guard.test.ts keeps it so.
  *
  * trade-offs: AUDIT-001 and AUDIT-002 tests exercise the worker's pure
  * functions (buildSystemInstruction, resolveModelAlias, resolvePromptArtifact)
@@ -178,6 +181,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
+
     // W3-10 / SCL-144: the explanation MUST NOT reach the model pre-submit —
     // possession is the control, not a directive.
     expect(systemInstruction).not.toContain("[AUTHORED EXPLANATION");
@@ -225,6 +229,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
+
     // No authored explanation block when explanation is null
     expect(systemInstruction).not.toContain(
       "[AUTHORED EXPLANATION — INTERNAL USE ONLY]",
@@ -260,6 +265,7 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
     });
 
     const systemInstruction = buildSystemInstruction(envelope);
+
 
     // Correct answer present
     expect(systemInstruction).toContain("Correct answer: B.");
@@ -298,6 +304,7 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
         reason_snapshot: { reason: "default_deterministic_assignment" },
       },
     });
+
 
     // 1. The envelope values match the audit row (the fix)
     expect(envelope.policy_assignment.policy_family).toBe(
@@ -338,6 +345,7 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       policyVariant: "standard",
       proBudgetCircuitBreakerTripped: false,
     });
+
 
     // 'standard' falls through to flash_class — this was the bug
     expect(modelAlias).toBe("flash_class");

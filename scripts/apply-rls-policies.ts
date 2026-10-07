@@ -109,8 +109,7 @@ async function applyRLSPolicies() {
 
     console.log('\n✅ RLS setup complete!\n');
     console.log('Next steps:');
-    console.log('  1. Run RLS tests: npm run test -- tests/specs/rls-auth-enforcement.spec.ts');
-    console.log('  2. Verify in production: Review database/RLS_SETUP.md\n');
+    console.log('  1. Verify in production: Review database/RLS_SETUP.md\n');
 
   } catch (error) {
     console.error('\n❌ Failed to apply RLS policies:', error);

@@ -22,12 +22,19 @@ import { expect, test, type Page } from "@playwright/test";
 import { Client } from "pg";
 import fs from "fs";
 import path from "path";
+import { answerCookieBanner } from "./exam-harness/consent";
+import { DESMOS_STUBBED, stubDesmos } from "./desmos-stub";
 
 test.describe.configure({ mode: "serial" });
 // A container whose Playwright browser build differs from the pinned one names its own.
 if (process.env.E2E_CHROMIUM)
   test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
 test.setTimeout(15 * 60_000);
+// The cookie banner, answered, so it is not fixed over the controls the walk clicks (2026-10-07).
+test.beforeEach(async ({ context, baseURL }) => {
+  await answerCookieBanner(context, baseURL ?? "http://localhost:5173");
+  if (DESMOS_STUBBED) await stubDesmos(context);
+});
 
 const SHOTS =
   process.env.E2E_SHOT_DIR ?? path.resolve("test-results/exam-shots");
@@ -225,7 +232,7 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
 
   // ── Start ───────────────────────────────────────────────────────────────
   await page.goto("/tests");
-  const card = page.getByRole("article", { name: "Practice Test 1" });
+  const card = page.getByRole("article", { name: "Full-Length Test 1" });
   await expect(card.getByTestId("exam-form-state")).toHaveText("Not started");
   // UI-54: the timing is chosen under "Before you start"; Start creates the session and lands
   // on the session page, where "Begin Reading & Writing" starts Module 1.
@@ -512,8 +519,15 @@ test("test-day timing: RW routes up, Math routes down; resume, URL re-entry, ant
   // record the refusal. E10: where desmos.com is reachable (E2E_DESMOS_REACHABLE=1), the real
   // embed must load — no failed request, no error state, a Desmos container in the panel. A
   // refused fetch proves nothing about the exam, so it is logged, never passed as G-EX-08.
-  console.log("DESMOS REQUEST FAILURES", JSON.stringify(desmosFailures));
-  if (process.env.E2E_DESMOS_REACHABLE === "1") {
+  // E2E_DESMOS_STUB=1 (nightly CI, no key; 2026-10-07): calculator.js is answered by the shared
+  // stand-in (tests/e2e/desmos-stub.ts), so the embed mounts and the same wiring checks run —
+  // still NOT G-EX-08, which needs the real Desmos runtime.
+  console.log(
+    "DESMOS REQUEST FAILURES",
+    JSON.stringify(desmosFailures),
+    DESMOS_STUBBED ? "(stubbed)" : "",
+  );
+  if (process.env.E2E_DESMOS_REACHABLE === "1" || DESMOS_STUBBED) {
     await expect(
       page.locator("#exam-calculator-panel .dcg-container").first(),
     ).toBeVisible({ timeout: 20_000 });
@@ -569,7 +583,7 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   const leaks = watchForLeaks(page);
   await page.setViewportSize({ width: 1280, height: 832 });
   await page.goto("/tests");
-  const card = page.getByRole("article", { name: "Practice Test 2" });
+  const card = page.getByRole("article", { name: "Full-Length Test 2" });
   await page.getByLabel(/Practice timing/).check();
   await card.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page).toHaveURL(/\/tests\/[0-9a-f-]{36}$/);
@@ -650,7 +664,7 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   await page.goto("/tests");
   // OQ-31 (owner ruling 2026-10-02, supersedes E7b ruling 2): the card shows the completed
   // test's score, and its §15.1 disclosure beside it.
-  for (const name of ["Practice Test 1", "Practice Test 2"]) {
+  for (const name of ["Full-Length Test 1", "Full-Length Test 2"]) {
     const done = page.getByRole("article", { name });
     await expect(done.getByTestId("exam-form-state")).toHaveText(
       /^Completed \d{1,2} [A-Z][a-z]+\. Score \d{3,4}\.$/,
@@ -696,7 +710,7 @@ test("keyboard only: start, answer, cross out, mark, navigator, review page", as
 }) => {
   await page.setViewportSize({ width: 1280, height: 832 });
   await page.goto("/tests");
-  const card = page.getByRole("article", { name: "Practice Test 1" });
+  const card = page.getByRole("article", { name: "Full-Length Test 1" });
   // UI-54: timing first (under "Before you start"), then the row's action creates the session.
   await tabTo(page, page.getByLabel(/Test-day timing/));
   await page.keyboard.press("ArrowDown");
