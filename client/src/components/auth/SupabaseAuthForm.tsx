@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Mail, Lock, User } from "lucide-react";
 import { BareCardHeader } from "@/components/layout/BareCardShell";
-import { Notice } from "@/components/student-ui";
+import { Notice } from "@/components/student-ui/Notice";
 import { useToast } from "@/hooks/use-toast";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import { PasswordField } from "@/components/auth/PasswordField";

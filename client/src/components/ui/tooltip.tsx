@@ -7,7 +7,20 @@ import { cn } from "@/lib/utils"
 
 const TooltipProvider = TooltipPrimitive.Provider
 
-const Tooltip = TooltipPrimitive.Root
+// @spec [SEO plan F8 (public-page weight)] | @implemented [2026-10-07] | plain English: each
+// tooltip carries its own provider (shadcn's current pattern) instead of the app root mounting
+// one, so Radix tooltip and its positioning library load only with a page that shows a tooltip,
+// not in the entry every public page downloads. The 150 ms delay the root provider set is kept.
+function Tooltip({
+  delayDuration = 150,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Root>) {
+  return (
+    <TooltipProvider delayDuration={delayDuration}>
+      <TooltipPrimitive.Root {...props} />
+    </TooltipProvider>
+  )
+}
 
 const TooltipTrigger = TooltipPrimitive.Trigger
 
