@@ -184,6 +184,45 @@
   }
 }
 
+/* OQ-66 (c), owner ruling (Karl, 2026-10-07): "the calendar header is at most two rows at
+   1024px. Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu."
+   Keyed on the VIEWPORT, as the ruling is (StudentChrome `MoreActionsMenu` says why the column
+   would not do). Below 1200px the two buttons are not drawn and the actions group is the 40px
+   "⋯" alone. Under a 700px column (the phone; beside the right panel, 1024 to about 1135,
+   the column being the viewport less 436px) "⋯" moves up onto the range title's row, at its
+   right end, with an empty 40px column mirroring it on the left so the title stays centred; the view controls are the second row, centred as the
+   phone's controls are (owner decision 2026-10-01 item 10). Two rows where there were three;
+   "⋯" beside the controls would not fit a phone (the controls are 333px, the row 358px at 390).
+   From a 700px column the existing rules already put "⋯" right of the controls, two rows, and
+   from 920px one row. Only a header that HAS actions (`--actions`): the free calendar's
+   header is untouched. At 1200 and up nothing changes: the buttons show and "⋯" does not.
+   `display: none` takes the hidden one out of the tab order and the accessibility tree. */
+@media (max-width: 1199.98px) {
+  .lyc-cal-head__actions > .lyc-cal-head__wide {
+    display: none;
+  }
+  @container lyc-cal-body (max-width: 699.98px) {
+    .lyc-cal-head--actions {
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr) 40px;
+    }
+    .lyc-cal-head--actions > .lyc-cal-head__title {
+      grid-area: 1 / 2;
+    }
+    .lyc-cal-head--actions > .lyc-cal-head__actions {
+      grid-area: 1 / 3;
+    }
+    .lyc-cal-head--actions > .lyc-cal-head__nav {
+      grid-area: 2 / 1 / 3 / 4;
+    }
+  }
+}
+@media (min-width: 1200px) {
+  .lyc-cal-head__actions > .lyc-cal-head__more {
+    display: none;
+  }
+}
+
 /* ── Week grid ───────────────────────────────────────────────────────────── */
 
 .lyceon-calendar.lyc-cal .scroll {

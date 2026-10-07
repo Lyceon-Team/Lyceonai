@@ -186,18 +186,34 @@ for (const vp of [
  * (d) The header's two control groups never break inside themselves, and the header takes one
  *     row from 920px of calendar column, two from 700px, three below — never the broken
  *     three-column row it drew at 1024–1279.
+ * OQ-66 (c), owner ruling (Karl, 2026-10-07): "the calendar header is at most two rows at
+ *     1024px. Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu." Below a
+ *     1200px viewport the two buttons are not shown and the "⋯" trigger is (and the reverse from
+ *     1200), so the header is two rows at 1024 and on a phone (it was three). Below 1200 the
+ *     menu also opens with its two items and closes on Esc, focus back on "⋯"; at 1024 it is
+ *     walked by keyboard alone and its Edit schedule opens the schedule sheet.
  * (g) The goal card's projected range is on one line and inside its half of the card.
  * The page never scrolls sideways.
  */
+/**
+ * `moreRow` (OQ-66 (c)): the row the "⋯" sits on, at that row's right end — the range title's
+ * under a 700px column (390, and 1024 to about 1135 beside the right panel, where the column
+ * is the viewport less 436px), the view controls' from 700px; null where the buttons show.
+ */
 const QA_WIDTHS = [
-  { width: 390, headerRows: 3 },
-  { width: 700, headerRows: 2 },
-  { width: 768, headerRows: 2 },
-  { width: 820, headerRows: 2 },
-  { width: 1024, headerRows: 3 },
-  { width: 1280, headerRows: 2 },
-  { width: 1440, headerRows: 1 },
+  { width: 390, headerRows: 2, moreRow: "title" },
+  { width: 700, headerRows: 2, moreRow: "nav" },
+  { width: 768, headerRows: 2, moreRow: "nav" },
+  { width: 820, headerRows: 2, moreRow: "nav" },
+  { width: 1024, headerRows: 2, moreRow: "title" },
+  { width: 1199, headerRows: 2, moreRow: "nav" },
+  { width: 1200, headerRows: 2, moreRow: null },
+  { width: 1280, headerRows: 2, moreRow: null },
+  { width: 1440, headerRows: 1, moreRow: null },
 ] as const;
+
+/** OQ-66 (c): below this viewport width the header's actions are in the "⋯" menu. */
+const MORE_MENU_BELOW = 1200;
 
 /**
  * Everything inside a card that pokes out of it by more than half a pixel: every element's box,
@@ -303,9 +319,12 @@ for (const vp of QA_WIDTHS) {
         }
         return rows;
       };
-      const kids = Array.from(h.children).filter(
-        (c) => c.getBoundingClientRect().height > 0,
-      );
+      /** Drawn: a box with a size (a `display: none` control has none). */
+      const drawn = (c: Element): boolean => {
+        const r = c.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      };
+      const kids = Array.from(h.children).filter(drawn);
       const rows = rowCount(kids);
       const groups = ["calendar-header-nav"]
         .map((id) => document.querySelector(`[data-testid="${id}"]`))
@@ -318,11 +337,59 @@ for (const vp of QA_WIDTHS) {
         .map((g) => {
           const r = g.getBoundingClientRect();
           return {
-            lines: rowCount(Array.from(g.children)),
+            lines: rowCount(Array.from(g.children).filter(drawn)),
             inside: r.left >= box.left - 0.5 && r.right <= box.right + 0.5,
           };
         });
-      return { rows, groups };
+      // OQ-66 (c): which of the two entry points is drawn.
+      const shown = (id: string): boolean => {
+        const el = h.querySelector(`[data-testid="${id}"]`);
+        return el !== null && drawn(el);
+      };
+      // OQ-66 (c): which row the "⋯" shares (by centre), and whether it ends that row.
+      const centre = (id: string): number | null => {
+        const el = h.querySelector(`[data-testid="${id}"]`);
+        if (el === null || !drawn(el)) return null;
+        const r = el.getBoundingClientRect();
+        return r.top + r.height / 2;
+      };
+      const moreEl = h.querySelector('[data-testid="calendar-more-actions"]');
+      const moreY = centre("calendar-more-actions");
+      const titleY = centre("calendar-range-title");
+      const navY = centre("calendar-header-nav");
+      const moreRow =
+        moreY === null
+          ? null
+          : titleY !== null && Math.abs(moreY - titleY) <= 12
+            ? "title"
+            : navY !== null && Math.abs(moreY - navY) <= 12
+              ? "nav"
+              : "own";
+      const moreEnds =
+        moreEl === null || !drawn(moreEl)
+          ? null
+          : Array.from(h.querySelectorAll("button, h1"))
+              .filter(drawn)
+              // The controls on the same row as it (centres within 12px).
+              .filter((c) => {
+                const r = c.getBoundingClientRect();
+                return Math.abs(r.top + r.height / 2 - (moreY ?? 0)) <= 12;
+              })
+              .every(
+                (c) =>
+                  c === moreEl ||
+                  c.getBoundingClientRect().right <=
+                    moreEl.getBoundingClientRect().left + 0.5,
+              );
+      return {
+        rows,
+        groups,
+        moreRow,
+        moreEnds,
+        more: shown("calendar-more-actions"),
+        edit: shown("topbar-edit-schedule"),
+        regenerate: shown("calendar-regenerate"),
+      };
     });
     expect(header).not.toBeNull();
     expect(header?.groups).toHaveLength(2);
@@ -331,6 +398,31 @@ for (const vp of QA_WIDTHS) {
       { lines: 1, inside: true },
     ]);
     expect(header?.rows).toBe(vp.headerRows);
+    const compact = vp.width < MORE_MENU_BELOW;
+    expect({
+      more: header?.more,
+      edit: header?.edit,
+      regenerate: header?.regenerate,
+    }).toEqual({ more: compact, edit: !compact, regenerate: !compact });
+    expect(header?.moreRow).toBe(vp.moreRow);
+    // Nothing in the header sits right of "⋯": it ends its row.
+    expect(header?.moreEnds).toBe(compact ? true : null);
+
+    if (compact) {
+      // The menu opens with the two actions, and Esc closes it with focus back on "⋯".
+      const more = page.locator('[data-testid="calendar-more-actions"]');
+      await expect(more).toHaveAccessibleName("More actions");
+      await more.click();
+      const menu = page.getByRole("menu");
+      await expect(menu).toBeVisible();
+      expect(await menu.getByRole("menuitem").allInnerTexts()).toEqual([
+        "Edit schedule",
+        "Regenerate plan",
+      ]);
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+      await expect(more).toBeFocused();
+    }
 
     // (g) The projected range: one line, inside its half of the goal card.
     const figure = await page.evaluate(() => {
@@ -375,3 +467,47 @@ for (const vp of QA_WIDTHS) {
     ).toBeLessThanOrEqual(0);
   });
 }
+
+/**
+ * OQ-66 (c) by keyboard alone, at 1024 (the ruling's width): Tab from the Next arrow reaches
+ * "⋯", Enter opens the menu on its first item, the arrows move between the two, Esc closes it
+ * and returns focus to "⋯", and Edit schedule, chosen with Enter, opens the same schedule
+ * sheet the 1200px+ button opens.
+ *
+ * @spec [owner ruling (Karl, 2026-10-07, OQ-66 (c)); student-UI register §2 Keyboard]
+ *       | @implemented [2026-10-07]
+ */
+test("OQ-66 (c) the ⋯ menu by keyboard @1024", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await serveStudentCalendar(page, F.studentCalendarStarted);
+  await pinBrowserToday(page);
+  await page.goto("/calendar");
+  await page
+    .locator('[data-testid="calendar-week-grid"]')
+    .first()
+    .waitFor({ timeout: 15_000 });
+
+  const more = page.locator('[data-testid="calendar-more-actions"]');
+  await page.locator('[data-testid="calendar-next"]').focus();
+  await page.keyboard.press("Tab");
+  await expect(more).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  const edit = page.getByRole("menuitem", { name: "Edit schedule" });
+  const regenerate = page.getByRole("menuitem", { name: "Regenerate plan" });
+  await expect(edit).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(regenerate).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(edit).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(more).toBeFocused();
+
+  await page.keyboard.press("Space");
+  await expect(edit).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.locator('[data-testid="calendar-settings-sheet"]'),
+  ).toBeVisible();
+});

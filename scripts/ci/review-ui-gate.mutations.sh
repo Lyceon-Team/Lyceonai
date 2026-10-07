@@ -2610,6 +2610,97 @@ plant "QA11-E1" "the right panel shows \"Your schedule\" again" \
 assert s.count(a) == 1
 s = s.replace(a, "                in the Edit schedule sheet, whose live readout is the same sentence. */}\n            <section data-testid=\"calendar-schedule-card\"><h2>Your schedule</h2></section>\n            <ShowFilters", 1)'
 
+# OQ-66 (c), owner ruling (Karl, 2026-10-07): "the calendar header is at most two rows at 1024px.
+# Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu." The rows and which
+# entry point is drawn at which width are measured in the browser (tests/e2e/student-calendar.spec.ts,
+# "QA 2026-10-07 item 11 layout" at 390–1440 and "OQ-66 (c) the ⋯ menu by keyboard @1024");
+# these plants hold the menu's wiring (the same handlers, pending, done, theme) and the CSS pins.
+TOQ66="client/src/features/calendar/components/StudentChrome.more-menu.test.tsx"
+
+plant "OQ66-M1" "the menu's Edit schedule calls nothing" \
+  "$TOQ66 $T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "            onSelect={onEditSchedule}"
+assert s.count(a) == 1
+s = s.replace(a, "            onSelect={() => undefined}", 1)'
+
+plant "OQ66-M2" "the menu's Regenerate plan calls nothing" \
+  "$TOQ66 $T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "            onSelect={regenerate.onClick}"
+assert s.count(a) == 1
+s = s.replace(a, "            onSelect={() => undefined}", 1)'
+
+plant "OQ66-M3" "the menu's Regenerate plan stays enabled while a regenerate runs" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "\n            disabled={regenerate.pending}\n"
+assert s.count(a) == 1
+s = s.replace(a, "\n", 1)'
+
+plant "OQ66-M4" "the menu's Regenerate plan never says Plan regenerated" \
+  "$TOQ66 $T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "            {regenerateLabel(regenerate)}\n          </DropdownMenuItem>"
+assert s.count(a) == 1
+s = s.replace(a, "            Regenerate plan\n          </DropdownMenuItem>", 1)'
+
+plant "OQ66-M5" "the open menu loses the shell's theme lock (a light menu over a dark page)" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "        portalThemeLock={themeLock}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-F1" "a header with no actions (free, pre-setup) draws the ⋯ anyway" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "      {!hasActions ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {false ? (", 1)'
+
+plant "OQ66-T1" "the header loses the class that moves ⋯ onto the title row" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "${hasActions ? \" lyc-cal-head--actions\" : \"\"}"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-T2" "the ⋯ trigger loses the class the 1200px rule hides" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "          className=\"lyc-cal-head__more\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C1" "below 1200px the buttons are drawn as well as the ⋯" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "  .lyc-cal-head__actions > .lyc-cal-head__wide {\n    display: none;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C2" "from 1200px the ⋯ is drawn as well as the buttons" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "  .lyc-cal-head__actions > .lyc-cal-head__more {\n    display: none;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C3" "under a 700px column the ⋯ falls to its own row (three rows at 1024 and 390)" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .lyc-cal-head--actions {\n      display: grid;\n      grid-template-columns: 40px minmax(0, 1fr) 40px;\n    }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C4" "under a 700px column the ⋯ lands left of the title, not at the row's end" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .lyc-cal-head--actions > .lyc-cal-head__actions {\n      grid-area: 1 / 3;\n    }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \
   "client/src/components/home/PaidHome.tsx" \

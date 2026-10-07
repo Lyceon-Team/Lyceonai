@@ -486,6 +486,10 @@ describe("guardian calendar is read-only (§16, R-08-22)", () => {
     expect(
       container.querySelector('[data-testid="topbar-edit-schedule"]'),
     ).toBeNull();
+    // OQ-66 (c): nor the student header's "⋯" menu, which holds the same entry point.
+    expect(
+      container.querySelector('[data-testid="calendar-more-actions"]'),
+    ).toBeNull();
     expect(
       container.querySelector('[data-testid="calendar-settings-sheet"]'),
     ).toBeNull();

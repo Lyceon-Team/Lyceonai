@@ -124,7 +124,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - "Knowledge and skills" with seven segments per domain. Domain weight lines come from College Board's published specification. **No percentiles, no correct/total.**
 
 **Calendar** (Canvas-style).
-- Header: Week/Month, Today and the arrows on the left; the date range centered (`M/D – M/D`); Edit schedule and **Regenerate plan** (`POST /api/calendar/plan/regenerate`) on the right.
+- Header: Week/Month, Today and the arrows on the left; the date range centered (`M/D – M/D`); Edit schedule and **Regenerate plan** (`POST /api/calendar/plan/regenerate`) on the right. At most two rows at 1024px; below a ~1200px viewport Edit schedule and Regenerate plan move into a "⋯" menu ("More actions"), on a phone too (owner ruling, Karl, 2026-10-07, OQ-66 (c)).
 - Week grid with category-striped blocks, and Month view.
 - **The test day is starred** in week view, month view and the mini month.
 - Right panel:
