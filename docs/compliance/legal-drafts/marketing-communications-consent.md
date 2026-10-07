@@ -44,7 +44,7 @@ We process unsubscribe requests promptly, and in any case within 10 business day
 
 ## **6. Sender Identification**
 
-Each marketing email identifies LYCEON as the sender, includes our postal address, [POSTAL ADDRESS], and contains an unsubscribe link.
+Each marketing email identifies LYCEON as the sender, includes our postal address, 5650 Central Ave # E7, Toledo, OH 43615, and contains an unsubscribe link.
 
 ## **7. Consent Records**
 
@@ -64,6 +64,6 @@ We record your choice, the date and time you made it, and where you made it.
 
 1. Students aged 13 to 17 who opt in may receive marketing email in the US (CAN-SPAM); no separate parental notice is required. Under-13 users are never shown the checkbox.
 2. CASL: not applicable; the service is US-only at launch.
-3. Postal address (Section 6): Karl supplies it before the first marketing email is sent.
+3. Postal address (Section 6): filled 2026-10-07 with the address Karl supplied.
 4. Consent record: the choice, date and time, source and wording version (as built in `marketing_consent_log`); kept while the account is open and deleted with it.
 5. Unsubscribe: processed promptly and within 10 business days (CAN-SPAM). The one-click unsubscribe link must exist before the first marketing email is sent; the Settings toggle is live today.

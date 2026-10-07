@@ -2,7 +2,7 @@
 
 # **LYCEON Sub-Processors**
 
-**Last updated:** [●]
+**Last updated:** 2026-10-07
 
 The following service providers process personal information on LYCEON's behalf. Each processes it only on our instructions and only to provide its service to us.
 

@@ -2,7 +2,7 @@
 
 # **LYCEON Billing Terms**
 
-**Version 3** · **Effective date:** [●]
+**Version 3** · **Effective date:** 2026-10-07
 
 These Billing Terms are the Auto-Renewal Offer Terms for LYCEON subscriptions. They are presented before you complete checkout, and you are asked to agree to them separately from the LYCEON Terms of Use.
 

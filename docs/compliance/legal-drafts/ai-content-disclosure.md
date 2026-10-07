@@ -2,7 +2,7 @@
 
 # **LYCEON AI Content Disclosure**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 LYCEON uses artificial intelligence (AI) in parts of the service. This notice explains where AI is used and what to do if something looks wrong.
 

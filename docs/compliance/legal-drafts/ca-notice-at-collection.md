@@ -2,7 +2,7 @@
 
 # **LYCEON California Notice at Collection**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 If you live in California, this notice describes the personal information we collect, why we collect it and how long we keep it. Further details are in the **LYCEON Privacy Policy**.
 
@@ -35,7 +35,7 @@ We use sensitive personal information only to provide the service and keep it se
 
 You can request to know, delete or correct your personal information, and we will not discriminate against you for doing so. See Section 8.1 of the Privacy Policy or email **support@lyceon.ai**.
 
-**Privacy Policy:** [link]
+**Privacy Policy:** https://lyceon.ai/legal/privacy-policy
 
 ---
 

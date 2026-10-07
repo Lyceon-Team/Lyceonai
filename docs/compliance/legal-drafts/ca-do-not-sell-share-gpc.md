@@ -2,7 +2,7 @@
 
 # **Your Privacy Choices: Sale and Sharing**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 ## **We Do Not Sell or Share Your Personal Information**
 
