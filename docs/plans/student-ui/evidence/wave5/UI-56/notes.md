@@ -38,3 +38,25 @@ Differences kept, and why:
 10. **Under 13** is not captured: both harness personas are 13 or older. The age state (the
     headline, the server's age message, no button, no request) is covered by
     `client/src/pages/chat.ui56.test.tsx`.
+
+## QA 2026-10-07 (branch `claude/qa-lisa`)
+
+Re-captured with `STUDENT_HARNESS_DB=student_e2e_qalisa HARNESS_PORT=6731
+STUDENT_HARNESS_VITE_PORT=6732`; 28 built captures, 0px horizontal overflow in every one, no
+theme lock. Before/after pairs are in `../../qa-2026-10-07/lisa-*/`.
+
+- **Send pending (item 5).** From the click until LISA answers, Send reads "Sending…", disabled
+  and busy, at full strength (`paid-typing`). It keeps a 118px minimum width so the textarea does
+  not jump when the label changes; the prototype's idle Send is narrower (about 84px).
+- **New session (item 9)** creates nothing: it opens the empty column; the first message creates
+  the conversation (`paid-new-session`: the history keeps five rows, no blank "New session").
+  This replaces difference 3's "created then" wording only in that New session no longer
+  creates in advance.
+- **Empty prompt (item 15)**: the empty column shows "Ask LISA about a question you missed or a
+  skill you're working on." PROPOSED copy, awaiting Karl's approval. Not in the prototype.
+- **Picked session on a phone (item 15)**: picking a session from the history (under the
+  composer) brings the conversation and its composer to the bottom of the screen
+  (`paid-pick-session`); difference 8 now also holds for a pick, not only for the first open.
+- **Crisis titles (item 1, UI part)**: the seed adds a crisis-flagged conversation whose server
+  title is its first message; the history and header show "Conversation" (every paid shot).
+- **Composer textarea (difference 4)**: still disabled while a message is on its way.

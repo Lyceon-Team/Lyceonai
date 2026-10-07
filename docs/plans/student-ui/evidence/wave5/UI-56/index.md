@@ -1,9 +1,9 @@
 # UI-56 LISA (/chat): paid conversation, typing, New session; free locked card and Unlock LISA; light and dark, 1440 and 390
 
-Generated 2026-10-03T18:29:04.917Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-56` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T09:41:37.796Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-56` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
-- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844.
+- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
 - The prototypes are a fixed 1440x900 canvas with no phone layout; phone rows show the desktop prototype.
 - Dark is requested through the app's own per-device setting; the theme column records what the page rendered.
 - No external requests: the built app's Google Fonts (Inter, Poppins) are blocked, so legacy page bodies fall back to system faces; Source Sans 3 / Source Serif 4 are self-hosted and load for both sides.
@@ -16,10 +16,10 @@ Prototype: `Lisa.dc.html` (LISA, plan = paid).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-conversation desktop light](paid-conversation--desktop--light--built.png)<br>`/chat`, 87 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png), 89 KB |
-| desktop | dark | ![paid-conversation desktop dark](paid-conversation--desktop--dark--built.png)<br>`/chat`, 88 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png), 90 KB |
-| mobile | light | ![paid-conversation mobile light](paid-conversation--mobile--light--built.png)<br>`/chat`, 45 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png)<br>desktop prototype (no phone layout), 89 KB |
-| mobile | dark | ![paid-conversation mobile dark](paid-conversation--mobile--dark--built.png)<br>`/chat`, 46 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png)<br>desktop prototype (no phone layout), 90 KB |
+| desktop | light | ![paid-conversation desktop light](paid-conversation--desktop--light--built.png)<br>`/chat`, 90 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png), 89 KB |
+| desktop | dark | ![paid-conversation desktop dark](paid-conversation--desktop--dark--built.png)<br>`/chat`, 91 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png), 90 KB |
+| mobile | light | ![paid-conversation mobile light](paid-conversation--mobile--light--built.png)<br>`/chat`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png)<br>desktop prototype (no phone layout), 89 KB |
+| mobile | dark | ![paid-conversation mobile dark](paid-conversation--mobile--dark--built.png)<br>`/chat`, 55 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png)<br>desktop prototype (no phone layout), 90 KB |
 
 ## LISA, paid, full page (on a phone the right panel stacks under the composer)
 
@@ -29,40 +29,55 @@ Prototype: `Lisa.dc.html` (LISA, plan = paid (the canvas is a fixed 1440x900)).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-conversation-full desktop light](paid-conversation-full--desktop--light--built.png)<br>`/chat`, 87 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png), 89 KB |
-| desktop | dark | ![paid-conversation-full desktop dark](paid-conversation-full--desktop--dark--built.png)<br>`/chat`, 88 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png), 90 KB |
-| mobile | light | ![paid-conversation-full mobile light](paid-conversation-full--mobile--light--built.png)<br>`/chat`, 76 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png)<br>desktop prototype (no phone layout), 89 KB |
-| mobile | dark | ![paid-conversation-full mobile dark](paid-conversation-full--mobile--dark--built.png)<br>`/chat`, 78 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png)<br>desktop prototype (no phone layout), 90 KB |
+| desktop | light | ![paid-conversation-full desktop light](paid-conversation-full--desktop--light--built.png)<br>`/chat`, 90 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png), 89 KB |
+| desktop | dark | ![paid-conversation-full desktop dark](paid-conversation-full--desktop--dark--built.png)<br>`/chat`, 91 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png), 90 KB |
+| mobile | light | ![paid-conversation-full mobile light](paid-conversation-full--mobile--light--built.png)<br>`/chat`, 82 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png)<br>desktop prototype (no phone layout), 89 KB |
+| mobile | dark | ![paid-conversation-full mobile dark](paid-conversation-full--mobile--dark--built.png)<br>`/chat`, 84 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png)<br>desktop prototype (no phone layout), 90 KB |
 
-## Click path (paid): type a message and press Send; the student's bubble shows at once, then LISA's typing bubble (three dots, still under reduced motion), Send disabled. The request is held in the browser, so no turn runs
+## Click path (paid): type a message and press Send; the student's bubble shows at once, then LISA's typing bubble (three dots, still under reduced motion), and Send reads 'Sending…', disabled and busy, from the click (QA 2026-10-07 item 5). The request is held in the browser, so no turn runs
 
 Persona: `paid`. Route: `/chat?conversationId={paid.lisaConversationId}`.
 Step: type `So the slope is -3/2?` into `{"desktop":"textarea[aria-label=\"Message\"]","mobile":"textarea[aria-label=\"Message\"]"}`.
 Step: click `{"desktop":"button[aria-label=\"Send message\"]","mobile":"button[aria-label=\"Send message\"]"}`.
 Held: the browser's `POST /api/tutor/messages` is left unanswered through the screenshot, then aborted (it never reaches the server).
-Must then show `[data-testid="lisa-typing"]` (the capture fails otherwise).
+Must then show `button[aria-label="Send message"][data-pending="true"]` (the capture fails otherwise).
 Prototype: `Lisa.dc.html` (LISA, plan = paid (the canvas's typing state needs a typed draft; its steps are clicks only, so it is shown idle)).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-typing desktop light](paid-typing--desktop--light--built.png)<br>`/chat`, 91 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png), 89 KB |
-| desktop | dark | ![paid-typing desktop dark](paid-typing--desktop--dark--built.png)<br>`/chat`, 92 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png), 90 KB |
-| mobile | light | ![paid-typing mobile light](paid-typing--mobile--light--built.png)<br>`/chat`, 41 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png)<br>desktop prototype (no phone layout), 89 KB |
-| mobile | dark | ![paid-typing mobile dark](paid-typing--mobile--dark--built.png)<br>`/chat`, 41 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png)<br>desktop prototype (no phone layout), 90 KB |
+| desktop | light | ![paid-typing desktop light](paid-typing--desktop--light--built.png)<br>`/chat`, 95 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png), 89 KB |
+| desktop | dark | ![paid-typing desktop dark](paid-typing--desktop--dark--built.png)<br>`/chat`, 96 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png), 90 KB |
+| mobile | light | ![paid-typing mobile light](paid-typing--mobile--light--built.png)<br>`/chat`, 46 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light.png)<br>desktop prototype (no phone layout), 89 KB |
+| mobile | dark | ![paid-typing mobile dark](paid-typing--mobile--dark--built.png)<br>`/chat`, 46 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark.png)<br>desktop prototype (no phone layout), 90 KB |
 
-## Click path (paid): New session creates a conversation (real POST /api/tutor/conversations) and opens its empty column under "New session"; the history gains it
+## Click path (paid): New session opens an empty column under "New session" with the short prompt (QA 2026-10-07 items 9 and 15: nothing is created until the first message, so the history does not gain a blank session)
 
 Persona: `paid`. Route: `/chat?conversationId={paid.lisaConversationId}`.
 Step: click `{"desktop":"[data-testid=\"lisa-new-session\"]","mobile":"[data-testid=\"lisa-new-session\"]"}`.
+Must then show `[data-testid="lisa-empty-prompt"]` (the capture fails otherwise).
 Must then show no `[data-testid="tutor-bubble"]` (the capture fails otherwise).
 Prototype: `Lisa.dc.html` (LISA, plan = paid, New session clicked (the canvas does not clear its column)); clicked: `button:has-text("New session")`.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![paid-new-session desktop light](paid-new-session--desktop--light--built.png)<br>`/chat`, 55 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light--new-session.png), 89 KB |
-| desktop | dark | ![paid-new-session desktop dark](paid-new-session--desktop--dark--built.png)<br>`/chat`, 58 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark--new-session.png), 90 KB |
-| mobile | light | ![paid-new-session mobile light](paid-new-session--mobile--light--built.png)<br>`/chat`, 36 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light--new-session.png)<br>desktop prototype (no phone layout), 89 KB |
-| mobile | dark | ![paid-new-session mobile dark](paid-new-session--mobile--dark--built.png)<br>`/chat`, 38 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark--new-session.png)<br>desktop prototype (no phone layout), 90 KB |
+| desktop | light | ![paid-new-session desktop light](paid-new-session--desktop--light--built.png)<br>`/chat`, 63 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light--new-session.png), 89 KB |
+| desktop | dark | ![paid-new-session desktop dark](paid-new-session--desktop--dark--built.png)<br>`/chat`, 63 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark--new-session.png), 90 KB |
+| mobile | light | ![paid-new-session mobile light](paid-new-session--mobile--light--built.png)<br>`/chat`, 46 KB, horizontal overflow 0px | ![prototype light](proto--Lisa--paid--light--new-session.png)<br>desktop prototype (no phone layout), 89 KB |
+| mobile | dark | ![paid-new-session mobile dark](paid-new-session--mobile--dark--built.png)<br>`/chat`, 46 KB, horizontal overflow 0px | ![prototype dark](proto--Lisa--paid--dark--new-session.png)<br>desktop prototype (no phone layout), 90 KB |
+
+## QA 2026-10-07 item 15 and titles: from the empty column, pick "Slope from standard form" in the history. On a phone (the history under the composer) the conversation and its composer come into view; at 1440 the column shows its last turn and the list keeps the pick in view. The history shows the crisis-flagged session as "Conversation", never its first message
+
+Persona: `paid`. Route: `/chat`.
+Step: click `{"desktop":"[data-testid=\"lisa-history-item\"]:has-text(\"Slope from standard form\")","mobile":"[data-testid=\"lisa-history-item\"]:has-text(\"Slope from standard form\")"}`.
+Must then show `[data-testid="tutor-bubble"]` (the capture fails otherwise).
+Prototype: none. Not prototyped: Lisa.dc.html is a fixed 1440x900 canvas with no phone layout and no crisis-flagged history row (QA 2026-10-07 items 15 and 1).
+
+| Viewport | Theme (as rendered) | Built | Prototype |
+|---|---|---|---|
+| desktop | light | ![paid-pick-session desktop light](paid-pick-session--desktop--light--built.png)<br>`/chat`, 90 KB, horizontal overflow 0px | none |
+| desktop | dark | ![paid-pick-session desktop dark](paid-pick-session--desktop--dark--built.png)<br>`/chat`, 91 KB, horizontal overflow 0px | none |
+| mobile | light | ![paid-pick-session mobile light](paid-pick-session--mobile--light--built.png)<br>`/chat`, 55 KB, horizontal overflow 0px | none |
+| mobile | dark | ![paid-pick-session mobile dark](paid-pick-session--mobile--dark--built.png)<br>`/chat`, 55 KB, horizontal overflow 0px | none |
 
 ## LISA, free: the locked card (shipped headline "A Tutor That Knows The SAT And Knows You", the prototype body, Unlock LISA); the right panel empty; no tutor request
 
@@ -92,6 +107,6 @@ Prototype: `Lisa.dc.html` (LISA, plan = free, the locked LISA rail item clicked 
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"c5321ee5-d058-4988-a497-1814ae2c5503","openPracticeSessionId":"aa162262-b400-49c3-98e2-005949127ae8","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"131e9759-82c3-4c3e-80e3-c63e778bd9d5","openPracticeSessionId":"5df8152e-ff12-4bfe-b874-d4a8bfbd0974","openReviewSessionId":null,"diagnosticSessionId":"a3e0a7be-6845-418c-ad37-55def6843736","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":"3daa2183-5390-4f68-9c4e-c05348420cde","answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"c409ec96-6a8c-4530-9986-e2421840812d","openPracticeSessionId":"b354eb8d-1cc2-43e7-bea2-818634d05ff8","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"8c3de390-2964-4ae1-bd69-cde49b274f36","openPracticeSessionId":"82d7943d-b7bc-494c-8867-1cc5c78dca37","openReviewSessionId":null,"diagnosticSessionId":"7ff51858-36cb-4a70-8640-3a194b6af5ed","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":"c96ebbcd-85f9-4ced-901a-891961778957","answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
-- External hosts blocked: `fonts.googleapis.com`
+- External hosts blocked: none

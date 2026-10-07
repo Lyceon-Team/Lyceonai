@@ -209,6 +209,13 @@ import {
 } from "@/components/billing/upgrade-modal";
 import { AppShell } from "@/components/layout/app-shell";
 import { LISA_UPGRADE_PITCH } from "@/components/tutor/LisaUpgradeCard";
+import { LISA_SEND_PENDING_LABEL } from "@/components/tutor/TutorThreadParts";
+import {
+  evaluateNotificationPolicy,
+  flagConversationForReview,
+  getCrisisResponse,
+  runCrisisClassifier,
+} from "../../../server/services/tutor-crisis";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import ChatPage, { LISA_COMPOSER_PLACEHOLDER } from "./chat";
 
@@ -247,7 +254,13 @@ function workerReply(content: string = TUTOR_TEXT): unknown {
 
 /** A conversation row as the tutor's own route tests seed it. */
 function seedConversation(
-  overrides: { title?: string; status?: string; updated_at?: string } = {},
+  overrides: {
+    title?: string;
+    status?: string;
+    updated_at?: string;
+    crisis_flagged?: boolean;
+    crisis_paused_at?: string | null;
+  } = {},
 ): string {
   const row = db.current.seed("tutor_conversations", {
     student_id: STUDENT_ID,
@@ -259,12 +272,12 @@ function seedConversation(
     source_question_row_id: null,
     source_question_canonical_id: null,
     status: overrides.status ?? "active",
-    crisis_flagged: false,
+    crisis_flagged: overrides.crisis_flagged ?? false,
     deleted_at: null,
     updated_at: overrides.updated_at ?? "2026-09-24T10:00:00.000Z",
     closed_at: null,
     title: overrides.title ?? "New session",
-    crisis_paused_at: null,
+    crisis_paused_at: overrides.crisis_paused_at ?? null,
     ended_at: null,
   });
   return row.id as string;
@@ -423,9 +436,11 @@ describe("UI-56 paid: the conversation, the composer and the right panel", () =>
     const typing = screen.getByRole("status", { name: "LISA is thinking" });
     expect(within(typing).getByText("LISA")).toBeTruthy();
     expect(typing.querySelectorAll(".lyc-dot")).toHaveLength(3);
-    // No sentence beside the dots (DESIGN.md §3), and the button reads the prototype's "Send".
+    // No sentence beside the dots (DESIGN.md §3). QA 2026-10-07 item 5: while the message is on
+    // its way the button says so ("Sending…", busy), not just faded.
     expect(typing.textContent).toBe("LISA");
-    expect(sendButton().textContent).toBe("Send");
+    expect(sendButton().textContent).toBe(LISA_SEND_PENDING_LABEL);
+    expect(sendButton().getAttribute("aria-busy")).toBe("true");
     expect(sendButton().disabled).toBe(true);
     // Disabled because LISA is thinking, not because the draft is empty: with words in the
     // box it stays disabled, and Enter sends nothing.
@@ -500,7 +515,9 @@ describe("UI-56 paid: the conversation, the composer and the right panel", () =>
     expect(screen.queryByRole("button", { name: "Show older" })).toBeNull();
   });
 
-  it("New session creates a conversation and opens its empty column", async () => {
+  // QA 2026-10-07 item 9 (Karl): "LISA 'New session': don't create a conversation until the
+  // first message is sent (no blank sessions)".
+  it("New session opens an empty column and creates NOTHING; the first message creates the conversation, once, and is sent there", async () => {
     orchestrateTurn.mockResolvedValue(workerReply());
     const convId = seedConversation({ title: "Slope from standard form" });
     const { history } = await mount("paid", `?conversationId=${convId}`);
@@ -509,31 +526,55 @@ describe("UI-56 paid: the conversation, the composer and the right panel", () =>
     fireEvent.click(sendButton());
     await screen.findByText(TUTOR_TEXT);
     expect(screen.getAllByTestId("student-bubble")).toHaveLength(1);
+    await waitFor(() => expect(historyItems()).toHaveLength(1));
 
     fireEvent.click(screen.getByTestId("lisa-new-session"));
 
-    await waitFor(() =>
-      expect(db.current.rows("tutor_conversations")).toHaveLength(2),
-    );
-    const created = db.current
-      .rows("tutor_conversations")
-      .find((r) => r.id !== convId);
-    await waitFor(() =>
-      expect(history[history.length - 1]).toBe(
-        `/chat?conversationId=${String(created?.id)}`,
-      ),
-    );
-    await conversationLoaded(String(created?.id));
+    // The empty column: no conversation in the URL, no bubbles, the prompt, the composer.
+    await waitFor(() => expect(history[history.length - 1]).toBe("/chat"));
+    expect(await screen.findByTestId("lisa-empty-prompt")).toBeTruthy();
     expect(screen.getByTestId("lisa-title").textContent).toBe("New session");
     expect(screen.queryAllByTestId("student-bubble")).toHaveLength(0);
     expect(screen.queryAllByTestId("tutor-bubble")).toHaveLength(0);
-    const post = calls.find(
-      (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
-    );
-    expect(post?.body).toMatchObject({
+    expect(composer()).toBeTruthy();
+    // Nothing created: no POST, no row, no blank session in the history.
+    const creates = (): Call[] =>
+      calls.filter(
+        (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
+      );
+    expect(creates()).toHaveLength(0);
+    expect(db.current.rows("tutor_conversations")).toHaveLength(1);
+    expect(historyItems()).toHaveLength(1);
+
+    // The first message creates it (the existing route, with an idempotency key) and is sent
+    // into it through the same turn machine.
+    orchestrateTurn.mockResolvedValue(workerReply("A second reply."));
+    fireEvent.change(composer(), { target: { value: "A new question" } });
+    fireEvent.click(sendButton());
+    await screen.findByText("A second reply.");
+    expect(creates()).toHaveLength(1);
+    expect(creates()[0]?.body).toMatchObject({
       entry_mode: "general",
       source_surface: "dashboard",
     });
+    expect(
+      (creates()[0]?.body as { idempotency_key?: string }).idempotency_key,
+    ).toMatch(/^[0-9a-f-]{36}$/);
+    const created = db.current
+      .rows("tutor_conversations")
+      .find((r) => r.id !== convId);
+    expect(history[history.length - 1]).toBe(
+      `/chat?conversationId=${String(created?.id)}`,
+    );
+    const posts = calls.filter(
+      (c) =>
+        c.method === "POST" &&
+        c.path === "/api/tutor/messages" &&
+        (c.body as { conversation_id: string }).conversation_id ===
+          String(created?.id),
+    );
+    expect(posts).toHaveLength(1);
+    await waitFor(() => expect(historyItems()).toHaveLength(2));
   });
 
   it("with no conversation open, the first message creates one and is sent there, once", async () => {
@@ -606,6 +647,386 @@ describe("UI-56 paid: the conversation, the composer and the right panel", () =>
     expect(logged).not.toContain(STUDENT_TEXT);
     expect(logged).not.toContain("slope");
     expect(logged).not.toContain(TUTOR_TEXT);
+  });
+});
+
+// ── QA 2026-10-07: items 5, 9, 15 and crisis titles ───────────────────────────────────────
+
+/** QA-15: the proposed empty-column prompt (awaiting Karl's approval). */
+const EMPTY_PROMPT =
+  "Ask LISA about a question you missed or a skill you're working on.";
+const CRISIS_WORDS = "I don't want to be here anymore";
+const CRISIS_RESOURCES =
+  "You're not alone. If you are in immediate danger, call or text 988.";
+
+/** A turn LISA holds open until the test answers it. */
+function holdTurn(): { answer: (content?: string) => void } {
+  let resolveTurn: (v: unknown) => void = () => undefined;
+  orchestrateTurn.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveTurn = resolve;
+      }),
+  );
+  return { answer: (content) => resolveTurn(workerReply(content)) };
+}
+
+/**
+ * Counts each time Send went from enabled to disabled after the watch began: a Send that was
+ * enabled at any committed moment between the click and LISA's reply.
+ */
+function watchSendReenabled(): { violations: () => number; stop: () => void } {
+  let count = 0;
+  const tally = (records: MutationRecord[]): void => {
+    for (const r of records) {
+      if (
+        r.type === "attributes" &&
+        r.attributeName === "disabled" &&
+        r.oldValue === null &&
+        (r.target as Element).getAttribute("aria-label") === "Send message"
+      ) {
+        count += 1;
+      }
+    }
+  };
+  const observer = new MutationObserver(tally);
+  observer.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["disabled"],
+    attributeOldValue: true,
+  });
+  return {
+    violations: () => {
+      tally(observer.takeRecords());
+      return count;
+    },
+    stop: () => observer.disconnect(),
+  };
+}
+
+/** The phone layout (below `lg`): `PHONE_LAYOUT_QUERY` matches, nothing else does. */
+function phoneLayout(): void {
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        matches: query === "not all and (min-width: 1024px)",
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as MediaQueryList,
+  );
+}
+
+function scrollCalls(): Array<{
+  el: Element;
+  opts: ScrollIntoViewOptions | undefined;
+}> {
+  const mock = vi.mocked(Element.prototype.scrollIntoView);
+  return mock.mock.contexts.map((el, i) => ({
+    el: el as Element,
+    opts: mock.mock.calls[i]?.[0] as ScrollIntoViewOptions | undefined,
+  }));
+}
+
+function crisisTurnOnce(): void {
+  vi.mocked(runCrisisClassifier).mockResolvedValueOnce({
+    crisis: true,
+    source: "signature",
+    category: "crisis",
+    signatureId: "sig-qa",
+    modelConfidence: null,
+    forceReview: false,
+  });
+  // As the real flag write does: the conversation is marked crisis_flagged in the same turn.
+  vi.mocked(flagConversationForReview).mockImplementationOnce(
+    async (conversationId: string) => {
+      const row = db.current
+        .rows("tutor_conversations")
+        .find((r) => r.id === conversationId);
+      if (row) row.crisis_flagged = true;
+      return {
+        caseId: "case-qa",
+        isNewCase: true,
+        caseStatus: "open",
+        slaDeadline: "2026-09-26T00:00:00.000Z",
+      } as Awaited<ReturnType<typeof flagConversationForReview>>;
+    },
+  );
+  vi.mocked(evaluateNotificationPolicy).mockReturnValueOnce({
+    shouldNotify: false,
+    suppressionReason: "qa-test",
+  } as ReturnType<typeof evaluateNotificationPolicy>);
+  vi.mocked(getCrisisResponse).mockReturnValueOnce(CRISIS_RESOURCES);
+}
+
+describe("QA 2026-10-07 item 5: Send is pending from the click, standalone", () => {
+  it("in a conversation: the click's own render reads 'Sending…', disabled and busy; Send comes back with LISA's reply", async () => {
+    const turn = holdTurn();
+    const convId = seedConversation();
+    await mount("paid", `?conversationId=${convId}`);
+    await conversationLoaded(convId);
+    fireEvent.change(composer(), { target: { value: STUDENT_TEXT } });
+    // Presence first: the plain, enabled Send.
+    expect(sendButton().textContent).toBe("Send");
+    expect(sendButton().disabled).toBe(false);
+
+    fireEvent.click(sendButton());
+    // No await: the render the click causes.
+    expect(sendButton().textContent).toBe(LISA_SEND_PENDING_LABEL);
+    expect(sendButton().disabled).toBe(true);
+    expect(sendButton().getAttribute("aria-busy")).toBe("true");
+    // Pending, not faded as "unavailable": full strength over the Button's own disabled fade.
+    expect(sendButton().className).not.toContain("disabled:opacity-45");
+    expect(sendButton().className).toContain("disabled:opacity-100");
+    expect(sendButton().className).not.toContain("disabled:opacity-50");
+
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(1));
+    turn.answer();
+    await screen.findByText(TUTOR_TEXT);
+    fireEvent.change(composer(), { target: { value: "next one" } });
+    expect(sendButton().textContent).toBe("Send");
+    expect(sendButton().disabled).toBe(false);
+  });
+
+  it("a first message with no conversation open: pending from the click through the create, the navigation and the turn, never enabled in between", async () => {
+    const turn = holdTurn();
+    await mount("paid");
+    await screen.findByText("No sessions yet");
+    fireEvent.change(composer(), { target: { value: STUDENT_TEXT } });
+    expect(sendButton().disabled).toBe(false);
+
+    fireEvent.click(sendButton());
+    expect(sendButton().textContent).toBe(LISA_SEND_PENDING_LABEL);
+    expect(sendButton().disabled).toBe(true);
+    const watch = watchSendReenabled();
+
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(1));
+    expect(db.current.rows("tutor_conversations")).toHaveLength(1);
+    expect(sendButton().textContent).toBe(LISA_SEND_PENDING_LABEL);
+    expect(watch.violations()).toBe(0);
+
+    turn.answer();
+    await screen.findByText(TUTOR_TEXT);
+    watch.stop();
+  });
+});
+
+describe("QA 2026-10-07 item 9: New session defers the create to the first message", () => {
+  it("a create that fails is replayed with the SAME idempotency key on the next send: one conversation", async () => {
+    orchestrateTurn.mockResolvedValue(workerReply());
+    await mount("paid");
+    await screen.findByText("No sessions yet");
+
+    const broken = vi.spyOn(db.current, "client").mockImplementation(() => {
+      throw new Error("db down");
+    });
+    fireEvent.change(composer(), { target: { value: STUDENT_TEXT } });
+    fireEvent.click(sendButton());
+    await screen.findByText(/couldn.t start a session/i);
+    broken.mockRestore();
+    // The words are back in the composer; send them again.
+    expect(composer().value).toBe(STUDENT_TEXT);
+    fireEvent.click(sendButton());
+    await screen.findByText(TUTOR_TEXT);
+
+    const creates = calls.filter(
+      (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
+    );
+    expect(creates).toHaveLength(2);
+    const keys = creates.map(
+      (c) => (c.body as { idempotency_key: string }).idempotency_key,
+    );
+    expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(keys[1]).toBe(keys[0]);
+    expect(db.current.rows("tutor_conversations")).toHaveLength(1);
+  });
+
+  it("a crisis first message in a New session takes the same response path: the Support card and the paused bar, one create, one send; the title is neutral", async () => {
+    const convId = seedConversation({ title: "Slope from standard form" });
+    await mount("paid", `?conversationId=${convId}`);
+    await conversationLoaded(convId);
+    fireEvent.click(screen.getByTestId("lisa-new-session"));
+    await screen.findByTestId("lisa-empty-prompt");
+
+    crisisTurnOnce();
+    fireEvent.change(composer(), { target: { value: CRISIS_WORDS } });
+    fireEvent.click(sendButton());
+
+    const card = await screen.findByTestId("crisis-support-card");
+    expect(card.getAttribute("data-lane")).toBe("crisis");
+    expect(card.textContent).toContain(CRISIS_RESOURCES);
+    expect(screen.getByText("Tutoring is paused")).toBeTruthy();
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+    expect(
+      calls.filter(
+        (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
+      ),
+    ).toHaveLength(1);
+    expect(
+      calls.filter(
+        (c) => c.method === "POST" && c.path === "/api/tutor/messages",
+      ),
+    ).toHaveLength(1);
+
+    // The server titled the new conversation with the crisis message (its own rule); the page
+    // shows it nowhere as a title, in the header or the history.
+    const created = db.current
+      .rows("tutor_conversations")
+      .find((r) => r.id !== convId);
+    await waitFor(() => expect(created?.title).toBe(CRISIS_WORDS));
+    await waitFor(() => expect(historyItems()).toHaveLength(2));
+    // Once the refetched thread carries the server's title: the neutral one, never the words.
+    await waitFor(() =>
+      expect(screen.getByTestId("lisa-title").textContent).toBe("Conversation"),
+    );
+    const titles = historyItems().map(
+      (a) => a.querySelector("span")?.textContent ?? "",
+    );
+    // (Order is the fake database's clock; the set is the point.)
+    expect([...titles].sort()).toEqual([
+      "Conversation",
+      "Slope from standard form",
+    ]);
+    expect(titles.join(" ")).not.toContain(CRISIS_WORDS);
+  });
+});
+
+describe("QA 2026-10-07 titles: a crisis-flagged conversation is never shown under its own title", () => {
+  it("history and header: 'Conversation' for a flagged one; an unflagged one keeps its title", async () => {
+    const flagged = seedConversation({
+      title: CRISIS_WORDS,
+      crisis_flagged: true,
+      updated_at: "2026-09-24T11:00:00.000Z",
+    });
+    const plain = seedConversation({ title: "Slope from standard form" });
+    await mount("paid", `?conversationId=${flagged}`);
+    await conversationLoaded(flagged);
+    await waitFor(() => expect(historyItems()).toHaveLength(2));
+
+    const titles = historyItems().map(
+      (a) => a.querySelector("span")?.textContent ?? "",
+    );
+    expect(titles).toEqual(["Conversation", "Slope from standard form"]);
+    expect(screen.getByTestId("lisa-title").textContent).toBe("Conversation");
+    expect(document.body.textContent ?? "").not.toContain(CRISIS_WORDS);
+
+    fireEvent.click(historyItems()[1]!);
+    await conversationLoaded(plain);
+    await waitFor(() =>
+      expect(screen.getByTestId("lisa-title").textContent).toBe(
+        "Slope from standard form",
+      ),
+    );
+  });
+
+  it("fails closed: a flagged conversation opened by link beyond the loaded history, and a paused one the list calls unflagged, are 'Conversation'", async () => {
+    const old = seedConversation({
+      title: CRISIS_WORDS,
+      crisis_flagged: true,
+      updated_at: "2026-08-01T10:00:00.000Z",
+    });
+    for (let i = 0; i < 20; i += 1) {
+      seedConversation({
+        title: `Session ${String(i).padStart(2, "0")}`,
+        updated_at: new Date(Date.UTC(2026, 8, 1, 10, i)).toISOString(),
+      });
+    }
+    await mount("paid", `?conversationId=${old}`);
+    await conversationLoaded(old);
+    await waitFor(() => expect(historyItems()).toHaveLength(20));
+    expect(screen.getByTestId("lisa-title").textContent).toBe("Conversation");
+    cleanup();
+
+    const paused = seedConversation({
+      title: CRISIS_WORDS,
+      crisis_flagged: false,
+      crisis_paused_at: "2026-09-24T10:00:00.000Z",
+      updated_at: "2026-09-30T10:00:00.000Z",
+    });
+    await mount("paid", `?conversationId=${paused}`);
+    await screen.findByText("Tutoring is paused");
+    expect(screen.getByTestId("lisa-title").textContent).toBe("Conversation");
+  });
+});
+
+describe("QA 2026-10-07 item 15: the empty column's prompt, and the picked session in view", () => {
+  it("an empty column shows the prompt; it goes the moment a first message is on screen; a thread never shows it", async () => {
+    const turn = holdTurn();
+    await mount("paid");
+    const prompt = await screen.findByTestId("lisa-empty-prompt");
+    expect(prompt.textContent).toBe(EMPTY_PROMPT);
+    expect(prompt.className).toContain("text-lyc-muted");
+
+    fireEvent.change(composer(), { target: { value: STUDENT_TEXT } });
+    fireEvent.click(sendButton());
+    expect(screen.getByText(STUDENT_TEXT)).toBeTruthy();
+    expect(screen.queryByTestId("lisa-empty-prompt")).toBeNull();
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(1));
+    turn.answer();
+    await screen.findByText(TUTOR_TEXT);
+    expect(screen.queryByTestId("lisa-empty-prompt")).toBeNull();
+  });
+
+  it("phone: picking a session brings its conversation and composer into view (the end of the composer to the bottom of the screen)", async () => {
+    phoneLayout();
+    const first = seedConversation({ title: "First" });
+    const second = seedConversation({
+      title: "Second",
+      updated_at: "2026-09-24T09:00:00.000Z",
+    });
+    await mount("paid", `?conversationId=${first}`);
+    await conversationLoaded(first);
+    await waitFor(() => expect(historyItems()).toHaveLength(2));
+    vi.mocked(Element.prototype.scrollIntoView).mockClear();
+
+    fireEvent.click(historyItems()[1]!);
+    await conversationLoaded(second);
+    const form = screen.getByRole("form", { name: "Send a message to LISA" });
+    const toThreadEnd = scrollCalls().filter(
+      (c) =>
+        c.opts?.block === "end" &&
+        c.el.previousElementSibling?.contains(form) === true,
+    );
+    expect(toThreadEnd.length).toBeGreaterThan(0);
+    // Nothing on the phone scrolls the list to itself.
+    expect(scrollCalls().filter((c) => c.opts?.block === "nearest")).toEqual(
+      [],
+    );
+  });
+
+  it("desktop: the column scrolls inside itself to its last turn, and the list keeps the open session in view", async () => {
+    const first = seedConversation({ title: "First" });
+    const second = seedConversation({
+      title: "Second",
+      updated_at: "2026-09-24T09:00:00.000Z",
+    });
+    await mount("paid", `?conversationId=${first}`);
+    await conversationLoaded(first);
+    await waitFor(() => expect(historyItems()).toHaveLength(2));
+    vi.mocked(Element.prototype.scrollIntoView).mockClear();
+
+    fireEvent.click(historyItems()[1]!);
+    await conversationLoaded(second);
+    const log = screen.getByRole("log", { name: "Conversation with LISA" });
+    expect(
+      scrollCalls().some(
+        (c) => c.opts?.block === "start" && log.contains(c.el),
+      ),
+    ).toBe(true);
+    const current = historyItems().find(
+      (a) => a.getAttribute("aria-current") === "page",
+    );
+    expect(current?.textContent).toContain("Second");
+    expect(
+      scrollCalls().some(
+        (c) => c.opts?.block === "nearest" && c.el === current,
+      ),
+    ).toBe(true);
   });
 });
 

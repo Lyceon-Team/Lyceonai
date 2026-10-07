@@ -1089,12 +1089,13 @@ plant "UI56-S1" "the student bubble loses its You label" \
 assert s.count(a) == 1
 s = s.replace(a, "        {isStudent ? \"\" : \"LISA\"}", 1)'
 
+# Re-pointed 2026-10-07 (QA-5): Send's `disabled` is now `blocked` (disabled or pending).
 plant "UI56-T1" "Send stays enabled while LISA is thinking" \
   "$T56" \
   "client/src/components/tutor/TutorThreadParts.tsx" \
-  'a = "            disabled={disabled}\n            className=\"h-[50px]"
+  'a = "            disabled={blocked}\n            className={`h-[50px]"
 assert s.count(a) == 1
-s = s.replace(a, "            disabled={false}\n            className=\"h-[50px]", 1)'
+s = s.replace(a, "            disabled={false}\n            className={`h-[50px]", 1)'
 
 plant "UI56-T2" "the typing bubble loses its LISA label" \
   "$T56" \
@@ -1160,12 +1161,13 @@ plant "UI56-H3" "Show older never drawn" \
 assert s.count(a) == 1
 s = s.replace(a, "      {false ? (", 1)'
 
-plant "UI56-N1" "New session creates but does not open the new column" \
+# Re-pointed 2026-10-07 (QA-9): New session no longer creates; it opens the empty column.
+plant "UI56-N1" "New session does not open the empty column" \
   "$T56" \
   "client/src/pages/chat.tsx" \
-  'a = "    createThen((id) => navigateToConversation(id));"
+  'a = "  const handleNewSession = useCallback(() => {\n    navigateToConversation(\"\");\n"
 assert s.count(a) == 1
-s = s.replace(a, "    createThen(() => undefined);", 1)'
+s = s.replace(a, "  const handleNewSession = useCallback(() => {\n    void navigateToConversation;\n", 1)'
 
 plant "UI56-F1" "a first message with no conversation open is never sent" \
   "$T56" \
@@ -1229,6 +1231,151 @@ plant "UI56-W1" "a server refusal no longer draws the locked state (W4-11)" \
   'a = "  if (denied) return <LisaLocked reason=\"plan\" />;"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
+
+# ── QA 2026-10-07 (LISA): Send pending (5), Show LISA on a phone (8), New session (9), crisis
+# titles (item 1, UI part), the empty prompt and the picked session in view (15) ───────────
+TQA_PANEL="client/src/components/tutor/ScopedTutorPanel.contract.test.tsx"
+TQA_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+
+plant "QA5-L1" "Send reads Send, not Sending…, while a message is on its way" \
+  "$T56 $TQA_PANEL" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "{pending ? LISA_SEND_PENDING_LABEL : \"Send\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Send\"}", 1)'
+
+plant "QA5-O1" "a pending Send is faded like an unavailable one (the Button's disabled fade)" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "\"disabled:cursor-progress disabled:opacity-100\""
+assert s.count(a) == 1
+s = s.replace(a, "\"disabled:cursor-progress\"", 1)'
+
+plant "QA5-F1" "a first message (no conversation open) is not pending while its conversation is created" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const composerPending = isThinking || firstMessage !== null;"
+assert s.count(a) == 1
+s = s.replace(a, "  const composerPending = isThinking;", 1)'
+
+plant "QA5-P1" "the panel thread draws Send enabled before it sends the first message" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "pending={isThinking || firstAwaiting}"
+assert s.count(a) == 1
+s = s.replace(a, "pending={isThinking}", 1)'
+
+plant "QA5-P2" "the panel opener is not pending while the conversation is created" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "pending={!!pendingMessage}"
+assert s.count(a) == 1
+s = s.replace(a, "pending={false}", 1)'
+
+plant "QA8-R1" "the panel ignores revealOnOpen (Show LISA on a phone stays out of view)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "    if (!revealOnOpen || !el) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    return;", 1)'
+
+plant "QA8-R4" "the panel reveals itself whenever it mounts (LISA on load scrolls the runner)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "    if (!revealOnOpen || !el) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    if (!el) return;", 1)'
+
+plant "QA8-R2" "the reveal is one scroll on mount (stops short of a runner still laying out)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "      if (frames < 30 && (frames < 10 || !settled))"
+assert s.count(a) == 1
+s = s.replace(a, "      if (false)", 1)'
+
+plant "QA8-R3" "the reveal keeps chasing after the student scrolls" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "      if (stopped) return;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA8-W1" "the runner never tells the panel it was opened" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+assert s.count(a) == 1
+s = s.replace(a, "revealOnOpen={false}", 1)'
+
+plant "QA8-W2" "side by side, Show LISA scrolls the runner too" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+assert s.count(a) == 1
+s = s.replace(a, "revealOnOpen={tutorOpenedForItem === sessionItemId}", 1)'
+
+plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const handleNewSession = useCallback(() => {\n    navigateToConversation(\"\");\n  }, [navigateToConversation]);"
+assert s.count(a) == 1
+s = s.replace(a, "  const handleNewSession = useCallback(() => {\n    createConversation.mutate({ entry_mode: \"general\", source_surface: \"dashboard\" }, { onSuccess: (c) => navigateToConversation(c.conversation_id) });\n  }, [createConversation, navigateToConversation]);", 1)'
+
+plant "QA9-K1" "a retried first message makes a fresh idempotency key (a second conversation)" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    const idempotencyKey = firstCreateKeyRef.current ?? crypto.randomUUID();"
+assert s.count(a) == 1
+s = s.replace(a, "    const idempotencyKey = crypto.randomUUID();", 1)'
+
+plant "QAT-D1" "a flagged conversation is shown under its own (crisis) title" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  return flagged ? NEUTRAL_TITLE : title;"
+assert s.count(a) == 1
+s = s.replace(a, "  return title;", 1)'
+
+plant "QAT-L1" "the history ignores crisis_flagged" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "{displayTitle(conv.title, conv.crisis_flagged)}"
+assert s.count(a) == 1
+s = s.replace(a, "{displayTitle(conv.title, false)}", 1)'
+
+plant "QAT-H1" "the header fails open when the summary is not loaded" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const headerFlagged = isPaused || (openSummary?.crisis_flagged ?? true);"
+assert s.count(a) == 1
+s = s.replace(a, "  const headerFlagged = isPaused || (openSummary?.crisis_flagged ?? false);", 1)'
+
+plant "QAT-H2" "a paused conversation the list calls unflagged shows its own title" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const headerFlagged = isPaused || (openSummary?.crisis_flagged ?? true);"
+assert s.count(a) == 1
+s = s.replace(a, "  const headerFlagged = openSummary?.crisis_flagged ?? true;", 1)'
+
+plant "QA15-E1" "an empty LISA column shows no prompt" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "          {showEmptyPrompt ? ("
+assert s.count(a) == 1
+s = s.replace(a, "          {false ? (", 1)'
+
+plant "QA15-S1" "on a phone a picked session scrolls the log anchor, not the composer end" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    isPhone ? threadEndRef : scrollAnchorRef,"
+assert s.count(a) == 1
+s = s.replace(a, "    scrollAnchorRef,", 1)'
+
+plant "QA15-H1" "on desktop the history never brings the open session into view" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    if (isPhone || !activeListed) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    return;", 1)'
 
 # ── UI-57: Mastery (client/src/pages/mastery.test.tsx) ─────────────────────────────────
 

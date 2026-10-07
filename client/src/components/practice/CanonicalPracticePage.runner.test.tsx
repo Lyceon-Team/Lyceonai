@@ -600,9 +600,12 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(Object.keys(props).sort()).toEqual([
       "onHide",
       "questionLabel",
+      "revealOnOpen",
       "sessionItemId",
       "sourceSurface",
     ]);
+    // QA-8: LISA is simply there on load (W4-4), so it is not scrolled to.
+    expect(props.revealOnOpen).toBe(false);
     expect(props.sourceSurface).toBe("review");
     expect(props.sessionItemId).toBe("item-1");
     expect(props.questionLabel).toBe("Question 1 of 3");
@@ -610,5 +613,46 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
       expect(serialised).not.toContain(leak);
     }
+  });
+
+  // QA 2026-10-07 item 8 (Karl: "Phone LISA in the runner: opening it brings the panel into
+  // view"). The panel itself scrolls on mount when told to (ScopedTutorPanel.contract.test.tsx);
+  // this pins the runner telling it: only when the student opened it, only on the phone layout.
+  it("QA-8: Show LISA on the phone layout opens the panel told to reveal itself; on load it is not", async () => {
+    // The test DOM's default matchMedia answers "no match": below `lg`, LISA stacks.
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    expect(tutorProps.last?.revealOnOpen).toBe(false);
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    await click(toggle);
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealOnOpen).toBe(true);
+  });
+
+  it("QA-8: side by side (from lg) Show LISA does not scroll anything", async () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query: string) =>
+        ({
+          matches: /min-width:\s*1024px/.test(query),
+          media: query,
+          onchange: null,
+          addListener: () => undefined,
+          removeListener: () => undefined,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+          dispatchEvent: () => false,
+        }) as MediaQueryList,
+    );
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    await click(toggle);
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealOnOpen).toBe(false);
   });
 });

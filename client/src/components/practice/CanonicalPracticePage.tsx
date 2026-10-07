@@ -246,6 +246,12 @@ export default function CanonicalPracticePage(props: {
   const [tutorHiddenForItem, setTutorHiddenForItem] = React.useState<
     string | null
   >(null);
+  // QA 2026-10-07 item 8: the item whose LISA toggle the student last pressed. A panel that
+  // mounts for it was opened by Show LISA, so on the phone layout (LISA stacked under the
+  // question) it opens scrolled into view; LISA shown on load (W4-4) is not.
+  const [tutorOpenedForItem, setTutorOpenedForItem] = React.useState<
+    string | null
+  >(null);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
     unknown | null
   >(null);
@@ -404,6 +410,7 @@ export default function CanonicalPracticePage(props: {
         sessionItemId={sessionItemId}
         questionLabel={position ?? `Question ${currentIndex + 1}`}
         onHide={() => setTutorHiddenForItem(sessionItemId)}
+        revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}
       />
     ) : null;
 
@@ -478,9 +485,11 @@ export default function CanonicalPracticePage(props: {
           <button
             type="button"
             className={BAR_BUTTON}
-            onClick={() =>
-              setTutorHiddenForItem(tutorVisible ? sessionItemId : null)
-            }
+            onClick={() => {
+              setTutorHiddenForItem(tutorVisible ? sessionItemId : null);
+              // Read only while LISA is visible, so a hide may set it too.
+              setTutorOpenedForItem(sessionItemId);
+            }}
             aria-expanded={tutorVisible}
             data-testid="practice-tutor-toggle"
           >
