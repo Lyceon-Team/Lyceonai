@@ -88,15 +88,17 @@ Conversations with LISA, our AI tutor, are processed by Google Cloud Vertex AI. 
 
 ## **4. Children's Privacy**
 
-LYCEON is designed for students aged 13 and over. Users under 13 may use LYCEON only under the conditions in this Section.
+LYCEON is designed for students aged 13 and over. Users under 13 may use LYCEON only under the conditions in this Section. This Section is our notice to parents and guardians about the information we collect from children under 13, how we use it, and the choices available to you.
 
 ### **4.1 Under-13 Accounts Require a Connected Guardian**
 
 A student under 13 **cannot use LYCEON until a parent or guardian has connected their account.**
 
-Before that connection exists, the only information we hold about the student is the guardian email address they provided at sign-up, which we use solely to invite their guardian. No learning data, no usage data, and no platform activity is collected, because the account is not active.
+Before that connection exists, the account can be used only to connect a parent or guardian and to manage the account. We hold only the information needed to create it — name, email address, date of birth and sign-in details — the record of the sign-up agreements, and the technical data described in Section 1.3. No learning activity is collected.
 
-When a guardian connects and agrees to the Parent / Guardian Terms, the account activates.
+If the student asks us to, we email their link code to the parent or guardian address they provide. We use that address only to send the email and to prevent misuse of this feature.
+
+A parent or guardian connects by entering the student's link code in their own LYCEON account and agreeing to the Parent / Guardian Terms. A parent or guardian must be at least 18. When a parent or guardian connects, the account activates.
 
 ### **4.2 No AI Tutor Below 13**
 
@@ -112,9 +114,11 @@ Once active, an under-13 account is subject to the same collection described in 
 * is never asked to review LYCEON and cannot leave a review; and
 * may send us private feedback, which we use only to improve the service.
 
+We collect only the information reasonably necessary for a child to use LYCEON, and we do not require a child to provide more information as a condition of taking part. We do not show advertising to children, use their information for advertising, or sell or share it, and a child cannot make personal information publicly available on LYCEON. We use a child's information only to provide the service, show their practice and progress, show a connected parent or guardian the information described in Section 5.1, keep the account secure, and maintain the service. We disclose it only to a connected parent or guardian, to our service providers (Section 5.2), or where the law requires it or someone's safety is at risk. We keep it for the periods in Section 6.
+
 ### **4.4 Guardian Rights**
 
-A connected guardian may request access to, correction of, or deletion of their student's data at any time by contacting **support@lyceon.ai**.
+A connected parent or guardian may at any time review the information we hold about their child, correct it, delete it together with the account, or refuse further collection by disconnecting or asking us to close the account. Email **support@lyceon.ai** from the address on your parent or guardian account. We may need to verify that you are the connected parent or guardian before acting on your request.
 
 **Disconnecting ends the student's access** and you may request deletion of their data at the same time.
 
@@ -125,6 +129,12 @@ Connecting a guardian account is how we obtain and record consent for an under-1
 ### **4.6 If We Learn an Account Is Under 13 Without a Guardian**
 
 The account will be suspended, and associated personal data will be deleted in accordance with applicable law.
+
+### **4.7 Contact for Parents and Guardians**
+
+LYCEON AI operates LYCEON. Parents and guardians can contact us at **support@lyceon.ai**, by post at [POSTAL ADDRESS], or by telephone at [TELEPHONE].
+
+If we make a material change to how we collect, use or disclose children's information, we will notify connected parents and guardians and, where the law requires, obtain their consent before the change takes effect.
 
 ---
 
@@ -142,7 +152,7 @@ This sharing is a direct consequence of connecting, and either party can end the
 
 ### **5.2 Service Providers and Sub-Processors**
 
-We share information with the following providers, which process data only on LYCEON's instructions:
+We share information with the following service providers (our sub-processors), which process data only on LYCEON's instructions. We will update this list before engaging a new service provider that processes personal information.
 
 | Provider | Purpose | What it receives |
 |---|---|---|
@@ -150,9 +160,12 @@ We share information with the following providers, which process data only on LY
 | **Vercel** | Application hosting and delivery | Request and log data |
 | **PostHog** | Product analytics and session recordings, only with your consent and never for users under 13 | Usage events and page interactions, as described in Section 9 |
 | **Stripe** | Payment processing | Payer name, email, billing address, payment method |
-| **Google Cloud (Vertex AI)** | LISA, the AI tutor | Tutor conversation content — **never for users under 13** |
+| **Google Cloud** | AI services for LISA and content safety; background processing | Tutor conversation content — **never for users under 13**; internal identifiers |
+| **Google** | Sign in with Google, if you choose it | Google sign-in details |
 | **Resend** | Email delivery | Email address and message content |
 | **Cloudflare (Turnstile)** | Security and bot protection | Technical browser data |
+| **Desmos** | Graphing calculator in math questions | Technical browser data, such as IP address and browser type |
+| **Slack** | Internal team notifications | Internal reference numbers only |
 
 Where a provider is used for AI generation, it is contractually prohibited from using personal data to train public or general-purpose models.
 
@@ -166,7 +179,9 @@ Where a tutor conversation raises a safety concern, we may review it and contact
 
 ### **5.4 We Do Not Sell Personal Information**
 
-LYCEON does not sell personal information and does not share it for cross-context behavioral advertising.
+LYCEON does not sell personal information and does not share it for cross-context behavioral advertising, and has not done so in the past 12 months. This includes the personal information of consumers under 16. Our service providers process personal information only to provide services to us and are not permitted to use it for their own purposes.
+
+If your browser sends a Global Privacy Control signal, we treat it as a request to opt out of the sale or sharing of your personal information, and as a refusal of analytics cookies (Section 9). If we ever intend to sell or share personal information, we will update this policy and provide a way to opt out before doing so, and we will obtain opt-in consent for consumers under 16.
 
 ---
 
@@ -250,7 +265,22 @@ Depending on where you live, you may have rights to access your personal data, c
 
 Under the California Consumer Privacy Act as amended, you have the right to know what personal information we collect, use, and disclose; to delete it; to correct it; to obtain a portable copy; and to be free from discrimination for exercising these rights.
 
-**We do not sell personal information and do not share it for cross-context behavioral advertising.** We honor the Global Privacy Control signal (Section 9).
+**We do not sell personal information and do not share it for cross-context behavioral advertising.** We honor the Global Privacy Control signal (Section 5.4).
+
+**Notice at collection.** We collect the following categories of personal information, for the purposes and periods shown:
+
+| Category | Examples | Purpose | Retention |
+|---|---|---|---|
+| **Identifiers** | Name, email address, account ID, IP address | To create and operate your account, keep it secure, and contact you about the service | While your account is open; on deletion, as described in Section 6.2 |
+| **Customer records** | Billing name and address, subscription records | To process payments and manage subscriptions | 7 years |
+| **Characteristics of protected classifications** | Date of birth | To apply age requirements | While your account is open |
+| **Commercial information** | Subscription purchased, billing period | To provide the service you purchased | 7 years |
+| **Internet or other electronic network activity** | Pages used, device and browser data, log data; analytics and session recordings if you accept analytics cookies | To operate, secure and improve the service | Security records: 365 days; other operational records: up to 90 days; analytics events: up to 12 months; session recordings: 30 days |
+| **Education information** | Practice answers, progress, test results | To provide the learning service and show progress | While your account is open; de-identified on deletion |
+| **Electronic information** | Text conversations with LISA (users 13 and over) | To provide the AI tutor | While your subscription is active, then 7 days |
+| **Sensitive personal information** | Account login credentials | To let you sign in and keep your account secure | While your account is open |
+
+We do not collect precise geolocation, government identifiers, financial account numbers, health information or biometric information. We use sensitive personal information only to provide the service and keep it secure.
 
 ### **8.2 European Union, EEA, and United Kingdom Residents**
 
