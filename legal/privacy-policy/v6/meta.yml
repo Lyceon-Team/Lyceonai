@@ -1,0 +1,5 @@
+version: "6.0"
+effective_date: 2026-10-07
+supersedes: "5.0"
+published: true
+content_hash: sha256:05a132c243bf2513d3bcfda5192a8b66e0a99eb9d13f0ab85ece02689d66404e
