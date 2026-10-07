@@ -107,7 +107,7 @@ When a guardian connects and agrees to the Parent / Guardian Terms, the account 
 Once active, an under-13 account is subject to the same collection described in Section 1, **except** that an under-13 account:
 
 * has no tutor conversations;
-* is excluded from analytics and session recording;
+* is excluded from analytics and session recordings;
 * never receives marketing emails;
 * is never asked to review LYCEON and cannot leave a review; and
 * may send us private feedback, which we use only to improve the service.
@@ -148,10 +148,9 @@ We share information with the following providers, which process data only on LY
 |---|---|---|
 | **Supabase** | Database, authentication, hosting | Account data, learning data |
 | **Vercel** | Application hosting and delivery | Request and log data |
-| **PostHog** | Product analytics and session recording, only with your consent and never for users under 13 | Usage events and page interactions, as described in Section 9 |
+| **PostHog** | Product analytics and session recordings, only with your consent and never for users under 13 | Usage events and page interactions, as described in Section 9 |
 | **Stripe** | Payment processing | Payer name, email, billing address, payment method |
 | **Google Cloud (Vertex AI)** | LISA, the AI tutor | Tutor conversation content — **never for users under 13** |
-| **Google Cloud (BigQuery)** | Long-term retention and analytics | Archived learning data |
 | **Resend** | Email delivery | Email address and message content |
 | **Cloudflare (Turnstile)** | Security and bot protection | Technical browser data |
 
@@ -271,15 +270,15 @@ LYCEON uses cookies and similar technologies that are strictly necessary to keep
 
 **We do not use advertising or cross-site tracking cookies.**
 
-We use PostHog for product analytics and session recording, on our website and on pages within the signed-in app:
+We use PostHog for product analytics and session recordings, on our website and on pages within the signed-in app:
 
-* **Your choice.** We ask whether you accept analytics cookies when you first visit. You can change your choice at any time using the **Cookie settings** link. We keep a record of each choice — whether analytics was accepted, the version of the notice shown, and when — which does not include your name, your account or your IP address.
+* **Your choice.** We ask whether you accept analytics cookies when you first visit. You can change your choice at any time using the **Cookie settings** link. We keep a record of your cookie choices for as long as needed to show that we have your consent.
 * **Global Privacy Control.** If your browser sends a Global Privacy Control signal, we treat it as a refusal.
 * **Limited data.** We do not send names or email addresses to PostHog, IP addresses are anonymized, and analytics never includes your answers to questions or your conversations with LISA.
-* **Session recording.** Session recording runs only if you accept analytics cookies. Recordings mask everything you type, question and answer areas (in practice, review, practice tests and the Question of the Day), conversations with LISA, and the text of reviews and feedback.
+* **Session recordings.** With your consent, we make session recordings of how pages are used. Certain content is masked in these recordings, including what you type, questions and answers, conversations with LISA, and the text of reviews and feedback. Session recordings are kept for 30 days.
 * **How you found us.** If you accept analytics cookies, we note the kind of source you first arrived from — direct, a referring website, a paid ad, a search engine, or unknown — for the rest of that browser session, and store it with your account if you sign up. We do not keep the address of the page you came from or the name of any campaign.
 * **Testing improvements.** If you accept analytics cookies, we may show you one of several versions of a page, such as the homepage, to learn which works better.
-* **Children.** Accounts of users under 13 are excluded from analytics and session recording.
+* **Children.** Accounts of users under 13 are excluded from analytics and session recordings.
 
 You can control cookies through your browser settings, though some features may not function properly if disabled.
 
@@ -289,7 +288,7 @@ You can answer the Question of the Day without an account. To protect it from au
 
 ### **9.2 Marketing Emails**
 
-Users aged 13 and over may choose to receive marketing emails. We send them only if you opt in, and we record when you opted in or out, where you did so, and the version of the wording you agreed to. You can opt out at any time in your account settings, and every marketing email includes an unsubscribe link. Users under 13 never receive marketing emails.
+Users aged 13 and over may choose to receive marketing emails. We send them only if you opt in, and we record when you opted in or out, where you did so, and the version of the wording you agreed to. You can opt out of marketing emails at any time in your account settings or by using the unsubscribe link in any marketing email. Users under 13 never receive marketing emails.
 
 ---
 
