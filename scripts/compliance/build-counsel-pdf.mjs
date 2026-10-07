@@ -1,5 +1,6 @@
 /**
- * Builds the counsel package PDF: the cover note and the 12 launch legal drafts, in reading order.
+ * Builds the counsel package PDF: the cover note, Privacy Policy v6 and the 11 other launch legal
+ * drafts, in reading order.
  *
  * @spec [docs/compliance/legal-drafts/COUNSEL_PACKAGE.md §6; owner brief 2026-10-07 ("a single PDF
  *       of all 12 drafts plus the cover note, built with the repo's tooling … no new dependencies")]
@@ -17,7 +18,7 @@
  * Output: docs/compliance/legal-drafts/out/lyceon-counsel-package.pdf
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
@@ -33,13 +34,22 @@ const OUT = join(DRAFTS, "out/lyceon-counsel-package.pdf");
 /**
  * Reading order: the same order as COUNSEL_PACKAGE.md §2. Paths are from the repo root.
  *
- * The Privacy Policy is the single final pre-launch version, `legal/privacy-policy/v6/en.md`: #1128's
- * v5 (published and sealed) plus the SEO items, written by the cleanup/guardian session. The earlier draft `privacy-policy-v5.md` is retired and is
- * never rendered (owner ruling, 2026-10-07).
+ * The Privacy Policy is the single final pre-launch version, v6: #1128's v5 (published and sealed)
+ * plus the SEO items. It lives in draft PR #1138 (into cleanup), which merges only after counsel signs
+ * off, so it is read from that PR's branch at a PINNED commit, never from this checkout (owner
+ * ruling, 2026-10-07). The pin is recorded in COUNSEL_PACKAGE.md and in every page footer; the build
+ * fails if the package names a different commit, or if the commit is not fetched. To re-pin:
+ * `git fetch origin claude/privacy-policy-v6`, update PRIVACY_POLICY.commit and the package, rebuild.
+ * The earlier draft `privacy-policy-v5.md` is retired and is never rendered.
  */
-const PRIVACY_POLICY = "legal/privacy-policy/v6/en.md";
+const PRIVACY_POLICY = {
+  pr: 1138,
+  branch: "claude/privacy-policy-v6",
+  commit: "87b7f9d5b856019f8bc1799cf659d347c52e8960",
+  path: "legal/privacy-policy/v6/en.md",
+};
 const READING_ORDER = [
-  PRIVACY_POLICY,
+  PRIVACY_POLICY.path,
   "childrens-privacy-notice.md",
   "parental-consent-mechanism.md",
   "cookie-policy.md",
@@ -61,6 +71,30 @@ function assertReadingOrderMatchesPackage(packageText) {
     if (!packageText.includes(`\`${file}\``)) {
       throw new Error(`COUNSEL_PACKAGE.md §2 does not list ${file}`);
     }
+  }
+}
+
+function readPrivacyPolicy(packageText) {
+  const short = PRIVACY_POLICY.commit.slice(0, 8);
+  if (
+    !packageText.includes(`#${PRIVACY_POLICY.pr}`) ||
+    !packageText.includes(short)
+  ) {
+    throw new Error(
+      `COUNSEL_PACKAGE.md must record Privacy Policy v6 as #${PRIVACY_POLICY.pr} @ ${short}`,
+    );
+  }
+  try {
+    return execFileSync(
+      "git",
+      ["show", `${PRIVACY_POLICY.commit}:${PRIVACY_POLICY.path}`],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+  } catch (err) {
+    throw new Error(
+      `cannot read ${PRIVACY_POLICY.path} at ${short} (#${PRIVACY_POLICY.pr}); run: git fetch origin ${PRIVACY_POLICY.branch}`,
+      { cause: err },
+    );
   }
 }
 
@@ -98,14 +132,11 @@ async function main() {
 
   const sections = [
     packageText,
-    ...READING_ORDER.map((f) => {
-      if (!existsSync(join(ROOT, f))) {
-        throw new Error(
-          `${f} is missing: the Privacy Policy is v6, which is not on this checkout yet. Build once v6 is on seo`,
-        );
-      }
-      return readFileSync(join(ROOT, f), "utf8");
-    }),
+    ...READING_ORDER.map((f) =>
+      f === PRIVACY_POLICY.path
+        ? readPrivacyPolicy(packageText)
+        : readFileSync(join(ROOT, f), "utf8"),
+    ),
   ]
     .map((md) => `<section class="doc">${render(md)}</section>`)
     .join("\n");
@@ -128,12 +159,14 @@ async function main() {
       margin: { top: "0.8in", bottom: "0.8in", left: "0.9in", right: "0.9in" },
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
-      footerTemplate: `<div style="font-size:8pt;width:100%;padding:0 0.9in;display:flex;justify-content:space-between;color:#555;"><span>LYCEON counsel package · DRAFT — NOT PUBLISHED · source ${commit}</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`,
+      footerTemplate: `<div style="font-size:8pt;width:100%;padding:0 0.9in;display:flex;justify-content:space-between;color:#555;"><span>LYCEON counsel package · DRAFT — NOT PUBLISHED · source ${commit} · Privacy Policy v6: #${PRIVACY_POLICY.pr} @ ${PRIVACY_POLICY.commit.slice(0, 8)}</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`,
     });
   } finally {
     await browser.close();
   }
-  process.stdout.write(`wrote ${OUT} (source ${commit})\n`);
+  process.stdout.write(
+    `wrote ${OUT} (source ${commit}; Privacy Policy v6 #${PRIVACY_POLICY.pr} @ ${PRIVACY_POLICY.commit.slice(0, 8)})\n`,
+  );
 }
 
 await main();

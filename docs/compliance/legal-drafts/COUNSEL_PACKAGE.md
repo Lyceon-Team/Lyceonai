@@ -1,6 +1,6 @@
 # LYCEON — Counsel Package: Launch Legal Drafts
 
-**Internal; prepared for outside counsel.** Prepared 2026-10-07. This package covers LYCEON's **single Privacy Policy**, version 6 (`legal/privacy-policy/v6`), and the 11 other launch-state legal drafts in `docs/compliance/legal-drafts/` (see that folder's `README.md`). v6 is the single final pre-launch version; the cleanup/guardian session owns it. It carries #1128's v5 (already published and sealed) plus the SEO items. The earlier draft `privacy-policy-v5.md` is **retired** and superseded by v6 (§2). **The legal text of the drafts is unchanged by this package.** The drafts follow in reading order after this note.
+**Internal; prepared for outside counsel.** Prepared 2026-10-07. This package covers LYCEON's **single Privacy Policy**, version 6 (`legal/privacy-policy/v6`), and the 11 other launch-state legal drafts in `docs/compliance/legal-drafts/` (see that folder's `README.md`). v6 is the single final pre-launch version; the cleanup/guardian session owns it. It carries #1128's v5 (already published and sealed) plus the SEO items. **The v6 text in this package is from draft PR **#1138** (`claude/privacy-policy-v6`, into `cleanup`) at commit **`87b7f9d5`** (`87b7f9d5b856019f8bc1799cf659d347c52e8960`).** #1138 merges only after counsel signs off. The earlier draft `privacy-policy-v5.md` is **retired** and superseded by v6 (§2). **The legal text of the drafts is unchanged by this package.** The drafts follow in reading order after this note.
 
 ---
 
@@ -70,7 +70,7 @@ Some drafts also address the EU, UK, Ireland, Australia or Canada. Those passage
 
 | # | Draft | File | Replaces |
 |---|---|---|---|
-| 1 | Privacy Policy, version 6 | `legal/privacy-policy/v6/en.md` (not yet written; owned by the cleanup/guardian session) | published v5 (#1128) |
+| 1 | Privacy Policy, version 6 | `legal/privacy-policy/v6/en.md` from #1138 @ `87b7f9d5` (draft PR into `cleanup`; merges after counsel sign-off) | published v5 (#1128) |
 | 2 | Children's Online Privacy Notice | `childrens-privacy-notice.md` | new |
 | 3 | Parental Consent Mechanism | `parental-consent-mechanism.md` | new |
 | 4 | Cookie Policy | `cookie-policy.md` | new |
@@ -95,7 +95,26 @@ Each question appears once, under the draft that raises it, numbered as in that 
 
 ### 3.1 Privacy Policy, version 6 (PP, 15): carried into v6
 
-These 15 questions were raised by the retired draft `privacy-policy-v5.md` and are **carried into Privacy Policy v6**, the single Privacy Policy, so the count stays traceable. Section numbers below are the retired draft's. **Re-check pending:** each question is re-checked against v6 once v6 is on `seo`, its section reference mapped to v6's numbering, and any question v6 already answers marked so.
+These 15 questions were raised by the retired draft `privacy-policy-v5.md` and are **carried into Privacy Policy v6**, the single Privacy Policy, so the count stays traceable. Section numbers in the questions are the retired draft's. **Re-checked against v6 at #1138 @ `87b7f9d5`** (2026-10-07). The table maps each question to v6 and says where v6 already gives an answer for counsel to confirm. No question is added.
+
+| Q | Retired draft | v6 | Re-check |
+|---|---|---|---|
+| PP-1 | §4.1 | §4.1, §4.5 | Open. v6 §4.5 says the connection is how consent is obtained and claims no particular verifiable-consent standard. |
+| PP-2 | §4.1 | §4.1, §4.6, §6.4 | Open. Before connection v6 holds only the guardian email (§4.1); without a guardian the account is suspended and deleted (§4.6, §6.4). No period is stated. |
+| PP-3 | §6.2 | §6.2, §6.3 | Open. Guardian consent record kept permanently (§6.2); Billing Terms consent at least three years (§6.3). |
+| PP-4 | §6.6 | §6.6 | **Answered in v6, to confirm:** analytics events up to 12 months then deleted; session recordings 30 days. |
+| PP-5 | §9 | §9 | Not applicable at launch: US only. |
+| PP-6 | §5.2 | §5.2 | Open. v6 §5.2 lists neither Desmos nor Trustpilot as a provider; Trustpilot appears only as a link, with no data sent (paragraph after the table). |
+| PP-7 | §8.2 | §2, §5.2 | Open. v6 describes an in-app review prompt and a Trustpilot link, not review invitations. |
+| PP-8 | §10 | §10 | Not applicable at launch: US only. |
+| PP-9 | §5.5 | none | Open. v6 has no schools / FERPA section; FERPA wording is in the School Data Privacy Addendum (§3.11). |
+| PP-10 | §11 | §11 | Open. |
+| PP-11 | §5.2 | §5.2 | Open. v6 §5.2 differs from the Sub-Processor List (draft 12), for example Google Cloud (BigQuery) in v6 only, and Desmos, Slack and Google sign-in in the list only. |
+| PP-12 | §12 | §12 | Open. v6 §12 has no postal address line or placeholder (§4 below). |
+| PP-13 | §1.1, §2 | §1.1, §2, §6.1 | **Answered in v6, to confirm:** reviews, private feedback and marketing-email choices are kept while the account is open and deleted with it. |
+| PP-14 | §4.3 | §4.3 | Open. v6 §4.3 permits private feedback from under-13 accounts. |
+| PP-15 | §2 | §6.1, §9.2 | Open. Marketing-choice records are kept until the account is deleted (§6.1); the legal basis is the open point. |
+
 
 
 * **PP-1.** Confirm that the parental consent method in Section 4.1 meets 16 CFR §312.5(b). *See also CN-1, PC-1.*
@@ -211,11 +230,10 @@ Every placeholder left in the drafts: each `[●]`, `[POSTAL ADDRESS]`, `[TELEPH
 
 | Placeholder | Where | Who | Checklist |
 |---|---|---|---|
-| **Postal address** | Privacy Policy (retired draft §12; re-check in v6); Children's Notice §1; Marketing Consent §6 | LYCEON (Karl) | PP-12, CN-3, MC-3 |
+| **Postal address** | Privacy Policy v6 §12 (no line or placeholder yet: "LYCEON AI" only); Children's Notice §1; Marketing Consent §6 | LYCEON (Karl) | PP-12, CN-3, MC-3 |
 | **Telephone number** | Children's Notice §1 (`[TELEPHONE]`) | LYCEON (Karl) | CN-3 |
-| **Analytics retention** (months) | Privacy Policy (retired draft §6.6; re-check in v6) | Counsel with LYCEON | PP-4 |
-| **Session recording retention** (days) | Privacy Policy (retired draft §6.6; re-check in v6) | Counsel with LYCEON | PP-4 |
-| **In-app review, private feedback and marketing-consent record retention** | Privacy Policy (retired draft §1.1 and §2; no period stated; re-check in v6) | Counsel | PP-13, PP-15, MC-4 |
+| **Analytics and session recording retention** | Privacy Policy v6 §6.6 states them (12 months; 30 days): no longer a placeholder, counsel to confirm | Counsel | PP-4 |
+| **In-app review, private feedback and marketing-consent record retention** | Privacy Policy v6 §6.1 states it (while the account is open; deleted with it): no longer a placeholder, counsel to confirm | Counsel | PP-13, PP-15, MC-4 |
 | **Cookie consent record retention** | Banner consent record | Counsel | CB-5 |
 | **Cookie durations** (4) | Cookie Policy §3: `sb-<project>-auth-token`, `__Host-csrf`, the Turnstile security check, `ph_<project>_posthog` | Counsel with LYCEON | CP-1 |
 | **Sub-processor locations** (11) | Sub-Processor List: Supabase, Vercel, Stripe, Google Cloud, Google, Resend, Desmos, Slack, PostHog, Cloudflare, Trustpilot | Counsel with LYCEON | SP-1 |
@@ -239,4 +257,4 @@ These are on LYCEON's public pages. Karl has approved each one, and each is reco
 
 ## 6. Rebuilding this package
 
-The PDF in `out/` is generated from this file, Privacy Policy v6 and the 11 drafts by `pnpm run build:counsel-pdf`, which uses no new dependencies. Each page footer names the source commit. Regenerate the PDF before sending, so that it matches the drafts as committed.
+The PDF in `out/` is generated from this file, Privacy Policy v6 and the 11 drafts by `pnpm run build:counsel-pdf`, which uses no new dependencies. v6 is read from #1138 at the pinned commit recorded above (`git fetch origin claude/privacy-policy-v6` first); the build fails if this file names a different commit. Each page footer names this repository's source commit and the v6 pin. If #1138 changes, re-pin, re-check §3.1 and regenerate before sending.
