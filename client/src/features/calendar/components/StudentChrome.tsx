@@ -13,9 +13,13 @@
  * STUDENT. The header carries Week/Month, Today and the arrows on the left, the visible range
  * centred (`M/D – M/D`), and Edit schedule and Regenerate plan on the right. The right panel
  * carries the navigable mini month, the goal card (days until the SAT with a ★ date pill,
- * Target and Projected side by side, Target only on the free plan, and Edit goals), the
- * "Your schedule" summary (register §2 moves it here) and the Show category filters. The
- * guardian calendar keeps `LeftRail` and `TopBar` (`Chrome.tsx`) unchanged.
+ * Target and Projected side by side, Target only on the free plan, and Edit goals) and the
+ * Show category filters. The guardian calendar keeps `LeftRail` and `TopBar` (`Chrome.tsx`)
+ * unchanged.
+ *
+ * NO "YOUR SCHEDULE" SUMMARY (Karl's ruling on production QA 2026-10-07, item 11(e): "remove
+ * 'Your schedule' from the right panel", amending SCL-211's panel list). The schedule is read
+ * and changed in the Edit schedule sheet, whose live readout is the same sentence.
  *
  * Everything here draws with the student tokens (`lyc-*`, `--cat-*`), so it follows the
  * device theme. Copy is the prototype's or already shipped (`ABSENT_COPY`).
@@ -29,7 +33,7 @@
  * 0 days, as the shipped countdown did. The test day is starred in the mini month whether or
  * not a plan is read (free and paid alike), because the date comes from the profile.
  */
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Link } from "wouter";
 import type { SectionProjectionDto } from "@lyceon/shared";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
@@ -78,12 +82,14 @@ export function StudentCalendarHeader({
   regenerate?: RegenerateControl;
 }): JSX.Element {
   return (
+    // Laid out by `calendar-student.css` (`.lyc-cal-head`) against the calendar column's own
+    // width, not the viewport's: see the note there (QA 2026-10-07 item 11(d)).
     <header
-      className="grid shrink-0 grid-cols-1 items-center gap-4 border-b border-lyc-rule px-4 py-4 lg:grid-cols-[1fr_auto_1fr] lg:px-7 lg:py-5"
+      className="lyc-cal-head border-b border-lyc-rule"
       data-testid="calendar-header"
     >
       <div
-        className="flex flex-wrap items-center justify-center gap-2.5 lg:justify-self-start"
+        className="lyc-cal-head__group lyc-cal-head__nav"
         data-testid="calendar-header-nav"
       >
         <div
@@ -136,7 +142,7 @@ export function StudentCalendarHeader({
         </button>
       </div>
 
-      <div className="order-first flex flex-col items-center gap-1 lg:order-none">
+      <div className="lyc-cal-head__title">
         <h1
           className="m-0 whitespace-nowrap text-center font-lyc-serif text-[28px] font-semibold text-lyc-ink-strong"
           data-testid="calendar-range-title"
@@ -146,9 +152,9 @@ export function StudentCalendarHeader({
       </div>
 
       {onEditSchedule === undefined && regenerate === undefined ? (
-        <div aria-hidden="true" className="hidden lg:block" />
+        <div aria-hidden="true" className="lyc-cal-head__spacer" />
       ) : (
-        <div className="flex flex-wrap items-center justify-center gap-2.5 lg:justify-self-end">
+        <div className="lyc-cal-head__group lyc-cal-head__actions">
           {onEditSchedule === undefined ? null : (
             <Button
               type="button"
@@ -430,7 +436,8 @@ function GoalFigure({
   absent: string;
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-0.5 px-1">
+    // A size container: the figure below is sized against this half of the card.
+    <div className="flex flex-col gap-0.5 px-1 [container-type:inline-size]">
       <span className="text-lyc-meta-lg text-lyc-muted">{label}</span>
       {value === null ? (
         <span
@@ -440,35 +447,24 @@ function GoalFigure({
           {absent}
         </span>
       ) : (
+        /*
+         * @spec [DESIGN.md §4 Calendar (goal card: Target | Projected); production QA
+         *        2026-10-07 item 11(g)] | @implemented [2026-10-07]
+         * | plain English: the figure stays on ONE line ("440–790", never "440–" over "790").
+         * It is 32px wherever that fits, and shrinks with its half of the card where it does
+         * not: in the 340px panel a half is about 108px, and a 32px range is 122px (3 digits)
+         * to 157px (4 digits). One character of Source Serif's figures is about 0.545em, so
+         * the size is the half's width over the character count x 0.56 (`cqi`: 1% of it).
+         */
         <span
-          className="font-lyc-serif text-[32px] font-semibold text-lyc-ink-strong"
+          className="whitespace-nowrap font-lyc-serif font-semibold text-lyc-ink-strong [font-size:min(32px,calc(100cqi/(var(--lyc-figure-chars)*0.56)))]"
+          style={{ "--lyc-figure-chars": value.length } as CSSProperties}
           data-testid={testId}
         >
           {value}
         </span>
       )}
     </div>
-  );
-}
-
-/** §17.3's "Your schedule" summary — register §2 moves it from the old rail into the panel. */
-export function ScheduleSummary({ summary }: { summary: string }): JSX.Element {
-  return (
-    <section
-      aria-labelledby="calendar-schedule-h"
-      className="flex flex-col gap-1.5"
-      data-testid="calendar-schedule-card"
-    >
-      <h2 id="calendar-schedule-h" className={PANEL_H2}>
-        Your schedule
-      </h2>
-      <p
-        className="m-0 text-lyc-body text-lyc-ink"
-        data-testid="calendar-schedule-summary"
-      >
-        {summary}
-      </p>
-    </section>
   );
 }
 

@@ -30,7 +30,7 @@ import type {
   StudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
-import { SettingsSheet, scheduleSummary } from "./SettingsSheet";
+import { SettingsSheet } from "./SettingsSheet";
 
 const ESTIMATES: PlanningEstimates = {
   practice_seconds_per_unit: 90,
@@ -190,24 +190,16 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
   it("rounds questions DOWN to the five-question granule the allocator works in", () => {
     // 55 min = 3300s; 3300/90 = 36.67 -> 35, not 36 and not 37. A figure the plan cannot
     // contain would be a number the student could never see on their calendar.
-    expect(
-      scheduleSummary(
-        {
-          study_days_mask: 126,
-          daily_minutes: 55,
-          full_length_weekday: 6,
-          full_length_interval_weeks: 2,
-        },
-        ESTIMATES,
-        // No target date here: this test is about the QUESTION count, and the exam half is
-        // deliberately the rate rather than a count so it cannot drift into the assertion.
-        {
-          targetExamDate: null,
-          today: "2026-09-22",
-          finalExamLeadDays: EXAM_PLANNING.final_exam_lead_days,
-        },
-      ),
-    ).toContain("about 35 questions a day");
+    // Read through the sheet's own readout (the only place the sentence is drawn since the
+    // panel's "Your schedule" left, QA 2026-10-07 item 11(e)).
+    renderSheet({
+      // No target date here: this test is about the QUESTION count, and the exam half is
+      // deliberately the rate rather than a count so it cannot drift into the assertion.
+      profile: { ...PROFILE, daily_minutes: 55, target_exam_date: null },
+    });
+    expect(screen.getByTestId("settings-summary").textContent).toContain(
+      "about 35 questions a day",
+    );
   });
 });
 
@@ -436,7 +428,11 @@ describe("practice test frequency (§8.1)", () => {
     ): { save: HTMLElement; onSave: ReturnType<typeof vi.fn> } => {
       cleanup();
       const { onSave } = renderSheet({
-        profile: { ...PROFILE, full_length_weekday, full_length_interval_weeks },
+        profile: {
+          ...PROFILE,
+          full_length_weekday,
+          full_length_interval_weeks,
+        },
       });
       return { save: screen.getByTestId("settings-save"), onSave };
     };

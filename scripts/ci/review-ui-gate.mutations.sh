@@ -101,6 +101,7 @@ FILES=(
   "client/src/features/exam/components/ExamStatus.tsx"
   "client/src/features/calendar/components/FullLengthFields.tsx"
   "packages/shared/src/exam-form-display.ts"
+  "client/src/features/calendar/components/BlockSheet.tsx"
 )
 
 snapshot_all() {
@@ -2242,6 +2243,140 @@ plant "UI55-SPLIT2" "the shared CalendarView pulls calendar.css into the student
   'a = "import { WeekGrid } from \"./components/WeekGrid\";\n"
 assert s.count(a) == 1
 s = s.replace(a, "import \"./calendar.css\";\n" + a, 1)'
+
+# ── Production QA 2026-10-07 item 11 (the student calendar). (a) the month view's first render is
+# the whole month: Week → Month opens today's month, and that month is read ahead in week view. ──
+
+plant "QA11-A1" "Week → Month opens the month of the week's Monday again (September on 1 October)" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "                next === \"month\" && view === \"week\"\n                  ? monthCursorForWeek(cursor, today)\n                  : cursor,"
+assert s.count(a) == 1
+s = s.replace(a, "                cursor,", 1)'
+
+plant "QA11-A2" "week view no longer reads the month ahead (the toggle draws the held-over week)" \
+  "$T55" \
+  "client/src/features/calendar/api/queries.ts" \
+  'a = "              : [rangeForView(\"month\", monthCursorForWeek(cursor, today))]),"
+assert s.count(a) == 1
+s = s.replace(a, "              : []),", 1)'
+
+# (b) the student's block sheet is a modal dialog: role, name, Close, Esc, focus in and back, Tab
+# kept inside; the guardian's sheet (no `modal`) is unchanged.
+
+plant "QA11-B1" "the student's block sheet loses its dialog role" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "              role: \"dialog\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B2" "Esc no longer closes the block sheet" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "{ enabled: modal && open }"
+assert s.count(a) == 1
+s = s.replace(a, "{ enabled: false }", 1)'
+
+plant "QA11-B3" "opening the block sheet leaves focus behind it" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "    closeRef.current?.focus();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B4" "closing the block sheet drops focus instead of returning it to the block" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "      if (opener !== null && opener.isConnected) opener.focus();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B5" "the block sheet has no Close button" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "          {modal ? (\n            <button\n              ref={closeRef}"
+assert s.count(a) == 1
+s = s.replace(a, "          {false ? (\n            <button\n              ref={closeRef}", 1)'
+
+plant "QA11-B6" "the student calendar opens the non-modal sheet" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "          modal={viewer === \"student\"}"
+assert s.count(a) == 1
+s = s.replace(a, "          modal={false}", 1)'
+
+plant "QA11-B7" "the guardian's block sheet turns into the student's modal" \
+  "client/src/features/calendar/components/BlockSheet.test.tsx" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "  modal = false,\n"
+assert s.count(a) == 1
+s = s.replace(a, "  modal = true,\n", 1)'
+
+# (f) no "+ Add block" on the student's test day.
+
+plant "QA11-F1" "the test day offers \"+ Add block\" again" \
+  "$T55" \
+  "client/src/features/calendar/components/WeekGrid.tsx" \
+  'a = "      {onAddBlock !== undefined && date >= today && !isTestDay ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {onAddBlock !== undefined && date >= today ? (", 1)'
+
+# (c) nothing runs past a block card's edge; (d) the header is laid out against the calendar
+# column; (g) the projected range on one line. The layouts are measured in the browser by
+# tests/e2e/student-calendar.spec.ts ("QA 2026-10-07 item 11 layout", 390–1440); these plants
+# hold the page test's pins on the rules and wiring that layout depends on.
+
+plant "QA11-C1" "block-card text may no longer break (it runs past the card)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "     first; a word is split only when it alone is wider than the card. */\n  overflow-wrap: anywhere;\n"
+assert s.count(a) == 1
+s = s.replace(a, "     first; a word is split only when it alone is wider than the card. */\n", 1)'
+
+plant "QA11-C2" "the started tag neither drops under the title nor truncates" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyceon-calendar.lyc-cal .block .ttl {\n  flex-wrap: wrap;\n  min-width: 0;\n  row-gap: 2px;\n}\n.lyceon-calendar.lyc-cal .block .lock {\n  display: inline-block;\n  max-width: 100%;\n  min-width: 0;\n  overflow: hidden;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n"
+assert s.count(a) == 1
+s = s.replace(a, ".lyceon-calendar.lyc-cal .block .lock {\n  white-space: nowrap;\n}\n", 1)'
+
+plant "QA11-D1" "the header loses its size container (its layout falls back to the phone stack)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyc-cal-body {\n  container-type: inline-size;\n"
+assert s.count(a) == 1
+s = s.replace(a, ".lyc-cal-body {\n", 1)'
+
+plant "QA11-D2" "the calendar body is no longer the header's container" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "className={`lyc-cal-body flex min-h-0 flex-1 flex-col${"
+assert s.count(a) == 1
+s = s.replace(a, "className={`flex min-h-0 flex-1 flex-col${", 1)'
+
+plant "QA11-G1" "the projected range may wrap at the en dash" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "          className=\"whitespace-nowrap font-lyc-serif font-semibold text-lyc-ink-strong"
+assert s.count(a) == 1
+s = s.replace(a, "          className=\"font-lyc-serif font-semibold text-lyc-ink-strong", 1)'
+
+plant "QA11-G2" "the projected range is fixed at 32px (wider than its half of the card)" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = " [font-size:min(32px,calc(100cqi/(var(--lyc-figure-chars)*0.56)))]\""
+assert s.count(a) == 1
+s = s.replace(a, " text-[32px]\"", 1)'
+
+# (e) Karl's ruling: no "Your schedule" in the right panel.
+
+plant "QA11-E1" "the right panel shows \"Your schedule\" again" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "                in the Edit schedule sheet, whose live readout is the same sentence. */}\n            <ShowFilters"
+assert s.count(a) == 1
+s = s.replace(a, "                in the Edit schedule sheet, whose live readout is the same sentence. */}\n            <section data-testid=\"calendar-schedule-card\"><h2>Your schedule</h2></section>\n            <ShowFilters", 1)'
 
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \

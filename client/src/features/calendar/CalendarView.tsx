@@ -64,6 +64,7 @@ import type {
 import type { SectionProjectionDto } from "@lyceon/shared";
 import {
   daysBetween,
+  monthCursorForWeek,
   monthGridDates,
   numericRangeLabel,
   rangeLabel,
@@ -108,17 +109,12 @@ import {
   CalendarPanelColumn,
   GoalCard,
   MiniMonth,
-  ScheduleSummary,
   ShowFilters,
   StudentCalendarHeader,
 } from "./components/StudentChrome";
 import type { DayActions } from "./components/DayMenu";
 import { SetupPopup, type SetupAnswers } from "./components/SetupPopup";
-import {
-  SettingsSheet,
-  scheduleSummary,
-  type SettingsDraft,
-} from "./components/SettingsSheet";
+import { SettingsSheet, type SettingsDraft } from "./components/SettingsSheet";
 
 /**
  * Everything this screen can do to the server. A guardian caller passes `undefined`, which
@@ -614,6 +610,9 @@ export function CalendarView({
           open
           onClose={() => setOpenBlockId(null)}
           {...(sheetActions === undefined ? {} : { actions: sheetActions })}
+          // QA 2026-10-07 item 11(b): the student's sheet is a modal dialog (Close, Esc,
+          // focus in and back). The guardian's sheet is unchanged (guardian vertical).
+          modal={viewer === "student"}
         />
       )}
 
@@ -690,7 +689,9 @@ export function CalendarView({
         data-testid="calendar-student"
       >
         <div
-          className={`flex min-h-0 flex-1 flex-col${
+          // `lyc-cal-body`: the size container the header is laid out against (QA 2026-10-07
+          // item 11(d); calendar-student.css).
+          className={`lyc-cal-body flex min-h-0 flex-1 flex-col${
             setup === undefined
               ? ""
               : " pointer-events-none select-none blur-[3px]"
@@ -700,7 +701,18 @@ export function CalendarView({
           <StudentCalendarHeader
             view={view}
             title={numericRangeLabel(view, cursor)}
-            onView={(next) => move(next, cursor)}
+            // QA 2026-10-07 item 11(a): Week → Month opens today's month when the week holds
+            // today (else the month of the week's Thursday), never the month of the week's
+            // Monday — on 1 October that was September, whose grid and read stop on
+            // 11 October. The guardian's `TopBar` below keeps `move(next, cursor)`.
+            onView={(next) =>
+              move(
+                next,
+                next === "month" && view === "week"
+                  ? monthCursorForWeek(cursor, today)
+                  : cursor,
+              )
+            }
             onToday={() => move("week", startOfWeek(today))}
             onStep={step}
             {...(schedule === undefined
@@ -739,21 +751,9 @@ export function CalendarView({
               targetScore={targetScore}
               projection={projection ?? []}
             />
-            {schedule === undefined ? null : (
-              <ScheduleSummary
-                // Derived from the profile and the served estimates, never stored — the
-                // same function the sheet's live readout uses, so the panel and the sheet
-                // cannot describe the same schedule differently.
-                summary={scheduleSummary(schedule.profile, schedule.estimates, {
-                  targetExamDate: schedule.profile.target_exam_date,
-                  today,
-                  // The one field the readout reads, named rather than spread: the
-                  // prefill beside it on `examPlanning` is for the frequency control,
-                  // not for this sentence.
-                  finalExamLeadDays: schedule.examPlanning.final_exam_lead_days,
-                })}
-              />
-            )}
+            {/* No "Your schedule" summary here (Karl's ruling on production QA 2026-10-07,
+                item 11(e), amending SCL-211's panel list): the schedule is read and changed
+                in the Edit schedule sheet, whose live readout is the same sentence. */}
             <ShowFilters
               filters={filters}
               onToggle={(tone, next) =>
