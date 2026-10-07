@@ -21,8 +21,9 @@
  * (`lyceon-dashboard.tsx`), so a free student never calls a gated route from Home.
  *
  * edge cases: a calendar with no setup shows "Set up your study calendar" (DESIGN.md §4
- * Settings wording) as the primary, linking to /calendar; a rest day says "Rest day" (the
- * calendar's own words); a day with every block done offers no primary; empty "Pick up" and
+ * Settings wording) as the primary, linking to /calendar; a day with no blocks says the one
+ * empty-day sentence, "No study planned" (`EMPTY_DAY_MESSAGE`, owner QA list 2026-10-07 item 15;
+ * it said "Rest day", untrue of a day the student cleared); a day with every block done offers no primary; empty "Pick up" and
  * failed reads render nothing invented (the page shows one recovery notice).
  *
  * PHONE NOTICE (owner ruling, Karl, 2026-10-05, OQ-63: "show it for every full-length start on a
@@ -46,6 +47,7 @@ import {
 } from "@/components/mastery/domain-nodes";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
+import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
 import { STARTING_LABEL } from "@/lib/pending-copy";
 import { useCalendar, useLaunchBlock } from "@/features/calendar/api";
 import { primaryActionLabel } from "@/features/calendar/lib/blocks";
@@ -366,8 +368,11 @@ function TodayPlan({
           </Button>
         </div>
       ) : plan.blocks.length === 0 ? (
-        <p className="m-0 border-t border-lyc-rule pt-5 text-[17px] text-lyc-muted">
-          Rest day
+        <p
+          className="m-0 border-t border-lyc-rule pt-5 text-[17px] text-lyc-muted"
+          data-testid="home-plan-empty"
+        >
+          {EMPTY_DAY_MESSAGE}
         </p>
       ) : (
         <ReadyPlan

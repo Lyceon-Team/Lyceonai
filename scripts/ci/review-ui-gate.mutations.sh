@@ -105,6 +105,8 @@ FILES=(
   "client/src/pages/practice.tsx"
   "client/src/lib/session-reads.ts"
   "client/src/components/home/HomePanel.tsx"
+  "client/src/components/student-ui/filter-bar/FilterBar.tsx"
+  "client/src/components/MathRenderer.tsx"
 )
 
 snapshot_all() {
@@ -2416,6 +2418,47 @@ plant "QA14-R1" "a recent-session row looks pressable but does nothing" \
   'a = "                  onClick={() => onReview(s)}\n"
 assert s.count(a) == 1
 s = s.replace(a, "                  onClick={() => undefined}\n", 1)'
+
+# Item 15: one empty-day sentence; timing above Start; "Not now"; menus hold still; math on one line.
+QA_FILTER="client/src/components/student-ui/filter-bar/FilterBar.test.tsx"
+QA_MATH="client/src/components/MathRenderer.wrap.test.tsx"
+
+plant "QA15-E1" "Home's empty day says its own words again" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "          {EMPTY_DAY_MESSAGE}\n"
+assert s.count(a) == 1
+s = s.replace(a, "          Rest day\n", 1)'
+
+plant "QA15-T1" "the timing choice drops back under the list of Starts" \
+  "$QA_TESTS" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "            <TimingChoice mode={mode} onModeChange={setMode} />\n"
+b = "            <BeforeYouStart mode={mode} />\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "", 1).replace(b, b + a, 1)'
+
+plant "QA15-N1" "the phone notice's Not now does not close it" \
+  "$QA_TESTS" \
+  "client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx" \
+  'a = "          <ModalClose asChild>\n"
+b = "          </ModalClose>\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "          <span>\n", 1).replace(b, "          </span>\n", 1)'
+
+plant "QA15-F1" "the chips row above an open menu changes with every pick (the jump)" \
+  "$QA_FILTER" \
+  "client/src/components/student-ui/filter-bar/FilterBar.tsx" \
+  'a = "  const chips = frozenChips ?? liveChips;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const chips = liveChips;\n", 1)'
+
+plant "QA15-K1" "an inline math expression may wrap mid-way again" \
+  "$QA_MATH" \
+  "client/src/components/MathRenderer.tsx" \
+  'a = "      mathSpan.style.whiteSpace = \x27nowrap\x27;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
 
 # ── END QA-FLOWS
 

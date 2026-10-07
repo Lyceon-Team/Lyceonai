@@ -62,6 +62,7 @@ import { UPGRADE_MODAL_COPY } from "@/components/billing/upgrade-modal";
 import { AppShell } from "@/components/layout/app-shell";
 import { studentCalendarWeek } from "@/features/calendar/calendar-week.fixture";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
+import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
 import { getQueryFn } from "@/lib/queryClient";
 import type { EstimateResponse } from "@/lib/projectionApi";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
@@ -443,6 +444,8 @@ type Scenario = {
   quota?: number | "unlimited";
   /** OQ-63: today is the fixture's Saturday, its full-length block not started. */
   fullLengthToday?: boolean;
+  /** QA item 15: the fixture week as of another day (its Sunday has no blocks). */
+  today?: string;
 };
 
 function install(s: Scenario): void {
@@ -467,7 +470,7 @@ function install(s: Scenario): void {
         }
       : s.fullLengthToday === true
         ? studentCalendarWeek(SATURDAY, { openToday: true })
-        : studentCalendarWeek(TODAY);
+        : studentCalendarWeek(s.today ?? TODAY);
   net.handlers = [
     (url, init) => {
       const path = url.split("?")[0];
@@ -1398,5 +1401,28 @@ describe("QA item 14: Home's mastery rows and recent sessions go somewhere", () 
     expect(first.textContent).toContain("Starting…");
     expect((second as HTMLButtonElement).disabled).toBe(true);
     expect(second.textContent).toContain("1 to review");
+  });
+});
+
+describe("QA item 15: one empty-day sentence", () => {
+  it("a day with no blocks says the calendar's 'No study planned' (the shared constant), not 'Rest day'", async () => {
+    vi.setSystemTime(new Date(2026, 9, 4, 15, 0, 0));
+    // Presence: the fixture's Sunday is in its week, with no blocks.
+    const week = calendarReadyResponseSchema.parse(
+      Object.fromEntries(
+        Object.entries(studentCalendarWeek(SUNDAY)).filter(
+          ([k]) => k !== "requestId",
+        ),
+      ),
+    );
+    expect(week.days.find((d) => d.local_date === SUNDAY)?.blocks).toEqual([]);
+    await mount("paid", { calendar: "ready", today: SUNDAY });
+    const empty = await screen.findByTestId("home-plan-empty");
+    expect(empty.textContent).toBe(EMPTY_DAY_MESSAGE);
+    expect(EMPTY_DAY_MESSAGE).toBe("No study planned");
+    expect(screen.getByTestId("home-plan").textContent).not.toContain(
+      "Rest day",
+    );
+    expect(screen.queryByTestId("home-start-plan")).toBeNull();
   });
 });

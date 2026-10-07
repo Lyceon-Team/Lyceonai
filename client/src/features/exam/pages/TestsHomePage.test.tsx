@@ -818,8 +818,9 @@ describe("phone widths: the shared pre-start check (OQ-63)", () => {
     // An outline, never a filled primary: it acknowledges a note.
     expect(button.className).toContain("border-lyc-ink-strong");
     expect(button.className).not.toContain("bg-lyc-primary-bg");
-    // Exactly the ruling's words, plus the Modal's named Close.
-    expect(notice.textContent).toBe(PHONE_TEXT + "Continue anywayClose");
+    // Exactly the ruling's words, "Not now" (owner QA list, 2026-10-07, item 15), plus the
+    // Modal's named Close.
+    expect(notice.textContent).toBe(PHONE_TEXT + "Continue anywayNot nowClose");
     // The check runs BEFORE the start: nothing has been created.
     expect(createRequests()).toEqual([]);
     expect(history.at(-1)).toBe("/tests");
@@ -1017,5 +1018,56 @@ describe("QA item 5: Full-Length's Start shows a pending state from the first cl
     expect(
       net.bodies.filter((b) => b.url === "/api/tests/sessions"),
     ).toHaveLength(1);
+  });
+});
+
+describe("QA item 15: the timing choice comes before any Start", () => {
+  it("the Timing fieldset precedes the list of tests and every Start in reading order", async () => {
+    await mount("paid", { inProgress: false, scored: false });
+    const timing = await screen.findByTestId("tests-timing");
+    const starts = await screen.findAllByTestId("tests-start");
+    // Presence: there are Starts to come after it.
+    expect(starts.length).toBeGreaterThan(0);
+    for (const start of [screen.getByTestId("tests-list"), ...starts]) {
+      expect(
+        timing.compareDocumentPosition(start) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    // "Before you start" still names the chosen timing, after the list.
+    fireEvent.click(screen.getByLabelText(/Practice timing/));
+    expect(screen.getByTestId("tests-before-timing").textContent).toBe(
+      "The clock pauses when you step away. Your report says so.",
+    );
+  });
+});
+
+describe("QA item 15: the phone notice has a 'Not now' that closes it like Close", () => {
+  it("'Not now' (quiet) closes the notice and starts nothing; Continue anyway stays outline; Start asks again", async () => {
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "phone",
+    );
+    const start = within(row("Full-Length Test 1")).getByRole("button", {
+      name: "Start",
+    });
+    fireEvent.click(start);
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    const notNow = within(notice).getByRole("button", { name: "Not now" });
+    const proceed = within(notice).getByRole("button", {
+      name: "Continue anyway",
+    });
+    expect(notNow.className).toContain("bg-transparent");
+    expect(notNow.className).not.toContain("border-lyc-ink-strong");
+    expect(proceed.className).toContain("border-lyc-ink-strong");
+    expect(proceed.className).not.toContain("bg-lyc-primary-bg");
+    fireEvent.click(notNow);
+    await waitFor(() => expect(phoneNotice()).toBeNull());
+    expect(createRequests()).toEqual([]);
+    expect(history.at(-1)).toBe("/tests");
+    fireEvent.click(start);
+    expect(await screen.findByTestId("full-length-phone-notice")).toBeTruthy();
+    expect(createRequests()).toEqual([]);
   });
 });
