@@ -6,7 +6,7 @@ import {
   useRef,
   ReactNode,
 } from "react";
-import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
+import type { SupabaseProfile } from "@/lib/supabase";
 import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
@@ -491,6 +491,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       if (returnPath) callbackParams.set(RETURN_PATH_PARAM, returnPath);
       const redirectTo = `${window.location.origin}/auth/callback?${callbackParams.toString()}`;
 
+      // @spec [SEO plan F8 (public-page weight); OAUTH-001] | @implemented [2026-10-07] |
+      // plain English: the browser Supabase client exists only to start this redirect, so it is
+      // loaded here, on the click, instead of with the entry every public page downloads (about
+      // 55 KB gzip). The session stays server-held either way; nothing else in the app uses it.
+      const { getSupabaseBrowserClient } = await import("@/lib/supabase");
       const supabase = getSupabaseBrowserClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",

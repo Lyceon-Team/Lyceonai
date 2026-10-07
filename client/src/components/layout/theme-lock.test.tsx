@@ -72,8 +72,9 @@ function mount(shell: (lock: ThemeLock) => JSX.Element, lock: ThemeLock) {
 }
 
 /** The modal's own `.lyc` root: the portal wrapper around the dialog. */
-function modalRoot(): HTMLElement {
-  const dialog = screen.getByTestId("upgrade-modal");
+// The modal's view loads on the first open (it is not in the app entry), so it is awaited.
+async function modalRoot(): Promise<HTMLElement> {
+  const dialog = await screen.findByTestId("upgrade-modal");
   const root = dialog.closest<HTMLElement>(".lyc");
   // Presence: the modal rendered, outside the shell (on <body>), inside its own token root.
   expect(root).not.toBeNull();
@@ -96,29 +97,29 @@ const bareCard = (lock: ThemeLock): JSX.Element => (
 );
 
 describe("F-65: the upgrade modal follows the shell's theme lock", () => {
-  it("over an App shell pinned light, the modal is pinned light", () => {
+  it("over an App shell pinned light, the modal is pinned light", async () => {
     mount(appShell, "light");
     fireEvent.click(screen.getByRole("button", { name: "open" }));
-    expect(modalRoot().getAttribute("data-theme-lock")).toBe("light");
+    expect((await modalRoot()).getAttribute("data-theme-lock")).toBe("light");
   });
 
-  it("over an unlocked App shell (Home, UI-50), the modal carries no lock", () => {
+  it("over an unlocked App shell (Home, UI-50), the modal carries no lock", async () => {
     mount(appShell, null);
     fireEvent.click(screen.getByRole("button", { name: "open" }));
-    expect(modalRoot().hasAttribute("data-theme-lock")).toBe(false);
+    expect((await modalRoot()).hasAttribute("data-theme-lock")).toBe(false);
   });
 
-  it("over a Bare card pinned light, the modal is pinned light", () => {
+  it("over a Bare card pinned light, the modal is pinned light", async () => {
     mount(bareCard, "light");
     fireEvent.click(screen.getByRole("button", { name: "open" }));
-    expect(modalRoot().getAttribute("data-theme-lock")).toBe("light");
+    expect((await modalRoot()).getAttribute("data-theme-lock")).toBe("light");
   });
 
-  it("tracks the shell on screen: a shell that drops its lock drops it from the open modal", () => {
+  it("tracks the shell on screen: a shell that drops its lock drops it from the open modal", async () => {
     const { rerender } = mount(appShell, "light");
     fireEvent.click(screen.getByRole("button", { name: "open" }));
-    expect(modalRoot().getAttribute("data-theme-lock")).toBe("light");
+    expect((await modalRoot()).getAttribute("data-theme-lock")).toBe("light");
     rerender(null);
-    expect(modalRoot().hasAttribute("data-theme-lock")).toBe(false);
+    expect((await modalRoot()).hasAttribute("data-theme-lock")).toBe(false);
   });
 });
