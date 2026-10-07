@@ -1056,13 +1056,26 @@ export async function executeDueDeletions(
       // `recipientEmail` for this one iteration (C0.6) and never logs it. Best-effort: a
       // failure is logged and left to the daily reconcile; it never fails the deletion.
       if (recipientEmail !== null) {
-        const removed = await removeMarketingContactForDeletion(recipientEmail);
-        logger.info(
-          "DELETION",
-          "marketing_contact_removal",
-          "Marketing email contact removal after deletion",
-          { userId: pending.profile_id, outcome: removed, requestId },
-        );
+        try {
+          const removed = await removeMarketingContactForDeletion(recipientEmail);
+          logger.info(
+            "DELETION",
+            "marketing_contact_removal",
+            "Marketing email contact removal after deletion",
+            { userId: pending.profile_id, outcome: removed, requestId },
+          );
+        } catch (contactErr) {
+          logger.warn(
+            "DELETION",
+            "marketing_contact_removal_failed",
+            "Marketing contact removal threw; deletion is committed, the daily reconcile removes it",
+            {
+              userId: pending.profile_id,
+              error: errorMessage(contactErr),
+              requestId,
+            },
+          );
+        }
       }
 
       // Step 7 (after the notice, and the order is the whole design): the do-not-contact

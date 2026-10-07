@@ -18,6 +18,7 @@
  *   S5  the reconcile brings an unsubscribe back BEFORE deleting, including a manual import's
  *   S6  every contact no eligible profile backs is deleted; a foreign segment is reported
  *   S7  a failed read writes nothing; a second run over a correct state writes nothing
+ *   S8  past the write deadline the rest is deferred to the next run
  *   W1  bad / missing signature → 400, no row
  *   W2  contact.updated unsubscribed → opt-in false + one consent-log row `email_unsubscribe`
  *   W3  replaying it → `duplicate`, no second row
@@ -213,7 +214,9 @@ const ENV = {
   RESEND_SEGMENT_ID_GUARDIANS: SEG_GUARDIANS,
 } as NodeJS.ProcessEnv;
 
-async function reconcile(): Promise<
+async function reconcile(
+  now?: () => number,
+): Promise<
   Awaited<
     ReturnType<
       typeof import("../../server/lib/marketing-email-sync").reconcileMarketingContacts
@@ -229,6 +232,7 @@ async function reconcile(): Promise<
     contacts: createResendContactsTransport({ fetchImpl: fakeFetch, env: ENV }),
     env: ENV,
     pause: async () => undefined,
+    ...(now ? { now } : {}),
   });
 }
 
@@ -560,6 +564,20 @@ describe.skipIf(!PG_AVAILABLE)("marketing email lane — real Postgres", () => {
       recorded: 0,
     });
     expect(resend.writes).toEqual([]);
+  });
+
+  it("S8 past the write deadline the rest is deferred, and the next run finishes it", async () => {
+    await optIn(TEEN.id, true);
+    await optIn(PARENT.id, true);
+    // The clock reads 0 at the start, then jumps past the deadline after the first write.
+    let calls = 0;
+    const clock = (): number => (calls++ < 2 ? 0 : 10 * 60 * 1000);
+    const first = await reconcile(clock);
+    expect(first).toMatchObject({ created: 1, deferred: 1 });
+    expect(resend.contacts.size).toBe(1);
+    const second = await reconcile();
+    expect(second).toMatchObject({ ok: true, created: 1, deferred: 0 });
+    expect(resend.contacts.size).toBe(2);
   });
 
   // ── Resend → Lyceon ────────────────────────────────────────────────────────────────────

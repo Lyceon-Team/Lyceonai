@@ -55,6 +55,12 @@ export type MarketingSegment = "students" | "guardians";
 
 export const MAX_WRITES_PER_RUN = 500;
 export const RESEND_CALL_SPACING_MS = 150;
+/**
+ * Writes stop being started after this long, so a run ends well inside a conservative serverless
+ * timeout (no `maxDuration` is configured for the API function). What is left is counted as
+ * `deferred` and done the next day; the plan is state-based, so nothing is half-applied.
+ */
+export const RUN_WRITE_DEADLINE_MS = 45_000;
 
 const audienceRowSchema = z
   .object({
@@ -204,6 +210,8 @@ export type ReconcileOptions = {
   contacts?: ContactsTransport;
   env?: NodeJS.ProcessEnv;
   pause?: (ms: number) => Promise<void>;
+  /** Milliseconds since some fixed point; injectable so the deadline is testable. */
+  now?: () => number;
   requestId?: string;
 };
 
@@ -267,6 +275,8 @@ export async function reconcileMarketingContacts(
   const db = options.db ?? supabaseServer;
   const contacts = options.contacts ?? defaultContactsTransport();
   const pause = options.pause ?? defaultPause;
+  const now = options.now ?? Date.now;
+  const startedAt = now();
   const requestId = options.requestId;
   const summary = emptySummary();
 
@@ -383,7 +393,10 @@ export async function reconcileMarketingContacts(
   // ── 3. Apply: unsubscribes back first, then deletions, then creations. ───────────────
   let writes = 0;
   const budget = (): boolean => {
-    if (writes >= MAX_WRITES_PER_RUN) {
+    if (
+      writes >= MAX_WRITES_PER_RUN ||
+      now() - startedAt > RUN_WRITE_DEADLINE_MS
+    ) {
       summary.deferred += 1;
       return false;
     }

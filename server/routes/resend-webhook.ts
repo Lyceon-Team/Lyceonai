@@ -284,15 +284,23 @@ export async function processResendWebhook(
       const to = Array.isArray(recipients.data.to)
         ? recipients.data.to
         : [recipients.data.to];
+      const outcomes: MarketingOptOutOutcome[] = [];
       for (const [index, address] of to.entries()) {
-        marketing = await applyMarketingOptOut(
-          index === 0 ? providerEventId : `${providerEventId}:${index}`,
-          RESEND_EMAIL_COMPLAINED,
-          null,
-          address,
-          requestId,
+        outcomes.push(
+          await applyMarketingOptOut(
+            index === 0 ? providerEventId : `${providerEventId}:${index}`,
+            RESEND_EMAIL_COMPLAINED,
+            null,
+            address,
+            requestId,
+          ),
         );
       }
+      // One outcome for the event: applied if any recipient was opted out, else the first
+      // recipient's (every recipient shares the event, so a replay is duplicate for all).
+      marketing = outcomes.includes("applied")
+        ? "applied"
+        : (outcomes[0] ?? null);
     }
   }
 
