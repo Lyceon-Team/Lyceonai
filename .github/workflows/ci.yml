@@ -1348,9 +1348,10 @@ jobs:
           PGDATABASE: calendar_parity
         run: bash scripts/ci/calendar-concurrency-gate.sh
 
-      # The 13 committed fixtures on every pull request; the seeded 3,000-plan suite in the full
-      # tier (owner decision 2026-10-07).
-      - name: Parity vs calendar_formula_reference.py (13 fixtures)
+      # The 13 committed fixtures and a 100-plan seeded suite on every pull request; the
+      # 3,000-plan suite in the full tier (owner decision 2026-10-07). Not 0: the oracle's
+      # suite() divides by N (docs/Spec/calendar_formula_reference.py, read-only).
+      - name: Parity vs calendar_formula_reference.py (13 fixtures + seeded 100 suite)
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -1358,7 +1359,7 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: calendar_parity
           CALENDAR_PARITY_REQUIRE_PG_MAJOR: "17"
-        run: pnpm exec tsx scripts/ci/calendar-parity.ts --suite-n 0
+        run: pnpm exec tsx scripts/ci/calendar-parity.ts --suite-n 100 --suite-seed 1
 
       # ── Last on each server: the PostgREST gates set BYPASSRLS on service_role (cluster-wide) ──
 
