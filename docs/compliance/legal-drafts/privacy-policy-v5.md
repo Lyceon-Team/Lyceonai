@@ -1,3 +1,5 @@
+> **RETIRED (2026-10-07).** Superseded by `legal/privacy-policy/v5` (#1128), the single Privacy Policy counsel receives; the SEO items are being folded into it. This draft is kept for traceability and is not sent to counsel. Its counsel questions are carried into #1128's v5 (`COUNSEL_PACKAGE.md` §3.1).
+
 > **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
 
 # **LYCEON Privacy Policy**

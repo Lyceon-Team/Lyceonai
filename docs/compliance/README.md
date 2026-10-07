@@ -26,7 +26,7 @@ Drafts live in `docs/compliance/legal-drafts/` (see its README). They are not pu
 
 | Draft | File | Doc 10 | Status | Counsel sign-off |
 |---|---|---|---|---|
-| Privacy Policy v5 | `legal-drafts/privacy-policy-v5.md` | §9.2 | Awaiting counsel | — |
+| Privacy Policy v5 | `legal/privacy-policy/v5/en.md` (#1128); the draft `legal-drafts/privacy-policy-v5.md` is retired and superseded by it (Karl, 2026-10-07) | §9.2 | Awaiting counsel (SEO items being folded into #1128's v5) | — |
 | Cookie Policy | `legal-drafts/cookie-policy.md` | §9.10 | Awaiting counsel | — |
 | Cookie banner text | `legal-drafts/cookie-banner-text.md` | §9.11 | Awaiting counsel | — |
 | Children's Online Privacy Notice | `legal-drafts/childrens-privacy-notice.md` | §9.14 | Awaiting counsel | — |
@@ -44,7 +44,7 @@ Spec departures in these drafts are recorded in SCL-208. Open owner actions:
 - postal address and telephone, for the Privacy Policy, the children's notice and marketing emails: Karl will supply them; placeholders stay flagged in the counsel checklists until then.
 - cookie consent record (`cookie_consent_log`, SEO F11): its retention period is set by the retention work on the `guardian` branch (owner, 2026-10-05); no retention-registry row or sweep is added here;
 - Cookie Policy publication: the banner's "Cookie Policy" link opens the Privacy Policy until then — on publication, `COOKIE_POLICY_HREF` in `client/src/components/consent/CookieConsentRoot.tsx` becomes `/legal/cookie-policy`;
-- session replay (F15): **recording is on**. Karl enabled the PostHog project setting on 2026-10-05 after F15 shipped (owner decision 4, 2026-10-05; Doc 10A draft §6.5). Still owed: F15's masked-replay screenshot, the evidence for the SCL-204 / Doc 06A §5.2 compliance gate.
+- session replay (F15): **done; nothing owed.** Recording is on (PostHog project setting enabled 2026-10-05 after F15 shipped). Masked replay proven, Karl confirmed 2026-10-07: the question area is masked in a practice recording and the name is masked on Settings. This is the evidence for the SCL-204 / Doc 06A §5.2 compliance gate.
 
 ### Counsel checklist: marketing claims
 

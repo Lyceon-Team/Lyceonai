@@ -17,7 +17,7 @@
  * Output: docs/compliance/legal-drafts/out/lyceon-counsel-package.pdf
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
@@ -30,9 +30,16 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const DRAFTS = join(ROOT, "docs/compliance/legal-drafts");
 const OUT = join(DRAFTS, "out/lyceon-counsel-package.pdf");
 
-/** Reading order: the same order as COUNSEL_PACKAGE.md §2. */
+/**
+ * Reading order: the same order as COUNSEL_PACKAGE.md §2. Paths are from the repo root.
+ *
+ * The Privacy Policy is the single published-track policy, `legal/privacy-policy/v5/en.md`
+ * (#1128, with the SEO items folded in). The earlier draft `privacy-policy-v5.md` is retired and is
+ * never rendered (owner ruling, 2026-10-07).
+ */
+const PRIVACY_POLICY = "legal/privacy-policy/v5/en.md";
 const READING_ORDER = [
-  "privacy-policy-v5.md",
+  PRIVACY_POLICY,
   "childrens-privacy-notice.md",
   "parental-consent-mechanism.md",
   "cookie-policy.md",
@@ -44,10 +51,13 @@ const READING_ORDER = [
   "billing-terms-v3.md",
   "school-data-privacy-addendum.md",
   "sub-processor-list.md",
-];
+].map((f) => (f.includes("/") ? f : `docs/compliance/legal-drafts/${f}`));
 
 function assertReadingOrderMatchesPackage(packageText) {
-  for (const file of READING_ORDER) {
+  for (const path of READING_ORDER) {
+    const file = path.startsWith("docs/compliance/legal-drafts/")
+      ? path.slice("docs/compliance/legal-drafts/".length)
+      : path;
     if (!packageText.includes(`\`${file}\``)) {
       throw new Error(`COUNSEL_PACKAGE.md §2 does not list ${file}`);
     }
@@ -88,7 +98,14 @@ async function main() {
 
   const sections = [
     packageText,
-    ...READING_ORDER.map((f) => readFileSync(join(DRAFTS, f), "utf8")),
+    ...READING_ORDER.map((f) => {
+      if (!existsSync(join(ROOT, f))) {
+        throw new Error(
+          `${f} is missing: the Privacy Policy is #1128's v5, so build from a checkout that has it`,
+        );
+      }
+      return readFileSync(join(ROOT, f), "utf8");
+    }),
   ]
     .map((md) => `<section class="doc">${render(md)}</section>`)
     .join("\n");

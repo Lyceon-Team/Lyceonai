@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-10-07)** by Karl's committed `docs/Spec/Lyceon_Doc_10A_V1.md`. Not maintained; kept for history only.
+
 # **Lyceon — Document 10A: Public Surfaces & Content Engine**
 
 **Version:** V0.2 **Status:** Draft for review (not locked) **Last updated:** 2026-10-06 **Owners:** Karl (founder) **Governed by:** Doc 00 (Authoritative Platform Directive); Doc 10 V1.0 (parent); the Public Disclosure Doctrine (§2).
