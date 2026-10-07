@@ -71,7 +71,7 @@ export const UI_55: PageGroup = {
     {
       id: "paid-week",
       title:
-        "Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D), no streak line; Edit schedule and Regenerate plan; the starred test day; no facts strip (SCL-211); panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Show (no \"Your schedule\": QA 2026-10-07 item 11(e))",
+        'Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D), no streak line; Edit schedule and Regenerate plan; the starred test day; no facts strip (SCL-211); panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Show (no "Your schedule": QA 2026-10-07 item 11(e))',
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
@@ -80,6 +80,48 @@ export const UI_55: PageGroup = {
         file: "Calendar.dc.html",
         plan: "paid",
         note: "Calendar, plan = paid, week",
+      },
+    },
+    {
+      id: "paid-week-mid",
+      title:
+        "Calendar, paid, week between the phone and desktop layouts (production QA 2026-10-07 items 11(c), 11(d)): at 700 the range title over Week/Month, Today, arrows (left) and Edit schedule, Regenerate plan (right); at 1024, beside the right panel, the three groups stacked, none broken; block cards whose titles, chips and tags stay inside them",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: PAID_WEEK,
+      extraViewports: [
+        { name: "w700", width: 700, height: 900, selectors: "mobile" },
+        { name: "w1024", width: 1024, height: 768, selectors: "desktop" },
+        { name: "w1280", width: 1280, height: 800, selectors: "desktop" },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototype is a fixed 1440x900 canvas; these widths are the production QA's (2026-10-07 item 11).",
+      },
+    },
+    {
+      id: "paid-block-sheet",
+      title:
+        "Calendar, paid, a block's detail sheet open (production QA 2026-10-07 item 11(b)): a modal dialog named by the block's title, with Close (top right); focus on Close",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: {
+        desktop: "button.block.rev",
+        mobile: "button.block.rev",
+      },
+      steps: [
+        {
+          click: { desktop: "button.block.rev", mobile: "button.block.rev" },
+          ariaDisabledOk: true,
+        },
+      ],
+      expectVisible:
+        '[data-testid="calendar-block-sheet"][role="dialog"] [data-testid="calendar-block-sheet-close"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototype's blocks open no sheet; the dialog is the production QA's item 11(b).",
       },
     },
     {
