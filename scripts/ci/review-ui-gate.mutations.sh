@@ -2939,6 +2939,36 @@ plant "QA15-E2" "the calendar's week grid writes the empty-day sentence by hand 
 assert s.count(a) == 1
 s = s.replace(a, "{isRest ? \"No study planned\" : \"Nothing to show\"}", 1)'
 
+# QA 2026-10-07: the runner bar fits a long session (a 54-question review overflowed 239px).
+
+plant "QA-RO1" "the progress strip cannot shrink again" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "className=\"hidden min-w-0 shrink gap-1 lg:flex\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"hidden shrink-0 gap-1 lg:flex\"", 1)'
+
+plant "QA-RO2" "the strip segments hold 14px each again" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "\"h-1.5 w-3.5 min-w-[2px] shrink rounded-[3px]\","
+assert s.count(a) == 1
+s = s.replace(a, "\"h-1.5 w-3.5 rounded-[3px]\",", 1)'
+
+plant "QA-RO3" "the session name truncates to make room for the strip" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "max-w-[45%] shrink-0 truncate"
+assert s.count(a) == 1
+s = s.replace(a, "truncate", 1)'
+
+plant "QA-RO4" "the phone shows the full words 'Question N of M' again" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "<span className=\"sr-only sm:not-sr-only\">Question </span>"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"inline\">Question </span>", 1)'
+
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"

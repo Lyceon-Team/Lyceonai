@@ -470,6 +470,36 @@ describe("UI-53 runner: bar, steps, keys", () => {
     expect(segments()).toEqual(["done", "current", "todo"]);
   });
 
+  it("QA 2026-10-07: a long session fits the bar — the strip and its segments shrink, the title holds, and a phone hides only the word 'Question'", async () => {
+    installNetwork({ total: 54 });
+    mountRunner();
+    await loaded();
+    const strip = screen.getByTestId("runner-progress");
+    // Presence first: one segment per question.
+    expect(strip.querySelectorAll("[data-segment]")).toHaveLength(54);
+    // The strip may shrink (a 54-question review was 239px wider than 1440 with fixed 14px
+    // segments); each segment shrinks to a 2px floor instead of holding its width.
+    const stripClasses = strip.className.split(/\s+/);
+    expect(stripClasses).toEqual(expect.arrayContaining(["min-w-0", "shrink"]));
+    expect(stripClasses).not.toContain("shrink-0");
+    for (const seg of Array.from(strip.querySelectorAll("[data-segment]"))) {
+      expect(seg.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(["shrink", "min-w-[2px]"]),
+      );
+    }
+    // The session name keeps its width (up to a cap) instead of truncating to "Review …".
+    expect(
+      screen.getByTestId("runner-session-name").className.split(/\s+/),
+    ).toEqual(expect.arrayContaining(["shrink-0", "max-w-[45%]"]));
+    // On a phone "Question" is visually hidden; the full words stay for screen readers.
+    const position = screen.getByTestId("runner-position");
+    expect(position.textContent).toBe("Question 1 of 54");
+    const word = within(position).getByText("Question", { exact: false });
+    expect(word.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["sr-only", "sm:not-sr-only"]),
+    );
+  });
+
   it("Skip resolves the item and serves the next one, with no feedback panel", async () => {
     const net = installNetwork({ total: 3 });
     mountRunner();

@@ -431,30 +431,35 @@ export default function CanonicalPracticePage(props: {
         />
         <span
           data-testid="runner-session-name"
-          className="hidden min-w-0 truncate font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong sm:block"
+          className="hidden min-w-0 max-w-[45%] shrink-0 truncate font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong sm:block"
         >
           {props.title}
         </span>
         <span className="flex-1" aria-hidden="true" />
         {position !== null && typeof totalQuestions === "number" ? (
           <>
+            {/* QA 2026-10-07: a 54-question review made the bar 239px wider than a 1440 screen
+                and 26px wider than a phone. On a phone the word "Question" is dropped from view
+                (screen readers still hear it); the strip's segments shrink to fit, never below
+                2px, instead of holding 14px each. */}
             <span
               data-testid="runner-position"
               className="shrink-0 whitespace-nowrap text-lyc-body text-lyc-ink"
             >
-              {position}
+              <span className="sr-only sm:not-sr-only">Question </span>
+              {position.replace(/^Question /, "")}
             </span>
             <span
               aria-hidden="true"
               data-testid="runner-progress"
-              className="hidden shrink-0 gap-1 lg:flex"
+              className="hidden min-w-0 shrink gap-1 lg:flex"
             >
               {progressSegments(currentIndex, totalQuestions).map((tone, i) => (
                 <span
                   key={i}
                   data-segment={tone}
                   className={cn(
-                    "h-1.5 w-3.5 rounded-[3px]",
+                    "h-1.5 w-3.5 min-w-[2px] shrink rounded-[3px]",
                     SEGMENT_TONE[tone],
                   )}
                 />
