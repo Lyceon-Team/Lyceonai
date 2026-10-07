@@ -147,7 +147,6 @@ type BuiltResult = {
 };
 
 function log(line: string): void {
-  // eslint-disable-next-line no-console -- the capture run log
   console.log(line);
 }
 
@@ -681,7 +680,6 @@ async function shootBuilt(
             window.sessionStorage.setItem(k, v);
         } catch (err: unknown) {
           // A page with no storage still gets the colour-scheme media feature. (Runs in the page.)
-          // eslint-disable-next-line no-console -- browser-side; surfaces in the page console only
           console.warn("student harness: storage not written", err);
         }
       },
@@ -1246,7 +1244,6 @@ main().then(
     process.exit(0);
   },
   (err: unknown) => {
-    // eslint-disable-next-line no-console -- the capture failed; say why and stop the stack
     console.error(err);
     stopChildren();
     process.exit(1);

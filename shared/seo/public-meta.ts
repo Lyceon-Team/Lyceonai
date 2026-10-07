@@ -106,6 +106,22 @@ export const LEGAL_META: Record<string, LegalMeta> = {
     canonical: `${BASE_URL}/legal/subscription-auto-renewal-notice`,
     ogImage: DEFAULT_OG_IMAGE,
   },
+  // SCL-221 (2026-10-07): the Cookie Policy and the AI Content Disclosure. Descriptions are
+  // each document's own manifest description, unchanged.
+  "cookie-policy": {
+    title: "Cookie Policy",
+    description:
+      "The cookies and similar technologies LYCEON uses, why, and how to control them.",
+    canonical: `${BASE_URL}/legal/cookie-policy`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
+  "ai-content-disclosure": {
+    title: "AI Content Disclosure",
+    description:
+      "Where LYCEON uses AI, its limitations, and how to report a problem.",
+    canonical: `${BASE_URL}/legal/ai-content-disclosure`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
 };
 
 const blogPosts = BLOG_POSTS.map((post) => ({

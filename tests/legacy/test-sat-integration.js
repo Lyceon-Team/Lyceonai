@@ -98,7 +98,7 @@ async function testSATIntegration() {
         });
         console.log(`   "${query}": ${results.chunks.length} results`);
       } catch (error) {
-        console.log(`   "${query}": Search failed`);
+        console.log(`   "${query}": Search failed (${error instanceof Error ? error.message : String(error)})`);
       }
     }
     

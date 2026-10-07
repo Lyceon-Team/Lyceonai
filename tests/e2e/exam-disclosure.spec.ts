@@ -28,11 +28,16 @@ import {
 } from "@playwright/test";
 import fs from "fs";
 import path from "path";
+import { answerCookieBanner } from "./exam-harness/consent";
 
 if (process.env.E2E_CHROMIUM)
   test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
 test.use({ viewport: { width: 1280, height: 900 } });
 test.setTimeout(3 * 60_000);
+// The cookie banner, answered, so it is not fixed over the controls the walk clicks (2026-10-07).
+test.beforeEach(async ({ context, baseURL }) => {
+  await answerCookieBanner(context, baseURL ?? "http://localhost:5173");
+});
 
 const SHOTS =
   process.env.E2E_SHOT_DIR ??
@@ -89,6 +94,7 @@ test("the score screen carries the summary and no link, for the student and the 
   page,
   request,
   browser,
+  baseURL,
 }) => {
   const sid = await scoredSession(request);
   const disclosure = (
@@ -117,6 +123,7 @@ test("the score screen carries the summary and no link, for the student and the 
     extraHTTPHeaders: { "x-harness-as": "guardian" },
     viewport: { width: 1280, height: 900 },
   });
+  await answerCookieBanner(guardianContext, baseURL ?? "http://localhost:5173");
   const guardian = await guardianContext.newPage();
   await guardian.goto(`/guardian/${STUDENT}/exams/${sid}`);
   await expect(guardian.getByTestId("guardian-exam")).toBeVisible({
@@ -134,7 +141,6 @@ test("the score screen carries the summary and no link, for the student and the 
   });
   await guardianContext.close();
 
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "G2 EVIDENCE " +
       JSON.stringify({

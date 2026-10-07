@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { logger } from '../../../server/logger';
 
 const envSchema = z.object({
   // Core
@@ -47,13 +48,15 @@ class ConfigManager {
       const parsed = envSchema.parse(process.env);
       this.instance = parsed;
       
-      console.log('✅ [CONFIG] Environment configuration validated successfully');
-      console.log(`🔧 [CONFIG] Environment: ${parsed.NODE_ENV}`);
-      console.log(`🔧 [CONFIG] Embed Provider: Gemini (only)`);
-      console.log(`🔧 [CONFIG] RAG Top-K: ${parsed.TOP_K}`);
-      console.log(`🔧 [CONFIG] GCP Project: ${parsed.GCP_PROJECT_ID}`);
-      console.log(`🔧 [CONFIG] GCS Bucket: ${parsed.GCS_BUCKET_NAME}`);
-      console.log(`🔧 [CONFIG] PubSub Topic: ${parsed.PUBSUB_TOPIC}`);
+      // Non-secret configuration only.
+      logger.info('CONFIG', 'validated', 'Environment configuration validated successfully', {
+        nodeEnv: parsed.NODE_ENV,
+        embedProvider: 'gemini',
+        topK: parsed.TOP_K,
+        gcpProjectId: parsed.GCP_PROJECT_ID,
+        gcsBucketName: parsed.GCS_BUCKET_NAME,
+        pubsubTopic: parsed.PUBSUB_TOPIC,
+      });
       
       return parsed;
     } catch (error) {
@@ -67,9 +70,9 @@ class ConfigManager {
       // these variables (see `server/lib/startup-guards.ts`) reintroduces the
       // outage. Recorded, deliberately not fixed: code nothing runs.
       if (error instanceof z.ZodError) {
-        console.error('❌ [CONFIG] Environment validation failed:');
-        error.errors.forEach((err) => {
-          console.error(`  - ${err.path.join('.')}: ${err.message}`);
+        // Variable names and schema messages only, never values.
+        logger.error('CONFIG', 'validation_failed', 'Environment validation failed', undefined, {
+          issues: error.errors.map((err) => `${err.path.join('.')}: ${err.message}`),
         });
         process.exit(1);
       }

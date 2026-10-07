@@ -11,7 +11,7 @@
  *   6. List endpoint returns new fields (title, surface, crisis_paused_at)
  *   7. normalizeCrisisText handles "my self" → "myself"
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 

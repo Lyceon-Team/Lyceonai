@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **RETIRED 2026-10-07 — folded into the Privacy Policy, `legal/privacy-policy/v6` §5.4 and §8.1.** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
 
 # **Your Privacy Choices: Sale and Sharing**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 ## **We Do Not Sell or Share Your Personal Information**
 

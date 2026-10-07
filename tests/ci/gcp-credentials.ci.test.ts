@@ -11,6 +11,7 @@
  * error. The sentinel value never appears in the thrown error.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { z } from "zod";
 import {
   getGcpCredentials,
   _resetGcpCredentialsCache,
@@ -241,7 +242,6 @@ describe("server/lib/gcp-credentials", () => {
     // If we were to call serviceAccountSchema.parse() on a poisoned
     // input, the ZodError's issues array would contain the received
     // values — including the private_key sentinel.
-    const { z } = require("zod") as typeof import("zod");
 
     const schema = z.object({
       type: z.literal("service_account"),

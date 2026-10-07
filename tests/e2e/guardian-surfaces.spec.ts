@@ -19,8 +19,8 @@
  *   E2E_BASE_URL=http://localhost:5173 E2E_SHOT_DIR=<dir> \
  *     pnpm exec playwright test tests/e2e/guardian-surfaces.spec.ts
  * Not part of `pnpm test` (vitest): it needs a browser and a dev server. CI runs it, with
- * `student-calendar.spec.ts` and `student-mastery.spec.ts`, in the `guardian-e2e` job
- * (guardian closeout, Part B step 3).
+ * `student-calendar.spec.ts`, in the full tier's `browser` job (ci-full.yml; guardian closeout,
+ * Part B step 3; moved off every PR by the owner's CI decisions of 2026-10-07).
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { offCentre, type Check } from "./guardian-harness/centring";
@@ -816,8 +816,7 @@ test.describe("phone centring at 390 (item 10)", () => {
  * G5-03 (R13, Karl 2026-10-02): the guardian mastery card's meter is the design board's — a
  * 150px column between the domain name and the pill at 1440, and the row's full width beneath
  * the name and pill at 390. Measured per meter against its row, within 1px. Presence first: the
- * Dashboard draws 8 meters. (The student mastery page's own meter rule is
- * `student-mastery.spec.ts`'s; R13 leaves it unchanged.)
+ * Dashboard draws 8 meters. (R13 leaves the student mastery page's own meter unchanged.)
  */
 test.describe("the guardian mastery meter follows the design", () => {
   for (const vp of VIEWPORTS) {

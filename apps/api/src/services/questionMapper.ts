@@ -1,17 +1,31 @@
+import type {
+  CanonicalMcOption,
+  CanonicalQuestionRowLike,
+} from "../../../../shared/question-bank-contract";
+
 export type StudentQuestionType = "multiple_choice";
 
-type Option = { key: "A" | "B" | "C" | "D"; text: string };
+type Option = CanonicalMcOption;
 
 function normalizeOptions(options: unknown): Option[] {
   if (!Array.isArray(options)) return [];
   return options
-    .map((opt: any) => ({ key: opt?.key, text: opt?.text }))
+    .map((opt: unknown) => {
+      const row = typeof opt === "object" && opt !== null ? (opt as Record<string, unknown>) : {};
+      return { key: row.key, text: row.text };
+    })
     .filter((opt): opt is Option => {
-      return ["A", "B", "C", "D"].includes(opt.key) && typeof opt.text === "string";
+      return (
+        typeof opt.key === "string" &&
+        ["A", "B", "C", "D"].includes(opt.key) &&
+        typeof opt.text === "string"
+      );
     });
 }
 
-export function mapDbQuestionToStudentQuestion(q: any) {
+export function mapDbQuestionToStudentQuestion(
+  q: CanonicalQuestionRowLike & { competencies?: unknown },
+) {
   return {
     id: q.id,
     canonical_id: q.canonical_id,

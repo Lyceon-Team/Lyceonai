@@ -3,7 +3,7 @@ import app from '../server/index';
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../server/middleware/csrf-double-submit', () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
   generateToken: () => 'test-csrf-token',
 }));
 

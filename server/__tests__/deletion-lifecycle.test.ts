@@ -14,6 +14,7 @@ import {
   executeDueDeletions,
   anonymizeAccount,
 } from "../lib/account-deletion-execute";
+import type { Request, Response } from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as authMiddleware from "../middleware/supabase-auth";
 
@@ -131,9 +132,9 @@ describe("Deletion Lifecycle", () => {
       method: "GET",
       path: "/api/x",
       ...over,
-    }) as any;
+    }) as unknown as Request;
   const lockRes = () =>
-    ({ status: vi.fn().mockReturnThis(), json: vi.fn() }) as any;
+    ({ status: vi.fn().mockReturnThis(), json: vi.fn() }) as unknown as Response;
 
   it("hard-deleted user is 403 ACCOUNT_DELETED on every /api route (no allowlist)", async () => {
     process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";

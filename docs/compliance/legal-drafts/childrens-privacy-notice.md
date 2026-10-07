@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **RETIRED 2026-10-07 — folded into the Privacy Policy, `legal/privacy-policy/v6` §4 (with §5.2 and §6).** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
 
 # **LYCEON Children's Online Privacy Notice**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 **For parents and guardians of students under 13**
 
@@ -15,8 +15,8 @@ This notice explains what LYCEON collects from a student under 13, how we use it
 LYCEON AI operates the LYCEON SAT preparation service.
 
 * Email: **support@lyceon.ai**
-* Postal address: [POSTAL ADDRESS]
-* Telephone: [TELEPHONE]
+* Postal address: 5650 Central Ave # E7, Toledo, OH 43615
+* Telephone: +1 (419) 415-1885
 
 ---
 

@@ -1,4 +1,6 @@
+import type { NextFunction, Request, Response } from "express";
 import { vi } from "vitest";
+import type { SupabaseUser } from "../../server/middleware/supabase-auth";
 
 /**
  * Common environment variables for security tests
@@ -23,40 +25,46 @@ Object.entries(SECURITY_TEST_ENV).forEach(([key, value]) => {
   }
 });
 
+type Middleware = (req: Request, res: Response, next: NextFunction) => void;
+
+const passThrough: Middleware = (_req, _res, next) => next();
+
+/**
+ * The mocked signed-in student. Only the fields the security suites rely on are
+ * set; the cast is the mock's statement that it stands in for a SupabaseUser.
+ */
+function attachTestUser(req: Request): void {
+  req.user = {
+    id: "test-user",
+    role: "student",
+    isGuardian: false,
+    isAdmin: false,
+  } as SupabaseUser;
+  req.requestId ??= "req-security-test";
+}
+
 /**
  * Common mocks for security tests.
  * Use this BEFORE dynamically importing the app.
  */
 export function setupSecurityMocks() {
   vi.doMock("../../server/middleware/csrf-double-submit", () => ({
-    doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+    doubleCsrfProtection: passThrough,
     generateToken: () => "test-csrf-token",
   }));
 
   vi.doMock("../../server/middleware/supabase-auth", () => ({
-    supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
-      req.user = {
-        id: "test-user",
-        role: "student",
-        isGuardian: false,
-        isAdmin: false,
-      };
-      req.requestId ??= "req-security-test";
+    supabaseAuthMiddleware: (req: Request, _res: Response, next: NextFunction) => {
+      attachTestUser(req);
       next();
     },
-    requireSupabaseAuth: (req: any, _res: any, next: any) => {
-      req.user = {
-        id: "test-user",
-        role: "student",
-        isGuardian: false,
-        isAdmin: false,
-      };
-      req.requestId ??= "req-security-test";
+    requireSupabaseAuth: (req: Request, _res: Response, next: NextFunction) => {
+      attachTestUser(req);
       next();
     },
     // Global deletion lock — pass-through in security tests (not exercising deletion state).
-    enforceDeletionLock: (_req: any, _res: any, next: any) => next(),
-    requireRequestUser: (req: any, res: any) => {
+    enforceDeletionLock: passThrough,
+    requireRequestUser: (req: Request, res: Response) => {
       if (!req.user?.id) {
         res.status(401).json({
           error: "Authentication required",
@@ -67,12 +75,12 @@ export function setupSecurityMocks() {
       }
       return req.user;
     },
-    requireStudentOnly: (_req: any, _res: any, next: any) => next(),
-    requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
-    requireStudentAccount: (_req: any, _res: any, next: any) => next(),
-    requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
-    requireProfileComplete: (_req: any, _res: any, next: any) => next(),
-    requireGuardianLinkForUnder13: (_req: any, _res: any, next: any) => next(),
+    requireStudentOnly: passThrough,
+    requireStudentOrAdmin: passThrough,
+    requireStudentAccount: passThrough,
+    requireSupabaseAdmin: passThrough,
+    requireProfileComplete: passThrough,
+    requireGuardianLinkForUnder13: passThrough,
     getSupabaseAdmin: () => ({
       rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
     }),

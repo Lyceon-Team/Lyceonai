@@ -13,6 +13,20 @@
 #
 # Usage:  bash scripts/ci/review-ui-gate.mutations.sh
 # Exit 0 only if every plant produced a failure and every revert was byte-identical.
+#
+# Sharding (CI-minutes brief 2026-10-07): CI runs this through review-ui-gate.parallel.sh, which
+# sets REVIEW_UI_GATE_SHARD=<i>/<n> so this copy runs only plants k with k mod n == i, in its own
+# worktree, and REVIEW_UI_GATE_SKIP_FINAL_SUITE=1 because the driver proves the restored tree is
+# byte-identical to HEAD instead. Unset, both behave as before: every plant, then the suite.
+# vitest is started with node directly, not through `pnpm exec` (same binary and config, ~0.7 s
+# less per plant).
+#
+# Selection (owner decision 2026-10-07, CI audit item 3): with REVIEW_UI_GATE_ONLY_CHANGED=<file>
+# naming a list of changed paths (one per line), only the plants whose target file or one of
+# whose test paths the change touches are run; every other plant is counted but not applied.
+# Pull requests into integration branches run that subset; the full tier (ci-full.yml) runs
+# every plant. A plant whose target or test changed is exactly the plant whose proof the change
+# can break, so the subset is the part of the gate a given change can affect.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -129,10 +143,46 @@ verify_clean_revert() {
 
 PASS=0
 FAIL=0
+VITEST=(node "$REPO/node_modules/vitest/vitest.mjs")
+
+SHARD_SPEC="${REVIEW_UI_GATE_SHARD:-0/1}"
+SHARD_I="${SHARD_SPEC%/*}"
+SHARD_N="${SHARD_SPEC#*/}"
+if ! [[ "$SHARD_I" =~ ^[0-9]+$ && "$SHARD_N" =~ ^[1-9][0-9]*$ ]] || [ "$SHARD_I" -ge "$SHARD_N" ]; then
+  echo "!! bad REVIEW_UI_GATE_SHARD=$SHARD_SPEC (want <index>/<count>, index < count)"
+  exit 2
+fi
+PLANT_NO=0
+SELECTED=0
+RAN=0
+ONLY_CHANGED="${REVIEW_UI_GATE_ONLY_CHANGED:-}"
+if [ -n "$ONLY_CHANGED" ] && [ ! -f "$ONLY_CHANGED" ]; then
+  echo "!! REVIEW_UI_GATE_ONLY_CHANGED=$ONLY_CHANGED is not a file"
+  exit 2
+fi
+
+# selected <file> <test-paths>: true when no selection is set, or the change touches the plant's
+# target file or any of its test paths (a test path may be a directory).
+selected() {
+  [ -z "$ONLY_CHANGED" ] && return 0
+  local target="$1" t
+  grep -qxF "$target" "$ONLY_CHANGED" && return 0
+  for t in $2; do
+    grep -qxF "$t" "$ONLY_CHANGED" && return 0
+    awk -v p="${t%/}/" 'index($0, p) == 1 { found = 1 } END { exit !found }' "$ONLY_CHANGED" && return 0
+  done
+  return 1
+}
 
 # plant <id> <description> <test-path> <file> <python-mutation>
 plant() {
   local id="$1" desc="$2" tests="$3" file="$4" mutation="$5"
+
+  PLANT_NO=$((PLANT_NO + 1))
+  if ! selected "$file" "$tests"; then return; fi
+  SELECTED=$((SELECTED + 1))
+  if [ $(((SELECTED - 1) % SHARD_N)) -ne "$SHARD_I" ]; then return; fi
+  RAN=$((RAN + 1))
 
   printf '\n── %s ── %s\n' "$id" "$desc"
 
@@ -148,7 +198,7 @@ PY
     FAIL=$((FAIL + 1)); restore_all; return
   fi
 
-  if pnpm -s exec vitest run $tests >/dev/null 2>&1; then
+  if "${VITEST[@]}" run $tests >/dev/null 2>&1; then
     echo "  !! NO-OP PLANT: $tests still GREEN with $id applied"
     FAIL=$((FAIL + 1))
   else
@@ -2267,16 +2317,22 @@ s = s.replace(a, "    if (true)\n", 1)'
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"
+echo "plant count: total=$PLANT_NO selected=$SELECTED ran=$RAN red=$PASS"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "GATE FAILED"
   exit 1
 fi
 
+if [ "${REVIEW_UI_GATE_SKIP_FINAL_SUITE:-0}" = 1 ]; then
+  echo "GATE PASSED (shard $SHARD_SPEC) — all plants red, all reverts byte-identical"
+  exit 0
+fi
+
 # Final proof: with every plant reverted, the suite is green again.
 echo
 echo "Re-running the full client suite on the restored tree..."
-if pnpm -s exec vitest run client/src >/dev/null 2>&1; then
+if "${VITEST[@]}" run client/src >/dev/null 2>&1; then
   echo "GATE PASSED — all plants red, all reverts byte-identical, suite green"
   exit 0
 fi
