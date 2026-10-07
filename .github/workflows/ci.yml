@@ -242,8 +242,11 @@ jobs:
       # UTC day header, an error state for an empty pool, both halves of "abandoned
       # sessions never appear", a removed nav entry, a removed allowlist entry — and
       # fails unless each one turns its own U-test red and reverts byte-identically.
+      # Sharded since 2026-10-07 (CI-minutes brief): the same plants, one per worktree of HEAD,
+      # one shard per core. The driver also requires every plant to run exactly once and every
+      # worktree to end byte-identical to HEAD. It was ~24 of this job's ~30 minutes serially.
       - name: Review UI mutation gate (proves U1-U9 are load-bearing)
-        run: bash scripts/ci/review-ui-gate.mutations.sh
+        run: bash scripts/ci/review-ui-gate.parallel.sh
 
       - name: Retired endpoints gate (no caller of a deleted route may remain)
         run: node scripts/ci/retired-endpoints-gate.mjs

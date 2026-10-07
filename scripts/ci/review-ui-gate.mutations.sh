@@ -13,6 +13,13 @@
 #
 # Usage:  bash scripts/ci/review-ui-gate.mutations.sh
 # Exit 0 only if every plant produced a failure and every revert was byte-identical.
+#
+# Sharding (CI-minutes brief 2026-10-07): CI runs this through review-ui-gate.parallel.sh, which
+# sets REVIEW_UI_GATE_SHARD=<i>/<n> so this copy runs only plants k with k mod n == i, in its own
+# worktree, and REVIEW_UI_GATE_SKIP_FINAL_SUITE=1 because the driver proves the restored tree is
+# byte-identical to HEAD instead. Unset, both behave as before: every plant, then the suite.
+# vitest is started with node directly, not through `pnpm exec` (same binary and config, ~0.7 s
+# less per plant).
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -129,10 +136,25 @@ verify_clean_revert() {
 
 PASS=0
 FAIL=0
+VITEST=(node "$REPO/node_modules/vitest/vitest.mjs")
+
+SHARD_SPEC="${REVIEW_UI_GATE_SHARD:-0/1}"
+SHARD_I="${SHARD_SPEC%/*}"
+SHARD_N="${SHARD_SPEC#*/}"
+if ! [[ "$SHARD_I" =~ ^[0-9]+$ && "$SHARD_N" =~ ^[1-9][0-9]*$ ]] || [ "$SHARD_I" -ge "$SHARD_N" ]; then
+  echo "!! bad REVIEW_UI_GATE_SHARD=$SHARD_SPEC (want <index>/<count>, index < count)"
+  exit 2
+fi
+PLANT_NO=0
+RAN=0
 
 # plant <id> <description> <test-path> <file> <python-mutation>
 plant() {
   local id="$1" desc="$2" tests="$3" file="$4" mutation="$5"
+
+  PLANT_NO=$((PLANT_NO + 1))
+  if [ $(((PLANT_NO - 1) % SHARD_N)) -ne "$SHARD_I" ]; then return; fi
+  RAN=$((RAN + 1))
 
   printf '\n── %s ── %s\n' "$id" "$desc"
 
@@ -148,7 +170,7 @@ PY
     FAIL=$((FAIL + 1)); restore_all; return
   fi
 
-  if pnpm -s exec vitest run $tests >/dev/null 2>&1; then
+  if "${VITEST[@]}" run $tests >/dev/null 2>&1; then
     echo "  !! NO-OP PLANT: $tests still GREEN with $id applied"
     FAIL=$((FAIL + 1))
   else
@@ -2267,16 +2289,22 @@ s = s.replace(a, "    if (true)\n", 1)'
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"
+echo "plant count: total=$PLANT_NO ran=$RAN red=$PASS"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "GATE FAILED"
   exit 1
 fi
 
+if [ "${REVIEW_UI_GATE_SKIP_FINAL_SUITE:-0}" = 1 ]; then
+  echo "GATE PASSED (shard $SHARD_SPEC) — all plants red, all reverts byte-identical"
+  exit 0
+fi
+
 # Final proof: with every plant reverted, the suite is green again.
 echo
 echo "Re-running the full client suite on the restored tree..."
-if pnpm -s exec vitest run client/src >/dev/null 2>&1; then
+if "${VITEST[@]}" run client/src >/dev/null 2>&1; then
   echo "GATE PASSED — all plants red, all reverts byte-identical, suite green"
   exit 0
 fi
