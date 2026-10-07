@@ -83,4 +83,74 @@ jobs:
       - name: Verify GCP auth (one command proof)
         run: gcloud auth list
 
-  # EXAM_CALENDAR_E2E_PLACEHOLDER
+  # The exam and calendar browser specs (owner decision 2026-10-07, CI audit item 6). They had run
+  # in no job. The REAL client (Vite dev) against the E7b exam harness: the real /api/tests,
+  # /api/calendar, /api/students and /api/guardian routers over a database built from
+  # supabase/migrations, auth stubbed to one student, one fresh database per spec. The harness is
+  # started by tests/e2e/run-exam-calendar-e2e.sh: the harness isolation gate (I1) fails on any
+  # file outside tests/ that names the harness, this one included. No secrets: Desmos is answered
+  # by the shared stand-in (E2E_DESMOS_STUB), so the real Desmos runtime (G-EX-08) is NOT proven
+  # here.
+  exam-calendar-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17   # prod major; genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Vite proxies /api to localhost:$PORT (vite.config.ts); the harness listens on 5055. A
+      # placeholder Desmos key puts the calculator path in the bundle; the specs answer
+      # calculator.js with the stand-in (E2E_DESMOS_STUB=1).
+      - name: Start the client (Vite, /api proxied to the harness on :5055)
+        run: |
+          set -euo pipefail
+          PORT=5055 VITE_SUPABASE_URL=http://localhost:9 VITE_SUPABASE_ANON_KEY=ci \
+            VITE_DESMOS_API_KEY=ci-desmos-stub-key \
+            nohup pnpm exec vite --port 5173 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -sf -o /dev/null http://localhost:5173/; then echo "Vite up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/vite.log"
+          exit 1
+
+      - name: Exam + calendar browser specs (exam-shell, exam-desmos, exam-disclosure, calendar-full-length)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          HARNESS_PORT: "5055"
+          E2E_BASE_URL: http://localhost:5173
+          E2E_DESMOS_STUB: "1"
+          E2E_SHOT_DIR: ${{ runner.temp }}/exam-shots
+        run: bash tests/e2e/run-exam-calendar-e2e.sh
