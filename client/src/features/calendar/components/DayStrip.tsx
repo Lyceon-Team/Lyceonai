@@ -24,7 +24,7 @@
  */
 import { dayOfMonth, shortWeekday } from "../lib/dates";
 
-export type DayStripProps = {
+type DayStripProps = {
   dates: readonly string[];
   selected: string;
   today: string;

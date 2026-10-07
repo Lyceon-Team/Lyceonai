@@ -36,13 +36,13 @@ import { resolveLegalVersion } from "../../server/lib/legal-registry";
 const REPO_ROOT = path.resolve(__dirname, "../..");
 
 function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
 function readCode(relative: string): string {
-  return stripComments(fs.readFileSync(path.join(REPO_ROOT, relative), "utf-8"));
+  return stripComments(
+    fs.readFileSync(path.join(REPO_ROOT, relative), "utf-8"),
+  );
 }
 
 const NOTHING: LegalAccountFacts = {
@@ -171,15 +171,26 @@ describe("O2 — the four production states", () => {
   it("the linked guardian on December versions — all three", () => {
     // The real production row: guardian, two active links, December acceptances,
     // no Parent Terms acceptance in any version.
-    expect(outstandingSlugs(DECEMBER, { hasActiveGuardianLink: true })).toEqual([
-      "student-terms",
-      "privacy-policy",
-      "parent-guardian-terms",
-    ]);
+    expect(outstandingSlugs(DECEMBER, { hasActiveGuardianLink: true })).toEqual(
+      ["student-terms", "privacy-policy", "parent-guardian-terms"],
+    );
   });
 
   it("a fully current account — nothing outstanding", () => {
     expect(outstandingSlugs(CURRENT_TWO, {})).toEqual([]);
+  });
+
+  // @spec [owner ruling 2026-10-05 (v5 rulings 1): publish Privacy Policy v5 and every user
+  //       re-accepts] | @implemented [2026-10-05]
+  // A user who accepted Privacy Policy 4.0 and is current on Student Terms owes exactly the
+  // Privacy Policy again, at the version legal/ now publishes (5.0).
+  it("accepted Privacy Policy v4 — re-asked for v5, and only for that", () => {
+    expect(CURRENT["privacy-policy"]).toBe("5.0");
+    const ACCEPTED_V4 = [
+      { doc_key: "student_terms", doc_version: CURRENT["student-terms"]! },
+      { doc_key: "privacy_policy", doc_version: "4.0" },
+    ];
+    expect(outstandingSlugs(ACCEPTED_V4, {})).toEqual(["privacy-policy"]);
   });
 
   it("a payer who is current on both Terms still owes Billing Terms", () => {
@@ -192,20 +203,20 @@ describe("O2 — the four production states", () => {
 // ── O3 ──────────────────────────────────────────────────────────────────
 
 describe("O3 — one derivation, both routes", () => {
-  it.each([
-    "server/routes/profile-routes.ts",
-    "server/routes/legal-routes.ts",
-  ])("%s derives the facts from the shared helper", (relative) => {
-    const code = readCode(relative);
-    expect(code).toContain("loadLegalAccountFacts(");
-    // Passed through, never rebuilt at the call site. A second literal
-    // `{ hasActiveGuardianLink: ..., hasEverPaid: ... }` in a route is the
-    // divergence this test exists to catch: the prompt would offer a document
-    // that re-accept refuses to write, and neither route would look wrong.
-    expect(code).not.toMatch(/hasActiveGuardianLink\s*:/);
-    expect(code).not.toMatch(/hasEverPaid\s*:/);
-    expect(code).toMatch(/requiredLegalDocsForUse\(\s*facts\s*\)/);
-  });
+  it.each(["server/routes/profile-routes.ts", "server/routes/legal-routes.ts"])(
+    "%s derives the facts from the shared helper",
+    (relative) => {
+      const code = readCode(relative);
+      expect(code).toContain("loadLegalAccountFacts(");
+      // Passed through, never rebuilt at the call site. A second literal
+      // `{ hasActiveGuardianLink: ..., hasEverPaid: ... }` in a route is the
+      // divergence this test exists to catch: the prompt would offer a document
+      // that re-accept refuses to write, and neither route would look wrong.
+      expect(code).not.toMatch(/hasActiveGuardianLink\s*:/);
+      expect(code).not.toMatch(/hasEverPaid\s*:/);
+      expect(code).toMatch(/requiredLegalDocsForUse\(\s*facts\s*\)/);
+    },
+  );
 
   it("derives the link fact through the canonical guardian_links layer", () => {
     const facts = readCode("server/lib/legal-account-facts.ts");
@@ -222,7 +233,9 @@ describe("O3 — one derivation, both routes", () => {
     const route = readCode("server/routes/legal-routes.ts");
     const reaccept = route.slice(route.indexOf('legalRouter.post("/reaccept"'));
     for (const field of ["docSlug:", "docVersion:", "contentHash:"]) {
-      const sites = [...reaccept.matchAll(new RegExp(`${field}\\s*(\\S+)`, "g"))];
+      const sites = [
+        ...reaccept.matchAll(new RegExp(`${field}\\s*(\\S+)`, "g")),
+      ];
       expect(sites.length, `re-accept has no ${field}`).toBe(1);
       for (const [, value] of sites) {
         expect(value, `re-accept passes a literal to ${field}`).not.toMatch(

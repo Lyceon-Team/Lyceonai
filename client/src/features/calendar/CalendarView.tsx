@@ -124,7 +124,7 @@ import {
  * Everything this screen can do to the server. A guardian caller passes `undefined`, which
  * is what removes every control — see the module note.
  */
-export type CalendarMutations = {
+type CalendarMutations = {
   editDay: (
     date: string,
     members: ReturnType<typeof membersWithout>,
@@ -150,7 +150,7 @@ export type EditHint =
   | { blockId: string; edited: NonNullable<ViewBlock["plan"]> }
   | { removeBlockId: string };
 
-export type CalendarViewProps = {
+type CalendarViewProps = {
   model: CalendarViewModel | null;
   /** Present only when the student has not set up. Never passed on the guardian surface. */
   setup?: {

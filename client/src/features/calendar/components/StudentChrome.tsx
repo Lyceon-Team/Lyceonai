@@ -50,7 +50,7 @@ import { ABSENT_COPY, type ToneFilter } from "./Chrome";
 
 const OUTLINE_BUTTON = `${LYC_FOCUS} inline-flex h-10 items-center justify-center rounded-md border border-lyc-input-bd bg-transparent text-lyc-body font-semibold text-lyc-ink-strong hover:bg-lyc-hover`;
 
-export type RegenerateControl = {
+type RegenerateControl = {
   onClick: () => void;
   pending: boolean;
   /** True once a regenerate has returned; the label then says so (prototype `regenLabel`). */

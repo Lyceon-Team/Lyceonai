@@ -20,8 +20,6 @@ import {
   filterChips,
   normalizeFilter,
   removeChip,
-  removeDomain,
-  removeSkill,
   selectSection,
   skillOptions,
   toggleDifficulty,
@@ -56,6 +54,26 @@ beforeAll(async () => {
 });
 
 const MATH: FilterBarValue = { ...EMPTY_FILTER, sections: ["M"] };
+
+/**
+ * Removing a domain or a skill, through the public path the bar uses: the chip `filterChips`
+ * draws for it, handed to `removeChip`. When the value is no longer chosen (a second click on a
+ * chip already gone), the same chip is handed again, so idempotence is tested on that path.
+ */
+function removeVia(
+  value: FilterBarValue,
+  kind: "domain" | "skill",
+  name: string,
+): FilterBarValue {
+  const chip = filterChips(T, value).find(
+    (c) => c.kind === kind && c.value === name,
+  ) ?? { kind, value: name, label: name };
+  return removeChip(T, value, chip);
+}
+const removeDomain = (v: FilterBarValue, domain: string): FilterBarValue =>
+  removeVia(v, "domain", domain);
+const removeSkill = (v: FilterBarValue, skill: string): FilterBarValue =>
+  removeVia(v, "skill", skill);
 
 function skillsOf(domain: string): string[] {
   const found = T.sections
@@ -168,7 +186,7 @@ describe("rule 4: removing a domain removes its skills", () => {
     v = toggleSkill(T, v, "Linear Functions");
     v = toggleSkill(T, v, "Circles");
     expect(v.skills).toEqual(["Linear Functions", "Circles"]);
-    const removed = removeDomain(T, v, "Algebra");
+    const removed = removeDomain(v, "Algebra");
     expect(removed.domains).toEqual(["Geometry and Trigonometry"]);
     expect(removed.skills).toEqual(["Circles"]);
   });
@@ -176,15 +194,13 @@ describe("rule 4: removing a domain removes its skills", () => {
   it("drops its skills even when it was the last domain", () => {
     let v = toggleDomain(T, MATH, "Algebra");
     v = toggleSkill(T, v, "Linear Functions");
-    expect(removeDomain(T, v, "Algebra")).toEqual(MATH);
+    expect(removeDomain(v, "Algebra")).toEqual(MATH);
   });
 
   it("toggling a chosen domain off is the same as removing it", () => {
     let v = toggleDomain(T, MATH, "Algebra");
     v = toggleSkill(T, v, "Linear Functions");
-    expect(toggleDomain(T, v, "Algebra")).toEqual(
-      removeDomain(T, v, "Algebra"),
-    );
+    expect(toggleDomain(T, v, "Algebra")).toEqual(removeDomain(v, "Algebra"));
   });
 });
 
@@ -254,10 +270,10 @@ describe("idempotence and determinism", () => {
     const v = busy();
     const once = selectSection(T, v, "RW");
     expect(selectSection(T, once, "RW")).toEqual(once);
-    const r1 = removeDomain(T, v, "Algebra");
-    expect(removeDomain(T, r1, "Algebra")).toEqual(r1);
-    const s1 = removeSkill(T, v, "Linear Functions");
-    expect(removeSkill(T, s1, "Linear Functions")).toEqual(s1);
+    const r1 = removeDomain(v, "Algebra");
+    expect(removeDomain(r1, "Algebra")).toEqual(r1);
+    const s1 = removeSkill(v, "Linear Functions");
+    expect(removeSkill(s1, "Linear Functions")).toEqual(s1);
     const c1 = clearAll(T, v);
     expect(clearAll(T, c1)).toEqual(c1);
     const n1 = normalizeFilter(T, v);
@@ -318,7 +334,7 @@ describe("idempotence and determinism", () => {
     const v = busy();
     const copy = structuredClone(v);
     selectSection(T, v, "RW");
-    removeDomain(T, v, "Algebra");
+    removeDomain(v, "Algebra");
     clearAll(T, v);
     expect(v).toEqual(copy);
   });

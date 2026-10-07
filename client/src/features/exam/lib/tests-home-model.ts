@@ -37,7 +37,7 @@ import { formCardStateLabel } from "./labels";
 export type ExamForm = ExamFormsResponse["forms"][number];
 
 /** The session states a student can still continue (Doc-04A §5). PaidHome reads this too. */
-export const EXAM_IN_PROGRESS_STATES: ReadonlySet<string> = new Set([
+const EXAM_IN_PROGRESS_STATES: ReadonlySet<string> = new Set([
   "created",
   "active",
   "section_break",
@@ -65,7 +65,7 @@ export function dayMonthYear(iso: string): string {
 }
 
 /** OQ-32: "In progress: Reading & Writing, Module 2" from the attempt's own `/state`. */
-export function inProgressLine(
+function inProgressLine(
   session: ExamSessionResponse | undefined,
 ): string {
   if (session === undefined) return "In progress";

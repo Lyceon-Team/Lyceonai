@@ -86,7 +86,7 @@ export type SettingsDraft = {
   planner_mode: "auto" | "custom";
 };
 
-export type SettingsSheetProps = {
+type SettingsSheetProps = {
   profile: StudyProfile;
   bounds: StudyProfileBounds;
   estimates: PlanningEstimates;
@@ -112,11 +112,11 @@ export type SettingsSheetProps = {
  * design failure, not a validation success.
  *
  * NO CHIP CAN REACH THIS ANY MORE — both rows move both halves, so the draft is always whole.
- * It stays as the guard behind that, and it is EXPORTED so a test can reach a draft the
- * interaction cannot build: an unreachable guard that nothing asserts is an unreachable guard
- * that quietly stops working.
+ * It stays as the guard behind that. The draft opens from the `profile` prop, so a test
+ * reaches a half pair the interaction cannot build by rendering the sheet over one: an
+ * unreachable guard that nothing asserts is an unreachable guard that quietly stops working.
  */
-export function examPairIncomplete(
+function examPairIncomplete(
   draft: Pick<
     SettingsDraft,
     "full_length_weekday" | "full_length_interval_weeks"

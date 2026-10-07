@@ -159,7 +159,7 @@ function MonthCell({
   );
 }
 
-export type MonthGridProps = {
+type MonthGridProps = {
   dates: readonly string[];
   cursor: string;
   dayFor: (date: string) => ViewDay | null;

@@ -37,6 +37,3 @@ const BANNER_COPY: Partial<Readonly<Record<PlanTrigger, string>>> = {
 export function bannerCopy(trigger: PlanTrigger): string | null {
   return BANNER_COPY[trigger] ?? null;
 }
-
-/** Exported for the test that pins the three §17.4 sentences. */
-export const BANNER_COPY_TABLE = BANNER_COPY;

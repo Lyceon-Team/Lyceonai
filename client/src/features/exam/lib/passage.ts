@@ -26,7 +26,7 @@ import {
   type ExamHighlight,
 } from "@lyceon/shared/exam-runtime-schema";
 
-export type PassageSegment =
+type PassageSegment =
   | { kind: "text"; start: number; end: number; text: string; highlighted: boolean }
   | { kind: "math"; start: number; end: number; source: string; highlighted: boolean }
   | { kind: "escape"; start: number; end: number; text: string; highlighted: boolean };
@@ -71,7 +71,7 @@ function passagePieces(passage: string): Piece[] {
 }
 
 /** Sorted, disjoint, adjacent ranges merged. */
-export function normalizeHighlights(
+function normalizeHighlights(
   highlights: ReadonlyArray<ExamHighlight>,
 ): ExamHighlight[] {
   const sorted = [...highlights]
@@ -136,7 +136,7 @@ export function buildPassageSegments(
  * Widens [start, end) so it never cuts an atom; null when nothing is left. Offsets
  * outside the passage are clamped to it.
  */
-export function snapRange(
+function snapRange(
   passage: string,
   start: number,
   end: number,
@@ -152,7 +152,7 @@ export function snapRange(
   return s < e ? { start: s, end: e } : null;
 }
 
-export type HighlightEdit =
+type HighlightEdit =
   | { ok: true; highlights: ExamHighlight[] }
   | { ok: false; reason: "empty" | "limit" };
 

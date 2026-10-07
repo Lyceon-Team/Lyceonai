@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { anchorClock, remainingAt, type ClockAnchor } from "../lib/countdown";
 
-export type ExamClock = {
+type ExamClock = {
   remainingMs: number;
   resync: (remainingMs: number) => void;
 };

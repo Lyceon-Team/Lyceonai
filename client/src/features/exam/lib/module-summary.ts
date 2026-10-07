@@ -28,7 +28,7 @@ export type ModuleSummary = {
   firstUnanswered: number | null;
 };
 
-export function isAnswered(answer: string | null | undefined): boolean {
+function isAnswered(answer: string | null | undefined): boolean {
   return answer !== null && answer !== undefined && answer.trim() !== "";
 }
 

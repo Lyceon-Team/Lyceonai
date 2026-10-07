@@ -70,10 +70,11 @@ import { fullLengthAdapter } from "../../../server/services/calendar/adapters/fu
 import LyceonDashboard from "./lyceon-dashboard";
 import fs from "node:fs";
 import path from "node:path";
-import {
-  FULL_LENGTH_CARD_ACTION,
-  FULL_LENGTH_CARD_LINE,
-} from "@/components/home/FullLengthCard";
+
+/** The Full-Length card's words, verbatim: the ruling's action and the page's approved subtitle. */
+const FULL_LENGTH_CARD_ACTION = "Start a full-length test";
+const FULL_LENGTH_CARD_LINE =
+  "Timed like test day: two modules per section, a break between sections, and a scored report at the end.";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
 
@@ -977,8 +978,13 @@ describe("Home's 'Start a full-length test' card (owner ruling, Karl, 2026-10-05
     }
   }
 
-  it("its words are the ruling's action and the Full-Length page's approved subtitle", () => {
-    expect(FULL_LENGTH_CARD_ACTION).toBe("Start a full-length test");
+  it("its words are the ruling's action and the Full-Length page's approved subtitle", async () => {
+    await mount("paid", { calendar: "ready" });
+    const card = await screen.findByTestId("home-full-length");
+    expect(within(card).getByTestId("home-full-length-start").textContent).toBe(
+      FULL_LENGTH_CARD_ACTION,
+    );
+    expect(within(card).getByText(FULL_LENGTH_CARD_LINE)).toBeTruthy();
     const prototype = fs.readFileSync(
       path.join(
         __dirname,

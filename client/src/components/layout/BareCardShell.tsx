@@ -32,7 +32,7 @@ import { usePublishThemeLock } from "./theme-lock";
  * specificity of a bare `p`: it beats the base rule (the utilities layer comes later) and loses
  * to any class on the paragraph itself, so a `text-lyc-meta` line keeps its own 1.45.
  */
-export const BARE_CARD_PROSE_LEADING = "[:where(&)_p]:leading-[1.55]";
+const BARE_CARD_PROSE_LEADING = "[:where(&)_p]:leading-[1.55]";
 
 export function BareCard({
   children,
