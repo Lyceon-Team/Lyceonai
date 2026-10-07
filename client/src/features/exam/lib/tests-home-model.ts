@@ -48,14 +48,17 @@ export function isExamInProgress(state: string): boolean {
   return EXAM_IN_PROGRESS_STATES.has(state);
 }
 
-/** "26 September" (prototype FullLength.dc.html). QA 2026-10-07 item 15: the one formatter. */
+/**
+ * "September 26": the one formatter's US month-and-day (OQ-66 (g), Karl, 2026-10-07; was the
+ * prototype's "26 September"). Also LISA's history day label (chat.tsx).
+ */
 export function dayMonth(iso: string): string {
-  return formatDate(iso, "day-month") ?? "";
+  return formatDate(iso, "month-day") ?? "";
 }
 
-/** "26 September 2026" (prototype Report.dc.html's top bar), through the one formatter. */
+/** "September 26, 2026" (the report's top bar), through the one formatter (OQ-66 (g)). */
 export function dayMonthYear(iso: string): string {
-  return formatDate(iso, "day-month-year") ?? "";
+  return formatDate(iso, "month-day-year") ?? "";
 }
 
 /** OQ-32: "In progress: Reading & Writing, Module 2" from the attempt's own `/state`. */

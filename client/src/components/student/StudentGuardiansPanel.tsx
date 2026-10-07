@@ -189,7 +189,7 @@ export function StudentGuardiansPanel({
                 </p>
                 <p className="m-0 text-lyc-meta-lg text-lyc-muted">
                   {/* QA 2026-10-07 item 15: the one student date formatter. */}
-                  Linked {formatDate(link.linked_at, "day-month-year") ?? ""}
+                  Linked {formatDate(link.linked_at, "month-day-year") ?? ""}
                 </p>
               </div>
               <Button

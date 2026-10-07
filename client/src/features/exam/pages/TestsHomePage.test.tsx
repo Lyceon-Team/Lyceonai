@@ -57,6 +57,7 @@ import { masteryDomainsResponseSchema } from "@lyceon/shared/mastery-levels";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { AppShell } from "@/components/layout/app-shell";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
+import { formatDate } from "@/lib/format-date";
 import { getQueryFn } from "@/lib/queryClient";
 import { resolveFeatureAccess } from "../../../../../server/lib/feature-access";
 import {
@@ -557,7 +558,7 @@ describe("paid: the test list (DESIGN.md §4)", () => {
     const card = row("Full-Length Test 1");
     await waitFor(() =>
       expect(within(card).getByTestId("exam-form-state").textContent).toBe(
-        "Completed 26 September. Score 1120.",
+        `Completed ${formatDate("2026-09-26T15:00:00Z", "month-day") ?? ""}. Score 1120.`,
       ),
     );
     const note = within(card).getByTestId("exam-disclosure");
@@ -733,7 +734,7 @@ describe("paid: the right panel", () => {
     );
     expect(rows[0]!.textContent).toBe(
       "Full-Length Test 11120" +
-        "26 September. Reading & Writing 620, Math 500",
+        "September 26. Reading & Writing 620, Math 500",
     );
     expect(within(history).getByTestId("exam-disclosure").textContent).toBe(
       FIXTURE_DISCLOSURE.summary,

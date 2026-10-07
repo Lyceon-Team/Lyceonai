@@ -131,6 +131,8 @@ FILES=(
   "client/src/components/home/HomePanel.tsx"
   "client/src/components/student-ui/filter-bar/FilterBar.tsx"
   "client/src/components/MathRenderer.tsx"
+  "client/src/features/calendar/lib/dates.ts"
+  "client/src/pages/score-report.tsx"
 )
 
 snapshot_all() {
@@ -2847,9 +2849,9 @@ s = s.replace(a, "font-lyc-sans text-[0.65rem] font-semibold", 1)'
 plant "QA15-D1" "a student date formatted by hand again" \
   "$QA15_DATE" \
   "client/src/components/student/StudentGuardiansPanel.tsx" \
-  'a = "Linked {formatDate(link.linked_at, \"day-month-year\") ?? \"\"}"
+  'a = "Linked {formatDate(link.linked_at, \"month-day-year\") ?? \"\"}"
 assert s.count(a) == 1
-s = s.replace(a, "Linked {new Date(link.linked_at).toLocaleDateString()} {formatDate(\"\", \"day-month\")}", 1)'
+s = s.replace(a, "Linked {new Date(link.linked_at).toLocaleDateString()} {formatDate(\"\", \"month-day\")}", 1)'
 
 plant "QA15-D2" "a local day shifted by the viewer's zone" \
   "$QA15_DATE" \
@@ -2857,6 +2859,61 @@ plant "QA15-D2" "a local day shifted by the viewer's zone" \
   'a = "{ date, timeZone: \"UTC\" }"
 assert s.count(a) == 1
 s = s.replace(a, "{ date, timeZone: undefined }", 1)'
+# ── OQ-66 (Karl, 2026-10-07): (g) US dates through the shared formatter; (h) the recent row's
+# explicit "Review this session" action. Each plant mutates the line its test executes.
+OQ66_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+OQ66_DATES="client/src/features/calendar/lib/dates.test.ts"
+OQ66_SCORE="client/src/pages/score-report.dates.test.tsx"
+
+plant "OQ66-G1" "the long date goes day-first again (\"7 October 2026\")" \
+  "$QA15_DATE" \
+  "client/src/lib/format-date.ts" \
+  'a = "      return `${d.month ?? \"\"} ${d.day ?? \"\"}, ${d.year ?? \"\"}`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "      return `${d.day ?? \"\"} ${d.month ?? \"\"} ${d.year ?? \"\"}`;\n", 1)'
+
+plant "OQ66-G2" "the short date goes back to the prototypes' \"Fri 25 Sep\"" \
+  "$QA15_DATE $OQ66_HOME" \
+  "client/src/lib/format-date.ts" \
+  'a = "\n  return `${d.weekday ?? \"\"}, ${d.month ?? \"\"} ${d.day ?? \"\"}`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "\n  return `${d.weekday ?? \"\"} ${d.day ?? \"\"} ${d.month ?? \"\"}`;\n", 1)'
+
+plant "OQ66-G3" "Home's weekday line goes day-first again (\"Monday, 28 September\")" \
+  "$QA15_DATE" \
+  "client/src/lib/format-date.ts" \
+  'a = "      return `${d.weekday ?? \"\"}, ${d.month ?? \"\"} ${d.day ?? \"\"}`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "      return `${d.weekday ?? \"\"}, ${d.day ?? \"\"} ${d.month ?? \"\"}`;\n", 1)'
+
+plant "OQ66-G4" "the calendar side sheet builds its own day-first date again" \
+  "$OQ66_DATES" \
+  "client/src/features/calendar/lib/dates.ts" \
+  'a = "export function longDate(date: string): string {\n  return formatDate(date, \"weekday-month-day\") ?? \"\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "export function longDate(date: string): string {\n  return `${shortWeekday(date)} ${dayOfMonth(date)} ${monthName(date)}`;\n", 1)'
+
+plant "OQ66-G5" "the score report prints its own D/M/YYYY date again" \
+  "$OQ66_SCORE" \
+  "client/src/pages/score-report.tsx" \
+  'a = "  return formatDate(localDate, \"month-day-year\") ?? localDate;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(localDate);\n  return m === null ? localDate : `${Number(m[3])}/${Number(m[2])}/${m[1]}`;\n", 1)'
+
+plant "OQ66-H1" "a recent-session row hides its action again (no \"Review this session\")" \
+  "$OQ66_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "{starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}"
+assert s.count(a) == 1
+s = s.replace(a, "{starting ? STARTING_LABEL : toReviewLine(s.open_count)}", 1)'
+
+plant "OQ66-H2" "every recent row's action has the same accessible name" \
+  "$OQ66_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "                      : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`\n"
+assert s.count(a) == 1
+s = s.replace(a, "                      : REVIEW_SESSION_LABEL\n", 1)'
+
 # ── QA-FLOWS — owner QA list (Karl, 2026-10-07), branch claude/qa-flows ──────────────────────
 # Items 4-7, 10, 14, 15 (flows, links, loading states). Each plant mutates the product line the
 # named test exercises (checked by line, CLAUDE.md "A plant must mutate the call site under test").

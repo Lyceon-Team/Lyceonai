@@ -722,7 +722,7 @@ describe("the suppressed practice test (Brief 14, owner ruling 2026-09-26)", () 
       `[data-testid="calendar-full-length-suppressed-goto-${FULL_LENGTH_SUPPRESSIONS[0]}"]`,
     );
     expect(goto).not.toBeNull();
-    expect(goto!.textContent).toBe("17 October");
+    expect(goto!.textContent).toBe("October 17");
   });
 
   it("tells the GUARDIAN, in their own copy, with nothing to press", () => {

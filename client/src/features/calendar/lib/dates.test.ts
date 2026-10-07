@@ -7,9 +7,11 @@
  * boundary is the day a local-`Date` implementation gets wrong.
  */
 import { describe, expect, it } from "vitest";
+import { formatDate } from "@/lib/format-date";
 import {
   WEEKDAY_HEADERS,
   addDays,
+  dayAndMonth,
   dayOfMonth,
   daysBetween,
   isSameMonth,
@@ -24,6 +26,7 @@ import {
   startOfMonth,
   startOfWeek,
   weekDates,
+  weekdayDayMonth,
 } from "./dates";
 
 /** Monday 2026-09-21 … Sunday 2026-09-27 — one whole week, verified against the calendar. */
@@ -301,12 +304,12 @@ describe("daysBetween", () => {
 });
 
 describe("longDate and shortDate", () => {
-  it('formats the side sheet line as "Monday 21 September"', () => {
-    expect(longDate("2026-09-21")).toBe("Monday 21 September");
+  it('formats the side sheet line in US style, "Monday, September 21" (OQ-66 (g))', () => {
+    expect(longDate("2026-09-21")).toBe("Monday, September 21");
   });
 
   it("formats a Sunday with the right weekday name", () => {
-    expect(longDate("2026-09-27")).toBe("Sunday 27 September");
+    expect(longDate("2026-09-27")).toBe("Sunday, September 27");
   });
 
   it('formats the compact line as "Mon 21 Sep"', () => {
@@ -315,8 +318,27 @@ describe("longDate and shortDate", () => {
   });
 
   it("does not zero-pad the day of the month", () => {
-    expect(longDate("2026-09-01")).toBe("Tuesday 1 September");
+    expect(longDate("2026-09-01")).toBe("Tuesday, September 1");
     expect(shortDate("2026-09-01")).toBe("Tue 1 Sep");
+  });
+});
+
+describe("the calendar's sentence dates go through the one student formatter (OQ-66 (g))", () => {
+  // shortDate and rangeLabel are the guardian calendar's rail and top bar (not student scope);
+  // the compact grid labels (numericRangeLabel's M/D, column heads, day numbers) are not
+  // sentences. Everything a student reads as a date is the formatter's output.
+  it.each(["2026-09-01", "2026-09-28", "2026-12-05", "2027-01-31"])(
+    "%s: longDate, weekdayDayMonth and dayAndMonth are formatDate's US forms",
+    (day) => {
+      expect(longDate(day)).toBe(formatDate(day, "weekday-month-day"));
+      expect(weekdayDayMonth(day)).toBe(formatDate(day, "weekday-month-day"));
+      expect(dayAndMonth(day)).toBe(formatDate(day, "month-day"));
+    },
+  );
+
+  it("the student's test-date star and cadence sentence read month first", () => {
+    expect(weekdayDayMonth("2026-12-05")).toBe("Saturday, December 5");
+    expect(dayAndMonth("2026-12-05")).toBe("December 5");
   });
 });
 

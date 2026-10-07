@@ -21,6 +21,7 @@
  */
 
 import { startOfLocalWeek } from "@lyceon/shared/calendar/time";
+import { formatDate } from "@/lib/format-date";
 
 /** UTC midnight for a local date string. Never exported: see the module note. */
 function parse(date: string): Date {
@@ -176,15 +177,6 @@ const WEEKDAYS_SHORT = [
   "Fri",
   "Sat",
 ] as const;
-const WEEKDAYS_LONG = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-] as const;
 
 /** Monday-first column headers, matching the grids. */
 export const WEEKDAY_HEADERS = [
@@ -205,28 +197,38 @@ export function monthName(date: string): string {
   return MONTHS[parse(date).getUTCMonth()] ?? "";
 }
 
-/**
- * "Monday, 28 September" — Home's date line and test-day phrase (Main.dc.html; UI-50). The
- * comma is the prototype's; `longDate` below is the calendar sheet's form without it.
+/*
+ * THE CALENDAR'S SENTENCE DATES (owner ruling OQ-66 (g), Karl, 2026-10-07: "US date format,
+ * \"Fri, Sep 25\", through the shared formatter. Re-check every date surface.")
+ * | @implemented [2026-10-07]: the three helpers below are the student formatter's US forms
+ * (`@/lib/format-date`), where they used to assemble the prototypes' day-first forms here. They
+ * keep their names because their callers (the student header's ★ test-date pill, the free
+ * calendar, the block sheets, the suppression banner, the cadence sentence) are unchanged. The
+ * guardian calendar's read-only block sheet shares `longDate` (one component for both viewers),
+ * so it reads month-first too. Not changed: the compact grid labels (`numericRangeLabel`'s
+ * `M/D – M/D`, the column heads, the day numbers, the month title "October 2026"), which are
+ * not dates in a sentence, and the guardian-only rail and top bar (`shortDate`, `rangeLabel`).
  */
+
+/** "Monday, September 28" — the student header's test-date pill and the free calendar. */
 export function weekdayDayMonth(date: string): string {
-  return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""}, ${dayAndMonth(date)}`;
+  return formatDate(date, "weekday-month-day") ?? "";
 }
 
-/** "Monday 21 September" — the side sheet's date line. */
+/** "Monday, September 21" — the block sheets' date line. */
 export function longDate(date: string): string {
-  return `${WEEKDAYS_LONG[dayOfWeek(date)] ?? ""} ${dayOfMonth(date)} ${monthName(date)}`;
+  return formatDate(date, "weekday-month-day") ?? "";
 }
 
 /**
- * "5 December" — day and month, no weekday and no year, for a date read inside a sentence
- * ("about 5 practice tests before 5 December").
+ * "December 5" — month and day, no weekday and no year, for a date read inside a sentence
+ * ("about 5 practice tests before December 5").
  *
  * Here rather than in the component that needed it first: the settings sheet had its own
  * copy, with its own month array, which is the duplication this file exists to prevent.
  */
 export function dayAndMonth(date: string): string {
-  return `${dayOfMonth(date)} ${monthName(date)}`;
+  return formatDate(date, "month-day") ?? "";
 }
 
 /** "Mon 21 Sep" — compact, for toasts and the move picker. */

@@ -28,8 +28,9 @@ Differences kept, and why:
    22px / 28px.
 6. **"Show older"** appears only when the server reports another page (more than 20 sessions);
    the seed has four, so the shot does not show it (the test does: 21 sessions, cursor page 2).
-7. **History dates** read "Today" or "24 September" as in the prototype; the shipped subject
-   prefix ("Practice ·") is dropped with the header subject.
+7. **History dates** read "Today" or, since owner ruling OQ-66 (g) (Karl, 2026-10-07: US dates
+   through the shared formatter), "September 24" where the prototype wrote "24 September"; the
+   shipped subject prefix ("Practice ·") is dropped with the header subject.
 8. **Phone**: opening a conversation scrolls the page to the newest turn, so the composer is in
    view; the right panel stacks under the composer (DESIGN.md §2 Mobile). The prototype has no
    phone layout.

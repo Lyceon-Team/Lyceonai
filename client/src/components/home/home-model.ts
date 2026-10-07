@@ -47,17 +47,17 @@ export function greetingLine(hour: number, name: string | null): string {
 }
 
 /**
- * "Monday, 28 September. 68 days until your SAT on Saturday, 5 December." The countdown is
+ * "Monday, September 28. 68 days until your SAT on Saturday, December 5." (US style, OQ-66 (g)) The countdown is
  * omitted when the profile has no test date (wiring table §3) or the date is not ahead.
  */
 export function dateLine(today: string, testDate: string | null): string {
-  // QA 2026-10-07 item 15: the one student date formatter (same "Monday, 28 September").
-  const head = `${formatDate(today, "weekday-day-month") ?? ""}.`;
+  // QA 2026-10-07 item 15 / OQ-66 (g): the one student date formatter, US style.
+  const head = `${formatDate(today, "weekday-month-day") ?? ""}.`;
   if (testDate === null) return head;
   const days = daysBetween(today, testDate);
   if (days <= 0) return head;
   const unit = days === 1 ? "day" : "days";
-  return `${head} ${days} ${unit} until your SAT on ${formatDate(testDate, "weekday-day-month") ?? ""}.`;
+  return `${head} ${days} ${unit} until your SAT on ${formatDate(testDate, "weekday-month-day") ?? ""}.`;
 }
 
 /** "A", "A and B", "A, B, and C" — the prototype's list form. */
