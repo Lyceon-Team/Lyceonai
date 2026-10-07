@@ -9,7 +9,7 @@
  *   - GET /healthz
  */
 
-import express, { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import path from "path";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
@@ -180,13 +180,18 @@ app.post(
 
 app.use(express.json({ limit: "1mb" }));
 // Body parser error handling: keep parser failures explicit and non-500.
-app.use((err: any, _req: Request, res: Response, next: any) => {
-  if (err?.type === "entity.too.large") {
+app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  // body-parser errors carry `type` (and `status`) as own properties.
+  const errType =
+    typeof err === "object" && err !== null && "type" in err
+      ? err.type
+      : undefined;
+  if (errType === "entity.too.large") {
     return res.status(413).json({ error: "Payload too large" });
   }
   if (
-    err?.type === "entity.parse.failed" ||
-    (err instanceof SyntaxError && (err as any).status === 400)
+    errType === "entity.parse.failed" ||
+    (err instanceof SyntaxError && "status" in err && err.status === 400)
   ) {
     return res.status(400).json({ error: "Invalid JSON payload" });
   }
@@ -630,12 +635,17 @@ if (process.env.NODE_ENV === "production") {
     "SUPABASE_ANON_KEY",
     "GEMINI_API_KEY",
     "CSRF_SECRET",
-  ];
+  ] as const satisfies ReadonlyArray<keyof typeof env>;
 
-  const missingVars = criticalEnvVars.filter((k) => !(env as any)[k]);
+  const missingVars = criticalEnvVars.filter((k) => !env[k]);
   if (missingVars.length > 0) {
-    console.error(
-      `[WARN] Missing env vars: ${missingVars.join(", ")} - some features may not work`,
+    // Variable NAMES only, never values. Severity kept at error (it was console.error).
+    logger.error(
+      "STARTUP",
+      "env_missing",
+      "Missing env vars - some features may not work",
+      undefined,
+      { missing: missingVars },
     );
   }
 }
@@ -711,59 +721,49 @@ if (isMainModule) {
     isProductionDeployment: isProductionDeployment(),
   });
   if (siteUrlVerdict.kind === "fatal") {
-    for (const line of siteUrlVerdict.lines) console.error(line);
+    for (const line of siteUrlVerdict.lines) {
+      logger.error("STARTUP", "site_url_fatal", line, undefined, {
+        reason: siteUrlVerdict.reason,
+      });
+    }
     process.exit(1);
   }
-  // Warning lines keep their stream: the previous inline version emitted them
-  // via console.warn, and a startup warning demoted to stdout is a startup
+  // Warning lines keep their severity: the previous inline version emitted them
+  // via console.warn, and a startup warning demoted to info is a startup
   // warning nobody greps for.
   for (const line of siteUrlVerdict.lines) {
-    if (line.startsWith("⚠️")) console.warn(line);
-    else console.log(line);
+    if (line.startsWith("⚠️")) logger.warn("STARTUP", "site_url", line);
+    else logger.info("STARTUP", "site_url", line);
   }
 
-  console.log(`[API] Starting Lyceon API server...`);
-  console.log(`[API] NODE_ENV: ${process.env.NODE_ENV || "development"}`);
-  console.log(`[API] Binding to 0.0.0.0:${PORT}`);
+  logger.info("STARTUP", "server_starting", "Starting Lyceon API server", {
+    nodeEnv: process.env.NODE_ENV || "development",
+    host: "0.0.0.0",
+    port: PORT,
+  });
 
   // Initialize Stripe before starting server (non-blocking)
   // TODO: Restore when initStripe is implemented
   // initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
 
   const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
-    console.log(`\n📋 Core API endpoints:`);
-    console.log(`  GET    /healthz`);
-    console.log(`  POST   /api/tutor/conversations (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/messages (requires Supabase auth)`);
-    console.log(
-      `  GET    /api/tutor/conversations/:conversationId (requires Supabase auth)`,
-    );
-    console.log(`  GET    /api/tutor/conversations (requires Supabase auth)`);
-    console.log(
-      `  POST   /api/tutor/conversations/:conversationId/close (requires Supabase auth)`,
-    );
-    console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
-    console.log(`  POST   /api/auth/signup`);
-    console.log(`  POST   /api/auth/signin`);
-    console.log(`  POST   /api/auth/signout`);
-    console.log(`\n📚 Practice (requires Supabase auth):`);
-    console.log(`  POST   /api/practice/sessions`);
-    console.log(`  POST   /api/practice/sessions/:sessionId/terminate`);
-    console.log(`  GET    /api/practice/sessions/:sessionId/next`);
-    console.log(`  GET    /api/practice/sessions/:sessionId/state`);
-    console.log(`  POST   /api/practice/answer`);
-    console.log(`  GET    /api/practice/reference/questions`);
+    // The hand-maintained endpoint banner that used to follow this line listed
+    // a dozen routes out of the ~100 mounted above and had drifted from them;
+    // the route registry, not a boot log, is the source of truth for routes.
+    logger.info("STARTUP", "server_listening", "Server listening", {
+      host: "0.0.0.0",
+      port: PORT,
+    });
   });
 
   // Graceful shutdown
   process.on("SIGTERM", () => {
-    console.log("[API] SIGTERM received. Shutting down.");
+    logger.systemShutdown("API", "SIGTERM");
     server.close(() => process.exit(0));
   });
 
   process.on("SIGINT", () => {
-    console.log("[API] SIGINT received. Shutting down.");
+    logger.systemShutdown("API", "SIGINT");
     server.close(() => process.exit(0));
   });
 }

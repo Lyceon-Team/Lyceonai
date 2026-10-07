@@ -18,7 +18,10 @@
  *   LISA-AUDIT-003 (HIGH): retention-sweep returns ok:true when memory-summary
  *     purge fails → now returns ok:false with reason string.
  *
- * Karl's proof requirements (printed runtime values, not descriptions):
+ * Karl's proof requirements (runtime values, not descriptions). These were PRINTED
+ * to stdout for the original audit; the prints were removed 2026-10-07 (eslint
+ * zero, owner decision) because they wrote the full tutor systemInstruction into
+ * every CI log (Coding Standards §12.1). The assertions below carry each proof:
  *   1. Full systemInstruction for PRE-SUBMIT on active question — explanation PRESENT
  *   2. Full systemInstruction for pre-submit with unanswered same-skill item —
  *      that item's explanation ABSENT
@@ -176,13 +179,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-    // ── PRINT: full systemInstruction for PRE-SUBMIT on active question ──
-    console.log(
-      "=== PROOF-1: PRE-SUBMIT active question — full systemInstruction ===",
-    );
-    console.log(systemInstruction);
-    console.log("=== END PROOF-1 ===");
-
     // W3-10 / SCL-144: the explanation MUST NOT reach the model pre-submit —
     // possession is the control, not a directive.
     expect(systemInstruction).not.toContain("[AUTHORED EXPLANATION");
@@ -230,13 +226,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-    // ── PRINT: full systemInstruction for pre-submit with null explanation ──
-    console.log(
-      "=== PROOF-2: PRE-SUBMIT unanswered same-skill — full systemInstruction ===",
-    );
-    console.log(systemInstruction);
-    console.log("=== END PROOF-2 ===");
-
     // No authored explanation block when explanation is null
     expect(systemInstruction).not.toContain(
       "[AUTHORED EXPLANATION — INTERNAL USE ONLY]",
@@ -272,11 +261,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
     });
 
     const systemInstruction = buildSystemInstruction(envelope);
-
-    // ── PRINT: full systemInstruction for POST-SUBMIT ──
-    console.log("=== PROOF-3: POST-SUBMIT — full systemInstruction ===");
-    console.log(systemInstruction);
-    console.log("=== END PROOF-3 ===");
 
     // Correct answer present
     expect(systemInstruction).toContain("Correct answer: B.");
@@ -316,17 +300,6 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       },
     });
 
-    // Print the values side-by-side
-    console.log("=== PROOF-4: POLICY SIDE-BY-SIDE ===");
-    console.log(
-      "Audit row (tutor_instruction_assignments):",
-      "policy_family=instructional_tutor, policy_variant=scaffolded",
-    );
-    console.log(
-      "Envelope sent to worker:",
-      `policy_family=${envelope.policy_assignment.policy_family}, policy_variant=${envelope.policy_assignment.policy_variant}`,
-    );
-
     // 1. The envelope values match the audit row (the fix)
     expect(envelope.policy_assignment.policy_family).toBe(
       "instructional_tutor",
@@ -340,27 +313,21 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       policyVariant: "scaffolded",
       proBudgetCircuitBreakerTripped: false,
     });
-    console.log("Model routing for scaffolded:", modelAlias);
     expect(modelAlias).toBe("pro_class");
 
     // 3. Prompt registry: scaffolded resolves to a known artifact (not fallback)
     const artifact = resolvePromptArtifact("scaffolded", null);
-    console.log("Prompt artifact version for scaffolded:", artifact.version);
     expect(artifact.version).toBe("lisa-default-v2");
-    console.log("=== END PROOF-4 ===");
   });
 
   it("all four spec variants resolve in the prompt registry (no fallback warning)", () => {
     const variants = ["scaffolded", "socratic", "concise", "strategy_first"];
 
-    console.log("=== AUDIT-002 VARIANT REGISTRY ===");
     for (const variant of variants) {
       const artifact = resolvePromptArtifact(variant, null);
-      console.log(`  ${variant} → ${artifact.version}`);
       // Each variant must resolve without falling back to the unknown-variant path
       expect(artifact.version).toBe("lisa-default-v2");
     }
-    console.log("=== END ===");
   });
 
   it("the stale value 'standard' would have fallen through to flash_class (the bug)", () => {
@@ -372,11 +339,6 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       policyVariant: "standard",
       proBudgetCircuitBreakerTripped: false,
     });
-
-    console.log("=== AUDIT-002 BUG DEMONSTRATION ===");
-    console.log("Model routing for stale 'standard':", modelAlias);
-    console.log("Expected per spec (scaffolded → pro_class), got:", modelAlias);
-    console.log("=== END ===");
 
     // 'standard' falls through to flash_class — this was the bug
     expect(modelAlias).toBe("flash_class");

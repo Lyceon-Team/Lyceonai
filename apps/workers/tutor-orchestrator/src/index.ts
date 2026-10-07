@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import type { Request, Response } from "express";
 import { createWorkerBoundaryAuthMiddleware } from "./lib/boundary-auth.js";
+import { logEvent } from "./lib/vertex-client.js";
 import { compactRouter } from "./routes/compact.js";
 import { orchestrateRouter } from "./routes/orchestrate.js";
 
@@ -19,5 +20,5 @@ app.use("/orchestrate", boundaryAuth, orchestrateRouter);
 app.use("/compact", boundaryAuth, compactRouter);
 
 app.listen(port, () => {
-  console.log(`Tutor orchestrator listening on port ${port}`);
+  logEvent("info", "SERVER", "listening", "Tutor orchestrator listening", { port });
 });
