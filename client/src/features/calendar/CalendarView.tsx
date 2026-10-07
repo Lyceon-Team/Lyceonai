@@ -615,6 +615,9 @@ export function CalendarView({
           open
           onClose={() => setOpenBlockId(null)}
           {...(sheetActions === undefined ? {} : { actions: sheetActions })}
+          // QA 2026-10-07 item 11(b): the student's sheet is a modal dialog (Close, Esc,
+          // focus in and back). The guardian's sheet is unchanged (guardian vertical).
+          modal={viewer === "student"}
         />
       )}
 

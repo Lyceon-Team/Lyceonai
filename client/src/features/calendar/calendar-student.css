@@ -654,8 +654,29 @@
   transform: none;
 }
 .lyceon-calendar.lyc-cal .sheet header {
+  position: relative;
   padding: 17px 20px 13px;
   border-bottom: 1px solid var(--rule);
+}
+/* QA 2026-10-07 item 11(b): the block sheet's Close (top right, a 40px target). The title keeps
+   clear of it. */
+.lyceon-calendar.lyc-cal .sheet .sheet-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--ink-strong);
+}
+.lyceon-calendar.lyc-cal .sheet .sheet-close:hover {
+  background: var(--hover);
+}
+.lyceon-calendar.lyc-cal .sheet .sheet-close ~ h3 {
+  padding-right: 40px;
 }
 .lyceon-calendar.lyc-cal .sheet .kind {
   display: inline-flex;

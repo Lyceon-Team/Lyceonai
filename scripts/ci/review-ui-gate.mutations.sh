@@ -101,6 +101,7 @@ FILES=(
   "client/src/features/exam/components/ExamStatus.tsx"
   "client/src/features/calendar/components/FullLengthFields.tsx"
   "packages/shared/src/exam-form-display.ts"
+  "client/src/features/calendar/components/BlockSheet.tsx"
 )
 
 snapshot_all() {
@@ -2259,6 +2260,58 @@ plant "QA11-A2" "week view no longer reads the month ahead (the toggle draws the
   'a = "              : [rangeForView(\"month\", monthCursorForWeek(cursor, today))]),"
 assert s.count(a) == 1
 s = s.replace(a, "              : []),", 1)'
+
+# (b) the student's block sheet is a modal dialog: role, name, Close, Esc, focus in and back, Tab
+# kept inside; the guardian's sheet (no `modal`) is unchanged.
+
+plant "QA11-B1" "the student's block sheet loses its dialog role" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "              role: \"dialog\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B2" "Esc no longer closes the block sheet" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "{ enabled: modal && open }"
+assert s.count(a) == 1
+s = s.replace(a, "{ enabled: false }", 1)'
+
+plant "QA11-B3" "opening the block sheet leaves focus behind it" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "    closeRef.current?.focus();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B4" "closing the block sheet drops focus instead of returning it to the block" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "      if (opener !== null && opener.isConnected) opener.focus();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B5" "the block sheet has no Close button" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "          {modal ? (\n            <button\n              ref={closeRef}"
+assert s.count(a) == 1
+s = s.replace(a, "          {false ? (\n            <button\n              ref={closeRef}", 1)'
+
+plant "QA11-B6" "the student calendar opens the non-modal sheet" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "          modal={viewer === \"student\"}"
+assert s.count(a) == 1
+s = s.replace(a, "          modal={false}", 1)'
+
+plant "QA11-B7" "the guardian's block sheet turns into the student's modal" \
+  "client/src/features/calendar/components/BlockSheet.test.tsx" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "  modal = false,\n"
+assert s.count(a) == 1
+s = s.replace(a, "  modal = true,\n", 1)'
 
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \

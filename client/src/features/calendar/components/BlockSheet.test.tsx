@@ -224,3 +224,17 @@ describe("§16 — a guardian gets no control at any date", () => {
     expect(screen.getByText(/Only the student can change it/)).not.toBeNull();
   });
 });
+
+describe("QA 2026-10-07 item 11(b) — the modal dialog is the student's; the guardian's sheet is unchanged", () => {
+  it("without `modal` (the guardian page) the sheet is the labelled aside it was: no dialog role, no Close", () => {
+    open(TODAY, {}, null);
+    const sheet = screen.getByTestId("calendar-block-sheet");
+    // Presence: the sheet drew its title.
+    expect(sheet.querySelector("h3")?.textContent).toBe("Math · 20 questions");
+    expect(sheet.getAttribute("aria-label")).toBe("Block details");
+    expect(sheet.getAttribute("role")).toBeNull();
+    expect(sheet.getAttribute("aria-modal")).toBeNull();
+    expect(sheet.querySelector("h3")?.id).toBe("");
+    expect(screen.queryByTestId("calendar-block-sheet-close")).toBeNull();
+  });
+});

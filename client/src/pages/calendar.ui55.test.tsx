@@ -963,6 +963,91 @@ describe("free: the plan upsell card", () => {
   });
 });
 
+// ── QA 2026-10-07 item 11(b): the block sheet is a modal dialog ───────────────────────────
+
+describe("paid: the block sheet is a modal dialog (QA 2026-10-07 item 11(b))", () => {
+  /** Open a block's sheet from the week grid by pressing its card, as a keyboard user would. */
+  async function openSheet(blockId: string): Promise<{
+    card: HTMLElement;
+    sheet: HTMLElement;
+  }> {
+    const card = await screen.findByTestId(`calendar-block-${blockId}`);
+    card.focus();
+    fireEvent.click(card);
+    const sheet = await screen.findByTestId("calendar-block-sheet");
+    return { card, sheet };
+  }
+
+  it("is a dialog named by its title, with focus moved into it on Close", async () => {
+    await mount("paid");
+    const { card, sheet } = await openSheet(PRACTICE_BLOCK);
+    expect(sheet.getAttribute("role")).toBe("dialog");
+    expect(sheet.getAttribute("aria-modal")).toBe("true");
+    const title = sheet.querySelector("h3");
+    // Presence: the title is the block's.
+    expect(title?.textContent).toBeTruthy();
+    expect(card.getAttribute("aria-label")).toContain(title?.textContent);
+    expect(sheet.getAttribute("aria-labelledby")).toBe(title?.id);
+    expect(screen.getByRole("dialog", { name: title?.textContent ?? "" })).toBe(
+      sheet,
+    );
+    const close = within(sheet).getByRole("button", { name: "Close" });
+    expect(document.activeElement).toBe(close);
+  });
+
+  it("Esc closes it and focus returns to the block that opened it", async () => {
+    await mount("paid");
+    const { card } = await openSheet(PRACTICE_BLOCK);
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    expect(screen.queryByTestId("calendar-block-sheet")).toBeNull();
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("Close closes it and focus returns to the block that opened it", async () => {
+    await mount("paid");
+    const { card, sheet } = await openSheet(PRACTICE_BLOCK);
+    fireEvent.click(within(sheet).getByRole("button", { name: "Close" }));
+    expect(screen.queryByTestId("calendar-block-sheet")).toBeNull();
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("Tab and Shift+Tab stay inside it", async () => {
+    await mount("paid");
+    const { sheet } = await openSheet(PRACTICE_BLOCK);
+    const close = within(sheet).getByRole("button", { name: "Close" });
+    const start = within(sheet).getByRole("button", { name: "Start" });
+    const tabbable = Array.from(
+      sheet.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href]",
+      ),
+    );
+    const last = tabbable[tabbable.length - 1];
+    // Presence: more than one control, Close first.
+    expect(tabbable.length).toBeGreaterThan(1);
+    expect(tabbable[0]).toBe(close);
+    expect(tabbable).toContain(start);
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    last?.focus();
+    fireEvent.keyDown(last ?? sheet, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
+  });
+
+  it("on a phone, Esc with the pre-start notice open closes the notice and leaves the sheet", async () => {
+    await mount("paid", {}, { phone: true });
+    await startBlock(FULL_LENGTH_BLOCK);
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    fireEvent.keyDown(notice, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByTestId("full-length-phone-notice")).toBeNull(),
+    );
+    expect(screen.getByTestId("calendar-block-sheet")).toBeTruthy();
+    expect(launches()).toEqual([]);
+  });
+});
+
 // ── OQ-63: the shared full-length pre-start check from a calendar block ──────────────────
 
 describe("phone: a full-length block's Start asks the shared pre-start check first (OQ-63)", () => {
