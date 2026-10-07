@@ -11,7 +11,8 @@
  *
  * plain English: what replaced the calendar's own dark rail and three-zone top bar for the
  * STUDENT. The header carries Week/Month, Today and the arrows on the left, the visible range
- * centred (`M/D – M/D`), and Edit schedule and Regenerate plan on the right. The right panel
+ * centred (`M/D – M/D`), and Edit schedule and Regenerate plan on the right (below a 1200px
+ * viewport, in a "⋯" menu: OQ-66 (c), `MoreActionsMenu`). The right panel
  * carries the navigable mini month, the goal card (days until the SAT with a ★ date pill,
  * Target and Projected side by side, Target only on the free plan, and Edit goals) and the
  * Show category filters. The guardian calendar keeps `LeftRail` and `TopBar` (`Chrome.tsx`)
@@ -35,8 +36,17 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "wouter";
+import { MoreHorizontal } from "lucide-react";
 import type { SectionProjectionDto } from "@lyceon/shared";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { STUDENT_MENU_ITEM_CLASS } from "@/components/layout/HeaderUserMenu";
+import { useActiveThemeLock } from "@/components/layout/theme-lock";
 import type { BlockTone } from "../lib/blocks";
 import {
   addDays,
@@ -81,11 +91,13 @@ export function StudentCalendarHeader({
   /** `POST /api/calendar/plan/regenerate`. Absent before setup (there is no plan). */
   regenerate?: RegenerateControl;
 }): JSX.Element {
+  const hasActions = onEditSchedule !== undefined || regenerate !== undefined;
   return (
     // Laid out by `calendar-student.css` (`.lyc-cal-head`) against the calendar column's own
-    // width, not the viewport's: see the note there (QA 2026-10-07 item 11(d)).
+    // width, not the viewport's: see the note there (QA 2026-10-07 item 11(d)). `--actions`:
+    // below a 1200px viewport its "⋯" rides on the title's row (OQ-66 (c)).
     <header
-      className="lyc-cal-head border-b border-lyc-rule"
+      className={`lyc-cal-head${hasActions ? " lyc-cal-head--actions" : ""} border-b border-lyc-rule`}
       data-testid="calendar-header"
     >
       <div
@@ -151,15 +163,17 @@ export function StudentCalendarHeader({
         </h1>
       </div>
 
-      {onEditSchedule === undefined && regenerate === undefined ? (
+      {!hasActions ? (
         <div aria-hidden="true" className="lyc-cal-head__spacer" />
       ) : (
         <div className="lyc-cal-head__group lyc-cal-head__actions">
+          {/* At 1200px and up: the two buttons. Below: the "⋯" menu (OQ-66 (c); the CSS
+              shows exactly one of the two, see `.lyc-cal-head__wide` / `__more`). */}
           {onEditSchedule === undefined ? null : (
             <Button
               type="button"
               variant="lyc-outline"
-              className="h-10"
+              className="lyc-cal-head__wide h-10"
               onClick={onEditSchedule}
               data-testid="topbar-edit-schedule"
             >
@@ -170,20 +184,109 @@ export function StudentCalendarHeader({
             <Button
               type="button"
               variant="lyc-outline"
-              className="h-10"
+              className="lyc-cal-head__wide h-10"
               onClick={regenerate.onClick}
               disabled={regenerate.pending}
               aria-busy={regenerate.pending || undefined}
               data-testid="calendar-regenerate"
             >
-              {regenerate.done && !regenerate.pending
-                ? "Plan regenerated"
-                : "Regenerate plan"}
+              {regenerateLabel(regenerate)}
             </Button>
           )}
+          <MoreActionsMenu
+            {...(onEditSchedule === undefined ? {} : { onEditSchedule })}
+            {...(regenerate === undefined ? {} : { regenerate })}
+          />
         </div>
       )}
     </header>
+  );
+}
+
+/** The prototype's `regenLabel`: says so once a regenerate has returned. */
+function regenerateLabel(regenerate: RegenerateControl): string {
+  return regenerate.done && !regenerate.pending
+    ? "Plan regenerated"
+    : "Regenerate plan";
+}
+
+/**
+ * @spec [owner ruling (Karl, 2026-10-07, OQ-66 (c)): "the calendar header is at most two rows
+ *        at 1024px. Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu.";
+ *        DESIGN.md §4 Calendar; student-UI register §8 F-70 (a portalled menu follows the
+ *        page theme)] | @implemented [2026-10-07]
+ *
+ * plain English: below 1200px of VIEWPORT the header's two actions live in this "⋯" menu, so
+ * the header is the range title over one row of controls (two rows at 1024, where the column
+ * beside the right panel is 588px, and on a phone, where it was three). Its items call the
+ * very handlers the buttons do: Edit schedule opens the same sheet, Regenerate plan posts the
+ * same request and is disabled (aria-busy) while it runs and reads "Plan regenerated" after,
+ * as the button does. The menu is the canonical `DropdownMenu` (Radix: Tab reaches the
+ * trigger, Enter/Space/ArrowDown open it, arrows move between items, Esc closes it and returns
+ * focus to the trigger), drawn like the student avatar menu (`tone="student"`, F-70): portalled
+ * inside a `.lyc` root carrying the shell's theme lock, with the student tokens.
+ *
+ * WHY THE VIEWPORT, NOT THE COLUMN. The rest of the header switches on the column's width (a
+ * size container, QA item 11(d)), but the ruling is phrased in viewport terms, and the two
+ * differ exactly where it matters: below 1024px the right panel stacks under the page, so the
+ * column widens back to the full viewport. Keyed on the column (~764px at a 1200px viewport),
+ * the buttons would come back on an 800–1199px tablet, which "below ~1200px" rules out.
+ * edge cases: the trigger renders only where at least one action exists (paid, after setup);
+ * an absent action has no item. Both the buttons and the trigger are in the DOM and the CSS
+ * hides one with `display: none`, so exactly one entry point is reachable at any width.
+ */
+function MoreActionsMenu({
+  onEditSchedule,
+  regenerate,
+}: {
+  onEditSchedule?: () => void;
+  regenerate?: RegenerateControl;
+}): JSX.Element {
+  // F-65 / F-70: the portal takes the lock of the shell on screen (layout/theme-lock.tsx).
+  const themeLock = useActiveThemeLock();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="lyc-outline"
+          size="icon"
+          className="lyc-cal-head__more"
+          aria-label="More actions"
+          data-testid="calendar-more-actions"
+        >
+          <MoreHorizontal aria-hidden="true" className="h-5 w-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-56 border-lyc-rule bg-lyc-sheet text-lyc-ink"
+        portalClassName="lyc contents"
+        portalThemeLock={themeLock}
+        data-testid="calendar-more-menu"
+      >
+        {onEditSchedule === undefined ? null : (
+          <DropdownMenuItem
+            className={`${STUDENT_MENU_ITEM_CLASS} text-lyc-body`}
+            onSelect={onEditSchedule}
+            data-testid="calendar-more-edit-schedule"
+          >
+            Edit schedule
+          </DropdownMenuItem>
+        )}
+        {regenerate === undefined ? null : (
+          <DropdownMenuItem
+            className={`${STUDENT_MENU_ITEM_CLASS} text-lyc-body`}
+            onSelect={regenerate.onClick}
+            disabled={regenerate.pending}
+            aria-busy={regenerate.pending || undefined}
+            data-testid="calendar-more-regenerate"
+          >
+            {regenerateLabel(regenerate)}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

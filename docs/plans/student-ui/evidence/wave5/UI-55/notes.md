@@ -87,3 +87,16 @@ in all). Before/after pairs for each sub-item are in `../../qa-2026-10-07/11a` �
   row from 920px) and block cards whose text stays inside them.
 - (e) the right panel without "Your schedule"; (f) no "+ Add block" under the test-day card;
   (g) the projected range on one line (`paid-week`, `paid-week-full`).
+
+OQ-66 (c), owner ruling (Karl, 2026-10-07): "the calendar header is at most two rows at 1024px.
+Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu." Re-captured after the
+change (56 rows, 0px horizontal overflow in all). Before/after pairs are in
+`../../qa-2026-10-07/oq66-c-calendar-header/`.
+- Below a 1200px viewport the two buttons are in a "⋯" menu ("More actions"): at 1024
+  (`paid-week-mid--w1024`) and 390 (`paid-week--mobile`) the header is two rows, the range title
+  with "⋯" at its right end over the view controls (it was three); at 700 the title over the
+  controls with "⋯" at the right. At 1280 and 1440 the buttons, unchanged.
+- New shot `paid-more-menu`: the menu open at 1024 (extra viewport) and 390, light and dark, in
+  the page's theme; at 1440 (control) no "⋯", the two buttons.
+- `paid-regenerate` at 390 now chooses Regenerate plan from the menu and reopens it: the item
+  reads "Plan regenerated".

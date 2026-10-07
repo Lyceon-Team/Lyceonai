@@ -573,6 +573,50 @@ describe("paid: Regenerate plan", () => {
   });
 });
 
+/**
+ * OQ-66 (c), owner ruling (Karl, 2026-10-07): below a 1200px viewport Edit schedule and
+ * Regenerate plan live in the header's "⋯" menu. jsdom draws both entry points (the CSS picks
+ * one by width; the browser spec measures that), so this drives the MENU on the real page and
+ * asserts it does what the buttons do: the same sheet, the same request.
+ */
+describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
+  async function openMore(): Promise<void> {
+    const more = await screen.findByRole("button", { name: "More actions" });
+    more.focus();
+    fireEvent.keyDown(more, { key: "Enter" });
+    await screen.findByRole("menu");
+  }
+
+  it("Edit schedule opens the schedule sheet, as the button does", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    expect(screen.queryByTestId("calendar-settings-sheet")).toBeNull();
+    await openMore();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
+    expect(await screen.findByTestId("calendar-settings-sheet")).toBeTruthy();
+  });
+
+  it("Regenerate plan posts to /api/calendar/plan/regenerate with a fresh key, then reads Plan regenerated", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    await openMore();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Regenerate plan" }));
+    await waitFor(() =>
+      expect(sent("POST", "/api/calendar/plan/regenerate")).toHaveLength(1),
+    );
+    const [first] = sent("POST", "/api/calendar/plan/regenerate") as {
+      idempotency_key: string;
+    }[];
+    expect(first?.idempotency_key).toMatch(UUID);
+    // The button and the item share the state: both say so once it has returned.
+    await screen.findByRole("button", { name: "Plan regenerated" });
+    await openMore();
+    expect(
+      screen.getByRole("menuitem", { name: "Plan regenerated" }),
+    ).toBeTruthy();
+  });
+});
+
 describe("paid: no streak line and no facts strip (SCL-211, OQ-56)", () => {
   it("the week draws; neither the streak line nor the facts strip does, and no streak is read", async () => {
     await mount("paid");
