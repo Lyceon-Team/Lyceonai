@@ -46,7 +46,17 @@
 /** Characters that, as the last significant char, mean a following `/` divides. */
 const DIVIDES_AFTER = /[A-Za-z0-9_$)\]}]/;
 
-export function stripComments(source: string): string {
+export type StripCommentsOptions = {
+  /**
+   * Keep each newline a block comment spanned, so line N of the output is line N of the
+   * source. Callers that report findings by line number need it; the default (false) keeps
+   * the original single-space behaviour for every existing caller.
+   */
+  keepLines?: boolean;
+};
+
+export function stripComments(source: string, options: StripCommentsOptions = {}): string {
+  const keepLines = options.keepLines === true;
   let out = "";
   let i = 0;
   let lastSignificant = "";
@@ -66,10 +76,12 @@ export function stripComments(source: string): string {
 
     // Block comment
     if (c === "/" && next === "*") {
+      const start = i;
       i += 2;
       while (i < n && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
       i += 2;
       out += " ";
+      if (keepLines) out += "\n".repeat(source.slice(start, i).split("\n").length - 1);
       continue;
     }
 
