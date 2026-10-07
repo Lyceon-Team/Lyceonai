@@ -19,6 +19,8 @@
 #       "validation that iterates over parsed results cannot detect a parse
 #       failure" — zero entries and zero violations are indistinguishable unless
 #       something counts the SOURCE.
+#  G6b  an EXPLICIT `entries: []` passes (G6 still refuses the bare form)
+#  G6c  `entries: []` together with an entry block is rejected
 #   G7  an orphan field with no `- id:` opener is a parse ERROR, not a skip.
 #   G8  a count above the declared ceiling turns the gate red — an accepted gap
 #       may sit at a size, it may not grow quietly.
@@ -172,6 +174,30 @@ if [ "$RC" -eq 0 ]; then
        must never be indistinguishable — that is the whole defect class."
 else
   pass G6 "a zero-entry accept-list is rejected"
+fi
+
+# ── G6b — an EXPLICIT `entries: []` passes (2026-10-07, eslint-legacy-tree resolved) ──
+# The one zero-entry shape that is a statement rather than a symptom: a person wrote
+# `[]`. G6 above proves the bare form is still refused, so this cannot mask a parse
+# failure; G6c proves the explicit form cannot be combined with a block.
+printf 'entries: []\n' > "$TMP/explicit-empty.yaml"
+OUT="$(run_gate "$TMP/explicit-empty.yaml")"; RC=$?
+if [ "$RC" -eq 0 ] && echo "$OUT" | grep -q "KNOWN-GAPS GATE: PASS"; then
+  pass G6b "an explicitly empty accept-list (entries: []) passes"
+else
+  fail G6b "entries: [] was refused (rc=$RC):
+$OUT"
+fi
+
+# ── G6c — `entries: []` alongside a `- id:` block is a contradiction ────────
+write_entry "$TMP/contradiction.yaml" "    expires: 2099-01-01"
+sed -i 's/^entries:$/entries: []/' "$TMP/contradiction.yaml"
+OUT="$(run_gate "$TMP/contradiction.yaml")"; RC=$?
+if [ "$RC" -ne 0 ] && echo "$OUT" | grep -q "cannot be both empty and non-empty"; then
+  pass G6c "entries: [] with an entry block is rejected"
+else
+  fail G6c "entries: [] plus a block was accepted (rc=$RC):
+$OUT"
 fi
 
 # ── G7 — an orphan field with no `- id:` opener is a parse error ────────────

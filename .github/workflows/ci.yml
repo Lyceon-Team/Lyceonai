@@ -141,6 +141,9 @@ jobs:
       - name: Shared package — lint (blocking)
         run: pnpm run lint:shared
 
+      - name: Lint — whole repository (blocking)
+        run: pnpm run lint
+
       # Codex audit of #1073 + #1108 + #1113, finding 1 (HIGH), accepted by Karl 2026-10-05:
       # no console.* in shipped client code. `pnpm lint` already sets no-console to error but
       # runs in the advisory ci-known-gaps job; this step is the blocking one. One rule only,
@@ -454,16 +457,6 @@ jobs:
             if (bad) { console.error('High/Critical vulnerabilities found.'); process.exit(1); }
             console.log('No High/Critical vulnerabilities found.');
           "
-
-      # ACCEPTED under ci/known-gaps.yaml -> eslint-legacy-tree, owner karl,
-      # expires 2026-11-01. 2,368 problems; 96% are three rules, and 449 of those
-      # (no-undef on a TypeScript tree) are a config defect rather than findings.
-      # The standing rule — every wave lint-cleans the files it touches — is
-      # recorded as the re-arm criterion in the entry, where it expires.
-      # packages/shared lints BLOCKING in the required `ci` job.
-      - name: ESLint (legacy tree) — accepted, expires 2026-11-01
-        continue-on-error: true
-        run: pnpm run lint
 
       - name: Summary
         run: |
