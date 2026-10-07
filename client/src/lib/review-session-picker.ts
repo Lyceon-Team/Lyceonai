@@ -6,7 +6,7 @@
  *
  * plain English: turns R3's `sessions[]` facts into the two lines the picker shows —
  * "Practice, 2:40 PM" (UI-52) and "Math · Algebra" — and groups the rows under "Today",
- * "Yesterday" or "Thu, Sep 17". Expected outcome: a student sees their own days, in
+ * "Yesterday" or "Thu 17 Sep". Expected outcome: a student sees their own days, in
  * their own clock, without the server ever storing a display string.
  *
  * WHY EVERY FUNCTION HERE IS PURE AND TAKES `today` AS AN ARGUMENT. "Today" is the one
@@ -32,6 +32,7 @@
  */
 
 import { displayFormName } from "@lyceon/shared/exam-form-display";
+import { formatDate } from "@/lib/format-date";
 
 /** `YYYY-MM-DD` in the given IANA zone. `en-CA` is the locale that formats that way. */
 export function localDateKey(date: Date, timeZone: string | null): string {
@@ -61,7 +62,7 @@ function previousDayKey(key: string): string | null {
 }
 
 /**
- * "Today", "Yesterday", or "Thu, Sep 17". `todayKey` is the caller's local date, which
+ * "Today", "Yesterday", or "Thu 17 Sep". `todayKey` is the caller's local date, which
  * is why this never reads the clock itself.
  */
 export function dayHeaderLabel(
@@ -72,16 +73,9 @@ export function dayHeaderLabel(
   if (localDate === todayKey) return "Today";
   if (localDate === previousDayKey(todayKey)) return "Yesterday";
 
-  // Parsed as UTC and formatted as UTC: `localDate` is already the student's own
-  // calendar day, so re-interpreting it in any zone would shift it by one.
-  const parsed = Date.parse(`${localDate}T00:00:00Z`);
-  if (!Number.isFinite(parsed)) return "Earlier";
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(parsed));
+  // `localDate` is already the student's own calendar day, which the one student formatter
+  // never shifts by a zone (QA 2026-10-07 item 15: "Thu 17 Sep", the prototypes' form).
+  return formatDate(localDate, "short-weekday-day-month") ?? "Earlier";
 }
 
 /**

@@ -47,6 +47,7 @@ import { useUpgradeModal } from "@/components/billing/UpgradeModal";
 import { FocusBarContext } from "@/components/layout/FocusShell";
 import { Button } from "@/components/ui/button";
 import { sectionDisplayLabel } from "@shared/section-display";
+import { formatDate } from "@/lib/format-date";
 import { fetchExamReport, fetchExamReportStatus } from "../api/exam-api";
 import { examKeys } from "../api/keys";
 import { sessionPath } from "../lib/exam-position";
@@ -69,11 +70,9 @@ const PANEL_H2 =
 const WITHHELD =
   "rounded-lg border border-lyc-rule bg-lyc-sheet p-5 text-[17px] text-lyc-ink";
 
+// QA 2026-10-07 item 15: the one student date formatter ("2:05 PM").
 function formatTime(iso: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
+  return formatDate(iso, "time") ?? "";
 }
 
 export default function ExamReportPage(): JSX.Element {

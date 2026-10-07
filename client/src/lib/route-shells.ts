@@ -221,27 +221,44 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
 };
 
 /**
- * The theme lock for `RequireRole`'s full-page loader at a pathname.
+ * The shell a pathname renders in, or null when it is not a student route.
  *
- * @spec [student-UI register UI-59, OQ-60 (e) (owner ruling 2026-10-05, accepted as recommended:
- *        "let `RequireRole`'s loader follow the device theme on Bare routes (a small change,
- *        removes the light flash)"); DESIGN.md §2 "Bare card"; OQ-49] | @implemented [2026-10-05]
+ * @spec [production QA 2026-10-07 item 5 (Karl: "route-level lazy loading with page skeletons
+ *        instead of the full-page cream 'Loading…' flash", which "also breaks dark mode"); UI-41;
+ *        DESIGN.md §2; UI-59 / OQ-60 (e) (owner ruling 2026-10-05: no light flash before a dark
+ *        Bare card), which this generalises from the Bare routes to every student route]
+ *        | @implemented [2026-10-07; replaces `requireRoleLoaderThemeLock` of 2026-10-05]
  *
- * plain English: the route guard wraps the shell, so while auth loads no shell is mounted and the
- * guard draws the loader itself. On a Bare route the loader takes that route's own lock from the
- * table above (null since UI-59: the device theme), so a dark device goes dark loader → dark card
- * with no light frame between. Every other route keeps the light lock, as before: the guard also
- * fronts guardian and admin pages, and pages still pinned light.
+ * plain English: what loads above the shells (the router's Suspense fallback and the route
+ * guard's auth wait) asks this which shell to sketch, so the first paint is the page's own shell
+ * in the page's own theme (its lock from this table), not a light full-page loader. Matched
+ * against the table's own keys: an exact key, or a key whose `:param` segments stand for any one
+ * non-empty segment. When two keys match, the one with fewer parameters wins (a literal segment
+ * is more specific).
  *
- * edge cases: matched on the exact path, because every Bare route the guard wraps
- * (`/profile/complete`, `/update-password`, `/guardian-required`) has no parameters; a pathname
- * that is not a key (or names a non-Bare route, or the catch-all key itself) reads "light". The
- * lookup walks the table's own entries, so `constructor` and friends never match.
+ * edge cases: the catch-all key is not a path and never matches (the 404 has no student shell);
+ * a wouter pathname carries no query; `constructor` and friends never match, because the lookup
+ * walks the table's own entries.
  */
-export function requireRoleLoaderThemeLock(pathname: string): ThemeLock {
-  if (pathname === NOT_FOUND_ROUTE) return "light";
+export function studentShellAt(pathname: string): ShellSpec | null {
+  const parts = pathname.split("/");
+  let best: { spec: ShellSpec; params: number } | null = null;
   const entries: readonly (readonly [string, ShellSpec])[] =
     Object.entries(STUDENT_ROUTE_SHELLS);
-  const spec = entries.find(([route]) => route === pathname)?.[1];
-  return spec?.shell === "bare" ? spec.themeLock : "light";
+  for (const [route, spec] of entries) {
+    const keys = route.split("/");
+    if (keys.length !== parts.length) continue;
+    let params = 0;
+    const matches = keys.every((key, i) => {
+      const part = parts[i] ?? "";
+      if (key.startsWith(":")) {
+        params += 1;
+        return part.length > 0;
+      }
+      return key === part;
+    });
+    if (matches && (best === null || params < best.params))
+      best = { spec, params };
+  }
+  return best?.spec ?? null;
 }

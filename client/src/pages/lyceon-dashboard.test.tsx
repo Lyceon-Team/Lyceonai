@@ -718,7 +718,7 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     const recent = await within(panel).findAllByTestId("home-recent-row");
     expect(recent.map((r) => r.textContent)).toEqual([
       "PracticeYesterday, 2:40 PM4 to review",
-      "ReviewSat, Sep 26, 2:12 AM1 to review",
+      "ReviewSat 26 Sep, 2:12 AM1 to review",
     ]);
 
     // The slim legal footer is on (the shell's prop).

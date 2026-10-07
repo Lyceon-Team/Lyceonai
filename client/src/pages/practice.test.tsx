@@ -755,7 +755,7 @@ describe("Recent practice (OQ-23: /api/review/pool)", () => {
     const rows = await screen.findAllByTestId("practice-recent-row");
     expect(gets()).toContain("/api/review/pool");
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.textContent).toContain("Fri, Sep 25, 12:49 PM");
+    expect(rows[0]?.textContent).toContain("Fri 25 Sep, 12:49 PM");
     // The row's criteria are not read here (UI-51 choice): the line is the row's own kind.
     expect(rows[0]?.textContent).toContain("Practice");
     expect(rows[0]?.textContent).not.toContain("Algebra");

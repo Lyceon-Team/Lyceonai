@@ -48,10 +48,15 @@ function classStrings(text: string): string[] {
   );
 }
 
-/** The six sites audit §6.2 lists as plain full-page spinner duplicates, now FullPageLoader. */
+/**
+ * The six sites audit §6.2 lists as plain full-page spinner duplicates, now FullPageLoader.
+ * QA 2026-10-07 item 5: App.tsx's route fallback and RequireRole's auth wait both render
+ * `RouteLoading` (layout/RouteSkeleton.tsx), which draws the route's shell skeleton on a student
+ * route and the shared FullPageLoader everywhere else; that module stands in for the two here,
+ * and the two are held to rendering it (below).
+ */
 const REPLACED_SITES = [
-  "App.tsx",
-  "components/auth/RequireRole.tsx",
+  "components/layout/RouteSkeleton.tsx",
   "pages/UserProfile.tsx",
   "pages/profile-complete.tsx",
   "pages/resume-practice.tsx",
@@ -68,6 +73,17 @@ describe("UI-46 guard: replaced duplicates stay gone", () => {
       ).toBe(true);
     }
   });
+
+  it.each(["App.tsx", "components/auth/RequireRole.tsx"])(
+    "%s renders the route loading state (RouteLoading), which renders the shared FullPageLoader",
+    (site) => {
+      const text = read(site);
+      expect(text).toMatch(
+        /import \{ RouteLoading \} from "@\/components\/layout\/RouteSkeleton"/,
+      );
+      expect(text).toMatch(/<RouteLoading\b/);
+    },
+  );
 
   it.each(REPLACED_SITES)("%s renders the shared FullPageLoader", (site) => {
     const text = read(site);

@@ -43,13 +43,13 @@ describe("dayHeaderLabel", () => {
   });
 
   it("labels anything older with a weekday and date", () => {
-    expect(dayHeaderLabel("2026-09-17", "2026-09-22")).toBe("Thu, Sep 17");
+    expect(dayHeaderLabel("2026-09-17", "2026-09-22")).toBe("Thu 17 Sep");
   });
 
   it("does not shift the date when rendering the long form", () => {
     // The row's local_date is already the student's calendar day. Re-interpreting it
-    // in a western zone would print Sep 16 for a Sep 17 row.
-    expect(dayHeaderLabel("2026-09-17", "2026-10-01")).toContain("Sep 17");
+    // in a western zone would print 16 Sep for a 17 Sep row.
+    expect(dayHeaderLabel("2026-09-17", "2026-10-01")).toContain("17 Sep");
   });
 
   it('groups a session whose parent row is gone under "Earlier" rather than dropping it', () => {

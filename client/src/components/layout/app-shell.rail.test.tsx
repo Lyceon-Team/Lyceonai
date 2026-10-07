@@ -540,7 +540,27 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the
       "Settings",
     );
     expect(screen.getByTestId("menu-help").textContent).toBe("Help");
-    expect(screen.getByTestId("menu-logout").textContent).toContain("Sign Out");
+    // QA 3: sentence case.
+    expect(screen.getByTestId("menu-logout").textContent).toBe("Sign out");
+  });
+
+  it("QA 14: every menu entry carries an icon hidden from assistive tech, and the trigger is named", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    expect(
+      screen.getByTestId("button-user-menu").getAttribute("aria-label"),
+    ).toBe("Account menu");
+    const ids = openMenuItemIds();
+    // Presence first: the three entries rendered.
+    expect(ids).toEqual(["menu-profile", "menu-help", "menu-logout"]);
+    for (const id of ids) {
+      const icons = screen.getByTestId(id).querySelectorAll("svg");
+      expect([id, icons.length]).toEqual([id, 1]);
+      expect([id, icons[0]?.getAttribute("aria-hidden")]).toEqual([id, "true"]);
+    }
+    // The accessible name is the label alone (the icon adds nothing to it).
+    expect(screen.getByRole("menuitem", { name: "Help" })).toBe(
+      screen.getByTestId("menu-help"),
+    );
   });
 
   it("Help in the avatar menu goes to the help destination", async () => {
@@ -555,11 +575,11 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the
   it("an admin keeps the menu at every width: Settings, Help, Crisis review, Sign out (OQ-48)", async () => {
     authState = signedIn("admin");
     renderShell(null);
-    // The admin's menu is not wrapped in lg:hidden (W2-7), and no avatar link replaces it.
+    // The admin's menu is not wrapped in lg:hidden (W2-7), and there is exactly one.
     expect(
       screen.getByTestId("button-user-menu").closest(".lg\\:hidden"),
     ).toBeNull();
-    expect(screen.queryByTestId("rail-account")).toBeNull();
+    expect(screen.getAllByTestId("button-user-menu")).toHaveLength(1);
     expect(openMenuItemIds()).toEqual([
       "menu-profile",
       "menu-help",
@@ -644,17 +664,55 @@ describe("F-70: the avatar dropdown follows the page theme", () => {
 });
 
 describe("Help, the account avatar and the bell", () => {
-  it("Help links to the help destination and the avatar links to Settings", async () => {
-    renderShell(await serverMap({ paid: true, under13: false }), {
-      path: "/profile",
-    });
+  it("QA 3: the avatar opens the account menu at every width (desktop included), with Sign out; current on Settings", async () => {
+    const { history } = renderShell(
+      await serverMap({ paid: true, under13: false }),
+      { path: "/profile" },
+    );
     expect(screen.getByTestId("rail-help").getAttribute("href")).toBe(
       HELP_PATH,
     );
-    const avatar = screen.getByTestId("rail-account");
-    expect(avatar.getAttribute("href")).toBe("/profile");
-    expect(avatar.getAttribute("aria-current")).toBe("page");
+    // One trigger, a button (not a link to Settings), hidden at no width.
+    const triggers = screen.getAllByTestId("button-user-menu");
+    expect(triggers).toHaveLength(1);
+    const trigger = triggers[0]!;
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.closest("a")).toBeNull();
+    for (let el: HTMLElement | null = trigger; el; el = el.parentElement) {
+      expect(el.className.split(/\s+/)).not.toContain("hidden");
+      expect(el.className.split(/\s+/)).not.toContain("lg:hidden");
+    }
+    const avatar = within(trigger).getByTestId("account-avatar");
     expect(avatar.textContent).toBe("S");
+    expect(avatar.getAttribute("data-current")).toBe("true");
+    // Desktop (the test DOM's default): the menu opens beside the rail.
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    const menu = screen.getByTestId("user-menu");
+    expect(menu.getAttribute("data-side")).toBe("right");
+    fireEvent.click(within(menu).getByTestId("menu-logout"));
+    expect(authState.signOut).toHaveBeenCalledTimes(1);
+    expect(history.at(-1)).toBe("/profile");
+  });
+
+  it("QA 3: on a phone the same menu opens under the top bar", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "not all and (min-width: 1024px)",
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    renderShell(await serverMap({ paid: true, under13: false }));
+    const trigger = screen.getByTestId("button-user-menu");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(screen.getByTestId("user-menu").getAttribute("data-side")).toBe(
+      "bottom",
+    );
   });
 
   it("the bell is in the rail directly above Help, and not hidden below lg (OQ-47)", async () => {
@@ -673,6 +731,58 @@ describe("Help, the account avatar and the bell", () => {
     expect(bellSlot.closest(".lg\\:hidden")).toBeNull();
     // Exactly one bell in the shell: not duplicated into the tab bar or the content.
     expect(screen.getAllByTestId("button-notifications")).toHaveLength(1);
+  });
+});
+
+/**
+ * @spec [production QA 2026-10-07 item 14 (Karl: "the rail highlights the current section on
+ *        /mastery and /notifications")] | @implemented [2026-10-07]
+ * plain English: /mastery has no rail item, so it lights Home's (Home's mastery rows and "See
+ * every skill" are its way in); /notifications is the bell's own page, so the bell is current.
+ * Presence first: the item that should be lit is found, then exactly it is lit.
+ */
+describe("QA 14: the rail shows the current section on pages with no item of their own", () => {
+  function current(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('[aria-current="page"]')).map(
+      (el) => el.getAttribute("data-testid") ?? "",
+    );
+  }
+
+  it.each(["/mastery", "/mastery/anything"])(
+    "%s lights Home on the rail and the tab bar, and nothing else",
+    async (path) => {
+      const { container } = renderShell(
+        await serverMap({ paid: true, under13: false }),
+        { path },
+      );
+      expect(screen.getByTestId("rail-home").getAttribute("aria-current")).toBe(
+        "page",
+      );
+      expect(current(container).sort()).toEqual(["rail-home", "tab-home"]);
+    },
+  );
+
+  it("/notifications marks the bell current (and its slot drawn as the current item), nothing else", async () => {
+    const { container } = renderShell(
+      await serverMap({ paid: true, under13: false }),
+      { path: "/notifications" },
+    );
+    const bell = screen.getByTestId("button-notifications");
+    expect(bell.getAttribute("aria-current")).toBe("page");
+    expect(current(container)).toEqual(["button-notifications"]);
+    expect(screen.getByTestId("rail-bell").className).toContain(
+      "[&>button]:bg-lyc-rail-on-bg",
+    );
+  });
+
+  it("control: on /dashboard the bell is not current", async () => {
+    const { container } = renderShell(
+      await serverMap({ paid: true, under13: false }),
+    );
+    expect(
+      screen.getByTestId("button-notifications").hasAttribute("aria-current"),
+    ).toBe(false);
+    expect(current(container).sort()).toEqual(["rail-home", "tab-home"]);
   });
 });
 
@@ -755,7 +865,7 @@ describe("keyboard", () => {
       screen.getByTestId("logo-link"),
       ...RAIL.map((i) => screen.getByTestId(`rail-${i.key}`)),
       screen.getByTestId("rail-help"),
-      screen.getByTestId("rail-account"),
+      screen.getByTestId("button-user-menu"),
     ];
     for (const el of targets) {
       expect(order, el.getAttribute("data-testid") ?? "").toContain(el);

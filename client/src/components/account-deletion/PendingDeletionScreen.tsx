@@ -4,6 +4,7 @@ import { BareCardHeader } from "@/components/layout/BareCardShell";
 import { Notice } from "@/components/student-ui";
 import { toast } from "@/hooks/use-toast";
 import { apiRequestRaw } from "@/lib/queryClient";
+import { formatDate } from "@/lib/format-date";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   DeletionActionError,
@@ -25,14 +26,9 @@ import {
  * Sign out is a quiet button. The email reminder is a neutral info notice (polite status) where
  * it was a shadcn Alert (role="alert"): it is not an error and is on screen from the first paint.
  */
+// QA 2026-10-07 item 15: the one student date formatter (an instant, in the viewer's zone).
 function formatDeletionDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? "soon"
-    : d.toLocaleString(undefined, {
-        dateStyle: "long",
-        timeStyle: "short",
-      });
+  return formatDate(iso, "date-time") ?? "soon";
 }
 
 export function PendingDeletionScreen() {

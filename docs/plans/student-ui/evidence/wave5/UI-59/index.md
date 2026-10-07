@@ -1,9 +1,9 @@
 # UI-59 Bare-card pages (sign in, sign up, reset, profile completion, update password, account recovery, guardian required, 404, pending deletion, error screen), all NOT PROTOTYPED; light and dark, 1440 and 390
 
-Generated 2026-10-05T06:50:52.412Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-07T09:42:35.015Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
-- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844.
+- Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
 - The prototypes are a fixed 1440x900 canvas with no phone layout; phone rows show the desktop prototype.
 - Dark is requested through the app's own per-device setting; the theme column records what the page rendered.
 - No external requests: the built app's Google Fonts (Inter, Poppins) are blocked, so legacy page bodies fall back to system faces; Source Sans 3 / Source Serif 4 are self-hosted and load for both sides.
@@ -17,10 +17,10 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![login-signin desktop light](login-signin--desktop--light--built.png)<br>`/login`, 43 KB, horizontal overflow 0px | none |
-| desktop | dark | ![login-signin desktop dark](login-signin--desktop--dark--built.png)<br>`/login`, 44 KB, horizontal overflow 0px | none |
-| mobile | light | ![login-signin mobile light](login-signin--mobile--light--built.png)<br>`/login`, 38 KB, horizontal overflow 0px | none |
-| mobile | dark | ![login-signin mobile dark](login-signin--mobile--dark--built.png)<br>`/login`, 38 KB, horizontal overflow 0px | none |
+| desktop | light | ![login-signin desktop light](login-signin--desktop--light--built.png)<br>`/login`, 38 KB, horizontal overflow 0px | none |
+| desktop | dark | ![login-signin desktop dark](login-signin--desktop--dark--built.png)<br>`/login`, 39 KB, horizontal overflow 0px | none |
+| mobile | light | ![login-signin mobile light](login-signin--mobile--light--built.png)<br>`/login`, 33 KB, horizontal overflow 0px | none |
+| mobile | dark | ![login-signin mobile dark](login-signin--mobile--dark--built.png)<br>`/login`, 34 KB, horizontal overflow 0px | none |
 
 ## /login?error=google_oauth_failed (a code the real OAuth callback redirects with): the human message as an alert
 
@@ -30,10 +30,10 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![login-redirect-error desktop light](login-redirect-error--desktop--light--built.png)<br>`/login`, 50 KB, horizontal overflow 0px | none |
-| desktop | dark | ![login-redirect-error desktop dark](login-redirect-error--desktop--dark--built.png)<br>`/login`, 51 KB, horizontal overflow 0px | none |
-| mobile | light | ![login-redirect-error mobile light](login-redirect-error--mobile--light--built.png)<br>`/login`, 44 KB, horizontal overflow 0px | none |
-| mobile | dark | ![login-redirect-error mobile dark](login-redirect-error--mobile--dark--built.png)<br>`/login`, 44 KB, horizontal overflow 0px | none |
+| desktop | light | ![login-redirect-error desktop light](login-redirect-error--desktop--light--built.png)<br>`/login`, 46 KB, horizontal overflow 0px | none |
+| desktop | dark | ![login-redirect-error desktop dark](login-redirect-error--desktop--dark--built.png)<br>`/login`, 46 KB, horizontal overflow 0px | none |
+| mobile | light | ![login-redirect-error mobile light](login-redirect-error--mobile--light--built.png)<br>`/login`, 39 KB, horizontal overflow 0px | none |
+| mobile | dark | ![login-redirect-error mobile dark](login-redirect-error--mobile--dark--built.png)<br>`/login`, 40 KB, horizontal overflow 0px | none |
 
 ## /login → Sign Up tab (the student sign-up form)
 
@@ -45,10 +45,10 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![login-signup desktop light](login-signup--desktop--light--built.png)<br>`/login`, 63 KB, horizontal overflow 0px | none |
-| desktop | dark | ![login-signup desktop dark](login-signup--desktop--dark--built.png)<br>`/login`, 64 KB, horizontal overflow 0px | none |
-| mobile | light | ![login-signup mobile light](login-signup--mobile--light--built.png)<br>`/login`, 55 KB, horizontal overflow 0px | none |
-| mobile | dark | ![login-signup mobile dark](login-signup--mobile--dark--built.png)<br>`/login`, 56 KB, horizontal overflow 0px | none |
+| desktop | light | ![login-signup desktop light](login-signup--desktop--light--built.png)<br>`/login`, 57 KB, horizontal overflow 0px | none |
+| desktop | dark | ![login-signup desktop dark](login-signup--desktop--dark--built.png)<br>`/login`, 58 KB, horizontal overflow 0px | none |
+| mobile | light | ![login-signup mobile light](login-signup--mobile--light--built.png)<br>`/login`, 50 KB, horizontal overflow 0px | none |
+| mobile | dark | ![login-signup mobile dark](login-signup--mobile--dark--built.png)<br>`/login`, 51 KB, horizontal overflow 0px | none |
 
 ## /login → Forgot password? (reset mode)
 
@@ -60,10 +60,10 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![login-reset desktop light](login-reset--desktop--light--built.png)<br>`/login`, 29 KB, horizontal overflow 0px | none |
-| desktop | dark | ![login-reset desktop dark](login-reset--desktop--dark--built.png)<br>`/login`, 30 KB, horizontal overflow 0px | none |
-| mobile | light | ![login-reset mobile light](login-reset--mobile--light--built.png)<br>`/login`, 25 KB, horizontal overflow 0px | none |
-| mobile | dark | ![login-reset mobile dark](login-reset--mobile--dark--built.png)<br>`/login`, 25 KB, horizontal overflow 0px | none |
+| desktop | light | ![login-reset desktop light](login-reset--desktop--light--built.png)<br>`/login`, 25 KB, horizontal overflow 0px | none |
+| desktop | dark | ![login-reset desktop dark](login-reset--desktop--dark--built.png)<br>`/login`, 25 KB, horizontal overflow 0px | none |
+| mobile | light | ![login-reset mobile light](login-reset--mobile--light--built.png)<br>`/login`, 21 KB, horizontal overflow 0px | none |
+| mobile | dark | ![login-reset mobile dark](login-reset--mobile--dark--built.png)<br>`/login`, 21 KB, horizontal overflow 0px | none |
 
 ## /profile/complete: a student with no completed profile (the onboarding persona)
 
@@ -130,12 +130,12 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 122 KB, horizontal overflow 0px | none |
-| desktop | dark | ![guardian-required desktop dark](guardian-required--desktop--dark--built.png)<br>`/guardian-required`, 125 KB, horizontal overflow 0px | none |
-| mobile | light | ![guardian-required mobile light](guardian-required--mobile--light--built.png)<br>`/guardian-required`, 106 KB, horizontal overflow 0px | none |
-| mobile | dark | ![guardian-required mobile dark](guardian-required--mobile--dark--built.png)<br>`/guardian-required`, 109 KB, horizontal overflow 0px | none |
+| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 121 KB, horizontal overflow 0px | none |
+| desktop | dark | ![guardian-required desktop dark](guardian-required--desktop--dark--built.png)<br>`/guardian-required`, 124 KB, horizontal overflow 0px | none |
+| mobile | light | ![guardian-required mobile light](guardian-required--mobile--light--built.png)<br>`/guardian-required`, 105 KB, horizontal overflow 0px | none |
+| mobile | dark | ![guardian-required mobile dark](guardian-required--mobile--dark--built.png)<br>`/guardian-required`, 108 KB, horizontal overflow 0px | none |
 
-## 404 (/no-such-page), signed in: the shipped heading and the way home
+## 404 (/no-such-page), signed in: the SEO page ("Page not found") and its link home
 
 Persona: `paid`. Route: `/no-such-page`.
 Full page: the whole document, not just the viewport.
@@ -143,24 +143,24 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![not-found desktop light](not-found--desktop--light--built.png)<br>`/no-such-page`, 14 KB, horizontal overflow 0px | none |
-| desktop | dark | ![not-found desktop dark](not-found--desktop--dark--built.png)<br>`/no-such-page`, 15 KB, horizontal overflow 0px | none |
-| mobile | light | ![not-found mobile light](not-found--mobile--light--built.png)<br>`/no-such-page`, 11 KB, horizontal overflow 0px | none |
-| mobile | dark | ![not-found mobile dark](not-found--mobile--dark--built.png)<br>`/no-such-page`, 11 KB, horizontal overflow 0px | none |
+| desktop | light | ![not-found desktop light](not-found--desktop--light--built.png)<br>`/no-such-page`, 18 KB, horizontal overflow 0px | none |
+| desktop | dark | ![not-found desktop dark](not-found--desktop--dark--built.png)<br>`/no-such-page`, 18 KB, horizontal overflow 0px | none |
+| mobile | light | ![not-found mobile light](not-found--mobile--light--built.png)<br>`/no-such-page`, 15 KB, horizontal overflow 0px | none |
+| mobile | dark | ![not-found mobile dark](not-found--mobile--dark--built.png)<br>`/no-such-page`, 15 KB, horizontal overflow 0px | none |
 
-## Click path: 404 → Back to dashboard lands on /dashboard
+## Click path: 404 → Go to the homepage lands on /
 
 Persona: `paid`. Route: `/no-such-page`.
-Step: click `{"desktop":"[data-testid=\"not-found-home\"]","mobile":"[data-testid=\"not-found-home\"]"}`.
-Click path: must land on a path matching `^/dashboard$` (the capture fails otherwise); the path it landed on is under each built shot.
+Step: click `{"desktop":"a[href=\"/\"]","mobile":"a[href=\"/\"]"}`.
+Click path: must land on a path matching `^/$` (the capture fails otherwise); the path it landed on is under each built shot.
 Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pending-deletion screen are built to the shell spec (§2 Bare card); these screenshots go to Karl before merge.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![not-found-home desktop light](not-found-home--desktop--light--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
-| desktop | dark | ![not-found-home desktop dark](not-found-home--desktop--dark--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
-| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/dashboard`, 53 KB, horizontal overflow 0px | none |
-| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/dashboard`, 53 KB, horizontal overflow 0px | none |
+| desktop | light | ![not-found-home desktop light](not-found-home--desktop--light--built.png)<br>`/`, 96 KB, horizontal overflow 0px | none |
+| desktop | dark | ![not-found-home desktop dark](not-found-home--desktop--dark--built.png)<br>`/`, 96 KB, horizontal overflow 0px | none |
+| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/`, 68 KB, horizontal overflow 0px | none |
+| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/`, 68 KB, horizontal overflow 0px | none |
 
 ## The pending-deletion screen: a student on whom the real request_account_deletion has run, opening /dashboard
 
@@ -170,7 +170,7 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![pending-deletion desktop light](pending-deletion--desktop--light--built.png)<br>`/dashboard`, 56 KB, horizontal overflow 0px | none |
+| desktop | light | ![pending-deletion desktop light](pending-deletion--desktop--light--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
 | desktop | dark | ![pending-deletion desktop dark](pending-deletion--desktop--dark--built.png)<br>`/dashboard`, 58 KB, horizontal overflow 0px | none |
 | mobile | light | ![pending-deletion mobile light](pending-deletion--mobile--light--built.png)<br>`/dashboard`, 48 KB, horizontal overflow 0px | none |
 | mobile | dark | ![pending-deletion mobile dark](pending-deletion--mobile--dark--built.png)<br>`/dashboard`, 49 KB, horizontal overflow 0px | none |
@@ -191,6 +191,6 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"5e3b1318-3187-4ba8-a8b6-458062ea31ec","openPracticeSessionId":"51ed2571-a860-4642-b41f-149385a5a11a","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"5625414b-7a45-4884-ad39-27202d60f4d1","openPracticeSessionId":"df80c48d-3065-48d3-85cd-ff375cc96e7d","openReviewSessionId":null,"diagnosticSessionId":"fad3598c-2252-405a-852d-40fa3555ce03","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"ec5537f2-0559-415a-a498-8bc0e72b22ba","openPracticeSessionId":"f5aad190-2633-4053-9afa-68ba1e593813","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"cb56cd52-7d5c-4915-b4a4-b84a0ad54ca8","openPracticeSessionId":"d200bd22-bcd5-450d-a975-ac3c010ce4a4","openReviewSessionId":null,"diagnosticSessionId":"e05eebbd-5e62-4577-b2d8-dbddd5cf2299","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
-- External hosts blocked: `fonts.googleapis.com`
+- External hosts blocked: none

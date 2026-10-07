@@ -31,6 +31,7 @@ import type { ExamFormsResponse } from "@lyceon/shared/exam-report-schema";
 import type { ExamScoredSessionRow } from "@lyceon/shared/exam-scored-sessions-schema";
 import type { ExamSessionResponse } from "@lyceon/shared/exam-runtime-schema";
 import { sectionDisplayLabel } from "@shared/section-display";
+import { formatDate } from "@/lib/format-date";
 import { examPosition } from "./exam-position";
 import { formCardStateLabel } from "./labels";
 
@@ -47,27 +48,18 @@ export function isExamInProgress(state: string): boolean {
   return EXAM_IN_PROGRESS_STATES.has(state);
 }
 
-/** "26 September" (prototype FullLength.dc.html). */
+/** "26 September" (prototype FullLength.dc.html). QA 2026-10-07 item 15: the one formatter. */
 export function dayMonth(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "long",
-  }).format(new Date(iso));
+  return formatDate(iso, "day-month") ?? "";
 }
 
-/** "26 September 2026" (prototype Report.dc.html's top bar). */
+/** "26 September 2026" (prototype Report.dc.html's top bar), through the one formatter. */
 export function dayMonthYear(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(iso));
+  return formatDate(iso, "day-month-year") ?? "";
 }
 
 /** OQ-32: "In progress: Reading & Writing, Module 2" from the attempt's own `/state`. */
-function inProgressLine(
-  session: ExamSessionResponse | undefined,
-): string {
+function inProgressLine(session: ExamSessionResponse | undefined): string {
   if (session === undefined) return "In progress";
   const position = examPosition(session);
   if (position.kind === "module") {

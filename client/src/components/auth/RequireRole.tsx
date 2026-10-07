@@ -4,8 +4,7 @@ import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { Redirect, useLocation } from "wouter";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
-import { FullPageLoader } from "@/components/student-ui";
-import { requireRoleLoaderThemeLock } from "@/lib/route-shells";
+import { RouteLoading } from "@/components/layout/RouteSkeleton";
 import {
   loginPathWithReturn,
   onboardingPathWithReturn,
@@ -63,16 +62,15 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
 
   if (authLoading || (user && profileLoading)) {
     // @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"; UI-59, OQ-60 (e) (owner
-    // ruling 2026-10-05)] | @implemented [2026-10-03; Bare routes 2026-10-05]
-    // The shared FullPageLoader (role="status", named by its label). This gate sits above the
-    // shell, so the loader takes its lock from the route table: a Bare route's own lock (the
-    // device theme since UI-59, so a dark device sees no light flash before the dark card), and
-    // light everywhere else (guardian, admin and still-pinned pages share this gate).
-    return requireRoleLoaderThemeLock(location) === "light" ? (
-      <FullPageLoader themeLock="light" />
-    ) : (
-      <FullPageLoader />
-    );
+    // ruling 2026-10-05); production QA 2026-10-07 items 5 and 12 (no cream "Loading…" flash, in
+    // dark mode either)] | @implemented [2026-10-03; Bare routes 2026-10-05; every student
+    // shell 2026-10-07]
+    // This gate sits above the shell, so it draws the route's loading state itself, from the
+    // route table (layout/RouteSkeleton.tsx): on a student route that route's shell, sketched,
+    // under the route's own theme lock (a Bare card, the App shell, the Focus shell), so a dark
+    // device sees no light frame first; on every other route (guardian and admin pages share this
+    // gate) the light full-page loader, as before. Named "Loading..." either way.
+    return <RouteLoading />;
   }
 
   // G2-02: the server refused this session as ROLE_UNRECOGNIZED. Not a sign-out, so not /login —
