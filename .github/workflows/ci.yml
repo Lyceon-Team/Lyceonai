@@ -5,6 +5,14 @@ on:
   push:
     branches: [main, cleanup]
 
+# CI minutes (brief 2026-10-07). A newer push to a pull request supersedes the run still testing
+# the old head, so that run is cancelled: its result could no longer gate anything. Push runs on
+# `main` and `cleanup` each get a group of their own (the run id), so no push run is ever cancelled
+# or dropped from a queue.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-run-{0}', github.run_id) }}
+  cancel-in-progress: true
+
 # CI runs without secrets by default (for forks and basic validation).
 # Secrets are only required for integration tests, which are skipped here.
 env:
@@ -12,12 +20,63 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Run scope (CI-minutes brief 2026-10-07; no gate weakened). Decides, and fails OPEN:
+  #   duplicate  a push to main/cleanup whose exact tree already passed a full PR run → nothing
+  #              re-runs (the `integration` job, push-to-main only, is unaffected);
+  #   docs_only  a PR into an integration branch (never into main) changing only docs no gated
+  #              job reads → the database, e2e and GCP jobs skip; `ci` still runs.
+  # Every job's `if:` starts with !cancelled(), so a failed scope job runs everything, never
+  # nothing. scripts/ci/ci-run-scope.sh has the rules; scripts/ci/ci-scope-guard.mjs keeps
+  # "no gated job reads those docs" true.
+  # ---------------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      duplicate: ${{ steps.scope.outputs.duplicate }}
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+      tree: ${{ steps.scope.outputs.tree }}
+    steps:
+      - name: Checkout (with parents, for the PR diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Decide the run scope
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/ci-run-scope.sh
+
+      # A full PR run records the tree it tests, so the push that merges exactly this tree can
+      # recognise it. The marker counts only if the run it belongs to concludes `success`.
+      - name: Record the tested tree (full PR runs only)
+        if: github.event_name == 'pull_request' && steps.scope.outputs.docs_only != 'true'
+        run: echo "${{ steps.scope.outputs.tree }}" > tested-tree.txt
+
+      - name: Upload the tested-tree marker
+        if: github.event_name == 'pull_request' && steps.scope.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-tested-tree-${{ steps.scope.outputs.tree }}
+          path: tested-tree.txt
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   # Required gate. Every step here is verified GREEN against the current tree
   # (Pass 0, 2026-06-03). Node version comes from .nvmrc (single source of
   # truth shared with local dev); pnpm matches the version used to verify.
   # ---------------------------------------------------------------------------
   ci:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' }}
     # 45, not 20 (owner decision 2026-10-03): the review UI mutation gate runs one test
     # file per plant, and with the student UI Wave 5 plants (197 in all) it alone takes
     # over 15 minutes, which pushed this job past 20 and cancelled it. The gate stays in
@@ -248,6 +307,13 @@ jobs:
       - name: Review UI mutation gate (proves U1-U9 are load-bearing)
         run: bash scripts/ci/review-ui-gate.parallel.sh
 
+      # The docs-only skip (changes job) is sound only while no job it skips reads those docs.
+      - name: CI scope guard (no job skipped on docs-only PRs reads docs)
+        run: node scripts/ci/ci-scope-guard.mjs
+
+      - name: CI scope guard self-test (proves each mutation turns it red)
+        run: node scripts/ci/ci-scope-guard.mjs --selftest
+
       - name: Retired endpoints gate (no caller of a deleted route may remain)
         run: node scripts/ci/retired-endpoints-gate.mjs
 
@@ -397,6 +463,8 @@ jobs:
   # owner question in the PR instead.
   ci-known-gaps:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' }}
     timeout-minutes: 20
 
     permissions:
@@ -533,6 +601,8 @@ jobs:
   # ---------------------------------------------------------------------------
   genesis-fresh-apply:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -804,6 +874,8 @@ jobs:
   # ---------------------------------------------------------------------------
   calendar-parity:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1155,6 +1227,8 @@ jobs:
 
   practice-integration:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     # 20, not 10. Observed runs on this job: 5m14s, 10m04s (killed), 10m14s (killed),
     # 7m20s. The work fits; the margin did not, and GitHub reports a timeout kill as
     # "cancelled", which reads like an infrastructure hiccup rather than a budget.
@@ -2205,6 +2279,8 @@ jobs:
 
   practice-integration-mutations:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     # The planted-violation self-tests for the proofs in practice-integration, split out of
     # that job so the two run side by side instead of end to end (the job had reached
     # ~15m of a 20m budget). Each script asserts its own baseline green before planting,
@@ -2325,6 +2401,8 @@ jobs:
   # ---------------------------------------------------------------------------
   mastery-pipeline:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -2503,6 +2581,8 @@ jobs:
   # ---------------------------------------------------------------------------
   deletion-deidentify-rehearsal:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -2586,6 +2666,8 @@ jobs:
   # ---------------------------------------------------------------------------
   mastery-parity:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -2637,6 +2719,8 @@ jobs:
   # ---------------------------------------------------------------------------
   scoring-parity:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -2681,6 +2765,8 @@ jobs:
   # ---------------------------------------------------------------------------
   lane-c-seam-gates:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -2725,6 +2811,8 @@ jobs:
   # ---------------------------------------------------------------------------
   rollup-05b-05c-gates:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 12
     permissions:
       contents: read
@@ -2791,6 +2879,8 @@ jobs:
   # ---------------------------------------------------------------------------
   tutor-schema-proof:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -2888,6 +2978,8 @@ jobs:
   # ---------------------------------------------------------------------------
   gcp-wif-auth:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -2916,6 +3008,8 @@ jobs:
   # answered inside the browser; nothing leaves the runner. The key is a dummy (`phc_e2e…`).
   analytics-consent-e2e:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -3011,6 +3105,8 @@ jobs:
   # ---------------------------------------------------------------------------
   guardian-e2e:
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.docs_only != 'true' }}
     timeout-minutes: 20
     permissions:
       contents: read
