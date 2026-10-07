@@ -27,7 +27,9 @@
  * on remount opens the modal again; that is the "any entitlement_required response" rule.
  */
 import {
+  Suspense,
   createContext,
+  lazy,
   useCallback,
   useContext,
   useEffect,
@@ -37,25 +39,21 @@ import {
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { Lock } from "lucide-react";
 import type {
   FeatureLockReason,
   LockableFeatureKey,
 } from "@lyceon/shared/feature-access";
-import { Modal, ModalClose } from "@/components/student-ui";
-import { Button } from "@/components/ui/button";
-import {
-  UPGRADE_MODAL_COPY,
-  UPGRADE_MODAL_SHARED_COPY,
-  UPGRADE_PLANS_DESTINATION,
-  upgradeFeatureForDenial,
-} from "./upgrade-modal";
+import { upgradeFeatureForDenial } from "./upgrade-modal";
+import type { UpgradeModalRequest } from "./UpgradeModalView";
 
-type UpgradeModalRequest = {
-  readonly feature: LockableFeatureKey;
-  readonly reason: FeatureLockReason;
-};
+// @spec [SEO plan F8 (public-page weight); student-UI register UI-44] | @implemented [2026-10-07] |
+// plain English: the provider (context + denial listener) is mounted at the app root, so it is in
+// the entry every public page downloads. The modal it shows (the student `Modal`, its buttons and
+// copy) loads the first time it opens, then stays mounted so its close animation and focus return
+// work as before. A visitor who is never refused never downloads it.
+const UpgradeModalView = lazy(() =>
+  import("./UpgradeModalView").then((m) => ({ default: m.UpgradeModalView })),
+);
 
 type UpgradeModalApi = {
   /** Opens the modal for `feature`. `reason` defaults to `plan`; `age` shows the age message. */
@@ -92,6 +90,8 @@ export function UpgradeModalProvider({
   autoOpenOnDenial = true,
 }: UpgradeModalProviderProps): JSX.Element {
   const [current, setCurrent] = useState<UpgradeModalRequest | null>(null);
+  // Latches true on the first open; the view is fetched only from then on.
+  const [viewWanted, setViewWanted] = useState(false);
   const queryClient = useQueryClient();
 
   /**
@@ -109,6 +109,7 @@ export function UpgradeModalProvider({
           ? active
           : null;
     }
+    setViewWanted(true);
     setCurrent(next);
   }, []);
 
@@ -162,71 +163,11 @@ export function UpgradeModalProvider({
   return (
     <UpgradeModalContext.Provider value={api}>
       {children}
-      <UpgradeModalView request={current} onClose={close} />
-    </UpgradeModalContext.Provider>
-  );
-}
-
-function UpgradeModalView({
-  request,
-  onClose,
-}: {
-  request: UpgradeModalRequest | null;
-  onClose: () => void;
-}): JSX.Element {
-  const [, navigate] = useLocation();
-  const copy =
-    request === null
-      ? null
-      : UPGRADE_MODAL_COPY[request.feature][request.reason];
-  const isPlan = request?.reason === "plan";
-
-  return (
-    <Modal
-      open={request !== null}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      data-testid="upgrade-modal"
-      title={
-        <>
-          <Lock
-            aria-hidden="true"
-            className="mb-3 block h-[26px] w-[26px] text-lyc-ink-strong"
-          />
-          {copy?.title ?? ""}
-        </>
-      }
-      description={copy?.body}
-      footer={
-        <>
-          {isPlan ? (
-            <Button
-              type="button"
-              variant="lyc-primary"
-              size="lyc-lg"
-              data-testid="upgrade-modal-see-plans"
-              onClick={() => {
-                onClose();
-                navigate(UPGRADE_PLANS_DESTINATION);
-              }}
-            >
-              {UPGRADE_MODAL_SHARED_COPY.primaryLabel}
-            </Button>
-          ) : null}
-          <ModalClose asChild>
-            <Button type="button" variant="lyc-quiet" size="lyc-lg">
-              {UPGRADE_MODAL_SHARED_COPY.secondaryLabel}
-            </Button>
-          </ModalClose>
-        </>
-      }
-    >
-      {isPlan ? (
-        <p className="m-0 text-lyc-meta-lg text-lyc-muted">
-          {UPGRADE_MODAL_SHARED_COPY.includedLine}
-        </p>
+      {viewWanted ? (
+        <Suspense fallback={null}>
+          <UpgradeModalView request={current} onClose={close} />
+        </Suspense>
       ) : null}
-    </Modal>
+    </UpgradeModalContext.Provider>
   );
 }

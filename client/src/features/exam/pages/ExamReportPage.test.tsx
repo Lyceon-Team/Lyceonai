@@ -448,7 +448,7 @@ describe('naming: the section is "Full-Length" (owner ruling, Karl, 2026-10-05)'
 });
 
 describe("OQ-34: a lapsed report opens the upgrade modal for Full-Length", () => {
-  it("the server's renew_entitlement action opens the modal on arrival and from Continue", () => {
+  it("the server's renew_entitlement action opens the modal on arrival and from Continue", async () => {
     const payload = lapsed();
     // Presence of the action in the real producer's payload first.
     expect(
@@ -459,7 +459,8 @@ describe("OQ-34: a lapsed report opens the upgrade modal for Full-Length", () =>
       screen.getByText("This report isn't available right now"),
     ).toBeTruthy();
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
-    const modal = screen.getByTestId("upgrade-modal");
+    // The modal's view loads on its first open (it is not in the app entry).
+    const modal = await screen.findByTestId("upgrade-modal");
     expect(modal.textContent).toContain("Full-length tests");
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByTestId("upgrade-modal")).toBeNull();
