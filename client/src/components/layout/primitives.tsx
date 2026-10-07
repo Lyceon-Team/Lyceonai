@@ -61,31 +61,6 @@ export function Section({ children, className, title, subtitle, id }: SectionPro
   );
 }
 
-interface ProseProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-export function Prose({ children, className }: ProseProps) {
-  return (
-    <div className={cn(
-      "prose-lyceon",
-      "max-w-none",
-      "[&>p]:mb-4 [&>p]:leading-relaxed",
-      "[&>h2]:text-2xl [&>h2]:font-semibold [&>h2]:mt-10 [&>h2]:mb-4",
-      "[&>h3]:text-xl [&>h3]:font-semibold [&>h3]:mt-8 [&>h3]:mb-3",
-      "[&>ul]:list-disc [&>ul]:ml-6 [&>ul]:mb-4 [&>ul]:space-y-2",
-      "[&>ol]:list-decimal [&>ol]:ml-6 [&>ol]:mb-4 [&>ol]:space-y-2",
-      "[&>blockquote]:border-l-4 [&>blockquote]:border-border [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground",
-      "[&_a]:underline [&_a]:underline-offset-2 [&_a]:hover:opacity-80",
-      "[&_strong]:font-semibold",
-      className
-    )}>
-      {children}
-    </div>
-  );
-}
-
 interface BreadcrumbItem {
   label: string;
   href?: string;

@@ -53,7 +53,7 @@ export type BlockSheetActions = {
   launchPending: boolean;
 };
 
-export type BlockSheetProps = {
+type BlockSheetProps = {
   block: ViewBlock;
   day: ViewDay;
   today: string;

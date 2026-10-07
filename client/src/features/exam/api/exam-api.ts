@@ -60,13 +60,13 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { HttpApiError } from "@/lib/api-error";
 
-export const EXAM_ROOT = "/api/tests" as const;
+const EXAM_ROOT = "/api/tests" as const;
 
-export type ExamItemsResponse = z.infer<typeof examItemsResponseSchema>;
-export type ExamStartModuleResponse = z.infer<
+type ExamItemsResponse = z.infer<typeof examItemsResponseSchema>;
+type ExamStartModuleResponse = z.infer<
   typeof examStartModuleResponseSchema
 >;
-export type ExamSubmitModuleResponse = z.infer<
+type ExamSubmitModuleResponse = z.infer<
   typeof examSubmitModuleResponseSchema
 >;
 export type ExamHeartbeatResponse = z.infer<typeof examHeartbeatResponseSchema>;
@@ -91,11 +91,6 @@ async function parsed<T>(
   }
   const result = schema.safeParse(body);
   if (!result.success) {
-    const paths = result.error.issues.map((i) => i.path.join(".")).join(", ");
-    // eslint-disable-next-line no-console -- the client has no structured logger; paths only, never the body.
-    console.error(
-      `[EXAM] ${resource}: response failed schema validation at [${paths}].`,
-    );
     throw new Error(
       `${resource}: the server returned a body this client cannot read.`,
     );

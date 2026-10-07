@@ -57,8 +57,8 @@ DropdownMenuSubContent.displayName =
 /**
  * @spec [student-UI register §8 F-70 ("the avatar dropdown follows the page theme"), F-65]
  *       | @implemented [2026-10-05]
- * plain English: `portalClassName` wraps the portalled menu in one element, as the dialog and
- * the sheet do for the student Modal and Sheet. The student avatar menu passes `lyc contents`, so
+ * plain English: `portalClassName` wraps the portalled menu in one element, as the dialog does
+ * for the student Modal. The student avatar menu passes `lyc contents`, so
  * the student tokens (light or dark) resolve on <body>, outside the shell's `.lyc` root, and
  * `portalThemeLock` carries the shell's lock onto that wrapper, so a page pinned light gets a
  * light menu. Callers that pass neither render exactly as before (the guardian shell's menu).

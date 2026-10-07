@@ -8,13 +8,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  MONTH_GRID_LENGTH,
   WEEKDAY_HEADERS,
-  WEEK_LENGTH,
   addDays,
-  addMonths,
   dayOfMonth,
-  dayOfWeek,
   daysBetween,
   isSameMonth,
   longDate,
@@ -44,7 +40,7 @@ describe("startOfWeek (R-08-30)", () => {
   it("anchors the week on Monday, including for a Sunday (R-08-30)", () => {
     // 2026-09-27 is a Sunday. A `getUTCDay()`-anchored week puts Sunday at 0 and would
     // return 2026-09-27 itself; R-08-30 says the week it belongs to began on 2026-09-21.
-    expect(dayOfWeek("2026-09-27")).toBe(0);
+    expect(shortWeekday("2026-09-27")).toBe("Sun");
     expect(startOfWeek("2026-09-27")).toBe("2026-09-21");
   });
 
@@ -140,7 +136,7 @@ describe("addDays across a DST transition (§8.2: a plan date is not a moment)",
 describe("weekDates", () => {
   it("returns 7 dates starting on Monday", () => {
     const dates = weekDates("2026-09-24");
-    expect(dates).toHaveLength(WEEK_LENGTH);
+    expect(dates).toHaveLength(7);
     expect(dates[0]).toBe("2026-09-21");
     expect([...dates]).toEqual([...WEEK_OF_21_SEPTEMBER_2026]);
   });
@@ -173,7 +169,7 @@ describe("monthGridDates", () => {
       "2026-11-30",
       "2028-02-01",
     ]) {
-      expect(monthGridDates(cursor)).toHaveLength(MONTH_GRID_LENGTH);
+      expect(monthGridDates(cursor)).toHaveLength(42);
     }
   });
 
@@ -181,13 +177,13 @@ describe("monthGridDates", () => {
     // 2026-09-01 is a Tuesday, so the grid opens on Monday 2026-08-31.
     const grid = monthGridDates("2026-09-15");
     expect(grid[0]).toBe("2026-08-31");
-    expect(dayOfWeek(grid[0] ?? "")).toBe(1);
-    expect(grid[MONTH_GRID_LENGTH - 1]).toBe("2026-10-11");
+    expect(shortWeekday(grid[0] ?? "")).toBe("Mon");
+    expect(grid[42 - 1]).toBe("2026-10-11");
   });
 
   it("starts on the 1st itself when the 1st IS a Monday", () => {
     // 2026-06-01 is a Monday.
-    expect(dayOfWeek("2026-06-01")).toBe(1);
+    expect(shortWeekday("2026-06-01")).toBe("Mon");
     expect(monthGridDates("2026-06-20")[0]).toBe("2026-06-01");
   });
 
@@ -216,7 +212,7 @@ describe("monthGridDates", () => {
 
   it("is seven consecutive dates per row, with no gaps or repeats", () => {
     const grid = monthGridDates("2026-09-15");
-    expect(new Set(grid).size).toBe(MONTH_GRID_LENGTH);
+    expect(new Set(grid).size).toBe(42);
     for (let index = 1; index < grid.length; index += 1) {
       expect(grid[index]).toBe(addDays(grid[index - 1] ?? "", 1));
     }
@@ -310,12 +306,6 @@ describe("the small helpers the grids lean on", () => {
     expect(startOfMonth("2026-09-01")).toBe("2026-09-01");
   });
 
-  it("addMonths walks whole months from the 1st, across a year boundary", () => {
-    expect(addMonths("2026-09-21", 1)).toBe("2026-10-01");
-    expect(addMonths("2026-01-15", -1)).toBe("2025-12-01");
-    expect(addMonths("2026-12-31", 1)).toBe("2027-01-01");
-  });
-
   it("dayOfMonth and monthName read the date, not the runner's clock", () => {
     expect(dayOfMonth("2026-09-21")).toBe(21);
     expect(monthName("2026-01-15")).toBe("January");
@@ -328,7 +318,7 @@ describe("the small helpers the grids lean on", () => {
     expect(isSameMonth("2026-09-15", "2027-09-15")).toBe(false);
   });
 
-  it("shortWeekday uses the Sunday-zero names `dayOfWeek` returns", () => {
+  it("shortWeekday names the date's own weekday, Monday and Sunday both", () => {
     expect(shortWeekday("2026-09-21")).toBe("Mon");
     expect(shortWeekday("2026-09-27")).toBe("Sun");
   });

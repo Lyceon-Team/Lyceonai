@@ -10,9 +10,8 @@
  * WHY A PROVISIONAL BLOCK NEEDS A FLAG. `calendar_blocks` rows are append-only, so changing
  * a block's mix does not update a row — it CREATES one and drops the old member. Until the
  * write returns, the client cannot know the new `block_id`. These functions mint a
- * `provisional:` id so React has a stable key, and `isProvisional` lets the UI disable the
- * controls on it: launching a block id the server has never seen is a 404, and offering the
- * button is offering a broken one.
+ * `provisional:` id so React has a stable key until the settle-time refetch replaces it with
+ * the server's — launching a block id the server has never seen is a 404.
  *
  * trade-offs: an optimistic day is a PREDICTION, and the only honest way to run one is to
  * replace it with the server's answer on settle. Every caller invalidates.
@@ -27,27 +26,18 @@ import type {
 } from "@lyceon/shared/calendar";
 
 /** The id prefix a block carries while the server has not yet confirmed it. */
-export const PROVISIONAL_PREFIX = "provisional:" as const;
-
-export function isProvisional(blockId: string): boolean {
-  return blockId.startsWith(PROVISIONAL_PREFIX);
-}
+const PROVISIONAL_PREFIX = "provisional:" as const;
 
 let provisionalCounter = 0;
 
 /**
  * Monotonic rather than random: two provisional blocks created in the same tick must not
- * collide as React keys, and a predictable id makes the tests readable. It is never sent to
- * the server — `isProvisional` gates that.
+ * collide as React keys, and a predictable id makes the tests readable. It lives only in the
+ * optimistic cache, which every caller replaces with the server's answer on settle.
  */
-export function nextProvisionalId(): string {
+function nextProvisionalId(): string {
   provisionalCounter += 1;
   return `${PROVISIONAL_PREFIX}${provisionalCounter}`;
-}
-
-/** Test seam: resets the counter so ids are deterministic per test. */
-export function resetProvisionalIds(): void {
-  provisionalCounter = 0;
 }
 
 type DayMapper = (day: CalendarDay) => CalendarDay;
@@ -84,7 +74,7 @@ function mapDays(
 }
 
 /** Finds a block and the local date it sits on, or null when the range does not hold it. */
-export function findBlock(
+function findBlock(
   response: CalendarResponse,
   blockId: string,
 ): { block: DayBlock; date: string } | null {

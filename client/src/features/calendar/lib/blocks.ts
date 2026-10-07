@@ -95,21 +95,6 @@ export function titleOf(block: PlanBlock): string {
 }
 
 /**
- * The per-domain chips under a practice row. A `section`-level scope (cold start and every
- * fallback plan — formula sheet §1, owner ruling B1) has no mix and therefore no chips,
- * which is the honest rendering: the plan has not chosen domains yet.
- */
-export function mixOf(block: PlanBlock): readonly {
-  domain: CanonicalDomain;
-  count: number;
-  explanation_key: string;
-}[] {
-  if (block.block_type !== "practice") return [];
-  if (block.scope.level !== "domain") return [];
-  return block.scope.mix;
-}
-
-/**
  * The domains a block may use: the eight canonical names, filtered to the block's OWN
  * section. §17.2's Domain select must not offer a Math domain on a Reading & Writing block —
  * the database CHECK would refuse it, and offering a choice the server rejects is a trap.
@@ -167,7 +152,7 @@ export function isStarted(entry: { status: string; actual: number }): boolean {
 }
 
 /** A day in the past is read-only (§12.2) — nothing on it may be dragged or edited. */
-export function isPastDate(date: string, today: string): boolean {
+function isPastDate(date: string, today: string): boolean {
   return date < today;
 }
 

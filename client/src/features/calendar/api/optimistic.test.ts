@@ -13,7 +13,7 @@
  * object is live in the TanStack cache while these functions run, and a mutation in place
  * would corrupt the snapshot `onError` rolls back to.
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   calendarResponseSchema,
   type CalendarResponse,
@@ -26,10 +26,10 @@ import {
   applyDoItNow,
   applyMove,
   applyRemoveBlock,
-  findBlock,
-  isProvisional,
-  resetProvisionalIds,
 } from "./optimistic";
+
+/** The shape of a minted provisional id: the prefix and a counter, nothing else. */
+const PROVISIONAL_ID = /^provisional:(\d+)$/;
 
 // ── Fixture ─────────────────────────────────────────────────────────────────
 
@@ -266,10 +266,6 @@ function blockIdsOn(response: CalendarResponse, date: string): string[] {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("optimistic calendar transforms", () => {
-  beforeEach(() => {
-    resetProvisionalIds();
-  });
-
   it("the fixture is a payload the §15 contract actually accepts", () => {
     // A prediction tested against a shape the server cannot send proves nothing.
     expect(calendarResponseSchema.safeParse(READY).success).toBe(true);
@@ -353,7 +349,7 @@ describe("optimistic calendar transforms", () => {
 
       const [replacement] = dayOf(next, TODAY).blocks;
       expect(replacement).toBeDefined();
-      expect(isProvisional(replacement!.block.block_id)).toBe(true);
+      expect(replacement!.block.block_id).toMatch(PROVISIONAL_ID);
       // And the old id is gone — launching it would be a 404.
       expect(blockIdsOn(next, TODAY)).not.toContain(B_PRACTICE_TODAY);
     });
@@ -382,10 +378,15 @@ describe("optimistic calendar transforms", () => {
       const first = applyBlockEdit(READY, TODAY, B_PRACTICE_TODAY, edited);
       const second = applyBlockEdit(READY, TODAY, B_PRACTICE_TODAY, edited);
 
-      const firstId = dayOf(first, TODAY).blocks[0]?.block.block_id;
-      const secondId = dayOf(second, TODAY).blocks[0]?.block.block_id;
-      expect(firstId).toBe("provisional:1");
-      expect(secondId).toBe("provisional:2");
+      const firstId = dayOf(first, TODAY).blocks[0]?.block.block_id ?? "";
+      const secondId = dayOf(second, TODAY).blocks[0]?.block.block_id ?? "";
+      // The counter is module state shared across this file's tests, so the assertion is on
+      // the STEP, not on an absolute value: the second mint is exactly one past the first.
+      const firstN = Number(PROVISIONAL_ID.exec(firstId)?.[1]);
+      const secondN = Number(PROVISIONAL_ID.exec(secondId)?.[1]);
+      expect(firstId).toMatch(PROVISIONAL_ID);
+      expect(secondId).toMatch(PROVISIONAL_ID);
+      expect(secondN).toBe(firstN + 1);
     });
   });
 
@@ -401,14 +402,14 @@ describe("optimistic calendar transforms", () => {
       expect(copy!.block.derived_from_block_id).toBe(B_PRACTICE_PAST);
       expect(copy!.block.scheduled_date).toBe(TODAY);
       expect(copy!.block.source).toBe("student");
-      expect(isProvisional(copy!.block.block_id)).toBe(true);
+      expect(copy!.block.block_id).toMatch(PROVISIONAL_ID);
     });
 
     it("leaves the SOURCE day untouched — the student did not do it, and the plan records that", () => {
       const next = applyDoItNow(READY, B_PRACTICE_PAST, TODAY);
 
       expect(dayOf(next, YESTERDAY)).toEqual(dayOf(READY, YESTERDAY));
-      expect(findBlock(next, B_PRACTICE_PAST)?.date).toBe(YESTERDAY);
+      expect(blockIdsOn(next, YESTERDAY)).toContain(B_PRACTICE_PAST);
     });
 
     it("recomputes today's counts to include the copy's target (§14)", () => {
@@ -461,7 +462,6 @@ describe("optimistic calendar transforms", () => {
         SETUP_REQUIRED,
       );
       expect(applyAcknowledge(SETUP_REQUIRED)).toBe(SETUP_REQUIRED);
-      expect(findBlock(SETUP_REQUIRED, B_PRACTICE_PAST)).toBeNull();
     });
   });
 

@@ -27,14 +27,13 @@ import { fileURLToPath } from "node:url";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getQueryFn } from "@/lib/queryClient";
-import {
-  isLaunchable,
-  stateKeyForEngine,
-  practiceStateKey,
-  useLaunchBlock,
-  type LaunchOutcome,
-} from "./launch";
+import { useLaunchBlock } from "./launch";
 import { isLaunchableBlockType } from "../lib/blocks";
+
+/** What `launch` resolves to, read off the hook rather than imported as a named type. */
+type LaunchOutcome = Awaited<
+  ReturnType<ReturnType<typeof useLaunchBlock>["launch"]>
+>;
 
 const csrfFetchMock = vi.fn();
 
@@ -53,6 +52,15 @@ const LAUNCH_BODY = {
   next: NEXT,
   resumed: false,
 };
+
+/**
+ * The two state keys, spelled out as literals — the strings `resume-practice.tsx` and
+ * `resume-review.tsx` read with. Literals, not the module's builder: the assertion is that
+ * the cache slot a launch warms is EXACTLY this string, and a builder shared by both sides
+ * would agree with itself whatever it spelled.
+ */
+const PRACTICE_STATE_KEY = `/api/practice/sessions/${SESSION_ID}/state?client_instance_id=${CID}`;
+const REVIEW_STATE_KEY = `/api/review/sessions/${SESSION_ID}/state?client_instance_id=${CID}`;
 
 /** What `GET /api/practice/sessions/:id/state` answers — the payload the page renders from. */
 const SESSION_STATE = {
@@ -85,7 +93,10 @@ function routeByUrl(launchResponse: () => Response): void {
   csrfFetchMock.mockImplementation((url: unknown) => {
     const path = String(url);
     if (path.includes("/launch")) return Promise.resolve(launchResponse());
-    if (path.startsWith("/api/practice/sessions/")) {
+    if (
+      path.startsWith("/api/practice/sessions/") ||
+      path.startsWith("/api/review/sessions/")
+    ) {
       return Promise.resolve(jsonResponse(SESSION_STATE));
     }
     return Promise.resolve(jsonResponse({}));
@@ -116,18 +127,48 @@ beforeEach(() => {
 
 // ── The key itself ──────────────────────────────────────────────────────────
 
-describe("practiceStateKey — the one string that stops the prefetch rotting", () => {
-  it("returns EXACTLY `/api/practice/sessions/:id/state?client_instance_id=:cid`", () => {
-    expect(practiceStateKey(SESSION_ID, CID)).toBe(
-      `/api/practice/sessions/${SESSION_ID}/state?client_instance_id=${CID}`,
+/** Every query key the launch left in the cache — the slots it warmed, and nothing else. */
+function warmedKeys(queryClient: QueryClient): unknown[] {
+  return queryClient
+    .getQueryCache()
+    .getAll()
+    .map((query) => query.queryKey);
+}
+
+/** Launches one block of `blockType` through the real hook, against `routeByUrl`. */
+async function launchOne(
+  blockType: "practice" | "review" | "full_length",
+): Promise<{ queryClient: QueryClient; navigate: ReturnType<typeof vi.fn> }> {
+  routeByUrl(() =>
+    jsonResponse({
+      ...LAUNCH_BODY,
+      engine: blockType,
+      next: `/${blockType}/session/${SESSION_ID}`,
+    }),
+  );
+  const { queryClient, wrapper } = harness();
+  const navigate = vi.fn();
+  const { result } = renderHook(() => useLaunchBlock(navigate), { wrapper });
+  await act(async () => {
+    await result.current.launch(BLOCK_ID, blockType);
+  });
+  return { queryClient, navigate };
+}
+
+describe("the practice state key — the one string that stops the prefetch rotting", () => {
+  it("a practice launch warms EXACTLY `/api/practice/sessions/:id/state?client_instance_id=:cid`", async () => {
+    const { queryClient } = await launchOne("practice");
+    expect(warmedKeys(queryClient)).toEqual([[PRACTICE_STATE_KEY]]);
+    expect(queryClient.getQueryData([PRACTICE_STATE_KEY])).toEqual(
+      SESSION_STATE,
     );
   });
 
-  it("matches the literal `resume-practice.tsx` builds its query key from — the page is the other end of the contract", () => {
+  it("matches the literal `resume-practice.tsx` builds its query key from — the page is the other end of the contract", async () => {
     // Read as TEXT, not imported: the assertion is about the key the PAGE spells, and an
     // import would only prove this file can load that module. If the page's key is edited
-    // and `practiceStateKey` is not, the prefetch lands in a slot nothing reads and the
-    // spinner comes back silently. That is the rot this test exists to catch.
+    // and the launch's is not, the prefetch lands in a slot nothing reads and the spinner
+    // comes back silently. That is the rot this test exists to catch.
     const here = path.dirname(fileURLToPath(import.meta.url));
     const pageSource = readFileSync(
       path.resolve(here, "../../../pages/resume-practice.tsx"),
@@ -142,53 +183,46 @@ describe("practiceStateKey — the one string that stops the prefetch rotting", 
       .slice(1, -1)
       .replace("${sessionId}", SESSION_ID)
       .replace("${clientInstanceId}", CID);
-    expect(practiceStateKey(SESSION_ID, CID)).toBe(substituted);
+    const { queryClient } = await launchOne("practice");
+    expect(warmedKeys(queryClient)).toEqual([[substituted]]);
   });
 });
 
-// ── isLaunchable (formula sheet §8 item 12) ─────────────────────────────────
+// ── isLaunchableBlockType (formula sheet §8 item 12) ────────────────────────
 
-describe("isLaunchable", () => {
+describe("isLaunchableBlockType", () => {
   it("is true for the engines that are REAL — practice, review (2026-09-22) and full-length (E9b)", () => {
-    expect(isLaunchable({ block_type: "practice" })).toBe(true);
-    expect(isLaunchable({ block_type: "review" })).toBe(true);
+    expect(isLaunchableBlockType("practice")).toBe(true);
+    expect(isLaunchableBlockType("review")).toBe(true);
     // E9b: the exam vertical shipped and its adapter replaced the fail-open stub, so this
     // line moved from false to true exactly as it said it would.
-    expect(isLaunchable({ block_type: "full_length" })).toBe(true);
-  });
-
-  it("is the SAME rule the view model uses — one definition, not two that agree by luck", () => {
-    // Until this change the rule existed twice: here, and as a hand-written
-    // `block.block_type === "practice"` in view-model.ts. They agreed by coincidence, and
-    // the moment review shipped the launch path accepted it while the card still drew
-    // "Coming soon". Both now call `isLaunchableBlockType`.
-    for (const blockType of ["practice", "review", "full_length"] as const) {
-      expect(isLaunchable({ block_type: blockType })).toBe(
-        isLaunchableBlockType(blockType),
-      );
-    }
+    expect(isLaunchableBlockType("full_length")).toBe(true);
   });
 });
 
 describe("the prefetch key is the one the landing page actually reads", () => {
-  it("routes each engine to its own state key, and full_length to none", () => {
-    expect(stateKeyForEngine("practice", "s1", "ci")).toBe(
-      "/api/practice/sessions/s1/state?client_instance_id=ci",
-    );
+  it("routes each engine to its own state key, and full_length to none", async () => {
+    expect(warmedKeys((await launchOne("practice")).queryClient)).toEqual([
+      [PRACTICE_STATE_KEY],
+    ]);
     // resume-review.tsx:65, character for character.
-    expect(stateKeyForEngine("review", "s1", "ci")).toBe(
-      "/api/review/sessions/s1/state?client_instance_id=ci",
+    expect(warmedKeys((await launchOne("review")).queryClient)).toEqual([
+      [REVIEW_STATE_KEY],
+    ]);
+    // Nothing warmed means "navigate without prefetching", never "prefetch the wrong key" —
+    // a key nothing reads warms a slot nobody looks in and the spinner comes back silently.
+    const fullLength = await launchOne("full_length");
+    expect(warmedKeys(fullLength.queryClient)).toEqual([]);
+    expect(fullLength.navigate).toHaveBeenCalledWith(
+      `/full_length/session/${SESSION_ID}`,
     );
-    // Null means "navigate without prefetching", never "prefetch the wrong key" — a key
-    // nothing reads warms a slot nobody looks in and the spinner comes back silently.
-    expect(stateKeyForEngine("full_length", "s1", "ci")).toBeNull();
   });
 
-  it("never returns the practice key for a review launch", () => {
+  it("never warms the practice key for a review launch", async () => {
     // The one mistake that would look like it worked.
-    expect(stateKeyForEngine("review", "s1", "ci")).not.toBe(
-      stateKeyForEngine("practice", "s1", "ci"),
-    );
+    const { queryClient } = await launchOne("review");
+    expect(queryClient.getQueryData([REVIEW_STATE_KEY])).toEqual(SESSION_STATE);
+    expect(queryClient.getQueryData([PRACTICE_STATE_KEY])).toBeUndefined();
   });
 });
 
@@ -215,7 +249,7 @@ describe("useLaunchBlock (§15.1)", () => {
     const page = renderHook(
       () =>
         useQuery<typeof SESSION_STATE>({
-          queryKey: [practiceStateKey(SESSION_ID, CID)],
+          queryKey: [PRACTICE_STATE_KEY],
         }),
       { wrapper },
     );
@@ -243,7 +277,7 @@ describe("useLaunchBlock (§15.1)", () => {
     expect(sent.client_instance_id).toBe(CID);
 
     expect(
-      queryClient.getQueryData([practiceStateKey(SESSION_ID, CID)]),
+      queryClient.getQueryData([PRACTICE_STATE_KEY]),
     ).toEqual(SESSION_STATE);
   });
 
@@ -253,7 +287,7 @@ describe("useLaunchBlock (§15.1)", () => {
     let cacheAtNavigate: unknown;
     const navigate = vi.fn(() => {
       cacheAtNavigate = queryClient.getQueryData([
-        practiceStateKey(SESSION_ID, CID),
+        PRACTICE_STATE_KEY,
       ]);
     });
 
@@ -324,7 +358,7 @@ describe("useLaunchBlock (§15.1)", () => {
 
     await waitFor(() =>
       expect(
-        queryClient.getQueryData([practiceStateKey(SESSION_ID, CID)]),
+        queryClient.getQueryData([PRACTICE_STATE_KEY]),
       ).toBeUndefined(),
     );
   });

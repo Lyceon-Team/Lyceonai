@@ -17,18 +17,20 @@
  * fell back to a hard-coded [15,30,45,60,90,120] fails here instead of passing by coincidence.
  */
 import React from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type {
   PlanningEstimates,
   StudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
-import {
-  examPairIncomplete,
-  SettingsSheet,
-  scheduleSummary,
-} from "./SettingsSheet";
+import { SettingsSheet, scheduleSummary } from "./SettingsSheet";
 
 const ESTIMATES: PlanningEstimates = {
   practice_seconds_per_unit: 90,
@@ -423,36 +425,42 @@ describe("practice test frequency (§8.1)", () => {
     expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBe(6);
   });
 
-  // The guard behind the interaction. `examPairIncomplete` is unreachable by tapping now that
-  // both chip rows move both halves — which is exactly when a guard stops being tested and
-  // starts rotting, so it is asserted directly against a draft no chip can produce.
+  // The guard behind the interaction. Half a pair is unreachable by tapping now that both
+  // chip rows move both halves — which is exactly when a guard stops being tested and starts
+  // rotting. The draft opens from the `profile` prop, so the sheet is rendered over a half
+  // pair no chip can produce, and the Save button is what is asserted.
   it("still refuses to SAVE half a pair, if a draft ever holds one", () => {
-    expect(
-      examPairIncomplete({
-        full_length_weekday: null,
-        full_length_interval_weeks: 2,
-      }),
-    ).toBe(true);
-    expect(
-      examPairIncomplete({
-        full_length_weekday: 6,
-        full_length_interval_weeks: null,
-      }),
-    ).toBe(true);
+    const saveFor = (
+      full_length_weekday: number | null,
+      full_length_interval_weeks: number | null,
+    ): { save: HTMLElement; onSave: ReturnType<typeof vi.fn> } => {
+      cleanup();
+      const { onSave } = renderSheet({
+        profile: { ...PROFILE, full_length_weekday, full_length_interval_weeks },
+      });
+      return { save: screen.getByTestId("settings-save"), onSave };
+    };
+
+    for (const [weekday, interval] of [
+      [null, 2],
+      [6, null],
+    ] as const) {
+      const { save, onSave } = saveFor(weekday, interval);
+      expect(save).toBeDisabled();
+      fireEvent.click(save);
+      expect(onSave).not.toHaveBeenCalled();
+    }
     // And the two legitimate states are not refused, so the assertions above are about the
-    // PAIR and not about the guard returning true for everything.
-    expect(
-      examPairIncomplete({
-        full_length_weekday: 6,
-        full_length_interval_weeks: 2,
-      }),
-    ).toBe(false);
-    expect(
-      examPairIncomplete({
-        full_length_weekday: null,
-        full_length_interval_weeks: null,
-      }),
-    ).toBe(false);
+    // PAIR and not about the button being disabled for everything.
+    for (const [weekday, interval] of [
+      [6, 2],
+      [null, null],
+    ] as const) {
+      const { save, onSave } = saveFor(weekday, interval);
+      expect(save).toBeEnabled();
+      fireEvent.click(save);
+      expect(onSave).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("states the RATE, not a count, when there is no target date to count toward", () => {

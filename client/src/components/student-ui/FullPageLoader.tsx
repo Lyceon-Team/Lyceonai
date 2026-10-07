@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  *   app-wide route fallback, which also serves guardian, admin and marketing pages), so a
  *   dark-device user does not see a dark loader flash before a light page.
  */
-export type FullPageLoaderProps = {
+type FullPageLoaderProps = {
   label?: string;
   fill?: "screen" | "region";
   themeLock?: "light";

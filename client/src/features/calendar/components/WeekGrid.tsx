@@ -20,7 +20,7 @@ import { BlockCard } from "./BlockCard";
 import { DayMenu, DayOffCard, type DayActions } from "./DayMenu";
 import { canControlDay, isBlockedOut } from "../lib/day-state";
 
-export type WeekGridProps = {
+type WeekGridProps = {
   dates: readonly string[];
   dayFor: (date: string) => ViewDay | null;
   today: string;
