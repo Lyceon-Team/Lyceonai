@@ -132,6 +132,26 @@ export function rangeForView(
   return { from: dates[0] ?? cursor, to: dates[dates.length - 1] ?? cursor };
 }
 
+/**
+ * @spec [Doc_05F_Study_Calendar §17.7 (Week/Month toggle); design/prototype/Calendar.dc.html
+ *        (its month view opens on today's month); production QA 2026-10-07 item 11(a)]
+ * | @implemented [2026-10-07]
+ * | plain English: the date the month view opens on when the student switches from a week.
+ * The week view's cursor is its Monday, and a week that starts in one month and ends in the
+ * next (28 September – 4 October) used to open the PREVIOUS month: on 1 October the student got
+ * the September grid, whose read ends on 11 October, so the rest of their plan never showed.
+ * The month is today's when the week holds today (the prototype's month opens on today's), and
+ * otherwise the month of the week's Thursday — the ISO rule for which month a week belongs to,
+ * so a week is never shown inside a month it barely touches.
+ */
+export function monthCursorForWeek(cursor: string, today: string): string {
+  const monday = startOfWeek(cursor);
+  if (today >= monday && today <= addDays(monday, WEEK_LENGTH - 1)) {
+    return today;
+  }
+  return addDays(monday, 3);
+}
+
 const MONTHS = [
   "January",
   "February",

@@ -2243,6 +2243,23 @@ plant "UI55-SPLIT2" "the shared CalendarView pulls calendar.css into the student
 assert s.count(a) == 1
 s = s.replace(a, "import \"./calendar.css\";\n" + a, 1)'
 
+# ── Production QA 2026-10-07 item 11 (the student calendar). (a) the month view's first render is
+# the whole month: Week → Month opens today's month, and that month is read ahead in week view. ──
+
+plant "QA11-A1" "Week → Month opens the month of the week's Monday again (September on 1 October)" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "                next === \"month\" && view === \"week\"\n                  ? monthCursorForWeek(cursor, today)\n                  : cursor,"
+assert s.count(a) == 1
+s = s.replace(a, "                cursor,", 1)'
+
+plant "QA11-A2" "week view no longer reads the month ahead (the toggle draws the held-over week)" \
+  "$T55" \
+  "client/src/features/calendar/api/queries.ts" \
+  'a = "              : [rangeForView(\"month\", monthCursorForWeek(cursor, today))]),"
+assert s.count(a) == 1
+s = s.replace(a, "              : []),", 1)'
+
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \
   "client/src/components/home/PaidHome.tsx" \

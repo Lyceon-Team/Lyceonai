@@ -14,6 +14,7 @@ import {
   daysBetween,
   isSameMonth,
   longDate,
+  monthCursorForWeek,
   monthGridDates,
   monthName,
   rangeForView,
@@ -243,6 +244,25 @@ describe("rangeForView", () => {
     for (const date of grid) {
       expect(date >= range.from && date <= range.to).toBe(true);
     }
+  });
+});
+
+describe("monthCursorForWeek (QA 2026-10-07 item 11(a))", () => {
+  it("opens today's month when the week holds today, even if the week starts in the month before", () => {
+    // Thursday 1 October; the week is 28 September – 4 October.
+    expect(monthCursorForWeek("2026-09-28", "2026-10-01")).toBe("2026-10-01");
+    expect(
+      rangeForView("month", monthCursorForWeek("2026-09-28", "2026-10-01")),
+    ).toEqual({
+      from: "2026-09-28",
+      to: "2026-11-08",
+    });
+  });
+
+  it("opens the month of the week's Thursday when the week does not hold today", () => {
+    expect(monthCursorForWeek("2026-09-28", "2026-10-20")).toBe("2026-10-01");
+    expect(monthCursorForWeek("2026-10-26", "2026-10-07")).toBe("2026-10-29");
+    expect(monthCursorForWeek("2026-08-31", "2026-10-07")).toBe("2026-09-03");
   });
 });
 

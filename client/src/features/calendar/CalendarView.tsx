@@ -64,6 +64,7 @@ import type {
 import type { SectionProjectionDto } from "@lyceon/shared";
 import {
   daysBetween,
+  monthCursorForWeek,
   monthGridDates,
   numericRangeLabel,
   rangeLabel,
@@ -700,7 +701,18 @@ export function CalendarView({
           <StudentCalendarHeader
             view={view}
             title={numericRangeLabel(view, cursor)}
-            onView={(next) => move(next, cursor)}
+            // QA 2026-10-07 item 11(a): Week → Month opens today's month when the week holds
+            // today (else the month of the week's Thursday), never the month of the week's
+            // Monday — on 1 October that was September, whose grid and read stop on
+            // 11 October. The guardian's `TopBar` below keeps `move(next, cursor)`.
+            onView={(next) =>
+              move(
+                next,
+                next === "month" && view === "week"
+                  ? monthCursorForWeek(cursor, today)
+                  : cursor,
+              )
+            }
             onToday={() => move("week", startOfWeek(today))}
             onStep={step}
             {...(schedule === undefined

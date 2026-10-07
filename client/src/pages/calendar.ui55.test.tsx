@@ -496,9 +496,61 @@ describe("paid: the Canvas-style header (DESIGN.md §4)", () => {
     ).toBe("true");
     expect(await screen.findByTestId("calendar-month-grid")).toBeTruthy();
     expect(screen.queryByTestId("calendar-week-grid")).toBeNull();
-    expect(title()).toBe("September 2026");
+    // QA 2026-10-07 item 11(a): the week 28 September – 4 October holds today (1 October), so
+    // Month opens October — today's month — and reads October's whole grid.
+    expect(title()).toBe("October 2026");
+    await waitFor(() => expect(monthRead()).toBe(true));
   });
+});
 
+/** October 2026's grid, as `rangeForView("month", …)` names it: Monday 28 Sep – Sunday 8 Nov. */
+const MONTH_READ = "/api/calendar?from=2026-09-28&to=2026-11-08";
+
+/** True once October's grid has been read (the query string goes on with `device_timezone`). */
+function monthRead(): boolean {
+  return planReads().some(
+    (url) => url === MONTH_READ || url.startsWith(`${MONTH_READ}&`),
+  );
+}
+
+/**
+ * The month read's answer: the fixture week plus the NEXT week's days (its block ids remapped so
+ * they cannot collide with this week's), so a month cell after 4 October has a block only when
+ * the MONTH's rows are on screen — the week held over by `keepPreviousData` has none there.
+ */
+function paidMonth(): unknown {
+  const week = paidWeek() as { days: unknown[] };
+  const next = JSON.parse(
+    JSON.stringify(
+      studentCalendarWeek("2026-10-08", { testDate: TEST_DATE }),
+    ).replaceAll("7c9e6679-7425-40de-944b-", "7c9e6679-7425-40de-944c-"),
+  ) as { days: unknown[] };
+  return { ...week, days: [...week.days, ...next.days] };
+}
+
+describe("paid: the month view's first render is the whole month (QA 2026-10-07 item 11(a))", () => {
+  it("in week view the month the toggle opens is read ahead, so Month draws the month's rows at once", async () => {
+    await mount("paid", {
+      calendar: () => paidMonth(),
+    });
+    await screen.findByTestId("calendar-week-grid");
+    // The week's own read first; then, once idle, the month the toggle would open.
+    await waitFor(() => expect(monthRead()).toBe(true), {
+      timeout: 3_000,
+    });
+    // Presence: the month payload has a block after this week (Wednesday 7 October).
+    const reads = planReads().length;
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    // The FIRST render after the click, with no wait: next week's day already has its chips.
+    const cell = screen.getByTestId("calendar-month-cell-2026-10-07");
+    expect(cell.querySelectorAll(".mchip").length).toBeGreaterThan(0);
+    expect(title()).toBe("October 2026");
+    // Served from the read-ahead: the toggle sent no new plan read.
+    expect(planReads().length).toBe(reads);
+  });
+});
+
+describe("paid: Regenerate plan", () => {
   it("Regenerate plan posts to /api/calendar/plan/regenerate with one fresh idempotency key per press", async () => {
     await mount("paid");
     const button = await screen.findByRole("button", {
