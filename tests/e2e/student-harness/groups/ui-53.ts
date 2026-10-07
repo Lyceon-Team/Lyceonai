@@ -200,7 +200,7 @@ export const UI_53: PageGroup = {
     {
       id: "review-lisa-typing",
       title:
-        "Review runner, LISA panel in use (OQ-54 (a), ruling 2026-10-05: student tokens, follows the device theme): a first message typed and sent creates the item's conversation (real POST /api/tutor/conversations); the student's bubble and LISA's typing dots show in the panel. The turn request is held in the browser, so no turn runs. On a phone the panel stacks under the question; typing into it scrolls it into view",
+        "Review runner, LISA panel in use (OQ-54 (a), ruling 2026-10-05: student tokens, follows the device theme): a first message typed and sent creates the item's conversation (real POST /api/tutor/conversations); the student's bubble and LISA's typing dots show in the panel, and Send reads 'Sending…' (QA 2026-10-07 item 5). The turn request is held in the browser, so no turn runs. On a phone the panel stacks under the question; typing into it scrolls it into view",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
@@ -220,7 +220,7 @@ export const UI_53: PageGroup = {
         ),
       ],
       expectVisible:
-        '[data-testid="scoped-tutor-panel"] [data-testid="lisa-typing"]',
+        '[data-testid="scoped-tutor-panel"] button[aria-label="Send message"][data-pending="true"]',
       expectFitsViewport: FITS,
       prototype: {
         kind: "none",
@@ -250,6 +250,27 @@ export const UI_53: PageGroup = {
         kind: "none",
         reason:
           "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d)). F-69's proof shot: the shell's top bar with the composer focused.",
+      },
+    },
+    {
+      id: "review-lisa-show",
+      title:
+        "QA 2026-10-07 item 8: LISA hidden with the bar's toggle, then opened again with Show LISA. On a phone (LISA stacks under the question) the panel opens scrolled into view inside the shell, its header at the top of the runner's scroll area; at 1440 it is beside the question and nothing scrolls",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: LISA_COMPOSER,
+      steps: [
+        both('[data-testid="practice-tutor-toggle"]'),
+        both('[data-testid="practice-tutor-toggle"]'),
+      ],
+      expectVisible: '[data-testid="scoped-tutor-panel"]',
+      expectFitsViewport: FITS,
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d)). QA item 8's proof shot: Show LISA on a phone brings the panel into view.",
       },
     },
     {

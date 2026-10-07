@@ -765,3 +765,145 @@ describe("OQ-54 (a) — the panel on the student tokens (ruling 2026-10-05)", ()
     expect(modal.textContent).toContain(approved.body);
   });
 });
+
+// ── QA 2026-10-07: Send's pending state (item 5) and Show LISA on a phone (item 8) ──────────
+//
+// Item 5 (Karl): "LISA Send shows an immediate pressed/pending state (disabled, visible pending)
+// from the first click, standalone and in the runner panel." In the panel a first message goes
+// opener → create → a NEW thread composer, whose first render precedes the effect that sends
+// the message; the old thread composer drew "Send", enabled, in between. A MutationObserver
+// keeps every committed change to Send's `disabled` attribute, so a Send that was enabled at any
+// moment between the click and LISA's reply is a record, not a missed frame.
+
+/** Records each time a Send button went from enabled to disabled (it was enabled before). */
+function watchSendReenabled(): { violations: () => number; stop: () => void } {
+  let count = 0;
+  const tally = (records: MutationRecord[]): void => {
+    for (const r of records) {
+      const el = r.target as Element;
+      if (
+        r.type === "attributes" &&
+        r.attributeName === "disabled" &&
+        r.oldValue === null &&
+        el.getAttribute("aria-label") === "Send message"
+      ) {
+        count += 1;
+      }
+    }
+  };
+  const observer = new MutationObserver(tally);
+  observer.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["disabled"],
+    attributeOldValue: true,
+  });
+  return {
+    violations: () => {
+      tally(observer.takeRecords());
+      return count;
+    },
+    stop: () => observer.disconnect(),
+  };
+}
+
+function sendButton(): HTMLButtonElement {
+  return screen.getByRole("button", { name: "Send message" });
+}
+
+describe("QA 2026-10-07 — Send is pending from the click (item 5), Show LISA reveals the panel (item 8)", () => {
+  beforeEach(() => {
+    cleanup();
+    calls.length = 0;
+    setEntitled(true);
+    vi.mocked(Element.prototype.scrollIntoView).mockClear();
+  });
+
+  it("item 5: from the click to LISA's reply, Send reads 'Sending…' and is never enabled — opener, create, the new thread, the turn", async () => {
+    let reply: (v: unknown) => void = () => undefined;
+    orchestrateTurn.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          reply = resolve;
+        }),
+    );
+    const itemId = seedReviewItem(1);
+    renderPanel(props(itemId));
+    await ready();
+    // Presence first: before the click Send is the plain, enabled button.
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "where do I start?" },
+    });
+    expect(sendButton().textContent).toBe("Send");
+    expect(sendButton().disabled).toBe(false);
+
+    fireEvent.click(sendButton());
+    // The render the click causes: pending, before any request has answered.
+    expect(sendButton().textContent).toBe("Sending…");
+    expect(sendButton().disabled).toBe(true);
+    expect(sendButton().getAttribute("aria-busy")).toBe("true");
+    expect(conversationCreates()).toHaveLength(0);
+    // From here to the reply, a Send that turns disabled was enabled in between: a violation.
+    const watch = watchSendReenabled();
+
+    // The conversation is created, the thread mounts and sends the turn; LISA has not answered.
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(1));
+    expect(conversationCreates()).toHaveLength(1);
+    expect(sendButton().textContent).toBe("Sending…");
+    expect(sendButton().disabled).toBe(true);
+    expect(watch.violations()).toBe(0);
+
+    reply(workerReply());
+    await screen.findByText(TUTOR_TEXT);
+    watch.stop();
+    expect(sendButton().textContent).toBe("Send");
+  });
+
+  it("item 5: a later turn in the thread is pending from the click too", async () => {
+    const itemId = seedReviewItem(1);
+    seedConversation(itemId, [
+      { role: "student", message: "How do I start?" },
+      { role: "tutor", message: "Isolate x." },
+    ]);
+    let reply: (v: unknown) => void = () => undefined;
+    orchestrateTurn.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          reply = resolve;
+        }),
+    );
+    renderPanel(props(itemId));
+    await screen.findByText("Isolate x.");
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "and then?" },
+    });
+    expect(sendButton().disabled).toBe(false);
+    fireEvent.click(sendButton());
+    expect(sendButton().textContent).toBe("Sending…");
+    expect(sendButton().disabled).toBe(true);
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(1));
+    reply(workerReply());
+    await screen.findByText(TUTOR_TEXT);
+    expect(sendButton().textContent).toBe("Send");
+  });
+
+  it("item 8: told to reveal itself (Show LISA on a phone), the panel scrolls its own frame into view on mount", async () => {
+    renderPanel({ ...props(seedReviewItem(1)), revealOnOpen: true });
+    await ready();
+    const panel = screen.getByTestId("scoped-tutor-panel");
+    const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    const onPanel = scroll.mock.contexts.filter((el) => el === panel);
+    expect(onPanel).toHaveLength(1);
+    expect(scroll.mock.calls[scroll.mock.contexts.indexOf(panel)]?.[0]).toEqual(
+      { behavior: "auto", block: "start" },
+    );
+  });
+
+  it("item 8: LISA simply there (every question, W4-4) does not scroll the runner to itself", async () => {
+    renderPanel(props(seedReviewItem(1)));
+    await ready();
+    const panel = screen.getByTestId("scoped-tutor-panel");
+    const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    expect(scroll.mock.contexts.filter((el) => el === panel)).toHaveLength(0);
+  });
+});

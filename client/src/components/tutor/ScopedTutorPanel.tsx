@@ -114,6 +114,7 @@ export function ScopedTutorPanel({
   sessionItemId,
   questionLabel,
   onHide,
+  revealOnOpen = false,
 }: {
   sourceSurface: Extract<TutorSourceSurface, "review" | "practice">;
   sessionItemId: string;
@@ -121,7 +122,21 @@ export function ScopedTutorPanel({
   questionLabel: string;
   /** Hide LISA for the current question; it returns on the next. */
   onHide: () => void;
+  /**
+   * QA 2026-10-07 item 8: the student opened LISA (Show LISA) where the panel stacks under the
+   * question (the phone layout), so it opens scrolled into view, its header at the top of the
+   * runner's scroll area. False when LISA is simply there (every question, W4-4), so a question
+   * never loads scrolled away from itself.
+   */
+  revealOnOpen?: boolean;
 }) {
+  const sectionRef = useRef<HTMLElement | null>(null);
+  // Mount-only: the panel mounts when it is opened, and it is the opening that is revealed.
+  useEffect(() => {
+    if (!revealOnOpen) return;
+    // "auto", not "smooth": DESIGN.md §1 allows no motion but the LISA dots.
+    sectionRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+  }, []);
   // Looking is a GET. Nothing here creates a conversation on load.
   const existing = useItemConversation(sourceSurface, sessionItemId);
   const createConversation = useCreateConversation();
@@ -186,6 +201,7 @@ export function ScopedTutorPanel({
   return (
     // SCL-204 / R32: `ph-no-capture` — the LISA conversation is never recorded (Coding Standards §12).
     <section
+      ref={sectionRef}
       className="ph-no-capture flex h-full min-h-[480px] flex-col overflow-hidden rounded-lg border border-lyc-rule bg-lyc-sheet"
       aria-label="LISA"
       data-testid="scoped-tutor-panel"
@@ -265,7 +281,8 @@ export function ScopedTutorPanel({
             onSubmit={() => {
               if (draft.trim()) startConversation(draft.trim());
             }}
-            disabled={!!pendingMessage}
+            disabled={false}
+            pending={!!pendingMessage}
             placeholder={
               pendingMessage ? "LISA is responding..." : COMPOSER_PLACEHOLDER
             }
@@ -328,6 +345,10 @@ function ScopedThread({
   // same turn machine as every other — a server call, so an effect; the ref
   // keeps it to one send.
   const firstSent = useRef(false);
+  // QA-5: between this thread mounting and that effect sending the first message, the message
+  // is still on its way: Send stays pending (it was pending in the opener), with no enabled
+  // frame in between. Read during render on purpose; the send it guards re-renders the thread.
+  const firstAwaiting = firstMessage !== null && !firstSent.current;
   useEffect(() => {
     if (firstMessage === null || firstSent.current) return;
     firstSent.current = true;
@@ -420,9 +441,12 @@ function ScopedThread({
           draft={draft}
           onDraftChange={setDraft}
           onSubmit={submit}
-          disabled={isThinking || isPaused || isEnded}
+          disabled={isPaused || isEnded}
+          pending={isThinking || firstAwaiting}
           placeholder={
-            isThinking ? "LISA is responding..." : COMPOSER_PLACEHOLDER
+            isThinking || firstAwaiting
+              ? "LISA is responding..."
+              : COMPOSER_PLACEHOLDER
           }
           inset="panel"
         />

@@ -1088,12 +1088,13 @@ plant "UI56-S1" "the student bubble loses its You label" \
 assert s.count(a) == 1
 s = s.replace(a, "        {isStudent ? \"\" : \"LISA\"}", 1)'
 
+# Re-pointed 2026-10-07 (QA-5): Send's `disabled` is now `blocked` (disabled or pending).
 plant "UI56-T1" "Send stays enabled while LISA is thinking" \
   "$T56" \
   "client/src/components/tutor/TutorThreadParts.tsx" \
-  'a = "            disabled={disabled}\n            className=\"h-[50px]"
+  'a = "            disabled={blocked}\n            className={`h-[50px]"
 assert s.count(a) == 1
-s = s.replace(a, "            disabled={false}\n            className=\"h-[50px]", 1)'
+s = s.replace(a, "            disabled={false}\n            className={`h-[50px]", 1)'
 
 plant "UI56-T2" "the typing bubble loses its LISA label" \
   "$T56" \
