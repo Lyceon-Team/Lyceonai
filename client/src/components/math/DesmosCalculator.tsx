@@ -157,6 +157,20 @@ type DesmosCalculatorProps = {
 const EXPANDED_HEIGHT_GRAPHING = 520;
 const EXPANDED_HEIGHT_SCIENTIFIC = 400;
 
+/**
+ * @spec [production QA 2026-10-07 item 12 (Karl: the Desmos "Scientific" tab contrast in dark
+ *       mode); DESIGN.md §1 (student tokens only, nothing below 14px)] | @implemented [2026-10-07]
+ * plain English: our own mode switch above the Desmos host, drawn with the student tokens, so it
+ * follows the page's theme (the practice and review runners follow the device; the timed module
+ * is pinned light). It used the app-wide light tokens at 12px: in dark mode the selected tab was
+ * a cream block and the other tab's label all but vanished into the panel. Desmos's own UI inside
+ * the host is not styled here.
+ */
+const MODE_TAB =
+  "flex-1 rounded px-3 py-1.5 text-lyc-meta font-semibold transition-colors";
+const MODE_TAB_ON = "bg-lyc-sheet text-lyc-ink-strong shadow-sm";
+const MODE_TAB_OFF = "bg-transparent text-lyc-ink hover:bg-lyc-hover";
+
 export default function DesmosCalculator({
   className,
   expanded,
@@ -361,7 +375,7 @@ export default function DesmosCalculator({
     >
       {expanded && (
         <div
-          className="mb-2 flex items-center gap-1 rounded-md bg-secondary/60 p-0.5 shrink-0"
+          className="mb-2 flex shrink-0 items-center gap-1 rounded-md border border-lyc-rule bg-lyc-margin p-0.5"
           role="radiogroup"
           aria-label="Calculator mode"
         >
@@ -370,11 +384,7 @@ export default function DesmosCalculator({
             role="radio"
             aria-checked={mode === "graphing"}
             onClick={() => handleModeSwitch("graphing")}
-            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-              mode === "graphing"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={`${MODE_TAB} ${mode === "graphing" ? MODE_TAB_ON : MODE_TAB_OFF}`}
             data-testid="desmos-mode-graphing"
           >
             Graphing
@@ -384,11 +394,7 @@ export default function DesmosCalculator({
             role="radio"
             aria-checked={mode === "scientific"}
             onClick={() => handleModeSwitch("scientific")}
-            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-              mode === "scientific"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={`${MODE_TAB} ${mode === "scientific" ? MODE_TAB_ON : MODE_TAB_OFF}`}
             data-testid="desmos-mode-scientific"
           >
             Scientific
@@ -403,7 +409,7 @@ export default function DesmosCalculator({
       >
         {loadError && (
           <div
-            className="mb-2 text-sm text-amber-700"
+            className="mb-2 text-lyc-meta text-lyc-danger"
             data-testid="desmos-calculator-error"
           >
             {loadError}
@@ -411,7 +417,7 @@ export default function DesmosCalculator({
         )}
         <div
           ref={hostRef}
-          className="h-full w-full rounded-md border border-slate-200"
+          className="h-full w-full rounded-md border border-lyc-rule"
           data-testid="desmos-calculator"
         />
       </div>

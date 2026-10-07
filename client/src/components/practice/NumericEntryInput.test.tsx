@@ -71,6 +71,31 @@ describe("NumericEntryInput", () => {
     ).toBe(true);
   });
 
+  // @spec [production QA 2026-10-07 item 12: the submitted grid-in answer's contrast]
+  // | @implemented [2026-10-07] | plain English: the runner disables the field after submit; the
+  // student's own answer must stay at full ink and 19px, not the shared Input's faded 14px.
+  it("QA 12: a submitted (disabled) answer keeps full opacity and its 19px size at every width", () => {
+    render(<NumericEntryInput value="12" onChange={() => {}} disabled />);
+    const input = screen.getByLabelText(
+      "Enter your answer",
+    ) as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+    expect(input.value).toBe("12");
+    const classes = input.className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        "disabled:opacity-100",
+        "text-[19px]",
+        "md:text-[19px]",
+        "text-lyc-ink",
+      ]),
+    );
+    expect(classes.filter((c) => /^disabled:opacity-(?!100$)/.test(c))).toEqual(
+      [],
+    );
+    expect(classes).not.toContain("md:text-sm");
+  });
+
   it("disables input when showResult=true", () => {
     render(
       <NumericEntryInput value="42" onChange={() => {}} showResult isCorrect />,
