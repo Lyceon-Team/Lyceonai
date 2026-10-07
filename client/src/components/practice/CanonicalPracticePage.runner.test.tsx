@@ -47,6 +47,7 @@ import {
 } from "@/lib/engine-config";
 import CanonicalPracticePage from "./CanonicalPracticePage";
 import { MISS_NOTE } from "@/components/question-renderer";
+import { queryClient as appQueryClient } from "@/lib/queryClient";
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the shortened-session sentence, verbatim. */
 const SHORTER_SESSION_NOTE =
@@ -698,5 +699,70 @@ describe("QA item 5 (2026-10-07): the runner's footer shows a pending state from
       held.release();
     });
     await loaded(2);
+  });
+});
+
+/**
+ * QA item 6 (owner QA list, Karl, 2026-10-07) | @implemented [2026-10-07]. The reads an answer,
+ * a skip or leaving the runner changes, keyed exactly as the pages that show them key them:
+ * Home's and Practice's open-session list, Review's, the review pool (its URL carries `?tz=`),
+ * today's plan (the calendar range) and this session's own state (resume-practice.tsx).
+ */
+function seedSessionReads(): readonly (readonly unknown[])[] {
+  const keys: readonly (readonly unknown[])[] = [
+    ["/api/practice/sessions/open"],
+    ["/api/review/sessions/open"],
+    ["/api/review/pool?tz=America%2FChicago"],
+    ["calendar", "range", "2026-09-28", "2026-10-04", "UTC"],
+    [`/api/practice/sessions/${SESSION_ID}/state?client_instance_id=c-1`],
+  ];
+  for (const key of keys) appQueryClient.setQueryData(key, { seeded: true });
+  return keys;
+}
+
+function invalidated(key: readonly unknown[]): boolean {
+  return appQueryClient.getQueryState(key)?.isInvalidated === true;
+}
+
+describe("QA item 6 (2026-10-07): answering, skipping and leaving mark the session reads stale", () => {
+  afterEach(() => {
+    appQueryClient.clear();
+  });
+
+  it("an answer marks every list stale (the pool by its ?tz= key) and this session's state, refetching none", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const keys = seedSessionReads();
+    // Presence: seeded, and fresh before the answer.
+    expect(keys.map(invalidated)).toEqual([false, false, false, false, false]);
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await waitFor(() => expect(screen.getByTestId("runner-next")).toBeTruthy());
+    expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
+    // Nothing on this page reads them, and the state is never refetched under the runner.
+    expect(appQueryClient.getQueryState(keys[4] ?? [])?.fetchStatus).toBe(
+      "idle",
+    );
+  });
+
+  it("a skip marks them stale too", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const keys = seedSessionReads();
+    await click(screen.getByRole("button", { name: "Skip" }));
+    await loaded(2);
+    expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
+  });
+
+  it("leaving the runner (unmount) marks them stale", async () => {
+    installNetwork({ total: 3 });
+    const { unmount } = mountRunner();
+    await loaded();
+    const keys = seedSessionReads();
+    expect(keys.map(invalidated)).toEqual([false, false, false, false, false]);
+    unmount();
+    expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
   });
 });

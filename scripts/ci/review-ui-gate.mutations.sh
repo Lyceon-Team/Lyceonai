@@ -103,6 +103,7 @@ FILES=(
   "packages/shared/src/exam-form-display.ts"
   "client/src/components/ui/button.tsx"
   "client/src/pages/practice.tsx"
+  "client/src/lib/session-reads.ts"
 )
 
 snapshot_all() {
@@ -2352,6 +2353,37 @@ plant "QA5-T1" "Full-Length's Start keeps its label while the create is in fligh
   'a = "        {pending ? STARTING_LABEL : label}\n"
 assert s.count(a) == 1
 s = s.replace(a, "        {label}\n", 1)'
+
+# Item 6: answering, skipping, ending or leaving a session marks the reads it changes stale.
+QA_READS="client/src/lib/session-reads.test.ts"
+
+plant "QA6-1" "an answer or skip marks nothing stale" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "        invalidateSessionReads(queryClient, {\n          engine: engine.domain,\n          sessionId: effectiveSessionId,\n        });\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA6-2" "leaving the runner marks nothing stale" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "      const id = leaveSession.current;\n"
+assert s.count(a) == 1
+s = s.replace(a, a + "      if (id !== null) return;\n", 1)'
+
+plant "QA6-3" "the review pool is matched by its bare prefix again (dead: the key carries ?tz=)" \
+  "$QA_READS $QA_RUNNER" \
+  "client/src/lib/session-reads.ts" \
+  'a = "    predicate: (q) => firstKeyStartsWith(q.queryKey, REVIEW_POOL_QUERY_KEY),\n"
+assert s.count(a) == 1
+s = s.replace(a, "    queryKey: [REVIEW_POOL_QUERY_KEY],\n", 1)'
+
+plant "QA6-4" "the runner's own state read is refetched under the runner" \
+  "$QA_READS" \
+  "client/src/lib/session-reads.ts" \
+  'a = "      refetchType: \"none\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
 
 # ── END QA-FLOWS
 

@@ -3,6 +3,7 @@ import { queryClient } from "@/lib/queryClient";
 import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
 import { csrfFetch } from "@/lib/csrf";
 import { getClientInstanceId } from "@/lib/client-instance";
+import { invalidateSessionReads } from "@/lib/session-reads";
 import { isSubmittableAnswer } from "@/lib/practice-submission";
 import {
   type EngineConfig,
@@ -615,6 +616,12 @@ export function useCanonicalPractice(
         const data = (payloadBody ?? {}) as
           | PracticeAnswerResponse
           | PracticeSkipResponse;
+        // QA item 6 (2026-10-07): an answer or a skip changes the session lists, the
+        // "N of M answered" counts, the review pool and today's plan; mark them stale.
+        invalidateSessionReads(queryClient, {
+          engine: engine.domain,
+          sessionId: effectiveSessionId,
+        });
         if (data.state) setSessionState(data.state);
         // Owner ruling 2026-10-01: the KPI read no longer polls, so the answer that completes
         // the session marks it stale (practice and review both run through this hook).
@@ -734,6 +741,26 @@ export function useCanonicalPractice(
     // Mount-only by design: the first question loads once; later loads are driven
     // by the student's actions, not by `fetchNextQuestion`'s identity changing.
   }, []);
+
+  /**
+   * QA item 6 (owner QA list, Karl, 2026-10-07) | @implemented [2026-10-07]: leaving the runner
+   * (the back arrow, a completion redirect, any navigation) marks the session reads stale, so the
+   * page the student lands on reads them afresh. A ref, so the cleanup sees the session id the
+   * runner ended on, not the one it mounted with.
+   */
+  const leaveSession = useRef<string | null>(null);
+  leaveSession.current = sessionId;
+  useEffect(
+    () => () => {
+      const id = leaveSession.current;
+      invalidateSessionReads(
+        queryClient,
+        id === null ? undefined : { engine: engine.domain, sessionId: id },
+      );
+    },
+    // Unmount only: `engine` is fixed for a mounted runner.
+    [],
+  );
 
   return {
     question,
