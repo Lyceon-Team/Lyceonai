@@ -198,5 +198,29 @@ export const UI_54: PageGroup = {
           "A click path; its proof is the landing path (the prototype's Resume is not wired).",
       },
     },
+    {
+      id: "click-paid-start-pending",
+      title:
+        "QA item 5: a test's Start pressed (at 390 after Continue anyway), the create held in flight: 'Starting…' with a spinner, disabled",
+      persona: "paid",
+      route: "/tests",
+      waitFor: TESTS_PAID,
+      holdRequest: { method: "POST", path: "/api/tests/sessions" },
+      steps: [
+        {
+          click: {
+            desktop: '[data-testid="tests-start"]',
+            mobile: '[data-testid="tests-start"]',
+          },
+        },
+        CONTINUE_ANYWAY,
+      ],
+      expectVisible: '[data-testid="tests-start"][aria-busy="true"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).",
+      },
+    },
   ],
 };

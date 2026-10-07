@@ -157,5 +157,21 @@ export const UI_51: PageGroup = {
           "A click path: the screenshot is where the click landed (the runner), proven by its pathname.",
       },
     },
+    {
+      id: "click-paid-start-pending",
+      title:
+        "QA item 5: Start pressed, the create held in flight: 'Starting…' with a spinner, disabled",
+      persona: "paid",
+      route: "/practice",
+      waitFor: PRACTICE,
+      holdRequest: { method: "POST", path: "/api/practice/sessions" },
+      steps: [both('[data-testid="practice-start"]')],
+      expectVisible: '[data-testid="practice-start"][aria-busy="true"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).",
+      },
+    },
   ],
 };

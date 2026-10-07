@@ -150,7 +150,8 @@ export type Shot = {
    * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
    * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`
    * waits). The request never reaches the harness server. Steps then wait a fixed settle time
-   * instead of network idle, which a held request would never reach.
+   * instead of network idle, which a held request would never reach. A `*` in `path` stands for
+   * one path segment (QA item 5: a calendar block's launch, whose block id is unknown ahead).
    */
   holdRequest?: { method: "POST" | "GET"; path: string };
   /**
