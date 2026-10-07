@@ -222,7 +222,7 @@ export const ABSENT_COPY = {
  *
  * plain English: the four readouts of the calendar header — target, streak, test-date
  * countdown, projected band — as display-only components. `TopBar` renders each in its own
- * slot, exactly as it always did (pinned by `Chrome.identity.test.tsx`); the guardian's
+ * slot, exactly as it always did; the guardian's
  * Calendar tab renders the same `TopBar`, so a parent reads the same numbers, the same absence
  * copy and the same markup as the student's calendar — one component, not a guardian copy
  * (R11). None of them holds a control. (The guardian Dashboard drew these four as a flat strip

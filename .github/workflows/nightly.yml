@@ -1,0 +1,86 @@
+# NIGHTLY (owner decisions 2026-10-07 on the CI audit, items 2 and 6). Checks of external drift
+# that must not turn an unrelated pull request red, and the slow browser specs no other job runs.
+# Runs against `main` every night; a failure here is fixed on its own branch.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # 06:17 UTC daily
+  workflow_dispatch:
+
+env:
+  CI: true
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" — single source of truth (Q2).
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The accepted "TypeScript Check (CI tsconfig)" step that stood here was retired on
+      # 2026-09-30 per its own re-arm condition (ci/known-gaps.yaml, typecheck-ci-tsconfig: "Delete
+      # this entry and drop continue-on-error once `pnpm exec tsc -p tsconfig.ci.json` exits 0").
+      # Both it and `pnpm run check` exit 0; the blocking "TypeScript check — whole app" step in the
+      # `ci` job covers every file it did.
+
+      # PROMOTED TO BLOCKING 2026-08-19. Measured before promoting: `pnpm run
+      # audit:ci` reports ZERO advisories of any severity, so the
+      # continue-on-error was suppressing nothing at all — it only guaranteed
+      # that the first real high/critical advisory would land silently. There is
+      # no accept-list entry for this because there is nothing to accept.
+      - name: Security Audit (high/critical) — blocking
+        run: |
+          pnpm run audit:ci
+          node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('audit-output.json','utf8'));
+            const v = data?.vulnerabilities || {};
+            const bad = Object.values(v).some(x => ['high','critical'].includes(String(x?.severity || '').toLowerCase()));
+            if (bad) { console.error('High/Critical vulnerabilities found.'); process.exit(1); }
+            console.log('No High/Critical vulnerabilities found.');
+          "
+
+  # Workload Identity Federation still exchanges a token (GCP pool and IAM config drift). No job
+  # depends on it, so it does not need to run, and mint an OIDC token, on every pull request.
+  gcp-wif-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/480325859530/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: lyceon-ci-eval@replit-cop.iam.gserviceaccount.com
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Verify GCP auth (one command proof)
+        run: gcloud auth list
+
+  # EXAM_CALENDAR_E2E_PLACEHOLDER

@@ -67,7 +67,8 @@
 --                             looking at Step 8's backfill rows, not a live write.
 --                             Confirm the question was answered AFTER the backfill.
 --
--- NOTE ON step8-verify.sql: once a live event lands, that file will report STOP,
+-- NOTE ON step8-verify.sql (removed 2026-10-07, once the backfill was confirmed in
+-- production): once a live event lands, that file will report STOP,
 -- because it asserts the event-time tables are EMPTY — which is the correct
 -- acceptance signature for a pure backfill and nothing else. That STOP is expected
 -- and is not a regression. After the live path is proven, THIS file is the one to
