@@ -7,7 +7,7 @@ Register row UI-39 ("Mobile: bottom tab bar and one page per shell"; proof: Karl
 - **Overflow:** every group's `index.md` records 0px horizontal overflow on every phone capture (UI-41 to UI-59).
 - **Prototypes:** the prototypes are a fixed 1440x900 canvas with no phone layout, so no phone prototype exists to compare against; these are built-only.
 
-**237 phone captures** across 11 page groups.
+**241 phone captures** across 11 page groups.
 
 ## UI-41: Shells: App shell (rail, mobile tab bar, avatar menu), Focus shell, Bare card
 
@@ -46,6 +46,7 @@ Full index with conditions: [`UI-50/index.md`](UI-50/index.md).
 | `click-paid-full-length-card` | ![click-paid-full-length-card light](UI-50/click-paid-full-length-card--mobile--light--built.png) | ![click-paid-full-length-card dark](UI-50/click-paid-full-length-card--mobile--dark--built.png) |
 | `click-paid-pickup-continue` | ![click-paid-pickup-continue light](UI-50/click-paid-pickup-continue--mobile--light--built.png) | ![click-paid-pickup-continue dark](UI-50/click-paid-pickup-continue--mobile--dark--built.png) |
 | `click-paid-plan-row-start` | ![click-paid-plan-row-start light](UI-50/click-paid-plan-row-start--mobile--light--built.png) | ![click-paid-plan-row-start dark](UI-50/click-paid-plan-row-start--mobile--dark--built.png) |
+| `click-paid-recent-review-pending` | ![click-paid-recent-review-pending light](UI-50/click-paid-recent-review-pending--mobile--light--built.png) | ![click-paid-recent-review-pending dark](UI-50/click-paid-recent-review-pending--mobile--dark--built.png) |
 | `click-paid-start-plan` | ![click-paid-start-plan light](UI-50/click-paid-start-plan--mobile--light--built.png) | ![click-paid-start-plan dark](UI-50/click-paid-start-plan--mobile--dark--built.png) |
 | `click-paid-start-plan-pending` | ![click-paid-start-plan-pending light](UI-50/click-paid-start-plan-pending--mobile--light--built.png) | ![click-paid-start-plan-pending dark](UI-50/click-paid-start-plan-pending--mobile--dark--built.png) |
 | `home-free` | ![home-free light](UI-50/home-free--mobile--light--built.png) | ![home-free dark](UI-50/home-free--mobile--dark--built.png) |
@@ -133,6 +134,7 @@ Full index with conditions: [`UI-55/index.md`](UI-55/index.md).
 | `paid-full-length-continue` | ![paid-full-length-continue light](UI-55/paid-full-length-continue--mobile--light--built.png) | ![paid-full-length-continue dark](UI-55/paid-full-length-continue--mobile--dark--built.png) |
 | `paid-full-length-notice` | ![paid-full-length-notice light](UI-55/paid-full-length-notice--mobile--light--built.png) | ![paid-full-length-notice dark](UI-55/paid-full-length-notice--mobile--dark--built.png) |
 | `paid-month` | ![paid-month light](UI-55/paid-month--mobile--light--built.png) | ![paid-month dark](UI-55/paid-month--mobile--dark--built.png) |
+| `paid-more-menu` | ![paid-more-menu light](UI-55/paid-more-menu--mobile--light--built.png) | ![paid-more-menu dark](UI-55/paid-more-menu--mobile--dark--built.png) |
 | `paid-regenerate` | ![paid-regenerate light](UI-55/paid-regenerate--mobile--light--built.png) | ![paid-regenerate dark](UI-55/paid-regenerate--mobile--dark--built.png) |
 | `paid-week` | ![paid-week light](UI-55/paid-week--mobile--light--built.png) | ![paid-week dark](UI-55/paid-week--mobile--dark--built.png) |
 | `paid-week-full` | ![paid-week-full light](UI-55/paid-week-full--mobile--light--built.png) | ![paid-week-full dark](UI-55/paid-week-full--mobile--dark--built.png) |
