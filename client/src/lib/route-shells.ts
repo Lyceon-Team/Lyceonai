@@ -262,3 +262,32 @@ export function studentShellAt(pathname: string): ShellSpec | null {
   }
   return best?.spec ?? null;
 }
+
+/**
+ * @spec [Production QA 2026-10-07 item 7; DESIGN.md §2 (rail labels)] | @implemented [2026-10-07]
+ * plain English: the name a student knows a page by, for the Focus shell's back arrow when it
+ * returns to the previous in-app page. App-shell pages use their rail/menu names; a Focus page
+ * uses its section ("Practice", "Review", "Full-Length"). Anything else (an unknown path) is
+ * null, and the arrow then says "Back" rather than guess.
+ */
+const APP_PAGE_NAMES: Readonly<Record<string, string>> = {
+  "/dashboard": "Home",
+  "/practice": "Practice",
+  "/practice/topics": "Practice",
+  "/review": "Review",
+  "/tests": "Full-Length",
+  "/calendar": "Calendar",
+  "/chat": "LISA",
+  "/mastery": "Mastery",
+  "/upgrade": "Plans",
+  "/profile": "Settings",
+  "/help": "Help",
+  "/notifications": "Notifications",
+};
+
+export function pageNameAt(pathname: string): string | null {
+  const named = APP_PAGE_NAMES[pathname];
+  if (named !== undefined) return named;
+  const spec = studentShellAt(pathname);
+  return spec !== null && spec.shell === "focus" ? spec.section : null;
+}
