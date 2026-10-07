@@ -1,12 +1,18 @@
 import { defineConfig } from "vitest/config"
 import react from "@vitejs/plugin-react"
 import path from "path"
+import { loadTutorPromptFingerprints, makeTutorConsoleGuard } from "./tests/ci/lib/tutor-log-guard"
+
+// CI logs are public: console output carrying LISA's prompt text is dropped and fails the run
+// (tests/ci/lib/tutor-log-guard.ts; owner decision 2026-10-07).
+const tutorConsoleGuard = makeTutorConsoleGuard(loadTutorPromptFingerprints(__dirname))
 
 export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
+    onConsoleLog: tutorConsoleGuard.onConsoleLog,
     // Several CI suites initialize the full server in beforeAll; allow enough
     // time to avoid nondeterministic hook timeouts on shared runners.
     hookTimeout: 30_000,
