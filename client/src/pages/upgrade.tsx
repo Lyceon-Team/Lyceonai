@@ -20,6 +20,8 @@
  * drift. They replace the shipped "One secure checkout flow…" description and the per-card
  * "Full KPI + mastery + projection access" / "Premium tutor and full-test analytics" lines: every
  * plan carries the same features, so they are stated once, above the cards, not three times.
+ * The free sentence's daily number is the server's (`useFreeDailyLimit`, `GET /api/practice/quota`;
+ * OQ-68 (d), Karl, 2026-10-08, UI-64), with no number until that read answers.
  * Plan names, intervals and prices still come from `GET /api/billing/plans`; the title, eyebrow,
  * "Best value", "Choose plan" and the loading/error lines are the shipped copy, unchanged.
  */
@@ -40,7 +42,8 @@ import {
   monthlyAmountFrom,
 } from "../../../packages/shared/src/billing-pricing";
 import { useToast } from "@/hooks/use-toast";
-import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
+import { useFreeDailyLimit } from "@/hooks/usePracticeQuota";
+import { PLAN_PAID_ADDS, planFreeIncludes } from "@/lib/plan-copy";
 
 const planCardTestIds: Record<BillingPlan, string> = {
   monthly: "upgrade-plan-monthly",
@@ -88,6 +91,7 @@ function formatPrice(cents: number, currency = "usd"): string {
 
 export default function UpgradePage() {
   const { toast } = useToast();
+  const freeDailyLimit = useFreeDailyLimit();
 
   const {
     data: remotePlans,
@@ -156,7 +160,7 @@ export default function UpgradePage() {
         className="m-0 -mt-4 text-lyc-meta-lg text-lyc-muted"
         data-testid="upgrade-free-includes"
       >
-        {PLAN_FREE_INCLUDES}
+        {planFreeIncludes(freeDailyLimit)}
       </p>
 
       {error && (

@@ -34,6 +34,8 @@ const QUOTA_OUT = practiceQuotaSchema.parse({
   limit: 40,
   remaining: 0,
   resetAt: "2026-10-09T05:00:00.000Z",
+  // OQ-68 (d) / UI-64: the free plan's limit, on every quota shape (the seeded config value).
+  freeDailyLimit: 40,
 });
 
 export const W6_UI_65: PageGroup = {

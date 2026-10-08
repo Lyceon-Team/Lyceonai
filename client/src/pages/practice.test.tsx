@@ -254,6 +254,9 @@ function openSessions(withOpen: boolean, max = 5) {
         ]
       : [],
     maxConcurrentSessions: max,
+    // The seeded practice_runtime_config values (OQ-68 (d): config numbers on this read).
+    diagnosticTotalQuestions: 40,
+    diagnosticPerDomain: 5,
     requestId: "r",
   });
 }
@@ -333,6 +336,8 @@ function quota(remaining: number | "unlimited") {
           reservationId: null,
           duplicate: false,
         },
+    // `freeDailyLimitFor`: the seeded daily_quota_free (OQ-68 (d)).
+    40,
   );
   if (!result.ok) throw new Error("quota fixture did not serialize");
   return result.value;

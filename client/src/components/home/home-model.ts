@@ -239,9 +239,74 @@ export function toReviewLine(openCount: number): string {
   return `${openCount} to review`;
 }
 
-/** "40 of 40 practice questions left" — today's quota (OQ-21). */
+/** "27 of 37 practice questions left" — today's quota (OQ-21), both numbers the server's. */
 export function quotaLine(remaining: number, limit: number): string {
   return `${remaining} of ${limit} practice questions left`;
+}
+
+/** The words the approved copy spells its small counts with ("five", "eight"). */
+const SMALL_COUNT_WORDS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+] as const;
+
+/** A count as the copy writes it: a word up to ten, digits above. */
+function countWord(n: number): string {
+  return SMALL_COUNT_WORDS[n] ?? String(n);
+}
+
+/**
+ * @spec [owner ruling OQ-68 (d), Karl, 2026-10-08, register row UI-64: "The '40 questions' copy
+ *        reads the server quota value (the same source as the 402)"; Doc 05P §10.1 (the
+ *        diagnostic is 8 domains × `diagnostic_per_domain`, trimmed to
+ *        `diagnostic_total_questions`)] | @implemented [2026-10-08]
+ *
+ * plain English: the free Home's sentences that state a configured number, with the server's
+ * numbers put in. The diagnostic's length and per-domain count come from
+ * `GET /api/practice/sessions/open` (`diagnosticTotalQuestions`, `diagnosticPerDomain`, the
+ * config `POST /diagnostic/sessions` sizes it with); the daily limit from
+ * `GET /api/practice/quota` (`freeDailyLimit`, the 402's `daily_quota_free`). A null number (the
+ * read failed) prints the sentence without one, never a remembered 40.
+ * edge cases: "five from each of the eight SAT domains" is printed only when the total is a
+ * whole number of per-domain draws (total ÷ per-domain = the domains); otherwise the server
+ * trims some domain short, so the per-domain clause is dropped rather than stated wrongly.
+ */
+export function diagnosticCardLine(
+  total: number | null,
+  perDomain: number | null,
+): string {
+  const ending = "When you finish, you'll see your projected SAT score.";
+  if (total === null) {
+    return `Questions from every SAT domain. ${ending}`;
+  }
+  if (perDomain !== null && perDomain > 0 && total % perDomain === 0) {
+    return `${total} questions, ${countWord(perDomain)} from each of the ${countWord(total / perDomain)} SAT domains. ${ending}`;
+  }
+  return `${total} questions across the SAT domains. ${ending}`;
+}
+
+/** "How Lyceon works" step 1, with the diagnostic's length (OQ-68 (d)). */
+export function diagnosticStepBody(total: number | null): string {
+  const lead = total === null ? "Questions" : `${total} questions`;
+  return `${lead} across every domain give you a projected score and a starting point.`;
+}
+
+/** "How Lyceon works" step 2, with the free daily limit (OQ-68 (d)). */
+export function practiceStepBody(freeDailyLimit: number | null): string {
+  const lead =
+    freeDailyLimit === null
+      ? "Practice questions every day"
+      : `${freeDailyLimit} practice ${freeDailyLimit === 1 ? "question" : "questions"} a day`;
+  return `${lead}, and every question you miss comes back until you get it right.`;
 }
 
 /** The projected band as the prototype prints it: "610–990". */

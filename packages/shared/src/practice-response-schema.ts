@@ -222,9 +222,18 @@ export const practiceOpenSessionSchema = z.object({
 });
 export type PracticeOpenSession = z.infer<typeof practiceOpenSessionSchema>;
 
+/**
+ * `diagnosticTotalQuestions` and `diagnosticPerDomain` (owner ruling OQ-68 (d), Karl,
+ * 2026-10-08, register row UI-64): the diagnostic's configured length and per-domain count
+ * (`practice_runtime_config.diagnostic_total_questions`, `diagnostic_per_domain`), the numbers
+ * `POST /api/practice/diagnostic/sessions` sizes the diagnostic with. Home's diagnostic card
+ * prints them, never a literal. Config numbers beside `maxConcurrentSessions`, not student data.
+ */
 export const practiceOpenSessionsResponseSchema = z.object({
   sessions: z.array(practiceOpenSessionSchema),
   maxConcurrentSessions: z.number(),
+  diagnosticTotalQuestions: z.number().int().positive(),
+  diagnosticPerDomain: z.number().int().positive(),
   requestId: z.string().optional(),
 });
 export type PracticeOpenSessionsResponse = z.infer<
