@@ -133,6 +133,8 @@ FILES=(
   "client/src/components/MathRenderer.tsx"
   "client/src/features/calendar/lib/dates.ts"
   "client/src/pages/score-report.tsx"
+  "client/src/lib/theme.ts"
+  "client/src/components/home/HomeLoading.tsx"
 )
 
 snapshot_all() {
@@ -1374,12 +1376,15 @@ plant "QA8-W1" "the runner never tells the panel it was opened" \
 assert s.count(a) == 1
 s = s.replace(a, "revealOnOpen={false}", 1)'
 
+# Re-pointed 2026-10-08 (QA2-D): side by side the toggle no longer records an opening (only the
+# phone layout's tap does), so dropping the layout check alone changed nothing; the plant now
+# tells a side-by-side panel to reveal itself outright.
 plant "QA8-W2" "side by side, Show LISA scrolls the runner too" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
   'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
 assert s.count(a) == 1
-s = s.replace(a, "revealOnOpen={tutorOpenedForItem === sessionItemId}", 1)'
+s = s.replace(a, "revealOnOpen={tutorSideBySide || tutorOpenedForItem === sessionItemId}", 1)'
 
 plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
   "$T56" \
@@ -2800,9 +2805,9 @@ s = s.replace(a, "", 1)'
 plant "QA5-S1" "a page's chunk wait falls through the App shell to the full-page fallback" \
   "$QA5_FRAME" \
   "client/src/components/layout/StudentRouteFrame.tsx" \
-  'a = "            fallback={<PageSkeleton padded={spec.content === \"full\"} />}\n"
+  'a = "          fallback={<PageSkeleton padded={spec.content === \"full\"} />}\n"
 assert s.count(a) == 1
-s = s.replace(a, "            fallback={null}\n", 1)'
+s = s.replace(a, "          fallback={null}\n", 1)'
 
 plant "QA5-S2" "a page's chunk wait falls through the Focus shell" \
   "$QA5_FRAME" \
@@ -3074,11 +3079,13 @@ plant "QA15-E1F" "Home's empty day says its own words again" \
 assert s.count(a) == 1
 s = s.replace(a, "          Rest day\n", 1)'
 
+# Re-pointed 2026-10-08 (QA2-F): "Before you start" is drawn once the rows' reads are in, so
+# its line is the conditional; same plant (the timing choice moved after it).
 plant "QA15-T1" "the timing choice drops back under the list of Starts" \
   "$QA_TESTS" \
   "client/src/features/exam/pages/TestsHomePage.tsx" \
   'a = "            <TimingChoice mode={mode} onModeChange={setMode} />\n"
-b = "            <BeforeYouStart mode={mode} />\n"
+b = "            {listReady || forms.isError ? <BeforeYouStart mode={mode} /> : null}\n"
 assert s.count(a) == 1 and s.count(b) == 1
 s = s.replace(a, "", 1).replace(b, b + a, 1)'
 
@@ -3166,6 +3173,133 @@ plant "QA-RO4" "the phone shows the full words 'Question N of M' again" \
   'a = "<span className=\"sr-only sm:not-sr-only\">Question </span>"
 assert s.count(a) == 1
 s = s.replace(a, "<span className=\"inline\">Question </span>", 1)'
+
+# ── QA2 B, D, F (production re-test round 2, Karl, 2026-10-08) ───────────────────────────
+# B: "Desmos: invertedColors when the app theme is dark (Graphing and Scientific)."
+# D: "Phone: the LISA panel defaults closed; tapping the icon always brings it into view."
+# F: "Full-Length cards: no layout shift on load."
+QA2B_CALC="client/src/components/math/DesmosCalculator.theme.test.tsx"
+QA2F_HOME="client/src/features/exam/pages/TestsHomePage.test.tsx"
+QA2F_DASH="client/src/pages/lyceon-dashboard.test.tsx"
+
+plant "QA2-B1" "Desmos is constructed light on a dark page (no invertedColors from the theme)" \
+  "$QA2B_CALC" \
+  "client/src/components/math/DesmosCalculator.tsx" \
+  'a = "          invertedColors: invertedColorsRef.current,\n"
+assert s.count(a) == 1
+s = s.replace(a, "          invertedColors: false,\n", 1)'
+
+plant "QA2-B2" "a theme change after construction never reaches Desmos (no updateSettings)" \
+  "$QA2B_CALC" \
+  "client/src/components/math/DesmosCalculator.tsx" \
+  'a = "    calcRef.current?.updateSettings({ invertedColors });\n"
+assert s.count(a) == 1
+s = s.replace(a, "    void invertedColors;\n", 1)'
+
+plant "QA2-B3" "a root pinned light (the timed module) no longer keeps Desmos light" \
+  "$QA2B_CALC" \
+  "client/src/lib/theme.ts" \
+  'a = "  return root.getAttribute(\"data-theme-lock\") === \"light\" ||\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return false ||\n", 1)'
+
+plant "QA2-D1" "on the phone layout LISA is open on load again" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "      : tutorShownForItem === sessionItemId);"
+assert s.count(a) == 1
+s = s.replace(a, "      : tutorHiddenForItem !== sessionItemId);", 1)'
+
+plant "QA2-D2" "a tap on an open LISA scrolled out of view closes it instead of bringing it into view" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "                setTutorRevealKey((k) => k + 1);\n"
+assert s.count(a) == 1
+s = s.replace(a, "                setTutorShownForItem(null);\n", 1)'
+
+plant "QA2-D3" "the runner reads LISA as always in view (a tap never reveals, it closes)" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "  return top >= area.top - 1 && top <= area.bottom - TUTOR_HEADER_VISIBLE_PX;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return true;\n", 1)'
+
+plant "QA2-D4" "the runner never passes the reveal request to the panel" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "        revealKey={tutorRevealKey}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-D5" "the panel reveals itself on mount only (a new revealKey does nothing)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "  }, [revealKey]);\n"
+assert s.count(a) == 1
+s = s.replace(a, "  }, []);\n", 1)'
+
+plant "QA2-F1" "the rows are drawn before the scored sessions land (a completed row grows under the student)" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const listReady = forms.isSuccess && !scored.isPending && inProgressSettled;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const listReady = forms.isSuccess && inProgressSettled;\n", 1)'
+
+plant "QA2-F2" "the rows are drawn before the in-progress test's /state lands" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const inProgressSettled = inProgressId === null || !inProgress.isPending;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const inProgressSettled = true;\n", 1)'
+
+plant "QA2-F3" "the panel draws before the score history (the history is inserted above the mastery rows)" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const panelReady = !examGranted || !scored.isPending;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const panelReady = true;\n", 1)'
+
+plant "QA2-F4" "the loading placeholder no longer reserves the screen" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "      className=\"flex min-h-[100dvh] flex-col\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "      className=\"flex flex-col\"\n", 1)'
+
+plant "QA2-F5" "the legal footer is drawn under the page skeleton again (pushed down when the page lands)" \
+  "$QA5_FRAME" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "                {footer ? <LegalFooter /> : null}\n              </Suspense>\n"
+assert s.count(a) == 1
+s = s.replace(a, "              </Suspense>\n              {footer ? <LegalFooter /> : null}\n", 1)'
+
+plant "QA2-F6" "paid Home draws section by section again (the card pushed down by today's plan)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "  if (!settled) return <HomeLoading />;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-F7" "paid Home stops waiting for the calendar (today's plan lands above the card)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "    !calendar.isLoading &&\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-F8" "free Home draws before the projection status (the diagnostic card lands above the card)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "  if (!settled) return <HomeLoading />;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-F9" "Home's placeholder no longer reserves the screen (the footer is pulled into view)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/HomeLoading.tsx" \
+  'a = "    <div className=\"min-h-[100dvh]\" data-testid=\"home-loading\">\n"
+assert s.count(a) == 1
+s = s.replace(a, "    <div data-testid=\"home-loading\">\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
