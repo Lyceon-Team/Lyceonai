@@ -46,6 +46,18 @@ the site-wide cookie banner: capture.ts sets the strictly necessary consent cook
 refused, the app's own `lyceon_consent` format) on each browser context, so the banner is not
 drawn over the pages under review.
 
+QA2 (2026-10-08) adds three more. `expectInView` fails the capture unless an element's top edge
+is inside the viewport after the steps (the phone LISA panel brought into view by a tap).
+`layoutShift: { max, apiDelayMs }` observes the page's `layout-shift` entries (without recent
+input) from before the first byte, delays every `/api/` answer by `apiDelayMs` in the browser so
+the loading state paints as it does over a real network, records the sum and the largest shifts
+(with the nodes that moved) under each shot in the index, and fails the run after the index is
+written when the sum exceeds `max`. And the real Desmos calculator, opt-in for one run:
+`STUDENT_HARNESS_DESMOS=1` with a `VITE_DESMOS_API_KEY` in the environment (the client build
+reads it) answers requests to desmos.com from a cache that `curl` fills once under
+`test-results/` (ignored; nothing from Desmos is committed). Without it the run stays local-only
+and the calculator shows its "unavailable" line.
+
 Output: `docs/plans/student-ui/evidence/wave5/<group>/` — one PNG per built shot
 (`<shot>--<desktop|mobile>--<light|dark>--built.png`), one per prototype state
 (`proto--<Screen>--<plan>--<theme>[--clicked].png`), and `index.md` with a built | prototype
