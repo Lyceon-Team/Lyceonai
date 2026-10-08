@@ -232,6 +232,8 @@ type Scenario = {
   noForms?: boolean;
   /** POST /api/tests/sessions answers 500 (Start's error line). */
   startError?: boolean;
+  /** QA2-F: a read is held (`net.hold`), so `mount` does not wait for the rows. */
+  pending?: boolean;
 };
 
 function forms(s: Scenario) {
@@ -482,7 +484,8 @@ async function mount(
   if (
     plan === "paid" &&
     scenario.formsError !== true &&
-    scenario.noForms !== true
+    scenario.noForms !== true &&
+    scenario.pending !== true
   ) {
     await screen.findAllByTestId("tests-row");
   }
@@ -1070,5 +1073,90 @@ describe("QA item 15: the phone notice has a 'Not now' that closes it like Close
     fireEvent.click(start);
     expect(await screen.findByTestId("full-length-phone-notice")).toBeTruthy();
     expect(createRequests()).toEqual([]);
+  });
+});
+
+/**
+ * @spec [production QA 2026-10-08 item F (Karl: "Full-Length cards: no layout shift on load")]
+ *       | @implemented [2026-10-08]
+ * plain English: a row's look needs three reads (forms, scored sessions, the in-progress test's
+ * /state), and the right panel's score history sits above the mastery rows. Each read is held
+ * here in turn (a slow server): until all of the rows' reads are in, the list and "Before you
+ * start" are one page-shaped placeholder that reserves the screen, and the panel waits for the
+ * scored sessions, so nothing already drawn is pushed when a read lands. jsdom lays nothing out;
+ * the in-browser measurement is the harness's (UI-54 `tests-paid-load-shift`).
+ */
+describe("QA2-F: the Full-Length rows are drawn once, complete", () => {
+  function holdUntilReleased(pattern: RegExp): () => void {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    return () => release();
+  }
+
+  it("scored sessions in flight: the placeholder holds the list and Before you start; the panel waits; then all of it lands at once", async () => {
+    const release = holdUntilReleased(/state=scored$/);
+    await mount("paid", { pending: true });
+    // The forms are in (the request was made and answered), but no row is drawn yet.
+    await waitFor(() => expect(gets()).toContain("/api/tests/forms"));
+    expect(await screen.findByTestId("tests-loading")).toBeTruthy();
+    expect(screen.queryAllByTestId("tests-row")).toHaveLength(0);
+    expect(screen.queryByTestId("tests-before")).toBeNull();
+    expect(screen.getByTestId("tests-panel-loading")).toBeTruthy();
+    expect(screen.queryByTestId("tests-mastery")).toBeNull();
+    await act(async () => {
+      release();
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("tests-row")).toHaveLength(3),
+    );
+    expect(screen.queryByTestId("tests-loading")).toBeNull();
+    expect(screen.getByTestId("tests-before")).toBeTruthy();
+    expect(screen.getByTestId("tests-history")).toBeTruthy();
+    expect(screen.queryByTestId("tests-panel-loading")).toBeNull();
+  });
+
+  it("the in-progress test's /state in flight: no row is drawn until it lands, so it is never drawn without 'section, module'", async () => {
+    const release = holdUntilReleased(/\/state$/);
+    await mount("paid", { pending: true });
+    await waitFor(() =>
+      expect(gets()).toContain(`/api/tests/sessions/${OPEN_SESSION}/state`),
+    );
+    expect(screen.getByTestId("tests-loading")).toBeTruthy();
+    expect(screen.queryAllByTestId("tests-row")).toHaveLength(0);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("tests-row")).toHaveLength(3),
+    );
+    expect(
+      within(row("Full-Length Test 2")).getByTestId("exam-form-state")
+        .textContent,
+    ).toBe("In progress: Reading & Writing, Module 2");
+  });
+
+  it("the placeholder is page-shaped and reserves the screen, so nothing under it is in view", async () => {
+    holdUntilReleased(/\/api\/tests\/forms$/);
+    await mount("paid", { pending: true });
+    const loading = await screen.findByTestId("tests-loading");
+    expect(loading.getAttribute("role")).toBe("status");
+    expect(loading.getAttribute("aria-label")).toBe(
+      "Loading full-length tests",
+    );
+    expect(loading.className.split(/\s+/)).toContain("min-h-[100dvh]");
+    // Three row-shaped placeholders at the loaded rows' height.
+    expect(loading.querySelectorAll(".min-h-\\[107px\\]")).toHaveLength(3);
+  });
+
+  it("a failed list read ends the wait: the notice and Before you start draw, no placeholder", async () => {
+    await mount("paid", { formsError: true });
+    expect(await screen.findByTestId("tests-error")).toBeTruthy();
+    expect(screen.queryByTestId("tests-loading")).toBeNull();
+    expect(screen.getByTestId("tests-before")).toBeTruthy();
   });
 });

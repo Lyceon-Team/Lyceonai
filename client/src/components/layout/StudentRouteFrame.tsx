@@ -18,6 +18,8 @@
  * bars, the theme) and only the content area shows the page skeleton (RouteSkeleton.tsx), where
  * it used to fall through to the router's full-page loader. A page laid out edge to edge
  * (Calendar, LISA) and a Focus page get the reading column's padding around the skeleton.
+ * QA2-F (2026-10-08): in the App shell the boundary is the shell's own (`AppShell` `fallback`),
+ * so the legal footer arrives with the page instead of being pushed down by it.
  */
 import { Suspense, type ReactNode } from "react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -49,12 +51,9 @@ export function StudentRouteFrame({
           footer={spec.footer}
           content={spec.content}
           themeLock={spec.themeLock}
+          fallback={<PageSkeleton padded={spec.content === "full"} />}
         >
-          <Suspense
-            fallback={<PageSkeleton padded={spec.content === "full"} />}
-          >
-            {children}
-          </Suspense>
+          {children}
         </AppShell>
       );
     case "focus":

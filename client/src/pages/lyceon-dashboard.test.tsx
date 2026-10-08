@@ -534,8 +534,18 @@ function install(s: Scenario): void {
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario,
+  /** QA2-F: a read is held (`net.hold`), so wait for the loading state, not the page. */
+  opts: { pending?: boolean; failPath?: RegExp } = {},
 ): Promise<{ container: HTMLElement; history: string[] }> {
   install(scenario);
+  // QA2-F: one read answers 500 (a failed read ends the loading wait).
+  const failPath = opts.failPath;
+  if (failPath !== undefined)
+    net.handlers.unshift((url) =>
+      failPath.test(url)
+        ? json({ error: { message: "boom" } }, 500)
+        : undefined,
+    );
   const map = await accessMap(plan === "paid");
   const { hook, history } = memoryLocation({
     path: "/dashboard",
@@ -568,7 +578,7 @@ async function mount(
       </Router>
     </QueryClientProvider>,
   );
-  await screen.findByTestId("home");
+  await screen.findByTestId(opts.pending === true ? "home-loading" : "home");
   return { container, history };
 }
 
@@ -1465,5 +1475,94 @@ describe("QA item 15: one empty-day sentence", () => {
       "Rest day",
     );
     expect(screen.queryByTestId("home-start-plan")).toBeNull();
+  });
+});
+
+/**
+ * @spec [production QA 2026-10-08 item F (Karl: "Full-Length cards: no layout shift on load")]
+ *       | @implemented [2026-10-08]
+ * plain English: Home used to draw each section as its read landed, so the Full-Length card was
+ * pushed down by today's plan above it and the panel grew under the student. Now the page is one
+ * placeholder (HomeLoading) until every read it draws from has answered or failed, then the
+ * whole page at once. Each case holds one read (a slow server) and proves nothing of the page,
+ * the Full-Length card included, is drawn until it lands. jsdom lays nothing out; the in-browser
+ * measurement is the harness's (UI-54 `home-full-length-load-shift`).
+ */
+describe("QA2-F: Home is drawn once, complete", () => {
+  function holdUntilReleased(pattern: RegExp): () => void {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    return () => release();
+  }
+
+  it("paid, the calendar (today's plan, above the card) in flight: only the placeholder; then the whole page", async () => {
+    const release = holdUntilReleased(/^\/api\/calendar\?/);
+    await mount("paid", { calendar: "ready" }, { pending: true });
+    await waitFor(() => expect(gets()).toContain("/api/calendar"));
+    expect(screen.getByTestId("home-loading")).toBeTruthy();
+    expect(screen.queryByTestId("home")).toBeNull();
+    expect(screen.queryByTestId("home-full-length")).toBeNull();
+    expect(screen.getByTestId("home-panel-loading")).toBeTruthy();
+    await act(async () => {
+      release();
+    });
+    await screen.findByTestId("home");
+    expect(screen.getByTestId("home-plan")).toBeTruthy();
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
+    expect(screen.getByTestId("home-mastery")).toBeTruthy();
+    expect(screen.getByTestId("home-panel")).toBeTruthy();
+    expect(screen.queryByTestId("home-loading")).toBeNull();
+  });
+
+  it("paid, a panel read (recent sessions) in flight: the column waits for it too", async () => {
+    const release = holdUntilReleased(/^\/api\/review\/pool/);
+    await mount("paid", { calendar: "ready" }, { pending: true });
+    await waitFor(() => expect(gets()).toContain("/api/review/pool"));
+    expect(screen.queryByTestId("home-full-length")).toBeNull();
+    await act(async () => {
+      release();
+    });
+    await screen.findByTestId("home");
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
+  });
+
+  it("free, the projection status (which decides the diagnostic card above the card) in flight: only the placeholder", async () => {
+    const release = holdUntilReleased(/^\/api\/progress\/projection/);
+    await mount(
+      "free",
+      { estimateStatus: "insufficient_data" },
+      { pending: true },
+    );
+    await waitFor(() => expect(gets()).toContain("/api/progress/projection"));
+    expect(screen.queryByTestId("home")).toBeNull();
+    expect(screen.queryByTestId("home-full-length")).toBeNull();
+    await act(async () => {
+      release();
+    });
+    await screen.findByTestId("home");
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
+  });
+
+  it("the placeholder reserves the screen, so the footer under it starts below the screen", async () => {
+    holdUntilReleased(/^\/api\/calendar\?/);
+    await mount("paid", { calendar: "ready" }, { pending: true });
+    const loading = screen.getByTestId("home-loading");
+    expect(loading.className.split(/\s+/)).toContain("min-h-[100dvh]");
+    expect(within(loading).getByTestId("page-skeleton")).toBeTruthy();
+  });
+
+  it("a failed read ends the wait: the page draws with its load notice", async () => {
+    await mount(
+      "paid",
+      { calendar: "ready" },
+      { failPath: /^\/api\/review\/pool/ },
+    );
+    expect(await screen.findByTestId("home-load-error")).toBeTruthy();
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
   });
 });
