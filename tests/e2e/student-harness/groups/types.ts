@@ -149,6 +149,20 @@ export type Shot = {
   /** UI-56: a selector the page must NOT show after `steps` (e.g. no bubbles in a new column). */
   expectGone?: string;
   /**
+   * QA2-A (owner re-test, 2026-10-08): a selector that must, after `steps`, lie wholly inside the
+   * viewport (its bounding box between the top and bottom of the window): the review cap's message
+   * shown at the clicked button, never below the fold. The capture fails otherwise, naming the box.
+   */
+  expectInViewport?: string;
+  /**
+   * QA2-A (owner re-test, 2026-10-08): the persona is at the concurrent review-session cap before
+   * every capture. capture.ts opens review sessions through the REAL create route
+   * (`POST /api/review/sessions`, queue mode) until the server itself refuses one with
+   * `SESSION_LIMIT_EXCEEDED`, and ends the ones it opened through the real terminate route after
+   * the screenshot. The refusal the page then meets is the server's own, not a stub.
+   */
+  reviewCap?: true;
+  /**
    * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
    * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`
    * waits). The request never reaches the harness server. Steps then wait a fixed settle time

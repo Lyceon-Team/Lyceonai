@@ -39,7 +39,15 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
@@ -71,6 +79,10 @@ import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { practiceAdapter } from "../../../server/services/calendar/adapters/practice";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
 import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
+import {
+  capTables,
+  reviewCapRefusal,
+} from "@/components/review/review-cap.fixture";
 import LyceonDashboard from "./lyceon-dashboard";
 import fs from "node:fs";
 import path from "node:path";
@@ -136,13 +148,18 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: () => undefined }),
 }));
 
-// The server modules the producers import reach for a database; none is used here.
+// The server modules the producers import reach for a database; only the review cap's producer
+// reads one, through `db.from`, while its refusal is built (QA2-A, review-cap.fixture.ts).
+const db = vi.hoisted(() => ({
+  from: null as null | ((table: string) => unknown),
+}));
 vi.mock("../../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     rpc: () => {
       throw new Error("no database in this test");
     },
-    from: () => {
+    from: (table: string) => {
+      if (db.from !== null) return db.from(table);
       throw new Error("no database in this test");
     },
   },
@@ -1466,4 +1483,114 @@ describe("QA item 15: one empty-day sentence", () => {
     );
     expect(screen.queryByTestId("home-start-plan")).toBeNull();
   });
+});
+
+// ── Owner re-test (Karl, 2026-10-08) item A: the review cap ───────────────────────────────────
+
+describe("QA2-A: a recent session's review start, refused by the review cap, is answered at that row", () => {
+  /** The real producer's cap refusal (review-cap.fixture.ts). */
+  let CAP_BODY: Record<string, unknown>;
+  beforeAll(async () => {
+    db.from = capTables;
+    try {
+      CAP_BODY = (await reviewCapRefusal()).body;
+    } finally {
+      db.from = null;
+    }
+  });
+
+  let scrolled: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    scrolled = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      writable: true,
+      value: scrolled,
+    });
+  });
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  function refuseCreate(body: unknown, status: number): void {
+    net.handlers.unshift((url, init) =>
+      init?.method === "POST" && url === "/api/review/sessions"
+        ? json(body, status)
+        : undefined,
+    );
+  }
+
+  async function pressFirstRecent(): Promise<HTMLElement> {
+    const panel = screen.getByTestId("app-shell-panel");
+    const [first] = await within(panel).findAllByTestId("home-recent-review");
+    if (first === undefined) throw new Error("a recent row");
+    await act(async () => {
+      fireEvent.click(first);
+    });
+    return first;
+  }
+
+  it.each([403, 409])(
+    "refused with %i: the message directly under the pressed row, scrolled into view; Continue opens the open session",
+    async (status) => {
+      const { history } = await mount("paid", { calendar: "ready" });
+      expect(CAP_BODY.code).toBe("SESSION_LIMIT_EXCEEDED");
+      refuseCreate(CAP_BODY, status);
+      const pressed = await pressFirstRecent();
+      const cap = await screen.findByTestId("review-cap");
+      expect(screen.getAllByTestId("review-cap")).toHaveLength(1);
+      expect(cap.textContent).toContain("Too many open review sessions");
+      expect(cap.textContent).toContain(String(CAP_BODY.message));
+      // At the pressed row: the list item right after it holds the notice.
+      const row = pressed.closest("li");
+      expect(row?.nextElementSibling?.contains(cap)).toBe(true);
+      expect(row?.nextElementSibling?.getAttribute("data-testid")).toBe(
+        "home-recent-cap",
+      );
+      // Not the old red line under the whole list.
+      expect(
+        within(screen.getByTestId("home-recent")).queryByRole("alert"),
+      ).toBeNull();
+      // Never below the fold.
+      expect(scrolled.mock.contexts).toContain(cap.parentElement);
+      // The row is not left pending.
+      expect(pressed.textContent).toBe("Review this session");
+
+      fireEvent.click(
+        within(cap).getByRole("button", { name: "Continue your open session" }),
+      );
+      expect(history.at(-1)).toBe(`/review/session/${REVIEW_ID}`);
+    },
+  );
+
+  it("End a session goes to Review's open sessions, focused there", async () => {
+    const { history } = await mount("paid", { calendar: "ready" });
+    refuseCreate(CAP_BODY, 409);
+    await pressFirstRecent();
+    const cap = await screen.findByTestId("review-cap");
+    fireEvent.click(within(cap).getByRole("button", { name: "End a session" }));
+    expect(history.at(-1)).toBe("/review?focus=open-sessions");
+  });
+
+  it.each([403, 409])(
+    "a different refusal under %i is not the cap: the plain failure line, no cap actions",
+    async (status) => {
+      await mount("paid", { calendar: "ready" });
+      refuseCreate(
+        {
+          error: "forbidden",
+          code: "STUDENT_ROLE_REQUIRED",
+          message: "Only students can start review sessions.",
+        },
+        status,
+      );
+      await pressFirstRecent();
+      const recent = screen.getByTestId("home-recent");
+      expect((await within(recent).findByRole("alert")).textContent).toBe(
+        "Only students can start review sessions.",
+      );
+      expect(screen.queryByTestId("review-cap")).toBeNull();
+      expect(screen.queryByTestId("home-recent-cap")).toBeNull();
+    },
+  );
 });

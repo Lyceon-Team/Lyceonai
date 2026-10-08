@@ -78,6 +78,10 @@ import {
   pageSourceSessions,
   reviewDifficultyLabel,
 } from "../../../server/services/review-pool";
+import {
+  capTables,
+  reviewCapRefusal,
+} from "@/components/review/review-cap.fixture";
 import ReviewPage from "./review";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
@@ -148,13 +152,18 @@ vi.mock("@/hooks/useReview", async (importOriginal) => ({
 }));
 
 // The server modules the producers import reach for a database; the topics route reads the
-// catalog view, answered with the canonical tree; nothing else is used.
+// catalog view, answered with the canonical tree; the review cap's producer reads its two tables
+// through `db.from` while its refusal is built (QA2-A, review-cap.fixture.ts); nothing else is used.
+const db = vi.hoisted(() => ({
+  from: null as null | ((table: string) => unknown),
+}));
 vi.mock("../../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     rpc: () => {
       throw new Error("no database in this test");
     },
-    from: () => {
+    from: (table: string) => {
+      if (db.from !== null) return db.from(table);
       throw new Error("no database in this test");
     },
   },
@@ -194,7 +203,18 @@ const TZ = "America/Los_Angeles";
 let TOPICS: PracticeTopicsResponse;
 let M_DOMAINS: string[];
 let RW_DOMAINS: string[];
+/** QA2-A: the review cap's refusal body, from the real producer (review-cap.fixture.ts). */
+let CAP_BODY: Record<string, unknown>;
+let CAP_STATUS: number;
 beforeAll(async () => {
+  db.from = capTables;
+  try {
+    const refusal = await reviewCapRefusal();
+    CAP_BODY = refusal.body;
+    CAP_STATUS = refusal.status;
+  } finally {
+    db.from = null;
+  }
   TOPICS = await topicsFromRoute(getPracticeTopics);
   const domainsOf = (code: string): string[] =>
     TOPICS.sections
@@ -424,6 +444,12 @@ type Scenario = {
   pool?: "full" | "empty" | "error" | "tz-fallback";
   open?: boolean;
   max?: number;
+  /**
+   * QA2-A: how `POST /api/review/sessions` answers. "cap" serves the real producer's cap refusal
+   * under `status` (403 is production's today, 409 the review vertical's planned one); "other"
+   * serves a refusal with a different code under `status`. Default: a created session.
+   */
+  create?: { kind: "cap" | "other"; status: number };
 };
 
 function install(s: Scenario): void {
@@ -452,8 +478,19 @@ function install(s: Scenario): void {
             : page,
         );
       }
-      if (method === "POST" && path === "/api/review/sessions")
+      if (method === "POST" && path === "/api/review/sessions") {
+        if (s.create?.kind === "cap") return json(CAP_BODY, s.create.status);
+        if (s.create?.kind === "other")
+          return json(
+            {
+              error: "forbidden",
+              code: "STUDENT_ROLE_REQUIRED",
+              message: "Only students can start review sessions.",
+            },
+            s.create.status,
+          );
         return json({ sessionId: NEW_SESSION, id: NEW_SESSION });
+      }
       if (
         method === "POST" &&
         path === `/api/review/sessions/${OPEN_FILTER}/terminate`
@@ -473,10 +510,11 @@ function install(s: Scenario): void {
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario = {},
+  path = "/review",
 ): Promise<{ container: HTMLElement; history: string[] }> {
   install(scenario);
   const map = await accessMap(plan === "paid");
-  const { hook, history } = memoryLocation({ path: "/review", record: true });
+  const { hook, history } = memoryLocation({ path, record: true });
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -653,18 +691,19 @@ describe("open sessions (OQ-22: named by their criteria, End and Continue)", () 
     );
   });
 
-  it("at the open-session limit, says so and disables every start", async () => {
+  it("QA2-A: at the open-session limit no start is disabled and no page-level notice is drawn; the server decides", async () => {
     await mount("paid", { max: 2 });
-    const limit = await screen.findByTestId("review-limit");
-    expect(limit.textContent).toContain(
-      "You have 2 open review sessions. Finish or end one first.",
-    );
+    // Presence: the page knows it is at the limit (both open rows drawn, the server's max is 2).
+    expect(await screen.findAllByTestId("review-open-row")).toHaveLength(2);
+    await screen.findByTestId("review-topic-picker");
     expect(
       (screen.getByTestId("button-start-queue") as HTMLButtonElement).disabled,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       (screen.getByTestId("button-start-topic") as HTMLButtonElement).disabled,
-    ).toBe(true);
+    ).toBe(false);
+    expect(screen.queryByTestId("review-limit")).toBeNull();
+    expect(screen.queryByTestId("review-cap")).toBeNull();
   });
 });
 
@@ -948,5 +987,167 @@ describe("QA item 5: Review's starts show a pending state from the first click",
     expect(screen.getByTestId("button-start-queue").textContent).toBe(
       "Start reviewing",
     );
+  });
+});
+
+// ── Owner re-test (Karl, 2026-10-08) item A: the review cap ───────────────────────────────────
+
+describe("QA2-A: the review cap's refusal is shown at the pressed start, with Continue and End a session", () => {
+  let scrolled: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    scrolled = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      writable: true,
+      value: scrolled,
+    });
+  });
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  /** The one cap notice on the page, after proving the producer's body is the cap's. */
+  async function capNotice(): Promise<HTMLElement> {
+    expect(CAP_BODY.code).toBe("SESSION_LIMIT_EXCEEDED");
+    const caps = await screen.findAllByTestId("review-cap");
+    expect(caps).toHaveLength(1);
+    return caps[0] as HTMLElement;
+  }
+
+  it("the producer refuses at the cap with its code (403 today; the review vertical is moving it to 409)", () => {
+    // Either status is the cap; the client keys on the code (the it.each below serves both).
+    expect([403, 409]).toContain(CAP_STATUS);
+    expect(CAP_BODY.code).toBe("SESSION_LIMIT_EXCEEDED");
+    expect(String(CAP_BODY.message)).toMatch(/open review sessions/);
+  });
+
+  it.each([403, 409])(
+    "Start reviewing, refused with %i: the message under that button, scrolled into view; Continue opens the latest open session",
+    async (status) => {
+      const { history } = await mount("paid", {
+        create: { kind: "cap", status },
+      });
+      await screen.findByTestId("review-queue-total");
+      await screen.findAllByTestId("review-open-row");
+      const opensBefore = gets().filter(
+        (g) => g === "/api/review/sessions/open",
+      ).length;
+      const start = screen.getByTestId("button-start-queue");
+      fireEvent.click(start);
+      const cap = await capNotice();
+      expect(cap.textContent).toContain("Too many open review sessions");
+      expect(cap.textContent).toContain(String(CAP_BODY.message));
+      // At the pressed button: inside the queue card's section, right after the button.
+      expect(screen.getByTestId("review-queue").contains(cap)).toBe(true);
+      expect(
+        start.compareDocumentPosition(cap) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.queryByTestId("review-start-failure")).toBeNull();
+      // Never below the fold: the notice was brought into view as it appeared.
+      expect(scrolled.mock.contexts).toContain(cap.parentElement);
+      // The refusal re-reads the open list the actions name.
+      await waitFor(() =>
+        expect(
+          gets().filter((g) => g === "/api/review/sessions/open").length,
+        ).toBeGreaterThan(opensBefore),
+      );
+      // The start is not left pending.
+      expect(start.textContent).toBe("Start reviewing");
+      expect((start as HTMLButtonElement).disabled).toBe(false);
+
+      fireEvent.click(
+        within(cap).getByRole("button", { name: "Continue your open session" }),
+      );
+      // The most recently started open session (created 20:00, the other 19:00).
+      expect(history.at(-1)).toBe(`/review/session/${OPEN_FILTER}`);
+    },
+  );
+
+  it("End a session brings this page's open sessions (each with End) into view and focuses them", async () => {
+    await mount("paid", { create: { kind: "cap", status: 409 } });
+    await screen.findAllByTestId("review-open-row");
+    fireEvent.click(await screen.findByTestId("button-start-queue"));
+    const cap = await capNotice();
+    fireEvent.click(within(cap).getByRole("button", { name: "End a session" }));
+    const heading = screen.getByRole("heading", {
+      name: "Pick up where you left off",
+    });
+    expect(document.activeElement).toBe(heading);
+    expect(scrolled.mock.contexts).toContain(heading);
+    // Ending one there lifts the cap, and its message goes with it.
+    const rows = screen.getAllByTestId("review-open-row");
+    fireEvent.click(
+      within(rows[0] as HTMLElement).getByRole("button", {
+        name: `End ${M_DOMAINS[0]}`,
+      }),
+    );
+    const modal = await screen.findByTestId("review-end-modal");
+    fireEvent.click(within(modal).getByRole("button", { name: "End session" }));
+    await waitFor(() => expect(screen.queryByTestId("review-cap")).toBeNull());
+  });
+
+  it("a past session's Redo, refused: the message inside that row only", async () => {
+    await mount("paid", { create: { kind: "cap", status: 403 } });
+    const list = await openPast();
+    const rows = within(list).getAllByTestId("review-past-row");
+    fireEvent.click(
+      within(rows[2] as HTMLElement).getByTestId("review-past-redo"),
+    );
+    const cap = await capNotice();
+    expect((rows[2] as HTMLElement).contains(cap)).toBe(true);
+    expect(rows.filter((r) => r !== rows[2]).some((r) => r.contains(cap))).toBe(
+      false,
+    );
+    expect(screen.getByTestId("review-queue").contains(cap)).toBe(false);
+    expect(scrolled.mock.contexts).toContain(cap.parentElement);
+  });
+
+  it("the topic picker's start, refused: the message inside the picker, under its start", async () => {
+    await mount("paid", { create: { kind: "cap", status: 409 } });
+    const picker = await screen.findByTestId("review-topic-picker");
+    const start = within(picker).getByTestId("button-start-topic");
+    fireEvent.click(start);
+    const cap = await capNotice();
+    expect(picker.contains(cap)).toBe(true);
+    expect(
+      start.compareDocumentPosition(cap) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it.each([403, 409])(
+    "a different refusal under %i is not the cap: the plain failure notice, no cap actions",
+    async (status) => {
+      await mount("paid", { create: { kind: "other", status } });
+      fireEvent.click(await screen.findByTestId("button-start-queue"));
+      const failure = await screen.findByTestId("review-start-failure");
+      expect(failure.textContent).toContain("Couldn't start that session");
+      expect(failure.textContent).toContain(
+        "Only students can start review sessions.",
+      );
+      expect(screen.queryByTestId("review-cap")).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Continue your open session" }),
+      ).toBeNull();
+    },
+  );
+
+  it("/review?focus=open-sessions (Home's End a session) opens with the open sessions in view and focused", async () => {
+    await mount("paid", {}, "/review?focus=open-sessions");
+    await screen.findAllByTestId("review-open-row");
+    const heading = screen.getByRole("heading", {
+      name: "Pick up where you left off",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(scrolled.mock.contexts).toContain(heading);
+  });
+
+  it("without the query, the page does not move focus to the open sessions", async () => {
+    await mount("paid");
+    await screen.findAllByTestId("review-open-row");
+    const heading = screen.getByRole("heading", {
+      name: "Pick up where you left off",
+    });
+    expect(document.activeElement).not.toBe(heading);
+    expect(scrolled.mock.contexts).not.toContain(heading);
   });
 });

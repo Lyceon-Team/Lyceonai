@@ -129,6 +129,7 @@ FILES=(
   "client/src/pages/practice.tsx"
   "client/src/lib/session-reads.ts"
   "client/src/components/home/HomePanel.tsx"
+  "client/src/components/review/ReviewCapNotice.tsx"
   "client/src/components/student-ui/filter-bar/FilterBar.tsx"
   "client/src/components/MathRenderer.tsx"
   "client/src/features/calendar/lib/dates.ts"
@@ -370,10 +371,11 @@ plant "UI52-Q2" "Start reviewing sends filter mode instead of queue" \
 assert s.count(a) == 1
 s = s.replace(a, "onClick={() => void start({ mode: \"filter\", filters: {} })}", 1)'
 
+# Re-pointed 2026-10-08 (QA2-A): the runner path comes from `reviewSessionHref` (useReview.ts).
 plant "UI52-Q3" "a started session stays on /review instead of the runner" \
   "client/src/pages/review.test.tsx" \
   "client/src/pages/review.tsx" \
-  'a = "      navigate(\x60/review/session/\x24{result.sessionId}\x60);"
+  'a = "      navigate(reviewSessionHref(result.sessionId));"
 assert s.count(a) == 1
 s = s.replace(a, "      navigate(\"/review\");", 1)'
 
@@ -412,12 +414,9 @@ plant "UI52-O2" "End confirms but never terminates" \
 assert s.count(a) == 1
 s = s.replace(a, "void onEnd;", 1)'
 
-plant "UI52-O3" "the session limit is reached one session later" \
-  "client/src/pages/review.test.tsx" \
-  "client/src/pages/review.tsx" \
-  'a = "open.sessions.length >= open.maxConcurrentSessions;"
-assert s.count(a) == 1
-s = s.replace(a, "open.sessions.length > open.maxConcurrentSessions;", 1)'
+# UI52-O3 retired 2026-10-08 (QA2-A, owner re-test item A): Review no longer disables its starts
+# at the open-session limit (the `atLimit` line it mutated is gone); the server's refusal is shown
+# at the pressed start instead. Its replacement is QA2A-R3, which plants the disabling back.
 
 plant "UI52-T1" "domain chips lose their own-queue count" \
   "client/src/pages/review.test.tsx" \
@@ -2910,9 +2909,9 @@ s = s.replace(a, "{starting ? STARTING_LABEL : toReviewLine(s.open_count)}", 1)'
 plant "OQ66-H2" "every recent row's action has the same accessible name" \
   "$OQ66_HOME" \
   "client/src/components/home/HomePanel.tsx" \
-  'a = "                      : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`\n"
+  'a = "                        : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`\n"
 assert s.count(a) == 1
-s = s.replace(a, "                      : REVIEW_SESSION_LABEL\n", 1)'
+s = s.replace(a, "                        : REVIEW_SESSION_LABEL\n", 1)'
 
 # ── QA-FLOWS — owner QA list (Karl, 2026-10-07), branch claude/qa-flows ──────────────────────
 # Items 4-7, 10, 14, 15 (flows, links, loading states). Each plant mutates the product line the
@@ -3059,9 +3058,9 @@ s = s.replace(a, "      ?.getAttribute(\"id\");\n", 1)'
 plant "QA14-R1F" "a recent-session row looks pressable but does nothing" \
   "$QA_HOME" \
   "client/src/components/home/HomePanel.tsx" \
-  'a = "                  onClick={() => onReview(s)}\n"
+  'a = "                    onClick={() => onReview(s)}\n"
 assert s.count(a) == 1
-s = s.replace(a, "                  onClick={() => undefined}\n", 1)'
+s = s.replace(a, "                    onClick={() => undefined}\n", 1)'
 
 # Item 15: one empty-day sentence; timing above Start; "Not now"; menus hold still; math on one line.
 QA_FILTER="client/src/components/student-ui/filter-bar/FilterBar.test.tsx"
@@ -3105,6 +3104,127 @@ assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
 # ── END QA-FLOWS
+
+# ── QA2-A — owner re-test (Karl, 2026-10-08) item A: the review cap at the pressed start ──────
+# "Review cap (5 open sessions): show the error at the clicked button (inline or toast), never
+# below the fold, with 'Continue your open session' and 'End a session' actions. Same on Home and
+# Review." Each plant mutates the line the named page test runs (checked by line number).
+QA2A_REVIEW="client/src/pages/review.test.tsx"
+QA2A_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+
+plant "QA2A-C1" "the cap is recognised by its 403 status again (a 409 cap goes dark)" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
+assert s.count(a) == 1
+s = s.replace(a, "      if (res.status === 403 && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {", 1)'
+
+plant "QA2A-C2" "any refusal is taken for the cap (the code is not read)" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
+assert s.count(a) == 1
+s = s.replace(a, "      if (!res.ok) {", 1)'
+
+plant "QA2A-I1" "a cap refusal no longer re-reads the open sessions it offers" \
+  "$QA2A_REVIEW" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      if (result.failure.kind === \"session_limit\")\n        void queryClient.invalidateQueries({"
+assert s.count(a) == 1
+s = s.replace(a, "      if (result.failure.kind === \"pool_empty\")\n        void queryClient.invalidateQueries({", 1)'
+
+plant "QA2A-N3" "Continue opens the oldest open session instead of the latest" \
+  "$QA2A_REVIEW" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      Date.parse(s.created_at) > Date.parse(latest.created_at)"
+assert s.count(a) == 1
+s = s.replace(a, "      Date.parse(s.created_at) < Date.parse(latest.created_at)", 1)'
+
+plant "QA2A-N1" "the cap message is not scrolled into view (it can sit below the fold)" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/components/review/ReviewCapNotice.tsx" \
+  'a = "      el.scrollIntoView({ block: \"nearest\" });"
+assert s.count(a) == 1
+s = s.replace(a, "      void el;", 1)'
+
+plant "QA2A-N2" "Continue goes to the Review list instead of the open session" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/components/review/ReviewCapNotice.tsx" \
+  'a = "              onAction: () => navigate(reviewSessionHref(latest.id)),"
+assert s.count(a) == 1
+s = s.replace(a, "              onAction: () => navigate(REVIEW_OPEN_SESSIONS_HREF),", 1)'
+
+plant "QA2A-N4" "Home's End a session lands on Review without its open sessions in view" \
+  "$QA2A_HOME" \
+  "client/src/components/review/ReviewCapNotice.tsx" \
+  'a = "          onEndSession ?? (() => navigate(REVIEW_OPEN_SESSIONS_HREF))"
+assert s.count(a) == 1
+s = s.replace(a, "          onEndSession ?? (() => navigate(\"/review\"))", 1)'
+
+plant "QA2A-R1" "Start reviewing's refusal is not drawn under it" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
+assert s.count(a) == 1
+s = s.replace(a, "            {null}", 1)'
+
+plant "QA2A-R2" "every refusal is drawn under Start reviewing too (a Redo's lands at the top)" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
+assert s.count(a) == 1
+s = s.replace(a, "            {capKey !== null ? <div className=\"mt-3\">{cap}</div> : null}", 1)'
+
+plant "QA2A-R3" "starts are disabled at the open-session limit again (nothing to press)" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "  const canStart = !create.isStarting && starting === null;"
+assert s.count(a) == 1
+s = s.replace(a, "  const canStart =\n    !create.isStarting &&\n    starting === null &&\n    open.sessions.length < (open.maxConcurrentSessions ?? Infinity);", 1)'
+
+plant "QA2A-R4" "Review's End a session does not bring the open sessions into view" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "        onEndSession={showOpenSessions}"
+assert s.count(a) == 1
+s = s.replace(a, "        onEndSession={() => undefined}", 1)'
+
+plant "QA2A-R5" "the page reads ?focus=open-sessions the wrong way round" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "    if (!focusOpen || !openRowsDrawn || focusedOpen.current) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    if (focusOpen || !openRowsDrawn || focusedOpen.current) return;", 1)'
+
+plant "QA2A-R6" "a Redo's refusal is not drawn in its row" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "                      {capKey === redoStartKey(row) ? ("
+assert s.count(a) == 1
+s = s.replace(a, "                      {false ? (", 1)'
+
+plant "QA2A-R7" "the topic picker's refusal is not drawn in the picker" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "              cap={capKey === \"filter\" ? cap : null}"
+assert s.count(a) == 1
+s = s.replace(a, "              cap={null}", 1)'
+
+plant "QA2A-H1" "Home draws the cap under every recent row, not the pressed one" \
+  "$QA2A_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "                {capFor === recentRowKey(s) ? ("
+assert s.count(a) == 1
+s = s.replace(a, "                {capFor !== null ? (", 1)'
+
+plant "QA2A-H2" "Home's cap goes back to the red line under the list" \
+  "$QA2A_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "            capFor={reviewCap?.row ?? null}"
+assert s.count(a) == 1
+s = s.replace(a, "            capFor={null}", 1)'
+
+# ── END QA2-A
 
 # ── QA 2026-10-07 item 7: the Focus shell's back arrow names its real destination ─────────────
 QA7_FOCUS="client/src/components/layout/FocusShell.test.tsx"

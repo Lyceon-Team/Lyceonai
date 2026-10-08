@@ -46,6 +46,13 @@ the site-wide cookie banner: capture.ts sets the strictly necessary consent cook
 refused, the app's own `lyceon_consent` format) on each browser context, so the banner is not
 drawn over the pages under review.
 
+QA2-A (the review cap, 2026-10-08) adds two. `reviewCap: true` puts the persona at the server's
+own concurrent review-session cap before each capture: queue review sessions are opened through
+the real `POST /api/review/sessions` until the route itself refuses one with
+`SESSION_LIMIT_EXCEEDED`, and the ones opened are ended through the real terminate route after the
+shot. `expectInViewport` fails the capture unless the named element lies wholly inside the window
+after the steps (the cap's message, never below the fold).
+
 Output: `docs/plans/student-ui/evidence/wave5/<group>/` — one PNG per built shot
 (`<shot>--<desktop|mobile>--<light|dark>--built.png`), one per prototype state
 (`proto--<Screen>--<plan>--<theme>[--clicked].png`), and `index.md` with a built | prototype

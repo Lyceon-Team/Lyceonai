@@ -578,6 +578,48 @@ async function endFreshSession(
 }
 
 /**
+ * QA2-A (groups/types.ts `reviewCap`): opens queue review sessions through the real create route
+ * until the server refuses one with its concurrent-session cap, and returns the ids it opened (so
+ * they can be ended after the shot). Any other refusal, or no refusal within twenty starts, fails
+ * the capture: the state is the server's own cap or nothing.
+ */
+async function fillReviewCap(
+  stack: Stack,
+  persona: StudentPersona,
+): Promise<string[]> {
+  const opened: string[] = [];
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    freshCounter += 1;
+    const res = await fetch(`${stack.baseUrl}/api/review/sessions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [PERSONA_HEADER]: persona,
+      },
+      body: JSON.stringify({
+        mode: "queue",
+        client_instance_id: SEED_CLIENT_INSTANCE,
+        idempotency_key: `student-harness-cap-${process.pid}-${freshCounter}`,
+      }),
+    });
+    const json: unknown = await res.json();
+    const body =
+      json !== null && typeof json === "object"
+        ? (json as Record<string, unknown>)
+        : {};
+    if (res.ok && typeof body.sessionId === "string") {
+      opened.push(body.sessionId);
+      continue;
+    }
+    if (body.code === "SESSION_LIMIT_EXCEEDED") return opened;
+    throw new Error(
+      `review cap: create answered ${res.status} ${JSON.stringify(json).slice(0, 300)}`,
+    );
+  }
+  throw new Error("review cap: twenty starts and the server never refused one");
+}
+
+/**
  * The on-screen index of the choice a pick names, from the served item's stored display order
  * (`option_order`, canonical keys in the order shown) and its correct key. Harness only: the
  * page under test is never told.
@@ -636,6 +678,12 @@ async function shootBuilt(
     throw new Error(`${shot.id}: a fresh session needs a signed-in persona`);
   const sessionId =
     fresh && persona ? await startFreshSession(stack, persona, fresh) : null;
+  if (shot.reviewCap === true && persona === null)
+    throw new Error(`${shot.id}: the review cap needs a seeded student`);
+  const capOpened =
+    shot.reviewCap === true && persona
+      ? await fillReviewCap(stack, persona)
+      : [];
   if (shot.freshCalendarProfile === true) {
     if (persona === null)
       throw new Error(
@@ -822,6 +870,18 @@ async function shootBuilt(
         .locator(shot.expectGone)
         .first()
         .waitFor({ state: "detached", timeout: 20_000 });
+    if (shot.expectInViewport !== undefined) {
+      const box = await page
+        .locator(shot.expectInViewport)
+        .first()
+        .boundingBox({ timeout: 20_000 });
+      const height = page.viewportSize()?.height ?? 0;
+      if (box === null || box.y < 0 || box.y + box.height > height)
+        throw new Error(
+          `${shot.id} ${size.name} ${theme}: ${shot.expectInViewport} is not wholly in the viewport ` +
+            `(box ${JSON.stringify(box)}, viewport height ${height})`,
+        );
+    }
     if (shot.expectText !== undefined)
       await page
         .getByText(shot.expectText, { exact: true })
@@ -917,6 +977,14 @@ async function shootBuilt(
     await context.close();
     if (fresh && persona && sessionId !== null)
       await endFreshSession(stack, persona, fresh, sessionId);
+    if (persona)
+      for (const opened of capOpened)
+        await endFreshSession(
+          stack,
+          persona,
+          { engine: "review", body: {} },
+          opened,
+        );
   }
 }
 
@@ -1053,6 +1121,14 @@ function writeIndex(
     if (shot.cookieChoiceMade === true)
       lines.push(
         "Cookie banner already answered (the real `lyceon_consent` cookie, analytics rejected, current banner version).",
+      );
+    if (shot.reviewCap === true)
+      lines.push(
+        "At the review-session cap before each capture: queue review sessions are opened through the real `POST /api/review/sessions` until the server itself refuses one with `SESSION_LIMIT_EXCEEDED`; the ones opened are ended through the real terminate route after the shot.",
+      );
+    if (shot.expectInViewport !== undefined)
+      lines.push(
+        `Must then show \`${shot.expectInViewport}\` wholly inside the viewport (the capture fails otherwise).`,
       );
     if (shot.freshReviewPrompt === true)
       lines.push(
