@@ -105,14 +105,7 @@ async function createFavicons() {
     .toFile(path.join(OUTPUT_DIR, 'favicon-32.png'));
   console.log('✅ Created favicon-32.png (32x32)');
   
-  // Create 16px PNG for ICO
-  const favicon16 = await sharp(logoPng)
-    .resize(16, 16, { fit: 'contain', background: bgColor })
-    .flatten({ background: bgColor })
-    .png()
-    .toBuffer();
-  
-  // Create 32px version for ICO
+  // Create 32px version for ICO (a 16px buffer was also rendered here and never used)
   const favicon32 = await sharp(logoPng)
     .resize(32, 32, { fit: 'contain', background: bgColor })
     .flatten({ background: bgColor })

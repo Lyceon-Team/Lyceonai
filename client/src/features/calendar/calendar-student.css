@@ -106,6 +106,123 @@
   filter: brightness(1.12);
 }
 
+/* ── The student header (StudentChrome `StudentCalendarHeader`) ─────────────
+
+   QA 2026-10-07 item 11(d): the header wrapped badly between the phone and desktop layouts. It
+   switched on the VIEWPORT (Tailwind `lg`), but what it has to fit into is the calendar column,
+   which at 1024–1279 is the viewport less the rail and the 340px right panel (588–844px): the
+   three-column row then broke the controls themselves over two lines. And from 640 to 1023 it
+   stayed the phone's three stacked rows. It now switches on the column's own width (a size
+   container on `.lyc-cal-body`), and a control group never breaks inside itself:
+     - under 700px: the phone's stack — the range title, the view controls, the actions;
+     - 700–919px: the title on its own row, then the view controls left and the actions right
+       (the two groups need 647px together);
+     - 920px and up: one row, controls | centred title | actions (the prototype; it needs
+       845px between the 28px gutters).
+   The values (16px gaps and gutters, 10px inside a group, 28px x 20px from one row) are the
+   ones the Tailwind classes had. Outside `.lyceon-calendar` on purpose: the header is that
+   root's sibling (see CalendarView). */
+.lyc-cal-body {
+  container-type: inline-size;
+  container-name: lyc-cal-body;
+}
+.lyc-cal-head {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+}
+.lyc-cal-head > * {
+  flex: 1 1 100%;
+}
+.lyc-cal-head__title {
+  order: -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.lyc-cal-head__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.lyc-cal-head__spacer {
+  display: none;
+}
+@container lyc-cal-body (min-width: 700px) {
+  .lyc-cal-head {
+    justify-content: space-between;
+  }
+  .lyc-cal-head > .lyc-cal-head__group {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+}
+@container lyc-cal-body (min-width: 920px) {
+  .lyc-cal-head {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    padding: 20px 28px;
+  }
+  .lyc-cal-head__title {
+    order: 0;
+  }
+  .lyc-cal-head__nav {
+    justify-self: start;
+  }
+  .lyc-cal-head__actions {
+    justify-self: end;
+  }
+  .lyc-cal-head__spacer {
+    display: block;
+  }
+}
+
+/* OQ-66 (c), owner ruling (Karl, 2026-10-07): "the calendar header is at most two rows at
+   1024px. Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu."
+   Keyed on the VIEWPORT, as the ruling is (StudentChrome `MoreActionsMenu` says why the column
+   would not do). Below 1200px the two buttons are not drawn and the actions group is the 40px
+   "⋯" alone. Under a 700px column (the phone; beside the right panel, 1024 to about 1135,
+   the column being the viewport less 436px) "⋯" moves up onto the range title's row, at its
+   right end, with an empty 40px column mirroring it on the left so the title stays centred; the view controls are the second row, centred as the
+   phone's controls are (owner decision 2026-10-01 item 10). Two rows where there were three;
+   "⋯" beside the controls would not fit a phone (the controls are 333px, the row 358px at 390).
+   From a 700px column the existing rules already put "⋯" right of the controls, two rows, and
+   from 920px one row. Only a header that HAS actions (`--actions`): the free calendar's
+   header is untouched. At 1200 and up nothing changes: the buttons show and "⋯" does not.
+   `display: none` takes the hidden one out of the tab order and the accessibility tree. */
+@media (max-width: 1199.98px) {
+  .lyc-cal-head__actions > .lyc-cal-head__wide {
+    display: none;
+  }
+  @container lyc-cal-body (max-width: 699.98px) {
+    .lyc-cal-head--actions {
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr) 40px;
+    }
+    .lyc-cal-head--actions > .lyc-cal-head__title {
+      grid-area: 1 / 2;
+    }
+    .lyc-cal-head--actions > .lyc-cal-head__actions {
+      grid-area: 1 / 3;
+    }
+    .lyc-cal-head--actions > .lyc-cal-head__nav {
+      grid-area: 2 / 1 / 3 / 4;
+    }
+  }
+}
+@media (min-width: 1200px) {
+  .lyc-cal-head__actions > .lyc-cal-head__more {
+    display: none;
+  }
+}
+
 /* ── Week grid ───────────────────────────────────────────────────────────── */
 
 .lyceon-calendar.lyc-cal .scroll {
@@ -324,6 +441,118 @@
   font-size: 14px;
   color: var(--muted);
 }
+/* QA 2026-10-07 item 11(c): nothing in a block card runs past its edge, at any width. A week
+   column is about 84px wide beside the 340px panel at 1024 and 105px at 768, narrower than
+   "Data Analysis 5" or "🔒 started" on one line. The title wraps between words (and inside a
+   word only when one word is wider than the card); the "started" tag drops under the title
+   and, if even that is too narrow, is cut with an ellipsis; a scope chip wraps inside itself.
+   The month chips already truncate (`.mchip span`). */
+.lyceon-calendar.lyc-cal .block {
+  min-width: 0;
+  max-width: 100%;
+  /* `anywhere`, not `break-word`: the title and the chips are flex items, whose minimum
+     width is their longest word unless that word may break. Words still break at spaces
+     first; a word is split only when it alone is wider than the card. */
+  overflow-wrap: anywhere;
+}
+.lyceon-calendar.lyc-cal .block .ttl {
+  flex-wrap: wrap;
+  min-width: 0;
+  row-gap: 2px;
+}
+.lyceon-calendar.lyc-cal .block .lock {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lyceon-calendar.lyc-cal .block .dom span {
+  max-width: 100%;
+  min-width: 0;
+}
+/* A narrow day column (seven of them in under 910px: beside the right panel from 1024 to about
+   1280, or with no panel from 768 to about 900) gives the card's text the room its insets were
+   taking, so words wrap whole rather than being split: the stack and card insets tighten and
+   the text drops its 9px indent (the card's own 9px left padding already clears the 4px bar).
+   The week is the size container; `:is(...)` picks the columns of a SEVEN-day week only (the
+   phone's one-day week is a single wide column and keeps its insets). */
+.lyceon-calendar.lyc-cal .week {
+  container-type: inline-size;
+}
+@container (max-width: 909px) {
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .stack {
+    padding: 6px 4px;
+    gap: 6px;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block {
+    padding: 8px 5px 8px 9px;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    :is(.ttl, .sub, .dom) {
+    padding-left: 0;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .ttl {
+    font-size: 14px;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .progress {
+    margin-left: 0;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .dom
+    span {
+    padding: 2px 4px;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .add {
+    margin: 4px 4px 11px;
+  }
+}
+
 .lyceon-calendar.lyc-cal .block.locked {
   cursor: default;
 }
@@ -654,8 +883,29 @@
   transform: none;
 }
 .lyceon-calendar.lyc-cal .sheet header {
+  position: relative;
   padding: 17px 20px 13px;
   border-bottom: 1px solid var(--rule);
+}
+/* QA 2026-10-07 item 11(b): the block sheet's Close (top right, a 40px target). The title keeps
+   clear of it. */
+.lyceon-calendar.lyc-cal .sheet .sheet-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--ink-strong);
+}
+.lyceon-calendar.lyc-cal .sheet .sheet-close:hover {
+  background: var(--hover);
+}
+.lyceon-calendar.lyc-cal .sheet .sheet-close ~ h3 {
+  padding-right: 40px;
 }
 .lyceon-calendar.lyc-cal .sheet .kind {
   display: inline-flex;

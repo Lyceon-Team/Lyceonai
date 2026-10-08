@@ -142,6 +142,24 @@ export const UI_51: PageGroup = {
         note: "Practice, plan = paid, the same three choices clicked on the canvas",
       },
     },
+    // The pending shot runs before the click path: each click-path capture leaves a real
+    // session open, and four of them reach the open-session limit that disables Start.
+    {
+      id: "click-paid-start-pending",
+      title:
+        "QA item 5: Start pressed, the create held in flight: 'Starting…' with a spinner, disabled",
+      persona: "paid",
+      route: "/practice",
+      waitFor: PRACTICE,
+      holdRequest: { method: "POST", path: "/api/practice/sessions" },
+      steps: [both('[data-testid="practice-start"]')],
+      expectVisible: '[data-testid="practice-start"][aria-busy="true"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).",
+      },
+    },
     {
       id: "click-paid-start",
       title:

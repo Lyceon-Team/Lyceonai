@@ -40,14 +40,18 @@
  * read; the grid's one "Start practicing" shows only when nothing is measured (RULE 6) and each
  * opened domain with an unmeasured skill offers one outline "Practice <domain>".
  */
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
-import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import {
+  canonicalDomainNodes,
+  masteryDomainAnchorId,
+  masteryDomainFromSearch,
+} from "@/components/mastery/domain-nodes";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -113,7 +117,19 @@ export default function MasteryPage(): JSX.Element {
     retry: 1,
   });
 
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  // QA item 14 (2026-10-07): `/mastery?domain=M:Algebra` (Home's mastery rows) opens that
+  // domain, and the effect below scrolls it into view once the grid has drawn.
+  const linkedDomain = masteryDomainFromSearch(useSearch());
+  const [open, setOpen] = useState<ReadonlySet<string>>(
+    () => new Set(linkedDomain === null ? [] : [linkedDomain]),
+  );
+  const gridDrawn = domains.data !== undefined;
+  useEffect(() => {
+    if (!gridDrawn || linkedDomain === null) return;
+    document
+      .getElementById(masteryDomainAnchorId(linkedDomain))
+      ?.scrollIntoView({ block: "start" });
+  }, [gridDrawn, linkedDomain]);
   function toggle(key: string): void {
     setOpen((prev) => {
       const next = new Set(prev);
@@ -233,7 +249,12 @@ function DomainBlock({
 }): JSX.Element {
   const listId = useId();
   return (
-    <div data-testid="mastery-domain" data-domain={node.domain}>
+    <div
+      id={masteryDomainAnchorId(`${node.section}:${node.domain}`)}
+      className="scroll-mt-6"
+      data-testid="mastery-domain"
+      data-domain={node.domain}
+    >
       <MasteryRow
         label={node.domain}
         levelKey={node.levelKey}

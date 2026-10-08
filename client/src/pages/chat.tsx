@@ -14,7 +14,7 @@
  *        §4 LISA; prototype Lisa.dc.html (paid and free); evidence/wiring-table.md §10]
  *       [CC Brief "PR B: Standalone LISA Chat UI" §2–§5 (client_turn_id idempotency, the crisis
  *        and safeguarding cards drawn from the server's response); closure plan W4-11]
- * @implemented [2026-09-23; UI-56 2026-10-03]
+ * @implemented [2026-09-23; UI-56 2026-10-03; QA items 5, 9, 15 and titles 2026-10-07]
  *
  * plain English: one page, three states, decided by the feature-access map on
  * `GET /api/profile` before any tutor request is made:
@@ -24,13 +24,15 @@
  *   - locked, reason `age` (under 13): the same headline with the server's own age message and
  *     no button. Never the upgrade pitch.
  *   - otherwise (granted, or no map): the conversation. The header names it (its title, else
- *     "New session") with End session; the column lists the turns, each labelled "You" or
- *     "LISA", the typing indicator while LISA thinks; the composer sends on Enter, adds a line
- *     on Shift+Enter (the shared keyboard hook), and Send is disabled while LISA thinks. With no
- *     conversation open the composer still takes a first message: the conversation is created
- *     then, and that message is sent through the same turn machine. The right panel holds
- *     New session (creates one and opens its empty column) and "Your sessions", newest first,
- *     with "Show older" while the server reports another page.
+ *     "New session"; "Conversation" for a crisis-flagged one, QA 2026-10-07) with End session;
+ *     the column lists the turns, each labelled "You" or "LISA", the typing indicator while
+ *     LISA thinks, and a short prompt while it is empty (QA-15); the composer sends on Enter,
+ *     adds a line on Shift+Enter (the shared keyboard hook), and Send reads "Sending…",
+ *     disabled, from the click until LISA answers (QA-5). With no conversation open the
+ *     composer still takes a first message: the conversation is created then, and that message
+ *     is sent through the same turn machine. The right panel holds New session (opens an empty
+ *     column and creates nothing until the first message, QA-9 2026-10-07) and "Your
+ *     sessions", newest first, with "Show older" while the server reports another page.
  *
  * THE SERVER STILL DECIDES. A map can be stale. Every tutor route refuses an unpaid student
  * first (Doc 03B §6.5), and any `entitlement_required` refusal (on the list, a conversation,
@@ -61,6 +63,7 @@ import {
   type TutorConversationSummary,
   type TutorMessage,
 } from "@/hooks/tutor-client";
+import { PHONE_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
@@ -86,6 +89,22 @@ export const LISA_COMPOSER_PLACEHOLDER = "Ask LISA about a question or a skill";
 /** Shipped title of a conversation with none yet (the server titles it on the first turn). */
 const UNTITLED = "New session";
 
+/**
+ * QA 2026-10-07 (titles, from item 1): what a crisis-flagged conversation is called in every list
+ * and header. The server titles a conversation with its first student message
+ * (server/routes/tutor-runtime.ts, "Set title on first student message"), so a conversation
+ * that began with a crisis message carries that message as its title; the page never shows it.
+ */
+const NEUTRAL_TITLE = "Conversation";
+
+/**
+ * QA 2026-10-07 item 15: the short prompt an empty LISA column shows. A presentation line, not a
+ * message: never sent, never stored, gone once a message is on screen.
+ * PROPOSED WORDING: new in-app copy, awaiting Karl's approval (QA 2026-10-07 report).
+ */
+const LISA_EMPTY_PROMPT =
+  "Ask LISA about a question you missed or a skill you're working on.";
+
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
@@ -109,6 +128,21 @@ export function historyWhen(iso: string, now: Date = new Date()): string {
 
 function chatHref(conversationId: string): string {
   return `/chat?conversationId=${encodeURIComponent(conversationId)}`;
+}
+
+/**
+ * @spec [QA 2026-10-07, titles (Karl, item 1 UI part): "don't use a crisis message as a
+ *        session's display title; show a neutral title"] | @implemented [2026-10-07]
+ *
+ * plain English: the title a conversation is shown under. No title yet (or the server's
+ * placeholder): "New session", which holds no student words. A conversation that is, or may be,
+ * crisis-flagged: "Conversation". Otherwise the server's title. The caller decides `flagged`
+ * and fails closed (see the header's use): the server-side fix (never titling a conversation
+ * with a crisis message) is the LISA vertical's handoff.
+ */
+function displayTitle(title: string | null, flagged: boolean): string {
+  if (title === null || title === UNTITLED) return UNTITLED;
+  return flagged ? NEUTRAL_TITLE : title;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +254,15 @@ function LisaConversation(): JSX.Element {
   } | null>(null);
 
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  /** The end of the thread's bottom bar (composer or paused bar): what a phone scrolls to. */
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * QA-9: the idempotency key of the conversation a first message creates, kept until that create
+   * succeeds, so sending the same first message again after a failed create replays the create
+   * (the server's `idempotency_key`) instead of making a second conversation.
+   */
+  const firstCreateKeyRef = useRef<string | null>(null);
+  const isPhone = useMediaQuery(PHONE_LAYOUT_QUERY, false);
 
   const conversations = conversationsList?.conversations ?? [];
   const messages = conversationDetail?.messages ?? [];
@@ -231,6 +274,7 @@ function LisaConversation(): JSX.Element {
     crisisLane,
     effectiveCrisisContent,
     showCrisisCard,
+    showPausedBar,
     premiumReason,
     suggestedAction,
     send,
@@ -259,7 +303,16 @@ function LisaConversation(): JSX.Element {
   const scrollTrigger =
     (messages.length + (optimisticMessage ? 1 : 0)) * 2 +
     (isThinking || firstMessage !== null ? 1 : 0);
-  useScrollToBottomOnChange(scrollAnchorRef, scrollTrigger);
+  // QA-15 (phone): on the phone layout the page itself scrolls (the column is not a scroll box)
+  // and the history sits under the composer, so a session picked there, a New session, or a new
+  // turn brings the end of the thread and its composer to the bottom of the screen (above the
+  // tab bar). On desktop the column scrolls inside itself, to its last turn, as before. Keyed
+  // on the conversation as well: a picked session with as many turns as the last one still moves.
+  useScrollToBottomOnChange(
+    isPhone ? threadEndRef : scrollAnchorRef,
+    `${conversationId ?? ""}:${scrollTrigger}`,
+    isPhone ? "end" : "start",
+  );
 
   // ── Navigation ────────────────────────────────────────────────────────
 
@@ -274,28 +327,17 @@ function LisaConversation(): JSX.Element {
 
   // ── New session ───────────────────────────────────────────────────────
 
-  // `mutate`, never `mutateAsync` in an empty catch: the failure stays on
-  // `createConversation.error`, which the page reads (W4-11).
-  const createThen = useCallback(
-    (onCreated: (conversationId: string) => void, onFailed?: () => void) => {
-      createConversation.mutate(
-        {
-          entry_mode: "general",
-          source_surface: "dashboard",
-          idempotency_key: crypto.randomUUID(),
-        },
-        {
-          onSuccess: (conv) => onCreated(conv.conversation_id),
-          ...(onFailed ? { onError: onFailed } : {}),
-        },
-      );
-    },
-    [createConversation],
-  );
-
+  // @spec [QA 2026-10-07 item 9 (Karl: "LISA 'New session': don't create a conversation until
+  //        the first message is sent (no blank sessions)"); Doc 03B create route's
+  //        `idempotency_key`] | @implemented [2026-10-07]
+  // plain English: New session creates nothing. It opens the empty column at /chat (no
+  // conversation), and the first message sent there creates the conversation and is then sent
+  // into it through the same turn machine (`send`, the same response path, so a crisis first
+  // message is handled exactly as before). Trade-off: the history gains the session only once
+  // its first message is sent, which is the point.
   const handleNewSession = useCallback(() => {
-    createThen((id) => navigateToConversation(id));
-  }, [createThen, navigateToConversation]);
+    navigateToConversation("");
+  }, [navigateToConversation]);
 
   // ── Send ──────────────────────────────────────────────────────────────
 
@@ -307,20 +349,33 @@ function LisaConversation(): JSX.Element {
       void send(text);
       return;
     }
-    // No conversation open: create one for this message, then send it there.
+    // No conversation open: create one for this message, then send it there. The key is kept
+    // until a create succeeds (QA-9), so a retry after a failed create replays it.
     setFirstMessage(text);
-    createThen(
-      (id) => {
-        setQueued({ conversationId: id, text });
-        navigateToConversation(id);
+    const idempotencyKey = firstCreateKeyRef.current ?? crypto.randomUUID();
+    firstCreateKeyRef.current = idempotencyKey;
+    // `mutate`, never `mutateAsync` in an empty catch: the failure stays on
+    // `createConversation.error`, which the page reads (W4-11).
+    createConversation.mutate(
+      {
+        entry_mode: "general",
+        source_surface: "dashboard",
+        idempotency_key: idempotencyKey,
       },
-      () => {
-        // The student's words go back in the composer, never lost.
-        setFirstMessage(null);
-        setDraft(text);
+      {
+        onSuccess: (conv) => {
+          firstCreateKeyRef.current = null;
+          setQueued({ conversationId: conv.conversation_id, text });
+          navigateToConversation(conv.conversation_id);
+        },
+        onError: () => {
+          // The student's words go back in the composer, never lost.
+          setFirstMessage(null);
+          setDraft(text);
+        },
       },
     );
-  }, [draft, conversationId, send, createThen, navigateToConversation]);
+  }, [draft, conversationId, send, createConversation, navigateToConversation]);
 
   // Once the page has opened the conversation created for a first message, that message is
   // sent through the turn machine, once: a server call, so an effect.
@@ -359,8 +414,29 @@ function LisaConversation(): JSX.Element {
         }
       : null;
 
-  const composerDisabled =
-    isThinking || isPaused || isEnded || firstMessage !== null;
+  // QA-5: a message on its way (its conversation being created, or LISA's turn in flight) is
+  // `pending`: both are set synchronously in the submit handler, so Send reads "Sending…" from
+  // the render the click causes.
+  const composerPending = isThinking || firstMessage !== null;
+
+  // QA titles: the open conversation's summary carries `crisis_flagged`; the detail does not.
+  // Fail closed: a paused conversation (a crisis turn paused it), or one whose summary is not
+  // (yet) in the loaded history, is shown under the neutral title, never its own.
+  const openSummary = conversations.find(
+    (c) => c.conversation_id === conversationId,
+  );
+  const headerFlagged = isPaused || (openSummary?.crisis_flagged ?? true);
+  const headerTitle = displayTitle(conversation?.title ?? null, headerFlagged);
+
+  // QA-15: an empty column shows a short prompt (presentation only), until a message is on screen.
+  const showEmptyPrompt =
+    !isLoading &&
+    !hasMessages &&
+    firstMessage === null &&
+    turnState.kind === "idle" &&
+    !isPaused &&
+    !isEnded &&
+    !createFailed;
 
   return (
     // SCL-204 / R32: `ph-no-capture` — the whole LISA page (log, composer, conversation titles);
@@ -374,7 +450,7 @@ function LisaConversation(): JSX.Element {
           className="m-0 min-w-0 truncate font-lyc-serif text-[22px] font-semibold text-lyc-ink-strong lg:text-[24px]"
           data-testid="lisa-title"
         >
-          {conversation?.title ?? UNTITLED}
+          {headerTitle}
         </h1>
         {conversationId && hasMessages && !isEnded ? (
           <Button
@@ -404,6 +480,17 @@ function LisaConversation(): JSX.Element {
           {isLoading ? (
             <li role="status" aria-label="Loading conversation">
               <Skeleton variant="lyc" className="h-24 w-full" />
+            </li>
+          ) : null}
+
+          {showEmptyPrompt ? (
+            <li>
+              <p
+                className="m-0 text-[18px] leading-relaxed text-lyc-muted"
+                data-testid="lisa-empty-prompt"
+              >
+                {LISA_EMPTY_PROMPT}
+              </p>
             </li>
           ) : null}
 
@@ -466,7 +553,7 @@ function LisaConversation(): JSX.Element {
         <div ref={scrollAnchorRef} />
       </div>
 
-      {showCrisisCard || isPaused ? (
+      {showPausedBar || isPaused ? (
         <PausedBar
           onEnd={() => setEndModalOpen(true)}
           onContinue={handleResume}
@@ -478,10 +565,12 @@ function LisaConversation(): JSX.Element {
           draft={draft}
           onDraftChange={setDraft}
           onSubmit={handleComposerSubmit}
-          disabled={composerDisabled}
+          disabled={false}
+          pending={composerPending}
           placeholder={LISA_COMPOSER_PLACEHOLDER}
         />
       )}
+      <div ref={threadEndRef} className="scroll-mb-[76px]" />
 
       <AppShellPanel>
         <HistoryPanel
@@ -533,6 +622,19 @@ function HistoryPanel({
   onShowOlder: () => void;
   loadingOlder: boolean;
 }): JSX.Element {
+  // QA-15: on desktop the panel scrolls inside itself, so the open session is kept in view in
+  // the list ("nearest": no move when it already is). Not on the phone layout, where the page
+  // itself scrolls and the conversation, not the list, is what a pick brings into view.
+  const isPhone = useMediaQuery(PHONE_LAYOUT_QUERY, false);
+  const currentRef = useRef<HTMLAnchorElement | null>(null);
+  const activeListed = conversations.some(
+    (c) => c.conversation_id === activeId,
+  );
+  useEffect(() => {
+    if (isPhone || !activeListed) return;
+    currentRef.current?.scrollIntoView({ block: "nearest", behavior: "auto" });
+  }, [activeId, activeListed, isPhone]);
+
   return (
     <div className="flex flex-col gap-3.5" data-testid="lisa-history">
       <Button
@@ -560,6 +662,7 @@ function HistoryPanel({
             return (
               <li key={conv.conversation_id}>
                 <a
+                  ref={current ? currentRef : undefined}
                   href={chatHref(conv.conversation_id)}
                   aria-current={current ? "page" : undefined}
                   data-testid="lisa-history-item"
@@ -572,7 +675,7 @@ function HistoryPanel({
                   }`}
                 >
                   <span className="break-words text-lyc-body font-semibold">
-                    {conv.title ?? UNTITLED}
+                    {displayTitle(conv.title, conv.crisis_flagged)}
                   </span>
                   <span className="text-lyc-meta text-lyc-muted">
                     {historyWhen(conv.updated_at)}

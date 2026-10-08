@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **RETIRED 2026-10-07 — published as `legal/cookie-policy/v1`.** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
 
 # **LYCEON Cookie Policy**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 This Cookie Policy explains the cookies and similar technologies LYCEON uses, why we use them, and how you can control them. It supplements the **LYCEON Privacy Policy**.
 
@@ -34,15 +34,15 @@ We do not use advertising cookies, cross-site tracking cookies, or cookies that 
 
 | Name | Category | Provider | Purpose | Duration |
 |---|---|---|---|---|
-| `sb-<project>-auth-token` | Strictly necessary | LYCEON | Keeps you signed in | [●] |
-| `__Host-csrf` | Strictly necessary | LYCEON | Protects your account against forged requests | [●] |
+| `sb-<project>-auth-token` | Strictly necessary | LYCEON | Keeps you signed in | Up to 400 days, or until you sign out |
+| `__Host-csrf` | Strictly necessary | LYCEON | Protects your account against forged requests | Until you close your browser |
 | Sign-in verifier | Strictly necessary | LYCEON | Completes "Sign in with Google" securely | Until sign-in completes |
 | `lyceon-theme` (local storage) | Strictly necessary | LYCEON | Remembers your display preference | Until you clear it |
 | Device identifier (local storage) | Strictly necessary | LYCEON | Supports the operation of the service on your device | Until you clear it |
 | Notice preference (session storage) | Strictly necessary | LYCEON | Remembers that you dismissed a notice | Until you close the tab |
 | Cookie consent record | Strictly necessary | LYCEON | Remembers your cookie choice | 6 months |
-| Security check | Strictly necessary | Cloudflare (Turnstile) | Protects forms against automated abuse | [●] |
-| `ph_<project>_posthog` | Analytics | PostHog | Distinguishes visits for analytics | [●] |
+| Security check | Strictly necessary | Cloudflare (Turnstile) | Protects forms against automated abuse | Not stored; see the published policy, Section 5 |
+| `ph_<project>_posthog` | Analytics | PostHog | Distinguishes visits for analytics | 1 year, or until you withdraw consent |
 | `lyceon_first_touch` (session storage) | Analytics | LYCEON | Remembers how you first arrived (for example, from an ad or a search engine) until you create an account | Until you close the tab |
 
 ---
@@ -86,7 +86,7 @@ We will update this policy when the cookies we use change, and update the effect
 
 ## Counsel checklist
 
-1. Complete each duration marked [●].
+1. Complete each duration (done 2026-10-07; see `legal/cookie-policy/v1`).
 2. Confirm the strictly necessary classification of each local storage and session storage item.
 3. Confirm whether Desmos, Cloudflare Turnstile or any Trustpilot content on the website stores information in the browser, and whether any of it requires consent.
 4. Confirm the 6-month duration of the cookie consent record.

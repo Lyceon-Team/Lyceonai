@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import express from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import request from "supertest";
 // The wire codes come from the contract module, not from string literals here: the first draft
 // of the Q7 accept case asserted "WRONG_ACCEPTOR" and got a 500, because the real constant is
@@ -55,10 +59,10 @@ const systemEventInserts: Record<string, unknown>[] = [];
 const guardianAuditInserts: Record<string, unknown>[] = [];
 
 class FakeSelectBuilder {
-  private readonly rows: any[];
-  private readonly error: any;
+  private readonly rows: unknown[];
+  private readonly error: unknown;
 
-  constructor(rows: any[], error: any = null) {
+  constructor(rows: unknown[], error: unknown = null) {
     this.rows = rows;
     this.error = error;
   }
@@ -111,14 +115,14 @@ class FakeSelectBuilder {
     return { data: this.rows[0] ?? null, error: null };
   }
 
-  then<TResult1 = any, TResult2 = never>(
+  then<TResult1 = unknown, TResult2 = never>(
     onfulfilled?:
       | ((value: {
-          data: any[];
-          error: any;
+          data: unknown[] | null;
+          error: unknown;
         }) => TResult1 | PromiseLike<TResult1>)
       | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     return Promise.resolve({
       data: this.error ? null : this.rows,
@@ -146,7 +150,7 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
   return {
     ...actual,
     getSupabaseAdmin: vi.fn(() => ({})),
-    requireSupabaseAuth: (req: any, _res: any, next: any) => {
+    requireSupabaseAuth: (req: Request, _res: Response, next: NextFunction) => {
       req.requestId ??= "req-guardian-reporting";
       next();
     },
@@ -154,7 +158,7 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
 });
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) => next(),
   generateToken: () => "test-csrf-token",
 }));
 
@@ -173,7 +177,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
     from: (table: string) => {
       if (table === "system_event_logs") {
         return {
-          insert: async (payload: any) => {
+          insert: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
             if (Array.isArray(payload)) {
               systemEventInserts.push(...payload);
             } else {
@@ -190,7 +194,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
       // the new row shape.
       if (table === "audit_logs") {
         return {
-          insert: async (payload: any) => {
+          insert: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
             if (Array.isArray(payload)) {
               guardianAuditInserts.push(...payload);
             } else if (payload) {
@@ -201,7 +205,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
         };
       }
 
-      const rows = (seed as Record<string, any[]>)[table] ?? [];
+      const rows = (seed as Record<string, unknown[]>)[table] ?? [];
       return {
         select: () => new FakeSelectBuilder([...rows]),
         insert: async () => ({ error: null }),
@@ -304,7 +308,7 @@ const APP_IDENTITIES = {
 function buildApp(role: keyof typeof APP_IDENTITIES = "guardian") {
   const app = express();
   app.use(express.json());
-  app.use((req: any, _res, next) => {
+  app.use((req, _res, next) => {
     req.user = { ...APP_IDENTITIES[role], role };
     next();
   });
@@ -583,7 +587,7 @@ describe("Guardian reporting runtime contract", () => {
     // The transition never happened, so no revoke row exists anywhere — the database wrote
     // none because the transaction raised, and the route writes none by design.
     const unlinkSuccess = guardianAuditInserts.find(
-      (row: any) => row.action === "guardian_link_revoked",
+      (row: Record<string, unknown>) => row.action === "guardian_link_revoked",
     );
     expect(unlinkSuccess).toBeUndefined();
   });
@@ -658,7 +662,7 @@ describe("Guardian reporting runtime contract", () => {
 
     // No second, best-effort revoke row from this layer. See the docblock.
     const unlinkSuccess = guardianAuditInserts.find(
-      (row: any) => row.action === "guardian_link_revoked",
+      (row: Record<string, unknown>) => row.action === "guardian_link_revoked",
     );
     expect(
       unlinkSuccess,

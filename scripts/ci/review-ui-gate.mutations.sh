@@ -13,6 +13,20 @@
 #
 # Usage:  bash scripts/ci/review-ui-gate.mutations.sh
 # Exit 0 only if every plant produced a failure and every revert was byte-identical.
+#
+# Sharding (CI-minutes brief 2026-10-07): CI runs this through review-ui-gate.parallel.sh, which
+# sets REVIEW_UI_GATE_SHARD=<i>/<n> so this copy runs only plants k with k mod n == i, in its own
+# worktree, and REVIEW_UI_GATE_SKIP_FINAL_SUITE=1 because the driver proves the restored tree is
+# byte-identical to HEAD instead. Unset, both behave as before: every plant, then the suite.
+# vitest is started with node directly, not through `pnpm exec` (same binary and config, ~0.7 s
+# less per plant).
+#
+# Selection (owner decision 2026-10-07, CI audit item 3): with REVIEW_UI_GATE_ONLY_CHANGED=<file>
+# naming a list of changed paths (one per line), only the plants whose target file or one of
+# whose test paths the change touches are run; every other plant is counted but not applied.
+# Pull requests into integration branches run that subset; the full tier (ci-full.yml) runs
+# every plant. A plant whose target or test changed is exactly the plant whose proof the change
+# can break, so the subset is the part of the gate a given change can affect.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -54,6 +68,7 @@ FILES=(
   "client/src/features/calendar/CalendarView.tsx"
   "client/src/features/calendar/components/FreeCalendar.tsx"
   "client/src/pages/chat.tsx"
+  "client/src/hooks/useTutorTurn.ts"
   "client/src/components/tutor/TutorThreadParts.tsx"
   "client/src/hooks/tutor-client.ts"
   "client/src/styles/student-tokens.css"
@@ -101,6 +116,23 @@ FILES=(
   "client/src/features/exam/components/ExamStatus.tsx"
   "client/src/features/calendar/components/FullLengthFields.tsx"
   "packages/shared/src/exam-form-display.ts"
+  "client/src/features/calendar/components/BlockSheet.tsx"
+  "client/src/components/math/MathReferenceSheet.tsx"
+  "client/src/components/math/DesmosCalculator.tsx"
+  "client/src/components/practice/NumericEntryInput.tsx"
+  "client/src/components/notifications/NotificationBell.tsx"
+  "client/src/components/layout/StudentRouteFrame.tsx"
+  "client/src/components/layout/RouteSkeleton.tsx"
+  "client/src/lib/format-date.ts"
+  "client/src/lib/in-app-history.ts"
+  "client/src/components/ui/button.tsx"
+  "client/src/pages/practice.tsx"
+  "client/src/lib/session-reads.ts"
+  "client/src/components/home/HomePanel.tsx"
+  "client/src/components/student-ui/filter-bar/FilterBar.tsx"
+  "client/src/components/MathRenderer.tsx"
+  "client/src/features/calendar/lib/dates.ts"
+  "client/src/pages/score-report.tsx"
 )
 
 snapshot_all() {
@@ -129,10 +161,46 @@ verify_clean_revert() {
 
 PASS=0
 FAIL=0
+VITEST=(node "$REPO/node_modules/vitest/vitest.mjs")
+
+SHARD_SPEC="${REVIEW_UI_GATE_SHARD:-0/1}"
+SHARD_I="${SHARD_SPEC%/*}"
+SHARD_N="${SHARD_SPEC#*/}"
+if ! [[ "$SHARD_I" =~ ^[0-9]+$ && "$SHARD_N" =~ ^[1-9][0-9]*$ ]] || [ "$SHARD_I" -ge "$SHARD_N" ]; then
+  echo "!! bad REVIEW_UI_GATE_SHARD=$SHARD_SPEC (want <index>/<count>, index < count)"
+  exit 2
+fi
+PLANT_NO=0
+SELECTED=0
+RAN=0
+ONLY_CHANGED="${REVIEW_UI_GATE_ONLY_CHANGED:-}"
+if [ -n "$ONLY_CHANGED" ] && [ ! -f "$ONLY_CHANGED" ]; then
+  echo "!! REVIEW_UI_GATE_ONLY_CHANGED=$ONLY_CHANGED is not a file"
+  exit 2
+fi
+
+# selected <file> <test-paths>: true when no selection is set, or the change touches the plant's
+# target file or any of its test paths (a test path may be a directory).
+selected() {
+  [ -z "$ONLY_CHANGED" ] && return 0
+  local target="$1" t
+  grep -qxF "$target" "$ONLY_CHANGED" && return 0
+  for t in $2; do
+    grep -qxF "$t" "$ONLY_CHANGED" && return 0
+    awk -v p="${t%/}/" 'index($0, p) == 1 { found = 1 } END { exit !found }' "$ONLY_CHANGED" && return 0
+  done
+  return 1
+}
 
 # plant <id> <description> <test-path> <file> <python-mutation>
 plant() {
   local id="$1" desc="$2" tests="$3" file="$4" mutation="$5"
+
+  PLANT_NO=$((PLANT_NO + 1))
+  if ! selected "$file" "$tests"; then return; fi
+  SELECTED=$((SELECTED + 1))
+  if [ $(((SELECTED - 1) % SHARD_N)) -ne "$SHARD_I" ]; then return; fi
+  RAN=$((RAN + 1))
 
   printf '\n── %s ── %s\n' "$id" "$desc"
 
@@ -148,7 +216,7 @@ PY
     FAIL=$((FAIL + 1)); restore_all; return
   fi
 
-  if pnpm -s exec vitest run $tests >/dev/null 2>&1; then
+  if "${VITEST[@]}" run $tests >/dev/null 2>&1; then
     echo "  !! NO-OP PLANT: $tests still GREEN with $id applied"
     FAIL=$((FAIL + 1))
   else
@@ -1088,12 +1156,13 @@ plant "UI56-S1" "the student bubble loses its You label" \
 assert s.count(a) == 1
 s = s.replace(a, "        {isStudent ? \"\" : \"LISA\"}", 1)'
 
+# Re-pointed 2026-10-07 (QA-5): Send's `disabled` is now `blocked` (disabled or pending).
 plant "UI56-T1" "Send stays enabled while LISA is thinking" \
   "$T56" \
   "client/src/components/tutor/TutorThreadParts.tsx" \
-  'a = "            disabled={disabled}\n            className=\"h-[50px]"
+  'a = "            disabled={blocked}\n            className={`h-[50px]"
 assert s.count(a) == 1
-s = s.replace(a, "            disabled={false}\n            className=\"h-[50px]", 1)'
+s = s.replace(a, "            disabled={false}\n            className={`h-[50px]", 1)'
 
 plant "UI56-T2" "the typing bubble loses its LISA label" \
   "$T56" \
@@ -1159,12 +1228,13 @@ plant "UI56-H3" "Show older never drawn" \
 assert s.count(a) == 1
 s = s.replace(a, "      {false ? (", 1)'
 
-plant "UI56-N1" "New session creates but does not open the new column" \
+# Re-pointed 2026-10-07 (QA-9): New session no longer creates; it opens the empty column.
+plant "UI56-N1" "New session does not open the empty column" \
   "$T56" \
   "client/src/pages/chat.tsx" \
-  'a = "    createThen((id) => navigateToConversation(id));"
+  'a = "  const handleNewSession = useCallback(() => {\n    navigateToConversation(\"\");\n"
 assert s.count(a) == 1
-s = s.replace(a, "    createThen(() => undefined);", 1)'
+s = s.replace(a, "  const handleNewSession = useCallback(() => {\n    void navigateToConversation;\n", 1)'
 
 plant "UI56-F1" "a first message with no conversation open is never sent" \
   "$T56" \
@@ -1228,6 +1298,167 @@ plant "UI56-W1" "a server refusal no longer draws the locked state (W4-11)" \
   'a = "  if (denied) return <LisaLocked reason=\"plan\" />;"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
+
+# ── QA 2026-10-07 (LISA): Send pending (5), Show LISA on a phone (8), New session (9), crisis
+# titles (item 1, UI part), the empty prompt and the picked session in view (15) ───────────
+TQA_PANEL="client/src/components/tutor/ScopedTutorPanel.contract.test.tsx"
+TQA_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+
+plant "QA5-L1" "Send reads Send, not Sending…, while a message is on its way" \
+  "$T56 $TQA_PANEL" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "{pending ? LISA_SEND_PENDING_LABEL : \"Send\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Send\"}", 1)'
+
+plant "QA5-O1" "a pending Send is faded like an unavailable one (the Button's disabled fade)" \
+  "$T56" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "\"disabled:cursor-progress disabled:opacity-100\""
+assert s.count(a) == 1
+s = s.replace(a, "\"disabled:cursor-progress\"", 1)'
+
+plant "QA5-F1" "a first message (no conversation open) is not pending while its conversation is created" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const composerPending = isThinking || firstMessage !== null;"
+assert s.count(a) == 1
+s = s.replace(a, "  const composerPending = isThinking;", 1)'
+
+plant "QA5-P1" "the panel thread draws Send enabled before it sends the first message" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "pending={isThinking || firstAwaiting}"
+assert s.count(a) == 1
+s = s.replace(a, "pending={isThinking}", 1)'
+
+plant "QA5-P2" "the panel opener is not pending while the conversation is created" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "pending={!!pendingMessage}"
+assert s.count(a) == 1
+s = s.replace(a, "pending={false}", 1)'
+
+plant "QA8-R1" "the panel ignores revealOnOpen (Show LISA on a phone stays out of view)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "    if (!revealOnOpen || !el) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    return;", 1)'
+
+plant "QA8-R4" "the panel reveals itself whenever it mounts (LISA on load scrolls the runner)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "    if (!revealOnOpen || !el) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    if (!el) return;", 1)'
+
+plant "QA8-R2" "the reveal is one scroll on mount (stops short of a runner still laying out)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "      if (frames < 30 && (frames < 10 || !settled))"
+assert s.count(a) == 1
+s = s.replace(a, "      if (false)", 1)'
+
+plant "QA8-R3" "the reveal keeps chasing after the student scrolls" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "      if (stopped) return;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA8-W1" "the runner never tells the panel it was opened" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+assert s.count(a) == 1
+s = s.replace(a, "revealOnOpen={false}", 1)'
+
+plant "QA8-W2" "side by side, Show LISA scrolls the runner too" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+assert s.count(a) == 1
+s = s.replace(a, "revealOnOpen={tutorOpenedForItem === sessionItemId}", 1)'
+
+plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const handleNewSession = useCallback(() => {\n    navigateToConversation(\"\");\n  }, [navigateToConversation]);"
+assert s.count(a) == 1
+s = s.replace(a, "  const handleNewSession = useCallback(() => {\n    createConversation.mutate({ entry_mode: \"general\", source_surface: \"dashboard\" }, { onSuccess: (c) => navigateToConversation(c.conversation_id) });\n  }, [createConversation, navigateToConversation]);", 1)'
+
+# QA 2026-10-07 item 1 (register §8 F-78): a crisis turn whose pause write failed shows the
+# Support card from the send response's crisis_category, with no paused bar.
+plant "QA1-C1" "the Support card needs crisis_paused again (a failed pause write shows only text)" \
+  "$T56" \
+  "client/src/hooks/useTutorTurn.ts" \
+  'a = "        if (response.response.crisis_category) {"
+assert s.count(a) == 1
+s = s.replace(a, "        if (response.crisis_paused && response.response.crisis_category) {", 1)'
+
+plant "QA1-C2" "the paused bar (Continue with LISA) shows for an un-paused crisis card" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "      {showPausedBar || isPaused ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {showCrisisCard || isPaused ? (", 1)'
+
+plant "QA9-K1" "a retried first message makes a fresh idempotency key (a second conversation)" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    const idempotencyKey = firstCreateKeyRef.current ?? crypto.randomUUID();"
+assert s.count(a) == 1
+s = s.replace(a, "    const idempotencyKey = crypto.randomUUID();", 1)'
+
+plant "QAT-D1" "a flagged conversation is shown under its own (crisis) title" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  return flagged ? NEUTRAL_TITLE : title;"
+assert s.count(a) == 1
+s = s.replace(a, "  return title;", 1)'
+
+plant "QAT-L1" "the history ignores crisis_flagged" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "{displayTitle(conv.title, conv.crisis_flagged)}"
+assert s.count(a) == 1
+s = s.replace(a, "{displayTitle(conv.title, false)}", 1)'
+
+plant "QAT-H1" "the header fails open when the summary is not loaded" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const headerFlagged = isPaused || (openSummary?.crisis_flagged ?? true);"
+assert s.count(a) == 1
+s = s.replace(a, "  const headerFlagged = isPaused || (openSummary?.crisis_flagged ?? false);", 1)'
+
+plant "QAT-H2" "a paused conversation the list calls unflagged shows its own title" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "  const headerFlagged = isPaused || (openSummary?.crisis_flagged ?? true);"
+assert s.count(a) == 1
+s = s.replace(a, "  const headerFlagged = openSummary?.crisis_flagged ?? true;", 1)'
+
+plant "QA15-E1" "an empty LISA column shows no prompt" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "          {showEmptyPrompt ? ("
+assert s.count(a) == 1
+s = s.replace(a, "          {false ? (", 1)'
+
+plant "QA15-S1" "on a phone a picked session scrolls the log anchor, not the composer end" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    isPhone ? threadEndRef : scrollAnchorRef,"
+assert s.count(a) == 1
+s = s.replace(a, "    scrollAnchorRef,", 1)'
+
+plant "QA15-H1" "on desktop the history never brings the open session into view" \
+  "$T56" \
+  "client/src/pages/chat.tsx" \
+  'a = "    if (isPhone || !activeListed) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    return;", 1)'
 
 # ── UI-57: Mastery (client/src/pages/mastery.test.tsx) ─────────────────────────────────
 
@@ -1881,19 +2112,21 @@ s = s.replace(a, "<h2>Your account is scheduled for deletion</h2>", 1)'
 # OQ-60 (e) (Karl, 2026-10-05): RequireRole's loader follows the device theme on Bare routes.
 L60="client/src/components/auth/RequireRole.loader-theme.test.tsx"
 
+# Re-pointed 2026-10-07 (QA item 5): RequireRole now renders RouteLoading, which takes the
+# route's shell and lock from the table in layout/RouteSkeleton.tsx.
 plant "UI59-RL1" "the route guard's loader pinned light on every route again" \
   "$L60" \
-  "client/src/components/auth/RequireRole.tsx" \
-  'a = "    return requireRoleLoaderThemeLock(location) === \"light\" ? ("
+  "client/src/components/layout/RouteSkeleton.tsx" \
+  'a = "  const spec = user?.role === \"guardian\" ? null : studentShellAt(location);"
 assert s.count(a) == 1
-s = s.replace(a, "    return true ? (", 1)'
+s = s.replace(a, "  const spec = user?.role === \"guardian\" ? null : null;", 1)'
 
-plant "UI59-RL2" "the loader unlocks on every table route, not only the Bare ones" \
+plant "UI59-RL2" "the skeleton drops the route's lock (a page pinned light loads dark)" \
   "$L60" \
-  "client/src/lib/route-shells.ts" \
-  'a = "  return spec?.shell === \"bare\" ? spec.themeLock : \"light\";"
+  "client/src/components/layout/RouteSkeleton.tsx" \
+  'a = "    \"data-theme-lock\": spec.themeLock ?? undefined,"
 assert s.count(a) == 1
-s = s.replace(a, "  return spec !== undefined ? spec.themeLock : \"light\";", 1)'
+s = s.replace(a, "    \"data-theme-lock\": undefined,", 1)'
 
 # OQ-60 (f) (Karl, 2026-10-05): tighter paragraph leading inside the Bare card only.
 plant "UI59-CL1" "the card's paragraphs fall back to the global 1.75 leading" \
@@ -1957,9 +2190,11 @@ s = s.replace(a, "  \"practice\",\n  \"review\",\n", 1)'
 plant "FU-M3" "Full-Length back in the avatar menu (#1108's menu)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      items={<MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" />}"
-assert s.count(a) == 1
-s = s.replace(a, "      items={<><MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" /><MenuLink href={HELP_PATH} label=\"Help\" testId=\"menu-help\" /></>}", 1)'
+  'a = "      items={\n        <MenuLink\n"
+b = "          icon={CircleHelp}\n        />\n      }\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "      items={\n        <>\n        <MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" icon={CircleHelp} />\n        <MenuLink\n", 1)
+s = s.replace(b, "          icon={CircleHelp}\n        />\n        </>\n      }\n", 1)'
 
 plant "FU-M4" "Calendar off the phone tab bar" \
   "$T41_RAIL" \
@@ -2243,6 +2478,231 @@ plant "UI55-SPLIT2" "the shared CalendarView pulls calendar.css into the student
 assert s.count(a) == 1
 s = s.replace(a, "import \"./calendar.css\";\n" + a, 1)'
 
+# ── Production QA 2026-10-07 item 11 (the student calendar). (a) the month view's first render is
+# the whole month: Week → Month opens today's month, and that month is read ahead in week view. ──
+
+plant "QA11-A1" "Week → Month opens the month of the week's Monday again (September on 1 October)" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "                next === \"month\" && view === \"week\"\n                  ? monthCursorForWeek(cursor, today)\n                  : cursor,"
+assert s.count(a) == 1
+s = s.replace(a, "                cursor,", 1)'
+
+plant "QA11-A2" "week view no longer reads the month ahead (the toggle draws the held-over week)" \
+  "$T55" \
+  "client/src/features/calendar/api/queries.ts" \
+  'a = "              : [rangeForView(\"month\", monthCursorForWeek(cursor, today))]),"
+assert s.count(a) == 1
+s = s.replace(a, "              : []),", 1)'
+
+# (b) the student's block sheet is a modal dialog: role, name, Close, Esc, focus in and back, Tab
+# kept inside; the guardian's sheet (no `modal`) is unchanged.
+
+plant "QA11-B1" "the student's block sheet loses its dialog role" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "              role: \"dialog\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B2" "Esc no longer closes the block sheet" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "{ enabled: modal && open }"
+assert s.count(a) == 1
+s = s.replace(a, "{ enabled: false }", 1)'
+
+plant "QA11-B3" "opening the block sheet leaves focus behind it" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "    closeRef.current?.focus();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B4" "closing the block sheet drops focus instead of returning it to the block" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "      if (opener !== null && opener.isConnected) opener.focus();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA11-B5" "the block sheet has no Close button" \
+  "$T55" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "          {modal ? (\n            <button\n              ref={closeRef}"
+assert s.count(a) == 1
+s = s.replace(a, "          {false ? (\n            <button\n              ref={closeRef}", 1)'
+
+plant "QA11-B6" "the student calendar opens the non-modal sheet" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "          modal={viewer === \"student\"}"
+assert s.count(a) == 1
+s = s.replace(a, "          modal={false}", 1)'
+
+plant "QA11-B7" "the guardian's block sheet turns into the student's modal" \
+  "client/src/features/calendar/components/BlockSheet.test.tsx" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "  modal = false,\n"
+assert s.count(a) == 1
+s = s.replace(a, "  modal = true,\n", 1)'
+
+# (f) no "+ Add block" on the student's test day.
+
+plant "QA11-F1" "the test day offers \"+ Add block\" again" \
+  "$T55" \
+  "client/src/features/calendar/components/WeekGrid.tsx" \
+  'a = "      {onAddBlock !== undefined && date >= today && !isTestDay ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {onAddBlock !== undefined && date >= today ? (", 1)'
+
+# (c) nothing runs past a block card's edge; (d) the header is laid out against the calendar
+# column; (g) the projected range on one line. The layouts are measured in the browser by
+# tests/e2e/student-calendar.spec.ts ("QA 2026-10-07 item 11 layout", 390–1440); these plants
+# hold the page test's pins on the rules and wiring that layout depends on.
+
+plant "QA11-C1" "block-card text may no longer break (it runs past the card)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "     first; a word is split only when it alone is wider than the card. */\n  overflow-wrap: anywhere;\n"
+assert s.count(a) == 1
+s = s.replace(a, "     first; a word is split only when it alone is wider than the card. */\n", 1)'
+
+plant "QA11-C2" "the started tag neither drops under the title nor truncates" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyceon-calendar.lyc-cal .block .ttl {\n  flex-wrap: wrap;\n  min-width: 0;\n  row-gap: 2px;\n}\n.lyceon-calendar.lyc-cal .block .lock {\n  display: inline-block;\n  max-width: 100%;\n  min-width: 0;\n  overflow: hidden;\n  white-space: nowrap;\n  text-overflow: ellipsis;\n}\n"
+assert s.count(a) == 1
+s = s.replace(a, ".lyceon-calendar.lyc-cal .block .lock {\n  white-space: nowrap;\n}\n", 1)'
+
+plant "QA11-D1" "the header loses its size container (its layout falls back to the phone stack)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = ".lyc-cal-body {\n  container-type: inline-size;\n"
+assert s.count(a) == 1
+s = s.replace(a, ".lyc-cal-body {\n", 1)'
+
+plant "QA11-D2" "the calendar body is no longer the header's container" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "className={`lyc-cal-body flex min-h-0 flex-1 flex-col${"
+assert s.count(a) == 1
+s = s.replace(a, "className={`flex min-h-0 flex-1 flex-col${", 1)'
+
+plant "QA11-G1" "the projected range may wrap at the en dash" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "          className=\"whitespace-nowrap font-lyc-serif font-semibold text-lyc-ink-strong"
+assert s.count(a) == 1
+s = s.replace(a, "          className=\"font-lyc-serif font-semibold text-lyc-ink-strong", 1)'
+
+plant "QA11-G2" "the projected range is fixed at 32px (wider than its half of the card)" \
+  "$T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = " [font-size:min(32px,calc(100cqi/(var(--lyc-figure-chars)*0.56)))]\""
+assert s.count(a) == 1
+s = s.replace(a, " text-[32px]\"", 1)'
+
+# (e) Karl's ruling: no "Your schedule" in the right panel.
+
+plant "QA11-E1" "the right panel shows \"Your schedule\" again" \
+  "$T55" \
+  "client/src/features/calendar/CalendarView.tsx" \
+  'a = "                in the Edit schedule sheet, whose live readout is the same sentence. */}\n            <ShowFilters"
+assert s.count(a) == 1
+s = s.replace(a, "                in the Edit schedule sheet, whose live readout is the same sentence. */}\n            <section data-testid=\"calendar-schedule-card\"><h2>Your schedule</h2></section>\n            <ShowFilters", 1)'
+
+# OQ-66 (c), owner ruling (Karl, 2026-10-07): "the calendar header is at most two rows at 1024px.
+# Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu." The rows and which
+# entry point is drawn at which width are measured in the browser (tests/e2e/student-calendar.spec.ts,
+# "QA 2026-10-07 item 11 layout" at 390–1440 and "OQ-66 (c) the ⋯ menu by keyboard @1024");
+# these plants hold the menu's wiring (the same handlers, pending, done, theme) and the CSS pins.
+TOQ66="client/src/features/calendar/components/StudentChrome.more-menu.test.tsx"
+
+plant "OQ66-M1" "the menu's Edit schedule calls nothing" \
+  "$TOQ66 $T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "            onSelect={onEditSchedule}"
+assert s.count(a) == 1
+s = s.replace(a, "            onSelect={() => undefined}", 1)'
+
+plant "OQ66-M2" "the menu's Regenerate plan calls nothing" \
+  "$TOQ66 $T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "            onSelect={regenerate.onClick}"
+assert s.count(a) == 1
+s = s.replace(a, "            onSelect={() => undefined}", 1)'
+
+plant "OQ66-M3" "the menu's Regenerate plan stays enabled while a regenerate runs" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "\n            disabled={regenerate.pending}\n"
+assert s.count(a) == 1
+s = s.replace(a, "\n", 1)'
+
+plant "OQ66-M4" "the menu's Regenerate plan never says Plan regenerated" \
+  "$TOQ66 $T55" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "            {regenerateLabel(regenerate)}\n          </DropdownMenuItem>"
+assert s.count(a) == 1
+s = s.replace(a, "            Regenerate plan\n          </DropdownMenuItem>", 1)'
+
+plant "OQ66-M5" "the open menu loses the shell's theme lock (a light menu over a dark page)" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "        portalThemeLock={themeLock}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-F1" "a header with no actions (free, pre-setup) draws the ⋯ anyway" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "      {!hasActions ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {false ? (", 1)'
+
+plant "OQ66-T1" "the header loses the class that moves ⋯ onto the title row" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "${hasActions ? \" lyc-cal-head--actions\" : \"\"}"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-T2" "the ⋯ trigger loses the class the 1200px rule hides" \
+  "$TOQ66" \
+  "client/src/features/calendar/components/StudentChrome.tsx" \
+  'a = "          className=\"lyc-cal-head__more\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C1" "below 1200px the buttons are drawn as well as the ⋯" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "  .lyc-cal-head__actions > .lyc-cal-head__wide {\n    display: none;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C2" "from 1200px the ⋯ is drawn as well as the buttons" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "  .lyc-cal-head__actions > .lyc-cal-head__more {\n    display: none;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C3" "under a 700px column the ⋯ falls to its own row (three rows at 1024 and 390)" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .lyc-cal-head--actions {\n      display: grid;\n      grid-template-columns: 40px minmax(0, 1fr) 40px;\n    }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ66-C4" "under a 700px column the ⋯ lands left of the title, not at the row's end" \
+  "$TOQ66" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .lyc-cal-head--actions > .lyc-cal-head__actions {\n      grid-area: 1 / 3;\n    }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
 plant "FU-H1" "Home's Today's plan launches a full-length block without the check" \
   "$T50_HOME" \
   "client/src/components/home/PaidHome.tsx" \
@@ -2264,19 +2724,468 @@ plant "FU-H3" "Home's Today's plan asks the check for every block (review too)" 
 assert s.count(a) == 1
 s = s.replace(a, "    if (true)\n", 1)'
 
+# ── Production QA 2026-10-07 (Karl's walkthrough), UI shell items 2, 3, 5, 12–15 ────────────
+QA2_REF="client/src/components/math/MathReferenceSheet.test.tsx"
+QA12_CALC="client/src/components/math/DesmosCalculator.mode-switch.test.tsx"
+QA12_GRID="client/src/components/practice/NumericEntryInput.test.tsx"
+QA13_BELL="client/src/components/notifications/NotificationBell.test.tsx"
+QA5_FRAME="client/src/components/layout/StudentRouteFrame.suspense.test.tsx"
+QA15_DATE="client/src/lib/format-date.test.ts"
+
+plant "QA2-R1" "the 30-60-90 labels x and x√3 swapped onto the wrong legs again" \
+  "$QA2_REF" \
+  "client/src/components/math/MathReferenceSheet.tsx" \
+  'a = "        <FigureText x={22} y={100} anchor=\"end\">\n          x\n"
+b = "        <FigureText x={108} y={158} anchor=\"middle\">\n          x√3\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "        <FigureText x={22} y={100} anchor=\"end\">\n          x√3\n", 1)
+s = s.replace(b, "        <FigureText x={108} y={158} anchor=\"middle\">\n          x\n", 1)'
+
+plant "QA2-R2" "the 30-60-90 drawn at the wrong angles (a 4:3 triangle) again" \
+  "$QA2_REF" \
+  "client/src/components/math/MathReferenceSheet.tsx" \
+  'a = "          points=\"30,140 186,140 30,50\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "          points=\"30,140 186,140 30,20\"\n", 1)'
+
+plant "QA2-R3" "a formula off the College Board sheet (Pythagorean in the other order)" \
+  "$QA2_REF" \
+  "client/src/components/math/MathReferenceSheet.tsx" \
+  'a = "latex: \"$c^2 = a^2 + b^2$\""
+assert s.count(a) == 1
+s = s.replace(a, "latex: \"$a^2 + b^2 = c^2$\"", 1)'
+
+plant "QA3-M1" "the avatar menu hidden on desktop again (desktop has no sign-out)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "            className=\"flex justify-center lg:pb-1 lg:pt-1.5\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "            className=\"flex justify-center lg:hidden\"\n", 1)'
+
+plant "QA3-M2" "Sign out back in title case" \
+  "$T41_RAIL" \
+  "client/src/components/layout/HeaderUserMenu.tsx" \
+  'a = "{isSigningOut ? \"Signing out...\" : \"Sign out\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{isSigningOut ? \"Signing out...\" : \"Sign Out\"}", 1)'
+
+plant "QA3-M3" "the desktop menu opens under the rail's avatar instead of beside the rail" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      side={phoneLayout ? \"bottom\" : \"right\"}\n"
+assert s.count(a) == 1
+s = s.replace(a, "      side=\"bottom\"\n", 1)'
+
+plant "QA14-R1" "/mastery lights no rail item" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "  \"/mastery\": \"/dashboard\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA14-R2" "the bell not current on /notifications" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "<NotificationBell tone=\"student\" current={notificationsActive} />"
+assert s.count(a) == 1
+s = s.replace(a, "<NotificationBell tone=\"student\" />", 1)'
+
+plant "QA14-R3" "the avatar menu's Help entry without its icon" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "      <Icon aria-hidden=\"true\" className=\"mr-2 h-4 w-4\" />\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-S1" "a page's chunk wait falls through the App shell to the full-page fallback" \
+  "$QA5_FRAME" \
+  "client/src/components/layout/StudentRouteFrame.tsx" \
+  'a = "            fallback={<PageSkeleton padded={spec.content === \"full\"} />}\n"
+assert s.count(a) == 1
+s = s.replace(a, "            fallback={null}\n", 1)'
+
+plant "QA5-S2" "a page's chunk wait falls through the Focus shell" \
+  "$QA5_FRAME" \
+  "client/src/components/layout/StudentRouteFrame.tsx" \
+  'a = "          <Suspense fallback={<PageSkeleton padded />}>{children}</Suspense>\n"
+assert s.count(a) == 1
+s = s.replace(a, "          {children}\n", 1)'
+
+plant "QA12-C1" "the unselected calculator tab back to the muted ink" \
+  "$QA12_CALC" \
+  "client/src/components/math/DesmosCalculator.tsx" \
+  'a = "const MODE_TAB_OFF = \"bg-transparent text-lyc-ink hover:bg-lyc-hover\";"
+assert s.count(a) == 1
+s = s.replace(a, "const MODE_TAB_OFF = \"bg-transparent text-lyc-muted hover:bg-lyc-hover\";", 1)'
+
+plant "QA12-G1" "the submitted grid-in answer faded and shrunk again" \
+  "$QA12_GRID" \
+  "client/src/components/practice/NumericEntryInput.tsx" \
+  'a = " disabled:cursor-default disabled:opacity-100 md:text-[19px] "
+assert s.count(a) == 1
+s = s.replace(a, " ", 1)'
+
+plant "QA13-B1" "the popover says Loading… again" \
+  "$QA13_BELL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "            <FeedSkeleton t={t} />\n"
+assert s.count(a) == 1
+s = s.replace(a, "            <p data-testid=\"notifications-loading\">Loading…</p>\n", 1)'
+
+plant "QA13-B2" "the popover off the page theme (no .lyc root)" \
+  "$QA13_BELL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "              portalClassName: \"lyc contents\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "              portalClassName: \"contents\",\n", 1)'
+
+plant "QA13-B3" "the unread badge below 14px again" \
+  "$QA13_BELL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "font-lyc-sans text-lyc-meta font-semibold"
+assert s.count(a) == 1
+s = s.replace(a, "font-lyc-sans text-[0.65rem] font-semibold", 1)'
+
+plant "QA15-D1" "a student date formatted by hand again" \
+  "$QA15_DATE" \
+  "client/src/components/student/StudentGuardiansPanel.tsx" \
+  'a = "Linked {formatDate(link.linked_at, \"month-day-year\") ?? \"\"}"
+assert s.count(a) == 1
+s = s.replace(a, "Linked {new Date(link.linked_at).toLocaleDateString()} {formatDate(\"\", \"month-day\")}", 1)'
+
+plant "QA15-D2" "a local day shifted by the viewer's zone" \
+  "$QA15_DATE" \
+  "client/src/lib/format-date.ts" \
+  'a = "{ date, timeZone: \"UTC\" }"
+assert s.count(a) == 1
+s = s.replace(a, "{ date, timeZone: undefined }", 1)'
+# ── OQ-66 (Karl, 2026-10-07): (g) US dates through the shared formatter; (h) the recent row's
+# explicit "Review this session" action. Each plant mutates the line its test executes.
+OQ66_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+OQ66_DATES="client/src/features/calendar/lib/dates.test.ts"
+OQ66_SCORE="client/src/pages/score-report.dates.test.tsx"
+
+plant "OQ66-G1" "the long date goes day-first again (\"7 October 2026\")" \
+  "$QA15_DATE" \
+  "client/src/lib/format-date.ts" \
+  'a = "      return `${d.month ?? \"\"} ${d.day ?? \"\"}, ${d.year ?? \"\"}`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "      return `${d.day ?? \"\"} ${d.month ?? \"\"} ${d.year ?? \"\"}`;\n", 1)'
+
+plant "OQ66-G2" "the short date goes back to the prototypes' \"Fri 25 Sep\"" \
+  "$QA15_DATE $OQ66_HOME" \
+  "client/src/lib/format-date.ts" \
+  'a = "\n  return `${d.weekday ?? \"\"}, ${d.month ?? \"\"} ${d.day ?? \"\"}`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "\n  return `${d.weekday ?? \"\"} ${d.day ?? \"\"} ${d.month ?? \"\"}`;\n", 1)'
+
+plant "OQ66-G3" "Home's weekday line goes day-first again (\"Monday, 28 September\")" \
+  "$QA15_DATE" \
+  "client/src/lib/format-date.ts" \
+  'a = "      return `${d.weekday ?? \"\"}, ${d.month ?? \"\"} ${d.day ?? \"\"}`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "      return `${d.weekday ?? \"\"}, ${d.day ?? \"\"} ${d.month ?? \"\"}`;\n", 1)'
+
+plant "OQ66-G4" "the calendar side sheet builds its own day-first date again" \
+  "$OQ66_DATES" \
+  "client/src/features/calendar/lib/dates.ts" \
+  'a = "export function longDate(date: string): string {\n  return formatDate(date, \"weekday-month-day\") ?? \"\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "export function longDate(date: string): string {\n  return `${shortWeekday(date)} ${dayOfMonth(date)} ${monthName(date)}`;\n", 1)'
+
+plant "OQ66-G5" "the score report prints its own D/M/YYYY date again" \
+  "$OQ66_SCORE" \
+  "client/src/pages/score-report.tsx" \
+  'a = "  return formatDate(localDate, \"month-day-year\") ?? localDate;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const m = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(localDate);\n  return m === null ? localDate : `${Number(m[3])}/${Number(m[2])}/${m[1]}`;\n", 1)'
+
+plant "OQ66-H1" "a recent-session row hides its action again (no \"Review this session\")" \
+  "$OQ66_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "{starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}"
+assert s.count(a) == 1
+s = s.replace(a, "{starting ? STARTING_LABEL : toReviewLine(s.open_count)}", 1)'
+
+plant "OQ66-H2" "every recent row's action has the same accessible name" \
+  "$OQ66_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "                      : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`\n"
+assert s.count(a) == 1
+s = s.replace(a, "                      : REVIEW_SESSION_LABEL\n", 1)'
+
+# ── QA-FLOWS — owner QA list (Karl, 2026-10-07), branch claude/qa-flows ──────────────────────
+# Items 4-7, 10, 14, 15 (flows, links, loading states). Each plant mutates the product line the
+# named test exercises (checked by line, CLAUDE.md "A plant must mutate the call site under test").
+QA_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+QA_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+QA_REVIEW="client/src/pages/review.test.tsx"
+QA_PRACTICE="client/src/pages/practice.test.tsx"
+QA_TESTS="client/src/features/exam/pages/TestsHomePage.test.tsx"
+
+# Item 5: an action that waits on the server is disabled, busy and labelled from the first click.
+plant "QA5-B1" "the shared Button stops saying it is busy" \
+  "$QA_HOME" \
+  "client/src/components/ui/button.tsx" \
+  'a = "        aria-busy={busy ? true : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        aria-busy={undefined}\n", 1)'
+
+plant "QA5-H1" "Start today's plan keeps its label while the launch is in flight" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "{primaryPending ? STARTING_LABEL : \"Start today\x27s plan\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Start today\x27s plan\"}", 1)'
+
+plant "QA5-H2" "a plan row's Start draws no pending state" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "pending={pendingBlockId === row.blockId && !startedFromPrimary}"
+assert s.count(a) == 1
+s = s.replace(a, "pending={false}", 1)'
+
+plant "QA5-H3" "Start diagnostic draws no pending state" \
+  "$QA_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "              pending={diagnostic.isStarting}\n"
+assert s.count(a) == 1
+s = s.replace(a, "              disabled={diagnostic.isStarting}\n", 1)'
+
+plant "QA5-R1" "the runner's Skip keeps its label while the skip is in flight" \
+  "$QA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "{submitKind === \"skip\" ? SKIPPING_LABEL : \"Skip\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Skip\"}", 1)'
+
+plant "QA5-R2" "the hook never records which submit is in flight" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "      setSubmitKind(opts.skipped ? \"skip\" : \"answer\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-R3" "Next question draws no pending state while the next item loads" \
+  "$QA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "            pending={isLoading}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-V1" "Start reviewing keeps its label while the create is in flight" \
+  "$QA_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "{starting === \"queue\" ? STARTING_LABEL : \"Start reviewing\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{\"Start reviewing\"}", 1)'
+
+plant "QA5-V2" "the topic picker says it is starting when the queue was pressed" \
+  "$QA_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "              starting={starting === \"filter\"}\n"
+assert s.count(a) == 1
+s = s.replace(a, "              starting={starting !== null}\n", 1)'
+
+plant "QA5-P1F" "Practice's Start draws no pending state" \
+  "$QA_PRACTICE" \
+  "client/src/pages/practice.tsx" \
+  'a = "          pending={starting}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA5-T1" "Full-Length's Start keeps its label while the create is in flight" \
+  "$QA_TESTS" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "        {pending ? STARTING_LABEL : label}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {label}\n", 1)'
+
+# Item 6: answering, skipping, ending or leaving a session marks the reads it changes stale.
+QA_READS="client/src/lib/session-reads.test.ts"
+
+plant "QA6-1" "an answer or skip marks nothing stale" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "        invalidateSessionReads(queryClient, {\n          engine: engine.domain,\n          sessionId: effectiveSessionId,\n        });\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA6-2" "leaving the runner marks nothing stale" \
+  "$QA_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "      const id = leaveSession.current;\n"
+assert s.count(a) == 1
+s = s.replace(a, a + "      if (id !== null) return;\n", 1)'
+
+plant "QA6-3" "the review pool is matched by its bare prefix again (dead: the key carries ?tz=)" \
+  "$QA_READS $QA_RUNNER" \
+  "client/src/lib/session-reads.ts" \
+  'a = "    predicate: (q) => firstKeyStartsWith(q.queryKey, REVIEW_POOL_QUERY_KEY),\n"
+assert s.count(a) == 1
+s = s.replace(a, "    queryKey: [REVIEW_POOL_QUERY_KEY],\n", 1)'
+
+plant "QA6-4" "the runner's own state read is refetched under the runner" \
+  "$QA_READS" \
+  "client/src/lib/session-reads.ts" \
+  'a = "      refetchType: \"none\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# Item 14: Home's mastery rows deep-link to their domain; recent-session rows review that session.
+QA_MASTERY="client/src/pages/mastery.test.tsx"
+
+plant "QA14-H1" "Home's mastery rows go to the top of /mastery again" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "                      href={masteryDomainHref(node)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                      href=\"/mastery\"\n", 1)'
+
+plant "QA14-M1" "the Mastery page ignores the domain in its address" \
+  "$QA_MASTERY" \
+  "client/src/pages/mastery.tsx" \
+  'a = "    () => new Set(linkedDomain === null ? [] : [linkedDomain]),\n"
+assert s.count(a) == 1
+s = s.replace(a, "    () => new Set(),\n", 1)'
+
+plant "QA14-M2" "the linked domain opens but is never scrolled into view" \
+  "$QA_MASTERY" \
+  "client/src/pages/mastery.tsx" \
+  'a = "      ?.scrollIntoView({ block: \"start\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "      ?.getAttribute(\"id\");\n", 1)'
+
+plant "QA14-R1F" "a recent-session row looks pressable but does nothing" \
+  "$QA_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "                  onClick={() => onReview(s)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  onClick={() => undefined}\n", 1)'
+
+# Item 15: one empty-day sentence; timing above Start; "Not now"; menus hold still; math on one line.
+QA_FILTER="client/src/components/student-ui/filter-bar/FilterBar.test.tsx"
+QA_MATH="client/src/components/MathRenderer.wrap.test.tsx"
+
+plant "QA15-E1F" "Home's empty day says its own words again" \
+  "$QA_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "          {EMPTY_DAY_MESSAGE}\n"
+assert s.count(a) == 1
+s = s.replace(a, "          Rest day\n", 1)'
+
+plant "QA15-T1" "the timing choice drops back under the list of Starts" \
+  "$QA_TESTS" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "            <TimingChoice mode={mode} onModeChange={setMode} />\n"
+b = "            <BeforeYouStart mode={mode} />\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "", 1).replace(b, b + a, 1)'
+
+plant "QA15-N1" "the phone notice's Not now does not close it" \
+  "$QA_TESTS" \
+  "client/src/features/exam/lib/useFullLengthPhonePrecheck.tsx" \
+  'a = "          <ModalClose asChild>\n"
+b = "          </ModalClose>\n"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "          <span>\n", 1).replace(b, "          </span>\n", 1)'
+
+plant "QA15-F1" "the chips row above an open menu changes with every pick (the jump)" \
+  "$QA_FILTER" \
+  "client/src/components/student-ui/filter-bar/FilterBar.tsx" \
+  'a = "  const chips = frozenChips ?? liveChips;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const chips = liveChips;\n", 1)'
+
+plant "QA15-K1" "an inline math expression may wrap mid-way again" \
+  "$QA_MATH" \
+  "client/src/components/MathRenderer.tsx" \
+  'a = "      mathSpan.style.whiteSpace = \x27nowrap\x27;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# ── END QA-FLOWS
+
+# ── QA 2026-10-07 item 7: the Focus shell's back arrow names its real destination ─────────────
+QA7_FOCUS="client/src/components/layout/FocusShell.test.tsx"
+
+plant "QA7-B1" "the back arrow is labelled with the section again, whatever page it returns to" \
+  "$QA7_FOCUS" \
+  "client/src/components/layout/FocusShell.tsx" \
+  'a = "    previous === null ? section : (pageNameAt(previous) ?? \"Back\");"
+assert s.count(a) == 1
+s = s.replace(a, "    section;", 1)'
+
+plant "QA7-H1" "the history tracker no longer records in-app navigations" \
+  "$QA7_FOCUS" \
+  "client/src/lib/in-app-history.ts" \
+  'a = "      paths.push(window.location.pathname);"
+assert s.count(a) == 1
+s = s.replace(a, "      void 0;", 1)'
+
+plant "QA7-H2" "the tracker records the old page again instead of the new one" \
+  "$QA7_FOCUS" \
+  "client/src/lib/in-app-history.ts" \
+  'a = "      paths.push(window.location.pathname);"
+assert s.count(a) == 1
+s = s.replace(a, "      paths.push(paths[paths.length - 1] ?? \"\");", 1)'
+
+plant "QA15-E2" "the calendar's week grid writes the empty-day sentence by hand again" \
+  "client/src/lib/empty-day.test.ts" \
+  "client/src/features/calendar/components/WeekGrid.tsx" \
+  'a = "{isRest ? EMPTY_DAY_MESSAGE : \"Nothing to show\"}"
+assert s.count(a) == 1
+s = s.replace(a, "{isRest ? \"No study planned\" : \"Nothing to show\"}", 1)'
+
+# QA 2026-10-07: the runner bar fits a long session (a 54-question review overflowed 239px).
+
+plant "QA-RO1" "the progress strip cannot shrink again" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "className=\"hidden min-w-0 shrink gap-1 lg:flex\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"hidden shrink-0 gap-1 lg:flex\"", 1)'
+
+plant "QA-RO2" "the strip segments hold 14px each again" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "\"h-1.5 w-3.5 min-w-[2px] shrink rounded-[3px]\","
+assert s.count(a) == 1
+s = s.replace(a, "\"h-1.5 w-3.5 rounded-[3px]\",", 1)'
+
+plant "QA-RO3" "the session name truncates to make room for the strip" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "max-w-[45%] shrink-0 truncate"
+assert s.count(a) == 1
+s = s.replace(a, "truncate", 1)'
+
+plant "QA-RO4" "the phone shows the full words 'Question N of M' again" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "<span className=\"sr-only sm:not-sr-only\">Question </span>"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"inline\">Question </span>", 1)'
+
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"
+echo "plant count: total=$PLANT_NO selected=$SELECTED ran=$RAN red=$PASS"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "GATE FAILED"
   exit 1
 fi
 
+if [ "${REVIEW_UI_GATE_SKIP_FINAL_SUITE:-0}" = 1 ]; then
+  echo "GATE PASSED (shard $SHARD_SPEC) — all plants red, all reverts byte-identical"
+  exit 0
+fi
+
 # Final proof: with every plant reverted, the suite is green again.
 echo
 echo "Re-running the full client suite on the restored tree..."
-if pnpm -s exec vitest run client/src >/dev/null 2>&1; then
+if "${VITEST[@]}" run client/src >/dev/null 2>&1; then
   echo "GATE PASSED — all plants red, all reverts byte-identical, suite green"
   exit 0
 fi

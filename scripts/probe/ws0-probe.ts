@@ -40,10 +40,6 @@
  * =============================================================================
  */
 
-/* eslint-disable no-console -- standalone CLI diagnostic: console is this
-   script's output channel, not production logging (Coding Standards §16 targets
-   product code). Consistent with the existing scripts/*.ts convention. */
-
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;

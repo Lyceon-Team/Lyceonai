@@ -26,7 +26,7 @@ async function testExistingPDFs() {
 }
 
 testExistingPDFs()
-  .then(pdfs => {
+  .then(() => {
     console.log("\n✅ Successfully retrieved existing PDFs");
     process.exit(0);
   })

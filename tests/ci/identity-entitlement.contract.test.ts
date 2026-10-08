@@ -12,7 +12,13 @@
  * retired, not accommodated. The identity assertion is preserved unchanged.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import express from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
+import type Stripe from "stripe";
+import type { SupabaseUser } from "../../server/middleware/supabase-auth";
 import request from "supertest";
 
 const authState = vi.hoisted(() => ({
@@ -22,7 +28,7 @@ const authState = vi.hoisted(() => ({
     email: "student@test.com",
     isGuardian: false,
     isAdmin: false,
-  } as any,
+  } as SupabaseUser | null,
 }));
 
 const accountMocks = vi.hoisted(() => ({
@@ -91,7 +97,7 @@ vi.mock("../../server/lib/entitlement-runtime-config", () => ({
 }));
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) => next(),
   generateToken: () => "test-csrf-token",
 }));
 
@@ -107,7 +113,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   // tests/ci/profile-name.pg.ci.test.ts. This suite never calls that route.
   requireStudentAccount: (_req: unknown, _res: unknown, next: () => void) =>
     next(),
-  requireSupabaseAuth: (req: any, res: any, next: any) => {
+  requireSupabaseAuth: (req: Request, res: Response, next: NextFunction) => {
     if (!authState.currentUser) {
       return res.status(401).json({
         error: "Authentication required",
@@ -119,7 +125,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     req.requestId ??= "req-identity-entitlement";
     return next();
   },
-  requireRequestUser: (req: any, res: any) => {
+  requireRequestUser: (req: Request, res: Response) => {
     if (!req.user?.id) {
       res.status(401).json({
         error: "Authentication required",
@@ -139,7 +145,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
       code: "ROLE_UNRECOGNIZED",
       requestId,
     }),
-  sendUnauthenticated: (res: any, requestId?: string) =>
+  sendUnauthenticated: (res: Response, requestId?: string) =>
     res.status(401).json({
       error: "Authentication required",
       message: "You must be signed in to access this resource",
@@ -193,7 +199,7 @@ vi.mock("../../server/lib/stripe/client", () => ({
 function buildApp() {
   const app = express();
   app.use(express.json());
-  app.use((req: any, _res, next) => {
+  app.use((req, _res, next) => {
     req.requestId ??= "req-identity-entitlement";
     next();
   });
@@ -219,7 +225,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
       email: "student@test.com",
       isGuardian: false,
       isAdmin: false,
-    } as any;
+    } as SupabaseUser;
     accountMocks.getEntitlementForProfile.mockResolvedValue(null);
     accountMocks.getProfileStripeCustomerId.mockResolvedValue(null);
     accountMocks.setProfileStripeCustomerId.mockResolvedValue(undefined);
@@ -242,7 +248,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
       .default;
     const { requireSupabaseAuth } =
       await import("../../server/middleware/supabase-auth");
-    app.use("/api/profile", requireSupabaseAuth as any, profileRoutes);
+    app.use("/api/profile", requireSupabaseAuth, profileRoutes);
 
     // The authenticated user is a student; attempt to self-escalate to admin.
     const res = await request(app)
@@ -277,7 +283,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
       email: "guardian@test.com",
       isGuardian: true,
       isAdmin: false,
-    } as any;
+    } as SupabaseUser;
     accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
       hasPremiumAccess: true,
       hasActiveLink: true,
@@ -310,7 +316,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
       email: "guardian@test.com",
       isGuardian: true,
       isAdmin: false,
-    } as any;
+    } as SupabaseUser;
     accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
       hasPremiumAccess: false,
       hasActiveLink: true,
@@ -346,7 +352,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
       email: "guardian@test.com",
       isGuardian: true,
       isAdmin: false,
-    } as any;
+    } as SupabaseUser;
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
       { student_profile_id: STUDENT_A, status: "active" },
       { student_profile_id: STUDENT_B, status: "active" },
@@ -962,7 +968,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
       email: "guardian@test.com",
       isGuardian: true,
       isAdmin: false,
-    } as any;
+    } as SupabaseUser;
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([]);
 
     const res = await request(await billingApp())
@@ -984,7 +990,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.status).toBe(200);
     expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
 
-    const args = stripeMocks.checkoutCreate.mock.calls[0][0] as any;
+    const args = stripeMocks.checkoutCreate.mock.calls[0][0] as Stripe.Checkout.SessionCreateParams;
     expect(args.client_reference_id).toBe(STUDENT_ID);
     expect(args.metadata.student_profile_id).toBe(STUDENT_ID);
     expect(args.subscription_data.metadata.student_profile_id).toBe(STUDENT_ID);
@@ -1102,7 +1108,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
       email: "guardian@test.com",
       isGuardian: true,
       isAdmin: false,
-    } as any;
+    } as SupabaseUser;
     accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
       hasPremiumAccess: false,
       hasActiveLink: true,
@@ -1322,7 +1328,7 @@ describe("Identity + Entitlement Runtime Contract", () => {
     const res = await request(await billingApp()).get("/api/billing/plans");
 
     expect(res.status).toBe(200);
-    const monthly = res.body.plans.find((p: any) => p.plan === "monthly");
+    const monthly = res.body.plans.find((p: Record<string, unknown>) => p.plan === "monthly");
     expect(monthly.amountCents).toBe(4242);
     expect(monthly.currency).toBe("usd");
     expect(monthly.intervalLabel).toBe("per month");

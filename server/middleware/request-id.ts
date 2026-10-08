@@ -35,7 +35,7 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
 
   res.on('finish', () => {
     const duration = Date.now() - startTime;
-    const responseSize = parseContentLength(res.getHeader('Content-Length') as any);
+    const responseSize = parseContentLength(res.getHeader('Content-Length'));
 
     logger.apiRequest(
       req.method,

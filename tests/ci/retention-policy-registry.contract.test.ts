@@ -302,9 +302,15 @@ describe("F1 suite B — agreement with the published policy and the SQL", () =>
 
     const periodRe =
       /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(days?|months?|years?)\b/i;
+    // The last subsection ends where §6 does — at the next top-level heading —
+    // not at the end of the document, or a period stated in a later section
+    // (v6 §9.1) is wrongly attributed to it.
+    const lastMark = marks[marks.length - 1];
+    const nextTop = lastMark ? policy.indexOf("\n## ", lastMark.at) : -1;
+    const sectionEnd = nextTop >= 0 ? nextTop : policy.length;
     const statesAPeriod = marks
       .filter((mark, i) => {
-        const end = marks[i + 1]?.at ?? policy.length;
+        const end = marks[i + 1]?.at ?? sectionEnd;
         return periodRe.test(policy.slice(mark.at, end));
       })
       .map((m) => m.id);

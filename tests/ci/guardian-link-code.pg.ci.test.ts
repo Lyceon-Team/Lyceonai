@@ -100,7 +100,6 @@ async function buildApp(): Promise<express.Express> {
       rs: express.Response,
       _n: express.NextFunction,
     ) => {
-      // eslint-disable-next-line no-console
       console.log(`[SCL-080 ERR] ${err?.stack ?? err}`);
       rs.status(500).json({ error: String(err?.message ?? err) });
     },

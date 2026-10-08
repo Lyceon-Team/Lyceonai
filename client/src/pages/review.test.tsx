@@ -30,6 +30,7 @@
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -87,6 +88,8 @@ const net = vi.hoisted(() => ({
   handlers: [] as Array<
     (url: string, init: RequestInit | undefined) => Response | undefined
   >,
+  /** QA item 5: requests matching `pattern` wait for `gate` (a slow server). */
+  hold: null as null | { pattern: RegExp; gate: Promise<void> },
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -99,6 +102,7 @@ function json(body: unknown, status = 200): Response {
 vi.mock("@/lib/csrf", () => ({
   csrfFetch: async (url: string, init?: RequestInit): Promise<Response> => {
     net.log.push(`${init?.method ?? "GET"} ${url}`);
+    if (net.hold !== null && net.hold.pattern.test(url)) await net.hold.gate;
     if (typeof init?.body === "string") {
       net.bodies.push({ url, body: JSON.parse(init.body) as unknown });
     }
@@ -535,6 +539,7 @@ beforeEach(() => {
   net.log.length = 0;
   net.bodies.length = 0;
   net.handlers = [];
+  net.hold = null;
   auth.user = {
     id: STUDENT,
     email: "sam@example.test",
@@ -892,5 +897,56 @@ describe("free plan has full review (SCL-110): nothing on the review path is gat
       expect(history.at(-1)).toBe(`/review/session/${NEW_SESSION}`),
     );
     expect(screen.queryByTestId("upgrade-modal")).toBeNull();
+  });
+});
+
+// ── Owner QA list (Karl, 2026-10-07) item 5 ───────────────────────────────────────────────────
+
+describe("QA item 5: Review's starts show a pending state from the first click", () => {
+  it("Start reviewing: 'Starting…', disabled and busy while the create is in flight; one create; the other starts wait", async () => {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern: /^\/api\/review\/sessions$/,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const { history } = await mount("paid");
+    await screen.findByTestId("review-queue-total");
+    const start = screen.getByTestId("button-start-queue") as HTMLButtonElement;
+    expect(start.textContent).toBe("Start reviewing");
+    fireEvent.click(start);
+    expect(start.textContent).toBe("Starting…");
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-busy")).toBe("true");
+    expect(within(start).getByTestId("button-pending-spinner")).toBeTruthy();
+    // Every other start waits, and none of them claims to be the one starting.
+    const topic = screen.getByTestId("button-start-topic") as HTMLButtonElement;
+    expect(topic.disabled).toBe(true);
+    expect(topic.getAttribute("aria-busy")).toBeNull();
+    fireEvent.click(start);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() =>
+      expect(history.at(-1)).toBe(`/review/session/${NEW_SESSION}`),
+    );
+    expect(startBodies()).toHaveLength(1);
+  });
+
+  it("the topic picker's start: that button says 'Starting…', Start reviewing keeps its label", async () => {
+    net.hold = {
+      pattern: /^\/api\/review\/sessions$/,
+      gate: new Promise<void>(() => undefined),
+    };
+    await mount("paid");
+    await screen.findByTestId("review-queue-total");
+    const topic = screen.getByTestId("button-start-topic") as HTMLButtonElement;
+    fireEvent.click(topic);
+    expect(topic.textContent).toBe("Starting…");
+    expect(topic.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByTestId("button-start-queue").textContent).toBe(
+      "Start reviewing",
+    );
   });
 });

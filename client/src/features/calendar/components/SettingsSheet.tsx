@@ -129,7 +129,7 @@ function examPairIncomplete(
 }
 
 /** §17.3's live readout. Derived, never stored — Coding Standards §11.4. */
-export function scheduleSummary(
+function scheduleSummary(
   draft: Pick<
     SettingsDraft,
     | "study_days_mask"

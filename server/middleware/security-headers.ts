@@ -71,7 +71,7 @@ export function securityHeadersMiddleware(): RequestHandler {
 
   return (req, res, next) => {
     middleware(req, res, (err?: unknown) => {
-      if (err) return next(err as any);
+      if (err) return next(err);
 
       res.setHeader('Permissions-Policy', SECURITY_HEADERS.permissionsPolicy);
       res.setHeader('X-Permitted-Cross-Domain-Policies', SECURITY_HEADERS.xPermittedCrossDomainPolicies);

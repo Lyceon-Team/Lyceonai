@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **RETIRED 2026-10-07 — published as `legal/ai-content-disclosure/v1`.** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
 
 # **LYCEON AI Content Disclosure**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 LYCEON uses artificial intelligence (AI) in parts of the service. This notice explains where AI is used and what to do if something looks wrong.
 

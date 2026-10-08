@@ -46,6 +46,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { csrfFetch } from "@/lib/csrf";
+import { formatDate } from "@/lib/format-date";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import {
   buildEscapeKeymap,
@@ -80,15 +81,9 @@ function ledeFor(documents: OutstandingLegalDoc[]): string {
   return "Some of these are new to you, and some have new versions.";
 }
 
+// QA 2026-10-07 item 15: the effective date is a local day, through the one student formatter.
 function formatEffectiveDate(iso: string): string {
-  const parsed = new Date(`${iso}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return formatDate(iso, "month-day-year") ?? iso;
 }
 
 export function ReconsentModal({

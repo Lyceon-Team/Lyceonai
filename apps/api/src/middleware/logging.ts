@@ -14,7 +14,7 @@ export function reqLogger() {
 
     res.on("finish", () => {
       const duration = Date.now() - startedAt;
-      const requestId = (req as any).requestId || logger.generateRequestId();
+      const requestId = req.requestId || logger.generateRequestId();
       const responseSize = Number(res.getHeader("Content-Length") || 0) || 0;
 
       logger.apiRequest(
@@ -23,7 +23,7 @@ export function reqLogger() {
         res.statusCode,
         duration,
         requestId,
-        (req as any).user?.id,
+        req.user?.id,
         req.ip,
         undefined,
         responseSize,

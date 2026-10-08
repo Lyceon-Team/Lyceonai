@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { CanonicalQuestionRowLike } from "../../../shared/question-bank-contract";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SERVICE_KEY =
@@ -55,7 +56,7 @@ async function main() {
 
   const updates: Array<{ id: string; domain: string | null; skill: string | null; subskill: string | null; skill_code: string | null }> = [];
 
-  for (const row of data as any[]) {
+  for (const row of data as CanonicalQuestionRowLike[]) {
     const tags = parseTags(row.tags);
 
     const tagDomain = parseTaggedValue(tags, "domain");

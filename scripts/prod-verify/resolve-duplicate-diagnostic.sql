@@ -3,6 +3,12 @@
 -- ============================================================================
 -- WRITES. Sets status='abandoned' on ONE pinned session and nothing else.
 --
+-- DONE IN PRODUCTION — confirmed 2026-10-07 by a read-only query (target 18187611… is
+-- 'abandoned' with completed_at NULL; the kept 86b0dc8f… is 'completed'; the once-only index
+-- is present). Re-running it refuses. Its CI gate was deleted that day (owner decision
+-- 2026-10-07, CI audit item 5). This file and its preview stay because migration
+-- 20260817000000's RAISE message names this file, and a migration is never edited.
+--
 -- ============================================================================
 -- ORDERING IS LOAD-BEARING
 -- ============================================================================

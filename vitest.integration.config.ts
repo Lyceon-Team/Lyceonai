@@ -43,6 +43,11 @@
  */
 import path from "path";
 import { defineConfig } from "vitest/config";
+import { loadTutorPromptFingerprints, makeTutorConsoleGuard } from "./tests/ci/lib/tutor-log-guard";
+
+// CI logs are public: console output carrying LISA's prompt text is dropped and fails the run
+// (tests/ci/lib/tutor-log-guard.ts; owner decision 2026-10-07).
+const tutorConsoleGuard = makeTutorConsoleGuard(loadTutorPromptFingerprints(__dirname));
 
 export default defineConfig({
   test: {
@@ -54,6 +59,7 @@ export default defineConfig({
     pool: "threads",
     include: ["tests/integration/**/*.test.ts"],
     exclude: ["**/node_modules/**"],
+    onConsoleLog: tutorConsoleGuard.onConsoleLog,
   },
   resolve: {
     alias: {

@@ -6,7 +6,7 @@
  *        (UI hides by role, the server enforces); student-UI register §8 F-70 (the student
  *        avatar dropdown follows the page theme)] | @implemented [2026-09-11; F-70 2026-10-05]
  *
- * plain English: the signed-in user's header menu (name, email, Settings, Sign Out) and the
+ * plain English: the signed-in user's header menu (name, email, Settings, Sign out) and the
  * sign-out handler behind it, shared by every authenticated shell so the student header and
  * the guardian header cannot drift apart. Extracted from app-shell.tsx with the same test ids
  * and the same behaviour; the student shell's mobile sheet keeps using the same hook, so one
@@ -114,6 +114,9 @@ export function HeaderUserMenu({
   fallbackName,
   items,
   tone = "app",
+  trigger,
+  triggerClassName,
+  side = "bottom",
 }: HeaderSignOut & {
   fallbackName: string;
   /**
@@ -124,6 +127,14 @@ export function HeaderUserMenu({
   items?: React.ReactNode;
   /** F-70: `student` draws the open menu in the student tokens, inside the page's theme. */
   tone?: HeaderMenuTone;
+  /**
+   * QA 2026-10-07 item 3: what the trigger shows (the App shell's avatar letter); the default is
+   * the account icon. Either way the trigger is named "Account menu".
+   */
+  trigger?: React.ReactNode;
+  triggerClassName?: string;
+  /** Which side of the trigger the menu opens on (the desktop rail opens it to the right). */
+  side?: "bottom" | "right";
 }) {
   const [, navigate] = useLocation();
   const { user, isLoading, isAdmin } = useSupabaseAuth();
@@ -141,14 +152,16 @@ export function HeaderUserMenu({
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full"
+          className={triggerClassName ?? "rounded-full"}
+          aria-label="Account menu"
           data-testid="button-user-menu"
         >
-          <UserCircle className="h-5 w-5" />
+          {trigger ?? <UserCircle aria-hidden="true" className="h-5 w-5" />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
+        side={side}
         className={t.content}
         data-testid="user-menu"
         {...(tone === "student"
@@ -175,7 +188,7 @@ export function HeaderUserMenu({
           onClick={() => navigate("/profile")}
           data-testid="menu-profile"
         >
-          <Settings className="mr-2 h-4 w-4" />
+          <Settings aria-hidden="true" className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
         {items}
@@ -192,7 +205,7 @@ export function HeaderUserMenu({
             onClick={() => navigate("/admin/crisis-review")}
             data-testid="menu-crisis-review"
           >
-            <ShieldAlert className="mr-2 h-4 w-4" />
+            <ShieldAlert aria-hidden="true" className="mr-2 h-4 w-4" />
             Crisis review
           </DropdownMenuItem>
         )}
@@ -203,8 +216,8 @@ export function HeaderUserMenu({
           disabled={isSigningOut}
           data-testid="menu-logout"
         >
-          <LogOut className="mr-2 h-4 w-4" />
-          {isSigningOut ? "Signing out..." : "Sign Out"}
+          <LogOut aria-hidden="true" className="mr-2 h-4 w-4" />
+          {isSigningOut ? "Signing out..." : "Sign out"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

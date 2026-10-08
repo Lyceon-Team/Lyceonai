@@ -2,6 +2,7 @@
  * Service-only canonical publish/version owner.
  * Intentionally unmounted from public routes: runtime callers should invoke this service directly.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   buildCanonicalId,
@@ -13,9 +14,7 @@ import {
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
 
-type SupabaseLike = {
-  from: (table: string) => any;
-};
+type SupabaseLike = Pick<SupabaseClient, "from">;
 
 const PUBLISH_SELECT = [
   "id",
@@ -72,7 +71,7 @@ export interface VersionPublishedQuestionParams {
 async function loadQuestionForPublish(supabase: SupabaseLike, questionId: string) {
   const { data, error } = await supabase
     .from("questions")
-    .select(PUBLISH_SELECT)
+    .select<string, CanonicalQuestionRowLike>(PUBLISH_SELECT)
     .eq("id", questionId)
     .single();
 
@@ -220,7 +219,7 @@ export async function publishQuestion(params: PublishQuestionParams) {
     .from("questions")
     .update(updatePatch)
     .eq("id", params.questionId)
-    .select(PUBLISH_SELECT)
+    .select<string, CanonicalQuestionRowLike>(PUBLISH_SELECT)
     .single();
 
   if (updateError || !updated) {
@@ -234,7 +233,7 @@ export async function publishQuestion(params: PublishQuestionParams) {
     versionNumber,
     lifecycleStatus: "published",
     actorUserId: params.actorUserId,
-    snapshot: updated as Record<string, unknown>,
+    snapshot: { ...updated },
     publishedAt: now,
   });
 
@@ -304,7 +303,7 @@ export async function versionPublishedQuestion(params: VersionPublishedQuestionP
     .from("questions")
     .update(updatePatch)
     .eq("id", params.questionId)
-    .select(PUBLISH_SELECT)
+    .select<string, CanonicalQuestionRowLike>(PUBLISH_SELECT)
     .single();
 
   if (updateError || !updated) {
@@ -318,7 +317,7 @@ export async function versionPublishedQuestion(params: VersionPublishedQuestionP
     versionNumber: nextVersion,
     lifecycleStatus: "qa",
     actorUserId: params.actorUserId,
-    snapshot: updated as Record<string, unknown>,
+    snapshot: { ...updated },
   });
 
   return {
