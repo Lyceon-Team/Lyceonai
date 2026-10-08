@@ -766,12 +766,14 @@ plant "UI53-CH2" "the guidance card is back" \
 assert s.count(a) == 1
 s = s.replace(a, "      <p>Session Guidance</p>\n      {error ? <Notice tone=\"danger\" title={String(error)} /> : null}", 1)'
 
+# Re-pointed 2026-10-08 (OQ-68 (c)): the KPI-invalidation comment the anchor ended on is gone with
+# the invalidation; the anchor now ends on the blank line before the stats merge. Same plant.
 plant "UI53-C4" "the last answer closes the runner before its feedback is read" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
   "client/src/hooks/useCanonicalPractice.ts" \
-  'a = "        if (data.state) setSessionState(data.state);\n        // Owner ruling"
+  'a = "        if (data.state) setSessionState(data.state);\n\n        if (data.stats) {\n"
 assert s.count(a) == 1
-s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\") setSessionClosed(true);\n        // Owner ruling", 1)'
+s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\") setSessionClosed(true);\n\n        if (data.stats) {\n", 1)'
 
 
 # ── UI-53 / OQ-54 (a), OQ-57 (f) — the review runner's LISA panel on the student tokens ──
