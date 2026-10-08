@@ -131,6 +131,49 @@ RW domains are already on-target.
 
 ---
 
+## Shuffle-Invariant Reference (11) — Gate HARD-FAIL
+
+### 11. OPTION_LETTER_REF / OPTION_POSITION_REF — Letter or positional option references
+
+**Defect:** Stem or explanation references an answer option by letter (A/B/C/D) or by position (first/second/third/fourth/last option/choice/response). Options are Fisher-Yates shuffled at serve; these references point at the wrong choice once shuffled.
+
+**Rule:** Reference every option BY CONTENT ONLY — name the actual text, claim, or value. Never write "Option A", "Choice B", "(C)", "the second option", "the first choice", "the last response", etc.
+
+**Gate detectors (HARD-FAIL):**
+
+- Letter: `/(Option|Choice)\s+\(?[A-D][\s.),]/` — case-sensitive on A-D to avoid firing on the article "a". Does NOT flag bare capital letters (geometry vertex labels are legitimate).
+- Position: `/\b(?:the\s+)?(?:first|second|third|fourth|last)\s+(?:option|choice|response)\b/i`
+
+Both are checked on `stem` and `explanation`.
+
+**Codex check:** For every question, read the stem and explanation. Flag any reference to an option by letter or by ordinal position. A capital letter inside LaTeX (`$\sin A$`, `$\cos(B)$`, `triangle $ABC$`) or as a geometry vertex/point label is math, not an option reference — do not flag those. The test is whether the letter or positional phrase is being used to identify one of the four answer choices.
+
+---
+
+## Stem Integrity (12–13) — Gate HARD-FAIL
+
+### 12. EMPTY_STEM — Missing or whitespace-only stem
+
+**Defect:** The `stem` field is empty, null, or contains only whitespace. The student sees no question prompt.
+
+**Rule:** Every question must have a non-empty stem that contains the question prompt.
+
+**Gate detector:** `!rec.stem || rec.stem.trim().length === 0` → FAIL.
+
+**Codex check:** Flag any question whose stem is blank or contains no recognizable question prompt.
+
+### 13. STEM_EQUALS_PASSAGE — Stem is a verbatim copy of the passage
+
+**Defect:** `trim(stem) === trim(passage)`. The stem was overwritten by a copy of the passage — the student sees the passage twice and no question prompt. Found in 17 published Transitions questions. A DB CHECK constraint (`questions_stem_ne_passage`) now blocks publishing these; the gate rejects them at authoring so batches don't fail at publish time.
+
+**Rule:** The stem must contain the actual question prompt, not a copy of the passage. For R&W questions, the stem asks the question ("Which choice completes the text…"); the passage provides the context. They must be distinct.
+
+**Gate detector:** `typeof stem === 'string' && typeof passage === 'string' && stem.trim() === passage.trim()` → FAIL.
+
+**Codex check:** For every R&W question, verify the stem contains an actual question prompt (e.g., "Which choice completes the text…" or "Which choice best states the main idea…") and is not a duplicate of the passage. For any question where stem and passage appear identical or near-identical, flag as **REJECT**.
+
+---
+
 ## Lower-Priority Guidance (10) — Authoring Convention
 
 ### 10. Math Delimiter Standardization

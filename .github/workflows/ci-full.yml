@@ -6,21 +6,24 @@
 # 3,000-plan calendar parity suite, the gate self-tests, the guardian browser specs, the page-CSP
 # flow sweep and the question-authoring test. Together with ci.yml this is the full suite.
 #
-# TRIGGER. Integration branches keep a pull request open into `main`, and every merge into the
-# branch updates it (~460 runs a month), so the full tier cannot run on every update. It runs
-# when the pull request carries the `ci:full` label — applied right before merging — and on every
-# push to `main` whose tree no passing full-tier PR run already covered.
+# TRIGGER (owner brief 2026-10-08). Every pull request into `main` runs the full tier
+# automatically on every head — no label. A pull request into `cleanup` runs it only when it
+# carries the `ci:full` label (opt-in). It also runs on every push to `main` whose tree no passing
+# full-tier run already covered. A tree that already passed is never re-run (tree marker).
+# Cost: integration branches keep a pull request open into `main` and every merge into the branch
+# updates it, so this runs on each of those updates; `cancel-in-progress` keeps one run per PR.
 #
-# THE REQUIRED CHECK is the last job, `ci-full`. It is green only when, on this exact tree, the
-# full tier ran and passed (this run, or an earlier one recorded by its tree marker). On a pull
-# request into `main` without the label it is red and says so. After a run the label is removed,
-# so a later push needs a fresh `ci:full` — the full tier always covers the head being merged.
+# THE REQUIRED CHECK is the last job, `ci-full` (scripts/ci/ci-full-verdict.sh). On a pull request
+# into `main` it is green only when, on this exact tree, the full tier ran and passed (this run,
+# or an earlier one recorded by its tree marker); otherwise red. On a pull request into `cleanup`
+# without the label it is green and says the tier was not requested; with the label it must pass.
+# After a labelled run the label is removed, so a later push needs a fresh `ci:full`.
 # Owner action: make `ci-full` a required status check on `main`.
 name: CI full tier
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, cleanup]
     types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
@@ -43,6 +46,7 @@ jobs:
     outputs:
       run: ${{ steps.scope.outputs.run }}
       satisfied: ${{ steps.scope.outputs.satisfied }}
+      required: ${{ steps.scope.outputs.required }}
       tree: ${{ steps.scope.outputs.tree }}
     steps:
       - name: Checkout
@@ -55,6 +59,7 @@ jobs:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           HAS_LABEL: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:full') }}
+          BASE_REF: ${{ github.base_ref }}
         run: bash scripts/ci/ci-full-scope.sh
 
   review-ui-gate:
@@ -553,29 +558,17 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Verdict
         env:
           RUN: ${{ needs.scope.outputs.run }}
           SATISFIED: ${{ needs.scope.outputs.satisfied }}
+          REQUIRED: ${{ needs.scope.outputs.required }}
           RESULTS: ${{ needs.review-ui-gate.result }} ${{ needs.gate-selftests.result }} ${{ needs.pg-mutations.result }} ${{ needs.browser.result }}
           SCOPE_RESULT: ${{ needs.scope.result }}
-        run: |
-          set -euo pipefail
-          echo "scope=$SCOPE_RESULT run=$RUN satisfied=$SATISFIED jobs: $RESULTS"
-          if [ "$SCOPE_RESULT" != success ]; then
-            echo "::error::the scope job did not succeed"; exit 1
-          fi
-          if [ "$RUN" = true ]; then
-            for r in $RESULTS; do
-              [ "$r" = success ] || { echo "::error::a full-tier job ended $r"; exit 1; }
-            done
-            echo "full tier passed on this tree"
-          elif [ "$SATISFIED" = true ]; then
-            echo "this exact tree already passed the full tier"
-          else
-            echo "::error::The full tier has not run on this head. Add the ci:full label to this pull request when it is ready to merge."
-            exit 1
-          fi
+        run: bash scripts/ci/ci-full-verdict.sh
 
       - name: Record the tree the full tier passed
         if: ${{ needs.scope.outputs.run == 'true' }}
@@ -590,9 +583,10 @@ jobs:
           retention-days: 30
 
       # The label means "run the full tier on this head". Once it has run, it is spent: a later
-      # push needs a fresh label, so the full tier always covers the head being merged.
+      # push needs a fresh label, so the full tier always covers the head being merged. (A pull
+      # request into `main` needs no label; one left on it is removed the same way.)
       - name: Spend the ci:full label
-        if: ${{ always() && github.event_name == 'pull_request' && needs.scope.outputs.run == 'true' }}
+        if: ${{ always() && github.event_name == 'pull_request' && needs.scope.outputs.run == 'true' && contains(github.event.pull_request.labels.*.name, 'ci:full') }}
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
