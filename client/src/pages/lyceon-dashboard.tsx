@@ -22,8 +22,8 @@
  */
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
 import { FreeHome } from "@/components/home/FreeHome";
+import { HomeLoading } from "@/components/home/HomeLoading";
 import { PaidHome } from "@/components/home/PaidHome";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { browserLocalToday } from "@/features/calendar/lib/dates";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
@@ -43,14 +43,8 @@ export default function LyceonDashboard(): JSX.Element {
   const profile = useProfileQuery();
   const access = useFeatureAccess();
 
-  if (user === null || profile.isLoading) {
-    return (
-      <div className="flex flex-col gap-4" data-testid="home-loading">
-        <Skeleton variant="lyc" className="h-12 w-2/3" />
-        <Skeleton variant="lyc" className="h-6 w-1/2" />
-      </div>
-    );
-  }
+  // QA2-F: the same placeholder the paid and free Home show until their own reads answer.
+  if (user === null || profile.isLoading) return <HomeLoading />;
 
   const name = user.display_name ?? null;
   if (isPaidHome(access)) {

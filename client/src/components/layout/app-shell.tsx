@@ -76,6 +76,7 @@
  *   the trigger is named "Account menu".
  */
 import {
+  Suspense,
   createContext,
   useContext,
   useRef,
@@ -385,6 +386,18 @@ type AppShellProps = {
   /** The padded 800px reading column, or the page edge to edge (route-shells.ts). */
   content?: AppContentLayout;
   themeLock?: ThemeLock;
+  /**
+   * @spec [production QA 2026-10-08 item F (Karl: "Full-Length cards: no layout shift on
+   *       load"); QA 2026-10-07 item 5 (the page skeleton inside the shell)]
+   *       | @implemented [2026-10-08]
+   * plain English: what shows while the page's own code chunk loads (StudentRouteFrame passes
+   * the page skeleton). The shell holds the page's Suspense boundary itself so the legal footer
+   * can sit INSIDE it: the footer used to be drawn under the short skeleton and then pushed down
+   * by the page when its chunk landed, a layout shift on every cold load of a column page
+   * (measured 0.056 at 390 on Full-Length). Now the footer arrives with the page, in its final
+   * place. Without a fallback (a test rendering the shell directly) nothing suspends here.
+   */
+  fallback?: ReactNode;
 };
 
 export function AppShell({
@@ -393,6 +406,7 @@ export function AppShell({
   footer = false,
   content = "column",
   themeLock = null,
+  fallback = null,
 }: AppShellProps): JSX.Element {
   const [location] = useLocation();
   const { user } = useSupabaseAuth();
@@ -544,8 +558,12 @@ export function AppShell({
               data-content="column"
               className="min-w-0 flex-1 px-4 pb-10 pt-6 lg:overflow-y-auto lg:px-[72px] lg:pb-[72px] lg:pt-14"
             >
-              <div className="max-w-[800px]">{children}</div>
-              {footer ? <LegalFooter /> : null}
+              <Suspense
+                fallback={<div className="max-w-[800px]">{fallback}</div>}
+              >
+                <div className="max-w-[800px]">{children}</div>
+                {footer ? <LegalFooter /> : null}
+              </Suspense>
             </main>
           ) : (
             <main
@@ -554,7 +572,7 @@ export function AppShell({
               data-content="full"
               className="flex min-w-0 flex-1 flex-col lg:overflow-hidden"
             >
-              {children}
+              <Suspense fallback={fallback}>{children}</Suspense>
             </main>
           )}
           {panel !== null ? (

@@ -80,6 +80,7 @@ import {
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { FullLengthCard } from "./FullLengthCard";
+import { HomeLoading } from "./HomeLoading";
 import {
   ProjectionSection,
   RecentSessionsSection,
@@ -201,6 +202,18 @@ export function PaidHome({
     pool.isError ||
     projection.isError;
 
+  // QA2-F (Karl, 2026-10-08: "Full-Length cards: no layout shift on load"): the page is drawn
+  // once every read it draws from has answered or failed (HomeLoading.tsx). A disabled read
+  // (Full-Length not granted) is not loading.
+  const settled =
+    !calendar.isLoading &&
+    !mastery.isLoading &&
+    !practice.isLoading &&
+    !review.isLoading &&
+    !exams.isLoading &&
+    !pool.isLoading &&
+    !projection.isLoading;
+
   const retry = (): void => {
     void calendar.refetch();
     void mastery.refetch();
@@ -246,6 +259,8 @@ export function PaidHome({
         : [],
     ),
   ];
+
+  if (!settled) return <HomeLoading />;
 
   return (
     <div className="flex flex-col gap-12" data-testid="home" data-plan="paid">

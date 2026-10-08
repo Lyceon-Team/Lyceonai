@@ -1193,6 +1193,9 @@ describe("W4-4 — LISA always open in review, three panels", () => {
   it("below 1024px: one column — question, then LISA, then the calculator", () => {
     mockViewport(390);
     renderReview();
+    // QA2-D: below 1024 LISA starts closed; the student opens it from the bar.
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const layout = screen.getByTestId("review-tutor-layout");

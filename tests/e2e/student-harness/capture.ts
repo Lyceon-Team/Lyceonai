@@ -28,7 +28,8 @@
  *
  * run: pnpm exec tsx tests/e2e/student-harness/capture.ts UI-41   (see README.md)
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -143,7 +144,16 @@ type BuiltResult = {
   overflowX: number;
   /** F-69: the document and top-bar measurement, for shots with `expectFitsViewport`. */
   fit: Fit | null;
+  /** QA2-F: the load's layout-shift sum and its largest shifts, for shots with `layoutShift`. */
+  cls: LayoutShiftReading | null;
   skipped?: string;
+};
+
+/** QA2-F: what the page's `layout-shift` observer saw (groups/types.ts `layoutShift`). */
+type LayoutShiftReading = {
+  sum: number;
+  /** The largest shifts, largest first: value and the nodes that moved (tag#id.testid). */
+  top: Array<{ value: number; at: number; sources: string[] }>;
 };
 
 function log(line: string): void {
@@ -387,6 +397,50 @@ function fontFaceCss(): string {
   ].join("\n");
 }
 
+/**
+ * QA2-B (2026-10-08): the real Desmos calculator, opt-in for one run. With
+ * `STUDENT_HARNESS_DESMOS=1` (and a `VITE_DESMOS_API_KEY` in the environment, which the client
+ * build reads), requests to desmos.com are fetched once by `curl` on the machine (which honours
+ * the machine's proxy) into test-results/ (ignored, never committed) and answered from there, so
+ * a shot can show Desmos itself in dark mode. Off by default: every other run stays local-only,
+ * and the calculator shows its "unavailable" line.
+ */
+const DESMOS_LIVE = process.env.STUDENT_HARNESS_DESMOS === "1";
+const desmosServed = new Set<string>();
+
+function fetchDesmos(url: string): { body: Buffer; contentType: string } {
+  const dir = path.join(ROOT, "test-results", "student-harness", "desmos");
+  fs.mkdirSync(dir, { recursive: true });
+  const key = crypto.createHash("sha1").update(url).digest("hex");
+  const bodyFile = path.join(dir, key);
+  const typeFile = `${bodyFile}.type`;
+  if (!fs.existsSync(bodyFile) || !fs.existsSync(typeFile)) {
+    const res = spawnSync(
+      "curl",
+      [
+        "-sSL",
+        "--max-time",
+        "90",
+        "-o",
+        bodyFile,
+        "-w",
+        "%{content_type}",
+        url,
+      ],
+      { encoding: "utf8" },
+    );
+    if (res.status !== 0)
+      throw new Error(
+        `desmos fetch failed (${String(res.status)}): ${res.stderr}`,
+      );
+    fs.writeFileSync(typeFile, res.stdout || "application/octet-stream");
+  }
+  return {
+    body: fs.readFileSync(bodyFile),
+    contentType: fs.readFileSync(typeFile, "utf8"),
+  };
+}
+
 /** Local-only network: localhost, file: and data: pass; Google Fonts CSS is answered locally; the rest is aborted. */
 async function localOnly(
   context: BrowserContext,
@@ -410,6 +464,18 @@ async function localOnly(
         status: 200,
         contentType: "text/css",
         body: fontCss,
+      });
+    }
+    if (
+      DESMOS_LIVE &&
+      (url.hostname === "desmos.com" || url.hostname.endsWith(".desmos.com"))
+    ) {
+      desmosServed.add(url.hostname);
+      const got = fetchDesmos(url.toString());
+      return route.fulfill({
+        status: 200,
+        contentType: got.contentType,
+        body: got.body,
       });
     }
     blockedHosts.add(url.hostname);
@@ -654,6 +720,45 @@ async function pickIndex(
   }
 }
 
+/**
+ * QA2-F: installed before the page's first script (groups/types.ts `layoutShift`). Keeps every
+ * `layout-shift` entry the browser reports without recent input (input-driven shifts are not
+ * load shifts), with the nodes that moved, on `window.__lycShifts`.
+ */
+const LAYOUT_SHIFT_OBSERVER = `(() => {
+  const store = [];
+  window.__lycShifts = store;
+  const name = (n) => {
+    const el = n && n.nodeType === 3 ? n.parentElement : n;
+    if (!el || el.nodeType !== 1) return "?";
+    const t = el.getAttribute("data-testid");
+    return el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (t ? "[" + t + "]" : "");
+  };
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        if (e.hadRecentInput) continue;
+        store.push({
+          value: e.value,
+          at: Math.round(e.startTime),
+          sources: (e.sources || []).map((s) => name(s.node)),
+        });
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  } catch (err) {
+    console.warn("student harness: layout-shift is not observable here", err);
+  }
+})();`;
+
+/** QA2-F: the sum and the five largest shifts, after one more frame so queued entries land. */
+const READ_LAYOUT_SHIFTS = `new Promise((resolve) => requestAnimationFrame(() => setTimeout(() => {
+  const all = window.__lycShifts || [];
+  const sum = all.reduce((a, e) => a + e.value, 0);
+  const top = [...all].sort((a, b) => b.value - a.value).slice(0, 5)
+    .map((e) => ({ value: Math.round(e.value * 10000) / 10000, at: e.at, sources: e.sources }));
+  resolve({ sum: Math.round(sum * 10000) / 10000, top });
+}, 50)))`;
+
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle", { timeout: 20_000 });
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -747,7 +852,21 @@ async function shootBuilt(
         session: { ...(shot.sessionStorage ?? {}) },
       },
     );
+    // QA2-F: the load's layout shifts, observed from before the first byte (groups/types.ts
+    // `layoutShift`). A string, so nothing the TS compiler adds to a function reaches the page.
+    if (shot.layoutShift)
+      await context.addInitScript({ content: LAYOUT_SHIFT_OBSERVER });
     const page = await context.newPage();
+    // QA2-F: every `/api/` answer arrives `apiDelayMs` later, as over a real network.
+    const apiDelayMs = shot.layoutShift?.apiDelayMs ?? 0;
+    if (apiDelayMs > 0)
+      await page.route(
+        (url) => url.pathname.startsWith("/api/"),
+        async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, apiDelayMs));
+          await route.fallback();
+        },
+      );
     // UI-56: a held request (groups/types.ts `holdRequest`) is answered by nobody until the
     // screenshot is taken, then aborted. A page route outranks the context's local-only route.
     const held: Array<() => Promise<void>> = [];
@@ -816,8 +935,9 @@ async function shootBuilt(
     );
     // QA 2026-10-07: a code chunk held by pattern may be one the first paint needs (a cold load of
     // the route whose loading state is shot), so the network never goes idle: settle on the
-    // window's load event and a fixed wait instead.
-    if (hold?.match === "pattern") {
+    // window's load event and a fixed wait instead. QA2-F: so may a held GET the page asks for on
+    // load (`/api/tests/forms`, held to shoot the loading rows).
+    if (hold?.match === "pattern" || hold?.method === "GET") {
       await page.waitForLoadState("load", { timeout: 20_000 });
       await page.waitForTimeout(2_000);
     } else await settle(page);
@@ -896,6 +1016,24 @@ async function shootBuilt(
       });
       await settle(page);
     }
+    // QA2-D: the element's top edge must be inside the viewport (read before the screenshot,
+    // asserted after it, so a failure can be seen).
+    const inView =
+      shot.expectInView === undefined
+        ? null
+        : await page.evaluate(
+            (sel: string): { top: number; innerHeight: number } => ({
+              top:
+                document.querySelector(sel)?.getBoundingClientRect().top ??
+                Number.NaN,
+              innerHeight: window.innerHeight,
+            }),
+            shot.expectInView,
+          );
+    // QA2-F: the load's layout shifts (read after the page settled and every step ran).
+    const cls: LayoutShiftReading | null = shot.layoutShift
+      ? ((await page.evaluate(READ_LAYOUT_SHIFTS)) as LayoutShiftReading)
+      : null;
     // F-69: measured before the screenshot, which is taken either way so a failure can be seen.
     const fits = shot.expectFitsViewport;
     const fit: Fit | null = fits
@@ -951,6 +1089,10 @@ async function shootBuilt(
             ? `, ${fits?.unscrolled ?? ""} scrollHeight ${fit.unscrolled.scrollHeight} vs clientHeight ${fit.unscrolled.clientHeight}`
             : ""),
       );
+    if (inView && !(inView.top >= 0 && inView.top < inView.innerHeight))
+      throw new Error(
+        `${shot.id} ${size.name} ${theme}: ${shot.expectInView ?? ""} is not in view: its top edge is at ${inView.top}px in a ${inView.innerHeight}px viewport`,
+      );
     if (fail && failed === 0)
       throw new Error(
         `${shot.id}: no request matched failRequest ${fail.pathPattern}`,
@@ -972,7 +1114,7 @@ async function shootBuilt(
           .querySelector("[data-theme-lock]")
           ?.getAttribute("data-theme-lock") ?? null,
     }));
-    return { file, finalPath: new URL(page.url()).pathname, ...dom, fit };
+    return { file, finalPath: new URL(page.url()).pathname, ...dom, fit, cls };
   } finally {
     await context.close();
     if (fresh && persona && sessionId !== null)
@@ -1164,6 +1306,18 @@ function writeIndex(
       lines.push(
         `Must then show \`${shot.expectVisible}\` (the capture fails otherwise).`,
       );
+    if (shot.expectInView !== undefined)
+      lines.push(
+        `Must then have \`${shot.expectInView}\` in view: its top edge inside the viewport (the capture fails otherwise).`,
+      );
+    if (shot.layoutShift !== undefined)
+      lines.push(
+        `Layout shift during load (QA2-F): the sum of the page's \`layout-shift\` entries without recent input, observed from before the first byte, must be at most ${shot.layoutShift.max}${
+          shot.layoutShift.apiDelayMs
+            ? `; every \`/api/\` answer is delayed ${shot.layoutShift.apiDelayMs}ms in the browser, as over a real network, so the loading state paints first`
+            : ""
+        } (the run fails otherwise, after this index is written); the sum and the largest shifts are under each built shot.`,
+      );
     if (shot.expectGone !== undefined)
       lines.push(
         `Must then show no \`${shot.expectGone}\` (the capture fails otherwise).`,
@@ -1216,6 +1370,10 @@ function writeIndex(
                     : ""
                 }`
               : ""
+          }${
+            row.built.cls
+              ? `, layout shift ${row.built.cls.sum}${row.built.cls.top.length > 0 ? ` (largest: ${row.built.cls.top.map((t) => `${t.value} at ${t.at}ms by ${t.sources.join(" ") || "?"}`).join("; ")})` : ""}`
+              : ""
           }`;
       let proto: string;
       if ("none" in row.proto) proto = row.proto.none;
@@ -1239,6 +1397,16 @@ function writeIndex(
       notServed.length === 0
         ? "none"
         : notServed.map((e) => `\`${e}\``).join(", ")
+    }`,
+  );
+  lines.push(
+    `- Desmos (QA2-B, opt-in \`STUDENT_HARNESS_DESMOS=1\`): ${
+      desmosServed.size === 0
+        ? "not loaded (a local-only run; the calculator shows its unavailable line)"
+        : `the real calculator script, fetched once from ${[...desmosServed]
+            .sort()
+            .map((h) => `\`${h}\``)
+            .join(", ")} and answered from a local cache`
     }`,
   );
   lines.push(
@@ -1326,6 +1494,10 @@ async function main(): Promise<void> {
                   ),
                 };
           rows.push({ shot, viewport, theme, built, proto });
+          if (built.cls)
+            log(
+              `capture: ${shot.id} ${viewport} ${theme} layout shift ${built.cls.sum} ${JSON.stringify(built.cls.top)}`,
+            );
           log(
             `capture: ${shot.id} ${viewport} ${theme} -> ${built.file} (${built.finalPath}, html data-theme=${String(built.htmlTheme)}, lock=${String(built.themeLock)}, overflow-x=${built.overflowX}px${built.fit ? `, document ${built.fit.scrollHeight}/${built.fit.innerHeight}px, scrollY ${built.fit.scrollY}, top bar ${Math.round(built.fit.barTop)}..${Math.round(built.fit.barBottom)}${built.fit.unscrolled ? `, unscrolled ${built.fit.unscrolled.scrollHeight}/${built.fit.unscrolled.clientHeight}` : ""}` : ""})` +
               ("file" in proto ? ` | ${proto.file}` : " | no prototype"),
@@ -1349,6 +1521,23 @@ async function main(): Promise<void> {
   log(
     `capture: wrote ${rows.length} rows to ${path.relative(ROOT, path.join(outDir, "index.md"))}`,
   );
+  // QA2-F: a load that shifted more than its shot allows fails the run, after the index is written
+  // so the numbers and the screenshots can be read.
+  const shifted = rows.filter(
+    (r) =>
+      r.built.cls !== null &&
+      r.shot.layoutShift !== undefined &&
+      r.built.cls.sum > r.shot.layoutShift.max,
+  );
+  if (shifted.length > 0)
+    throw new Error(
+      `layout shift over the limit: ${shifted
+        .map(
+          (r) =>
+            `${r.shot.id} ${r.viewport} ${r.theme} ${r.built.cls?.sum ?? "?"} > ${r.shot.layoutShift?.max ?? "?"}`,
+        )
+        .join("; ")}`,
+    );
 }
 
 main().then(
