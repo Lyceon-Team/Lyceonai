@@ -1167,6 +1167,7 @@ jobs:
             tests/ci/analytics-identity.pg.ci.test.ts \
             tests/ci/marketing-consent-reviews.pg.ci.test.ts \
             tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            tests/ci/marketing-email-sync.pg.ci.test.ts \
             tests/ci/signup-analytics.pg.ci.test.ts \
             tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             tests/ci/exam-shell-server.handler-pg.ci.test.ts \
@@ -1237,6 +1238,7 @@ jobs:
             --file tests/ci/analytics-identity.pg.ci.test.ts \
             --file tests/ci/marketing-consent-reviews.pg.ci.test.ts \
             --file tests/ci/marketing-consent-routes.pg.ci.test.ts \
+            --file tests/ci/marketing-email-sync.pg.ci.test.ts \
             --file tests/ci/signup-analytics.pg.ci.test.ts \
             --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts \

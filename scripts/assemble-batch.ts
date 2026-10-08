@@ -456,8 +456,25 @@ function validateRecord(
     );
   }
 
+  // EMPTY_STEM — stem is missing or whitespace-only
   if (!rec.stem || rec.stem.trim().length === 0) {
-    v("stem", "stem is empty");
+    v("stem", "EMPTY_STEM: stem is empty or whitespace-only.");
+  }
+
+  // STEM_EQUALS_PASSAGE — stem is a verbatim copy of passage (caught 17
+  // published Transitions questions whose prompt was overwritten by the passage).
+  // DB CHECK constraint questions_stem_ne_passage blocks these at publish;
+  // the gate rejects them at authoring so batches don't fail at publish time.
+  if (
+    typeof rec.stem === "string" &&
+    typeof rec.passage === "string" &&
+    rec.stem.trim().length > 0 &&
+    rec.stem.trim() === rec.passage.trim()
+  ) {
+    v(
+      "stem",
+      `STEM_EQUALS_PASSAGE: stem is identical to passage after trimming. The stem must contain the question prompt, not a copy of the passage.`,
+    );
   }
 
   if (!rec.explanation || rec.explanation.trim().length === 0) {
@@ -558,6 +575,40 @@ function validateRecord(
       "stem+assets",
       `PHANTOM_FIGURE: stem references a visual ("${rec.stem.match(figureRefRe)?.[0]}") but assets is null. Make the item self-contained or attach the asset.`,
     );
+  }
+
+  // OPTION_LETTER_REF / OPTION_POSITION_REF — HARD-FAIL
+  // Options are Fisher-Yates shuffled at serve (Feature-8 option_order); letter
+  // and positional references point at the wrong choice once shuffled.
+  // Letter: "Option A", "Choice B", "Option (C)" — case-sensitive on A-D to
+  //   avoid firing on the article "a" in "answers a different question".
+  //   Does NOT flag bare capital letters (geometry vertex labels are legitimate).
+  // Position: "the first option", "second choice", "last response" — case-insensitive.
+  const optionLetterRefRe = /(Option|Choice)\s+\(?[A-D][\s.),]/;
+  const optionPositionRefRe =
+    /\b(?:the\s+)?(?:first|second|third|fourth|last)\s+(?:option|choice|response)\b/i;
+
+  for (const { name: fieldName, value: fieldValue } of [
+    { name: "stem", value: rec.stem },
+    { name: "explanation", value: rec.explanation },
+  ]) {
+    if (typeof fieldValue !== "string") continue;
+
+    const letterMatch = fieldValue.match(optionLetterRefRe);
+    if (letterMatch) {
+      v(
+        fieldName,
+        `OPTION_LETTER_REF: references an option by letter ("${letterMatch[0].trim()}"). Options are shuffled at serve; reference by content only.`,
+      );
+    }
+
+    const posMatch = fieldValue.match(optionPositionRefRe);
+    if (posMatch) {
+      v(
+        fieldName,
+        `OPTION_POSITION_REF: references an option by position ("${posMatch[0].trim()}"). Options are shuffled at serve; reference by content only.`,
+      );
+    }
   }
 
   // Tripwire: flag explanations that MAY reference options by letter (A/B/C/D).

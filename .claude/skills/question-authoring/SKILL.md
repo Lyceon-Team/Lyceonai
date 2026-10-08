@@ -45,6 +45,10 @@ One object per line. No trailing commas, no comments, no prose around it.
 - Exactly one correct option. `option_metadata[correct_option].role = "correct"` with `error_taxonomy: null`.
 - The other three: `role: "distractor"`, each with an `error_taxonomy` label drawn from **this section's** `distractor_taxonomy` set in taxonomy.json, and the explanation names the specific error each represents.
 
+### RW option-length constraint (hard rule)
+
+For every Reading & Writing MCQ, the correct answer MUST NOT be the strictly longest option. At least one distractor must be as long as or longer than the key; ideally the key sits mid-pack in length. A correct option that is strictly longest is the single most exploitable SAT tell — option shuffling does not hide a length signal. Fix direction: lengthen distractors to match or exceed the key, never trim the key. The assembly gate fails the batch above 35% (`RW_LONGEST_ANSWER_TELL`), but every individual RW MCQ must satisfy this constraint — do not rely on batch-level averaging.
+
 ## 4. Grid-in rules
 
 - No options. `correct_answer` is the value a student would enter.
@@ -68,21 +72,25 @@ Assign the one skill whose definition best fits. When a question could fit two s
 
 Calibrate to taxonomy.json: 1 = single-step/direct; 2 = two-to-three steps or one non-obvious concept; 3 = multi-step/layered/subtle-trap.
 
-## 8. Passages
+## 8. Stem integrity (hard rule)
+
+The stem must contain the actual question prompt — it must never be empty and must never be a copy of the passage. For R&W, the stem asks the question ("Which choice completes the text…"); the passage provides the context. If `trim(stem) === trim(passage)`, the gate hard-fails (`STEM_EQUALS_PASSAGE`). An empty or whitespace-only stem also hard-fails (`EMPTY_STEM`).
+
+## 9. Passages
 
 RW items are self-contained: answerable from the passage alone, no outside knowledge. Math items have no passage (`passage: null`).
 
-## 9. No letter references in explanations (hard rule)
+## 10. No letter or positional references (hard rule — shuffle-invariant)
 
-Explanations reference answer content, never position. Never name an option by letter (A/B/C/D) or say "the correct answer is \<letter\>." Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy. Options are shuffled at serve and letters are never shown to the student.
+Explanations and stems must reference answer options BY CONTENT ONLY — name the actual text, claim, or value. Never reference by letter (A/B/C/D) or by position (first/second/third/fourth/last option/choice/response). Options are Fisher-Yates shuffled at serve; letter and positional references point at the wrong choice once shuffled. The assembly gate hard-fails any record matching these patterns in stem or explanation. Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy.
 
-## 10. Output discipline
+## 11. Output discipline
 
 - Write **only** NDJSON records to your assigned part-file path — one object per line.
 - No prose, no markdown, no SQL, no scratchpad, no reasoning in the file. Nothing but records.
 - Author exactly the assignment: the given `(skill × difficulty × count)` leaves, no more, no fewer.
 
-## 11. Before you finish (DoD)
+## 12. Before you finish (DoD)
 
 - Every record parses as JSON and matches the schema.
 - Every `section`/`domain`/`skill`/`difficulty`/`error_taxonomy` literal was copied from taxonomy.json.
