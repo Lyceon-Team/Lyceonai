@@ -202,7 +202,7 @@ git grep -nE "_whoami|admin-provision|auth/debug|publishable-key|account/status|
 
 Every hit is a comment recording the deletion (`server/lib/account.ts:291-292`, `server/routes/billing-routes.ts:6`, `server/routes/legal-routes.ts:48`) or the `legal_acceptances` table name. No handler matches. `ls apps/api/src/routes` → `No such file or directory`. `ls server/routes/health-routes.ts` → `No such file or directory`.
 
-`node scripts/ci/retired-endpoints-gate.mjs` (exit 0): `OK: retired endpoints — 3543 file(s) scanned, no caller remains for 14 retired path(s)`. The 14 include `/api/me/streak` (SCL-212) and the 6 `/api/me/mastery/*` and `/api/me/weakness/*` paths.
+`node scripts/ci/retired-endpoints-gate.mjs` (exit 0): `OK: retired endpoints — 3543 file(s) scanned, no caller remains for 14 retired path(s)`. The 14 include the student streak read retired by SCL-212 and the 6 `/api/me/mastery/*` and `/api/me/weakness/*` paths.
 
 ## 5. Endpoints that refuse a student (listed only)
 
