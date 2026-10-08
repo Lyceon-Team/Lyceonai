@@ -32,6 +32,7 @@
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -40,7 +41,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Router } from "wouter";
+import { Router, useLocation } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
 import {
@@ -53,6 +54,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { canonicalCatalogRows } from "@/components/student-ui/filter-bar/topics.fixture";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import { getQueryFn } from "@/lib/queryClient";
+import { useRouteScrollReset } from "@/lib/route-scroll-reset";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
 import { sendPaymentRequired } from "../../../server/lib/http-errors";
 import {
@@ -802,6 +804,95 @@ describe("QA item 14: a domain address opens that domain and scrolls to it", () 
       expect(
         within(row).getAllByRole("button")[0]?.getAttribute("aria-expanded"),
       ).toBe("false");
+    }
+  });
+});
+
+// ── Production re-test (Karl, 2026-10-08) item I ──────────────────────────────────────────────
+
+/**
+ * @spec [production re-test 2026-10-08 item I (Karl: "Reset scroll to top on every route
+ *        change"), QA item 14 (the `/mastery?domain=` deep link)] | @implemented [2026-10-08]
+ * plain English: the route-change scroll reset must not undo the deep link's own scroll. The
+ * hardest case is a return visit: the grid is cached, so the page's scroll effect runs in the
+ * SAME commit as the route change. The reset (a layout effect) must come first and the page's
+ * scroll to the domain second; the log records both, in order.
+ */
+describe("QA2-I: the route-change scroll reset keeps the /mastery?domain= deep link", () => {
+  it("a return visit to /mastery?domain= resets to the top, THEN scrolls to the domain", async () => {
+    serve({ domains: await domainsBody(), skills: await skillsBody() });
+    const map = await accessMap(true);
+    const { hook, searchHook } = memoryLocation({ path: "/mastery" });
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          queryFn: getQueryFn({ on401: "throw" }),
+          retry: false,
+          staleTime: Infinity,
+        },
+        mutations: { retry: false },
+      },
+    });
+    client.setQueryData(PROFILE_QUERY_KEY, {
+      authenticated: true,
+      featureAccess: map,
+      user: null,
+    });
+    let go: (to: string) => void = () => undefined;
+    function Routes(): JSX.Element {
+      useRouteScrollReset();
+      const [pathname, navigate] = useLocation();
+      go = navigate;
+      return pathname === "/mastery" ? (
+        <AppShell panel={null} footer={false}>
+          <MasteryPage />
+        </AppShell>
+      ) : (
+        <div data-testid="elsewhere" />
+      );
+    }
+    const log: string[] = [];
+    let top = 0;
+    const page = document.documentElement;
+    Object.defineProperty(page, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (v: number) => {
+        top = v;
+        log.push(`window top=${v}`);
+      },
+    });
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      log.push(`into ${this.id}`);
+    };
+    try {
+      render(
+        <QueryClientProvider client={client}>
+          <Router hook={hook} searchHook={searchHook}>
+            <UpgradeModalProvider autoOpenOnDenial>
+              <Routes />
+            </UpgradeModalProvider>
+          </Router>
+        </QueryClientProvider>,
+      );
+      // First visit: the grid loads and is cached.
+      await screen.findAllByTestId("mastery-domain");
+      act(() => go("/dashboard"));
+      await screen.findByTestId("elsewhere");
+      page.scrollTop = 900;
+      log.length = 0;
+      // Home's mastery row link: the grid is cached, so it draws in the navigation's own commit.
+      act(() =>
+        go(masteryDomainHref({ section: "M", domain: "Advanced Math" })),
+      );
+      await screen.findByTestId("skill-list");
+      const id = masteryDomainAnchorId("M:Advanced Math");
+      await waitFor(() => expect(log).toContain(`into ${id}`));
+      expect(log).toEqual(["window top=0", `into ${id}`]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+      delete (page as unknown as Record<string, unknown>).scrollTop;
     }
   });
 });

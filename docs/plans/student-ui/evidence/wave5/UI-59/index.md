@@ -1,6 +1,6 @@
 # UI-59 Bare-card pages (sign in, sign up, reset, profile completion, update password, account recovery, guardian required, 404, pending deletion, error screen), all NOT PROTOTYPED; light and dark, 1440 and 390
 
-Generated 2026-10-07T21:12:47.706Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-08T02:19:15.002Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -76,7 +76,7 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 | desktop | light | ![profile-complete desktop light](profile-complete--desktop--light--built.png)<br>`/profile/complete`, 36 KB, horizontal overflow 0px | none |
 | desktop | dark | ![profile-complete desktop dark](profile-complete--desktop--dark--built.png)<br>`/profile/complete`, 37 KB, horizontal overflow 0px | none |
 | mobile | light | ![profile-complete mobile light](profile-complete--mobile--light--built.png)<br>`/profile/complete`, 31 KB, horizontal overflow 0px | none |
-| mobile | dark | ![profile-complete mobile dark](profile-complete--mobile--dark--built.png)<br>`/profile/complete`, 32 KB, horizontal overflow 0px | none |
+| mobile | dark | ![profile-complete mobile dark](profile-complete--mobile--dark--built.png)<br>`/profile/complete`, 33 KB, horizontal overflow 0px | none |
 
 ## /update-password: the form a recovery-granted student sees (the page reads no grant; the server's POST does)
 
@@ -130,37 +130,56 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 123 KB, horizontal overflow 0px | none |
-| desktop | dark | ![guardian-required desktop dark](guardian-required--desktop--dark--built.png)<br>`/guardian-required`, 125 KB, horizontal overflow 0px | none |
-| mobile | light | ![guardian-required mobile light](guardian-required--mobile--light--built.png)<br>`/guardian-required`, 106 KB, horizontal overflow 0px | none |
-| mobile | dark | ![guardian-required mobile dark](guardian-required--mobile--dark--built.png)<br>`/guardian-required`, 109 KB, horizontal overflow 0px | none |
+| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 122 KB, horizontal overflow 0px | none |
+| desktop | dark | ![guardian-required desktop dark](guardian-required--desktop--dark--built.png)<br>`/guardian-required`, 124 KB, horizontal overflow 0px | none |
+| mobile | light | ![guardian-required mobile light](guardian-required--mobile--light--built.png)<br>`/guardian-required`, 105 KB, horizontal overflow 0px | none |
+| mobile | dark | ![guardian-required mobile dark](guardian-required--mobile--dark--built.png)<br>`/guardian-required`, 108 KB, horizontal overflow 0px | none |
 
-## 404 (/no-such-page), signed in: the SEO page ("Page not found") and its link home
+## 404 (/no-such-page), signed in: the Bare card ("Page not found") and Back to Home
 
 Persona: `paid`. Route: `/no-such-page`.
 Full page: the whole document, not just the viewport.
+Also shot at w1024 1024x768 (the desktop steps and selectors).
 Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pending-deletion screen are built to the shell spec (§2 Bare card); these screenshots go to Karl before merge.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![not-found desktop light](not-found--desktop--light--built.png)<br>`/no-such-page`, 18 KB, horizontal overflow 0px | none |
-| desktop | dark | ![not-found desktop dark](not-found--desktop--dark--built.png)<br>`/no-such-page`, 18 KB, horizontal overflow 0px | none |
-| mobile | light | ![not-found mobile light](not-found--mobile--light--built.png)<br>`/no-such-page`, 15 KB, horizontal overflow 0px | none |
-| mobile | dark | ![not-found mobile dark](not-found--mobile--dark--built.png)<br>`/no-such-page`, 15 KB, horizontal overflow 0px | none |
+| desktop | light | ![not-found desktop light](not-found--desktop--light--built.png)<br>`/no-such-page`, 17 KB, horizontal overflow 0px | none |
+| desktop | dark | ![not-found desktop dark](not-found--desktop--dark--built.png)<br>`/no-such-page`, 17 KB, horizontal overflow 0px | none |
+| mobile | light | ![not-found mobile light](not-found--mobile--light--built.png)<br>`/no-such-page`, 14 KB, horizontal overflow 0px | none |
+| mobile | dark | ![not-found mobile dark](not-found--mobile--dark--built.png)<br>`/no-such-page`, 14 KB, horizontal overflow 0px | none |
+| w1024 | light | ![not-found w1024 light](not-found--w1024--light--built.png)<br>`/no-such-page`, 15 KB, horizontal overflow 0px | none |
+| w1024 | dark | ![not-found w1024 dark](not-found--w1024--dark--built.png)<br>`/no-such-page`, 15 KB, horizontal overflow 0px | none |
 
-## Click path: 404 → Go to the homepage lands on /
+## 404 (/no-such-page), signed out: the Bare card and Go to the homepage
+
+Persona: `signed-out`. Route: `/no-such-page`.
+Full page: the whole document, not just the viewport.
+Also shot at w1024 1024x768 (the desktop steps and selectors).
+Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pending-deletion screen are built to the shell spec (§2 Bare card); these screenshots go to Karl before merge.
+
+| Viewport | Theme (as rendered) | Built | Prototype |
+|---|---|---|---|
+| desktop | light | ![not-found-signed-out desktop light](not-found-signed-out--desktop--light--built.png)<br>`/no-such-page`, 18 KB, horizontal overflow 0px | none |
+| desktop | dark | ![not-found-signed-out desktop dark](not-found-signed-out--desktop--dark--built.png)<br>`/no-such-page`, 18 KB, horizontal overflow 0px | none |
+| mobile | light | ![not-found-signed-out mobile light](not-found-signed-out--mobile--light--built.png)<br>`/no-such-page`, 14 KB, horizontal overflow 0px | none |
+| mobile | dark | ![not-found-signed-out mobile dark](not-found-signed-out--mobile--dark--built.png)<br>`/no-such-page`, 14 KB, horizontal overflow 0px | none |
+| w1024 | light | ![not-found-signed-out w1024 light](not-found-signed-out--w1024--light--built.png)<br>`/no-such-page`, 16 KB, horizontal overflow 0px | none |
+| w1024 | dark | ![not-found-signed-out w1024 dark](not-found-signed-out--w1024--dark--built.png)<br>`/no-such-page`, 16 KB, horizontal overflow 0px | none |
+
+## Click path: 404 (signed in) → Back to Home lands on /dashboard
 
 Persona: `paid`. Route: `/no-such-page`.
-Step: click `{"desktop":"a[href=\"/\"]","mobile":"a[href=\"/\"]"}`.
-Click path: must land on a path matching `^/$` (the capture fails otherwise); the path it landed on is under each built shot.
+Step: click `{"desktop":"[data-testid=\"not-found-way-out\"]","mobile":"[data-testid=\"not-found-way-out\"]"}`.
+Click path: must land on a path matching `^/dashboard$` (the capture fails otherwise); the path it landed on is under each built shot.
 Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pending-deletion screen are built to the shell spec (§2 Bare card); these screenshots go to Karl before merge.
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![not-found-home desktop light](not-found-home--desktop--light--built.png)<br>`/`, 96 KB, horizontal overflow 0px | none |
-| desktop | dark | ![not-found-home desktop dark](not-found-home--desktop--dark--built.png)<br>`/`, 96 KB, horizontal overflow 0px | none |
-| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/`, 68 KB, horizontal overflow 0px | none |
-| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/`, 68 KB, horizontal overflow 0px | none |
+| desktop | light | ![not-found-home desktop light](not-found-home--desktop--light--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | none |
+| desktop | dark | ![not-found-home desktop dark](not-found-home--desktop--dark--built.png)<br>`/dashboard`, 140 KB, horizontal overflow 0px | none |
+| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/dashboard`, 54 KB, horizontal overflow 0px | none |
+| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/dashboard`, 54 KB, horizontal overflow 0px | none |
 
 ## The pending-deletion screen: a student on whom the real request_account_deletion has run, opening /dashboard
 
@@ -191,6 +210,6 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"6aa223a6-7276-43ed-b80c-2bd1b0be799c","openPracticeSessionId":"85949fc7-fe5f-4b2a-ab89-d8bf52b50398","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"f6266377-55d6-47d3-b4be-65cda1210115","openPracticeSessionId":"6839a269-eb00-4dea-ba7e-15cc6f1b78f8","openReviewSessionId":null,"diagnosticSessionId":"8f9f4a3a-5a4b-4948-b4fd-31e809f9ce15","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"c2a4b339-867a-4eba-9d2f-67b45ce43569","openPracticeSessionId":"b375f5d3-33f6-4474-babd-e8c5e4908580","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"9aa83bcd-5707-4f79-9140-213821bab2ab","openPracticeSessionId":"610e4c09-9e99-4d7e-85f9-29193f4ba7d2","openReviewSessionId":null,"diagnosticSessionId":"ec2f81f2-09f2-443b-bd13-eebcb0a9f242","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - External hosts blocked: none
