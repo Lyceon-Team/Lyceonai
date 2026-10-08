@@ -30,6 +30,7 @@ type Q = {
   section: "M" | "RW";
   domain: string;
   stem: string;
+  passage?: string;
   explanation?: string;
 };
 
@@ -70,7 +71,7 @@ function makeDb(pool: Q[]) {
           .map((q) => ({
             question_id: q.id,
             stem: q.stem,
-            passage: null,
+            passage: q.passage ?? null,
             options: [{ key: "A", text: "x" }],
             explanation: q.explanation ?? "e",
           }));
@@ -231,6 +232,34 @@ describe("runQotdSchedule", () => {
     });
     expect(summary.skippedLetterReference).toBe(1);
     expect(db.schedule.get("2026-10-05")).toBe(plain.id);
+  });
+
+  it("skips a question whose stem repeats its passage (no prompt; owner 2026-10-08), and takes the next", async () => {
+    const pool = makePool(3);
+    const first = rotationFor("2026-10-05")[0];
+    const inDomain = pool
+      .filter((q) => q.section === first?.section && q.domain === first?.domain)
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    const [copied, padded, good] = inDomain;
+    if (!copied || !padded || !good) throw new Error("no candidates");
+    const passage =
+      "Historians have argued that the uprising was driven by tax grievances.";
+    copied.passage = passage;
+    copied.stem = passage;
+    // Whitespace differences do not hide the copy.
+    padded.passage = passage;
+    padded.stem = `  ${passage.replace(" ", "\n")}  `;
+    // A real stem under the same passage is a normal question.
+    good.passage = passage;
+    good.stem = "Which choice best states the main idea of the text?";
+    const db = makeDb(pool);
+    const summary = await runQotdSchedule({
+      client: db.client,
+      now: NOW,
+      daysAhead: 0,
+    });
+    expect(summary.skippedStemRepeatsPassage).toBe(2);
+    expect(db.schedule.get("2026-10-05")).toBe(good.id);
   });
 
   it("moves to the next domain in the rotation when one has nothing left, and reports a day it cannot fill", async () => {

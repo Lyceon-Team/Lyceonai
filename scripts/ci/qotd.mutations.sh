@@ -36,6 +36,7 @@ FILES=(
   "client/src/components/qotd/QotdWidget.tsx"
   "shared/qotd/social.ts"
   "scripts/qotd-social/generate.ts"
+  "server/services/qotd/schedule-job.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -85,6 +86,7 @@ ROUTES=tests/ci/public-qotd-routes.contract.test.ts
 PAGES=tests/seo.qotd-pages.test.ts
 WIDGET=client/src/components/qotd/QotdWidget.test.tsx
 SOCIAL=tests/ci/qotd-social.test.ts
+SCHED=tests/ci/qotd-schedule-job.test.ts
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -105,8 +107,8 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL")"; RC=$?
-[ "$RC" = 0 ] && ok "route + page + widget + social tests green" || { bad "route + page + widget + social tests not green"; echo "$OUT" | tail -30; }
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED")"; RC=$?
+[ "$RC" = 0 ] && ok "route + page + widget + social + scheduler tests green" || { bad "route + page + widget + social + scheduler tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "QOTD MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 if [ "$HAVE_PG" = 1 ]; then
@@ -224,8 +226,16 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M13 today buildable by date" "a date is buildable only once it has passed in America/Chicago" "$OUT" "$RC"
 restore
 
+echo "=== (14) the scheduler stops skipping a stem that repeats its passage (owner 2026-10-08) ==="
+plant server/services/qotd/schedule-job.ts \
+  '      if (stemRepeatsPassage(c.stem ?? "", c.passage)) {' \
+  "      if (false) {" || { bad "M14 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M14 prompt-less question scheduled" "skips a question whose stem repeats its passage" "$OUT" "$RC"
+restore
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL")"; RC=$?
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "QOTD MUTATIONS: $PASS passed, $FAIL failed"

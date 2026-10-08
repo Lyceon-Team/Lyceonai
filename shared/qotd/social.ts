@@ -38,6 +38,7 @@ import {
   type QotdTodayResponse,
 } from "../../packages/shared/src/qotd-schema";
 import { tokenizeMathContent } from "../math/tokenize";
+import { stemRepeatsPassage } from "./projection";
 import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
@@ -346,8 +347,7 @@ export function buildSocialCopy(input: QotdSocialInput): QotdSocialCopy {
  * posted broken.
  */
 export function socialInputProblems(input: QotdSocialInput): string[] {
-  const passage = input.passage?.trim() ?? "";
-  return passage.length > 0 && input.stem.trim() === passage
+  return stemRepeatsPassage(input.stem, input.passage)
     ? ["input: the stem repeats the passage word for word (no question prompt)"]
     : [];
 }
