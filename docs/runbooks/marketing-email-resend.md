@@ -39,10 +39,8 @@ not marketing opt-ins. The first run handles them in the order the owner set:
    `foreign_segment_present` (error level) until they are gone. **Delete them in the Resend
    dashboard** once the first run has finished and they show 0 contacts.
 
-Complaints already received on the launch broadcasts arrived before this lane existed, so they
-did not turn anyone's opt-in off. Resend has already suppressed those addresses for every send.
-Check the broadcasts' "complained" counts in the dashboard; if any are non-zero, tell Claude and
-the matching accounts can be opted out with source `email_complaint`.
+Complaints on the launch broadcasts: none. The complained count was checked on 2026-10-08 and
+was 0, so there is nothing to backfill with source `email_complaint`.
 
 ## 3. What the daily run does
 
@@ -69,7 +67,8 @@ day. A second run over a correct state does nothing.
 
 **Marketing broadcasts target only `Marketing — students` or `Marketing — guardians`.** Never a
 hand-built segment, never an imported list, never "all contacts". Resend cannot enforce this on a
-broadcast, so it is held two ways: this rule, and the daily run, which deletes every contact not
+broadcast, so it is held two ways: this rule (also guardrail 9 of the AI CMO skill,
+`.claude/skills/ai-cmo/SKILL.md`), and the daily run, which deletes every contact not
 backed by an eligible account (an imported list empties itself) and reports any other segment.
 
 A one-off account notice that is not marketing (like the launch notice) is a transactional
