@@ -66,6 +66,7 @@ import {
 import ExamReportPage, { ReportBody } from "./ExamReportPage";
 import { ExamLoadError, ExamLoading } from "../components/ExamStatus";
 import { HttpApiError } from "@/lib/api-error";
+import { formatDate } from "@/lib/format-date";
 
 /** A report source as `exam_report_source` returns it: a completed, scored test-day sitting. */
 function source(overrides: Partial<ExamReportSource> = {}): ExamReportSource {
@@ -448,7 +449,7 @@ describe('naming: the section is "Full-Length" (owner ruling, Karl, 2026-10-05)'
 });
 
 describe("OQ-34: a lapsed report opens the upgrade modal for Full-Length", () => {
-  it("the server's renew_entitlement action opens the modal on arrival and from Continue", () => {
+  it("the server's renew_entitlement action opens the modal on arrival and from Continue", async () => {
     const payload = lapsed();
     // Presence of the action in the real producer's payload first.
     expect(
@@ -459,7 +460,8 @@ describe("OQ-34: a lapsed report opens the upgrade modal for Full-Length", () =>
       screen.getByText("This report isn't available right now"),
     ).toBeTruthy();
     expect(screen.queryByTestId("exam-total-score")).toBeNull();
-    const modal = screen.getByTestId("upgrade-modal");
+    // The modal's view loads on its first open (it is not in the app entry).
+    const modal = await screen.findByTestId("upgrade-modal");
     expect(modal.textContent).toContain("Full-length tests");
     fireEvent.click(screen.getByRole("button", { name: "Not now" }));
     expect(screen.queryByTestId("upgrade-modal")).toBeNull();
@@ -509,7 +511,10 @@ describe("the page in the Focus shell", () => {
     expect(title.textContent).toBe("Full-Length Test 1 report");
     const bar = screen.getByTestId("focus-context");
     expect(bar.contains(title)).toBe(true);
-    expect(bar.textContent).toContain("26 September 2026");
+    expect(bar.textContent).toContain(
+      formatDate("2026-09-26T15:00:00Z", "month-day-year") ?? "",
+    );
+    expect(bar.textContent).toContain("September 26, 2026");
     expect(screen.getAllByRole("banner")).toHaveLength(1);
     expect(screen.queryByText("Lyceon")).toBeNull();
     expect(screen.queryByText(/back to dashboard/i)).toBeNull();

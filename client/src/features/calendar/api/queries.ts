@@ -38,7 +38,12 @@ import {
   fetchGuardianCalendar,
   fetchStudyProfile,
 } from "./client";
-import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
+import {
+  monthCursorForWeek,
+  rangeForView,
+  shiftDays,
+  shiftMonths,
+} from "../lib/dates";
 
 /**
  * The device's IANA zone, for §17.3's mismatch prompt and the pre-setup `defaults.timezone`.
@@ -46,7 +51,7 @@ import { rangeForView, shiftDays, shiftMonths } from "../lib/dates";
  * "the device did not say" — the server treats a missing `device_timezone` as exactly that
  * and falls back to `America/Chicago` (formula sheet item 19).
  */
-export function deviceTimezone(): string {
+function deviceTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
   } catch {
@@ -108,25 +113,43 @@ export function useCalendar(
 export function usePrefetchAdjacentRange(
   view: "week" | "month",
   cursor: string,
-  options?: { enabled?: boolean },
+  options?: {
+    enabled?: boolean;
+    /**
+     * QA 2026-10-07 item 11(a). The student's today: in week view the month the Month toggle
+     * would open (`monthCursorForWeek`) is warmed too. Without it the toggle's first render
+     * had only the week's rows (`keepPreviousData` holds the previous key's data while the new
+     * one loads), so the month showed one week until its own read answered.
+     */
+    today?: string;
+  },
 ): void {
   const client = useQueryClient();
   const timezone = deviceTimezone();
   const enabled = options?.enabled ?? true;
+  const today = options?.today;
 
   useEffect(() => {
     if (!enabled) return;
 
-    const neighbours =
+    const ranges =
       view === "week"
-        ? [shiftDays(cursor, -7), shiftDays(cursor, 7)]
-        : [shiftMonths(cursor, -1), shiftMonths(cursor, 1)];
+        ? [
+            rangeForView("week", shiftDays(cursor, -7)),
+            rangeForView("week", shiftDays(cursor, 7)),
+            ...(today === undefined
+              ? []
+              : [rangeForView("month", monthCursorForWeek(cursor, today))]),
+          ]
+        : [
+            rangeForView("month", shiftMonths(cursor, -1)),
+            rangeForView("month", shiftMonths(cursor, 1)),
+          ];
 
     let cancelled = false;
     const run = (): void => {
       if (cancelled) return;
-      for (const neighbour of neighbours) {
-        const range = rangeForView(view, neighbour);
+      for (const range of ranges) {
         void client.prefetchQuery({
           meta: ENTITLEMENT_DENIAL_INLINE_META,
           queryKey: calendarKeys.range(range.from, range.to, timezone),
@@ -149,7 +172,7 @@ export function usePrefetchAdjacentRange(
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [client, view, cursor, timezone, enabled]);
+  }, [client, view, cursor, timezone, enabled, today]);
 }
 
 /**

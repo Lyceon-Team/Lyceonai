@@ -222,10 +222,12 @@ describe("Phase 7 A — published Privacy Policy is structurally sound", () => {
     expect(body).not.toMatch(/Microsoft|Clarity(?!\b.*improve)/);
   });
 
-  it("the launch Privacy Policy draft names PostHog and not Vercel Analytics", () => {
-    const v5 = readOrEmpty("docs/compliance/legal-drafts/privacy-policy-v5.md");
-    expect(v5).toMatch(/\bPostHog\b/);
-    expect(v5).not.toMatch(/Vercel Analytics/);
+  it("the published Privacy Policy names PostHog and not Vercel Analytics", () => {
+    // The separate launch draft (docs/compliance/legal-drafts/privacy-policy-v5.md)
+    // was retired 2026-10-07 (SCL-220): its items are in the published v6, so
+    // the published body is what is pinned now.
+    expect(body).toMatch(/\bPostHog\b/);
+    expect(body).not.toMatch(/Vercel Analytics/);
   });
 });
 

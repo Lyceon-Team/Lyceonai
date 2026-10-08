@@ -43,6 +43,11 @@ import { BookOpen, Calculator, Loader2, MessageCircle } from "lucide-react";
 import QuestionRenderer from "@/components/question-renderer";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
+import {
+  CHECKING_LABEL,
+  LOADING_LABEL,
+  SKIPPING_LABEL,
+} from "@/lib/pending-copy";
 import { FocusBarContext } from "@/components/layout/FocusShell";
 import {
   useCanonicalPractice,
@@ -83,16 +88,6 @@ import {
   useKeyboardShortcuts,
 } from "@/hooks/useKeyboardShortcuts";
 
-/* ── Layout pixel constraints: defined in components/math/calculator-layout (E10b);
- * re-exported here, where the practice tests import them. ── */
-export {
-  CALC_MIN_PX,
-  CALC_PANEL_PAD_PX,
-  DESMOS_HOST_MIN_PX,
-  QUESTION_MIN_PX,
-  SPLIT_BREAKPOINT,
-} from "@/components/math/calculator-layout";
-
 /*
  * W4-4 — review with LISA always open. Three panels share the width:
  *   question (≥ QUESTION_MIN_PX) | Desmos (≥ CALC_MIN_PX, when opened) | LISA.
@@ -101,9 +96,9 @@ export {
  * LISA stays mounted underneath, so its thread and turn state survive. Below
  * `lg` everything stacks: question, LISA, calculator.
  */
-export const TUTOR_PANEL_PX = 360;
+const TUTOR_PANEL_PX = 360;
 const TUTOR_GAP_PX = 24;
-export const THREE_PANEL_BREAKPOINT =
+const THREE_PANEL_BREAKPOINT =
   QUESTION_MIN_PX +
   DIVIDER_PX +
   CALC_MIN_PX +
@@ -112,14 +107,14 @@ export const THREE_PANEL_BREAKPOINT =
   APP_HORIZONTAL_PADDING +
   BREAKPOINT_EXTRA; // 1446
 /** Tailwind's `lg`: below it, the review layout is a single column. */
-export const TUTOR_SIDE_BY_SIDE_BREAKPOINT = 1024;
+const TUTOR_SIDE_BY_SIDE_BREAKPOINT = 1024;
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the sentence, verbatim, with no number. */
-export const SHORTER_SESSION_NOTE =
+const SHORTER_SESSION_NOTE =
   "Fewer questions match these filters, so this session is shorter.";
 
 /** "Question 3 of 10" (DESIGN.md §4). */
-export function questionPosition(index: number, total: number): string {
+function questionPosition(index: number, total: number): string {
   return `Question ${index + 1} of ${total}`;
 }
 
@@ -127,7 +122,7 @@ export function questionPosition(index: number, total: number): string {
  * The progress strip (Runner.dc.html): one segment per question; answered ones in --ink-strong,
  * the current one in --rule-strong, the rest in --seg-empty.
  */
-export function progressSegments(
+function progressSegments(
   index: number,
   total: number,
 ): Array<"done" | "current" | "todo"> {
@@ -229,6 +224,7 @@ export default function CanonicalPracticePage(props: {
     freeResponseAnswer,
     setFreeResponseAnswer,
     isSubmitting,
+    submitKind,
     showResult,
     isCorrect,
     correctOptionId,
@@ -254,6 +250,12 @@ export default function CanonicalPracticePage(props: {
   // W4-4: LISA is open on every question; "Hide LISA" hides it for the
   // current one only. Derived per item, so it returns on the next.
   const [tutorHiddenForItem, setTutorHiddenForItem] = React.useState<
+    string | null
+  >(null);
+  // QA 2026-10-07 item 8: the item whose LISA toggle the student last pressed. A panel that
+  // mounts for it was opened by Show LISA, so on the phone layout (LISA stacked under the
+  // question) it opens scrolled into view; LISA shown on load (W4-4) is not.
+  const [tutorOpenedForItem, setTutorOpenedForItem] = React.useState<
     string | null
   >(null);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
@@ -414,6 +416,7 @@ export default function CanonicalPracticePage(props: {
         sessionItemId={sessionItemId}
         questionLabel={position ?? `Question ${currentIndex + 1}`}
         onHide={() => setTutorHiddenForItem(sessionItemId)}
+        revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}
       />
     ) : null;
 
@@ -428,30 +431,35 @@ export default function CanonicalPracticePage(props: {
         />
         <span
           data-testid="runner-session-name"
-          className="hidden min-w-0 truncate font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong sm:block"
+          className="hidden min-w-0 max-w-[45%] shrink-0 truncate font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong sm:block"
         >
           {props.title}
         </span>
         <span className="flex-1" aria-hidden="true" />
         {position !== null && typeof totalQuestions === "number" ? (
           <>
+            {/* QA 2026-10-07: a 54-question review made the bar 239px wider than a 1440 screen
+                and 26px wider than a phone. On a phone the word "Question" is dropped from view
+                (screen readers still hear it); the strip's segments shrink to fit, never below
+                2px, instead of holding 14px each. */}
             <span
               data-testid="runner-position"
               className="shrink-0 whitespace-nowrap text-lyc-body text-lyc-ink"
             >
-              {position}
+              <span className="sr-only sm:not-sr-only">Question </span>
+              {position.replace(/^Question /, "")}
             </span>
             <span
               aria-hidden="true"
               data-testid="runner-progress"
-              className="hidden shrink-0 gap-1 lg:flex"
+              className="hidden min-w-0 shrink gap-1 lg:flex"
             >
               {progressSegments(currentIndex, totalQuestions).map((tone, i) => (
                 <span
                   key={i}
                   data-segment={tone}
                   className={cn(
-                    "h-1.5 w-3.5 rounded-[3px]",
+                    "h-1.5 w-3.5 min-w-[2px] shrink rounded-[3px]",
                     SEGMENT_TONE[tone],
                   )}
                 />
@@ -488,9 +496,11 @@ export default function CanonicalPracticePage(props: {
           <button
             type="button"
             className={BAR_BUTTON}
-            onClick={() =>
-              setTutorHiddenForItem(tutorVisible ? sessionItemId : null)
-            }
+            onClick={() => {
+              setTutorHiddenForItem(tutorVisible ? sessionItemId : null);
+              // Read only while LISA is visible, so a hide may set it too.
+              setTutorOpenedForItem(sessionItemId);
+            }}
             aria-expanded={tutorVisible}
             data-testid="practice-tutor-toggle"
           >
@@ -625,9 +635,11 @@ export default function CanonicalPracticePage(props: {
                 size="lyc"
                 className="h-12 px-[18px]"
                 disabled={runnerBusy}
+                pending={submitKind === "skip"}
                 onClick={() => void submitAnswer({ skipped: true })}
+                data-testid="runner-skip"
               >
-                Skip
+                {submitKind === "skip" ? SKIPPING_LABEL : "Skip"}
               </Button>
             ) : null}
             <Button
@@ -635,9 +647,11 @@ export default function CanonicalPracticePage(props: {
               size="lyc"
               className="h-12 px-[26px] text-[17px] disabled:opacity-45"
               disabled={runnerBusy || !canSubmit}
+              pending={submitKind === "answer"}
               onClick={() => void submitAnswer({ skipped: false })}
+              data-testid="runner-submit"
             >
-              Submit
+              {submitKind === "answer" ? CHECKING_LABEL : "Submit"}
             </Button>
           </>
         ) : (
@@ -646,9 +660,15 @@ export default function CanonicalPracticePage(props: {
             size="lyc"
             className="h-12 px-[26px] text-[17px]"
             disabled={runnerBusy}
+            pending={isLoading}
             onClick={goNext}
+            data-testid="runner-next"
           >
-            {isLastQuestion ? "Done" : "Next question"}
+            {isLoading
+              ? LOADING_LABEL
+              : isLastQuestion
+                ? "Done"
+                : "Next question"}
           </Button>
         )}
       </div>

@@ -12,8 +12,12 @@
  * ephemeral PG cannot reach: Vertex response parsing, buildContentJson
  * normalization, threshold gating, and error handling.
  *
- * DB-layer proofs (trigger validation, UPSERT idempotency, HMAC signing)
- * live in tests/ci/memory-compaction.ephemeral-pg.proof.test.ts.
+ * DB-layer properties (trigger validation, UPSERT idempotency, HMAC signing) had an
+ * ephemeral-PG proof, tests/ci/memory-compaction.ephemeral-pg.proof.test.ts. It was deleted on
+ * 2026-10-07 (CI audit, owner-approved): it imported no product code and exercised a hand-copied
+ * trigger from 20260805000000, not the live definition (last definer 20260827000000). No test
+ * drives the live trigger today; that gap is recorded in the CI audit. The two DELETED notes
+ * below cite proofs (c), (d) and (f) of that file.
  *
  * Kept mock tests — justification for each:
  *   - Happy-path pipeline: proves executeCompaction orchestrates

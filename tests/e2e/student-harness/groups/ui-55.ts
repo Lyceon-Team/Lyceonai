@@ -48,6 +48,9 @@ const MONTH_BUTTON = {
   mobile: '[data-testid="calendar-view-month"]',
 } as const;
 
+/** OQ-66 (c): the header's "⋯" menu trigger, drawn below a 1200px viewport. */
+const MORE_ACTIONS = '[data-testid="calendar-more-actions"]';
+
 /** OQ-63: today's scheduled full-length block (BlockCard's `exam` tone class). */
 const FULL_LENGTH_BLOCK = 'button[data-testid^="calendar-block-"].exam';
 const FULL_LENGTH_BLOCK_AT = {
@@ -71,7 +74,7 @@ export const UI_55: PageGroup = {
     {
       id: "paid-week",
       title:
-        "Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D), no streak line; Edit schedule and Regenerate plan; the starred test day; no facts strip (SCL-211); panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Your schedule, Show",
+        'Calendar, paid, week: Week/Month, Today, arrows; the range centred (M/D – M/D), no streak line; Edit schedule and Regenerate plan (at 390 in the "⋯" menu right of the range title: OQ-66 (c)); the starred test day; no facts strip (SCL-211); panel: mini month (★), goal card (days until, ★ pill, Target | Projected), Show (no "Your schedule": QA 2026-10-07 item 11(e))',
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
@@ -80,6 +83,64 @@ export const UI_55: PageGroup = {
         file: "Calendar.dc.html",
         plan: "paid",
         note: "Calendar, plan = paid, week",
+      },
+    },
+    {
+      id: "paid-week-mid",
+      title:
+        'Calendar, paid, week between the phone and desktop layouts (production QA 2026-10-07 items 11(c), 11(d); OQ-66 (c)): at 700 the range title over Week/Month, Today, arrows (left) and the "⋯" menu (right); at 1024, beside the right panel, two rows: the range title with "⋯" at its right end, then the view controls; at 1280 the range title over the controls and Edit schedule, Regenerate plan; block cards whose titles, chips and tags stay inside them',
+      persona: "paid",
+      route: "/calendar",
+      waitFor: PAID_WEEK,
+      extraViewports: [
+        { name: "w700", width: 700, height: 900, selectors: "mobile" },
+        { name: "w1024", width: 1024, height: 768, selectors: "desktop" },
+        { name: "w1280", width: 1280, height: 800, selectors: "desktop" },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototype is a fixed 1440x900 canvas; these widths are the production QA's (2026-10-07 item 11).",
+      },
+    },
+    {
+      id: "paid-more-menu",
+      title: `OQ-66 (c), owner ruling (Karl, 2026-10-07): below a 1200px viewport Edit schedule and Regenerate plan are in the header's "⋯" menu ("More actions"), opened here: at 1024 and 390 the menu over the page, in the page's theme. Desktop (1440, control): no "⋯"; the two buttons, as before`,
+      persona: "paid",
+      route: "/calendar",
+      waitFor: PAID_WEEK,
+      steps: [{ click: { desktop: null, mobile: MORE_ACTIONS } }],
+      extraViewports: [
+        { name: "w1024", width: 1024, height: 768, selectors: "mobile" },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototype is a fixed 1440x900 canvas with the two buttons; the menu is the owner ruling on OQ-66 (c).",
+      },
+    },
+    {
+      id: "paid-block-sheet",
+      title:
+        "Calendar, paid, a block's detail sheet open (production QA 2026-10-07 item 11(b)): a modal dialog named by the block's title, with Close (top right); focus on Close",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: {
+        desktop: "button.block.rev",
+        mobile: "button.block.rev",
+      },
+      steps: [
+        {
+          click: { desktop: "button.block.rev", mobile: "button.block.rev" },
+          ariaDisabledOk: true,
+        },
+      ],
+      expectVisible:
+        '[data-testid="calendar-block-sheet"][role="dialog"] [data-testid="calendar-block-sheet-close"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototype's blocks open no sheet; the dialog is the production QA's item 11(b).",
       },
     },
     {
@@ -117,19 +178,24 @@ export const UI_55: PageGroup = {
     {
       id: "paid-regenerate",
       title:
-        'Click path (paid): Regenerate plan posts to POST /api/calendar/plan/regenerate and returns; the button then reads "Plan regenerated"',
+        'Click path (paid): Regenerate plan posts to POST /api/calendar/plan/regenerate and returns; the button then reads "Plan regenerated". At 390 (OQ-66 (c)) it is chosen from the "⋯" menu, which is then reopened to show the item reading "Plan regenerated"',
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
       steps: [
+        { click: { desktop: null, mobile: MORE_ACTIONS } },
         {
           click: {
             desktop: '[data-testid="calendar-regenerate"]',
-            mobile: '[data-testid="calendar-regenerate"]',
+            mobile: '[data-testid="calendar-more-regenerate"]',
           },
         },
+        { click: { desktop: null, mobile: MORE_ACTIONS } },
       ],
-      expectText: "Plan regenerated",
+      // The drawn one of the two entry points (OQ-66 (c)): the button at 1440, the reopened
+      // menu's item at 390 (the hidden button carries the same words, so not by text alone).
+      expectVisible:
+        '[data-testid="calendar-regenerate"]:visible:text-is("Plan regenerated"), [data-testid="calendar-more-regenerate"]:text-is("Plan regenerated")',
       prototype: {
         kind: "screen",
         file: "Calendar.dc.html",

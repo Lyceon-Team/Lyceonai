@@ -6,7 +6,7 @@
  *        (UI hides by role, the server enforces); student-UI register §8 F-70 (the student
  *        avatar dropdown follows the page theme)] | @implemented [2026-09-11; F-70 2026-10-05]
  *
- * plain English: the signed-in user's header menu (name, email, Settings, Sign Out) and the
+ * plain English: the signed-in user's header menu (name, email, Settings, Sign out) and the
  * sign-out handler behind it, shared by every authenticated shell so the student header and
  * the guardian header cannot drift apart. Extracted from app-shell.tsx with the same test ids
  * and the same behaviour; the student shell's mobile sheet keeps using the same hook, so one
@@ -16,7 +16,7 @@
  * TONE (F-70). The menu portals onto <body>, outside the shell's `.lyc` root, so it used to take
  * the app-wide light tokens: a light panel over a dark student page. `tone="student"` (the App
  * shell) puts the open menu inside its own `.lyc` root carrying the shell's theme lock, the way
- * the student Modal and Sheet do since F-65, and draws it with the student `lyc-*` tokens: a
+ * the student Modal does since F-65, and draws it with the student `lyc-*` tokens: a
  * light page gets a light menu, a dark page a dark one, and a page pinned light a light one. The
  * guardian shell keeps the default `app` tone: its pages use the app-wide tokens.
  */
@@ -37,13 +37,13 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import { useActiveThemeLock } from "./theme-lock";
 
-export type HeaderSignOut = {
+type HeaderSignOut = {
   signOut: () => Promise<void>;
   isSigningOut: boolean;
 };
 
 /** Which token set the open menu draws with (F-70). */
-export type HeaderMenuTone = "app" | "student";
+type HeaderMenuTone = "app" | "student";
 
 /**
  * A student menu item: the student ink and the student hover fill, not the app-wide accent.
@@ -114,6 +114,9 @@ export function HeaderUserMenu({
   fallbackName,
   items,
   tone = "app",
+  trigger,
+  triggerClassName,
+  side = "bottom",
 }: HeaderSignOut & {
   fallbackName: string;
   /**
@@ -124,6 +127,14 @@ export function HeaderUserMenu({
   items?: React.ReactNode;
   /** F-70: `student` draws the open menu in the student tokens, inside the page's theme. */
   tone?: HeaderMenuTone;
+  /**
+   * QA 2026-10-07 item 3: what the trigger shows (the App shell's avatar letter); the default is
+   * the account icon. Either way the trigger is named "Account menu".
+   */
+  trigger?: React.ReactNode;
+  triggerClassName?: string;
+  /** Which side of the trigger the menu opens on (the desktop rail opens it to the right). */
+  side?: "bottom" | "right";
 }) {
   const [, navigate] = useLocation();
   const { user, isLoading, isAdmin } = useSupabaseAuth();
@@ -141,14 +152,16 @@ export function HeaderUserMenu({
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full"
+          className={triggerClassName ?? "rounded-full"}
+          aria-label="Account menu"
           data-testid="button-user-menu"
         >
-          <UserCircle className="h-5 w-5" />
+          {trigger ?? <UserCircle aria-hidden="true" className="h-5 w-5" />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
+        side={side}
         className={t.content}
         data-testid="user-menu"
         {...(tone === "student"
@@ -175,7 +188,7 @@ export function HeaderUserMenu({
           onClick={() => navigate("/profile")}
           data-testid="menu-profile"
         >
-          <Settings className="mr-2 h-4 w-4" />
+          <Settings aria-hidden="true" className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
         {items}
@@ -192,7 +205,7 @@ export function HeaderUserMenu({
             onClick={() => navigate("/admin/crisis-review")}
             data-testid="menu-crisis-review"
           >
-            <ShieldAlert className="mr-2 h-4 w-4" />
+            <ShieldAlert aria-hidden="true" className="mr-2 h-4 w-4" />
             Crisis review
           </DropdownMenuItem>
         )}
@@ -203,8 +216,8 @@ export function HeaderUserMenu({
           disabled={isSigningOut}
           data-testid="menu-logout"
         >
-          <LogOut className="mr-2 h-4 w-4" />
-          {isSigningOut ? "Signing out..." : "Sign Out"}
+          <LogOut aria-hidden="true" className="mr-2 h-4 w-4" />
+          {isSigningOut ? "Signing out..." : "Sign out"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -24,7 +24,7 @@
  */
 import { z } from "zod";
 
-/** "% of students got this right" is shown only once a day has at least this many attempts. */
+/** "N% answered correctly" is shown only once a day has at least this many attempts. */
 export const QOTD_MIN_ATTEMPTS_FOR_STAT = 5;
 
 /** A calendar date, YYYY-MM-DD, that exists. */

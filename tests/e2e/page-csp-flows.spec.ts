@@ -50,7 +50,18 @@
  *   This serves dist/public with the header values vercel.json gives every page, so the CSP is
  *   the real one; it is how the 2026-10-02 evidence was taken when the session's network path
  *   to the preview failed Chromium's asset requests (ERR_TOO_MANY_RETRIES, not a CSP block).
- * Not part of `pnpm test` (vitest) and not run in CI.
+ * CI (Doc 10A INV-10A-17, 2026-10-06): runs in the `analytics-consent-e2e` job against the built
+ * bundle served with vercel.json's headers (`page-csp-static-server.mjs`), with
+ * E2E_DESMOS_STUB=1: CI holds no Desmos key, so www.desmos.com's calculator.js is answered by a
+ * minimal stand-in. The request still goes to the real Desmos URL, so the page CSP is still
+ * checked for loading it; what the stub cannot prove is the real Desmos runtime's own loads,
+ * which the preview run (a real key) still covers.
+ *
+ * Every flow starts with a stored "refused" analytics consent (`lyceon_consent`), so the cookie
+ * banner (added after this spec was written) does not cover the bottom of the page; the banner's
+ * own CSP behaviour is the consent spec's (analytics-consent.spec.ts).
+ *
+ * Not part of `pnpm test` (vitest).
  */
 import {
   expect,
@@ -61,6 +72,7 @@ import {
   type Route,
 } from "@playwright/test";
 import { execFileSync } from "child_process";
+import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
 import {
@@ -83,7 +95,12 @@ import {
   type ConversationDetailMessage,
 } from "../../packages/shared/src/tutor-lifecycle-schema";
 import { examReportMetaSchema } from "../../packages/shared/src/exam-report-schema";
+import {
+  CONSENT_COOKIE_NAME,
+  COOKIE_BANNER_VERSION,
+} from "../../packages/shared/src/analytics-consent-schema";
 import { masterySkillsResponseSchema } from "../../packages/shared/src/mastery-levels";
+import { DESMOS_SCRIPT, DESMOS_STUBBED, stubDesmos } from "./desmos-stub";
 import type { EstimateResponse } from "../../client/src/lib/projectionApi";
 import {
   FIXTURE_SESSION_ID,
@@ -126,8 +143,6 @@ const CONVERSATION = "44444444-4444-4444-8444-444444444444";
 const NOW = "2026-10-02T12:00:00.000Z";
 const STRIPE_PORTAL_URL = "https://billing.stripe.com/p/session/test_page_csp";
 const TUTOR_REPLY = "Start by isolating x: subtract 3 from both sides.";
-const DESMOS_SCRIPT =
-  /^https:\/\/www\.desmos\.com\/api\/v1\.11[^/]*\/calculator\.js/;
 const STEM = "If 2x + 3 = 11, what is the value of x?";
 
 const profileUser = {
@@ -438,6 +453,16 @@ async function startFlow(
 ): Promise<Flow> {
   const flow: Flow = { name, page, reports: [], unmocked: [] };
 
+  // A decided (refused) consent, current banner version, dated now: no banner over the page.
+  await page.context().addCookies([
+    {
+      name: CONSENT_COOKIE_NAME,
+      value: `${COOKIE_BANNER_VERSION}.${randomUUID()}.r.${Math.floor(Date.now() / 1000)}`,
+      url: BASE_URL,
+    },
+  ]);
+  if (DESMOS_STUBBED) await stubDesmos(page);
+
   await page.exposeBinding("__cspReport", (source, report: CspReport) => {
     flow.reports.push({ ...report, frameURL: source.frame.url() });
   });
@@ -566,7 +591,10 @@ const studentReads: ApiHandler = ({ path: p }) => {
 
 async function expectDashboard(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/dashboard$/, { timeout: 15_000 });
-  await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 15_000 });
+  // The rebuilt Home (UI-50) greets the student in its <h1>; `page-title` is gone.
+  await expect(
+    page.getByRole("heading", { level: 1, name: /^Welcome to Lyceon/ }),
+  ).toBeVisible({ timeout: 15_000 });
 }
 
 // ── The recorder itself ──────────────────────────────────────────────────────
@@ -800,9 +828,11 @@ test("calendar", async ({ page }) => {
   const flow = await startFlow(page, "calendar", [signedInShell, studentReads]);
 
   await page.goto("/calendar");
-  await expect(page.locator(".lyceon-calendar .main").first()).toBeVisible({
+  // The rebuilt calendar (UI-55): its week heading is the page's <h1>.
+  await expect(page.locator(".lyceon-calendar").first()).toBeVisible({
     timeout: 15_000,
   });
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   await finishFlow(flow);
 });
@@ -829,7 +859,8 @@ test("billing", async ({ page }) => {
   );
 
   await page.goto("/profile?tab=billing");
-  const manage = page.getByTestId("button-manage-subscription");
+  // Settings → Billing (UI-58): "Manage billing" opens the portal.
+  const manage = page.getByTestId("button-manage-billing");
   await expect(manage).toBeVisible({ timeout: 15_000 });
   const portal = page.waitForRequest((r) => r.url() === STRIPE_PORTAL_URL);
   await manage.click();
@@ -879,9 +910,11 @@ test("mastery", async ({ page }) => {
   const flow = await startFlow(page, "mastery", [signedInShell, studentReads]);
 
   await page.goto("/mastery");
-  await expect(page.getByTestId("domain-grid")).toBeVisible({
+  // The rebuilt Mastery page (UI-57): one row per domain, each with its meter.
+  await expect(page.getByTestId("mastery")).toBeVisible({
     timeout: 15_000,
   });
+  await expect(page.getByTestId("mastery-domain")).toHaveCount(8);
   expect(await page.getByTestId("mastery-meter").count()).toBe(8);
 
   await finishFlow(flow);

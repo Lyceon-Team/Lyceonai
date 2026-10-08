@@ -99,10 +99,8 @@ function violations(label: string, html: string): string[] {
  * fails; and the last test below fails once the wording is gone, so the exception cannot
  * outlive the defect it covers.
  */
-const KNOWN_EXCEPTIONS: readonly { path: string; pattern: RegExp }[] = [
-  { path: "/legal/billing-terms", pattern: /\bunlimited\b/i },
-  { path: "/legal/billing-terms", pattern: /expanded (guardian|visibility)/i },
-];
+// Empty since Billing Terms v3 (2026-10-07, SCL-221) replaced the v2 wording these two covered.
+const KNOWN_EXCEPTIONS: readonly { path: string; pattern: RegExp }[] = [];
 
 function isKnownException(path: string, pattern: RegExp): boolean {
   return KNOWN_EXCEPTIONS.some(
@@ -201,6 +199,7 @@ describe("public copy: the claims F6 removed stay removed", () => {
       "~13-15 questions",
       "Here's exactly how it works",
       "Module 1 matters most",
+      "67% of students got this right.",
     ];
     for (const { pattern } of BANNED) {
       expect(

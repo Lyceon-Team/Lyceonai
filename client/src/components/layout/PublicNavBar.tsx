@@ -4,11 +4,11 @@ import { GraduationCap } from "lucide-react";
 
 export default function PublicNavBar() {
   const [location] = useLocation();
-  const { user, isAuthenticated } = useSupabaseAuth();
+  const { isAuthenticated } = useSupabaseAuth();
 
   const navLinks = [
     { label: "Home", href: "/" },
-    { label: "Digital SAT", href: "/digital-sat" },
+    { label: "SAT Practice", href: "/sat-practice-questions" },
     { label: "Blog", href: "/blog" },
   ];
 

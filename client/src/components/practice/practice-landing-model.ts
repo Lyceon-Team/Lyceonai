@@ -44,7 +44,7 @@ export function parseQuestionsPerSession(
 }
 
 /** The chosen section's label, as the taxonomy route names it. */
-export function sectionLabel(
+function sectionLabel(
   taxonomy: PracticeTopicsResponse,
   criteria: SessionCriteria,
 ): string | null {

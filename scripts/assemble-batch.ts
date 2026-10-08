@@ -554,8 +554,8 @@ function validateRecord(
 
     // Rule 4 — DOUBLED_BACKSLASH_BEFORE_CMD: \\ followed by a letter or
     // delimiter char (after JSON.parse). Allowed: \\ + whitespace (row break).
-    if (/\\\\[A-Za-z$%({\[]/.test(value)) {
-      const match4 = value.match(/\\\\[A-Za-z$%({\[]/);
+    if (/\\\\[A-Za-z$%({[]/.test(value)) {
+      const match4 = value.match(/\\\\[A-Za-z$%({[]/);
       v(
         name,
         `DOUBLED_BACKSLASH_BEFORE_CMD: found "${match4?.[0]}" — single backslash for LaTeX commands; "\\\\" only as a row break (followed by whitespace).`,

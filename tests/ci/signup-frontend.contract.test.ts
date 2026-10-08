@@ -39,7 +39,7 @@ vi.mock("@/components/ui/tabs", () => ({
     children: React.ReactNode;
     onValueChange?: (value: string) => void;
   }) => {
-    (globalThis as any).__tabsOnValueChange = onValueChange;
+    Reflect.set(globalThis, "__tabsOnValueChange", onValueChange);
     return React.createElement("div", null, children);
   },
   TabsList: ({ children }: { children: React.ReactNode }) =>
@@ -59,7 +59,7 @@ vi.mock("@/components/ui/tabs", () => ({
         ...props,
         onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
           onClick?.(event);
-          const callback = (globalThis as any).__tabsOnValueChange as
+          const callback = Reflect.get(globalThis, "__tabsOnValueChange") as
             | ((value: string) => void)
             | undefined;
           if (value && callback) {
@@ -89,7 +89,7 @@ describe("Signup Frontend Contract", () => {
       disconnect() {}
     }
 
-    (globalThis as any).ResizeObserver = ResizeObserverMock;
+    Reflect.set(globalThis, "ResizeObserver", ResizeObserverMock);
   });
 
   beforeEach(() => {

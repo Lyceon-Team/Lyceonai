@@ -17,18 +17,20 @@
  * fell back to a hard-coded [15,30,45,60,90,120] fails here instead of passing by coincidence.
  */
 import React from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type {
   PlanningEstimates,
   StudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
-import {
-  examPairIncomplete,
-  SettingsSheet,
-  scheduleSummary,
-} from "./SettingsSheet";
+import { SettingsSheet } from "./SettingsSheet";
 
 const ESTIMATES: PlanningEstimates = {
   practice_seconds_per_unit: 90,
@@ -168,12 +170,12 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
   it("is derived, and moves when a chip moves", () => {
     renderSheet();
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 35 questions a day · about 3 full-length tests before 7 November, on Saturdays",
+      "6 study days a week · about 35 questions a day · about 3 full-length tests before November 7, on Saturdays",
     );
 
     fireEvent.click(chip("settings-minutes", "2 hr"));
     expect(screen.getByTestId("settings-summary").textContent).toBe(
-      "6 study days a week · about 80 questions a day · about 3 full-length tests before 7 November, on Saturdays",
+      "6 study days a week · about 80 questions a day · about 3 full-length tests before November 7, on Saturdays",
     );
   });
 
@@ -188,24 +190,16 @@ describe("the live readout describes the DRAFT, not the saved profile", () => {
   it("rounds questions DOWN to the five-question granule the allocator works in", () => {
     // 55 min = 3300s; 3300/90 = 36.67 -> 35, not 36 and not 37. A figure the plan cannot
     // contain would be a number the student could never see on their calendar.
-    expect(
-      scheduleSummary(
-        {
-          study_days_mask: 126,
-          daily_minutes: 55,
-          full_length_weekday: 6,
-          full_length_interval_weeks: 2,
-        },
-        ESTIMATES,
-        // No target date here: this test is about the QUESTION count, and the exam half is
-        // deliberately the rate rather than a count so it cannot drift into the assertion.
-        {
-          targetExamDate: null,
-          today: "2026-09-22",
-          finalExamLeadDays: EXAM_PLANNING.final_exam_lead_days,
-        },
-      ),
-    ).toContain("about 35 questions a day");
+    // Read through the sheet's own readout (the only place the sentence is drawn since the
+    // panel's "Your schedule" left, QA 2026-10-07 item 11(e)).
+    renderSheet({
+      // No target date here: this test is about the QUESTION count, and the exam half is
+      // deliberately the rate rather than a count so it cannot drift into the assertion.
+      profile: { ...PROFILE, daily_minutes: 55, target_exam_date: null },
+    });
+    expect(screen.getByTestId("settings-summary").textContent).toContain(
+      "about 35 questions a day",
+    );
   });
 });
 
@@ -423,36 +417,46 @@ describe("practice test frequency (§8.1)", () => {
     expect(onSave.mock.calls[0]?.[0].full_length_weekday).toBe(6);
   });
 
-  // The guard behind the interaction. `examPairIncomplete` is unreachable by tapping now that
-  // both chip rows move both halves — which is exactly when a guard stops being tested and
-  // starts rotting, so it is asserted directly against a draft no chip can produce.
+  // The guard behind the interaction. Half a pair is unreachable by tapping now that both
+  // chip rows move both halves — which is exactly when a guard stops being tested and starts
+  // rotting. The draft opens from the `profile` prop, so the sheet is rendered over a half
+  // pair no chip can produce, and the Save button is what is asserted.
   it("still refuses to SAVE half a pair, if a draft ever holds one", () => {
-    expect(
-      examPairIncomplete({
-        full_length_weekday: null,
-        full_length_interval_weeks: 2,
-      }),
-    ).toBe(true);
-    expect(
-      examPairIncomplete({
-        full_length_weekday: 6,
-        full_length_interval_weeks: null,
-      }),
-    ).toBe(true);
+    const saveFor = (
+      full_length_weekday: number | null,
+      full_length_interval_weeks: number | null,
+    ): { save: HTMLElement; onSave: ReturnType<typeof vi.fn> } => {
+      cleanup();
+      const { onSave } = renderSheet({
+        profile: {
+          ...PROFILE,
+          full_length_weekday,
+          full_length_interval_weeks,
+        },
+      });
+      return { save: screen.getByTestId("settings-save"), onSave };
+    };
+
+    for (const [weekday, interval] of [
+      [null, 2],
+      [6, null],
+    ] as const) {
+      const { save, onSave } = saveFor(weekday, interval);
+      expect(save).toBeDisabled();
+      fireEvent.click(save);
+      expect(onSave).not.toHaveBeenCalled();
+    }
     // And the two legitimate states are not refused, so the assertions above are about the
-    // PAIR and not about the guard returning true for everything.
-    expect(
-      examPairIncomplete({
-        full_length_weekday: 6,
-        full_length_interval_weeks: 2,
-      }),
-    ).toBe(false);
-    expect(
-      examPairIncomplete({
-        full_length_weekday: null,
-        full_length_interval_weeks: null,
-      }),
-    ).toBe(false);
+    // PAIR and not about the button being disabled for everything.
+    for (const [weekday, interval] of [
+      [6, 2],
+      [null, null],
+    ] as const) {
+      const { save, onSave } = saveFor(weekday, interval);
+      expect(save).toBeEnabled();
+      fireEvent.click(save);
+      expect(onSave).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("states the RATE, not a count, when there is no target date to count toward", () => {

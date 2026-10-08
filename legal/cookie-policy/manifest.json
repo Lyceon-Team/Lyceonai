@@ -1,0 +1,13 @@
+{
+  "slug": "cookie-policy",
+  "title": "LYCEON Cookie Policy",
+  "description": "The cookies and similar technologies LYCEON uses, why, and how to control them.",
+  "order": 35,
+  "current": "v1",
+  "locales": [
+    "en"
+  ],
+  "aliases": [
+    "Cookie Policy"
+  ]
+}

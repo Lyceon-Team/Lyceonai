@@ -81,7 +81,9 @@ import { membersCleared } from "@/features/calendar/lib/members";
 import { openingSchedule } from "@/features/calendar/lib/setup";
 import { studentViewModel } from "@/features/calendar/lib/view-model";
 import { toUserFacingMessage } from "@/lib/api-error";
-import "@/features/calendar/calendar.css";
+// The student calendar's whole stylesheet. `calendar.css` is the guardian calendar's alone
+// (owner ruling, Karl, 2026-10-05, "split it"); `calendar.ui55.test.tsx` fails if this page's
+// import graph reaches it again.
 import "@/features/calendar/calendar-student.css";
 import { ReviewPrompt } from "@/components/product-feedback/ReviewPrompt";
 
@@ -137,9 +139,12 @@ export default function CalendarPage(): JSX.Element {
 
   // §17.7. Warm the neighbouring ranges once the browser is idle, so the NEXT arrow press
   // has its rows already. Only once the current range is a READY plan: a free student's
-  // pre-setup answer has no neighbours worth reading.
+  // pre-setup answer has no neighbours worth reading. In week view the month the Month toggle
+  // opens is warmed as well (QA 2026-10-07 item 11(a)), so the month's first render is the
+  // whole month rather than the week held over while its own read is in flight.
   usePrefetchAdjacentRange(view, cursor, {
     enabled: calendar.isSuccess && calendar.data.status === "ready",
+    today,
   });
   // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).
 

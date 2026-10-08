@@ -41,8 +41,8 @@ import { Link } from "wouter";
 import { ChevronLeft } from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
 import { LYC_FOCUS } from "@/components/ui/button";
-import { hasInAppHistory } from "@/lib/in-app-history";
-import type { ThemeLock } from "@/lib/route-shells";
+import { hasInAppHistory, previousInAppPath } from "@/lib/in-app-history";
+import { pageNameAt, type ThemeLock } from "@/lib/route-shells";
 import { usePublishThemeLock } from "./theme-lock";
 
 const ContextSlot = createContext<HTMLElement | null>(null);
@@ -57,7 +57,7 @@ export function FocusBarContext({
   return slot === null ? null : createPortal(children, slot);
 }
 
-export type FocusShellProps = {
+type FocusShellProps = {
   children: ReactNode;
   /** The section name in the bar ("Practice", "Review", "Full-Length"). */
   section: string;
@@ -78,6 +78,13 @@ export function FocusShell({
   const [slotEl, setSlotEl] = useState<HTMLElement | null>(null);
   // F-65: portalled overlays take this shell's lock.
   usePublishThemeLock(themeLock);
+
+  // QA 2026-10-07 item 7: the arrow's label names where it goes. Back to the previous in-app
+  // page (register §2) is labelled with THAT page's name ("< Home" after a launch from Home);
+  // with nothing in-app behind, it goes to the section home and says the section.
+  const previous = hasInAppHistory() ? previousInAppPath() : null;
+  const backLabel =
+    previous === null ? section : (pageNameAt(previous) ?? "Back");
 
   const onBack = (event: MouseEvent<HTMLAnchorElement>): void => {
     // wouter calls this only for a plain left click; modified clicks open the href as usual.
@@ -102,7 +109,7 @@ export function FocusShell({
           <Link
             href={sectionHome}
             onClick={onBack}
-            aria-label={`Back to ${section}`}
+            aria-label={backLabel === "Back" ? "Back" : `Back to ${backLabel}`}
             data-testid="focus-back"
             className={`${LYC_FOCUS} flex h-11 items-center gap-2 rounded-md pl-2 pr-3.5 text-[17px] font-semibold text-lyc-ink-strong no-underline hover:bg-lyc-hover`}
           >
@@ -111,7 +118,7 @@ export function FocusShell({
               className="h-[22px] w-[22px]"
               strokeWidth={2}
             />
-            {section}
+            {backLabel}
           </Link>
         ) : (
           <span

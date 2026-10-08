@@ -421,6 +421,32 @@ describe("POST /today/answer — Turnstile first (SCL-202 item 2)", () => {
     expect(fake.state.calls).toHaveLength(0);
   });
 
+  it("production with no TURNSTILE_SECRET_KEY: every submit is 503 and nothing else runs (INV-10A-09)", async () => {
+    const saved = {
+      secret: process.env.TURNSTILE_SECRET_KEY,
+      vercel: process.env.VERCEL_ENV,
+    };
+    try {
+      delete process.env.TURNSTILE_SECRET_KEY;
+      process.env.VERCEL_ENV = "production";
+      for (const token of [PASS, undefined]) {
+        const res = await submit(nextIp(), {
+          qotd_date: QOTD_FIXTURE_TODAY,
+          answer: "C",
+          ...(token ? { turnstile_token: token } : {}),
+        });
+        expect(res.status).toBe(503);
+      }
+      expect(siteverify).not.toHaveBeenCalled();
+      expect(fake.state.calls).toHaveLength(0);
+    } finally {
+      if (saved.secret === undefined) delete process.env.TURNSTILE_SECRET_KEY;
+      else process.env.TURNSTILE_SECRET_KEY = saved.secret;
+      if (saved.vercel === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = saved.vercel;
+    }
+  });
+
   it("siteverify receives the secret and the token, and NOT the caller's IP", async () => {
     await submit("198.51.100.77", {
       qotd_date: QOTD_FIXTURE_TODAY,

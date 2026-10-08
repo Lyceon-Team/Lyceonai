@@ -120,6 +120,78 @@ describe("the back arrow", () => {
   });
 });
 
+// QA 2026-10-07 item 7: "a back link's label must match its destination. 'Start today's plan' →
+// runner → '< Review' went to Home." The arrow still returns to the previous in-app page
+// (register §2); its label now names that page.
+describe("QA item 7: the back arrow's label names its destination", () => {
+  function arriveFrom(from: string, section = "Review", home = "/review"): void {
+    window.history.replaceState(null, "", from);
+    // The tracker mounts on the page the student starts from…
+    render(<Tracker />);
+    // …and the launch is one client-side navigation into the runner.
+    navigate("/review/session/r-1");
+    render(
+      <FocusShell section={section} sectionHome={home}>
+        <div />
+      </FocusShell>,
+    );
+  }
+
+  it("launched from Home: the arrow says Home and goes back to Home", () => {
+    arriveFrom("/dashboard");
+    const link = screen.getByTestId("focus-back");
+    expect(link.textContent).toBe("Home");
+    expect(link.getAttribute("aria-label")).toBe("Back to Home");
+    fireEvent.click(link);
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it("launched from the calendar: the arrow says Calendar", () => {
+    arriveFrom("/calendar");
+    expect(screen.getByTestId("focus-back").textContent).toBe("Calendar");
+  });
+
+  it("started from Review: the arrow says Review", () => {
+    arriveFrom("/review");
+    expect(screen.getByTestId("focus-back").textContent).toBe("Review");
+  });
+
+  it("two steps in: the arrow names the page directly behind, not the first one", () => {
+    window.history.replaceState(null, "", "/dashboard");
+    render(<Tracker />);
+    navigate("/review");
+    navigate("/review/session/r-2");
+    render(
+      <FocusShell section="Review" sectionHome="/review">
+        <div />
+      </FocusShell>,
+    );
+    expect(screen.getByTestId("focus-back").textContent).toBe("Review");
+  });
+
+  it("an in-app page with no known name: the arrow says Back, never a wrong section", () => {
+    arriveFrom("/some/unknown/page");
+    const link = screen.getByTestId("focus-back");
+    expect(link.textContent).toBe("Back");
+    expect(link.getAttribute("aria-label")).toBe("Back");
+  });
+
+  it("a fresh load (nothing in-app behind): the section name, and the section home", () => {
+    window.history.replaceState(null, "", "/review/session/r-1");
+    render(
+      <>
+        <Tracker />
+        <FocusShell section="Review" sectionHome="/review">
+          <div />
+        </FocusShell>
+      </>,
+    );
+    const link = screen.getByTestId("focus-back");
+    expect(link.textContent).toBe("Review");
+    expect(link.getAttribute("href")).toBe("/review");
+  });
+});
+
 describe("the timed exam module", () => {
   it("has no back arrow, shows the section name, and pins the light theme", () => {
     const { container } = render(

@@ -31,7 +31,7 @@ const TONE_CLASS: Readonly<Record<ViewBlock["tone"], string>> = {
   exam: "exam",
 };
 
-export type BlockCardProps = {
+type BlockCardProps = {
   block: ViewBlock;
   date: string;
   /** False when the block is started, the day is past, or the viewer is a guardian. */

@@ -12,6 +12,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { logger } from '../../../../server/logger';
 
 let _supabaseServer: SupabaseClient | null = null;
 
@@ -28,7 +29,7 @@ function getSupabaseServer(): SupabaseClient {
   
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     if (isTestEnv) {
-      console.log('[SUPABASE-HTTP] Test mode: using placeholder client');
+      logger.info('SUPABASE_HTTP', 'init', 'Test mode: using placeholder client');
       _supabaseServer = createClient('https://placeholder.supabase.co', 'placeholder-key', {
         auth: {
           persistSession: false,
@@ -54,7 +55,7 @@ function getSupabaseServer(): SupabaseClient {
     },
   });
 
-  console.log('[SUPABASE-HTTP] Client initialized');
+  logger.info('SUPABASE_HTTP', 'init', 'Client initialized');
   return _supabaseServer;
 }
 
@@ -69,7 +70,7 @@ function getSupabaseServer(): SupabaseClient {
 export const supabaseServer: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
     const client = getSupabaseServer();
-    const value = (client as any)[prop];
+    const value: unknown = Reflect.get(client, prop);
     if (typeof value === 'function') {
       return value.bind(client);
     }
@@ -89,13 +90,13 @@ export async function testSupabaseHttpConnection(): Promise<boolean> {
       .select('id', { head: true, count: 'exact' });
 
     if (error) {
-      console.error('[SUPABASE-HTTP] Health check failed:', error.message);
+      logger.error('SUPABASE_HTTP', 'health_check', 'Health check failed', error);
       return false;
     }
 
     return true;
   } catch (err) {
-    console.error('[SUPABASE-HTTP] Health check exception:', err);
+    logger.error('SUPABASE_HTTP', 'health_check', 'Health check exception', err);
     return false;
   }
 }

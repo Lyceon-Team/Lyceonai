@@ -148,7 +148,7 @@ const INLINE_SCRIPT_UNSAFE_CHAR_MAP: Readonly<Record<string, string>> = {
 
 function escapeInlineScriptString(value: string): string {
   return value.replace(
-    /[<>\/\\\b\f\n\r\t\0\u2028\u2029]/g,
+    /[<>/\\\b\f\n\r\t\0\u2028\u2029]/g,
     (ch) => INLINE_SCRIPT_UNSAFE_CHAR_MAP[ch] ?? ch,
   );
 }

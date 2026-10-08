@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **RETIRED 2026-10-07 — folded into the Privacy Policy, `legal/privacy-policy/v6` §5.2.** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
 
 # **LYCEON Sub-Processors**
 
-**Last updated:** [●]
+**Last updated:** 2026-10-07
 
 The following service providers process personal information on LYCEON's behalf. Each processes it only on our instructions and only to provide its service to us.
 

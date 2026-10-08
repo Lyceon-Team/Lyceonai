@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **INTERNAL TEMPLATE — NOT PUBLISHED.** Approved by Karl, the approver (there is no external counsel), 2026-10-07; SCL-221.
 
 # **LYCEON Cookie Banner Text**
 
-**Version 2** · **Effective date:** [●]
+**Version 2** · **Effective date:** 2026-10-07
 
 ## **Banner**
 
@@ -54,10 +54,10 @@ Global Privacy Control notice: **Global Privacy Control**
 * California CCPA regulations, 11 CCR §7004 (symmetry in choice) and §7025 (opt-out preference signals) — https://cppa.ca.gov/regulations/
 * Global Privacy Control specification — https://globalprivacycontrol.org/
 
-## Counsel checklist
+## Decisions (Karl, 2026-10-07)
 
-1. Confirm that the first layer provides clear and comprehensive information under ePrivacy Directive Article 5(3).
-2. Confirm whether session recording requires a separate choice from analytics.
-3. Confirm the Global Privacy Control handling for users in the EU and UK.
-4. Confirm the 6-month interval before the choice is requested again.
-5. Confirm the content and retention period of the consent record.
+1. First-layer information: approved as written (the standard US banner wording).
+2. Session recordings: part of the Analytics category; no separate choice, which is the category's standard.
+3. Global Privacy Control: treated as a refusal everywhere.
+4. Re-ask interval: 6 months.
+5. Consent record: the choice, the banner wording version, where it was made and when; no name, account or IP address. Kept for as long as needed to show that we have consent (Privacy Policy v6 Section 9).

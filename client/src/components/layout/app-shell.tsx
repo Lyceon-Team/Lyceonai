@@ -54,7 +54,26 @@
  * Sign out.
  *
  * F-70: the avatar menu is drawn with the student tokens inside the page's theme (and its theme
- * lock), like the student Modal and Sheet (`HeaderUserMenu`'s `tone="student"`).
+ * lock), like the student Modal (`HeaderUserMenu`'s `tone="student"`).
+ *
+ * PRODUCTION QA 2026-10-07 (Karl's walkthrough).
+ * @spec [QA item 3 (Karl: "the avatar opens a menu (Settings, Help, Sign out) at every width
+ *        (desktop included)"; "Sign out" in sentence case); item 14 (the rail highlights the
+ *        current section on /mastery and /notifications; the phone avatar menu has a Help icon
+ *        and accessible labels); item 12/13 (the bell's popover on the student tokens)]
+ *        | @implemented [2026-10-07]
+ * - The avatar is the menu's trigger at every width: on the desktop rail it used to be a link
+ *   straight to Settings, so a desktop student had no sign-out in the shell at all. The menu
+ *   opens beside the rail on desktop and under the top bar on a phone. This supersedes DESIGN.md
+ *   §2's "the account avatar (opens Settings)" on the owner's instruction of 2026-10-07 (to be
+ *   recorded in DESIGN.md by the register owner).
+ * - Sections without a rail item of their own light the rail item they belong to
+ *   (`RAIL_SECTION_OF`): /mastery is Home's (Home's mastery rows and "See every skill" are the
+ *   way in, and Home is where the wide mastery rows live, DESIGN.md §4). /notifications is the
+ *   bell's own page, so the bell is marked current there (it is the rail entry that opens it);
+ *   no tab is lit on a phone for either, beyond Home for /mastery.
+ * - Every menu entry carries an icon (Settings, Help, Sign out), hidden from assistive tech;
+ *   the trigger is named "Account menu".
  */
 import {
   createContext,
@@ -91,6 +110,7 @@ import { LYC_FOCUS } from "@/components/ui/button";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useReportBottomChrome } from "@/lib/bottom-chrome";
+import { PHONE_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
 import type {
   AppContentLayout,
   RightPanelWidth,
@@ -107,7 +127,7 @@ import { usePublishThemeLock } from "./theme-lock";
 /** What a locked rail item does: open the upgrade modal in place, or navigate (ruling 3). */
 type LockBehaviour = "modal" | "navigate";
 
-export type RailItem = {
+type RailItem = {
   readonly key: string;
   readonly label: string;
   readonly href: string;
@@ -119,10 +139,11 @@ export type RailItem = {
 };
 
 /**
- * The rail, as data (DESIGN.md §2 order). Exported so the tests iterate the config rather than a
- * copy of it (#829): a seventh item is covered the moment it is added here.
+ * The rail, as data (DESIGN.md §2 order). The rail test lists the same items and first asserts
+ * the rendered rail is exactly that list, in order (#829): a seventh item added here fails it
+ * until the test lists it too, so every item stays covered.
  */
-export const RAIL_ITEMS: readonly RailItem[] = [
+const RAIL_ITEMS: readonly RailItem[] = [
   {
     key: "home",
     label: "Home",
@@ -172,7 +193,7 @@ export const RAIL_ITEMS: readonly RailItem[] = [
  * (the middle), Calendar, LISA. Full-Length is not on it. Keys into `RAIL_ITEMS`, so each tab is
  * the rail item itself (label, href, lock) and only the order and membership are the bar's own.
  */
-export const TAB_BAR_KEYS = [
+const TAB_BAR_KEYS = [
   "home",
   "review",
   "practice",
@@ -188,7 +209,7 @@ function railItem(key: string): RailItem {
   return item;
 }
 
-export const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
+const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
 
 const SETTINGS_PATH = "/profile";
 
@@ -201,6 +222,24 @@ export const LOCK_SUFFIX: Readonly<Record<FeatureLockReason, string>> = {
 function isActive(location: string, href: string): boolean {
   return location === href || location.startsWith(`${href}/`);
 }
+
+/**
+ * QA 14: pages with no rail item of their own, and the rail item whose section they are in
+ * (see the module note). A page here lights that item on the rail and the tab bar.
+ */
+const RAIL_SECTION_OF: Readonly<Record<string, string>> = {
+  "/mastery": "/dashboard",
+};
+
+/** The location the rail reads: a page's own path, or the section it belongs to. */
+function railLocation(location: string): string {
+  const entry = Object.entries(RAIL_SECTION_OF).find(([page]) =>
+    isActive(location, page),
+  );
+  return entry === undefined ? location : entry[1];
+}
+
+const NOTIFICATIONS_PATH = "/notifications";
 
 /**
  * Why `feature` is locked for this student, or null (granted, or no map). The ONE reading of the
@@ -319,7 +358,7 @@ export function AppShellPanel({
   return slot === null ? null : createPortal(children, slot);
 }
 
-export type AppShellProps = {
+type AppShellProps = {
   children: ReactNode;
   /** The right panel's width, or null for none (route-shells.ts). */
   panel?: RightPanelWidth | null;
@@ -338,7 +377,7 @@ export function AppShell({
   themeLock = null,
 }: AppShellProps): JSX.Element {
   const [location] = useLocation();
-  const { user, isAdmin } = useSupabaseAuth();
+  const { user } = useSupabaseAuth();
   const access = useFeatureAccess();
   const { signOut, isSigningOut } = useHeaderSignOut();
   const [panelEl, setPanelEl] = useState<HTMLElement | null>(null);
@@ -348,22 +387,48 @@ export function AppShell({
   // where the bar is hidden).
   const tabBarRef = useRef<HTMLElement>(null);
   useReportBottomChrome(tabBarRef);
+  // QA 3: the menu opens beside the desktop rail, and under the phone top bar.
+  const phoneLayout = useMediaQuery(PHONE_LAYOUT_QUERY, false);
 
-  const accountMenu = (
+  const helpActive = isActive(location, HELP_PATH);
+  const settingsActive = isActive(location, SETTINGS_PATH);
+  const notificationsActive = isActive(location, NOTIFICATIONS_PATH);
+  // QA 14: the location the rail and the tab bar light their current item from.
+  const railAt = railLocation(location);
+
+  const accountMenu = user ? (
     <HeaderUserMenu
       signOut={signOut}
       isSigningOut={isSigningOut}
       fallbackName="Student"
       // F-70: the student tokens, inside the page's theme and theme lock.
       tone="student"
+      side={phoneLayout ? "bottom" : "right"}
+      // QA 3: the avatar letter is the trigger at every width (it used to link to Settings on
+      // desktop). Ringed while Settings is open, as the current section.
+      trigger={
+        <span
+          data-testid="account-avatar"
+          data-current={settingsActive ? "true" : undefined}
+          className={`flex h-9 w-9 items-center justify-center rounded-full bg-lyc-rail-on-bg font-lyc-serif text-[18px] font-semibold text-lyc-rail-on-ink lg:h-10 lg:w-10 ${settingsActive ? "ring-2 ring-lyc-rail-on-bg ring-offset-2 ring-offset-lyc-rail" : ""}`}
+        >
+          {initialOf(user.display_name, user.email)}
+        </span>
+      }
+      triggerClassName={`${LYC_FOCUS} h-10 w-10 rounded-full p-0 hover:bg-transparent lg:h-12 lg:w-12`}
       // Owner ruling (Karl, 2026-10-05; supersedes OQ-48): Settings, Help, Sign out. Settings
       // and Sign out are the shared menu's own; an admin's Crisis review sits between Help and
       // Sign out. No rail item is in the menu.
-      items={<MenuLink href={HELP_PATH} label="Help" testId="menu-help" />}
+      items={
+        <MenuLink
+          href={HELP_PATH}
+          label="Help"
+          testId="menu-help"
+          icon={CircleHelp}
+        />
+      }
     />
-  );
-  const helpActive = isActive(location, HELP_PATH);
-  const settingsActive = isActive(location, SETTINGS_PATH);
+  ) : null;
 
   return (
     <div
@@ -403,7 +468,7 @@ export function AppShell({
               item={item}
               variant="rail"
               access={access}
-              location={location}
+              location={railAt}
             />
           ))}
         </nav>
@@ -413,9 +478,9 @@ export function AppShell({
         {user ? (
           <div
             data-testid="rail-bell"
-            className="flex justify-center [&_button]:text-lyc-rail-ink [&_button:hover]:bg-transparent"
+            className={`flex justify-center ${notificationsActive ? "[&>button]:bg-lyc-rail-on-bg [&>button]:text-lyc-rail-on-ink" : "[&>button]:text-lyc-rail-ink [&>button:hover]:bg-transparent"}`}
           >
-            <NotificationBell />
+            <NotificationBell tone="student" current={notificationsActive} />
           </div>
         ) : null}
 
@@ -433,28 +498,14 @@ export function AppShell({
           <span>Help</span>
         </Link>
 
-        {user && isAdmin ? (
-          // An admin keeps the menu at every width: it carries the crisis-review entry (W2-7).
-          <div className="flex justify-center [&_button]:text-lyc-rail-ink">
+        {accountMenu !== null ? (
+          // QA 3: one menu at every width, for every role (an admin's carries Crisis review, W2-7).
+          <div
+            data-testid="rail-account"
+            className="flex justify-center lg:pb-1 lg:pt-1.5"
+          >
             {accountMenu}
           </div>
-        ) : user ? (
-          <>
-            <Link
-              href={SETTINGS_PATH}
-              data-testid="rail-account"
-              aria-label="Account and settings"
-              aria-current={settingsActive ? "page" : undefined}
-              className={`${LYC_FOCUS} hidden justify-center rounded-full pb-1 pt-2.5 no-underline lg:flex`}
-            >
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-lyc-rail-on-bg font-lyc-serif text-[18px] font-semibold text-lyc-rail-on-ink">
-                {initialOf(user.display_name, user.email)}
-              </span>
-            </Link>
-            <div className="flex justify-center lg:hidden [&_button]:text-lyc-rail-ink">
-              {accountMenu}
-            </div>
-          </>
         ) : null}
       </header>
 
@@ -503,7 +554,7 @@ export function AppShell({
             item={item}
             variant="tab"
             access={access}
-            location={location}
+            location={railAt}
           />
         ))}
       </nav>
@@ -515,10 +566,13 @@ function MenuLink({
   href,
   label,
   testId,
+  icon: Icon,
 }: {
   href: string;
   label: string;
   testId: string;
+  /** QA 14: every menu entry carries an icon, as Settings and Sign out do. */
+  icon: LucideIcon;
 }): JSX.Element {
   const [, navigate] = useLocation();
   return (
@@ -527,6 +581,7 @@ function MenuLink({
       onClick={() => navigate(href)}
       data-testid={testId}
     >
+      <Icon aria-hidden="true" className="mr-2 h-4 w-4" />
       {label}
     </DropdownMenuItem>
   );

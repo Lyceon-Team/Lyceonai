@@ -21,6 +21,7 @@ import {
   resolveHistoricalTrendsAccess,
 } from "../../services/kpi-access";
 import { EntitlementService } from "../../services/entitlement-service";
+import { logger } from "../../logger";
 import { confidenceBandFromScore } from "../../../packages/shared/src/projection-confidence";
 
 function estimateExplanation(
@@ -362,6 +363,14 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
   } catch (error) {
+    logger.error(
+      "PROGRESS",
+      "score_estimate_failed",
+      "Failed to calculate score estimate",
+      error,
+      undefined,
+      { requestId: req.requestId },
+    );
     return res.status(500).json({
       error: "Failed to calculate score estimate",
       requestId: req.requestId,
@@ -420,6 +429,14 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
   } catch (error) {
+    logger.error(
+      "PROGRESS",
+      "recency_kpis_failed",
+      "Failed to calculate KPIs",
+      error,
+      undefined,
+      { requestId: req.requestId },
+    );
     return res
       .status(500)
       .json({ error: "Failed to calculate KPIs", requestId: req.requestId });

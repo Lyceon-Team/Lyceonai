@@ -38,7 +38,6 @@
 // ────────────────────────────────────────────────────────────────────
 // Script body — for Karl's manual execution
 // ────────────────────────────────────────────────────────────────────
-/* eslint-disable no-console -- CLI provisioning script, console is the output channel */
 
 async function main(): Promise<void> {
   const project = process.env.GOOGLE_CLOUD_PROJECT;

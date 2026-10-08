@@ -17,12 +17,15 @@ import "@/styles/accessibility.css";
 import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
-import { FullPageLoader } from "@/components/student-ui";
+// The route fallback's own module (it imports the loader's module, not the `student-ui` barrel:
+// the barrel also carries the filter bar (Radix menus), the modal and the notice, which only
+// signed-in pages use (SEO plan F8)).
+import { RouteLoading } from "@/components/layout/RouteSkeleton";
 import { Button } from "@/components/ui/button";
 import { BareCard, BareCardHeader } from "@/components/layout/BareCardShell";
-import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
 import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
+import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
@@ -43,6 +46,14 @@ const RequireRole = lazy(() =>
 const PendingDeletionScreen = lazy(() =>
   import("@/components/account-deletion/PendingDeletionScreen").then((m) => ({
     default: m.PendingDeletionScreen,
+  })),
+);
+// @spec [SEO plan F8; student-UI register UI-41] | @implemented [2026-10-07] | plain English: the
+// student shell frame (the App shell's rail, header menu and notification bell) only wraps signed-in
+// pages, so it loads with them, inside the same Suspense boundary, as RequireRole does.
+const StudentRouteFrame = lazy(() =>
+  import("@/components/layout/StudentRouteFrame").then((m) => ({
+    default: m.StudentRouteFrame,
   })),
 );
 const UpdatePassword = lazy(() => import("@/pages/update-password"));
@@ -149,11 +160,9 @@ function ProfileRoute(): JSX.Element {
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 const GuardianRequired = lazy(() => import("@/pages/guardian-required"));
 
-const DigitalSAT = lazy(() => import("@/pages/digital-sat"));
-const DigitalSATMath = lazy(() => import("@/pages/digital-sat-math"));
-const DigitalSATReadingWriting = lazy(
-  () => import("@/pages/digital-sat-reading-writing"),
-);
+// SEO Wave 3 (C2): every content page renders through one component, mounted at each path in
+// CONTENT_PAGE_PATHS (the light path list; the copy loads with the page's own chunk).
+const ContentPage = lazy(() => import("@/pages/content-page"));
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
 const SatQuestionOfTheDay = lazy(
@@ -173,15 +182,16 @@ const CrisisReviewDetail = lazy(
 );
 
 /**
- * @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"] | @implemented [2026-10-03]
- * plain English: the route Suspense fallback is the shared FullPageLoader. It serves every
- * audience (student, guardian, admin, marketing), none of which is themed yet, so it pins the
- * light token set. The `page-loader` test id and the "Loading..." text are kept: the guardian
- * e2e (tests/e2e/guardian-surfaces.spec.ts) waits on both.
+ * @spec [student-UI register UI-46; audit §6.2 "Full-page spinner"; production QA 2026-10-07
+ *        items 5 and 12 (Karl: page skeletons instead of the full-page cream "Loading…" flash,
+ *        which also broke dark mode)] | @implemented [2026-10-03; route-aware 2026-10-07]
+ * plain English: the route Suspense fallback. On a student route it is that route's own shell,
+ * sketched, in the route's own theme (RouteSkeleton.tsx); on every other route (guardian, admin,
+ * marketing, none of them themed) it is still the light FullPageLoader. The `page-loader` test id
+ * and the "Loading..." name are kept on both: the guardian e2e
+ * (tests/e2e/guardian-surfaces.spec.ts) waits on them. Every lazy route stays lazy.
  */
-const ROUTE_FALLBACK = (
-  <FullPageLoader themeLock="light" data-testid="page-loader" />
-);
+const ROUTE_FALLBACK = <RouteLoading data-testid="page-loader" />;
 
 /** The route switch — exported so the guardian route walk (G4-01) renders the real table. */
 export function Router() {
@@ -198,12 +208,27 @@ export function Router() {
         <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
 
         {/* SEO Content Pages */}
-        <Route path="/digital-sat" component={DigitalSAT} />
-        <Route path="/digital-sat/math" component={DigitalSATMath} />
-        <Route
-          path="/digital-sat/reading-writing"
-          component={DigitalSATReadingWriting}
-        />
+        {/* @spec [owner decision 3 on SEO Wave 3 Step 0, 2026-10-05: the three /digital-sat*
+            301s] | @implemented [2026-10-05] | plain English: the edge answers these with a 301
+            (vercel.json, from the registry's redirect_to); these routes only cover an in-app
+            navigation that reaches the old path. */}
+        <Route path="/digital-sat">
+          {() => <Redirect to="/online-sat-prep" replace />}
+        </Route>
+        <Route path="/digital-sat/math">
+          {() => <Redirect to="/sat-practice-questions/math" replace />}
+        </Route>
+        <Route path="/digital-sat/reading-writing">
+          {() => (
+            <Redirect
+              to="/sat-practice-questions/reading-and-writing"
+              replace
+            />
+          )}
+        </Route>
+        {CONTENT_PAGE_PATHS.map((path) => (
+          <Route key={path} path={path} component={ContentPage} />
+        ))}
         <Route path="/blog" component={Blog} />
         <Route path="/blog/:slug" component={BlogPost} />
         <Route

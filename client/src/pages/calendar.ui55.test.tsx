@@ -13,7 +13,9 @@
  *       [owner ruling (Karl, 2026-10-05, OQ-63): "Phone notice: show it for every full-length
  *        start on a phone, including calendar-launched starts. One shared pre-start check, same
  *        \"Continue anyway\". Test it from a calendar block at 390px."]
- * @implemented [2026-10-03; SCL-211 2026-10-05; OQ-63 2026-10-05]
+ *       [Codex audit finding 2; owner ruling (Karl, 2026-10-05): "split it" — the student
+ *        calendar's stylesheet is `calendar-student.css` alone; `calendar.css` is the guardian's]
+ * @implemented [2026-10-03; SCL-211 2026-10-05; OQ-63 2026-10-05; split 2026-10-05]
  *
  * plain English: the page is mounted with the real query layer, the real App shell (the right
  * panel portals into it) and the real upgrade modal with auto-open ON, over a scripted network
@@ -494,9 +496,61 @@ describe("paid: the Canvas-style header (DESIGN.md §4)", () => {
     ).toBe("true");
     expect(await screen.findByTestId("calendar-month-grid")).toBeTruthy();
     expect(screen.queryByTestId("calendar-week-grid")).toBeNull();
-    expect(title()).toBe("September 2026");
+    // QA 2026-10-07 item 11(a): the week 28 September – 4 October holds today (1 October), so
+    // Month opens October — today's month — and reads October's whole grid.
+    expect(title()).toBe("October 2026");
+    await waitFor(() => expect(monthRead()).toBe(true));
   });
+});
 
+/** October 2026's grid, as `rangeForView("month", …)` names it: Monday 28 Sep – Sunday 8 Nov. */
+const MONTH_READ = "/api/calendar?from=2026-09-28&to=2026-11-08";
+
+/** True once October's grid has been read (the query string goes on with `device_timezone`). */
+function monthRead(): boolean {
+  return planReads().some(
+    (url) => url === MONTH_READ || url.startsWith(`${MONTH_READ}&`),
+  );
+}
+
+/**
+ * The month read's answer: the fixture week plus the NEXT week's days (its block ids remapped so
+ * they cannot collide with this week's), so a month cell after 4 October has a block only when
+ * the MONTH's rows are on screen — the week held over by `keepPreviousData` has none there.
+ */
+function paidMonth(): unknown {
+  const week = paidWeek() as { days: unknown[] };
+  const next = JSON.parse(
+    JSON.stringify(
+      studentCalendarWeek("2026-10-08", { testDate: TEST_DATE }),
+    ).replaceAll("7c9e6679-7425-40de-944b-", "7c9e6679-7425-40de-944c-"),
+  ) as { days: unknown[] };
+  return { ...week, days: [...week.days, ...next.days] };
+}
+
+describe("paid: the month view's first render is the whole month (QA 2026-10-07 item 11(a))", () => {
+  it("in week view the month the toggle opens is read ahead, so Month draws the month's rows at once", async () => {
+    await mount("paid", {
+      calendar: () => paidMonth(),
+    });
+    await screen.findByTestId("calendar-week-grid");
+    // The week's own read first; then, once idle, the month the toggle would open.
+    await waitFor(() => expect(monthRead()).toBe(true), {
+      timeout: 3_000,
+    });
+    // Presence: the month payload has a block after this week (Wednesday 7 October).
+    const reads = planReads().length;
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    // The FIRST render after the click, with no wait: next week's day already has its chips.
+    const cell = screen.getByTestId("calendar-month-cell-2026-10-07");
+    expect(cell.querySelectorAll(".mchip").length).toBeGreaterThan(0);
+    expect(title()).toBe("October 2026");
+    // Served from the read-ahead: the toggle sent no new plan read.
+    expect(planReads().length).toBe(reads);
+  });
+});
+
+describe("paid: Regenerate plan", () => {
   it("Regenerate plan posts to /api/calendar/plan/regenerate with one fresh idempotency key per press", async () => {
     await mount("paid");
     const button = await screen.findByRole("button", {
@@ -516,6 +570,50 @@ describe("paid: the Canvas-style header (DESIGN.md §4)", () => {
     expect(second?.idempotency_key).not.toBe(first?.idempotency_key);
     // And the plan is read again after it (the settle-invalidate).
     await waitFor(() => expect(planReads().length).toBeGreaterThanOrEqual(2));
+  });
+});
+
+/**
+ * OQ-66 (c), owner ruling (Karl, 2026-10-07): below a 1200px viewport Edit schedule and
+ * Regenerate plan live in the header's "⋯" menu. jsdom draws both entry points (the CSS picks
+ * one by width; the browser spec measures that), so this drives the MENU on the real page and
+ * asserts it does what the buttons do: the same sheet, the same request.
+ */
+describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
+  async function openMore(): Promise<void> {
+    const more = await screen.findByRole("button", { name: "More actions" });
+    more.focus();
+    fireEvent.keyDown(more, { key: "Enter" });
+    await screen.findByRole("menu");
+  }
+
+  it("Edit schedule opens the schedule sheet, as the button does", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    expect(screen.queryByTestId("calendar-settings-sheet")).toBeNull();
+    await openMore();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
+    expect(await screen.findByTestId("calendar-settings-sheet")).toBeTruthy();
+  });
+
+  it("Regenerate plan posts to /api/calendar/plan/regenerate with a fresh key, then reads Plan regenerated", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    await openMore();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Regenerate plan" }));
+    await waitFor(() =>
+      expect(sent("POST", "/api/calendar/plan/regenerate")).toHaveLength(1),
+    );
+    const [first] = sent("POST", "/api/calendar/plan/regenerate") as {
+      idempotency_key: string;
+    }[];
+    expect(first?.idempotency_key).toMatch(UUID);
+    // The button and the item share the state: both say so once it has returned.
+    await screen.findByRole("button", { name: "Plan regenerated" });
+    await openMore();
+    expect(
+      screen.getByRole("menuitem", { name: "Plan regenerated" }),
+    ).toBeTruthy();
   });
 });
 
@@ -592,7 +690,7 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
     expect(card.textContent).toContain("days until your SAT");
     expect(
       within(card).getByTestId("calendar-test-date-pill").textContent,
-    ).toBe("★ Saturday, 3 October");
+    ).toBe("★ Saturday, October 3");
     expect(within(card).getByTestId("calendar-target").textContent).toBe(
       "1350",
     );
@@ -605,6 +703,24 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
         .getByRole("link", { name: "Edit goals" })
         .getAttribute("href"),
     ).toBe("/profile");
+  });
+
+  it("keeps the projected range on one line, sized to fit its half of the card (QA 2026-10-07 item 11(g))", async () => {
+    await mount("paid");
+    const card = await screen.findByTestId("calendar-goal-card");
+    const figure = within(card).getByTestId("calendar-projection");
+    // Presence: the range is drawn.
+    expect(figure.textContent).toBe("1180–1280");
+    // One line: no wrap at the en dash. The real layout is measured in the browser
+    // (tests/e2e/student-calendar.spec.ts); here the two rules that hold it are pinned.
+    expect(figure.className.split(" ")).toContain("whitespace-nowrap");
+    expect(figure.className).toContain(
+      "[font-size:min(32px,calc(100cqi/(var(--lyc-figure-chars)*0.56)))]",
+    );
+    expect(figure.style.getPropertyValue("--lyc-figure-chars")).toBe("9");
+    expect(figure.parentElement?.className).toContain(
+      "[container-type:inline-size]",
+    );
   });
 
   it('says "1 day until your SAT", singular, the day before the test', async () => {
@@ -628,6 +744,120 @@ describe("paid: the goal card (DESIGN.md §4, OQ-37)", () => {
     expect(gets().some((u) => u.startsWith("/api/profile/background"))).toBe(
       false,
     );
+  });
+});
+
+describe("paid: the header and card layout rules (QA 2026-10-07 items 11(c), 11(d))", () => {
+  /**
+   * The layout itself is measured in a real browser at 390–1440 (`tests/e2e/student-calendar.spec.ts`,
+   * "QA 2026-10-07 item 11 layout": nothing past a card's edge, the header's groups never broken,
+   * one/two/three header rows by the column's width). jsdom lays nothing out, so this pins the
+   * wiring the browser test depends on: the header and the body carry the classes the rules
+   * select, and the rules that hold the layout are in the stylesheet the page loads.
+   */
+  function studentCss(): string {
+    return fs.readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../features/calendar/calendar-student.css",
+      ),
+      "utf8",
+    );
+  }
+
+  /** The declarations of the FIRST rule with exactly this selector. */
+  function rule(css: string, selector: string): string {
+    const at = css.indexOf(`${selector} {`);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  }
+
+  it("(d) the header is laid out against the calendar column, not the viewport", async () => {
+    await mount("paid");
+    const header = await screen.findByTestId("calendar-header");
+    expect(header.classList.contains("lyc-cal-head")).toBe(true);
+    // No viewport breakpoint decides the header's columns any more.
+    expect(header.className).not.toMatch(/\blg:/);
+    expect(
+      screen
+        .getByTestId("calendar-header-nav")
+        .classList.contains("lyc-cal-head__group"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByTestId("calendar-student-body")
+        .classList.contains("lyc-cal-body"),
+    ).toBe(true);
+    const css = studentCss();
+    expect(rule(css, ".lyc-cal-body")).toContain(
+      "container-type: inline-size;",
+    );
+    expect(css).toContain("@container lyc-cal-body (min-width: 700px) {");
+    expect(css).toContain("@container lyc-cal-body (min-width: 920px) {");
+  });
+
+  it("(c) a card's text breaks rather than overflow, and the started tag is cut", () => {
+    const css = studentCss();
+    // The QA block's `.block` rule (the first is the base card's).
+    const block = css.slice(css.indexOf("QA 2026-10-07 item 11(c)"));
+    expect(rule(block, ".lyceon-calendar.lyc-cal .block")).toContain(
+      "overflow-wrap: anywhere;",
+    );
+    expect(rule(block, ".lyceon-calendar.lyc-cal .block .ttl")).toContain(
+      "flex-wrap: wrap;",
+    );
+    const lock = rule(block, ".lyceon-calendar.lyc-cal .block .lock");
+    expect(lock).toContain("text-overflow: ellipsis;");
+    expect(lock).toContain("max-width: 100%;");
+    expect(rule(block, ".lyceon-calendar.lyc-cal .block .dom span")).toContain(
+      "max-width: 100%;",
+    );
+  });
+});
+
+describe('paid: no "+ Add block" on the test day (QA 2026-10-07 item 11(f))', () => {
+  it("the other days still to come offer it; the test day does not", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    const add = (date: string): HTMLElement | null =>
+      within(screen.getByTestId(`calendar-day-${date}`)).queryByRole("button", {
+        name: "+ Add block",
+      });
+    // Presence: today and the day before the test (both to come) offer it.
+    expect(add(TODAY)).toBeTruthy();
+    expect(add("2026-10-02")).toBeTruthy();
+    // The test day (starred, so the grid knows it) does not.
+    expect(
+      within(screen.getByTestId(`calendar-day-${TEST_DATE}`)).getByTestId(
+        "calendar-test-day-card",
+      ),
+    ).toBeTruthy();
+    expect(add(TEST_DATE)).toBeNull();
+    // And the day after the test, still to come, offers it again.
+    expect(add("2026-10-04")).toBeTruthy();
+  });
+});
+
+describe('paid: the right panel has no "Your schedule" (QA 2026-10-07 item 11(e))', () => {
+  it("mini month, goal card and Show, in that order; no schedule summary", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    const panel = within(screen.getByTestId("app-shell-panel")).getByTestId(
+      "calendar-panel",
+    );
+    // Presence: the panel's three sections drew, and the schedule exists to summarise
+    // (Edit schedule is in the header).
+    expect(
+      Array.from(panel.children).map((el) => el.getAttribute("data-testid")),
+    ).toEqual([
+      "calendar-mini-month",
+      "calendar-goal-card",
+      "calendar-show-filters",
+    ]);
+    expect(screen.getByRole("button", { name: "Edit schedule" })).toBeTruthy();
+    // Absence.
+    expect(panel.textContent).not.toContain("Your schedule");
+    expect(screen.queryByTestId("calendar-schedule-card")).toBeNull();
   });
 });
 
@@ -778,7 +1008,7 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     );
     expect(
       within(card).getByTestId("calendar-test-date-pill").textContent,
-    ).toBe("★ Saturday, 5 December");
+    ).toBe("★ Saturday, December 5");
     // OQ-56 (b), SCL-211: the form is now read-only — the saved answers, "Edit goals in
     // Settings", and no input or Save left to press.
     const saved = screen.getByTestId("calendar-free-setup");
@@ -788,7 +1018,7 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     ).toBe("1400");
     expect(
       within(saved).getByTestId("calendar-free-saved-date").textContent,
-    ).toBe("Saturday, 5 December");
+    ).toBe("Saturday, December 5");
     expect(
       within(saved).getByRole("link", { name: "Edit goals in Settings" }),
     ).toBeTruthy();
@@ -809,7 +1039,7 @@ describe("free: with a profile saved (OQ-25)", () => {
     expect(form.getAttribute("data-state")).toBe("saved");
     expect(
       within(form).getByTestId("calendar-free-saved-date").textContent,
-    ).toBe("Saturday, 5 December");
+    ).toBe("Saturday, December 5");
     expect(
       within(form).getByTestId("calendar-free-saved-target").textContent,
     ).toBe(String(PROFILE_ROW.target_score));
@@ -819,7 +1049,7 @@ describe("free: with a profile saved (OQ-25)", () => {
     );
     expect(
       within(card).getByTestId("calendar-test-date-pill").textContent,
-    ).toBe("★ Saturday, 5 December");
+    ).toBe("★ Saturday, December 5");
     // Free: Target only.
     expect(within(card).queryByTestId("calendar-projection")).toBeNull();
     expect(within(card).queryByTestId("calendar-projection-absent")).toBeNull();
@@ -906,6 +1136,91 @@ describe("free: the plan upsell card", () => {
     expect(
       within(upsell).queryByRole("button", { name: "See plans" }),
     ).toBeNull();
+  });
+});
+
+// ── QA 2026-10-07 item 11(b): the block sheet is a modal dialog ───────────────────────────
+
+describe("paid: the block sheet is a modal dialog (QA 2026-10-07 item 11(b))", () => {
+  /** Open a block's sheet from the week grid by pressing its card, as a keyboard user would. */
+  async function openSheet(blockId: string): Promise<{
+    card: HTMLElement;
+    sheet: HTMLElement;
+  }> {
+    const card = await screen.findByTestId(`calendar-block-${blockId}`);
+    card.focus();
+    fireEvent.click(card);
+    const sheet = await screen.findByTestId("calendar-block-sheet");
+    return { card, sheet };
+  }
+
+  it("is a dialog named by its title, with focus moved into it on Close", async () => {
+    await mount("paid");
+    const { card, sheet } = await openSheet(PRACTICE_BLOCK);
+    expect(sheet.getAttribute("role")).toBe("dialog");
+    expect(sheet.getAttribute("aria-modal")).toBe("true");
+    const title = sheet.querySelector("h3");
+    // Presence: the title is the block's.
+    expect(title?.textContent).toBeTruthy();
+    expect(card.getAttribute("aria-label")).toContain(title?.textContent);
+    expect(sheet.getAttribute("aria-labelledby")).toBe(title?.id);
+    expect(screen.getByRole("dialog", { name: title?.textContent ?? "" })).toBe(
+      sheet,
+    );
+    const close = within(sheet).getByRole("button", { name: "Close" });
+    expect(document.activeElement).toBe(close);
+  });
+
+  it("Esc closes it and focus returns to the block that opened it", async () => {
+    await mount("paid");
+    const { card } = await openSheet(PRACTICE_BLOCK);
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    expect(screen.queryByTestId("calendar-block-sheet")).toBeNull();
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("Close closes it and focus returns to the block that opened it", async () => {
+    await mount("paid");
+    const { card, sheet } = await openSheet(PRACTICE_BLOCK);
+    fireEvent.click(within(sheet).getByRole("button", { name: "Close" }));
+    expect(screen.queryByTestId("calendar-block-sheet")).toBeNull();
+    expect(document.activeElement).toBe(card);
+  });
+
+  it("Tab and Shift+Tab stay inside it", async () => {
+    await mount("paid");
+    const { sheet } = await openSheet(PRACTICE_BLOCK);
+    const close = within(sheet).getByRole("button", { name: "Close" });
+    const start = within(sheet).getByRole("button", { name: "Start" });
+    const tabbable = Array.from(
+      sheet.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href]",
+      ),
+    );
+    const last = tabbable[tabbable.length - 1];
+    // Presence: more than one control, Close first.
+    expect(tabbable.length).toBeGreaterThan(1);
+    expect(tabbable[0]).toBe(close);
+    expect(tabbable).toContain(start);
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    last?.focus();
+    fireEvent.keyDown(last ?? sheet, { key: "Tab" });
+    expect(document.activeElement).toBe(close);
+  });
+
+  it("on a phone, Esc with the pre-start notice open closes the notice and leaves the sheet", async () => {
+    await mount("paid", {}, { phone: true });
+    await startBlock(FULL_LENGTH_BLOCK);
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    fireEvent.keyDown(notice, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByTestId("full-length-phone-notice")).toBeNull(),
+    );
+    expect(screen.getByTestId("calendar-block-sheet")).toBeTruthy();
+    expect(launches()).toEqual([]);
   });
 });
 
@@ -1012,5 +1327,96 @@ describe("phone: a full-length block's Start asks the shared pre-start check fir
       `POST /api/calendar/blocks/${FULL_LENGTH_BLOCK}/launch`,
     ]);
     expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+  });
+});
+
+/**
+ * The split (Codex audit finding 2; owner ruling, Karl, 2026-10-05: "split it"). The student
+ * calendar draws with `calendar-student.css` alone; the legacy `calendar.css` (literal palette,
+ * labels under 14px) is the guardian calendar's. This walks the static import graph from each
+ * page, through the `@/` alias and relative paths, and lists every stylesheet it reaches, so a
+ * re-import anywhere in the student tree (the page, `CalendarView`, a component) fails here.
+ * Presence before absence: the student graph must reach `calendar-student.css` and the shared
+ * `CalendarView`, and the guardian page's graph must reach `calendar.css`, so an absence cannot
+ * pass because the walker went blind.
+ */
+describe("UI-55 split: the student calendar's import graph never reaches calendar.css", () => {
+  const CLIENT_SRC = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+  );
+  const LEGACY = path.join(CLIENT_SRC, "features/calendar/calendar.css");
+  const STUDENT = path.join(
+    CLIENT_SRC,
+    "features/calendar/calendar-student.css",
+  );
+  const VIEW = path.join(CLIENT_SRC, "features/calendar/CalendarView.tsx");
+
+  const stripComments = (src: string): string =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+
+  const resolveSpecifier = (from: string, spec: string): string | null => {
+    let base: string;
+    if (spec.startsWith("@/")) base = path.join(CLIENT_SRC, spec.slice(2));
+    else if (spec.startsWith("."))
+      base = path.resolve(path.dirname(from), spec);
+    else return null; // a package: outside the client tree
+    for (const candidate of [
+      base,
+      `${base}.ts`,
+      `${base}.tsx`,
+      path.join(base, "index.ts"),
+      path.join(base, "index.tsx"),
+    ]) {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile())
+        return candidate;
+    }
+    return null;
+  };
+
+  /** Every file the entry reaches through static and dynamic imports. */
+  const importGraph = (entry: string): Set<string> => {
+    const seen = new Set<string>();
+    const queue = [entry];
+    while (queue.length > 0) {
+      const file = queue.pop();
+      if (file === undefined || seen.has(file)) continue;
+      seen.add(file);
+      if (!/\.tsx?$/.test(file)) continue;
+      const src = stripComments(fs.readFileSync(file, "utf8"));
+      const specifiers = [
+        ...src.matchAll(/\bimport\s+(?:[^'"`;]*?\sfrom\s+)?["']([^"']+)["']/g),
+        ...src.matchAll(/\bexport\s+[^'"`;]*?\sfrom\s+["']([^"']+)["']/g),
+        ...src.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g),
+      ].map((m) => m[1] ?? "");
+      for (const spec of specifiers) {
+        const resolved = resolveSpecifier(file, spec);
+        if (resolved !== null) queue.push(resolved);
+      }
+    }
+    return seen;
+  };
+
+  it("the student page reaches calendar-student.css and CalendarView, and not calendar.css", () => {
+    const graph = importGraph(path.join(CLIENT_SRC, "pages/calendar.tsx"));
+    expect(graph.has(STUDENT)).toBe(true);
+    expect(graph.has(VIEW)).toBe(true);
+    const sheets = [...graph]
+      .filter((file) => file.endsWith(".css"))
+      .map((file) => path.relative(CLIENT_SRC, file))
+      .sort();
+    expect(sheets).toContain("features/calendar/calendar-student.css");
+    expect(sheets).not.toContain("features/calendar/calendar.css");
+    expect(graph.has(LEGACY)).toBe(false);
+  });
+
+  it("the guardian calendar still reaches calendar.css (the walker can see the import)", () => {
+    const graph = importGraph(
+      path.join(CLIENT_SRC, "pages/guardian-student-calendar.tsx"),
+    );
+    expect(graph.has(VIEW)).toBe(true);
+    expect(graph.has(LEGACY)).toBe(true);
   });
 });

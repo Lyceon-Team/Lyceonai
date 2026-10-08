@@ -3,9 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Check } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { HOME_FAQS, faqParagraphs } from "@shared/seo/public-meta";
+import { HOME_FAQS, faqParagraphs } from "@shared/seo/faqs";
 import { sectionDisplayLabel } from "@shared/section-display";
-import { loginPathWithReturn } from "@lyceon/shared/return-path";
 import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { HomeNav } from "@/components/marketing/HomeNav";
@@ -19,6 +18,10 @@ import {
   formatMonthlyPrice,
 } from "@/lib/public-pricing";
 import { ctaClickHandlers } from "@/lib/cta-click";
+import {
+  GUARDIAN_SIGNUP_HREF,
+  START_DIAGNOSTIC_HREF,
+} from "@/lib/marketing-links";
 import {
   HERO_COPY,
   HERO_SUB_ID,
@@ -54,16 +57,6 @@ import { LazyQotdWidget } from "@/components/qotd/LazyQotdWidget";
  */
 const FREE_DAILY_PRACTICE_QUESTIONS = 40;
 
-/**
- * Where the homepage's calls to action land (owner rulings 2026-10-05, F13 Step 0 decision 4).
- * Signup is /login; the return path rides the shared `next` channel, which survives Google
- * sign-in and onboarding. The diagnostic button returns to /dashboard, where the free diagnostic
- * starts (no auto-start). The parent button returns to /guardian, which also makes Guardian the
- * DEFAULT role on the onboarding form (profile-complete.tsx) — a default only; the server
- * validates the chosen role exactly as before.
- */
-const START_DIAGNOSTIC_HREF = loginPathWithReturn("/dashboard");
-const GUARDIAN_SIGNUP_HREF = loginPathWithReturn("/guardian");
 
 const TRUST_ITEMS = [
   "Free daily practice",
@@ -170,9 +163,11 @@ export default function HomePage() {
   }, [heroVariant]);
   const hero = HERO_COPY[heroVariant ?? "control"];
 
-  const trackCtaClick = (ctaText: string) => {
-    console.debug("hero_cta_click", { ctaText });
-  };
+  // The CTA click is not an analytics event yet: no `hero_cta_click` entry exists in the event
+  // registry, and adding one is the SEO vertical's call. This used to `console.debug` the click,
+  // which shipped a debug print to every visitor's console (Coding Standards §16); it is now the
+  // empty wiring point ctaClickHandlers already calls exactly once per activation.
+  const trackCtaClick = (_ctaText: string): void => {};
 
   return (
     <PublicLayout
@@ -484,7 +479,7 @@ export default function HomePage() {
             Frequently asked questions
           </h2>
           {/* One copy of this FAQ: rendered here, and the homepage FAQPage JSON-LD is built
-              from the same array (shared/seo/public-meta.ts, F1). */}
+              from the same array (shared/seo/faqs.ts, F1). */}
           {HOME_FAQS.map((faq) => (
             <details key={faq.question} className={`${CARD} px-5 py-4 sm:px-6`}>
               <summary className="min-h-11 cursor-pointer py-2 text-[17px] font-semibold">

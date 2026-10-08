@@ -242,9 +242,13 @@ router.get("/", async (req: Request, res: Response) => {
       .single();
 
     if (profileError || !profileRow) {
-      console.error(
-        "[PROFILE] Failed to load canonical profile row:",
+      logger.error(
+        "PROFILE",
+        "profile_row_load_failed",
+        "Failed to load canonical profile row",
         profileError,
+        undefined,
+        { requestId: req.requestId },
       );
       return res.status(500).json({ error: "Failed to load profile" });
     }
@@ -260,9 +264,13 @@ router.get("/", async (req: Request, res: Response) => {
       .eq("user_id", user.id);
 
     if (legalError) {
-      console.error(
-        "[PROFILE] Failed to load legal acceptance status:",
+      logger.error(
+        "PROFILE",
+        "legal_acceptance_load_failed",
+        "Failed to load legal acceptance status",
         legalError,
+        undefined,
+        { requestId: req.requestId },
       );
     }
 
@@ -348,8 +356,10 @@ router.get("/", async (req: Request, res: Response) => {
         hasPassword,
       },
     });
-  } catch (error: any) {
-    console.error("[PROFILE] Error:", error);
+  } catch (error: unknown) {
+    logger.error("PROFILE", "get_profile", "Unexpected error", error, undefined, {
+      requestId: req.requestId,
+    });
     return res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -396,9 +406,13 @@ router.patch("/", async (req: Request, res: Response) => {
         .single();
 
     if (existingProfileError || !existingProfile) {
-      console.error(
-        "[PROFILE] Error loading existing profile:",
+      logger.error(
+        "PROFILE",
+        "existing_profile_load_failed",
+        "Error loading existing profile",
         existingProfileError,
+        undefined,
+        { requestId: req.requestId },
       );
       return res.status(500).json({ error: "Failed to load profile state" });
     }
@@ -578,7 +592,14 @@ router.patch("/", async (req: Request, res: Response) => {
       .eq("id", userId);
 
     if (updateError) {
-      console.error("[PROFILE] Error updating profile:", updateError);
+      logger.error(
+        "PROFILE",
+        "profile_update_failed",
+        "Error updating profile",
+        updateError,
+        undefined,
+        { requestId: req.requestId },
+      );
       return res.status(500).json({ error: "Failed to update profile" });
     }
 
@@ -619,7 +640,14 @@ router.patch("/", async (req: Request, res: Response) => {
       .single();
 
     if (fetchError || !profile) {
-      console.error("[PROFILE] Error fetching updated profile:", fetchError);
+      logger.error(
+        "PROFILE",
+        "updated_profile_fetch_failed",
+        "Error fetching updated profile",
+        fetchError,
+        undefined,
+        { requestId: req.requestId },
+      );
       return res.status(500).json({ error: "Failed to fetch updated profile" });
     }
 
@@ -669,8 +697,10 @@ router.patch("/", async (req: Request, res: Response) => {
       },
       guardianConsentRequired,
     });
-  } catch (error: any) {
-    console.error("[PROFILE] Unexpected error:", error);
+  } catch (error: unknown) {
+    logger.error("PROFILE", "complete_profile", "Unexpected error", error, undefined, {
+      requestId: req.requestId,
+    });
     return res.status(500).json({ error: "Internal server error" });
   }
 });

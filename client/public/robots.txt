@@ -1,35 +1,16 @@
 User-agent: *
 Allow: /
 
-# Public pages (prerendered; every one is listed in the sitemap)
-Allow: /digital-sat
-Allow: /blog
-Allow: /trust
-Allow: /legal
-
-# Signed-in app surfaces and non-content routes. Kept in step with
-# infra/route-surface-classification.yaml by tests/seo.route-registry.test.ts: every
-# authenticated route is covered here, and no indexable page is.
-Disallow: /admin
+# Only what must never be fetched is disallowed: the API and the auth callback, which are server
+# endpoints, not pages.
+#
+# The signed-in app, /login and every other non-content route are NOT disallowed. They are served
+# the SPA shell (app.html), which carries <meta name="robots" content="noindex">, and the 404 page
+# carries it too. A crawler can only obey a noindex it is allowed to fetch, so disallowing those
+# paths would keep them out of crawling but leave their URLs indexable from links (Doc 10A
+# INV-10A-05). tests/seo.route-registry.test.ts holds this in step with
+# infra/route-surface-classification.yaml.
 Disallow: /api/
 Disallow: /auth/
-Disallow: /account
-Disallow: /calendar
-Disallow: /chat
-Disallow: /dashboard
-Disallow: /guardian
-Disallow: /help
-Disallow: /login
-Disallow: /mastery
-Disallow: /notifications
-Disallow: /practice
-Disallow: /profile
-Disallow: /review
-Disallow: /score-report
-Disallow: /signup
-Disallow: /tests
-Disallow: /tutor
-Disallow: /update-password
-Disallow: /upgrade
 
 Sitemap: https://lyceon.ai/sitemap.xml

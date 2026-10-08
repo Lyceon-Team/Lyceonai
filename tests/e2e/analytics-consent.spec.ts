@@ -252,7 +252,7 @@ test.describe("cookie consent → PostHog", () => {
       source: "banner",
     });
     // Navigate and wait: nothing may load later either.
-    await page.goto(`${BASE}/digital-sat`);
+    await page.goto(`${BASE}/online-sat-prep`);
     await page.waitForTimeout(2500);
     expect(seen.posthog).toEqual([]);
   });
@@ -326,7 +326,7 @@ test.describe("cookie consent → PostHog", () => {
   }) => {
     await setAcceptedCookie(context);
     const seen = await instrument(context, page);
-    await page.goto(`${BASE}/digital-sat`);
+    await page.goto(`${BASE}/online-sat-prep`);
     await expect
       .poll(() => seen.posthog.length, { timeout: 15_000 })
       .toBeGreaterThan(0);
@@ -361,7 +361,7 @@ test.describe("cookie consent → PostHog", () => {
     const seen = await instrument(context, page, { signedIn: "adult" });
 
     // Control (presence before absence): on a public page the clicked element's text is captured.
-    await page.goto(`${BASE}/digital-sat`);
+    await page.goto(`${BASE}/online-sat-prep`);
     await expect
       .poll(() => seen.events.length, { timeout: 15_000 })
       .toBeGreaterThan(0);
@@ -389,6 +389,17 @@ test.describe("cookie consent → PostHog", () => {
     // text a public page would capture; here it must not be.
     const section = page.getByRole("button", { name: "Account", exact: true });
     await expect(section).toBeVisible({ timeout: 15_000 });
+    // The full load of /profile starts PostHog again, lazily. A click before it has started is never
+    // autocaptured, so wait for this view's $pageview (the SDK running) before clicking — the same
+    // guard the public-page control above takes.
+    await expect
+      .poll(
+        () =>
+          seen.events.slice(before).filter((e) => e.event === "$pageview")
+            .length,
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(0);
     await section.click();
     await expect
       .poll(
@@ -631,8 +642,13 @@ test("homepage: the banner's background is the page's cream; other public pages 
     banner: "rgb(251, 246, 236)",
     page: "rgb(251, 246, 236)",
   });
-  await page.goto(`${BASE}/digital-sat`);
+  await page.goto(`${BASE}/online-sat-prep`);
   await expect(page.getByTestId("cookie-banner")).toBeVisible();
+  // The page's own chunk loads after the shell: wait for its heading, so the colour read is of
+  // the page and not the route's loading fallback.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Online SAT prep" }),
+  ).toBeVisible();
   expect(await colours()).toEqual({
     banner: "rgb(255, 250, 239)",
     page: "rgb(255, 250, 239)",

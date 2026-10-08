@@ -22,7 +22,6 @@ import Stripe from "stripe";
 
 const WEBHOOK_SECRET = "whsec_test_secret_for_dispute_suite";
 const STUDENT_ID = "55555555-5555-4555-8555-555555555555";
-const OTHER_STUDENT_ID = "66666666-6666-4666-8666-666666666666";
 
 const state = vi.hoisted(() => ({ expectedLivemode: false }));
 

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 type Action = { label: string; onClick: () => void };
 
-export type RunnerStateCardProps = {
+type RunnerStateCardProps = {
   tone: "neutral" | "danger";
   title: string;
   message: string;

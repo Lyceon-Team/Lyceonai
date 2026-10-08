@@ -15,7 +15,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalendarDay, DayEditBody, PlanBlock } from "@lyceon/shared";
 import {
-  CALENDAR_ROOT,
   fetchCalendar,
   fetchGuardianCalendar,
   postAcknowledge,
@@ -23,6 +22,10 @@ import {
   postMoveBlock,
   putDay,
 } from "./client";
+
+/** The calendar API's root path, as the server mounts it — a literal, so a drift in the
+ * client's own constant fails here instead of agreeing with itself. */
+const CALENDAR_ROOT = "/api/calendar";
 
 const csrfFetchMock = vi.fn();
 
@@ -176,10 +179,13 @@ let errorSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.clearAllMocks();
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  for (const method of ["warn", "log", "info", "debug"] as const) {
+    vi.spyOn(console, method).mockImplementation(() => {});
+  }
 });
 
 afterEach(() => {
-  errorSpy.mockRestore();
+  vi.restoreAllMocks();
 });
 
 // ── URL construction (§15, §16) ─────────────────────────────────────────────
@@ -341,7 +347,7 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
     );
   });
 
-  it("reports through console.error with the issue PATHS only — never the body, which holds the plan", async () => {
+  it("writes nothing to the console, and the thrown message carries no plan content (Codex audit finding 1)", async () => {
     csrfFetchMock.mockResolvedValueOnce(
       jsonResponse({
         status: "ready",
@@ -355,15 +361,39 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
       }),
     );
 
-    await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow();
+    const thrown = await fetchCalendar(FROM, TO, TZ).then(
+      () => null,
+      (err: unknown) => err,
+    );
 
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    const logged = String(errorSpy.mock.calls[0]?.[0]);
-    expect(logged).toContain("[CALENDAR] GET /api/calendar");
-    expect(logged).toContain("contract mismatch");
-    // Privacy (Coding Standards §12.1): no student content in the log line.
-    expect(logged).not.toContain("Algebra");
-    expect(logged).not.toContain("target_score");
+    // Presence first: the read was refused with the curated message.
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    expect(message).toContain("GET /api/calendar");
+    expect(message).toContain("contract mismatch");
+    // Privacy (Coding Standards §12.1): no student content in the message.
+    expect(message).not.toContain("Algebra");
+    expect(message).not.toContain("target_score");
+    // No console channel at all (student client code, no replacement logger).
+    for (const method of ["error", "warn", "log", "info", "debug"] as const) {
+      expect(console[method]).not.toHaveBeenCalled();
+    }
+  });
+
+  it("a body that is not JSON is refused the same way, with nothing written to the console", async () => {
+    csrfFetchMock.mockResolvedValueOnce(
+      new Response("<html>bad gateway</html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    await expect(fetchCalendar(FROM, TO, TZ)).rejects.toThrow(
+      /GET \/api\/calendar: the server returned a body this client cannot read/,
+    );
+    for (const method of ["error", "warn", "log", "info", "debug"] as const) {
+      expect(console[method]).not.toHaveBeenCalled();
+    }
   });
 
   it("refuses a guardian body that arrived in the STUDENT shape", async () => {
@@ -374,7 +404,7 @@ describe("a malformed 200 is REFUSED, never defaulted", () => {
     await expect(fetchGuardianCalendar(STUDENT_ID, FROM, TO)).rejects.toThrow(
       /GET \/api\/students\/:id\/calendar/,
     );
-    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it("refuses a launch response missing `next`, rather than navigating nowhere", async () => {

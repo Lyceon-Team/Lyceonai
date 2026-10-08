@@ -5,6 +5,7 @@
  * for the SAT Learning Copilot application.
  */
 
+import type { Request } from "express";
 import { digestId, classifyError } from "./lib/redact";
 
 const REDACTION_STRING = "[REDACTED]";
@@ -353,9 +354,9 @@ function sanitiseEntry(
 }
 
 export function redactSensitive<T>(input: T): T {
-  const seen = new WeakMap<object, any>();
+  const seen = new WeakMap<object, unknown>();
 
-  const clone = (value: any): any => {
+  const clone = (value: unknown): unknown => {
     if (value === null || value === undefined) return value;
     if (isIdentifierValue(value)) return digestId(value);
     if (typeof value === "string") return scanStringValue(value);
@@ -415,7 +416,7 @@ export function redactSensitive<T>(input: T): T {
     }
 
     if (Array.isArray(value)) {
-      const arr: any[] = [];
+      const arr: unknown[] = [];
       seen.set(value, arr);
       for (let i = 0; i < value.length; i++) {
         arr[i] = clone(value[i]);
@@ -423,15 +424,18 @@ export function redactSensitive<T>(input: T): T {
       return arr;
     }
 
-    const result: Record<string, any> = {};
+    const result: Record<string, unknown> = {};
     seen.set(value, result);
     for (const key of Object.keys(value)) {
-      result[key] = sanitiseEntry(key, (value as any)[key], clone);
+      result[key] = sanitiseEntry(key, (value as Record<string, unknown>)[key], clone);
     }
     return result;
   };
 
-  return clone(input);
+  // The walker preserves the container shape (object/array/primitive) but not the
+  // exact class — an Error comes back as a plain record — so T is the caller's
+  // nominal view of the result, as it was when this returned `any`.
+  return clone(input) as T;
 }
 
 export interface LogEntry {
@@ -440,8 +444,8 @@ export interface LogEntry {
   component: string;
   operation: string;
   message: string;
-  data?: any;
-  error?: any;
+  data?: unknown;
+  error?: unknown;
   duration?: number;
   userId?: string;
   requestId?: string;
@@ -455,7 +459,7 @@ export interface PerformanceMetrics {
   endTime: number;
   success: boolean;
   errorType?: string;
-  metadata?: any;
+  metadata?: unknown;
 }
 
 class OperationalLogger {
@@ -480,18 +484,18 @@ class OperationalLogger {
     component: string,
     operation: string,
     message: string,
-    data?: any,
-    error?: any,
+    data?: unknown,
+    error?: unknown,
     duration?: number,
     context?: { userId?: string; requestId?: string; ip?: string },
   ): LogEntry {
-    let safeData: any;
+    let safeData: unknown;
     if (data !== undefined) {
       safeData =
         typeof data === "object" ? redactSensitive(data) : { value: data };
     }
 
-    let safeError: any;
+    let safeError: unknown;
     if (error !== undefined) {
       safeError = this.serializeError(error);
     }
@@ -514,7 +518,7 @@ class OperationalLogger {
   /**
    * Serialize error objects for logging
    */
-  private serializeError(error: any) {
+  private serializeError(error: unknown) {
     return redactSensitive(error);
   }
 
@@ -736,7 +740,7 @@ class OperationalLogger {
     component: string,
     operation: string,
     message: string,
-    data?: any,
+    data?: unknown,
     context?: { userId?: string; requestId?: string; ip?: string },
   ) {
     const entry = this.createLogEntry(
@@ -759,7 +763,7 @@ class OperationalLogger {
     component: string,
     operation: string,
     message: string,
-    data?: any,
+    data?: unknown,
     context?: { userId?: string; requestId?: string; ip?: string },
   ) {
     const entry = this.createLogEntry(
@@ -782,7 +786,7 @@ class OperationalLogger {
     component: string,
     operation: string,
     message: string,
-    data?: any,
+    data?: unknown,
     context?: { userId?: string; requestId?: string; ip?: string },
   ) {
     const entry = this.createLogEntry(
@@ -805,8 +809,8 @@ class OperationalLogger {
     component: string,
     operation: string,
     message: string,
-    error?: any,
-    data?: any,
+    error?: unknown,
+    data?: unknown,
     context?: { userId?: string; requestId?: string; ip?: string },
   ) {
     const entry = this.createLogEntry(
@@ -825,7 +829,7 @@ class OperationalLogger {
   /**
    * Performance monitoring
    */
-  startTimer(operation: string, metadata?: any): () => PerformanceMetrics {
+  startTimer(operation: string, metadata?: unknown): () => PerformanceMetrics {
     const startTime = Date.now();
 
     return (
@@ -877,7 +881,7 @@ class OperationalLogger {
     requestId: string,
     userId?: string,
     ip?: string,
-    requestBody?: any,
+    requestBody?: unknown,
     responseSize?: number,
   ) {
     const level =
@@ -914,7 +918,7 @@ class OperationalLogger {
     userId: string,
     requestId: string,
     ip: string,
-    changes?: any,
+    changes?: unknown,
     success: boolean = true,
   ) {
     const level = success ? "info" : "warn";
@@ -984,7 +988,7 @@ class OperationalLogger {
   /**
    * Log system startup
    */
-  systemStartup(component: string, details?: any) {
+  systemStartup(component: string, details?: unknown) {
     this.info("SYSTEM", "startup", `${component} started`, details);
   }
 
@@ -1007,10 +1011,12 @@ export interface LogContext {
 }
 
 // Helper for creating logging middleware
-export function createLoggingContext(req: any): LogContext {
+// (`req.userId` was read here too; no middleware sets it — `req.user` is the
+// canonical authenticated user, see server/middleware/supabase-auth.ts.)
+export function createLoggingContext(req: Request): LogContext {
   return {
-    userId: req.user?.id || req.userId,
+    userId: req.user?.id,
     requestId: req.requestId || logger.generateRequestId(),
-    ip: req.ip || req.connection?.remoteAddress,
+    ip: req.ip || req.socket?.remoteAddress,
   };
 }

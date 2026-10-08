@@ -16,8 +16,8 @@
  *     derived from the account, never taken from the client.
  *
  * Every database call goes through an injected `RpcClient`, and every moment check is an
- * injected function, so the decisions are tested without a database (tests/ci/
- * product-feedback-routes.contract.test.ts); the SQL itself is proved on Postgres by
+ * injected function, so the decisions are tested without a database
+ * (tests/ci/product-feedback.contract.test.ts); the SQL itself is proved on Postgres by
  * tests/ci/marketing-consent-reviews.pg.ci.test.ts.
  *
  * Privacy: review and feedback text is never logged. Logs carry outcomes and the request id.
@@ -29,7 +29,6 @@ import {
   feedbackAudienceFor,
   reviewAudienceFor,
   type FeedbackSubmit,
-  type ReviewAudience,
   type ReviewPromptQuery,
   type ReviewPromptResponse,
   type ReviewPromptState,

@@ -29,7 +29,8 @@
  *   explicit-render API (render -> iframe + callback(token), remove), for environments whose
  *   browser cannot reach challenges.cloudflare.com. The real widget and the CSP report check are
  *   only meaningful without it (the preview run).
- * Not part of `pnpm test` (vitest) and not run in CI.
+ * Not part of `pnpm test` (vitest). CI runs it in MOCKED mode against the built bundle served with
+ * vercel.json's headers, in the `analytics-consent-e2e` job (Doc 10A INV-10A-11, 2026-10-06).
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import fs from "fs";
@@ -277,7 +278,7 @@ test.describe("Question of the Day", () => {
       expect(sent.answer).toMatch(/^[A-Za-z0-9_-]{22}$/);
       expect(sent.turnstile_token.length).toBeGreaterThan(10);
       await expect(page.getByTestId("qotd-stat")).toHaveText(
-        "67% of students got this right.",
+        "67% answered correctly.",
       );
     }
 
@@ -344,11 +345,13 @@ test.describe("Question of the Day", () => {
     await page.goto("/sat-question-of-the-day");
     const area = page.getByTestId("qotd-question-area");
     await expect(area).toBeVisible({ timeout: 20_000 });
-    await area.getByRole("button").first().click();
+    // Choices are radios and the miss reads "Not quite" since the renderer moved to the student
+    // tokens (UI-53), as in the homepage test above; this test predates that and had not run in CI.
+    await area.getByRole("radio").first().click();
     const submit = page.getByTestId("qotd-submit");
     await expect(submit).toBeEnabled({ timeout: 20_000 });
     await submit.click();
-    await expect(page.getByText(/^(Correct|Incorrect)$/)).toBeVisible({
+    await expect(page.getByText(/^(Correct|Not quite)$/)).toBeVisible({
       timeout: 20_000,
     });
     await expect(page.getByTestId("qotd-locked")).toBeVisible();

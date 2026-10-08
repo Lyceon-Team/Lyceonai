@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  *
  * Use `rulerFill` to turn a count of the student's own (answered, remaining) into ticks.
  */
-export const RULER_TICKS = 40;
+const RULER_TICKS = 40;
 
 const SIZE = {
   card: {

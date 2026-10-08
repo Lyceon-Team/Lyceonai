@@ -24,7 +24,7 @@ describe("normalizePracticeTopicDomains", () => {
       { domain: " ", skills: [] },
       { skills: ["Missing domain"] },
       "Functions",
-    ] as any);
+    ] as unknown as Parameters<typeof normalizePracticeTopicDomains>[0]);
 
     expect(result).toEqual([{ domain: "Functions", skills: [] }]);
   });

@@ -97,7 +97,6 @@ describe("Stripe-native country control survey (INV-03-08 / SCL-046)", () => {
       "  CONCLUSION: no Stripe-native surface satisfies INV-03-08. The control is ours.",
       "",
     ];
-    // eslint-disable-next-line no-console
     console.log(lines.join("\n"));
 
     // The Radar claim is grounded, not asserted: the SDK really does offer a

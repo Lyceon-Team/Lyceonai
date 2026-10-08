@@ -342,7 +342,9 @@ describe("W4-11 — standalone chat: an unpaid student never reaches a composer"
     expect(screen.queryByLabelText("Message")).toBeNull();
   });
 
-  it("clicking New session after entitlement lapsed: the card, not a silent spinner", async () => {
+  // QA 2026-10-07 item 9: New session creates nothing; the create is the first message's. So
+  // the lapsed student's refusal arrives on that first message's create, and draws the card.
+  it("New session after entitlement lapsed: nothing is created on the click; the first message's create is refused and draws the card", async () => {
     await renderChat();
     const newSession = await screen.findByTestId("lisa-new-session");
     await waitFor(() =>
@@ -358,7 +360,15 @@ describe("W4-11 — standalone chat: an unpaid student never reaches a composer"
 
     setEntitled(false);
     fireEvent.click(newSession);
+    // Presence first: the empty column's composer is up; nothing was asked of the server.
+    expect(await screen.findByLabelText("Message")).toBeTruthy();
+    expect(
+      calls.filter(
+        (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
+      ),
+    ).toHaveLength(0);
 
+    send(STUDENT_TEXT);
     await lockedCard();
     expect(refused("POST", "/api/tutor/conversations")).toBe(true);
     expect(db.current.rows("tutor_conversations")).toHaveLength(0);
@@ -394,7 +404,12 @@ describe("W4-11 — standalone chat: an unpaid student never reaches a composer"
     const newSession = await screen.findByTestId("lisa-new-session");
     expect(screen.queryAllByTestId("lisa-locked")).toHaveLength(0);
 
+    // QA-9: New session creates nothing; its first message creates the conversation.
     fireEvent.click(newSession);
+    expect(db.current.rows("tutor_conversations")).toHaveLength(0);
+    // (This file's router is a fixed stub, so the page does not follow the create into the new
+    // conversation; chat.ui56.test.tsx follows it through to the reply.)
+    send(STUDENT_TEXT);
     await waitFor(() =>
       expect(db.current.rows("tutor_conversations")).toHaveLength(1),
     );
@@ -414,20 +429,28 @@ describe("W4-11 — standalone chat: an unpaid student never reaches a composer"
     expect(calls.filter((c) => c.status === 403)).toHaveLength(0);
   });
 
-  it("a New session that fails for any other reason says so — and is not drawn as a paywall", async () => {
+  it("a New session whose first message's create fails for any other reason says so — not a paywall; the words stay", async () => {
     await renderChat();
     const [welcomeButton] = await screen.findAllByRole("button", {
       name: /^new session$/i,
     });
+    // QA-9: the click creates nothing; the create is the first message's.
+    fireEvent.click(welcomeButton);
+    expect(await screen.findByLabelText("Message")).toBeTruthy();
 
     const broken = vi.spyOn(db.current, "client").mockImplementation(() => {
       throw new Error("db down");
     });
-    fireEvent.click(welcomeButton);
+    send(STUDENT_TEXT);
     const [alert] = await screen.findAllByRole("alert");
     broken.mockRestore();
 
     expect(alert.textContent).toMatch(/couldn.t start a session/i);
     expect(screen.queryAllByTestId("lisa-upgrade")).toHaveLength(0);
+    expect(screen.queryAllByTestId("lisa-locked")).toHaveLength(0);
+    // The student's words go back in the composer.
+    expect(
+      (screen.getByLabelText("Message") as HTMLTextAreaElement).value,
+    ).toBe(STUDENT_TEXT);
   });
 });

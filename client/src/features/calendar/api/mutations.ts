@@ -77,7 +77,7 @@ export function newIntent<V extends object>(
   return { ...variables, idempotency_key: crypto.randomUUID() };
 }
 
-export type Intent<V extends object> = V & { idempotency_key: string };
+type Intent<V extends object> = V & { idempotency_key: string };
 
 /** What `onMutate` hands to `onError` so a failed write can be undone exactly. */
 type Snapshot = { previous: [readonly unknown[], CalendarResponse][] };
@@ -168,7 +168,7 @@ export function useStudyProfileMutation(): UseMutationResult<
 
 // ── Day edits ───────────────────────────────────────────────────────────────
 
-export type EditDayVariables = Intent<{
+type EditDayVariables = Intent<{
   date: string;
   members: readonly PlanMember[];
   /**
@@ -210,7 +210,7 @@ export function useEditDay(): UseMutationResult<
 
 // ── Move ────────────────────────────────────────────────────────────────────
 
-export type MoveBlockVariables = Intent<{ blockId: string; toDate: string }>;
+type MoveBlockVariables = Intent<{ blockId: string; toDate: string }>;
 
 /**
  * §12.2/§12.4. The optimistic apply is exact here — unlike an edit, a move creates no new
@@ -238,8 +238,8 @@ export function useMoveBlock(): UseMutationResult<
  * The plan-wide regenerate takes nothing but its key. Spelled out rather than
  * `Intent<Record<string, never>>`, which an empty object literal does not satisfy.
  */
-export type RegenerateVariables = { idempotency_key: string };
-export type DayScopedVariables = Intent<{ date: string }>;
+type RegenerateVariables = { idempotency_key: string };
+type DayScopedVariables = Intent<{ date: string }>;
 
 /** §12.1 `student_refresh` — the student's own `Refresh plan`. */
 export function useRegeneratePlan(): UseMutationResult<
@@ -296,7 +296,7 @@ export function useResetDay(): UseMutationResult<
 
 // ── Do it now ───────────────────────────────────────────────────────────────
 
-export type DoItNowVariables = Intent<{ blockId: string; today: string }>;
+type DoItNowVariables = Intent<{ blockId: string; today: string }>;
 
 export function useDoItNow(): UseMutationResult<
   DoItNowResponse,
@@ -348,7 +348,7 @@ export function useAcknowledge(): UseMutationResult<
 
 // ── Launch ──────────────────────────────────────────────────────────────────
 
-export type LaunchVariables = { blockId: string } & LaunchBody;
+type LaunchVariables = { blockId: string } & LaunchBody;
 
 /**
  * §15.1. No optimistic apply and no idempotency key in the body: the service owns the engine

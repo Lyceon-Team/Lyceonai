@@ -222,13 +222,13 @@ export const ABSENT_COPY = {
  *
  * plain English: the four readouts of the calendar header — target, streak, test-date
  * countdown, projected band — as display-only components. `TopBar` renders each in its own
- * slot, exactly as it always did (pinned by `Chrome.identity.test.tsx`); the guardian's
+ * slot, exactly as it always did; the guardian's
  * Calendar tab renders the same `TopBar`, so a parent reads the same numbers, the same absence
  * copy and the same markup as the student's calendar — one component, not a guardian copy
  * (R11). None of them holds a control. (The guardian Dashboard drew these four as a flat strip
  * through `HeaderFacts` until G5-05; R13 gave that tab the design's own score strip.)
  */
-export function TargetFact({
+function TargetFact({
   viewer,
   targetScore,
 }: {
@@ -251,7 +251,7 @@ export function TargetFact({
 }
 
 /** Renders nothing when the streak is unknown — never a zero it did not read. */
-export function StreakFact({
+function StreakFact({
   streak,
 }: {
   streak: StreakSummary | undefined;
@@ -269,7 +269,7 @@ export function StreakFact({
   );
 }
 
-export function CountdownFact({
+function CountdownFact({
   viewer,
   daysToTest,
 }: {
@@ -295,7 +295,7 @@ export function CountdownFact({
 }
 
 /** Doc 05C's band, summed by `projectedRange` and nothing else. */
-export function ProjectionFact({
+function ProjectionFact({
   viewer,
   projection,
 }: {
@@ -559,9 +559,6 @@ const SUPPRESSION_COPY = {
   guardian:
     "A practice test couldn't be scheduled — the days chosen are blocked.",
 } as const satisfies Record<"student" | "guardian", string>;
-
-/** Exported for the test that pins the two sentences against the owner's ruling. */
-export const SUPPRESSION_COPY_TABLE = SUPPRESSION_COPY;
 
 export function FullLengthSuppressionNotice({
   viewer,

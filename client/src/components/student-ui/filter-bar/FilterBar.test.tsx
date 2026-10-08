@@ -204,7 +204,36 @@ describe("FilterBar dropdowns, keyboard only", () => {
         .getAllByRole("menuitemcheckbox")
         .map((i) => i.getAttribute("aria-checked")),
     ).toEqual(["true", "true", "false", "false"]);
+    // Owner QA list (Karl, 2026-10-07) item 15: the chips row above the menus holds still
+    // while a menu is open (a new chip could wrap it and push the open menu down)...
+    expect(chipTexts()).toEqual([]);
+    // ...and catches up the moment the menu closes.
+    pressOnFocused("Escape");
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "Domain" })).toBeNull(),
+    );
     expect(chipTexts()).toEqual(["Domain: Algebra", "Domain: Advanced Math"]);
+  });
+
+  it("QA item 15: a chip removed or added while a menu is open waits for it to close; the value does not", async () => {
+    const onChange = vi.fn();
+    render(<Harness initial={START} onChange={onChange} />);
+    const before = chipTexts();
+    // Presence: the row starts with chips, so "unchanged" means something.
+    expect(before.length).toBeGreaterThan(0);
+    const menu = openMenu("Difficulty");
+    const items = within(menu).getAllByRole("menuitemcheckbox");
+    await waitFor(() => expect(document.activeElement).toBe(items[0]));
+    pressOnFocused("Enter");
+    // The value changed at once (the page's summary and Start read it)...
+    expect(onChange).toHaveBeenCalledTimes(1);
+    // ...the row above the open menu did not move.
+    expect(chipTexts()).toEqual(before);
+    pressOnFocused("Escape");
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "Difficulty" })).toBeNull(),
+    );
+    expect(chipTexts()).not.toEqual(before);
   });
 
   it("offers only the chosen domains' skills in the Skill menu", () => {

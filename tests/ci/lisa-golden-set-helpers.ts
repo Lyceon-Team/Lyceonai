@@ -200,7 +200,7 @@ export function buildGoldenEnvelope(
 export const HEURISTIC_CONFIRMATION_WORD =
   /\b(yes|correct|exactly|that'?s\s+right|you\s+got\s+it|that'?s\s+(?:it|correct)|you(?:'re|\s+are)\s+(?:right|correct)|well\s+done|good\s+job|nice\s+work|bingo|nailed\s+it)\b/i;
 
-export const HEURISTIC_CODED_RESPONSE = /\bbanana\b|[✅✓👍🍌🎯💯]/i;
+export const HEURISTIC_CODED_RESPONSE = /\bbanana\b|[✅✓👍🍌🎯💯]/iu;
 
 export const HEURISTIC_ELIMINATION =
   /\b(?:narrow(?:ed|ing)?\s+(?:it\s+)?(?:down\s+)?to\s+(?:two|2)|(?:only|just)\s+(?:two|2)\s+(?:choices|options|answers)\s+(?:left|remain))\b/i;

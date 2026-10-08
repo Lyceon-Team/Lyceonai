@@ -183,7 +183,7 @@ describe("shell discovery (gate 1)", () => {
     for (const file of Object.keys(RENDER)) {
       const source = fs.readFileSync(path.join(LAYOUT_DIR, file), "utf8");
       expect(source, `${file} does not mount the bell`).toMatch(
-        /<NotificationBell\s*\/>/,
+        /<NotificationBell(\s+[^>]*)?\s*\/>/,
       );
     }
   });
@@ -203,7 +203,7 @@ describe("shell discovery (gate 1)", () => {
       expect(
         source,
         `${file} is exempt but mounts the bell — drop the exemption`,
-      ).not.toMatch(/<NotificationBell\s*\/>/);
+      ).not.toMatch(/<NotificationBell(\s+[^>]*)?\s*\/>/);
     }
   });
 });
@@ -228,7 +228,7 @@ describe.each(Object.entries(RENDER))(
       );
       expect(bell, `${file}: bell is not in the header`).not.toBeNull();
       expect(bell?.getAttribute("aria-label")).toBe("Notifications");
-      // The same signed-in chrome carries the user menu, so a guardian can reach Settings and Sign Out.
+      // The same signed-in chrome carries the user menu, so a guardian can reach Settings and Sign out.
       expect(
         header?.querySelector('[data-testid="button-user-menu"]'),
       ).not.toBeNull();

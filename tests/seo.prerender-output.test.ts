@@ -14,16 +14,13 @@ import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { PrerenderedSite } from "../client/src/prerender/entry-server";
 import {
-  DIGITAL_SAT_FAQS,
-  DIGITAL_SAT_MATH_FAQS,
-  DIGITAL_SAT_READING_WRITING_FAQS,
   HOME_FAQS,
   LEGAL_META,
   getPublicMeta,
   resolvePublicMeta,
   faqParagraphs,
-  type FaqItem,
 } from "../shared/seo/public-meta";
+import { CONTENT_PAGES } from "../shared/content/pages";
 import { BASE_URL, LOGO_URL } from "../shared/seo/structured-data";
 import { HEAD_END_MARKER, HEAD_START_MARKER } from "../shared/seo/head";
 import { stripComments } from "./ci/lib/strip-comments";
@@ -244,12 +241,28 @@ describe("structured data (F1)", () => {
       expect(p.html, p.path).not.toContain("SearchAction");
   });
 
-  const FAQ_PAGES: [string, readonly FaqItem[]][] = [
-    ["/", HOME_FAQS],
-    ["/digital-sat", DIGITAL_SAT_FAQS],
-    ["/digital-sat/math", DIGITAL_SAT_MATH_FAQS],
-    ["/digital-sat/reading-writing", DIGITAL_SAT_READING_WRITING_FAQS],
-  ];
+  // The homepage and every content page with an FAQ (SEO Wave 3: the /digital-sat FAQs moved,
+  // unchanged, to /online-sat-prep and the two section pages).
+  const FAQ_PAGES: [string, readonly { question: string; answer: string }[]][] =
+    [
+      ["/", HOME_FAQS],
+      ...CONTENT_PAGES.filter((p) => p.faq.length > 0).map(
+        (p): [string, readonly { question: string; answer: string }[]] => [
+          p.path,
+          p.faq,
+        ],
+      ),
+    ];
+
+  it("covers the moved FAQs (presence first)", () => {
+    const paths = FAQ_PAGES.map(([p]) => p);
+    for (const p of [
+      "/online-sat-prep",
+      "/sat-practice-questions/math",
+      "/sat-practice-questions/reading-and-writing",
+    ])
+      expect(paths).toContain(p);
+  });
 
   it.each(FAQ_PAGES)(
     "%s: the FAQPage JSON-LD is exactly the FAQ the page renders",
