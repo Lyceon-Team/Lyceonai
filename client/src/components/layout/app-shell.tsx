@@ -264,11 +264,29 @@ function lockReasonFor(
 }
 
 const RAIL_ITEM_CLASS =
-  "relative flex w-full flex-col items-center gap-1.5 rounded-lg px-1 py-2.5 text-lyc-meta font-medium no-underline hover:brightness-110";
+  "relative flex w-full flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-lyc-meta font-medium no-underline hover:brightness-110";
 const TAB_ITEM_CLASS =
   "relative flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2 text-lyc-meta font-medium no-underline";
 const ON_CLASS = "bg-lyc-rail-on-bg text-lyc-rail-on-ink";
 const OFF_CLASS = "bg-transparent text-lyc-rail-ink";
+
+/**
+ * @spec [production re-test 2026-10-08 item H (Karl: "Rail bell: add the 'Notifications' label
+ *        and the shared active style (light and dark)"); OQ-47 (bell above Help); QA item 14
+ *        (the bell is current on /notifications); DESIGN.md §2] | @implemented [2026-10-08]
+ * plain English: the bell is a rail item like the six above it: the same item class, the same
+ * on/off pair (ON_CLASS / OFF_CLASS, which carry the light and dark rail tokens), icon above a
+ * visible "Notifications" label. It used to be a bare icon button whose current state was a
+ * second, hand-written copy of the on colours. Below `lg` the same element sits in the phone top
+ * bar, so there it is the bar's 40px icon button: the label is hidden (the accessible name stays
+ * "Notifications"), and the on/off pair still marks /notifications.
+ * Height: the labelled bell is about 30px taller than the bare icon was, which pushed the avatar
+ * below a 768px-tall window (1024x768). So every rail item's vertical padding is 8px (was 10) and
+ * the wordmark's bottom space 16px (was 22), which brings the rail back inside 768px; on a still
+ * shorter window the rail scrolls on its own rather than clip the avatar.
+ */
+const RAIL_BELL_CLASS = `${RAIL_ITEM_CLASS} cursor-pointer border-0 max-lg:h-10 max-lg:w-10 max-lg:justify-center max-lg:p-0`;
+const RAIL_BELL_LABEL_CLASS = "hidden lg:inline";
 
 function RailEntry({
   item,
@@ -439,13 +457,13 @@ export function AppShell({
       <SkipLink />
       <header
         data-testid="app-shell-header"
-        className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-2 bg-lyc-rail px-4 lg:static lg:h-full lg:w-[96px] lg:flex-col lg:items-stretch lg:gap-1 lg:px-2 lg:py-5"
+        className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-2 bg-lyc-rail px-4 lg:static lg:h-full lg:w-[96px] lg:flex-col lg:items-stretch lg:gap-1 lg:overflow-y-auto lg:px-2 lg:py-5"
       >
         <Link
           href="/dashboard"
           data-testid="logo-link"
           title="Lyceon home: your dashboard"
-          className={`${LYC_FOCUS} flex items-center gap-2 rounded-md text-lyc-rail-on-bg no-underline lg:flex-col lg:gap-1.5 lg:pb-[22px] lg:pt-1`}
+          className={`${LYC_FOCUS} flex items-center gap-2 rounded-md text-lyc-rail-on-bg no-underline lg:flex-col lg:gap-1.5 lg:pb-4 lg:pt-1`}
         >
           <GraduationCap
             aria-hidden="true"
@@ -476,11 +494,19 @@ export function AppShell({
         <div aria-hidden="true" className="flex-1" />
 
         {user ? (
-          <div
-            data-testid="rail-bell"
-            className={`flex justify-center ${notificationsActive ? "[&>button]:bg-lyc-rail-on-bg [&>button]:text-lyc-rail-on-ink" : "[&>button]:text-lyc-rail-ink [&>button:hover]:bg-transparent"}`}
-          >
-            <NotificationBell tone="student" current={notificationsActive} />
+          <div data-testid="rail-bell" className="flex justify-center">
+            <NotificationBell
+              tone="student"
+              current={notificationsActive}
+              railItem={{
+                className: [
+                  LYC_FOCUS,
+                  RAIL_BELL_CLASS,
+                  notificationsActive ? ON_CLASS : OFF_CLASS,
+                ].join(" "),
+                labelClassName: RAIL_BELL_LABEL_CLASS,
+              }}
+            />
           </div>
         ) : null}
 
