@@ -142,6 +142,7 @@ FILES=(
   "client/src/lib/theme.ts"
   "client/src/components/home/HomeLoading.tsx"
   "client/src/components/billing/PremiumUpgradePrompt.tsx"
+  "client/src/components/home/home-model.ts"
 )
 
 snapshot_all() {
@@ -2924,10 +2925,11 @@ plant "OQ66-H1" "a recent-session row hides its action again (no \"Review this s
 assert s.count(a) == 1
 s = s.replace(a, "{starting ? STARTING_LABEL : toReviewLine(s.open_count)}", 1)'
 
+# Re-pointed 2026-10-08 (W6 UI-66): the row's name is now `title` (its criteria), was `kind`.
 plant "OQ66-H2" "every recent row's action has the same accessible name" \
   "$OQ66_HOME" \
   "client/src/components/home/HomePanel.tsx" \
-  'a = "                        : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`\n"
+  'a = "                        : `${REVIEW_SESSION_LABEL}: ${title}, ${when}`\n"
 assert s.count(a) == 1
 s = s.replace(a, "                        : REVIEW_SESSION_LABEL\n", 1)'
 
@@ -3660,6 +3662,47 @@ plant "W6-UI65-3" "the floating dismiss button keeps the 14px shadcn base size" 
   'a = "            className=\"text-lyc-body\"\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
+
+# ── W6 UI-66 — recent-session rows named by their criteria (OQ-53 (e)) ───────────────────────
+# @spec [student-UI register UI-66; OQ-53 (e), owner ruling 2026-10-05] | @implemented [2026-10-08]
+W6_UI66_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+W6_UI66_PRACTICE="client/src/pages/practice.test.tsx"
+W6_UI66_MODEL="client/src/components/home/home-model.test.ts"
+
+plant "W6-UI66-H1" "Home's recent row prints the engine label again, not the criteria" \
+  "$W6_UI66_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "            const title = recentSessionTitle(s);\n"
+assert s.count(a) == 1
+s = s.replace(a, "            const title = s.source_engine === \"review\" ? \"Review\" : \"Practice\";\n", 1)'
+
+plant "W6-UI66-P1" "Practice's recent row prints \"Practice\" again, not the criteria" \
+  "$W6_UI66_PRACTICE" \
+  "client/src/pages/practice.tsx" \
+  'a = "                  {recentSessionTitle(s)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  {\"Practice\"}\n", 1)'
+
+plant "W6-UI66-M1" "the row helper ignores the criteria the row carries" \
+  "$W6_UI66_MODEL $W6_UI66_HOME $W6_UI66_PRACTICE" \
+  "client/src/components/home/home-model.ts" \
+  'a = "    filters !== null && \"sections\" in filters ? filters : NO_CRITERIA;\n"
+assert s.count(a) == 1
+s = s.replace(a, "    NO_CRITERIA;\n", 1)'
+
+plant "W6-UI66-M2" "a full-length row loses its form name" \
+  "$W6_UI66_MODEL" \
+  "client/src/components/home/home-model.ts" \
+  'a = "      ? displayFormName(filters.test_form_name)\n"
+assert s.count(a) == 1
+s = s.replace(a, "      ? sourceEngineLabel(\"full_length\")\n", 1)'
+
+plant "W6-UI66-M3" "a review row with no criteria is named like a practice row" \
+  "$W6_UI66_MODEL $W6_UI66_HOME" \
+  "client/src/components/home/home-model.ts" \
+  'a = "    row.source_engine === \"review\" ? \"review\" : \"practice\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "    \"practice\",\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

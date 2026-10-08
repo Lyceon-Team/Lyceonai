@@ -45,6 +45,7 @@ import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt"
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
 import {
   answeredLine,
+  recentSessionTitle,
   sessionTitle,
   toReviewLine,
 } from "@/components/home/home-model";
@@ -63,7 +64,6 @@ import {
   freeQuotaLine,
   parseQuestionsPerSession,
   recentPracticeRows,
-  recentPracticeScope,
   sessionLimitLine,
   sessionSummary,
   startLabel,
@@ -634,14 +634,17 @@ function RecentPractice({
               className="flex items-center justify-between gap-6 border-b border-lyc-rule py-3.5"
               data-testid="practice-recent-row"
             >
+              {/* UI-66 (OQ-53 (e), owner ruling Karl 2026-10-05) | @implemented [2026-10-08]:
+                  the row leads with the session's criteria title, as "Pick up where you left
+                  off" does, and the day and time follow (was: the time, then "Practice"). */}
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="text-lg font-semibold text-lyc-ink">
+                  {recentSessionTitle(s)}
+                </span>
+                <span className="text-base text-lyc-muted">
                   {s.local_time === null
                     ? dayHeaderLabel(s.local_date, todayKey)
                     : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`}
-                </span>
-                <span className="text-base text-lyc-muted">
-                  {recentPracticeScope(s.mode)}
                 </span>
               </span>
               <span className="whitespace-nowrap text-base text-lyc-ink">

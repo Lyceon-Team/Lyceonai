@@ -13,6 +13,10 @@ import {
   type CalendarDay,
 } from "@lyceon/shared/calendar";
 import { toSessionCriteria } from "@lyceon/shared/session-criteria";
+import {
+  reviewPoolSourceSessionSchema,
+  type ReviewPoolSourceSession,
+} from "@lyceon/shared/review-schema";
 import { studentCalendarWeek } from "@/features/calendar/calendar-week.fixture";
 import { rulerFill } from "@/components/student-ui/RulerProgress";
 import {
@@ -23,6 +27,7 @@ import {
   joinList,
   planRowView,
   planTotal,
+  recentSessionTitle,
   sessionTitle,
   weekSummary,
 } from "./home-model";
@@ -163,6 +168,92 @@ describe("session names (OQ-22)", () => {
     expect(sessionTitle("review", c(null), null)).toBe("Review session");
     expect(sessionTitle("practice", c(null), "M")).toBe("Math");
     expect(sessionTitle("practice", c(null), null)).toBe("Practice");
+  });
+});
+
+/**
+ * UI-66 (OQ-53 (e), owner ruling 2026-10-05): a recent-session row (`/api/review/pool`) is named
+ * as an open row is. Every row is parsed by the pool's own row schema, so `filters` has the
+ * shapes the server sends since F-52 (the strict four arrays, a full-length `{test_form_name}`,
+ * or null) and no other.
+ */
+describe("recent-session names (UI-66)", () => {
+  const row = (over: Record<string, unknown>): ReviewPoolSourceSession =>
+    reviewPoolSourceSessionSchema.parse({
+      source_engine: "practice",
+      source_session_id: "s-1",
+      created_at: "2026-10-07T14:40:00Z",
+      local_date: "2026-10-07",
+      local_time: "9:40 AM",
+      mode: "custom",
+      filters: null,
+      open_count: 3,
+      ...over,
+    });
+  const criteria = (c: Record<string, string[]>) => ({
+    sections: [],
+    domains: [],
+    skills: [],
+    difficulties: [],
+    ...c,
+  });
+
+  it("names a practice or review row by its criteria, through sessionTitle", () => {
+    expect(
+      recentSessionTitle(
+        row({
+          filters: criteria({
+            sections: ["M"],
+            domains: ["Algebra"],
+            skills: ["Linear functions"],
+          }),
+        }),
+      ),
+    ).toBe("Linear functions");
+    expect(
+      recentSessionTitle(
+        row({ filters: criteria({ sections: ["M"], domains: ["Algebra"] }) }),
+      ),
+    ).toBe("Algebra");
+    expect(
+      recentSessionTitle(
+        row({
+          source_engine: "review",
+          mode: "filter",
+          filters: criteria({ sections: ["RW"] }),
+        }),
+      ),
+    ).toBe("Reading & Writing");
+  });
+
+  it("falls back as the open rows do when a row carries no criteria", () => {
+    expect(recentSessionTitle(row({}))).toBe("Practice");
+    expect(recentSessionTitle(row({ filters: criteria({}) }))).toBe("Practice");
+    expect(
+      recentSessionTitle(row({ source_engine: "review", mode: "queue" })),
+    ).toBe("Review session");
+  });
+
+  it("names a full-length row by its form, a diagnostic by the shipped label", () => {
+    expect(
+      recentSessionTitle(
+        row({
+          source_engine: "full_length",
+          mode: null,
+          filters: { test_form_name: "Practice Test 1" },
+        }),
+      ),
+    ).toBe("Full-Length Test 1");
+    expect(
+      recentSessionTitle(
+        row({ source_engine: "full_length", mode: null, filters: null }),
+      ),
+    ).toBe("Full-length test");
+    expect(
+      recentSessionTitle(
+        row({ mode: "diagnostic", filters: criteria({ sections: ["M"] }) }),
+      ),
+    ).toBe("Diagnostic");
   });
 });
 
