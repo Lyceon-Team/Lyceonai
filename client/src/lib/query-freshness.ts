@@ -60,10 +60,12 @@ export const QUERY_FRESHNESS = {
   pricing: { staleTime: HOUR_MS },
 
   /**
-   * `GET /api/progress/kpis` (`useProgressKpis`). No timer (owner ruling 2026-10-01): refetch on
-   * window focus, and on session completion through `invalidateProgressKpis`. KPIs only move when
-   * the student answers questions. It replaced a 60 s interval that cost every open dashboard 60
-   * requests an hour. The window only stops a focus event from re-reading a fresh copy.
+   * KPIs. No client reads them today: UI-50 and UI-51 (2026-10-03) removed the last KPI tiles,
+   * and OQ-68 (c) (Karl, 2026-10-08) deleted the unused read hook and its session-completion
+   * invalidations (the `GET /api/progress/kpis` route's removal is cleanup's). The values stand
+   * for a KPI read that returns: no timer (owner ruling 2026-10-01; a 60 s interval cost every
+   * open dashboard 60 requests an hour), refetch on window focus; the window only stops a focus
+   * event from re-reading a fresh copy.
    */
   kpis: { staleTime: 30 * SECOND_MS, refetchOnWindowFocus: true },
 

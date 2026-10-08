@@ -11,8 +11,10 @@
  *
  * plain English: a static page. The questions open one at a time (the first starts open, as in
  * the prototype); each is a button with `aria-expanded`. "Contact support" is a mailto link to
- * the one support address. The policies link to the existing public legal routes. No request
- * is made by this page.
+ * the one support address. The policies link to the existing public legal routes. The one
+ * request is `GET /api/practice/quota` (`useFreeDailyLimit`), for the free plan's daily number
+ * in the first answer (OQ-68 (d), Karl, 2026-10-08, UI-64); until it answers, that answer says
+ * "daily practice questions" with no number.
  *
  * COPY. Every question and answer is the prototype's approved text, with one exception: the
  * guardian answer uses the sentence the owner ruled for "what a guardian can see" (OQ-38,
@@ -25,18 +27,31 @@ import { Link } from "wouter";
 import { PageHeader } from "@/components/student-ui";
 import { buttonVariants, LYC_FOCUS } from "@/components/ui/button";
 import { GUARDIAN_VISIBILITY_SENTENCE } from "@/components/settings/LinkSection";
-import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
+import { useFreeDailyLimit } from "@/hooks/usePracticeQuota";
+import { PLAN_PAID_ADDS, planFreeIncludes } from "@/lib/plan-copy";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import { cn } from "@/lib/utils";
 import { FeedbackButton } from "@/components/product-feedback/FeedbackDialog";
 import { useFeedbackAudience } from "@/lib/product-feedback-api";
 
-export const HELP_FAQS: readonly { q: string; a: string }[] = [
-  {
-    q: "What is free, and what needs a paid plan?",
-    // One source with the plans page (OQ-59 (h)): `client/src/lib/plan-copy.ts`.
-    a: `${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`,
-  },
+/**
+ * The seven questions. The first answer carries the free plan's daily limit from the server
+ * (`freeDailyLimit`, OQ-68 (d)); null prints the sentence without a number.
+ */
+export function helpFaqs(
+  freeDailyLimit: number | null,
+): readonly { q: string; a: string }[] {
+  return [
+    {
+      q: "What is free, and what needs a paid plan?",
+      // One source with the plans page (OQ-59 (h)): `client/src/lib/plan-copy.ts`.
+      a: `${planFreeIncludes(freeDailyLimit)} ${PLAN_PAID_ADDS}`,
+    },
+    ...HELP_FAQS_REST,
+  ];
+}
+
+const HELP_FAQS_REST: readonly { q: string; a: string }[] = [
   {
     q: "How is my projected score worked out?",
     a: "It comes from your mastery across the eight SAT domains. The range is wide at first and narrows as you answer more questions.",
@@ -96,6 +111,7 @@ function FeedbackHelpBox(): JSX.Element | null {
 
 export default function HelpPage(): JSX.Element {
   const [open, setOpen] = useState<number>(0);
+  const faqs = helpFaqs(useFreeDailyLimit());
   const faqId = useId();
   const contactId = useId();
   const policiesId = useId();
@@ -115,7 +131,7 @@ export default function HelpPage(): JSX.Element {
           Frequently asked questions
         </h2>
         <div className="border-t border-lyc-rule" data-testid="help-faqs">
-          {HELP_FAQS.map((faq, index) => {
+          {faqs.map((faq, index) => {
             const expanded = open === index;
             const answerId = `${faqId}-a${index}`;
             return (

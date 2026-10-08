@@ -163,7 +163,12 @@ describe("Diagnostic prompting contract", () => {
     // Home's card (UI-50) uses the signed-off prototype's words ("Start diagnostic",
     // Main.dc.html; owner ruling 2026-10-03: copy from the prototype). The old card's
     // action-neutral "Work on Diagnostic" left with the card (UI-51).
+    // OQ-68 (d) / UI-64 (2026-10-08): the card's sentence carries the served diagnostic length,
+    // so it is built by home-model.ts `diagnosticCardLine`, which FreeHome renders.
     const home = code(read("client/src/components/home/FreeHome.tsx"));
-    expect(home).toContain("projected SAT score");
+    expect(home).toContain("diagnosticCardLine(");
+    const model = code(read("client/src/components/home/home-model.ts"));
+    expect(model).toContain("export function diagnosticCardLine(");
+    expect(model).toContain("projected SAT score");
   });
 });
