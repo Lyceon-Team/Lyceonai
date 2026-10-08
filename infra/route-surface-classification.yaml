@@ -548,6 +548,19 @@ routes:
     requires_hmac: false
     prerender: false
     indexable: false
+  # client redirect to /practice (history replace, query dropped); the topic browser is retired,
+  # OQ-68 (a), Karl 2026-10-08
+  - path_pattern: /practice/topics
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-02B
+    last_classified_at: 2026-10-08
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
   - path_pattern: /math-practice
     surface_class: unauth_marketing
     clarity_allowed: false
@@ -593,17 +606,6 @@ routes:
     prerender: false
     indexable: false
   - path_pattern: /practice
-    surface_class: authenticated_student
-    clarity_allowed: false
-    masking_required: false
-    owning_doc: Doc-02B
-    last_classified_at: 2026-10-03
-    is_internal_api: false
-    requires_cloudflare_access: false
-    requires_hmac: false
-    prerender: false
-    indexable: false
-  - path_pattern: /practice/topics
     surface_class: authenticated_student
     clarity_allowed: false
     masking_required: false
@@ -801,6 +803,18 @@ routes:
     masking_required: false
     owning_doc: Doc-01
     last_classified_at: 2026-10-05
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
+  # client redirect to /profile (Settings), query and hash kept; production re-test 2026-10-08 item E
+  - path_pattern: /settings
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-08
     is_internal_api: false
     requires_cloudflare_access: false
     requires_hmac: false

@@ -271,6 +271,18 @@ describe("the rail (DESIGN.md §2 order)", () => {
       "Calendar",
       "LISA",
     ]);
+    // QA2-H: below the six, the rail column's own entries: the bell (now labelled), Help, then the
+    // avatar. The bell is not a seventh nav item; it is a popover, not a page link.
+    const header = screen.getByTestId("app-shell-header");
+    const column = Array.from(
+      header.querySelectorAll<HTMLElement>(':scope > [data-testid^="rail-"]'),
+    ).map((el) => el.getAttribute("data-testid"));
+    expect(column).toEqual(["rail-bell", "rail-help", "rail-account"]);
+    expect(
+      [screen.getByTestId("rail-bell"), screen.getByTestId("rail-help")].map(
+        (el) => el.textContent,
+      ),
+    ).toEqual(["Notifications", "Help"]);
   });
 
   it("each lock is the one RAIL lists: a modal lock is a button, a navigate lock a link", async () => {
@@ -309,7 +321,8 @@ describe("the rail (DESIGN.md §2 order)", () => {
 
   it("marks only the active item aria-current=page", async () => {
     const map = await serverMap({ paid: true, under13: false });
-    renderShell(map, { path: "/practice/topics" });
+    // A nested path marks its section (OQ-68 (a) retired /practice/topics, the old example).
+    renderShell(map, { path: "/practice/session/s1" });
     for (const item of RAIL) {
       const el = screen.getByTestId(`rail-${item.key}`);
       expect(el.getAttribute("aria-current")).toBe(
@@ -741,6 +754,14 @@ describe("Help, the account avatar and the bell", () => {
  * every skill" are its way in); /notifications is the bell's own page, so the bell is current.
  * Presence first: the item that should be lit is found, then exactly it is lit.
  */
+/** The rail's shared on/off pair (app-shell.tsx ON_CLASS / OFF_CLASS), written out. */
+const ON = ["bg-lyc-rail-on-bg", "text-lyc-rail-on-ink"];
+const OFF = ["bg-transparent", "text-lyc-rail-ink"];
+
+function classesOf(el: Element): string[] {
+  return el.className.split(/\s+/).filter((c) => c.length > 0);
+}
+
 describe("QA 14: the rail shows the current section on pages with no item of their own", () => {
   function current(container: HTMLElement): string[] {
     return Array.from(container.querySelectorAll('[aria-current="page"]')).map(
@@ -770,19 +791,70 @@ describe("QA 14: the rail shows the current section on pages with no item of the
     const bell = screen.getByTestId("button-notifications");
     expect(bell.getAttribute("aria-current")).toBe("page");
     expect(current(container)).toEqual(["button-notifications"]);
-    expect(screen.getByTestId("rail-bell").className).toContain(
-      "[&>button]:bg-lyc-rail-on-bg",
-    );
+    // QA2-H: drawn with the rail's shared "on" pair, on the button itself.
+    expect(classesOf(bell)).toEqual(expect.arrayContaining(ON));
+    expect(classesOf(bell).filter((c) => OFF.includes(c))).toEqual([]);
   });
 
   it("control: on /dashboard the bell is not current", async () => {
     const { container } = renderShell(
       await serverMap({ paid: true, under13: false }),
     );
-    expect(
-      screen.getByTestId("button-notifications").hasAttribute("aria-current"),
-    ).toBe(false);
+    const bell = screen.getByTestId("button-notifications");
+    expect(bell.hasAttribute("aria-current")).toBe(false);
     expect(current(container).sort()).toEqual(["rail-home", "tab-home"]);
+    expect(classesOf(bell)).toEqual(expect.arrayContaining(OFF));
+    expect(classesOf(bell).filter((c) => ON.includes(c))).toEqual([]);
+  });
+});
+
+/**
+ * @spec [production re-test 2026-10-08 item H (Karl: "Rail bell: add the 'Notifications' label
+ *        and the shared active style (light and dark)")] | @implemented [2026-10-08]
+ * plain English: the bell is drawn as a rail item. Its classes are a rail item's classes: every
+ * class an inactive rail item (Practice, on /notifications) carries, with the "off" pair swapped
+ * for the "on" pair when current, and nothing of a second hand-written copy of the colours. The
+ * pair is the rail tokens, which carry light and dark themselves (student-tokens.css), so one
+ * class set serves both themes. The label is visible text from lg up and the accessible name
+ * stays "Notifications" (with the unread count when there is one).
+ */
+describe("QA2-H: the bell is a labelled rail item with the shared active style", () => {
+  it("shows the visible label Notifications, icon above label, named Notifications", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    const bell = screen.getByTestId("button-notifications");
+    expect(bell.tagName).toBe("BUTTON");
+    expect(bell.getAttribute("aria-label")).toBe("Notifications");
+    const label = within(bell).getByText("Notifications");
+    expect(label.tagName).toBe("SPAN");
+    // Visible on the desktop rail (from lg up); the phone top bar keeps the 40px icon button.
+    expect(classesOf(label)).toEqual(["hidden", "lg:inline"]);
+    // Icon first, label second (the rail's "icon above label").
+    expect(bell.lastElementChild).toBe(label);
+    expect(bell.firstElementChild?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("carries every class of an inactive rail item, the on pair swapped in on /notifications", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }), {
+      path: "/notifications",
+    });
+    const item = classesOf(screen.getByTestId("rail-practice"));
+    // Presence: the reference item is an inactive rail item, so it carries the off pair.
+    expect(item).toEqual(expect.arrayContaining(OFF));
+    const shared = item.filter((c) => !OFF.includes(c));
+    expect(shared.length).toBeGreaterThan(8);
+    const bell = classesOf(screen.getByTestId("button-notifications"));
+    expect(bell).toEqual(expect.arrayContaining([...shared, ...ON]));
+    // No fork: the slot carries no colour of its own for the button.
+    expect(screen.getByTestId("rail-bell").className).toBe(
+      "flex justify-center",
+    );
+  });
+
+  it("off /notifications it carries exactly an inactive rail item's colours (control)", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }));
+    const item = classesOf(screen.getByTestId("rail-practice"));
+    const bell = classesOf(screen.getByTestId("button-notifications"));
+    expect(bell).toEqual(expect.arrayContaining(item));
   });
 });
 
@@ -864,6 +936,8 @@ describe("keyboard", () => {
     const targets = [
       screen.getByTestId("logo-link"),
       ...RAIL.map((i) => screen.getByTestId(`rail-${i.key}`)),
+      // QA2-H: the bell, a rail item between LISA and Help.
+      screen.getByTestId("button-notifications"),
       screen.getByTestId("rail-help"),
       screen.getByTestId("button-user-menu"),
     ];

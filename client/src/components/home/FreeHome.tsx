@@ -5,11 +5,12 @@
  *        (plan = free); evidence/wiring-table.md §3 Home (diagnostic card: practice
  *        `/sessions/open` diagnostic row; start: POST /api/practice/diagnostic/sessions; when to
  *        show the card: `estimateStatus`; quota: GET /api/practice/quota); register §2 (free:
- *        the diagnostic, the projection, 40 practice questions a day, unlimited review; the
+ *        the diagnostic, the projection, the daily practice questions, unlimited review; the
  *        locked mastery card shows empty outlines only), OQ-21, OQ-36, OQ-39(c) (after the
  *        diagnostic: the free layout, the projection in the panel, "Go to practice" primary);
- *        owner ruling Q2 2026-08-17 (a finished diagnostic is never offered again)]
- *        | @implemented [2026-10-03]
+ *        owner ruling Q2 2026-08-17 (a finished diagnostic is never offered again); OQ-68 (d)
+ *        (owner ruling, Karl, 2026-10-08, UI-64: the configured numbers in the copy come from
+ *        the server)] | @implemented [2026-10-03; OQ-68 (d) 2026-10-08]
  *
  * plain English: the main column is the welcome, the diagnostic card (only while the student
  * has no baseline: a ruler of their own diagnostic's progress and "Start diagnostic", the ONE
@@ -23,10 +24,17 @@
  * NO GATED READS. Nothing here calls a paid route: no calendar, no mastery, no exam forms. The
  * mastery card draws shapes only, and the modal opens in place with no request.
  *
- * edge cases: "N of 40 answered" is drawn only from an open diagnostic session (the count is
- * the student's own); before one exists the ruler is empty and no count is printed, because no
- * read states the diagnostic's length. While `estimateStatus` is unknown neither the card nor a
- * primary is shown, so nothing is offered on a guess.
+ * NUMBERS IN THE COPY (OQ-68 (d), UI-64). The diagnostic's length and per-domain count are
+ * `GET /api/practice/sessions/open`'s `diagnosticTotalQuestions` / `diagnosticPerDomain` (the
+ * config `POST /diagnostic/sessions` sizes it with; this page already reads that route for the
+ * diagnostic row), and the daily limit is `GET /api/practice/quota`'s `freeDailyLimit` (the
+ * 402's `daily_quota_free`). None is written here; a failed read prints the sentence without
+ * its number (home-model.ts `diagnosticCardLine`, `diagnosticStepBody`, `practiceStepBody`).
+ *
+ * edge cases: "N of M answered" is drawn only from an open diagnostic session (the count is
+ * the student's own); before one exists the ruler is empty and no count is printed. While
+ * `estimateStatus` is unknown neither the card nor a primary is shown, so nothing is offered on
+ * a guess.
  */
 import { useLocation, Link } from "wouter";
 import type { FeatureLockReason } from "@lyceon/shared/feature-access";
@@ -46,8 +54,15 @@ import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { usePracticeQuota } from "@/hooks/usePracticeQuota";
 import { FullLengthCard } from "./FullLengthCard";
+import { HomeLoading } from "./HomeLoading";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
-import { answeredLine, freeHomeStage } from "./home-model";
+import {
+  answeredLine,
+  diagnosticCardLine,
+  diagnosticStepBody,
+  freeHomeStage,
+  practiceStepBody,
+} from "./home-model";
 
 const SECTION_H2 =
   "m-0 font-lyc-serif text-lyc-section font-semibold text-lyc-ink-strong";
@@ -57,30 +72,44 @@ const TEXT_LINK =
 const FREE_TAG = "border border-lyc-lv2-bd bg-lyc-lv2-bg text-lyc-lv2-ink";
 const PAID_TAG = "bg-lyc-primary-bg text-lyc-primary-ink";
 
-/** The prototype's three steps, verbatim (approved copy). */
-const STEPS = [
-  {
-    n: "1",
-    title: "Take the diagnostic",
-    body: "Forty questions across every domain give you a projected score and a starting point.",
-    tag: "Free",
-    tone: FREE_TAG,
-  },
-  {
-    n: "2",
-    title: "Practice and review every day",
-    body: "Forty practice questions a day, and every question you miss comes back until you get it right.",
-    tag: "Free",
-    tone: FREE_TAG,
-  },
-  {
-    n: "3",
-    title: "Follow a plan and track mastery",
-    body: "A study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.",
-    tag: "Paid plans",
-    tone: PAID_TAG,
-  },
-] as const;
+/**
+ * The prototype's three steps (approved copy), with the server's numbers where the prototype
+ * wrote "Forty" (OQ-68 (d)): the diagnostic's length and the free daily limit.
+ */
+function howSteps(
+  diagnosticTotal: number | null,
+  freeDailyLimit: number | null,
+): readonly {
+  n: string;
+  title: string;
+  body: string;
+  tag: string;
+  tone: string;
+}[] {
+  return [
+    {
+      n: "1",
+      title: "Take the diagnostic",
+      body: diagnosticStepBody(diagnosticTotal),
+      tag: "Free",
+      tone: FREE_TAG,
+    },
+    {
+      n: "2",
+      title: "Practice and review every day",
+      body: practiceStepBody(freeDailyLimit),
+      tag: "Free",
+      tone: FREE_TAG,
+    },
+    {
+      n: "3",
+      title: "Follow a plan and track mastery",
+      body: "A study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.",
+      tag: "Paid plans",
+      tone: PAID_TAG,
+    },
+  ];
+}
 
 type FreeHomeProps = {
   studentId: string;
@@ -112,6 +141,14 @@ export function FreeHome({
   };
 
   const failed = projection.isError || practice.isError || quota.isError;
+  // QA2-F (Karl, 2026-10-08: "Full-Length cards: no layout shift on load"): the stage (the
+  // diagnostic card above "How Lyceon works") and the panel come from these reads, so the page
+  // is drawn once they have answered or failed (HomeLoading.tsx).
+  const settled =
+    !projection.isLoading && !practice.isLoading && !quota.isLoading;
+  if (!settled) return <HomeLoading />;
+
+  const freeDailyLimit = quota.data?.freeDailyLimit ?? null;
 
   return (
     <div className="flex flex-col gap-12" data-testid="home" data-plan="free">
@@ -154,9 +191,14 @@ export function FreeHome({
           >
             Your free diagnostic
           </h2>
-          <p className="m-0 max-w-[600px] text-[18px] leading-relaxed text-lyc-ink">
-            40 questions, five from each of the eight SAT domains. When you
-            finish, you&apos;ll see your projected SAT score.
+          <p
+            className="m-0 max-w-[600px] text-[18px] leading-relaxed text-lyc-ink"
+            data-testid="home-diagnostic-length"
+          >
+            {diagnosticCardLine(
+              practice.diagnosticTotalQuestions,
+              practice.diagnosticPerDomain,
+            )}
           </p>
           <div className="flex flex-col gap-2.5">
             <RulerProgress
@@ -212,32 +254,34 @@ export function FreeHome({
           How Lyceon works
         </h2>
         <ol className="m-0 list-none border-t border-lyc-rule p-0">
-          {STEPS.map((step) => (
-            <li
-              key={step.n}
-              className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border-b border-lyc-rule py-[22px] sm:grid-cols-[56px_minmax(0,1fr)_160px] sm:gap-5"
-            >
-              <span
-                aria-hidden="true"
-                className="font-lyc-serif text-[34px] font-semibold leading-none text-lyc-step"
+          {howSteps(practice.diagnosticTotalQuestions, freeDailyLimit).map(
+            (step) => (
+              <li
+                key={step.n}
+                className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border-b border-lyc-rule py-[22px] sm:grid-cols-[56px_minmax(0,1fr)_160px] sm:gap-5"
               >
-                {step.n}
-              </span>
-              <div className="flex flex-col gap-1.5">
-                <span className="font-lyc-serif text-[21px] font-semibold text-lyc-ink-strong">
-                  {step.title}
+                <span
+                  aria-hidden="true"
+                  className="font-lyc-serif text-[34px] font-semibold leading-none text-lyc-step"
+                >
+                  {step.n}
                 </span>
-                <span className="text-[17px] leading-normal text-lyc-muted">
-                  {step.body}
+                <div className="flex flex-col gap-1.5">
+                  <span className="font-lyc-serif text-[21px] font-semibold text-lyc-ink-strong">
+                    {step.title}
+                  </span>
+                  <span className="text-[17px] leading-normal text-lyc-muted">
+                    {step.body}
+                  </span>
+                </div>
+                <span
+                  className={`col-start-2 justify-self-start whitespace-nowrap rounded-full px-3 py-1 text-lyc-meta-lg font-semibold sm:col-start-auto sm:justify-self-end ${step.tone}`}
+                >
+                  {step.tag}
                 </span>
-              </div>
-              <span
-                className={`col-start-2 justify-self-start whitespace-nowrap rounded-full px-3 py-1 text-lyc-meta-lg font-semibold sm:col-start-auto sm:justify-self-end ${step.tone}`}
-              >
-                {step.tag}
-              </span>
-            </li>
-          ))}
+              </li>
+            ),
+          )}
         </ol>
         <div className="flex flex-wrap items-center gap-6">
           {stage === "after" || stage === "pending" ? (

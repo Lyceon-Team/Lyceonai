@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
@@ -36,6 +36,8 @@ import {
   type ShellSpec,
   type StudentShellRoute,
 } from "./route-shells";
+import { navigate } from "wouter/use-browser-location";
+import { ROUTE_SCROLL_ATTR } from "./route-scroll-reset";
 
 const { pageStub } = vi.hoisted(() => ({
   pageStub: async () => {
@@ -62,7 +64,6 @@ vi.mock("@/pages/admin/CrisisReviewDetail", pageStub);
 vi.mock("@/pages/admin/CrisisReviewList", pageStub);
 vi.mock("@/pages/blog", pageStub);
 vi.mock("@/pages/blog-post", pageStub);
-vi.mock("@/pages/browse-topics", pageStub);
 vi.mock("@/pages/calendar", pageStub);
 vi.mock("@/pages/chat", pageStub);
 vi.mock("@/pages/digital-sat", pageStub);
@@ -299,6 +300,14 @@ function expectShell(spec: ShellSpec, shell: Element): void {
         spec.content,
       );
       expect(shell.querySelector('[data-testid="app-rail"]')).not.toBeNull();
+      // QA2-I: the content column (and the right panel, when there is one) is marked for the
+      // route-change scroll reset (route-scroll-reset.ts), which scrolls only marked elements.
+      expect(shell.querySelector(`main[${ROUTE_SCROLL_ATTR}]`)).not.toBeNull();
+      expect(
+        shell
+          .querySelector(`[data-testid="app-shell-panel"]`)
+          ?.hasAttribute(ROUTE_SCROLL_ATTR) ?? null,
+      ).toBe(spec.panel === null ? null : true);
       return;
     }
     case "focus": {
@@ -310,6 +319,8 @@ function expectShell(spec: ShellSpec, shell: Element): void {
         shell.querySelector('[data-testid="focus-shell-header"]')?.textContent,
       ).toContain(spec.section);
       expect(shell.querySelector("nav")).toBeNull();
+      // QA2-I: the Focus shell's <main> scrolls inside itself (F-69), so it is marked for the reset.
+      expect(shell.querySelector(`main[${ROUTE_SCROLL_ATTR}]`)).not.toBeNull();
       return;
     }
     case "bare":
@@ -389,8 +400,10 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/account/recover",
       "/guardian-required",
     ]);
-    // The topic explorer is not rebuilt (OQ-3 open): it stays pinned light.
-    expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
+    // OQ-68 (a) (Karl, 2026-10-08): the topic explorer, the last page pinned light by OQ-49, is
+    // retired; its address is a redirect and keys no shell.
+    expect(Object.keys(STUDENT_ROUTE_SHELLS)).not.toContain("/practice/topics");
+    expect(SHELL_EXCLUDED_ROUTES["/practice/topics"]).toBe("redirect");
   });
 
   it("UI-53: both runners follow the device theme (the review runner's LISA panel is on the student tokens: OQ-54 (a), ruling 2026-10-05)", () => {
@@ -565,7 +578,9 @@ describe("every student route renders inside exactly the shell the table names",
 
 describe("excluded public and admin routes render no student shell", () => {
   const rendered = excludedKeys.filter(
-    (k) => SHELL_EXCLUDED_ROUTES[k] !== "redirect",
+    (k) =>
+      SHELL_EXCLUDED_ROUTES[k] !== "redirect" &&
+      SHELL_EXCLUDED_ROUTES[k] !== "not-found",
   );
 
   it("has routes to check (negative control)", () => {
@@ -579,7 +594,72 @@ describe("excluded public and admin routes render no student shell", () => {
   });
 });
 
+/**
+ * @spec [production re-test 2026-10-08 item E (Karl: "restyle the 404 page with student tokens,
+ *        fonts and theme"); DESIGN.md §2 "Bare card"] | @implemented [2026-10-08]
+ */
+describe("QA2-E: the 404 is a Bare-card page", () => {
+  it("the catch-all renders the page inside exactly one Bare card, with no theme lock", async () => {
+    expect(SHELL_EXCLUDED_ROUTES[NOT_FOUND_ROUTE]).toBe("not-found");
+    renderAt(urlFor(NOT_FOUND_ROUTE));
+    const page = await screen.findByTestId("page-stub");
+    const shells = document.querySelectorAll("[data-shell]");
+    expect(shells).toHaveLength(1);
+    const shell = shells[0];
+    if (shell === undefined) throw new Error("unreachable");
+    expect(shell.contains(page)).toBe(true);
+    expectShell({ shell: "bare", themeLock: null }, shell);
+  });
+});
+
 describe("a redirect lands in its target's shell", () => {
+  /**
+   * @spec [production re-test 2026-10-08 item E (Karl: "Redirect /settings → /profile")]
+   *        | @implemented [2026-10-08]
+   * plain English: a history REPLACE (Back must not bounce back through /settings), keeping the
+   * query `/profile` reads (`?tab=`) and the hash, and landing in Settings' own App shell.
+   */
+  it("QA2-E: /settings replaces itself with /profile, keeping the query and hash", async () => {
+    const before = window.history.length;
+    renderAt("/settings?tab=billing#plan");
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/profile");
+    expect(window.location.search).toBe("?tab=billing");
+    expect(window.location.hash).toBe("#plan");
+    // Replaced, not pushed: no entry was added behind /profile.
+    expect(window.history.length).toBe(before);
+    const shells = document.querySelectorAll("[data-shell]");
+    expect(shells).toHaveLength(1);
+    expectShell(STUDENT_ROUTE_SHELLS["/profile"], shells[0] as Element);
+  });
+
+  it("QA2-E: a bare /settings lands on /profile with no stray query or hash", async () => {
+    renderAt("/settings");
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/profile");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
+  });
+
+  /**
+   * @spec [OQ-68 (a) (Karl, 2026-10-08): "/practice/topics is retired, with a redirect to
+   *        /practice"] | @implemented [2026-10-08]
+   * plain English: a history REPLACE (Back must not bounce back through the retired address),
+   * landing in Practice's own App shell. /practice reads no query, so the query is dropped.
+   */
+  it("OQ-68 (a): /practice/topics replaces itself with /practice, dropping the query", async () => {
+    const before = window.history.length;
+    renderAt("/practice/topics?section=math");
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/practice");
+    expect(window.location.search).toBe("");
+    // Replaced, not pushed: no entry was added behind /practice.
+    expect(window.history.length).toBe(before);
+    const shells = document.querySelectorAll("[data-shell]");
+    expect(shells).toHaveLength(1);
+    expectShell(STUDENT_ROUTE_SHELLS["/practice"], shells[0] as Element);
+  });
+
   it("/signup redirects to /login, a bare card", async () => {
     renderAt("/signup");
     await screen.findByTestId("page-stub");
@@ -587,5 +667,45 @@ describe("a redirect lands in its target's shell", () => {
     const shells = document.querySelectorAll("[data-shell]");
     expect(shells).toHaveLength(1);
     expect(shells[0]?.getAttribute("data-shell")).toBe("bare");
+  });
+});
+
+/**
+ * @spec [production re-test 2026-10-08 item I (Karl: "Reset scroll to top on every route
+ *        change")] | @implemented [2026-10-08]
+ * plain English: the reset is mounted ONCE, by the real route switch (route-scroll-reset.test.tsx
+ * holds its rules). Here the app's own Router is driven with the browser location: a scrolled
+ * window is back at the top after a pathname change, and stays put on a query-only change.
+ */
+describe("QA2-I: the route switch resets scroll on a pathname change", () => {
+  afterEach(() => {
+    document.documentElement.scrollTop = 0;
+  });
+
+  it("navigating /dashboard → /practice scrolls the window and the new page's column to the top", async () => {
+    renderAt("/dashboard");
+    await screen.findByTestId("page-stub");
+    const page = document.documentElement;
+    page.scrollTop = 600;
+    // Presence: the scroll took, so a 0 below is the reset's doing.
+    expect(page.scrollTop).toBe(600);
+    act(() => navigate("/practice"));
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/practice");
+    expect(page.scrollTop).toBe(0);
+    const column = document.querySelector<HTMLElement>(
+      `main[${ROUTE_SCROLL_ATTR}]`,
+    );
+    expect(column?.scrollTop).toBe(0);
+  });
+
+  it("control: a query-only change keeps the window where it is", async () => {
+    renderAt("/practice");
+    await screen.findByTestId("page-stub");
+    const page = document.documentElement;
+    page.scrollTop = 600;
+    act(() => navigate("/practice?section=math"));
+    expect(window.location.search).toBe("?section=math");
+    expect(page.scrollTop).toBe(600);
   });
 });

@@ -20,6 +20,14 @@
  * plan is entitled to; this component is only rendered when the feature-access map says so
  * (`lyceon-dashboard.tsx`), so a free student never calls a gated route from Home.
  *
+ * REVIEW CAP (owner re-test, Karl, 2026-10-08, item A) | @implemented [2026-10-08]: a "Recent
+ * sessions" row whose review start the server refuses for the concurrent-session cap draws the
+ * shared `ReviewCapNotice` directly under that row (scrolled into view), with "Continue your open
+ * session" and "End a session", the same as Review. It used to be a red line under the whole
+ * list, below the fold at 1440 and 1024. Today's plan rows launch through the calendar, whose
+ * route answers every engine refusal as `CALENDAR_ENGINE_ERROR` without the engine's code, so the
+ * client cannot tell the cap there (handed to the calendar vertical).
+ *
  * edge cases: a calendar with no setup shows "Set up your study calendar" (DESIGN.md §4
  * Settings wording) as the primary, linking to /calendar; a day with no blocks says the one
  * empty-day sentence, "No study planned" (`EMPTY_DAY_MESSAGE`, owner QA list 2026-10-07 item 15;
@@ -45,6 +53,7 @@ import {
   canonicalDomainNodes,
   masteryDomainHref,
 } from "@/components/mastery/domain-nodes";
+import { ReviewCapNotice } from "@/components/review/ReviewCapNotice";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
@@ -62,17 +71,21 @@ import {
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import {
+  reviewSessionHref,
   useActiveReviewSessions,
   useCreateReviewSession,
   useReviewPool,
+  type ReviewStartFailure,
 } from "@/hooks/useReview";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { FullLengthCard } from "./FullLengthCard";
+import { HomeLoading } from "./HomeLoading";
 import {
   ProjectionSection,
   RecentSessionsSection,
   WeekSection,
+  recentRowKey,
 } from "./HomePanel";
 import {
   answeredLine,
@@ -129,7 +142,11 @@ export function PaidHome({
   // the same start as Review's "Redo a past session".
   const createReview = useCreateReviewSession();
   const [reviewing, setReviewing] = useState<string | null>(null);
-  const [reviewFailure, setReviewFailure] = useState<string | null>(null);
+  // QA2-A: the failure and the row it belongs to, so the review cap is drawn under that row.
+  const [reviewFailure, setReviewFailure] = useState<{
+    row: string;
+    failure: ReviewStartFailure;
+  } | null>(null);
   const reviewRecent = async (row: ReviewPoolSourceSession): Promise<void> => {
     setReviewing(row.source_session_id);
     setReviewFailure(null);
@@ -141,12 +158,14 @@ export function PaidHome({
       },
     });
     if (result.ok) {
-      navigate(`/review/session/${result.sessionId}`);
+      navigate(reviewSessionHref(result.sessionId));
       return;
     }
     setReviewing(null);
-    setReviewFailure(result.failure.message);
+    setReviewFailure({ row: recentRowKey(row), failure: result.failure });
   };
+  const reviewCap =
+    reviewFailure?.failure.kind === "session_limit" ? reviewFailure : null;
 
   const ready: CalendarReadyResponse | null =
     calendar.data?.status === "ready" ? calendar.data : null;
@@ -183,6 +202,18 @@ export function PaidHome({
     pool.isError ||
     projection.isError;
 
+  // QA2-F (Karl, 2026-10-08: "Full-Length cards: no layout shift on load"): the page is drawn
+  // once every read it draws from has answered or failed (HomeLoading.tsx). A disabled read
+  // (Full-Length not granted) is not loading.
+  const settled =
+    !calendar.isLoading &&
+    !mastery.isLoading &&
+    !practice.isLoading &&
+    !review.isLoading &&
+    !exams.isLoading &&
+    !pool.isLoading &&
+    !projection.isLoading;
+
   const retry = (): void => {
     void calendar.refetch();
     void mastery.refetch();
@@ -210,7 +241,7 @@ export function PaidHome({
         key: `review:${s.id}`,
         title: sessionTitle("review", s.criteria, s.section),
         progress: { answered: s.answered_items, total: s.total_items },
-        href: `/review/session/${s.id}`,
+        href: reviewSessionHref(s.id),
         fullLength: false,
       }),
     ),
@@ -228,6 +259,8 @@ export function PaidHome({
         : [],
     ),
   ];
+
+  if (!settled) return <HomeLoading />;
 
   return (
     <div className="flex flex-col gap-12" data-testid="home" data-plan="paid">
@@ -316,7 +349,20 @@ export function PaidHome({
             todayKey={today}
             onReview={(row) => void reviewRecent(row)}
             startingId={reviewing}
-            failure={reviewFailure}
+            failure={
+              reviewFailure !== null && reviewCap === null
+                ? reviewFailure.failure.message
+                : null
+            }
+            capFor={reviewCap?.row ?? null}
+            cap={
+              reviewCap !== null ? (
+                <ReviewCapNotice
+                  message={reviewCap.failure.message}
+                  sessions={review.sessions}
+                />
+              ) : null
+            }
           />
         </div>
       </AppShellPanel>

@@ -65,6 +65,7 @@ import {
   type PracticeQuota,
 } from "../../packages/shared/src/practice-quota";
 import { err, ok, type Result } from "../../packages/shared/src/result";
+import { getPracticeDailyFreeQuota } from "./account";
 
 /** Decision codes under which the enforcement never applies the daily cap. */
 export const UNLIMITED_PRACTICE_DECISION_CODES: ReadonlySet<string> = new Set([
@@ -86,16 +87,50 @@ export async function dryRunPracticeQuota(args: {
   });
 }
 
+/**
+ * @spec [owner ruling OQ-68 (d), Karl, 2026-10-08, register row UI-64: "The '40 questions' copy
+ *        reads the server quota value (the same source as the 402)"; Doc 02B §12 Entitlement
+ *        Matrix ("Practice questions per day": free `daily_quota_free`), §41]
+ *        | @implemented [2026-10-08]
+ *
+ * plain English: the free plan's daily limit for the plan copy, for every reader. A free
+ * student's dry run already carries it: `limit` is `v_daily_limit`, read by
+ * `check_and_reserve_practice_quota` from `practice_runtime_config.daily_quota_free`, the number
+ * the 402 carries; it is taken from the decision, so the copy and the refusal are one SQL
+ * evaluation. An entitled dry run reports the per-session cap instead, and the admin bypass
+ * reports nothing, so for those two the same config row is read directly
+ * (`getPracticeDailyFreeQuota`, the account usage read's helper). A free decision without a
+ * limit is passed through as null and `toPracticeQuota` refuses it (503), never a guess.
+ * edge cases: a missing or invalid config row throws (as the SQL function raises for it); the
+ * route fails closed.
+ */
+export async function freeDailyLimitFor(
+  decision: RateLimitDecision,
+): Promise<number | null> {
+  if (UNLIMITED_PRACTICE_DECISION_CODES.has(decision.code)) {
+    return getPracticeDailyFreeQuota();
+  }
+  return decision.limit;
+}
+
 export function toPracticeQuota(
   decision: RateLimitDecision,
+  freeDailyLimit: number | null,
 ): Result<PracticeQuota, "quota_decision_incomplete"> {
   const candidate = UNLIMITED_PRACTICE_DECISION_CODES.has(decision.code)
-    ? { unlimited: true, limit: null, remaining: null, resetAt: null }
+    ? {
+        unlimited: true,
+        limit: null,
+        remaining: null,
+        resetAt: null,
+        freeDailyLimit,
+      }
     : {
         unlimited: false,
         limit: decision.limit,
         remaining: decision.remaining,
         resetAt: decision.resetAt,
+        freeDailyLimit,
       };
   const parsed = practiceQuotaSchema.safeParse(candidate);
   return parsed.success ? ok(parsed.data) : err("quota_decision_incomplete");

@@ -121,3 +121,29 @@ describe("QA 5: a page's chunk loads inside its own shell", () => {
     expect(screen.queryByTestId("page-skeleton")).toBeNull();
   });
 });
+
+/**
+ * @spec [production QA 2026-10-08 item F (Karl: "Full-Length cards: no layout shift on load")]
+ *       | @implemented [2026-10-08]
+ * plain English: the App shell's legal footer sits inside the page's Suspense boundary, so it
+ * is not drawn under the short page skeleton (and then pushed down when the page lands, a layout
+ * shift on every cold load); it arrives with the page, after it. Presence first: the loaded
+ * case shows the footer, so its absence while loading is not a footer that never renders.
+ */
+describe("QA2-F: the legal footer arrives with the page", () => {
+  it("loaded (/tests): the footer is drawn, after the page", () => {
+    renderFrame("/tests", "/tests", <p data-testid="page-body">Tests</p>);
+    const body = screen.getByTestId("page-body");
+    const footer = screen.getByTestId("legal-footer");
+    expect(
+      body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("while the page's chunk loads (/tests): the skeleton shows and no footer is drawn under it", () => {
+    renderFrame("/tests", "/tests", <NeverLoads />);
+    expect(screen.queryByTestId("router-fallback")).toBeNull();
+    expect(screen.getByTestId("page-skeleton")).toBeTruthy();
+    expect(screen.queryByTestId("legal-footer")).toBeNull();
+  });
+});

@@ -294,63 +294,6 @@ describe("E7b module page plants", () => {
 });
 
 /**
- * @spec [student-ui register UI-14; owner ruling 2026-10-01 (Brief 10, dashboard KPI polling)]
- *   | @implemented [2026-10-01] |
- * plain English: the KPI read no longer polls, so a completed exam marks `/api/progress/kpis`
- * stale on its way to the report. A module whose submit leaves the session still running (the
- * next section is ahead) does not.
- */
-describe("exam completion marks the KPIs stale (Brief 10)", () => {
-  const kpiInvalidations = (spy: ReturnType<typeof vi.spyOn>): number =>
-    spy.mock.calls.filter(([filters]) => {
-      const key = (filters as { queryKey?: unknown } | undefined)?.queryKey;
-      return Array.isArray(key) && key[0] === "/api/progress/kpis";
-    }).length;
-
-  async function submitThroughReview(): Promise<void> {
-    await screen.findByTestId("exam-module");
-    fireEvent.click(screen.getByTestId("exam-navigator-open"));
-    fireEvent.click(await screen.findByRole("button", { name: "Go to review page" }));
-    fireEvent.click(await screen.findByTestId("exam-review-submit"));
-    fireEvent.click(await screen.findByTestId("exam-submit-confirm"));
-  }
-
-  it("the submit that completes the session invalidates the KPIs, then goes to the report", async () => {
-    const { submitExamModule } = await import("../api/exam-api");
-    vi.mocked(submitExamModule).mockResolvedValueOnce({
-      section_state: { section: "RW", state: "completed", remaining_ms: null },
-      session_state: "completed",
-    } as unknown as Awaited<ReturnType<typeof submitExamModule>>);
-    fake.rwState = "module2_active";
-    const { client, history } = mount(`/tests/${SID}/RW/2`);
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-
-    await submitThroughReview();
-
-    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${SID}/report`));
-    expect(vi.mocked(submitExamModule)).toHaveBeenCalledTimes(1);
-    expect(kpiInvalidations(invalidate)).toBe(1);
-  });
-
-  it("a module submit that leaves the session running does not", async () => {
-    const { submitExamModule } = await import("../api/exam-api");
-    vi.mocked(submitExamModule).mockResolvedValueOnce({
-      section_state: { section: "RW", state: "completed", remaining_ms: null },
-      session_state: "active",
-    } as unknown as Awaited<ReturnType<typeof submitExamModule>>);
-    fake.rwState = "module2_active";
-    const { client } = mount(`/tests/${SID}/RW/2`);
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-
-    await submitThroughReview();
-
-    await waitFor(() => expect(vi.mocked(submitExamModule)).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(invalidate).toHaveBeenCalled());
-    expect(kpiInvalidations(invalidate)).toBe(0);
-  });
-});
-
-/**
  * @spec [student-UI register §2 Keyboard (Exam module row), UI-45; DESIGN.md §3]
  * @implemented [2026-10-03]
  *

@@ -39,7 +39,15 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
@@ -71,6 +79,10 @@ import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { practiceAdapter } from "../../../server/services/calendar/adapters/practice";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
 import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
+import {
+  capTables,
+  reviewCapRefusal,
+} from "@/components/review/review-cap.fixture";
 import LyceonDashboard from "./lyceon-dashboard";
 import fs from "node:fs";
 import path from "node:path";
@@ -136,13 +148,18 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: () => undefined }),
 }));
 
-// The server modules the producers import reach for a database; none is used here.
+// The server modules the producers import reach for a database; only the review cap's producer
+// reads one, through `db.from`, while its refusal is built (QA2-A, review-cap.fixture.ts).
+const db = vi.hoisted(() => ({
+  from: null as null | ((table: string) => unknown),
+}));
 vi.mock("../../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     rpc: () => {
       throw new Error("no database in this test");
     },
-    from: () => {
+    from: (table: string) => {
+      if (db.from !== null) return db.from(table);
       throw new Error("no database in this test");
     },
   },
@@ -279,7 +296,27 @@ const DIAGNOSTIC_ID = "22222222-2222-4222-8222-222222222222";
 const REVIEW_ID = "33333333-3333-4333-8333-333333333333";
 const EXAM_SESSION_ID = "44444444-4444-4444-8444-444444444444";
 
-function practiceOpen(withPractice: boolean, diagnosticAnswered: number) {
+/**
+ * The practice config numbers the routes carry (OQ-68 (d), UI-64): `daily_quota_free` on the
+ * quota read, `diagnostic_total_questions` / `diagnostic_per_domain` on `/sessions/open`. The
+ * seeded production values by default; a scenario may set others to prove the copy follows them.
+ */
+type PracticeConfigNumbers = {
+  dailyLimit: number;
+  diagnosticTotal: number;
+  diagnosticPerDomain: number;
+};
+const SEEDED_CONFIG: PracticeConfigNumbers = {
+  dailyLimit: 40,
+  diagnosticTotal: 40,
+  diagnosticPerDomain: 5,
+};
+
+function practiceOpen(
+  withPractice: boolean,
+  diagnosticAnswered: number,
+  config: PracticeConfigNumbers = SEEDED_CONFIG,
+) {
   return practiceOpenSessionsResponseSchema.parse({
     sessions: [
       ...(withPractice
@@ -307,13 +344,15 @@ function practiceOpen(withPractice: boolean, diagnosticAnswered: number) {
         mode: "diagnostic",
         status: "active",
         created_at: "2026-09-29T14:00:00Z",
-        target_question_count: 40,
-        total_items: 40,
+        target_question_count: config.diagnosticTotal,
+        total_items: config.diagnosticTotal,
         answered_items: diagnosticAnswered,
         criteria: toSessionCriteria(null),
       },
     ],
     maxConcurrentSessions: 3,
+    diagnosticTotalQuestions: config.diagnosticTotal,
+    diagnosticPerDomain: config.diagnosticPerDomain,
     requestId: "r",
   });
 }
@@ -352,10 +391,12 @@ const POOL = reviewPoolSummaryResponseSchema.parse({
       local_date: "2026-09-30",
       local_time: "2:40 PM",
       mode: "custom",
+      // As review-pool.ts sends it since F-52: the four criteria arrays only. UI-66 prints the
+      // narrowest (the skill) as the row's name.
       filters: {
-        sections: [],
-        domains: ["Raw Filter Domain"],
-        skills: [],
+        sections: ["M"],
+        domains: ["Algebra"],
+        skills: ["Linear functions"],
         difficulties: [],
       },
       open_count: 4,
@@ -395,7 +436,7 @@ const FORMS = examFormsResponseSchema.parse({
   ],
 });
 
-function quota(remaining: number | "unlimited") {
+function quota(remaining: number | "unlimited", dailyLimit = 40) {
   const result = toPracticeQuota(
     remaining === "unlimited"
       ? {
@@ -416,14 +457,16 @@ function quota(remaining: number | "unlimited") {
           code: "PRACTICE_QUOTA_OK",
           message: "",
           limitType: "practice",
-          current: 40 - remaining,
-          limit: 40,
+          current: dailyLimit - remaining,
+          limit: dailyLimit,
           remaining,
           resetAt: "2026-10-02T05:00:00.000Z",
           cooldownUntil: null,
           reservationId: null,
           duplicate: false,
         },
+    // `freeDailyLimitFor`: the free decision's own limit; the config row for the unlimited one.
+    dailyLimit,
   );
   if (!result.ok) throw new Error("quota fixture did not serialize");
   return result.value;
@@ -443,6 +486,10 @@ type Scenario = {
   projection?: "projected" | "none";
   diagnosticAnswered?: number;
   quota?: number | "unlimited";
+  /** OQ-68 (d): the config numbers the routes carry; the seeded values when absent. */
+  config?: PracticeConfigNumbers;
+  /** OQ-68 (d): the two reads that carry config numbers fail (500). */
+  configReadsFail?: boolean;
   /** OQ-63: today is the fixture's Saturday, its full-length block not started. */
   fullLengthToday?: boolean;
   /** QA item 15: the fixture week as of another day (its Sunday has no blocks). */
@@ -488,14 +535,27 @@ function install(s: Scenario): void {
         );
       if (path === "/api/progress/projection")
         return json(estimateStatusBody(s.estimateStatus ?? "computed"));
+      if (
+        s.configReadsFail === true &&
+        (path === "/api/practice/sessions/open" ||
+          path === "/api/practice/quota")
+      )
+        return json({ error: "boom" }, 500);
       if (path === "/api/practice/sessions/open")
         return json(
-          practiceOpen(s.calendar !== undefined, s.diagnosticAnswered ?? 12),
+          practiceOpen(
+            s.calendar !== undefined,
+            s.diagnosticAnswered ?? 12,
+            s.config,
+          ),
         );
       if (path === "/api/review/sessions/open") return json(REVIEW_OPEN);
       if (path === "/api/review/pool") return json(POOL);
       if (path === "/api/tests/forms") return json(FORMS);
-      if (path === "/api/practice/quota") return json(quota(s.quota ?? 12));
+      if (path === "/api/practice/quota")
+        return json(
+          quota(s.quota ?? 12, (s.config ?? SEEDED_CONFIG).dailyLimit),
+        );
       if (
         method === "POST" &&
         path === `/api/calendar/blocks/${TODAY_REVIEW_BLOCK}/launch`
@@ -534,8 +594,18 @@ function install(s: Scenario): void {
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario,
+  /** QA2-F: a read is held (`net.hold`), so wait for the loading state, not the page. */
+  opts: { pending?: boolean; failPath?: RegExp } = {},
 ): Promise<{ container: HTMLElement; history: string[] }> {
   install(scenario);
+  // QA2-F: one read answers 500 (a failed read ends the loading wait).
+  const failPath = opts.failPath;
+  if (failPath !== undefined)
+    net.handlers.unshift((url) =>
+      failPath.test(url)
+        ? json({ error: { message: "boom" } }, 500)
+        : undefined,
+    );
   const map = await accessMap(plan === "paid");
   const { hook, history } = memoryLocation({
     path: "/dashboard",
@@ -568,7 +638,7 @@ async function mount(
       </Router>
     </QueryClientProvider>,
   );
-  await screen.findByTestId("home");
+  await screen.findByTestId(opts.pending === true ? "home-loading" : "home");
   return { container, history };
 }
 
@@ -736,9 +806,11 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     // explicit action.
     const sat26 = formatDate("2026-09-26", "short-weekday-month-day") ?? "";
     expect(sat26).toBe("Sat, Sep 26");
+    // UI-66 (OQ-53 (e)): each row is named by its criteria, as the open rows are; the review
+    // row carries none (`filters: null`) and falls back to "Review session".
     expect(recent.map((r) => r.textContent)).toEqual([
-      "PracticeYesterday, 2:40 PM · 4 to reviewReview this session",
-      `Review${sat26}, 2:12 AM · 1 to reviewReview this session`,
+      "Linear functionsYesterday, 2:40 PM · 4 to reviewReview this session",
+      `Review session${sat26}, 2:12 AM · 1 to reviewReview this session`,
     ]);
 
     // The slim legal footer is on (the shell's prop).
@@ -881,6 +953,86 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
     expect(screen.queryByTestId("home-quota")).toBeNull();
   });
 
+  // OQ-68 (d), UI-64 (owner ruling, Karl, 2026-10-08): "The '40 questions' copy reads the server
+  // quota value (the same source as the 402)". Config values that are not the seeded 40 must
+  // reach every sentence that states one; a failed read prints the sentence with no number.
+  it("UI-64: the diagnostic's length and the daily limit are the config the routes carry, not 40", async () => {
+    await mount("free", {
+      estimateStatus: "no_baseline",
+      projection: "none",
+      quota: 12,
+      config: { dailyLimit: 37, diagnosticTotal: 48, diagnosticPerDomain: 6 },
+    });
+    const card = await screen.findByTestId("home-diagnostic");
+    // Presence first: the card's own count proves the config fixture reached the page.
+    await waitFor(() =>
+      expect(within(card).getByText("12 of 48 answered")).toBeTruthy(),
+    );
+    expect(within(card).getByTestId("home-diagnostic-length").textContent).toBe(
+      "48 questions, six from each of the eight SAT domains. When you finish, you'll see your projected SAT score.",
+    );
+    const how = screen.getByTestId("home-how");
+    expect(
+      within(how).getByText(
+        "48 questions across every domain give you a projected score and a starting point.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(how).getByText(
+        "37 practice questions a day, and every question you miss comes back until you get it right.",
+      ),
+    ).toBeTruthy();
+    const q = await screen.findByTestId("home-quota");
+    expect(
+      within(q).getByText("12 of 37 practice questions left"),
+    ).toBeTruthy();
+    expect(screen.getByTestId("home").textContent ?? "").not.toMatch(
+      /\b40\b|forty/i,
+    );
+  });
+
+  it("UI-64: a diagnostic length that is not a whole number of per-domain draws drops the per-domain clause", async () => {
+    await mount("free", {
+      estimateStatus: "no_baseline",
+      projection: "none",
+      config: { dailyLimit: 40, diagnosticTotal: 37, diagnosticPerDomain: 5 },
+    });
+    const card = await screen.findByTestId("home-diagnostic");
+    await waitFor(() =>
+      expect(within(card).getByText("12 of 37 answered")).toBeTruthy(),
+    );
+    expect(within(card).getByTestId("home-diagnostic-length").textContent).toBe(
+      "37 questions across the SAT domains. When you finish, you'll see your projected SAT score.",
+    );
+  });
+
+  it("UI-64: when the reads that carry the numbers fail, the copy prints no number at all", async () => {
+    await mount("free", {
+      estimateStatus: "no_baseline",
+      projection: "none",
+      configReadsFail: true,
+    });
+    await screen.findByTestId("home-load-error");
+    const card = screen.getByTestId("home-diagnostic");
+    expect(within(card).getByTestId("home-diagnostic-length").textContent).toBe(
+      "Questions from every SAT domain. When you finish, you'll see your projected SAT score.",
+    );
+    const how = screen.getByTestId("home-how");
+    expect(
+      within(how).getByText(
+        "Questions across every domain give you a projected score and a starting point.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(how).getByText(
+        "Practice questions every day, and every question you miss comes back until you get it right.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByTestId("home").textContent ?? "").not.toMatch(
+      /\b40\b|forty/i,
+    );
+  });
+
   it("See what's included opens the upgrade modal for mastery_detail, with no request", async () => {
     await mount("free", { estimateStatus: "no_baseline" });
     const before = net.log.length;
@@ -953,9 +1105,6 @@ describe("Home shows no raw accuracy, bank count or confidence (register §2; F-
     // Presence: the payloads carry what must not be shown.
     expect(PROJECTION_ROUTE.estimate?.confidenceBand).toBe("Medium");
     expect(FORMS.forms[0]?.question_count).toBe(98);
-    expect(JSON.stringify(POOL.sessions[0]?.filters)).toContain(
-      "Raw Filter Domain",
-    );
 
     const text = document.body.textContent ?? "";
     expect(text).not.toContain("%");
@@ -964,7 +1113,6 @@ describe("Home shows no raw accuracy, bank count or confidence (register §2; F-
     expect(text).not.toMatch(/confidence/i);
     expect(text).not.toMatch(/\bMedium\b/);
     expect(text).not.toContain("98");
-    expect(text).not.toContain("Raw Filter Domain");
     // The range is the sections' sum, not /api/progress/projection's estimate.
     expect(text).toContain("1140–1300");
     expect(text).not.toContain("1130");
@@ -1429,8 +1577,8 @@ describe("QA item 14: Home's mastery rows and recent sessions go somewhere", () 
       name: /^Review this session: /,
     });
     expect(actions.map((b) => b.getAttribute("aria-label"))).toEqual([
-      "Review this session: Practice, Yesterday, 2:40 PM",
-      `Review this session: Review, ${sat26}, 2:12 AM`,
+      "Review this session: Linear functions, Yesterday, 2:40 PM",
+      `Review this session: Review session, ${sat26}, 2:12 AM`,
     ]);
     // The visible label is the start of the accessible name (label in name), and no two
     // rows share one.
@@ -1465,5 +1613,204 @@ describe("QA item 15: one empty-day sentence", () => {
       "Rest day",
     );
     expect(screen.queryByTestId("home-start-plan")).toBeNull();
+  });
+});
+
+// ── Owner re-test (Karl, 2026-10-08) item A: the review cap ───────────────────────────────────
+
+describe("QA2-A: a recent session's review start, refused by the review cap, is answered at that row", () => {
+  /** The real producer's cap refusal (review-cap.fixture.ts). */
+  let CAP_BODY: Record<string, unknown>;
+  beforeAll(async () => {
+    db.from = capTables;
+    try {
+      CAP_BODY = (await reviewCapRefusal()).body;
+    } finally {
+      db.from = null;
+    }
+  });
+
+  let scrolled: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    scrolled = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      writable: true,
+      value: scrolled,
+    });
+  });
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  function refuseCreate(body: unknown, status: number): void {
+    net.handlers.unshift((url, init) =>
+      init?.method === "POST" && url === "/api/review/sessions"
+        ? json(body, status)
+        : undefined,
+    );
+  }
+
+  async function pressFirstRecent(): Promise<HTMLElement> {
+    const panel = screen.getByTestId("app-shell-panel");
+    const [first] = await within(panel).findAllByTestId("home-recent-review");
+    if (first === undefined) throw new Error("a recent row");
+    await act(async () => {
+      fireEvent.click(first);
+    });
+    return first;
+  }
+
+  it.each([403, 409])(
+    "refused with %i: the message directly under the pressed row, scrolled into view; Continue opens the open session",
+    async (status) => {
+      const { history } = await mount("paid", { calendar: "ready" });
+      expect(CAP_BODY.code).toBe("SESSION_LIMIT_EXCEEDED");
+      refuseCreate(CAP_BODY, status);
+      const pressed = await pressFirstRecent();
+      const cap = await screen.findByTestId("review-cap");
+      expect(screen.getAllByTestId("review-cap")).toHaveLength(1);
+      expect(cap.textContent).toContain("Too many open review sessions");
+      expect(cap.textContent).toContain(String(CAP_BODY.message));
+      // At the pressed row: the list item right after it holds the notice.
+      const row = pressed.closest("li");
+      expect(row?.nextElementSibling?.contains(cap)).toBe(true);
+      expect(row?.nextElementSibling?.getAttribute("data-testid")).toBe(
+        "home-recent-cap",
+      );
+      // Not the old red line under the whole list.
+      expect(
+        within(screen.getByTestId("home-recent")).queryByRole("alert"),
+      ).toBeNull();
+      // Never below the fold.
+      expect(scrolled.mock.contexts).toContain(cap.parentElement);
+      // The row is not left pending.
+      expect(pressed.textContent).toBe("Review this session");
+
+      fireEvent.click(
+        within(cap).getByRole("button", { name: "Continue your open session" }),
+      );
+      expect(history.at(-1)).toBe(`/review/session/${REVIEW_ID}`);
+    },
+  );
+
+  it("End a session goes to Review's open sessions, focused there", async () => {
+    const { history } = await mount("paid", { calendar: "ready" });
+    refuseCreate(CAP_BODY, 409);
+    await pressFirstRecent();
+    const cap = await screen.findByTestId("review-cap");
+    fireEvent.click(within(cap).getByRole("button", { name: "End a session" }));
+    expect(history.at(-1)).toBe("/review?focus=open-sessions");
+  });
+
+  it.each([403, 409])(
+    "a different refusal under %i is not the cap: the plain failure line, no cap actions",
+    async (status) => {
+      await mount("paid", { calendar: "ready" });
+      refuseCreate(
+        {
+          error: "forbidden",
+          code: "STUDENT_ROLE_REQUIRED",
+          message: "Only students can start review sessions.",
+        },
+        status,
+      );
+      await pressFirstRecent();
+      const recent = screen.getByTestId("home-recent");
+      expect((await within(recent).findByRole("alert")).textContent).toBe(
+        "Only students can start review sessions.",
+      );
+      expect(screen.queryByTestId("review-cap")).toBeNull();
+      expect(screen.queryByTestId("home-recent-cap")).toBeNull();
+    },
+  );
+});
+
+/**
+ * @spec [production QA 2026-10-08 item F (Karl: "Full-Length cards: no layout shift on load")]
+ *       | @implemented [2026-10-08]
+ * plain English: Home used to draw each section as its read landed, so the Full-Length card was
+ * pushed down by today's plan above it and the panel grew under the student. Now the page is one
+ * placeholder (HomeLoading) until every read it draws from has answered or failed, then the
+ * whole page at once. Each case holds one read (a slow server) and proves nothing of the page,
+ * the Full-Length card included, is drawn until it lands. jsdom lays nothing out; the in-browser
+ * measurement is the harness's (UI-54 `home-full-length-load-shift`).
+ */
+describe("QA2-F: Home is drawn once, complete", () => {
+  function holdUntilReleased(pattern: RegExp): () => void {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    return () => release();
+  }
+
+  it("paid, the calendar (today's plan, above the card) in flight: only the placeholder; then the whole page", async () => {
+    const release = holdUntilReleased(/^\/api\/calendar\?/);
+    await mount("paid", { calendar: "ready" }, { pending: true });
+    await waitFor(() => expect(gets()).toContain("/api/calendar"));
+    expect(screen.getByTestId("home-loading")).toBeTruthy();
+    expect(screen.queryByTestId("home")).toBeNull();
+    expect(screen.queryByTestId("home-full-length")).toBeNull();
+    expect(screen.getByTestId("home-panel-loading")).toBeTruthy();
+    await act(async () => {
+      release();
+    });
+    await screen.findByTestId("home");
+    expect(screen.getByTestId("home-plan")).toBeTruthy();
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
+    expect(screen.getByTestId("home-mastery")).toBeTruthy();
+    expect(screen.getByTestId("home-panel")).toBeTruthy();
+    expect(screen.queryByTestId("home-loading")).toBeNull();
+  });
+
+  it("paid, a panel read (recent sessions) in flight: the column waits for it too", async () => {
+    const release = holdUntilReleased(/^\/api\/review\/pool/);
+    await mount("paid", { calendar: "ready" }, { pending: true });
+    await waitFor(() => expect(gets()).toContain("/api/review/pool"));
+    expect(screen.queryByTestId("home-full-length")).toBeNull();
+    await act(async () => {
+      release();
+    });
+    await screen.findByTestId("home");
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
+  });
+
+  it("free, the projection status (which decides the diagnostic card above the card) in flight: only the placeholder", async () => {
+    const release = holdUntilReleased(/^\/api\/progress\/projection/);
+    await mount(
+      "free",
+      { estimateStatus: "insufficient_data" },
+      { pending: true },
+    );
+    await waitFor(() => expect(gets()).toContain("/api/progress/projection"));
+    expect(screen.queryByTestId("home")).toBeNull();
+    expect(screen.queryByTestId("home-full-length")).toBeNull();
+    await act(async () => {
+      release();
+    });
+    await screen.findByTestId("home");
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
+  });
+
+  it("the placeholder reserves the screen, so the footer under it starts below the screen", async () => {
+    holdUntilReleased(/^\/api\/calendar\?/);
+    await mount("paid", { calendar: "ready" }, { pending: true });
+    const loading = screen.getByTestId("home-loading");
+    expect(loading.className.split(/\s+/)).toContain("min-h-[100dvh]");
+    expect(within(loading).getByTestId("page-skeleton")).toBeTruthy();
+  });
+
+  it("a failed read ends the wait: the page draws with its load notice", async () => {
+    await mount(
+      "paid",
+      { calendar: "ready" },
+      { failPath: /^\/api\/review\/pool/ },
+    );
+    expect(await screen.findByTestId("home-load-error")).toBeTruthy();
+    expect(screen.getByTestId("home-full-length")).toBeTruthy();
   });
 });

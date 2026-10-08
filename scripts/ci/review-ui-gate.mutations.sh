@@ -117,6 +117,7 @@ FILES=(
   "client/src/features/calendar/components/FullLengthFields.tsx"
   "packages/shared/src/exam-form-display.ts"
   "client/src/features/calendar/components/BlockSheet.tsx"
+  "client/src/features/calendar/lib/members.ts"
   "client/src/components/math/MathReferenceSheet.tsx"
   "client/src/components/math/DesmosCalculator.tsx"
   "client/src/components/practice/NumericEntryInput.tsx"
@@ -125,14 +126,29 @@ FILES=(
   "client/src/components/layout/RouteSkeleton.tsx"
   "client/src/lib/format-date.ts"
   "client/src/lib/in-app-history.ts"
+  "client/src/lib/route-scroll-reset.ts"
   "client/src/components/ui/button.tsx"
   "client/src/pages/practice.tsx"
   "client/src/lib/session-reads.ts"
   "client/src/components/home/HomePanel.tsx"
+  "client/src/components/review/ReviewCapNotice.tsx"
   "client/src/components/student-ui/filter-bar/FilterBar.tsx"
   "client/src/components/MathRenderer.tsx"
   "client/src/features/calendar/lib/dates.ts"
   "client/src/pages/score-report.tsx"
+  "client/src/features/calendar/lib/blocks.ts"
+  "client/src/features/calendar/components/BlockCard.tsx"
+  "client/src/features/calendar/components/MonthGrid.tsx"
+  "client/src/lib/theme.ts"
+  "client/src/components/home/HomeLoading.tsx"
+  "client/src/components/billing/PremiumUpgradePrompt.tsx"
+  "client/src/components/home/home-model.ts"
+  "client/src/components/math/FloatingPanel.tsx"
+  "client/src/components/legal/ReconsentModal.tsx"
+  "server/routes/legacy/progress.ts"
+  "client/src/features/exam/pages/ExamModulePage.tsx"
+  "client/src/hooks/usePracticeQuota.ts"
+  "server/lib/practice-quota.ts"
 )
 
 snapshot_all() {
@@ -370,10 +386,11 @@ plant "UI52-Q2" "Start reviewing sends filter mode instead of queue" \
 assert s.count(a) == 1
 s = s.replace(a, "onClick={() => void start({ mode: \"filter\", filters: {} })}", 1)'
 
+# Re-pointed 2026-10-08 (QA2-A): the runner path comes from `reviewSessionHref` (useReview.ts).
 plant "UI52-Q3" "a started session stays on /review instead of the runner" \
   "client/src/pages/review.test.tsx" \
   "client/src/pages/review.tsx" \
-  'a = "      navigate(\x60/review/session/\x24{result.sessionId}\x60);"
+  'a = "      navigate(reviewSessionHref(result.sessionId));"
 assert s.count(a) == 1
 s = s.replace(a, "      navigate(\"/review\");", 1)'
 
@@ -412,12 +429,9 @@ plant "UI52-O2" "End confirms but never terminates" \
 assert s.count(a) == 1
 s = s.replace(a, "void onEnd;", 1)'
 
-plant "UI52-O3" "the session limit is reached one session later" \
-  "client/src/pages/review.test.tsx" \
-  "client/src/pages/review.tsx" \
-  'a = "open.sessions.length >= open.maxConcurrentSessions;"
-assert s.count(a) == 1
-s = s.replace(a, "open.sessions.length > open.maxConcurrentSessions;", 1)'
+# UI52-O3 retired 2026-10-08 (QA2-A, owner re-test item A): Review no longer disables its starts
+# at the open-session limit (the `atLimit` line it mutated is gone); the server's refusal is shown
+# at the pressed start instead. Its replacement is QA2A-R3, which plants the disabling back.
 
 plant "UI52-T1" "domain chips lose their own-queue count" \
   "client/src/pages/review.test.tsx" \
@@ -754,12 +768,14 @@ plant "UI53-CH2" "the guidance card is back" \
 assert s.count(a) == 1
 s = s.replace(a, "      <p>Session Guidance</p>\n      {error ? <Notice tone=\"danger\" title={String(error)} /> : null}", 1)'
 
+# Re-pointed 2026-10-08 (OQ-68 (c)): the KPI-invalidation comment the anchor ended on is gone with
+# the invalidation; the anchor now ends on the blank line before the stats merge. Same plant.
 plant "UI53-C4" "the last answer closes the runner before its feedback is read" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
   "client/src/hooks/useCanonicalPractice.ts" \
-  'a = "        if (data.state) setSessionState(data.state);\n        // Owner ruling"
+  'a = "        if (data.state) setSessionState(data.state);\n\n        if (data.stats) {\n"
 assert s.count(a) == 1
-s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\") setSessionClosed(true);\n        // Owner ruling", 1)'
+s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\") setSessionClosed(true);\n\n        if (data.stats) {\n", 1)'
 
 
 # ── UI-53 / OQ-54 (a), OQ-57 (f) — the review runner's LISA panel on the student tokens ──
@@ -1374,12 +1390,15 @@ plant "QA8-W1" "the runner never tells the panel it was opened" \
 assert s.count(a) == 1
 s = s.replace(a, "revealOnOpen={false}", 1)'
 
+# Re-pointed 2026-10-08 (QA2-D): side by side the toggle no longer records an opening (only the
+# phone layout's tap does), so dropping the layout check alone changed nothing; the plant now
+# tells a side-by-side panel to reveal itself outright.
 plant "QA8-W2" "side by side, Show LISA scrolls the runner too" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
   'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
 assert s.count(a) == 1
-s = s.replace(a, "revealOnOpen={tutorOpenedForItem === sessionItemId}", 1)'
+s = s.replace(a, "revealOnOpen={tutorSideBySide || tutorOpenedForItem === sessionItemId}", 1)'
 
 plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
   "$T56" \
@@ -1734,12 +1753,14 @@ s = s.replace(a, "          onClick={() => undefined}", 1)'
 
 # OQ-61 (e): the free box shows the approved Help FAQ wording from `@/lib/plan-copy`. Each plant
 # puts one line back to the Settings prototype's variant, the drift the shared constants prevent.
+# Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
+# (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
 plant "UI58-B4" "the Billing free box's free line drifts from the approved wording" \
   "$T58" \
   "client/src/components/settings/BillingSection.tsx" \
-  'a = "        {PLAN_FREE_INCLUDES}\n"
+  'a = "        {planFreeIncludes(freeDailyLimit)}\n"
 assert s.count(a) == 1
-s = s.replace(a, "        The diagnostic, your projected score, 40 practice questions a day and unlimited review.\n", 1)'
+s = s.replace(a, "        The diagnostic, your projected score, {freeDailyLimit} practice questions a day and unlimited review.\n", 1)'
 
 plant "UI58-B5" "the Billing free box's paid line drifts from the approved wording" \
   "$T58" \
@@ -1811,12 +1832,14 @@ plant "UI58-H1" "HELP_PATH back on the legal hub (OQ-46)" \
 assert s.count(a) == 1
 s = s.replace(a, "export const HELP_PATH = \"/legal\";", 1)'
 
+# Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
+# (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
 plant "UI58-H2" "an approved answer is reworded" \
   "$H58" \
   "client/src/lib/plan-copy.ts" \
-  'a = "40 practice questions a day and unlimited review."
+  'a = "${practice} and unlimited review."
 assert s.count(a) == 1
-s = s.replace(a, "40 questions a day and unlimited review.", 1)'
+s = s.replace(a, "${practice} and review.", 1)'
 
 plant "UI58-H3" "a question is dropped (six, not seven)" \
   "$H58" \
@@ -1875,7 +1898,7 @@ s = s.replace(a, "        description=\"One secure checkout flow for monthly, qu
 plant "UI58-U4" "the free line replaced by the shipped 'projection access' bullet" \
   "client/src/pages/upgrade.page.test.tsx" \
   "client/src/pages/upgrade.tsx" \
-  'a = "        {PLAN_FREE_INCLUDES}"
+  'a = "        {planFreeIncludes(freeDailyLimit)}"
 assert s.count(a) == 1
 s = s.replace(a, "        Full KPI + mastery + projection access", 1)'
 
@@ -1886,19 +1909,21 @@ plant "UI58-U5" "a card lists the projection as paid again" \
 assert s.count(a) == 1
 s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + projection access\n", 1)'
 
+# Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
+# (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
 plant "UI58-U6" "the shared free sentence drops the projection" \
   "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
   "client/src/lib/plan-copy.ts" \
-  'a = "the diagnostic, your projected score, 40 practice"
+  'a = "the diagnostic, your projected score, ${practice}"
 assert s.count(a) == 1
-s = s.replace(a, "the diagnostic, 40 practice", 1)'
+s = s.replace(a, "the diagnostic, ${practice}", 1)'
 
 plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
   "client/src/pages/upgrade.page.test.tsx" \
   "client/src/pages/help.tsx" \
-  'a = "    a: `${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`,"
+  'a = "      a: `${planFreeIncludes(freeDailyLimit)} ${PLAN_PAID_ADDS}`,"
 assert s.count(a) == 1
-s = s.replace(a, "    a: `${PLAN_FREE_INCLUDES} Paid plans add more.`,", 1)'
+s = s.replace(a, "      a: `${planFreeIncludes(freeDailyLimit)} Paid plans add more.`,", 1)'
 
 plant "UI58-N1" "a notification's time drops to 12px" \
   "client/src/pages/notifications.test.tsx" \
@@ -1948,26 +1973,28 @@ s = s.replace(a, a.replace("lyc-primary", "default"), 1)'
 # Re-pointed 2026-10-05 (merge of PR 1069): the 404 is the SEO page (main F6/F2, owner choice),
 # so the three 404 plants guard what that page promises: its link home, its heading, and no
 # developer line.
-plant "UI59-N1" "the 404's way home no longer goes home" \
+# Re-pointed 2026-10-08 (QA2-E): the page's copy moved into BareCardHeader props and its way out
+# into one choice per viewer; N1 now plants the signed-out way out (the homepage).
+plant "UI59-N1" "the 404's way home no longer goes home (signed out)" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = "<Link href=\"/\" "
+  'a = "? { href: \"/\", label: \"Go to the homepage\" }"
 assert s.count(a) == 1
-s = s.replace(a, "<Link href=\"/dashboard\" ", 1)'
+s = s.replace(a, "? { href: \"/dashboard\", label: \"Go to the homepage\" }", 1)'
 
 plant "UI59-N2" "the 404's heading reverts to the developer-style 404 Page Not Found" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = ">Page not found</h1>"
+  'a = "        title=\"Page not found\"\n"
 assert s.count(a) == 1
-s = s.replace(a, ">404 Page Not Found</h1>", 1)'
+s = s.replace(a, "        title=\"404 Page Not Found\"\n", 1)'
 
 plant "UI59-N3" "the developer line returns to the 404" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = "            Sorry, we couldn"
+  'a = "        description=\"Sorry, we couldn"
 assert s.count(a) == 1
-s = s.replace(a, "            Did you forget to add the page to the router? Sorry, we couldn", 1)'
+s = s.replace(a, "        description=\"Did you forget to add the page to the router? Sorry, we couldn", 1)'
 
 plant "UI59-A1" "Continue with Google is filled (two primaries on sign in)" \
   "$B59" \
@@ -2218,12 +2245,14 @@ assert s.count(a) == 1
 s = s.replace(a, "        {isAdmin ? null : items}\n", 1)'
 
 # F-70: the avatar dropdown follows the page theme (student tokens, the shell's theme lock).
+# Re-pointed 2026-10-08 (QA2-H): the rail bell passes `tone="student"` too, so the anchor carries
+# the menu's next prop (`side=`), which only the avatar menu has.
 plant "F70-1" "the App shell's menu back on the app-wide tone (outside any .lyc root)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      tone=\"student\"\n"
+  'a = "      tone=\"student\"\n      side="
 assert s.count(a) == 1
-s = s.replace(a, "", 1)'
+s = s.replace(a, "      side=", 1)'
 
 plant "F70-2" "the menu ignores the shell's light lock" \
   "$T41_RAIL" \
@@ -2561,12 +2590,14 @@ s = s.replace(a, "      {onAddBlock !== undefined && date >= today ? (", 1)'
 # tests/e2e/student-calendar.spec.ts ("QA 2026-10-07 item 11 layout", 390–1440); these plants
 # hold the page test's pins on the rules and wiring that layout depends on.
 
-plant "QA11-C1" "block-card text may no longer break (it runs past the card)" \
+# Re-pointed by QA2-C (2026-10-08): the rule no longer lets a word break inside itself (Karl: "no
+# mid-word breaks"), so the plant now puts that back and the page test's pin on it turns red.
+plant "QA11-C1" "block-card text may break inside a word again (overflow-wrap: anywhere)" \
   "$T55" \
   "client/src/features/calendar/calendar-student.css" \
-  'a = "     first; a word is split only when it alone is wider than the card. */\n  overflow-wrap: anywhere;\n"
+  'a = "     fit whole now has a shorter form instead. */\n  overflow-wrap: normal;\n  word-break: normal;\n"
 assert s.count(a) == 1
-s = s.replace(a, "     first; a word is split only when it alone is wider than the card. */\n", 1)'
+s = s.replace(a, "     fit whole now has a shorter form instead. */\n  overflow-wrap: anywhere;\n", 1)'
 
 plant "QA11-C2" "the started tag neither drops under the title nor truncates" \
   "$T55" \
@@ -2783,12 +2814,13 @@ plant "QA14-R1" "/mastery lights no rail item" \
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
+# Re-pointed 2026-10-08 (QA2-H): the bell's props are one per line since it takes `railItem`.
 plant "QA14-R2" "the bell not current on /notifications" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "<NotificationBell tone=\"student\" current={notificationsActive} />"
+  'a = "              current={notificationsActive}\n"
 assert s.count(a) == 1
-s = s.replace(a, "<NotificationBell tone=\"student\" />", 1)'
+s = s.replace(a, "", 1)'
 
 plant "QA14-R3" "the avatar menu's Help entry without its icon" \
   "$T41_RAIL" \
@@ -2800,9 +2832,9 @@ s = s.replace(a, "", 1)'
 plant "QA5-S1" "a page's chunk wait falls through the App shell to the full-page fallback" \
   "$QA5_FRAME" \
   "client/src/components/layout/StudentRouteFrame.tsx" \
-  'a = "            fallback={<PageSkeleton padded={spec.content === \"full\"} />}\n"
+  'a = "          fallback={<PageSkeleton padded={spec.content === \"full\"} />}\n"
 assert s.count(a) == 1
-s = s.replace(a, "            fallback={null}\n", 1)'
+s = s.replace(a, "          fallback={null}\n", 1)'
 
 plant "QA5-S2" "a page's chunk wait falls through the Focus shell" \
   "$QA5_FRAME" \
@@ -2907,12 +2939,13 @@ plant "OQ66-H1" "a recent-session row hides its action again (no \"Review this s
 assert s.count(a) == 1
 s = s.replace(a, "{starting ? STARTING_LABEL : toReviewLine(s.open_count)}", 1)'
 
+# Re-pointed 2026-10-08 (W6 UI-66): the row's name is now `title` (its criteria), was `kind`.
 plant "OQ66-H2" "every recent row's action has the same accessible name" \
   "$OQ66_HOME" \
   "client/src/components/home/HomePanel.tsx" \
-  'a = "                      : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`\n"
+  'a = "                        : `${REVIEW_SESSION_LABEL}: ${title}, ${when}`\n"
 assert s.count(a) == 1
-s = s.replace(a, "                      : REVIEW_SESSION_LABEL\n", 1)'
+s = s.replace(a, "                        : REVIEW_SESSION_LABEL\n", 1)'
 
 # ── QA-FLOWS — owner QA list (Karl, 2026-10-07), branch claude/qa-flows ──────────────────────
 # Items 4-7, 10, 14, 15 (flows, links, loading states). Each plant mutates the product line the
@@ -3059,9 +3092,9 @@ s = s.replace(a, "      ?.getAttribute(\"id\");\n", 1)'
 plant "QA14-R1F" "a recent-session row looks pressable but does nothing" \
   "$QA_HOME" \
   "client/src/components/home/HomePanel.tsx" \
-  'a = "                  onClick={() => onReview(s)}\n"
+  'a = "                    onClick={() => onReview(s)}\n"
 assert s.count(a) == 1
-s = s.replace(a, "                  onClick={() => undefined}\n", 1)'
+s = s.replace(a, "                    onClick={() => undefined}\n", 1)'
 
 # Item 15: one empty-day sentence; timing above Start; "Not now"; menus hold still; math on one line.
 QA_FILTER="client/src/components/student-ui/filter-bar/FilterBar.test.tsx"
@@ -3074,11 +3107,13 @@ plant "QA15-E1F" "Home's empty day says its own words again" \
 assert s.count(a) == 1
 s = s.replace(a, "          Rest day\n", 1)'
 
+# Re-pointed 2026-10-08 (QA2-F): "Before you start" is drawn once the rows' reads are in, so
+# its line is the conditional; same plant (the timing choice moved after it).
 plant "QA15-T1" "the timing choice drops back under the list of Starts" \
   "$QA_TESTS" \
   "client/src/features/exam/pages/TestsHomePage.tsx" \
   'a = "            <TimingChoice mode={mode} onModeChange={setMode} />\n"
-b = "            <BeforeYouStart mode={mode} />\n"
+b = "            {listReady || forms.isError ? <BeforeYouStart mode={mode} /> : null}\n"
 assert s.count(a) == 1 and s.count(b) == 1
 s = s.replace(a, "", 1).replace(b, b + a, 1)'
 
@@ -3105,6 +3140,127 @@ assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
 # ── END QA-FLOWS
+
+# ── QA2-A — owner re-test (Karl, 2026-10-08) item A: the review cap at the pressed start ──────
+# "Review cap (5 open sessions): show the error at the clicked button (inline or toast), never
+# below the fold, with 'Continue your open session' and 'End a session' actions. Same on Home and
+# Review." Each plant mutates the line the named page test runs (checked by line number).
+QA2A_REVIEW="client/src/pages/review.test.tsx"
+QA2A_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+
+plant "QA2A-C1" "the cap is recognised by its 403 status again (a 409 cap goes dark)" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
+assert s.count(a) == 1
+s = s.replace(a, "      if (res.status === 403 && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {", 1)'
+
+plant "QA2A-C2" "any refusal is taken for the cap (the code is not read)" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
+assert s.count(a) == 1
+s = s.replace(a, "      if (!res.ok) {", 1)'
+
+plant "QA2A-I1" "a cap refusal no longer re-reads the open sessions it offers" \
+  "$QA2A_REVIEW" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      if (result.failure.kind === \"session_limit\")\n        void queryClient.invalidateQueries({"
+assert s.count(a) == 1
+s = s.replace(a, "      if (result.failure.kind === \"pool_empty\")\n        void queryClient.invalidateQueries({", 1)'
+
+plant "QA2A-N3" "Continue opens the oldest open session instead of the latest" \
+  "$QA2A_REVIEW" \
+  "client/src/hooks/useReview.ts" \
+  'a = "      Date.parse(s.created_at) > Date.parse(latest.created_at)"
+assert s.count(a) == 1
+s = s.replace(a, "      Date.parse(s.created_at) < Date.parse(latest.created_at)", 1)'
+
+plant "QA2A-N1" "the cap message is not scrolled into view (it can sit below the fold)" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/components/review/ReviewCapNotice.tsx" \
+  'a = "      el.scrollIntoView({ block: \"nearest\" });"
+assert s.count(a) == 1
+s = s.replace(a, "      void el;", 1)'
+
+plant "QA2A-N2" "Continue goes to the Review list instead of the open session" \
+  "$QA2A_REVIEW $QA2A_HOME" \
+  "client/src/components/review/ReviewCapNotice.tsx" \
+  'a = "              onAction: () => navigate(reviewSessionHref(latest.id)),"
+assert s.count(a) == 1
+s = s.replace(a, "              onAction: () => navigate(REVIEW_OPEN_SESSIONS_HREF),", 1)'
+
+plant "QA2A-N4" "Home's End a session lands on Review without its open sessions in view" \
+  "$QA2A_HOME" \
+  "client/src/components/review/ReviewCapNotice.tsx" \
+  'a = "          onEndSession ?? (() => navigate(REVIEW_OPEN_SESSIONS_HREF))"
+assert s.count(a) == 1
+s = s.replace(a, "          onEndSession ?? (() => navigate(\"/review\"))", 1)'
+
+plant "QA2A-R1" "Start reviewing's refusal is not drawn under it" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
+assert s.count(a) == 1
+s = s.replace(a, "            {null}", 1)'
+
+plant "QA2A-R2" "every refusal is drawn under Start reviewing too (a Redo's lands at the top)" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
+assert s.count(a) == 1
+s = s.replace(a, "            {capKey !== null ? <div className=\"mt-3\">{cap}</div> : null}", 1)'
+
+plant "QA2A-R3" "starts are disabled at the open-session limit again (nothing to press)" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "  const canStart = !create.isStarting && starting === null;"
+assert s.count(a) == 1
+s = s.replace(a, "  const canStart =\n    !create.isStarting &&\n    starting === null &&\n    open.sessions.length < (open.maxConcurrentSessions ?? Infinity);", 1)'
+
+plant "QA2A-R4" "Review's End a session does not bring the open sessions into view" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "        onEndSession={showOpenSessions}"
+assert s.count(a) == 1
+s = s.replace(a, "        onEndSession={() => undefined}", 1)'
+
+plant "QA2A-R5" "the page reads ?focus=open-sessions the wrong way round" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "    if (!focusOpen || !openRowsDrawn || focusedOpen.current) return;"
+assert s.count(a) == 1
+s = s.replace(a, "    if (focusOpen || !openRowsDrawn || focusedOpen.current) return;", 1)'
+
+plant "QA2A-R6" "a Redo's refusal is not drawn in its row" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "                      {capKey === redoStartKey(row) ? ("
+assert s.count(a) == 1
+s = s.replace(a, "                      {false ? (", 1)'
+
+plant "QA2A-R7" "the topic picker's refusal is not drawn in the picker" \
+  "$QA2A_REVIEW" \
+  "client/src/pages/review.tsx" \
+  'a = "              cap={capKey === \"filter\" ? cap : null}"
+assert s.count(a) == 1
+s = s.replace(a, "              cap={null}", 1)'
+
+plant "QA2A-H1" "Home draws the cap under every recent row, not the pressed one" \
+  "$QA2A_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "                {capFor === recentRowKey(s) ? ("
+assert s.count(a) == 1
+s = s.replace(a, "                {capFor !== null ? (", 1)'
+
+plant "QA2A-H2" "Home's cap goes back to the red line under the list" \
+  "$QA2A_HOME" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "            capFor={reviewCap?.row ?? null}"
+assert s.count(a) == 1
+s = s.replace(a, "            capFor={null}", 1)'
+
+# ── END QA2-A
 
 # ── QA 2026-10-07 item 7: the Focus shell's back arrow names its real destination ─────────────
 QA7_FOCUS="client/src/components/layout/FocusShell.test.tsx"
@@ -3166,6 +3322,597 @@ plant "QA-RO4" "the phone shows the full words 'Question N of M' again" \
   'a = "<span className=\"sr-only sm:not-sr-only\">Question </span>"
 assert s.count(a) == 1
 s = s.replace(a, "<span className=\"inline\">Question </span>", 1)'
+
+# ── Production re-test round 2 (Karl, 2026-10-08), items C and G (the student calendar). ──
+# C: "Calendar chips at narrow widths: compact labels that keep the count ('Rev 15', 'Math 5',
+# 'R&W 15') plus color; never a single letter; no mid-word breaks." The layout is measured in the
+# browser by tests/e2e/student-calendar.spec.ts ("QA2-C chip labels" at 1024, 1199, 390, 1440, and
+# the item 11 layout loop at 390–1440); these plants hold the canonical table, the markup and the
+# CSS that layout depends on.
+TQA2C_LABELS="client/src/features/calendar/components/BlockCard.labels.test.tsx"
+TQA2C_BLOCKS="client/src/features/calendar/lib/blocks.test.ts"
+
+plant "QA2C-1" "the compact Reading & Writing label is a single letter" \
+  "$TQA2C_BLOCKS $TQA2C_LABELS" \
+  "client/src/features/calendar/lib/blocks.ts" \
+  'a = "  rw: \"R&W\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "  rw: \"R\",\n", 1)'
+
+plant "QA2C-2" "the compact title is read out beside the full one (no aria-hidden)" \
+  "$TQA2C_LABELS $T55" \
+  "client/src/features/calendar/components/BlockCard.tsx" \
+  'a = "<span className=\"ttl-short\" aria-hidden=\"true\">"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"ttl-short\">", 1)'
+
+plant "QA2C-3" "the card's accessible name drops the canonical domain names" \
+  "$TQA2C_LABELS" \
+  "client/src/features/calendar/components/BlockCard.tsx" \
+  'a = ".map((entry) => `, ${entry.domain} ${entry.count}`)"
+assert s.count(a) == 1
+s = s.replace(a, ".map(() => \"\")", 1)'
+
+plant "QA2C-4" "the month chip's compact label is the full one again" \
+  "$TQA2C_LABELS" \
+  "client/src/features/calendar/components/MonthGrid.tsx" \
+  'a = "<span className=\"short\" aria-hidden=\"true\">\n            {compact}"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"short\" aria-hidden=\"true\">\n            {full}", 1)'
+
+plant "QA2C-5" "a narrow week column keeps the full title (the compact one is never drawn)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .ttl-short {\n    display: inline;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "    .ttl-short {\n    display: none;\n  }\n", 1)'
+
+plant "QA2C-6" "a narrow scope chip no longer cuts its name (it splits or spills instead)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .dname {\n    min-width: 0;\n    overflow: hidden;\n    text-overflow: ellipsis;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "    .dname {\n    min-width: 0;\n  }\n", 1)'
+
+plant "QA2C-7" "the month is no longer a size container (its chips never go compact)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "  container: lyc-cal-month / inline-size;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# G: "Calendar block panel: disable 'Items to clear' while the block is in progress."
+TQA2G="client/src/features/calendar/components/BlockSheet.test.tsx"
+
+plant "QA2G-1" "Items to clear stays enabled while the block is in progress" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "                disabled={locked}\n                aria-disabled={locked ? \"true\" : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                disabled={false}\n                aria-disabled={locked ? \"true\" : undefined}\n", 1)'
+
+plant "QA2G-2" "the locked Items to clear is not marked aria-disabled" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "                aria-disabled={locked ? \"true\" : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2G-3" "no note says why Items to clear is locked" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "              {inProgress ? (\n                <p\n"
+assert s.count(a) == 1
+s = s.replace(a, "              {false ? (\n                <p\n", 1)'
+
+plant "QA2G-4" "a finished block is called in progress" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "  const inProgress = block.started && !complete;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const inProgress = block.started;\n", 1)'
+
+plant "QA2G-5" "a 7-item review block reads 5 items again (current count not offered)" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "{reviewCountChoices(block.target).map((count) => ("
+assert s.count(a) == 1
+s = s.replace(a, "{reviewCountChoices().map((count) => (", 1)'
+
+plant "QA2G-6" "the review choices drop the current count" \
+  "$TQA2G" \
+  "client/src/features/calendar/lib/members.ts" \
+  'a = "  if (current === undefined || steps.includes(current)) return steps;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return steps;\n", 1)'
+
+# ── QA2 E, H, I — production re-test 2026-10-08 (Karl): /settings and the 404, the rail bell,
+# scroll to top on a route change ──────────────────────────────────────────────────────────
+QA2_RS="client/src/lib/route-shells.test.tsx"
+QA2_SCROLL="client/src/lib/route-scroll-reset.test.tsx"
+
+plant "QA2-E1" "/settings pushes /profile instead of replacing itself (Back bounces)" \
+  "$QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "      to={`/profile${search === \"\" ? \"\" : `?${search}`}${hash}`}\n      replace\n"
+assert s.count(a) == 1
+s = s.replace(a, "      to={`/profile${search === \"\" ? \"\" : `?${search}`}${hash}`}\n", 1)'
+
+plant "QA2-E2" "/settings drops the query /profile reads (?tab=)" \
+  "$QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "      to={`/profile${search === \"\" ? \"\" : `?${search}`}${hash}`}\n"
+assert s.count(a) == 1
+s = s.replace(a, "      to={`/profile${hash}`}\n", 1)'
+
+plant "QA2-E3" "the 404 drawn without the Bare card (the old unshelled page)" \
+  "$B59 $QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "    <BareCard>\n      <NotFound />\n    </BareCard>\n"
+assert s.count(a) == 1
+s = s.replace(a, "    <NotFound />\n", 1)'
+
+plant "QA2-E4" "a signed-in student on the 404 is sent to the homepage, not Home" \
+  "$B59" \
+  "client/src/pages/not-found.tsx" \
+  'a = ": { href: \"/dashboard\", label: \"Back to Home\" }"
+assert s.count(a) == 1
+s = s.replace(a, ": { href: \"/\", label: \"Back to Home\" }", 1)'
+
+plant "QA2-E5" "the 404's way out is not the student filled action" \
+  "$B59" \
+  "client/src/pages/not-found.tsx" \
+  'a = "          variant: \"lyc-primary\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "          variant: \"lyc-outline\",\n", 1)'
+
+plant "QA2-H1" "the rail bell loses its visible Notifications label" \
+  "$T41_RAIL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "            <span className={railItem.labelClassName}>Notifications</span>\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-H2" "the rail bell is never drawn current (always the off pair)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "                  notificationsActive ? ON_CLASS : OFF_CLASS,\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  OFF_CLASS,\n", 1)'
+
+plant "QA2-H3" "the rail bell off the shared rail-item class (a style fork)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "const RAIL_BELL_CLASS = `${RAIL_ITEM_CLASS} cursor-pointer"
+assert s.count(a) == 1
+s = s.replace(a, "const RAIL_BELL_CLASS = `relative flex rounded-lg cursor-pointer", 1)'
+
+plant "QA2-I1" "the route switch no longer mounts the scroll reset" \
+  "$QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "  useRouteScrollReset();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-I2" "the reset runs as a passive effect, after (and over) a page's own deep-link scroll" \
+  "$QA_MASTERY" \
+  "client/src/lib/route-scroll-reset.ts" \
+  'a = "typeof window === \"undefined\" ? useEffect : useLayoutEffect;"
+assert s.count(a) == 1
+s = s.replace(a, "typeof window === \"undefined\" ? useEffect : useEffect;", 1)'
+
+plant "QA2-I3" "a query-only change (in-page state) resets the scroll too" \
+  "$QA2_SCROLL" \
+  "client/src/lib/route-scroll-reset.ts" \
+  'a = "import { useLocation } from \"wouter\";"
+assert s.count(a) == 1
+s = s.replace(a, "import { useLocation, useSearch } from \"wouter\";", 1)
+b = "  const [pathname] = useLocation();\n"
+assert s.count(b) == 1
+s = s.replace(b, "  const pathname = `${useLocation()[0]}?${useSearch()}`;\n", 1)'
+
+plant "QA2-I4" "the App shell's reading column is not marked for the reset" \
+  "$QA2_RS" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "              data-route-scroll=\"\"\n              data-content=\"column\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "              data-content=\"column\"\n", 1)'
+
+plant "QA2-I5" "a hash on the new address is ignored (the page opens at its top)" \
+  "$QA2_SCROLL" \
+  "client/src/lib/route-scroll-reset.ts" \
+  'a = "    document.getElementById(hash.slice(1))?.scrollIntoView({ block: \"start\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "    void hash;\n", 1)'
+
+# ── QA2 B, D, F (production re-test round 2, Karl, 2026-10-08) ───────────────────────────
+# B: "Desmos: invertedColors when the app theme is dark (Graphing and Scientific)."
+# D: "Phone: the LISA panel defaults closed; tapping the icon always brings it into view."
+# F: "Full-Length cards: no layout shift on load."
+QA2B_CALC="client/src/components/math/DesmosCalculator.theme.test.tsx"
+QA2F_HOME="client/src/features/exam/pages/TestsHomePage.test.tsx"
+QA2F_DASH="client/src/pages/lyceon-dashboard.test.tsx"
+
+plant "QA2-B1" "Desmos is constructed light on a dark page (no invertedColors from the theme)" \
+  "$QA2B_CALC" \
+  "client/src/components/math/DesmosCalculator.tsx" \
+  'a = "          invertedColors: invertedColorsRef.current,\n"
+assert s.count(a) == 1
+s = s.replace(a, "          invertedColors: false,\n", 1)'
+
+plant "QA2-B2" "a theme change after construction never reaches Desmos (no updateSettings)" \
+  "$QA2B_CALC" \
+  "client/src/components/math/DesmosCalculator.tsx" \
+  'a = "    calcRef.current?.updateSettings({ invertedColors });\n"
+assert s.count(a) == 1
+s = s.replace(a, "    void invertedColors;\n", 1)'
+
+plant "QA2-B3" "a root pinned light (the timed module) no longer keeps Desmos light" \
+  "$QA2B_CALC" \
+  "client/src/lib/theme.ts" \
+  'a = "  return root.getAttribute(\"data-theme-lock\") === \"light\" ||\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return false ||\n", 1)'
+
+plant "QA2-D1" "on the phone layout LISA is open on load again" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "      : tutorShownForItem === sessionItemId);"
+assert s.count(a) == 1
+s = s.replace(a, "      : tutorHiddenForItem !== sessionItemId);", 1)'
+
+plant "QA2-D2" "a tap on an open LISA scrolled out of view closes it instead of bringing it into view" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "                setTutorRevealKey((k) => k + 1);\n"
+assert s.count(a) == 1
+s = s.replace(a, "                setTutorShownForItem(null);\n", 1)'
+
+plant "QA2-D3" "the runner reads LISA as always in view (a tap never reveals, it closes)" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "  return top >= area.top - 1 && top <= area.bottom - TUTOR_HEADER_VISIBLE_PX;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return true;\n", 1)'
+
+plant "QA2-D4" "the runner never passes the reveal request to the panel" \
+  "$TQA_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "        revealKey={tutorRevealKey}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-D5" "the panel reveals itself on mount only (a new revealKey does nothing)" \
+  "$TQA_PANEL" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "  }, [revealKey]);\n"
+assert s.count(a) == 1
+s = s.replace(a, "  }, []);\n", 1)'
+
+plant "QA2-F1" "the rows are drawn before the scored sessions land (a completed row grows under the student)" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const listReady = forms.isSuccess && !scored.isPending && inProgressSettled;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const listReady = forms.isSuccess && inProgressSettled;\n", 1)'
+
+plant "QA2-F2" "the rows are drawn before the in-progress test's /state lands" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const inProgressSettled = inProgressId === null || !inProgress.isPending;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const inProgressSettled = true;\n", 1)'
+
+plant "QA2-F3" "the panel draws before the score history (the history is inserted above the mastery rows)" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "  const panelReady = !examGranted || !scored.isPending;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const panelReady = true;\n", 1)'
+
+plant "QA2-F4" "the loading placeholder no longer reserves the screen" \
+  "$QA2F_HOME" \
+  "client/src/features/exam/pages/TestsHomePage.tsx" \
+  'a = "      className=\"flex min-h-[100dvh] flex-col\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "      className=\"flex flex-col\"\n", 1)'
+
+plant "QA2-F5" "the legal footer is drawn under the page skeleton again (pushed down when the page lands)" \
+  "$QA5_FRAME" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "                {footer ? <LegalFooter /> : null}\n              </Suspense>\n"
+assert s.count(a) == 1
+s = s.replace(a, "              </Suspense>\n              {footer ? <LegalFooter /> : null}\n", 1)'
+
+plant "QA2-F6" "paid Home draws section by section again (the card pushed down by today's plan)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "  if (!settled) return <HomeLoading />;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-F7" "paid Home stops waiting for the calendar (today's plan lands above the card)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/PaidHome.tsx" \
+  'a = "    !calendar.isLoading &&\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-F8" "free Home draws before the projection status (the diagnostic card lands above the card)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "  if (!settled) return <HomeLoading />;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-F9" "Home's placeholder no longer reserves the screen (the footer is pulled into view)" \
+  "$QA2F_DASH" \
+  "client/src/components/home/HomeLoading.tsx" \
+  'a = "    <div className=\"min-h-[100dvh]\" data-testid=\"home-loading\">\n"
+assert s.count(a) == 1
+s = s.replace(a, "    <div data-testid=\"home-loading\">\n", 1)'
+
+# ── W6 UI-65 — the daily-limit billing card on the student tokens (OQ-52 (c)) ─────────────
+# @spec [student-UI register UI-65; OQ-52 (c), owner ruling 2026-10-05] | @implemented [2026-10-08]
+W6_UI65="client/src/components/billing/PremiumUpgradePrompt.tokens.test.tsx"
+
+plant "W6-UI65-1" "the card goes back to the shadcn card colours" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-6 sm:px-7"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg border border-primary/30 bg-card px-5 py-6 sm:px-7", 1)'
+
+plant "W6-UI65-2" "the card's action becomes a second filled primary on Practice" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "        variant=\"lyc-outline\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "        variant=\"lyc-primary\"\n", 1)'
+
+plant "W6-UI65-3" "the floating dismiss button keeps the 14px shadcn base size" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "            className=\"text-lyc-body\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# ── W6 UI-66 — recent-session rows named by their criteria (OQ-53 (e)) ───────────────────────
+# @spec [student-UI register UI-66; OQ-53 (e), owner ruling 2026-10-05] | @implemented [2026-10-08]
+W6_UI66_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+W6_UI66_PRACTICE="client/src/pages/practice.test.tsx"
+W6_UI66_MODEL="client/src/components/home/home-model.test.ts"
+
+plant "W6-UI66-H1" "Home's recent row prints the engine label again, not the criteria" \
+  "$W6_UI66_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "            const title = recentSessionTitle(s);\n"
+assert s.count(a) == 1
+s = s.replace(a, "            const title = s.source_engine === \"review\" ? \"Review\" : \"Practice\";\n", 1)'
+
+plant "W6-UI66-P1" "Practice's recent row prints \"Practice\" again, not the criteria" \
+  "$W6_UI66_PRACTICE" \
+  "client/src/pages/practice.tsx" \
+  'a = "                  {recentSessionTitle(s)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  {\"Practice\"}\n", 1)'
+
+plant "W6-UI66-M1" "the row helper ignores the criteria the row carries" \
+  "$W6_UI66_MODEL $W6_UI66_HOME $W6_UI66_PRACTICE" \
+  "client/src/components/home/home-model.ts" \
+  'a = "    filters !== null && \"sections\" in filters ? filters : NO_CRITERIA;\n"
+assert s.count(a) == 1
+s = s.replace(a, "    NO_CRITERIA;\n", 1)'
+
+plant "W6-UI66-M2" "a full-length row loses its form name" \
+  "$W6_UI66_MODEL" \
+  "client/src/components/home/home-model.ts" \
+  'a = "      ? displayFormName(filters.test_form_name)\n"
+assert s.count(a) == 1
+s = s.replace(a, "      ? sourceEngineLabel(\"full_length\")\n", 1)'
+
+plant "W6-UI66-M3" "a review row with no criteria is named like a practice row" \
+  "$W6_UI66_MODEL $W6_UI66_HOME" \
+  "client/src/components/home/home-model.ts" \
+  'a = "    row.source_engine === \"review\" ? \"review\" : \"practice\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "    \"practice\",\n", 1)'
+
+# ── W6 UI-62 — the 14px floor: the exam calculator panel and the re-consent version line ──────
+# @spec [student-UI register UI-62 (invariant sweep)] | @implemented [2026-10-08]
+W6_UI62_PANEL="client/src/components/math/FloatingPanel.type-floor.test.tsx"
+W6_UI62_RECONSENT="client/src/components/legal/ReconsentGate.test.tsx"
+
+plant "W6-UI62-1" "the calculator panel's title goes back to 13px" \
+  "$W6_UI62_PANEL" \
+  "client/src/components/math/FloatingPanel.tsx" \
+  'a = "<span id={`${id}-title`} className=\"text-[14px] font-semibold\">"
+assert s.count(a) == 1
+s = s.replace(a, "<span id={`${id}-title`} className=\"text-[13px] font-semibold\">", 1)'
+
+plant "W6-UI62-2" "the calculator panel's Expand goes back to 13px" \
+  "$W6_UI62_PANEL" \
+  "client/src/components/math/FloatingPanel.tsx" \
+  'a = "rounded-lg px-3 text-[14px] font-medium text-[var(--exam-muted)]"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg px-3 text-[13px] font-medium text-[var(--exam-muted)]", 1)'
+
+plant "W6-UI62-3" "the re-consent version line goes back to text-xs" \
+  "$W6_UI62_RECONSENT" \
+  "client/src/components/legal/ReconsentModal.tsx" \
+  'a = "<p className=\"mt-1 text-[14px] text-muted-foreground\">"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"mt-1 text-xs text-muted-foreground\">", 1)'
+
+# ── W6 UI-10 — the projection route's entitlement-read catch logs, and still fails closed ──────
+# @spec [student-UI register UI-10; Coding Standards §13, §12.1; Doc-05C §7.4] | @implemented [2026-10-08]
+# The one server plant in this gate (UI-10's exception to the UI-only scope).
+W6_UI10="tests/ci/kpi.gating.contract.test.ts"
+
+plant "W6-UI10-1" "the entitlement-read catch is silent again (no structured warning)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "          \"score_estimate_entitlement_read_failed\",\n"
+assert s.count(a) == 1
+i = s.index("        logger.warn(\n          \"PROGRESS\",\n          \"score_estimate_entitlement_read_failed\"")
+j = s.index("        canSeeLiveProgression = false;\n", i)
+s = s[:i] + s[j:]'
+
+plant "W6-UI10-2" "the warning writes the error's message (unredacted)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "            errorName: error instanceof Error ? error.name : typeof error,\n"
+assert s.count(a) == 1
+s = s.replace(a, "            errorName: error instanceof Error ? error.message : typeof error,\n", 1)'
+
+plant "W6-UI10-3" "the catch fails open (serves the paid view on a failed read)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = false;\n"
+assert s.count(a) == 1
+s = s.replace(a, "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = true;\n", 1)'
+
+# ── OQ-68 (a) — /practice/topics is retired, with a redirect to /practice (Karl, 2026-10-08) ──────
+# @spec [OQ-68 (a), owner ruling 2026-10-08] | @implemented [2026-10-08]
+# The topic browser (pages/browse-topics.tsx) is deleted; its address replaces itself with
+# /practice and nothing in the client links there any more.
+OQ68A_SHELLS="client/src/lib/route-shells.test.tsx"
+OQ68A_SWEEP="tests/ci/practice-topics-retired.contract.test.ts"
+
+plant "OQ68A-1" "the retired address pushes /practice instead of replacing itself (Back bounces)" \
+  "$OQ68A_SHELLS $OQ68A_SWEEP" \
+  "client/src/App.tsx" \
+  'a = "        <Route path=\"/practice/topics\">\n          {() => <Redirect to=\"/practice\" replace />}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        <Route path=\"/practice/topics\">\n          {() => <Redirect to=\"/practice\" />}\n", 1)'
+
+plant "OQ68A-2" "the retired address keeps its query on the way to /practice (which reads none)" \
+  "$OQ68A_SHELLS" \
+  "client/src/App.tsx" \
+  'a = "        <Route path=\"/practice/topics\">\n          {() => <Redirect to=\"/practice\" replace />}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        <Route path=\"/practice/topics\">\n          {() => <Redirect to={`/practice${window.location.search}`} replace />}\n", 1)'
+
+plant "OQ68A-3" "the shell table forgets the retired address is a redirect" \
+  "$OQ68A_SHELLS $OQ68A_SWEEP" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/practice/topics\": \"redirect\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ68A-4" "Practice links to the retired topic browser again" \
+  "$OQ68A_SWEEP client/src/pages/practice.test.tsx" \
+  "client/src/pages/practice.tsx" \
+  'a = "        <Link href=\"/review\" className={TEXT_LINK}>\n          Review what you missed\n        </Link>\n"
+assert s.count(a) == 1
+s = s.replace(a, a + "        <Link href=\"/practice/topics\" className={TEXT_LINK}>\n          Browse topics\n        </Link>\n", 1)'
+
+
+# ── OQ-68 (c) — no client read or invalidation of GET /api/progress/kpis (Karl, 2026-10-08) ──────
+# @spec [OQ-68 (c), owner ruling 2026-10-08] | @implemented [2026-10-08]
+# The read hook (hooks/useProgressKpis.ts) had no reader since UI-50/UI-51; its two
+# session-completion invalidations are gone with it. The route's removal is cleanup's.
+OQ68C_SWEEP="tests/ci/query-freshness.contract.test.ts"
+
+plant "OQ68C-1" "a completed exam marks the KPIs stale again" \
+  "$OQ68C_SWEEP" \
+  "client/src/features/exam/pages/ExamModulePage.tsx" \
+  'a = "        leaving.current = true;\n        navigate(reportPath(sessionId), { replace: true });\n"
+assert s.count(a) == 1
+s = s.replace(a, "        leaving.current = true;\n        void queryClient.invalidateQueries({ queryKey: [\"/api/progress/kpis\"] });\n        navigate(reportPath(sessionId), { replace: true });\n", 1)'
+
+plant "OQ68C-2" "the answer that completes a practice or review session marks the KPIs stale again" \
+  "$OQ68C_SWEEP" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "        if (data.state) setSessionState(data.state);\n\n        if (data.stats) {\n"
+assert s.count(a) == 1
+s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\")\n          void queryClient.invalidateQueries({ queryKey: [\"/api/progress/kpis\"] });\n\n        if (data.stats) {\n", 1)'
+
+
+# ── W6 UI-64 — configured numbers in student copy come from the server (OQ-68 (d)) ────────────
+# @spec [student-UI register UI-64; owner ruling OQ-68 (d) (Karl, 2026-10-08): "The '40 questions'
+#        copy reads the server quota value (the same source as the 402)"] | @implemented [2026-10-08]
+# Each plant puts a remembered number (or no server number) back at one call site; the test that
+# serves a non-40 config value (37; the diagnostic 48 / 6) must go red. W6-UI64-9 and -10 are the
+# server mapping (no database: the contract test mocks the config read); the route and the
+# /sessions/open fields are proven over real Postgres outside this gate (practice-quota.pg and
+# practice-config-copy.pg), whose plants are recorded in the UI-64 report.
+W6_UI64_PLAN="client/src/lib/plan-copy.test.ts"
+W6_UI64_HELP="client/src/pages/help.test.tsx"
+W6_UI64_SETTINGS="client/src/pages/settings.test.tsx"
+W6_UI64_UPGRADE="client/src/pages/upgrade.page.test.tsx"
+W6_UI64_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+W6_UI64_SERVER="tests/ci/practice-quota-free-limit.contract.test.ts"
+
+plant "W6-UI64-1" "the plan copy prints a literal 40 again, whatever number it is given" \
+  "$W6_UI64_PLAN" \
+  "client/src/lib/plan-copy.ts" \
+  'a = "      : `${freeDailyLimit} practice ${freeDailyLimit === 1 ? \"question\" : \"questions\"} a day`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "      : \"40 practice questions a day\";\n", 1)'
+
+plant "W6-UI64-2" "Help builds the plans answer without the served limit" \
+  "$W6_UI64_HELP" \
+  "client/src/pages/help.tsx" \
+  'a = "  const faqs = helpFaqs(useFreeDailyLimit());\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const faqs = helpFaqs(40);\n", 1)'
+
+plant "W6-UI64-3" "Settings → Billing's free box prints a remembered 40" \
+  "$W6_UI64_SETTINGS" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {planFreeIncludes(freeDailyLimit)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {planFreeIncludes(40)}\n", 1)'
+
+plant "W6-UI64-4" "/upgrade prints a remembered 40" \
+  "$W6_UI64_UPGRADE" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        {planFreeIncludes(freeDailyLimit)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {planFreeIncludes(40)}\n", 1)'
+
+plant "W6-UI64-5" "Home's diagnostic card prints a literal length instead of the served one" \
+  "$W6_UI64_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "            {diagnosticCardLine(\n              practice.diagnosticTotalQuestions,\n"
+assert s.count(a) == 1
+s = s.replace(a, "            {diagnosticCardLine(\n              40,\n", 1)'
+
+plant "W6-UI64-6" "Home's How Lyceon works prints a remembered daily limit" \
+  "$W6_UI64_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "  const freeDailyLimit = quota.data?.freeDailyLimit ?? null;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const freeDailyLimit = 40;\n", 1)'
+
+plant "W6-UI64-7" "the per-domain clause is printed even when the total is not whole draws" \
+  "$W6_UI64_HOME" \
+  "client/src/components/home/home-model.ts" \
+  'a = "  if (perDomain !== null && perDomain > 0 && total % perDomain === 0) {\n"
+assert s.count(a) == 1
+s = s.replace(a, "  if (perDomain !== null && perDomain > 0) {\n", 1)'
+
+plant "W6-UI64-8" "a missing quota answer falls back to a remembered 40" \
+  "$W6_UI64_HELP" \
+  "client/src/hooks/usePracticeQuota.ts" \
+  'a = "  return usePracticeQuota().data?.freeDailyLimit ?? null;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return usePracticeQuota().data?.freeDailyLimit ?? 40;\n", 1)'
+
+plant "W6-UI64-9" "a paid reader gets the per-session cap as the free daily limit" \
+  "$W6_UI64_SERVER" \
+  "server/lib/practice-quota.ts" \
+  'a = "  if (UNLIMITED_PRACTICE_DECISION_CODES.has(decision.code)) {\n    return getPracticeDailyFreeQuota();\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "W6-UI64-10" "the unlimited shape drops freeDailyLimit" \
+  "$W6_UI64_SERVER" \
+  "server/lib/practice-quota.ts" \
+  'a = "        resetAt: null,\n        freeDailyLimit,\n      }\n"
+assert s.count(a) == 1
+s = s.replace(a, "        resetAt: null,\n      }\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

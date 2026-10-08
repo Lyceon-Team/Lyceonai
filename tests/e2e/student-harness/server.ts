@@ -32,7 +32,11 @@ import express, {
 } from "express";
 import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
-import { buildStudentHarnessDb, seedPaidNotifications } from "./db";
+import {
+  applyQuotaConfig,
+  buildStudentHarnessDb,
+  seedPaidNotifications,
+} from "./db";
 import {
   BARE_PAGE_PERSONAS,
   isBarePagePersona,
@@ -312,6 +316,12 @@ async function main(): Promise<void> {
         // QA 2026-10-07 (UI-41): unread in-app notifications for the paid student (db.ts).
         if (process.env.STUDENT_HARNESS_SEED === "notifications")
           await seedPaidNotifications(pg);
+        // W6 UI-64: non-default practice config (db.ts `applyQuotaConfig`), after the base
+        // seed; then the practice config cache (30 s, practice-canonical.ts) is waited out.
+        if (process.env.STUDENT_HARNESS_SEED === "quota-config") {
+          await applyQuotaConfig(pg);
+          await new Promise((resolve) => setTimeout(resolve, 31_000));
+        }
         return seeded;
       })
       .then(

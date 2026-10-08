@@ -124,6 +124,7 @@ export function BlockSheet({
 }: BlockSheetProps): JSX.Element {
   const [moveDate, setMoveDate] = useState("");
   const titleId = useId();
+  const lockedNoteId = useId();
   const sheetRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
@@ -171,6 +172,9 @@ export function BlockSheet({
   // was always making and the date gate blurred: protecting a plan from edits is not the same
   // as forbidding the student to do the work.
   const locked = actions === undefined || block.started || isPast;
+  // Started and not finished: the state the "In progress" note below and the Items to clear
+  // note (QA2-G) both describe.
+  const inProgress = block.started && !complete;
   const plan = block.plan;
 
   return (
@@ -246,20 +250,42 @@ export function BlockSheet({
           actions !== undefined ? (
             <div className="field">
               <label>Items to clear</label>
+              {/*
+                @spec [Doc 05F §12.2 protected state; production re-test (Karl, 2026-10-08)
+                       item G: "Calendar block panel: disable 'Items to clear' while the block
+                       is in progress."] | @implemented [2026-10-08]
+                plain English: an in-progress block (`block.started`, from the server's §13
+                status, and not yet finished) cannot have its count changed, so the control
+                is disabled AND says so (`aria-disabled`, and a note it is described by); a
+                block not yet started keeps it enabled. A past or finished block stays
+                disabled too (§12.2, `locked`), without the in-progress note, which would not
+                be true of it.
+              */}
               <select
                 disabled={locked}
+                aria-disabled={locked ? "true" : undefined}
+                aria-describedby={inProgress ? lockedNoteId : undefined}
                 value={block.target}
                 aria-label="Items to clear"
                 onChange={(event) =>
                   actions.onEditReviewCount(Number(event.target.value))
                 }
               >
-                {reviewCountChoices().map((count) => (
+                {reviewCountChoices(block.target).map((count) => (
                   <option key={count} value={count}>
                     {count} items
                   </option>
                 ))}
               </select>
+              {inProgress ? (
+                <p
+                  id={lockedNoteId}
+                  className="field-note"
+                  data-testid="calendar-items-locked-note"
+                >
+                  You can&apos;t change this while the block is in progress.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -281,7 +307,7 @@ export function BlockSheet({
             </div>
           ) : null}
 
-          {block.started && !complete ? (
+          {inProgress ? (
             <div className="why">
               <b>In progress</b>
               You&apos;ve done {block.actual} of {block.target}. This block

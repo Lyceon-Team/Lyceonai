@@ -22,9 +22,10 @@
  *            arrow and is light only.
  *   - bare:  a centered card on --paper.
  *
- * Two bare surfaces are not routes and so are not keys here: the pending-deletion screen (rendered
- * by App's `DeletionGate` in place of any route) and the error screen (App's `ErrorBoundary`).
- * Both render `BareCard` directly.
+ * Three bare surfaces are not keys here: the pending-deletion screen (rendered by App's
+ * `DeletionGate` in place of any route), the error screen (App's `ErrorBoundary`) and the 404
+ * (App's catch-all, which declares no path; QA2-E, 2026-10-08). All three render `BareCard`
+ * directly.
  *
  * trade-offs: the table is keyed by path string rather than holding the page components, so the
  * `<Route>` JSX in App.tsx (which several source-reading contract tests and
@@ -123,7 +124,6 @@ export const STUDENT_ROUTE_SHELLS = {
   "/dashboard": app(360, true, "column", null),
   // UI-51 (2026-10-03): Practice is rebuilt on the student tokens only; off the light lock too.
   "/practice": app(360, true, "column", null),
-  "/practice/topics": app(null, false),
   // UI-52 (2026-10-03): Review is rebuilt on the student tokens only; off the light lock too.
   "/review": app(360, true, "column", null),
   // UI-54 (2026-10-03): Full-Length home is rebuilt on the student tokens only; off the lock too.
@@ -173,6 +173,7 @@ export type StudentShellRoute = keyof typeof STUDENT_ROUTE_SHELLS;
 /** Why a route App.tsx declares is not in the table above. */
 export type ShellExclusionReason =
   | "redirect"
+  | "not-found"
   | "public-marketing"
   | "public-legal"
   | "admin";
@@ -186,6 +187,8 @@ export type ShellExclusionReason =
  *   - public-marketing / public-legal: the signed-out site, which has its own layout and footer.
  *   - admin: the crisis-review queue keeps its in-page `AppShell` (rail, no student locks: the
  *     server sends no feature-access map for an admin).
+ *   - not-found: the catch-all (404). It has no path to key this table on, so App.tsx frames it
+ *     in the Bare card itself (`NotFoundRoute`), on the student tokens with no theme lock.
  */
 export const SHELL_EXCLUDED_ROUTES: Readonly<
   Record<string, ShellExclusionReason>
@@ -205,19 +208,26 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/legal": "public-legal",
   "/legal/:slug": "public-legal",
   "/signup": "redirect",
+  // QA2-E (production re-test 2026-10-08): /settings replaces itself with /profile (Settings).
+  "/settings": "redirect",
   "/tutor": "redirect",
   "/privacy": "redirect",
   "/terms": "redirect",
   "/practice/math": "redirect",
   "/practice/reading-writing": "redirect",
   "/practice/random": "redirect",
+  // OQ-68 (a) (Karl, 2026-10-08): the topic browser is retired; /practice/topics replaces itself
+  // with /practice.
+  "/practice/topics": "redirect",
   "/math-practice": "redirect",
   "/reading-writing-practice": "redirect",
   "/admin/crisis-review/:id": "admin",
   "/admin/crisis-review": "admin",
-  // The 404 is the SEO page (main, F6/F2): the same page the static 404.html is, with its own
-  // card and a link home, so no shell wraps it (merge of PR 1069, owner choice 2026-10-05).
-  [NOT_FOUND_ROUTE]: "public-marketing",
+  // The 404 is the SEO page (main, F6/F2) and the same render as the static 404.html. Since the
+  // production re-test of 2026-10-08 (item E, Karl: "restyle the 404 page with student tokens,
+  // fonts and theme") it is a Bare-card page, framed by App.tsx's catch-all; it was unshelled
+  // from the PR 1069 merge (owner choice 2026-10-05) until then.
+  [NOT_FOUND_ROUTE]: "not-found",
 };
 
 /**
@@ -236,7 +246,8 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
  * non-empty segment. When two keys match, the one with fewer parameters wins (a literal segment
  * is more specific).
  *
- * edge cases: the catch-all key is not a path and never matches (the 404 has no student shell);
+ * edge cases: the catch-all key is not a path and never matches (the 404's Bare card is drawn by
+ * App.tsx's catch-all itself, so nothing above it sketches one);
  * a wouter pathname carries no query; `constructor` and friends never match, because the lookup
  * walks the table's own entries.
  */
@@ -273,7 +284,6 @@ export function studentShellAt(pathname: string): ShellSpec | null {
 const APP_PAGE_NAMES: Readonly<Record<string, string>> = {
   "/dashboard": "Home",
   "/practice": "Practice",
-  "/practice/topics": "Practice",
   "/review": "Review",
   "/tests": "Full-Length",
   "/calendar": "Calendar",
