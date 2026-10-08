@@ -141,6 +141,7 @@ FILES=(
   "client/src/features/calendar/components/MonthGrid.tsx"
   "client/src/lib/theme.ts"
   "client/src/components/home/HomeLoading.tsx"
+  "client/src/components/billing/PremiumUpgradePrompt.tsx"
 )
 
 snapshot_all() {
@@ -3634,6 +3635,31 @@ plant "QA2-F9" "Home's placeholder no longer reserves the screen (the footer is 
   'a = "    <div className=\"min-h-[100dvh]\" data-testid=\"home-loading\">\n"
 assert s.count(a) == 1
 s = s.replace(a, "    <div data-testid=\"home-loading\">\n", 1)'
+
+# ── W6 UI-65 — the daily-limit billing card on the student tokens (OQ-52 (c)) ─────────────
+# @spec [student-UI register UI-65; OQ-52 (c), owner ruling 2026-10-05] | @implemented [2026-10-08]
+W6_UI65="client/src/components/billing/PremiumUpgradePrompt.tokens.test.tsx"
+
+plant "W6-UI65-1" "the card goes back to the shadcn card colours" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-6 sm:px-7"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg border border-primary/30 bg-card px-5 py-6 sm:px-7", 1)'
+
+plant "W6-UI65-2" "the card's action becomes a second filled primary on Practice" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "        variant=\"lyc-outline\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "        variant=\"lyc-primary\"\n", 1)'
+
+plant "W6-UI65-3" "the floating dismiss button keeps the 14px shadcn base size" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "            className=\"text-lyc-body\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
