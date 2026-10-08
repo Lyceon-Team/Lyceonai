@@ -143,6 +143,8 @@ FILES=(
   "client/src/components/home/HomeLoading.tsx"
   "client/src/components/billing/PremiumUpgradePrompt.tsx"
   "client/src/components/home/home-model.ts"
+  "client/src/components/math/FloatingPanel.tsx"
+  "client/src/components/legal/ReconsentModal.tsx"
 )
 
 snapshot_all() {
@@ -3703,6 +3705,32 @@ plant "W6-UI66-M3" "a review row with no criteria is named like a practice row" 
   'a = "    row.source_engine === \"review\" ? \"review\" : \"practice\",\n"
 assert s.count(a) == 1
 s = s.replace(a, "    \"practice\",\n", 1)'
+
+# ── W6 UI-62 — the 14px floor: the exam calculator panel and the re-consent version line ──────
+# @spec [student-UI register UI-62 (invariant sweep)] | @implemented [2026-10-08]
+W6_UI62_PANEL="client/src/components/math/FloatingPanel.type-floor.test.tsx"
+W6_UI62_RECONSENT="client/src/components/legal/ReconsentGate.test.tsx"
+
+plant "W6-UI62-1" "the calculator panel's title goes back to 13px" \
+  "$W6_UI62_PANEL" \
+  "client/src/components/math/FloatingPanel.tsx" \
+  'a = "<span id={`${id}-title`} className=\"text-[14px] font-semibold\">"
+assert s.count(a) == 1
+s = s.replace(a, "<span id={`${id}-title`} className=\"text-[13px] font-semibold\">", 1)'
+
+plant "W6-UI62-2" "the calculator panel's Expand goes back to 13px" \
+  "$W6_UI62_PANEL" \
+  "client/src/components/math/FloatingPanel.tsx" \
+  'a = "rounded-lg px-3 text-[14px] font-medium text-[var(--exam-muted)]"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg px-3 text-[13px] font-medium text-[var(--exam-muted)]", 1)'
+
+plant "W6-UI62-3" "the re-consent version line goes back to text-xs" \
+  "$W6_UI62_RECONSENT" \
+  "client/src/components/legal/ReconsentModal.tsx" \
+  'a = "<p className=\"mt-1 text-[14px] text-muted-foreground\">"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"mt-1 text-xs text-muted-foreground\">", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

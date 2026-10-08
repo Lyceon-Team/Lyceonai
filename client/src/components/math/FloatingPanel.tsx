@@ -27,6 +27,11 @@
  * Keyboard: opening focuses the panel; Escape inside it, or its close button, closes it
  * and returns focus to `returnFocusRef` (the button that opened it). The drag bar is
  * mouse/touch only, which the brief accepts; closing never needs a pointer.
+ *
+ * Type (student-UI register UI-62, the 14px floor, DESIGN.md §1) | @implemented [2026-10-08]:
+ * the header's title and Expand/Collapse were 13px, the one place under the floor in the timed
+ * module; both are 14px. Nothing else changes: the module stays on its pinned-light `--exam-*`
+ * look.
  */
 import React, {
   useCallback,
@@ -226,7 +231,7 @@ export function FloatingPanel({
         className="flex h-12 shrink-0 cursor-grab select-none items-center justify-between gap-2 border-b border-[var(--exam-line)] bg-[var(--exam-bg,var(--exam-surface))] px-4 active:cursor-grabbing"
         data-testid="floating-panel-drag-bar"
       >
-        <span id={`${id}-title`} className="text-[13px] font-semibold">
+        <span id={`${id}-title`} className="text-[14px] font-semibold">
           {title}
         </span>
         <div className="flex items-center gap-1">
@@ -234,7 +239,7 @@ export function FloatingPanel({
             type="button"
             aria-pressed={expanded}
             onClick={() => setExpanded((v) => !v)}
-            className="min-h-[44px] rounded-lg px-3 text-[13px] font-medium text-[var(--exam-muted)]"
+            className="min-h-[44px] rounded-lg px-3 text-[14px] font-medium text-[var(--exam-muted)]"
           >
             {expanded ? "Collapse" : "Expand"}
           </button>
