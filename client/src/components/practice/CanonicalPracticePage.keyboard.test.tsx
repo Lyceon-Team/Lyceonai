@@ -241,6 +241,8 @@ describe("practice/review runner keys (§2 row 1)", () => {
   it("review runner: same keys; typing in the LISA composer triggers none of them", () => {
     const state = hookState({ selectedAnswer: "opt-1", canSubmit: true });
     mountRunner(state, REVIEW_ENGINE_CONFIG);
+    // QA2-D: below 1024 LISA starts closed; the student opens it from the bar.
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     const composer = screen.getByTestId("lisa-composer");
     press("Enter", composer);
     press("ArrowDown", composer);

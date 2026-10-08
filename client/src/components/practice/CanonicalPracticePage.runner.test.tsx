@@ -301,6 +301,40 @@ async function click(el: HTMLElement): Promise<void> {
   });
 }
 
+/** From 1024 (TUTOR_SIDE_BY_SIDE_BREAKPOINT) LISA sits beside the question. */
+function mockSideBySide(): void {
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        matches: /min-width:\s*1024px/.test(query),
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as MediaQueryList,
+  );
+}
+
+/**
+ * QA2-D: jsdom lays nothing out, so the two boxes the runner measures are given positions: the
+ * runner's scroll area (0..700) and the top of LISA's column at `panelTop`.
+ */
+function layOut({ panelTop }: { panelTop: number }): void {
+  const real = Element.prototype.getBoundingClientRect;
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: Element): DOMRect {
+      const id = this.getAttribute("data-testid");
+      if (id === "runner-scroll") return new DOMRect(0, 0, 390, 700);
+      if (id === "practice-tutor-aside")
+        return new DOMRect(0, panelTop, 390, 600);
+      return real.call(this);
+    },
+  );
+}
+
 const submitButton = (): HTMLButtonElement =>
   screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement;
 
@@ -623,6 +657,8 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
   });
 
   it("LISA (review) gets the served item id and 'Question N of M' — no choices, no letters, no correctness", async () => {
+    // Side by side, where LISA is open on load (W4-4); on a phone it starts closed (QA2-D).
+    mockSideBySide();
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
@@ -631,6 +667,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(Object.keys(props).sort()).toEqual([
       "onHide",
       "questionLabel",
+      "revealKey",
       "revealOnOpen",
       "sessionItemId",
       "sourceSurface",
@@ -647,36 +684,83 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
   });
 
   // QA 2026-10-07 item 8 (Karl: "Phone LISA in the runner: opening it brings the panel into
-  // view"). The panel itself scrolls on mount when told to (ScopedTutorPanel.contract.test.tsx);
-  // this pins the runner telling it: only when the student opened it, only on the phone layout.
-  it("QA-8: Show LISA on the phone layout opens the panel told to reveal itself; on load it is not", async () => {
-    // The test DOM's default matchMedia answers "no match": below `lg`, LISA stacks.
+  // view"), and QA 2026-10-08 item D (Karl: "Phone: the LISA panel defaults closed; tapping the
+  // icon always brings it into view."). The panel itself scrolls when told to
+  // (ScopedTutorPanel.contract.test.tsx); this pins the runner: closed on load on the phone
+  // layout, opened and told to reveal by the icon, and an icon tap on an open panel that is
+  // scrolled out of view reveals it again rather than closing it.
+  it("QA2-D: on the phone layout LISA is closed on load and the icon offers it", async () => {
+    // The test DOM's default matchMedia answers "no match": below 1024, LISA stacks.
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
-    expect(tutorProps.last?.revealOnOpen).toBe(false);
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(tutorProps.last).toBeNull();
+  });
+
+  it("QA2-D: a tap on the phone opens LISA told to reveal itself", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    await click(screen.getByTestId("practice-tutor-toggle"));
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealOnOpen).toBe(true);
+    expect(
+      screen.getByTestId("practice-tutor-toggle").getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("QA2-D: open but scrolled out of view, a tap brings it back into view and does not close it", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
     const toggle = screen.getByTestId("practice-tutor-toggle");
     await click(toggle);
-    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    const keyBefore = tutorProps.last?.revealKey;
+    expect(typeof keyBefore).toBe("number");
+    // The runner scrolled back to the question: LISA's top is below the scroll area.
+    layOut({ panelTop: 1400 });
     await click(toggle);
     expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
     expect(tutorProps.last?.revealOnOpen).toBe(true);
+    expect(tutorProps.last?.revealKey).toBe(Number(keyBefore) + 1);
+    // Scrolled past it (its top above the scroll area): the same.
+    layOut({ panelTop: -600 });
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealKey).toBe(Number(keyBefore) + 2);
+  });
+
+  it("QA2-D: open and in view, a tap closes it", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    layOut({ panelTop: 120 });
+    await click(toggle);
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("QA2-D: side by side LISA is still open on load, and the toggle still hides it", async () => {
+    mockSideBySide();
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    // Even scrolled away, a tap side by side is the plain toggle.
+    layOut({ panelTop: 1400 });
+    await click(screen.getByTestId("practice-tutor-toggle"));
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
   });
 
   it("QA-8: side by side (from lg) Show LISA does not scroll anything", async () => {
-    vi.spyOn(window, "matchMedia").mockImplementation(
-      (query: string) =>
-        ({
-          matches: /min-width:\s*1024px/.test(query),
-          media: query,
-          onchange: null,
-          addListener: () => undefined,
-          removeListener: () => undefined,
-          addEventListener: () => undefined,
-          removeEventListener: () => undefined,
-          dispatchEvent: () => false,
-        }) as MediaQueryList,
-    );
+    mockSideBySide();
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
