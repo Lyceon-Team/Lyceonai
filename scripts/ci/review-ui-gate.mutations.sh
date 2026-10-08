@@ -125,6 +125,7 @@ FILES=(
   "client/src/components/layout/RouteSkeleton.tsx"
   "client/src/lib/format-date.ts"
   "client/src/lib/in-app-history.ts"
+  "client/src/lib/route-scroll-reset.ts"
   "client/src/components/ui/button.tsx"
   "client/src/pages/practice.tsx"
   "client/src/lib/session-reads.ts"
@@ -1948,26 +1949,28 @@ s = s.replace(a, a.replace("lyc-primary", "default"), 1)'
 # Re-pointed 2026-10-05 (merge of PR 1069): the 404 is the SEO page (main F6/F2, owner choice),
 # so the three 404 plants guard what that page promises: its link home, its heading, and no
 # developer line.
-plant "UI59-N1" "the 404's way home no longer goes home" \
+# Re-pointed 2026-10-08 (QA2-E): the page's copy moved into BareCardHeader props and its way out
+# into one choice per viewer; N1 now plants the signed-out way out (the homepage).
+plant "UI59-N1" "the 404's way home no longer goes home (signed out)" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = "<Link href=\"/\" "
+  'a = "? { href: \"/\", label: \"Go to the homepage\" }"
 assert s.count(a) == 1
-s = s.replace(a, "<Link href=\"/dashboard\" ", 1)'
+s = s.replace(a, "? { href: \"/dashboard\", label: \"Go to the homepage\" }", 1)'
 
 plant "UI59-N2" "the 404's heading reverts to the developer-style 404 Page Not Found" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = ">Page not found</h1>"
+  'a = "        title=\"Page not found\"\n"
 assert s.count(a) == 1
-s = s.replace(a, ">404 Page Not Found</h1>", 1)'
+s = s.replace(a, "        title=\"404 Page Not Found\"\n", 1)'
 
 plant "UI59-N3" "the developer line returns to the 404" \
   "$B59" \
   "client/src/pages/not-found.tsx" \
-  'a = "            Sorry, we couldn"
+  'a = "        description=\"Sorry, we couldn"
 assert s.count(a) == 1
-s = s.replace(a, "            Did you forget to add the page to the router? Sorry, we couldn", 1)'
+s = s.replace(a, "        description=\"Did you forget to add the page to the router? Sorry, we couldn", 1)'
 
 plant "UI59-A1" "Continue with Google is filled (two primaries on sign in)" \
   "$B59" \
@@ -2218,12 +2221,14 @@ assert s.count(a) == 1
 s = s.replace(a, "        {isAdmin ? null : items}\n", 1)'
 
 # F-70: the avatar dropdown follows the page theme (student tokens, the shell's theme lock).
+# Re-pointed 2026-10-08 (QA2-H): the rail bell passes `tone="student"` too, so the anchor carries
+# the menu's next prop (`side=`), which only the avatar menu has.
 plant "F70-1" "the App shell's menu back on the app-wide tone (outside any .lyc root)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      tone=\"student\"\n"
+  'a = "      tone=\"student\"\n      side="
 assert s.count(a) == 1
-s = s.replace(a, "", 1)'
+s = s.replace(a, "      side=", 1)'
 
 plant "F70-2" "the menu ignores the shell's light lock" \
   "$T41_RAIL" \
@@ -2783,12 +2788,13 @@ plant "QA14-R1" "/mastery lights no rail item" \
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
+# Re-pointed 2026-10-08 (QA2-H): the bell's props are one per line since it takes `railItem`.
 plant "QA14-R2" "the bell not current on /notifications" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "<NotificationBell tone=\"student\" current={notificationsActive} />"
+  'a = "              current={notificationsActive}\n"
 assert s.count(a) == 1
-s = s.replace(a, "<NotificationBell tone=\"student\" />", 1)'
+s = s.replace(a, "", 1)'
 
 plant "QA14-R3" "the avatar menu's Help entry without its icon" \
   "$T41_RAIL" \
@@ -3166,6 +3172,105 @@ plant "QA-RO4" "the phone shows the full words 'Question N of M' again" \
   'a = "<span className=\"sr-only sm:not-sr-only\">Question </span>"
 assert s.count(a) == 1
 s = s.replace(a, "<span className=\"inline\">Question </span>", 1)'
+
+# ── QA2 E, H, I — production re-test 2026-10-08 (Karl): /settings and the 404, the rail bell,
+# scroll to top on a route change ──────────────────────────────────────────────────────────
+QA2_RS="client/src/lib/route-shells.test.tsx"
+QA2_SCROLL="client/src/lib/route-scroll-reset.test.tsx"
+
+plant "QA2-E1" "/settings pushes /profile instead of replacing itself (Back bounces)" \
+  "$QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "      to={`/profile${search === \"\" ? \"\" : `?${search}`}${hash}`}\n      replace\n"
+assert s.count(a) == 1
+s = s.replace(a, "      to={`/profile${search === \"\" ? \"\" : `?${search}`}${hash}`}\n", 1)'
+
+plant "QA2-E2" "/settings drops the query /profile reads (?tab=)" \
+  "$QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "      to={`/profile${search === \"\" ? \"\" : `?${search}`}${hash}`}\n"
+assert s.count(a) == 1
+s = s.replace(a, "      to={`/profile${hash}`}\n", 1)'
+
+plant "QA2-E3" "the 404 drawn without the Bare card (the old unshelled page)" \
+  "$B59 $QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "    <BareCard>\n      <NotFound />\n    </BareCard>\n"
+assert s.count(a) == 1
+s = s.replace(a, "    <NotFound />\n", 1)'
+
+plant "QA2-E4" "a signed-in student on the 404 is sent to the homepage, not Home" \
+  "$B59" \
+  "client/src/pages/not-found.tsx" \
+  'a = ": { href: \"/dashboard\", label: \"Back to Home\" }"
+assert s.count(a) == 1
+s = s.replace(a, ": { href: \"/\", label: \"Back to Home\" }", 1)'
+
+plant "QA2-E5" "the 404's way out is not the student filled action" \
+  "$B59" \
+  "client/src/pages/not-found.tsx" \
+  'a = "          variant: \"lyc-primary\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "          variant: \"lyc-outline\",\n", 1)'
+
+plant "QA2-H1" "the rail bell loses its visible Notifications label" \
+  "$T41_RAIL" \
+  "client/src/components/notifications/NotificationBell.tsx" \
+  'a = "            <span className={railItem.labelClassName}>Notifications</span>\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-H2" "the rail bell is never drawn current (always the off pair)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "                  notificationsActive ? ON_CLASS : OFF_CLASS,\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  OFF_CLASS,\n", 1)'
+
+plant "QA2-H3" "the rail bell off the shared rail-item class (a style fork)" \
+  "$T41_RAIL" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "const RAIL_BELL_CLASS = `${RAIL_ITEM_CLASS} cursor-pointer"
+assert s.count(a) == 1
+s = s.replace(a, "const RAIL_BELL_CLASS = `relative flex rounded-lg cursor-pointer", 1)'
+
+plant "QA2-I1" "the route switch no longer mounts the scroll reset" \
+  "$QA2_RS" \
+  "client/src/App.tsx" \
+  'a = "  useRouteScrollReset();\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2-I2" "the reset runs as a passive effect, after (and over) a page's own deep-link scroll" \
+  "$QA_MASTERY" \
+  "client/src/lib/route-scroll-reset.ts" \
+  'a = "typeof window === \"undefined\" ? useEffect : useLayoutEffect;"
+assert s.count(a) == 1
+s = s.replace(a, "typeof window === \"undefined\" ? useEffect : useEffect;", 1)'
+
+plant "QA2-I3" "a query-only change (in-page state) resets the scroll too" \
+  "$QA2_SCROLL" \
+  "client/src/lib/route-scroll-reset.ts" \
+  'a = "import { useLocation } from \"wouter\";"
+assert s.count(a) == 1
+s = s.replace(a, "import { useLocation, useSearch } from \"wouter\";", 1)
+b = "  const [pathname] = useLocation();\n"
+assert s.count(b) == 1
+s = s.replace(b, "  const pathname = `${useLocation()[0]}?${useSearch()}`;\n", 1)'
+
+plant "QA2-I4" "the App shell's reading column is not marked for the reset" \
+  "$QA2_RS" \
+  "client/src/components/layout/app-shell.tsx" \
+  'a = "              data-route-scroll=\"\"\n              data-content=\"column\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "              data-content=\"column\"\n", 1)'
+
+plant "QA2-I5" "a hash on the new address is ignored (the page opens at its top)" \
+  "$QA2_SCROLL" \
+  "client/src/lib/route-scroll-reset.ts" \
+  'a = "    document.getElementById(hash.slice(1))?.scrollIntoView({ block: \"start\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "    void hash;\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
