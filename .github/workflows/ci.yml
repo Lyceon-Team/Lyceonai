@@ -415,6 +415,13 @@ jobs:
       - name: CI scope guard self-test (proves each mutation turns it red)
         run: node scripts/ci/ci-scope-guard.mjs --selftest
 
+      # The full tier's own trigger and verdict (ci-full.yml): every PR into main runs it with no
+      # label, a PR into cleanup only with `ci:full`, and the verdict is red unless it passed on
+      # this tree. Proven here, in the fast lane, so a change to either script is caught on the
+      # PR that makes it (owner brief 2026-10-08).
+      - name: CI full-tier scope and verdict self-test
+        run: bash scripts/ci/ci-full-scope.selftest.sh
+
       - name: Retired endpoints gate (no caller of a deleted route may remain)
         run: node scripts/ci/retired-endpoints-gate.mjs
 
