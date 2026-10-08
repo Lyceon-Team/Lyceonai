@@ -540,6 +540,7 @@ export function AppShell({
           {content === "column" ? (
             <main
               id="main"
+              data-route-scroll=""
               data-content="column"
               className="min-w-0 flex-1 px-4 pb-10 pt-6 lg:overflow-y-auto lg:px-[72px] lg:pb-[72px] lg:pt-14"
             >
@@ -549,6 +550,7 @@ export function AppShell({
           ) : (
             <main
               id="main"
+              data-route-scroll=""
               data-content="full"
               className="flex min-w-0 flex-1 flex-col lg:overflow-hidden"
             >
@@ -558,6 +560,7 @@ export function AppShell({
           {panel !== null ? (
             <aside
               ref={setPanelEl}
+              data-route-scroll=""
               aria-label="Side panel"
               data-testid="app-shell-panel"
               data-panel-width={panel}

@@ -27,6 +27,7 @@ import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
+import { useRouteScrollReset } from "@/lib/route-scroll-reset";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
@@ -229,6 +230,8 @@ const ROUTE_FALLBACK = <RouteLoading data-testid="page-loader" />;
 export function Router() {
   // UI-41: the Focus shell's back arrow asks whether the entry behind is an in-app page.
   useInAppHistoryTracking();
+  // QA2-I (production re-test 2026-10-08): every pathname change opens the page at its top.
+  useRouteScrollReset();
   return (
     <Suspense fallback={ROUTE_FALLBACK}>
       <Switch>

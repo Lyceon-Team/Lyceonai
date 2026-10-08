@@ -36,6 +36,8 @@ import {
   type ShellSpec,
   type StudentShellRoute,
 } from "./route-shells";
+import { navigate } from "wouter/use-browser-location";
+import { ROUTE_SCROLL_ATTR } from "./route-scroll-reset";
 
 const { pageStub } = vi.hoisted(() => ({
   pageStub: async () => {
@@ -299,6 +301,14 @@ function expectShell(spec: ShellSpec, shell: Element): void {
         spec.content,
       );
       expect(shell.querySelector('[data-testid="app-rail"]')).not.toBeNull();
+      // QA2-I: the content column (and the right panel, when there is one) is marked for the
+      // route-change scroll reset (route-scroll-reset.ts), which scrolls only marked elements.
+      expect(shell.querySelector(`main[${ROUTE_SCROLL_ATTR}]`)).not.toBeNull();
+      expect(
+        shell
+          .querySelector(`[data-testid="app-shell-panel"]`)
+          ?.hasAttribute(ROUTE_SCROLL_ATTR) ?? null,
+      ).toBe(spec.panel === null ? null : true);
       return;
     }
     case "focus": {
@@ -310,6 +320,8 @@ function expectShell(spec: ShellSpec, shell: Element): void {
         shell.querySelector('[data-testid="focus-shell-header"]')?.textContent,
       ).toContain(spec.section);
       expect(shell.querySelector("nav")).toBeNull();
+      // QA2-I: the Focus shell's <main> scrolls inside itself (F-69), so it is marked for the reset.
+      expect(shell.querySelector(`main[${ROUTE_SCROLL_ATTR}]`)).not.toBeNull();
       return;
     }
     case "bare":
@@ -635,5 +647,45 @@ describe("a redirect lands in its target's shell", () => {
     const shells = document.querySelectorAll("[data-shell]");
     expect(shells).toHaveLength(1);
     expect(shells[0]?.getAttribute("data-shell")).toBe("bare");
+  });
+});
+
+/**
+ * @spec [production re-test 2026-10-08 item I (Karl: "Reset scroll to top on every route
+ *        change")] | @implemented [2026-10-08]
+ * plain English: the reset is mounted ONCE, by the real route switch (route-scroll-reset.test.tsx
+ * holds its rules). Here the app's own Router is driven with the browser location: a scrolled
+ * window is back at the top after a pathname change, and stays put on a query-only change.
+ */
+describe("QA2-I: the route switch resets scroll on a pathname change", () => {
+  afterEach(() => {
+    document.documentElement.scrollTop = 0;
+  });
+
+  it("navigating /dashboard → /practice scrolls the window and the new page's column to the top", async () => {
+    renderAt("/dashboard");
+    await screen.findByTestId("page-stub");
+    const page = document.documentElement;
+    page.scrollTop = 600;
+    // Presence: the scroll took, so a 0 below is the reset's doing.
+    expect(page.scrollTop).toBe(600);
+    act(() => navigate("/practice"));
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/practice");
+    expect(page.scrollTop).toBe(0);
+    const column = document.querySelector<HTMLElement>(
+      `main[${ROUTE_SCROLL_ATTR}]`,
+    );
+    expect(column?.scrollTop).toBe(0);
+  });
+
+  it("control: a query-only change keeps the window where it is", async () => {
+    renderAt("/practice");
+    await screen.findByTestId("page-stub");
+    const page = document.documentElement;
+    page.scrollTop = 600;
+    act(() => navigate("/practice?section=math"));
+    expect(window.location.search).toBe("?section=math");
+    expect(page.scrollTop).toBe(600);
   });
 });
