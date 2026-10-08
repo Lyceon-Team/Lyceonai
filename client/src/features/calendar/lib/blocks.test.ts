@@ -19,7 +19,9 @@ import {
   type PlanningEstimates,
 } from "@lyceon/shared";
 import {
+  BLOCK_COMPACT_LABEL,
   TONE_LABEL,
+  compactBlockLabel,
   domainsForSection,
   isDraggable,
   isStarted,
@@ -197,6 +199,48 @@ describe("titleOf (§17.1 row title)", () => {
     const block = fullLengthBlock();
     expect(block.target_count).toBe(1);
     expect(titleOf(block)).toBe("Full-length test");
+  });
+});
+
+/**
+ * QA2-C (Karl, production re-test 2026-10-08): "compact labels that keep the count ('Rev 15',
+ * 'Math 5', 'R&W 15') plus color; never a single letter".
+ */
+describe("compactBlockLabel (QA2-C narrow-column label)", () => {
+  it("maps each tone to Karl's compact word and keeps the count", () => {
+    expect(compactBlockLabel({ tone: "review", target: 15 })).toBe("Rev 15");
+    expect(compactBlockLabel({ tone: "math", target: 5 })).toBe("Math 5");
+    expect(compactBlockLabel({ tone: "rw", target: 15 })).toBe("R&W 15");
+    // A sitting is not abbreviated (OQ-62 (b): "full-length test" everywhere), and its count
+    // is the literal 1, so it carries none.
+    expect(compactBlockLabel({ tone: "exam", target: 1 })).toBe(
+      "Full-length test",
+    );
+  });
+
+  it("is never a single letter, and is shorter than the full title (a sitting excepted)", () => {
+    const blocks = [
+      reviewBlock(15),
+      sectionPracticeBlock("M", 5),
+      sectionPracticeBlock("RW", 15),
+      fullLengthBlock(),
+    ];
+    for (const word of Object.values(BLOCK_COMPACT_LABEL)) {
+      expect(word.replace(/[^A-Za-z]/g, "").length).toBeGreaterThan(1);
+    }
+    for (const block of blocks) {
+      const compact = compactBlockLabel({
+        tone: toneOf(block),
+        target: block.target_count,
+      });
+      const word = compact.split(" ")[0] ?? "";
+      expect(word.replace(/[^A-Za-z]/g, "").length).toBeGreaterThan(1);
+      if (block.block_type === "full_length") {
+        expect(compact).toBe(titleOf(block));
+      } else {
+        expect(compact.length).toBeLessThan(titleOf(block).length);
+      }
+    }
   });
 });
 

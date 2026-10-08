@@ -125,7 +125,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 
 **Calendar** (Canvas-style).
 - Header: Week/Month, Today and the arrows on the left; the date range centered (`M/D – M/D`); Edit schedule and **Regenerate plan** (`POST /api/calendar/plan/regenerate`) on the right. At most two rows at 1024px; below a ~1200px viewport Edit schedule and Regenerate plan move into a "⋯" menu ("More actions"), on a phone too (owner ruling, Karl, 2026-10-07, OQ-66 (c)).
-- Week grid with category-striped blocks, and Month view.
+- Week grid with category-striped blocks, and Month view. Where a column is too narrow for a block's full title (under 130px), the card and the month chip show the compact label that keeps the count, in the block's colour: "Rev 15", "Math 5", "R&W 15"; a full-length test keeps its words. Never a single letter, never a word split; a scope chip keeps one line and cuts its name with an ellipsis, its count whole. The full title stays in the accessible name (owner ruling, Karl, 2026-10-08, production re-test item C).
 - **The test day is starred** in week view, month view and the mini month.
 - Right panel:
   - mini month, navigable;

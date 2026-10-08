@@ -74,6 +74,42 @@ export function domainChipLabel(domain: CanonicalDomain): string {
   return DOMAIN_CHIP[domain];
 }
 
+/**
+ * The compact label a block card or month chip shows when its column is too narrow for the
+ * full one.
+ *
+ * @spec [Doc 05F §17.1 rows; production re-test (Karl, 2026-10-08) item C: "Calendar chips at
+ *        narrow widths: compact labels that keep the count ('Rev 15', 'Math 5', 'R&W 15') plus
+ *        color; never a single letter; no mid-word breaks."] | @implemented [2026-10-08]
+ *
+ * plain English: ONE table, read by the week card and the month chip alike, so the two
+ * surfaces abbreviate a block the same way. Each entry is a whole short word, never a letter,
+ * and the count travels with it: "Rev 15", "Math 5", "R&W 15". The full title stays in the
+ * card's and chip's accessible name (`aria-label`), so nothing is lost to a screen reader.
+ *
+ * A `Record<BlockTone, string>`: a new tone is a compile error here, where its short form is
+ * chosen deliberately. A full-length sitting is NOT abbreviated: owner ruling OQ-62 (b) (Karl,
+ * 2026-10-05) names it "full-length test" everywhere a student sees it, so its compact label is
+ * its full title, with no count (a sitting's `target_count` is always 1,
+ * `calendar_blocks_full_length_single`). In a narrow column it wraps at the space and after
+ * the hyphen, never inside "length". It is the one entry Karl's re-test ruling does not name.
+ */
+export const BLOCK_COMPACT_LABEL: Readonly<Record<BlockTone, string>> = {
+  review: "Rev",
+  math: "Math",
+  rw: "R&W",
+  exam: "Full-length test",
+};
+
+/** "Rev 15", "Math 5", "R&W 15", or "Full-length test" for a sitting (see the table). */
+export function compactBlockLabel(block: {
+  tone: BlockTone;
+  target: number;
+}): string {
+  if (block.tone === "exam") return BLOCK_COMPACT_LABEL.exam;
+  return `${BLOCK_COMPACT_LABEL[block.tone]} ${block.target}`;
+}
+
 export const TONE_LABEL: Readonly<Record<BlockTone, string>> = {
   math: "Math practice",
   rw: "Reading & Writing",

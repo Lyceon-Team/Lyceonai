@@ -370,7 +370,7 @@
   flex-wrap: wrap;
   gap: 3px;
 }
-.lyceon-calendar.lyc-cal .block .dom span {
+.lyceon-calendar.lyc-cal .block .dom > span {
   font-size: 14px;
   padding: 2px 6px;
   border-radius: 5px;
@@ -443,17 +443,20 @@
 }
 /* QA 2026-10-07 item 11(c): nothing in a block card runs past its edge, at any width. A week
    column is about 84px wide beside the 340px panel at 1024 and 105px at 768, narrower than
-   "Data Analysis 5" or "🔒 started" on one line. The title wraps between words (and inside a
-   word only when one word is wider than the card); the "started" tag drops under the title
-   and, if even that is too narrow, is cut with an ellipsis; a scope chip wraps inside itself.
-   The month chips already truncate (`.mchip span`). */
+   "Data Analysis 5" or "🔒 started" on one line. The title wraps between words; the "started"
+   tag drops under the title and, if even that is too narrow, is cut with an ellipsis.
+   QA2-C (Karl, 2026-10-08: "compact labels that keep the count ... never a single letter; no
+   mid-word breaks"): a word is never split. In a narrow column the title is the compact one
+   ("Rev 15", rule below) and a scope chip keeps one line, its name cut with an ellipsis and
+   its count whole. The month chips do the same (`.mchip`). */
 .lyceon-calendar.lyc-cal .block {
   min-width: 0;
   max-width: 100%;
-  /* `anywhere`, not `break-word`: the title and the chips are flex items, whose minimum
-     width is their longest word unless that word may break. Words still break at spaces
-     first; a word is split only when it alone is wider than the card. */
-  overflow-wrap: anywhere;
+  /* `normal` since QA2-C (the earlier break-inside-a-word value split "Craft & Structur/e" and
+     "Conventi/ons" at 1024): words break at spaces (and after a hyphen) only. What could not
+     fit whole now has a shorter form instead. */
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .lyceon-calendar.lyc-cal .block .ttl {
   flex-wrap: wrap;
@@ -468,9 +471,18 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.lyceon-calendar.lyc-cal .block .dom span {
+/* A wide column: the chip wraps between words ("Craft &" over "Structure 5"), and a single word
+   wider than the chip ("Conventions" at 1440) is cut with an ellipsis on its own line, the
+   count on the next, rather than split. */
+.lyceon-calendar.lyc-cal .block .dom > span {
   max-width: 100%;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The compact title is drawn only in a narrow column (below). */
+.lyceon-calendar.lyc-cal .block .ttl-short {
+  display: none;
 }
 /* A narrow day column (seven of them in under 910px: beside the right panel from 1024 to about
    1280, or with no panel from 768 to about 900) gives the card's text the room its insets were
@@ -539,8 +551,9 @@
     )
     .block
     .dom
-    span {
+    > span {
     padding: 2px 4px;
+    white-space: nowrap;
   }
   .lyceon-calendar.lyc-cal
     .week
@@ -550,6 +563,67 @@
     )
     .add {
     margin: 4px 4px 11px;
+  }
+  /* QA2-C (Karl, 2026-10-08): a column under 130px is too narrow for "Reading & Writing · 5
+     questions" (four lines at 1024) and for a long domain name. The title becomes the compact
+     label from `BLOCK_COMPACT_LABEL` ("Rev 15", "Math 5", "R&W 15") in the card's own colour;
+     a scope chip keeps one line, its name cut with an ellipsis and its count whole. The full
+     title and the canonical domain names stay in the card's accessible name. */
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .ttl-full {
+    display: none;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .ttl-short {
+    display: inline;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .dom
+    > span {
+    display: inline-flex;
+    gap: 0.25em;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .dom
+    .dname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lyceon-calendar.lyc-cal
+    .week
+    > :is(
+      .col:first-child:nth-last-child(7),
+      .col:first-child:nth-last-child(7) ~ .col
+    )
+    .block
+    .dom
+    .dcount {
+    flex: none;
   }
 }
 
@@ -708,10 +782,53 @@
   border-radius: 2px;
   flex: none;
 }
-.lyceon-calendar.lyc-cal .mchip span {
+.lyceon-calendar.lyc-cal .mchip > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* QA2-C (Karl, 2026-10-08: "compact labels that keep the count ('Rev 15', 'Math 5', 'R&W 15')
+   plus color; never a single letter; no mid-word breaks"). The month is its own size
+   container. A cell under 130px (a month under 910px: 1024 to about 1345 beside the right
+   panel) shows the compact label from `BLOCK_COMPACT_LABEL`, which then fits whole where the
+   full one was cut ("Revi…"). A cell under 80px (a month under 560px: the phone) has no room
+   for even that beside the 6px tone square and the insets ("R…" at 390), so the chip drops
+   the square (its tint is the tone), tightens its insets, and lets the count go under the
+   label at the space: "Rev" over "15", never "R…". */
+.lyceon-calendar.lyc-cal .month {
+  container: lyc-cal-month / inline-size;
+}
+.lyceon-calendar.lyc-cal .mchip .short {
+  display: none;
+}
+@container lyc-cal-month (max-width: 909.98px) {
+  .lyceon-calendar.lyc-cal .mchip .full {
+    display: none;
+  }
+  .lyceon-calendar.lyc-cal .mchip .short {
+    display: inline;
+  }
+  /* "Full-length test" has no shorter form (OQ-62 (b)): it wraps at the space and after the
+     hyphen rather than being cut to "Full-l…". */
+  .lyceon-calendar.lyc-cal .mchip > .only {
+    white-space: normal;
+  }
+}
+@container lyc-cal-month (max-width: 559.98px) {
+  .lyceon-calendar.lyc-cal .mcell {
+    padding: 7px 3px;
+  }
+  .lyceon-calendar.lyc-cal .mchip {
+    justify-content: center;
+    padding: 3px 2px;
+    text-align: center;
+  }
+  .lyceon-calendar.lyc-cal .mchip i {
+    display: none;
+  }
+  .lyceon-calendar.lyc-cal .mchip > span {
+    white-space: normal;
+  }
 }
 
 /* ── §17.2 day menu and the blocked-out day ──────────────────────────────── */

@@ -100,3 +100,16 @@ change (56 rows, 0px horizontal overflow in all). Before/after pairs are in
   the page's theme; at 1440 (control) no "⋯", the two buttons.
 - `paid-regenerate` at 390 now chooses Regenerate plan from the menu and reopens it: the item
   reads "Plan regenerated".
+
+Production re-test, round 2 (Karl, 2026-10-08), items C and G. Re-captured after the change
+(`STUDENT_HARNESS_DB=qa2c_after HARNESS_PORT=5821 STUDENT_HARNESS_VITE_PORT=5823`; 68 rows, 0px
+horizontal overflow in all). Before/after pairs are in `../../qa-2026-10-08/C/` and `../G/`.
+- C ("Calendar chips at narrow widths: compact labels that keep the count ('Rev 15', 'Math 5',
+  'R&W 15') plus color; never a single letter; no mid-word breaks"): at 1024 and 1280
+  (`paid-week-mid`, seven columns under 130px) the card titles are "Rev 7", "Math 5", "R&W 5" in
+  the card's colour, and a scope chip keeps one line with its name cut by an ellipsis and its
+  count whole ("Data… 5"); before, "Craft & Structur e 5" and "Conventi ons 5" were split and
+  "Reading & Writing · 5 questions" took four lines. The month (`paid-month`, new `w1024`) shows
+  "Rev 7", "Math 5", "R&W 5" whole at 1024 (it was "Revi…"); at 390 the same labels where it was
+  "R…", "M…", "F…". A full-length test keeps its words (OQ-62 (b)) and wraps after the hyphen.
+  At 1440 the full wording, as before.
