@@ -94,7 +94,7 @@ export function domainChipLabel(domain: CanonicalDomain): string {
  * `calendar_blocks_full_length_single`). In a narrow column it wraps at the space and after
  * the hyphen, never inside "length". It is the one entry Karl's re-test ruling does not name.
  */
-export const BLOCK_COMPACT_LABEL: Readonly<Record<BlockTone, string>> = {
+const BLOCK_COMPACT_LABEL: Readonly<Record<BlockTone, string>> = {
   review: "Rev",
   math: "Math",
   rw: "R&W",

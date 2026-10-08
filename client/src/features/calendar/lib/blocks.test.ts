@@ -19,7 +19,6 @@ import {
   type PlanningEstimates,
 } from "@lyceon/shared";
 import {
-  BLOCK_COMPACT_LABEL,
   TONE_LABEL,
   compactBlockLabel,
   domainsForSection,
@@ -225,9 +224,8 @@ describe("compactBlockLabel (QA2-C narrow-column label)", () => {
       sectionPracticeBlock("RW", 15),
       fullLengthBlock(),
     ];
-    for (const word of Object.values(BLOCK_COMPACT_LABEL)) {
-      expect(word.replace(/[^A-Za-z]/g, "").length).toBeGreaterThan(1);
-    }
+    // One block of each of the four tones, so every entry of the table is read.
+    expect(new Set(blocks.map(toneOf)).size).toBe(4);
     for (const block of blocks) {
       const compact = compactBlockLabel({
         tone: toneOf(block),
