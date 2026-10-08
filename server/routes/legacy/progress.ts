@@ -110,8 +110,25 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
           user.id,
           "mastery_detail",
         );
-      } catch {
+      } catch (error) {
         // Entitlement-read failure → degrade to unpaid view, never 500.
+        //
+        // @spec [Coding Standards §13 (no silent catch), §12.1 (redacted logs); student-UI
+        //        register UI-10] | @implemented [2026-10-08]: the degrade is logged, so a
+        //        paid student shown the unpaid view because the read failed is visible in
+        //        the logs. Only the request id, the feature and the error's class name are
+        //        written: no user id, no token, no error message (an RPC message can echo
+        //        its arguments).
+        logger.warn(
+          "PROGRESS",
+          "score_estimate_entitlement_read_failed",
+          "Entitlement read failed; serving the unpaid projection view",
+          {
+            feature: "mastery_detail",
+            errorName: error instanceof Error ? error.name : typeof error,
+          },
+          { requestId: req.requestId },
+        );
         canSeeLiveProgression = false;
       }
     }

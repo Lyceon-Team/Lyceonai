@@ -145,6 +145,7 @@ FILES=(
   "client/src/components/home/home-model.ts"
   "client/src/components/math/FloatingPanel.tsx"
   "client/src/components/legal/ReconsentModal.tsx"
+  "server/routes/legacy/progress.ts"
 )
 
 snapshot_all() {
@@ -3731,6 +3732,34 @@ plant "W6-UI62-3" "the re-consent version line goes back to text-xs" \
   'a = "<p className=\"mt-1 text-[14px] text-muted-foreground\">"
 assert s.count(a) == 1
 s = s.replace(a, "<p className=\"mt-1 text-xs text-muted-foreground\">", 1)'
+
+# ── W6 UI-10 — the projection route's entitlement-read catch logs, and still fails closed ──────
+# @spec [student-UI register UI-10; Coding Standards §13, §12.1; Doc-05C §7.4] | @implemented [2026-10-08]
+# The one server plant in this gate (UI-10's exception to the UI-only scope).
+W6_UI10="tests/ci/kpi.gating.contract.test.ts"
+
+plant "W6-UI10-1" "the entitlement-read catch is silent again (no structured warning)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "          \"score_estimate_entitlement_read_failed\",\n"
+assert s.count(a) == 1
+i = s.index("        logger.warn(\n          \"PROGRESS\",\n          \"score_estimate_entitlement_read_failed\"")
+j = s.index("        canSeeLiveProgression = false;\n", i)
+s = s[:i] + s[j:]'
+
+plant "W6-UI10-2" "the warning writes the error's message (unredacted)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "            errorName: error instanceof Error ? error.name : typeof error,\n"
+assert s.count(a) == 1
+s = s.replace(a, "            errorName: error instanceof Error ? error.message : typeof error,\n", 1)'
+
+plant "W6-UI10-3" "the catch fails open (serves the paid view on a failed read)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = false;\n"
+assert s.count(a) == 1
+s = s.replace(a, "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = true;\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
