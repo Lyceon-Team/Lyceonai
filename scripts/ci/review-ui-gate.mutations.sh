@@ -134,6 +134,9 @@ FILES=(
   "client/src/components/MathRenderer.tsx"
   "client/src/features/calendar/lib/dates.ts"
   "client/src/pages/score-report.tsx"
+  "client/src/features/calendar/lib/blocks.ts"
+  "client/src/features/calendar/components/BlockCard.tsx"
+  "client/src/features/calendar/components/MonthGrid.tsx"
 )
 
 snapshot_all() {
@@ -2560,12 +2563,14 @@ s = s.replace(a, "      {onAddBlock !== undefined && date >= today ? (", 1)'
 # tests/e2e/student-calendar.spec.ts ("QA 2026-10-07 item 11 layout", 390–1440); these plants
 # hold the page test's pins on the rules and wiring that layout depends on.
 
-plant "QA11-C1" "block-card text may no longer break (it runs past the card)" \
+# Re-pointed by QA2-C (2026-10-08): the rule no longer lets a word break inside itself (Karl: "no
+# mid-word breaks"), so the plant now puts that back and the page test's pin on it turns red.
+plant "QA11-C1" "block-card text may break inside a word again (overflow-wrap: anywhere)" \
   "$T55" \
   "client/src/features/calendar/calendar-student.css" \
-  'a = "     first; a word is split only when it alone is wider than the card. */\n  overflow-wrap: anywhere;\n"
+  'a = "     fit whole now has a shorter form instead. */\n  overflow-wrap: normal;\n  word-break: normal;\n"
 assert s.count(a) == 1
-s = s.replace(a, "     first; a word is split only when it alone is wider than the card. */\n", 1)'
+s = s.replace(a, "     fit whole now has a shorter form instead. */\n  overflow-wrap: anywhere;\n", 1)'
 
 plant "QA11-C2" "the started tag neither drops under the title nor truncates" \
   "$T55" \
@@ -3286,6 +3291,95 @@ plant "QA-RO4" "the phone shows the full words 'Question N of M' again" \
   'a = "<span className=\"sr-only sm:not-sr-only\">Question </span>"
 assert s.count(a) == 1
 s = s.replace(a, "<span className=\"inline\">Question </span>", 1)'
+
+# ── Production re-test round 2 (Karl, 2026-10-08), items C and G (the student calendar). ──
+# C: "Calendar chips at narrow widths: compact labels that keep the count ('Rev 15', 'Math 5',
+# 'R&W 15') plus color; never a single letter; no mid-word breaks." The layout is measured in the
+# browser by tests/e2e/student-calendar.spec.ts ("QA2-C chip labels" at 1024, 1199, 390, 1440, and
+# the item 11 layout loop at 390–1440); these plants hold the canonical table, the markup and the
+# CSS that layout depends on.
+TQA2C_LABELS="client/src/features/calendar/components/BlockCard.labels.test.tsx"
+TQA2C_BLOCKS="client/src/features/calendar/lib/blocks.test.ts"
+
+plant "QA2C-1" "the compact Reading & Writing label is a single letter" \
+  "$TQA2C_BLOCKS $TQA2C_LABELS" \
+  "client/src/features/calendar/lib/blocks.ts" \
+  'a = "  rw: \"R&W\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "  rw: \"R\",\n", 1)'
+
+plant "QA2C-2" "the compact title is read out beside the full one (no aria-hidden)" \
+  "$TQA2C_LABELS $T55" \
+  "client/src/features/calendar/components/BlockCard.tsx" \
+  'a = "<span className=\"ttl-short\" aria-hidden=\"true\">"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"ttl-short\">", 1)'
+
+plant "QA2C-3" "the card's accessible name drops the canonical domain names" \
+  "$TQA2C_LABELS" \
+  "client/src/features/calendar/components/BlockCard.tsx" \
+  'a = ".map((entry) => `, ${entry.domain} ${entry.count}`)"
+assert s.count(a) == 1
+s = s.replace(a, ".map(() => \"\")", 1)'
+
+plant "QA2C-4" "the month chip's compact label is the full one again" \
+  "$TQA2C_LABELS" \
+  "client/src/features/calendar/components/MonthGrid.tsx" \
+  'a = "<span className=\"short\" aria-hidden=\"true\">\n            {compact}"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"short\" aria-hidden=\"true\">\n            {full}", 1)'
+
+plant "QA2C-5" "a narrow week column keeps the full title (the compact one is never drawn)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .ttl-short {\n    display: inline;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "    .ttl-short {\n    display: none;\n  }\n", 1)'
+
+plant "QA2C-6" "a narrow scope chip no longer cuts its name (it splits or spills instead)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "    .dname {\n    min-width: 0;\n    overflow: hidden;\n    text-overflow: ellipsis;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "    .dname {\n    min-width: 0;\n  }\n", 1)'
+
+plant "QA2C-7" "the month is no longer a size container (its chips never go compact)" \
+  "$T55" \
+  "client/src/features/calendar/calendar-student.css" \
+  'a = "  container: lyc-cal-month / inline-size;\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# G: "Calendar block panel: disable 'Items to clear' while the block is in progress."
+TQA2G="client/src/features/calendar/components/BlockSheet.test.tsx"
+
+plant "QA2G-1" "Items to clear stays enabled while the block is in progress" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "                disabled={locked}\n                aria-disabled={locked ? \"true\" : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                disabled={false}\n                aria-disabled={locked ? \"true\" : undefined}\n", 1)'
+
+plant "QA2G-2" "the locked Items to clear is not marked aria-disabled" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "                aria-disabled={locked ? \"true\" : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2G-3" "no note says why Items to clear is locked" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "              {inProgress ? (\n                <p\n"
+assert s.count(a) == 1
+s = s.replace(a, "              {false ? (\n                <p\n", 1)'
+
+plant "QA2G-4" "a finished block is called in progress" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "  const inProgress = block.started && !complete;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const inProgress = block.started;\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

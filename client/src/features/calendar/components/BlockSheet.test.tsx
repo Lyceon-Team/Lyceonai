@@ -24,6 +24,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BlockSheet, type BlockSheetActions } from "./BlockSheet";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
+import type { PlanBlock } from "@lyceon/shared/calendar";
 
 afterEach(cleanup);
 
@@ -236,5 +237,80 @@ describe("QA 2026-10-07 item 11(b) — the modal dialog is the student's; the gu
     expect(sheet.getAttribute("aria-modal")).toBeNull();
     expect(sheet.querySelector("h3")?.id).toBe("");
     expect(screen.queryByTestId("calendar-block-sheet-close")).toBeNull();
+  });
+});
+
+/**
+ * QA2-G (Karl, production re-test 2026-10-08): "Calendar block panel: disable 'Items to clear'
+ * while the block is in progress." In progress is `started` (the server's §13 status) and not
+ * finished; the control is then disabled, `aria-disabled`, and described by a short note.
+ */
+describe("QA2-G — Items to clear while the review block is in progress", () => {
+  const REVIEW_PLAN: PlanBlock = {
+    block_id: BLOCK_ID,
+    scheduled_date: TODAY,
+    source: "auto",
+    derived_from_block_id: null,
+    explanation_key: "review_due",
+    display_ordinal: 1,
+    membership_type: "created",
+    block_type: "review",
+    section: null,
+    scope: { mode: "queue" },
+    target_count: 15,
+  };
+  const review = (over: Partial<ViewBlock> = {}): Partial<ViewBlock> => ({
+    tone: "review",
+    title: "Review · 15 items",
+    target: 15,
+    plan: REVIEW_PLAN,
+    ...over,
+  });
+
+  it("an in-progress block: the control is disabled, aria-disabled, and described by the note", () => {
+    open(
+      TODAY,
+      review({
+        started: true,
+        status: "in_progress",
+        actual: 4,
+        progress: 4 / 15,
+      }),
+    );
+    const select = screen.getByRole("combobox", { name: "Items to clear" });
+    expect(select).toBeDisabled();
+    expect(select.getAttribute("aria-disabled")).toBe("true");
+    const note = screen.getByTestId("calendar-items-locked-note");
+    expect(note.textContent).toBe(
+      "You can't change this while the block is in progress.",
+    );
+    expect(select.getAttribute("aria-describedby")).toBe(note.id);
+    expect(note.id).not.toBe("");
+  });
+
+  it("a block launched with no answers yet is in progress too (status, not `actual`)", () => {
+    open(TODAY, review({ started: true, status: "in_progress", actual: 0 }));
+    const select = screen.getByRole("combobox", { name: "Items to clear" });
+    expect(select).toBeDisabled();
+    expect(screen.getByTestId("calendar-items-locked-note")).toBeTruthy();
+  });
+
+  it("a block not yet started: the control is enabled, with no aria-disabled and no note", () => {
+    open(TODAY, review());
+    const select = screen.getByRole("combobox", { name: "Items to clear" });
+    expect(select).toBeEnabled();
+    expect(select.getAttribute("aria-disabled")).toBeNull();
+    expect(select.getAttribute("aria-describedby")).toBeNull();
+    expect(screen.queryByTestId("calendar-items-locked-note")).toBeNull();
+  });
+
+  it("a finished block stays locked (§12.2) but is not called in progress", () => {
+    open(
+      TODAY,
+      review({ started: true, status: "completed", actual: 15, progress: 1 }),
+    );
+    const select = screen.getByRole("combobox", { name: "Items to clear" });
+    expect(select).toBeDisabled();
+    expect(screen.queryByTestId("calendar-items-locked-note")).toBeNull();
   });
 });
