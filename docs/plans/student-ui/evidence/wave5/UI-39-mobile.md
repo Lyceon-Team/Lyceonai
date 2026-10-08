@@ -7,7 +7,7 @@ Register row UI-39 ("Mobile: bottom tab bar and one page per shell"; proof: Karl
 - **Overflow:** every group's `index.md` records 0px horizontal overflow on every phone capture (UI-41 to UI-59).
 - **Prototypes:** the prototypes are a fixed 1440x900 canvas with no phone layout, so no phone prototype exists to compare against; these are built-only.
 
-**199 phone captures** across 11 page groups.
+**241 phone captures** across 11 page groups.
 
 ## UI-41: Shells: App shell (rail, mobile tab bar, avatar menu), Focus shell, Bare card
 
@@ -27,6 +27,14 @@ Full index with conditions: [`UI-41/index.md`](UI-41/index.md).
 | `bare-404` | ![bare-404 light](UI-41/bare-404--mobile--light--built.png) | ![bare-404 dark](UI-41/bare-404--mobile--dark--built.png) |
 | `bare-login` | ![bare-login light](UI-41/bare-login--mobile--light--built.png) | ![bare-login dark](UI-41/bare-login--mobile--dark--built.png) |
 | `focus-practice-runner` | ![focus-practice-runner light](UI-41/focus-practice-runner--mobile--light--built.png) | ![focus-practice-runner dark](UI-41/focus-practice-runner--mobile--dark--built.png) |
+| `qa-bell-unread-badge-paid` | ![qa-bell-unread-badge-paid light](UI-41/qa-bell-unread-badge-paid--mobile--light--built.png) | ![qa-bell-unread-badge-paid dark](UI-41/qa-bell-unread-badge-paid--mobile--dark--built.png) |
+| `qa-calculator-scientific` | ![qa-calculator-scientific light](UI-41/qa-calculator-scientific--mobile--light--built.png) | ![qa-calculator-scientific dark](UI-41/qa-calculator-scientific--mobile--dark--built.png) |
+| `qa-grid-in-submitted` | ![qa-grid-in-submitted light](UI-41/qa-grid-in-submitted--mobile--light--built.png) | ![qa-grid-in-submitted dark](UI-41/qa-grid-in-submitted--mobile--dark--built.png) |
+| `qa-notifications-popover-loading-paid` | ![qa-notifications-popover-loading-paid light](UI-41/qa-notifications-popover-loading-paid--mobile--light--built.png) | ![qa-notifications-popover-loading-paid dark](UI-41/qa-notifications-popover-loading-paid--mobile--dark--built.png) |
+| `qa-notifications-popover-paid` | ![qa-notifications-popover-paid light](UI-41/qa-notifications-popover-paid--mobile--light--built.png) | ![qa-notifications-popover-paid dark](UI-41/qa-notifications-popover-paid--mobile--dark--built.png) |
+| `qa-reference-sheet` | ![qa-reference-sheet light](UI-41/qa-reference-sheet--mobile--light--built.png) | ![qa-reference-sheet dark](UI-41/qa-reference-sheet--mobile--dark--built.png) |
+| `qa-route-skeleton-cold-paid` | ![qa-route-skeleton-cold-paid light](UI-41/qa-route-skeleton-cold-paid--mobile--light--built.png) | ![qa-route-skeleton-cold-paid dark](UI-41/qa-route-skeleton-cold-paid--mobile--dark--built.png) |
+| `qa-route-skeleton-nav-paid` | ![qa-route-skeleton-nav-paid light](UI-41/qa-route-skeleton-nav-paid--mobile--light--built.png) | ![qa-route-skeleton-nav-paid dark](UI-41/qa-route-skeleton-nav-paid--mobile--dark--built.png) |
 
 ## UI-50: Home
 
@@ -36,7 +44,11 @@ Full index with conditions: [`UI-50/index.md`](UI-50/index.md).
 |---|---|---|
 | `click-free-start-diagnostic` | ![click-free-start-diagnostic light](UI-50/click-free-start-diagnostic--mobile--light--built.png) | ![click-free-start-diagnostic dark](UI-50/click-free-start-diagnostic--mobile--dark--built.png) |
 | `click-paid-full-length-card` | ![click-paid-full-length-card light](UI-50/click-paid-full-length-card--mobile--light--built.png) | ![click-paid-full-length-card dark](UI-50/click-paid-full-length-card--mobile--dark--built.png) |
+| `click-paid-pickup-continue` | ![click-paid-pickup-continue light](UI-50/click-paid-pickup-continue--mobile--light--built.png) | ![click-paid-pickup-continue dark](UI-50/click-paid-pickup-continue--mobile--dark--built.png) |
+| `click-paid-plan-row-start` | ![click-paid-plan-row-start light](UI-50/click-paid-plan-row-start--mobile--light--built.png) | ![click-paid-plan-row-start dark](UI-50/click-paid-plan-row-start--mobile--dark--built.png) |
+| `click-paid-recent-review-pending` | ![click-paid-recent-review-pending light](UI-50/click-paid-recent-review-pending--mobile--light--built.png) | ![click-paid-recent-review-pending dark](UI-50/click-paid-recent-review-pending--mobile--dark--built.png) |
 | `click-paid-start-plan` | ![click-paid-start-plan light](UI-50/click-paid-start-plan--mobile--light--built.png) | ![click-paid-start-plan dark](UI-50/click-paid-start-plan--mobile--dark--built.png) |
+| `click-paid-start-plan-pending` | ![click-paid-start-plan-pending light](UI-50/click-paid-start-plan-pending--mobile--light--built.png) | ![click-paid-start-plan-pending dark](UI-50/click-paid-start-plan-pending--mobile--dark--built.png) |
 | `home-free` | ![home-free light](UI-50/home-free--mobile--light--built.png) | ![home-free dark](UI-50/home-free--mobile--dark--built.png) |
 | `home-free-full` | ![home-free-full light](UI-50/home-free-full--mobile--light--built.png) | ![home-free-full dark](UI-50/home-free-full--mobile--dark--built.png) |
 | `home-free-full-length-modal` | ![home-free-full-length-modal light](UI-50/home-free-full-length-modal--mobile--light--built.png) | ![home-free-full-length-modal dark](UI-50/home-free-full-length-modal--mobile--dark--built.png) |
@@ -51,6 +63,7 @@ Full index with conditions: [`UI-51/index.md`](UI-51/index.md).
 | State | Light | Dark |
 |---|---|---|
 | `click-paid-start` | ![click-paid-start light](UI-51/click-paid-start--mobile--light--built.png) | ![click-paid-start dark](UI-51/click-paid-start--mobile--dark--built.png) |
+| `click-paid-start-pending` | ![click-paid-start-pending light](UI-51/click-paid-start-pending--mobile--light--built.png) | ![click-paid-start-pending dark](UI-51/click-paid-start-pending--mobile--dark--built.png) |
 | `practice-free` | ![practice-free light](UI-51/practice-free--mobile--light--built.png) | ![practice-free dark](UI-51/practice-free--mobile--dark--built.png) |
 | `practice-free-full` | ![practice-free-full light](UI-51/practice-free-full--mobile--light--built.png) | ![practice-free-full dark](UI-51/practice-free-full--mobile--dark--built.png) |
 | `practice-paid` | ![practice-paid light](UI-51/practice-paid--mobile--light--built.png) | ![practice-paid dark](UI-51/practice-paid--mobile--dark--built.png) |
@@ -64,6 +77,7 @@ Full index with conditions: [`UI-52/index.md`](UI-52/index.md).
 | State | Light | Dark |
 |---|---|---|
 | `click-paid-start` | ![click-paid-start light](UI-52/click-paid-start--mobile--light--built.png) | ![click-paid-start dark](UI-52/click-paid-start--mobile--dark--built.png) |
+| `click-paid-start-pending` | ![click-paid-start-pending light](UI-52/click-paid-start-pending--mobile--light--built.png) | ![click-paid-start-pending dark](UI-52/click-paid-start-pending--mobile--dark--built.png) |
 | `review-free` | ![review-free light](UI-52/review-free--mobile--light--built.png) | ![review-free dark](UI-52/review-free--mobile--dark--built.png) |
 | `review-free-full` | ![review-free-full light](UI-52/review-free-full--mobile--light--built.png) | ![review-free-full dark](UI-52/review-free-full--mobile--dark--built.png) |
 | `review-free-past-open` | ![review-free-past-open light](UI-52/review-free-past-open--mobile--light--built.png) | ![review-free-past-open dark](UI-52/review-free-past-open--mobile--dark--built.png) |
@@ -82,10 +96,12 @@ Full index with conditions: [`UI-53/index.md`](UI-53/index.md).
 | `practice-incorrect` | ![practice-incorrect light](UI-53/practice-incorrect--mobile--light--built.png) | ![practice-incorrect dark](UI-53/practice-incorrect--mobile--dark--built.png) |
 | `practice-selected` | ![practice-selected light](UI-53/practice-selected--mobile--light--built.png) | ![practice-selected dark](UI-53/practice-selected--mobile--dark--built.png) |
 | `practice-shortened` | ![practice-shortened light](UI-53/practice-shortened--mobile--light--built.png) | ![practice-shortened dark](UI-53/practice-shortened--mobile--dark--built.png) |
+| `practice-skip-pending` | ![practice-skip-pending light](UI-53/practice-skip-pending--mobile--light--built.png) | ![practice-skip-pending dark](UI-53/practice-skip-pending--mobile--dark--built.png) |
 | `review-correct` | ![review-correct light](UI-53/review-correct--mobile--light--built.png) | ![review-correct dark](UI-53/review-correct--mobile--dark--built.png) |
 | `review-incorrect` | ![review-incorrect light](UI-53/review-incorrect--mobile--light--built.png) | ![review-incorrect dark](UI-53/review-incorrect--mobile--dark--built.png) |
 | `review-lisa-focused` | ![review-lisa-focused light](UI-53/review-lisa-focused--mobile--light--built.png) | ![review-lisa-focused dark](UI-53/review-lisa-focused--mobile--dark--built.png) |
 | `review-lisa-locked` | ![review-lisa-locked light](UI-53/review-lisa-locked--mobile--light--built.png) | ![review-lisa-locked dark](UI-53/review-lisa-locked--mobile--dark--built.png) |
+| `review-lisa-show` | ![review-lisa-show light](UI-53/review-lisa-show--mobile--light--built.png) | ![review-lisa-show dark](UI-53/review-lisa-show--mobile--dark--built.png) |
 | `review-lisa-typing` | ![review-lisa-typing light](UI-53/review-lisa-typing--mobile--light--built.png) | ![review-lisa-typing dark](UI-53/review-lisa-typing--mobile--dark--built.png) |
 | `review-selected` | ![review-selected light](UI-53/review-selected--mobile--light--built.png) | ![review-selected dark](UI-53/review-selected--mobile--dark--built.png) |
 
@@ -96,6 +112,7 @@ Full index with conditions: [`UI-54/index.md`](UI-54/index.md).
 | State | Light | Dark |
 |---|---|---|
 | `click-paid-resume` | ![click-paid-resume light](UI-54/click-paid-resume--mobile--light--built.png) | ![click-paid-resume dark](UI-54/click-paid-resume--mobile--dark--built.png) |
+| `click-paid-start-pending` | ![click-paid-start-pending light](UI-54/click-paid-start-pending--mobile--light--built.png) | ![click-paid-start-pending dark](UI-54/click-paid-start-pending--mobile--dark--built.png) |
 | `report-scored` | ![report-scored light](UI-54/report-scored--mobile--light--built.png) | ![report-scored dark](UI-54/report-scored--mobile--dark--built.png) |
 | `report-scored-full` | ![report-scored-full light](UI-54/report-scored-full--mobile--light--built.png) | ![report-scored-full dark](UI-54/report-scored-full--mobile--dark--built.png) |
 | `tests-free` | ![tests-free light](UI-54/tests-free--mobile--light--built.png) | ![tests-free dark](UI-54/tests-free--mobile--dark--built.png) |
@@ -113,12 +130,15 @@ Full index with conditions: [`UI-55/index.md`](UI-55/index.md).
 | `free-save` | ![free-save light](UI-55/free-save--mobile--light--built.png) | ![free-save dark](UI-55/free-save--mobile--dark--built.png) |
 | `free-saved` | ![free-saved light](UI-55/free-saved--mobile--light--built.png) | ![free-saved dark](UI-55/free-saved--mobile--dark--built.png) |
 | `free-setup` | ![free-setup light](UI-55/free-setup--mobile--light--built.png) | ![free-setup dark](UI-55/free-setup--mobile--dark--built.png) |
+| `paid-block-sheet` | ![paid-block-sheet light](UI-55/paid-block-sheet--mobile--light--built.png) | ![paid-block-sheet dark](UI-55/paid-block-sheet--mobile--dark--built.png) |
 | `paid-full-length-continue` | ![paid-full-length-continue light](UI-55/paid-full-length-continue--mobile--light--built.png) | ![paid-full-length-continue dark](UI-55/paid-full-length-continue--mobile--dark--built.png) |
 | `paid-full-length-notice` | ![paid-full-length-notice light](UI-55/paid-full-length-notice--mobile--light--built.png) | ![paid-full-length-notice dark](UI-55/paid-full-length-notice--mobile--dark--built.png) |
 | `paid-month` | ![paid-month light](UI-55/paid-month--mobile--light--built.png) | ![paid-month dark](UI-55/paid-month--mobile--dark--built.png) |
+| `paid-more-menu` | ![paid-more-menu light](UI-55/paid-more-menu--mobile--light--built.png) | ![paid-more-menu dark](UI-55/paid-more-menu--mobile--dark--built.png) |
 | `paid-regenerate` | ![paid-regenerate light](UI-55/paid-regenerate--mobile--light--built.png) | ![paid-regenerate dark](UI-55/paid-regenerate--mobile--dark--built.png) |
 | `paid-week` | ![paid-week light](UI-55/paid-week--mobile--light--built.png) | ![paid-week dark](UI-55/paid-week--mobile--dark--built.png) |
 | `paid-week-full` | ![paid-week-full light](UI-55/paid-week-full--mobile--light--built.png) | ![paid-week-full dark](UI-55/paid-week-full--mobile--dark--built.png) |
+| `paid-week-mid` | ![paid-week-mid light](UI-55/paid-week-mid--mobile--light--built.png) | ![paid-week-mid dark](UI-55/paid-week-mid--mobile--dark--built.png) |
 
 ## UI-56: LISA
 
@@ -131,6 +151,7 @@ Full index with conditions: [`UI-56/index.md`](UI-56/index.md).
 | `paid-conversation` | ![paid-conversation light](UI-56/paid-conversation--mobile--light--built.png) | ![paid-conversation dark](UI-56/paid-conversation--mobile--dark--built.png) |
 | `paid-conversation-full` | ![paid-conversation-full light](UI-56/paid-conversation-full--mobile--light--built.png) | ![paid-conversation-full dark](UI-56/paid-conversation-full--mobile--dark--built.png) |
 | `paid-new-session` | ![paid-new-session light](UI-56/paid-new-session--mobile--light--built.png) | ![paid-new-session dark](UI-56/paid-new-session--mobile--dark--built.png) |
+| `paid-pick-session` | ![paid-pick-session light](UI-56/paid-pick-session--mobile--light--built.png) | ![paid-pick-session dark](UI-56/paid-pick-session--mobile--dark--built.png) |
 | `paid-typing` | ![paid-typing light](UI-56/paid-typing--mobile--light--built.png) | ![paid-typing dark](UI-56/paid-typing--mobile--dark--built.png) |
 
 ## UI-57: Mastery (not prototyped)

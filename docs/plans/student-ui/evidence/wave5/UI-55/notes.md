@@ -42,8 +42,8 @@ free student's study profile before each capture so every viewport and theme mak
 Differences kept, and why:
 
 1. (Removed: the streak line, SCL-211.)
-2. **"Your schedule" in the right panel.** Not in the prototype; register §2 moves the calendar's
-   schedule summary into the right panel (register wins over DESIGN.md).
+2. (Removed: "Your schedule" in the right panel — Karl's ruling on the production QA of
+   2026-10-07, item 11(e). The panel is now the prototype's: mini month, goal card, Show.)
 3. (Removed: the facts strip, SCL-211.)
 4. **No "Training for".** OQ-37 holds the dream school until UI-S8 closes.
 5. **Free page has no Week/Month header.** The prototype draws the plan controls over the free
@@ -73,3 +73,30 @@ days (and a blocked-out day) are flat tints instead of diagonal hatches (DESIGN.
 gradients"); visible in `paid-month` (the days after the test date) and on any rest-day column.
 Every other pixel difference between the two runs is plan data (block mixes and the projected
 range differ from run to run of the harness), not styling. 0px horizontal overflow in all 36 rows.
+
+Production QA 2026-10-07, item 11 (re-captured after the fixes; 50 rows, 0px horizontal overflow
+in all). Before/after pairs for each sub-item are in `../../qa-2026-10-07/11a` … `11g`.
+- (a) `paid-month`: Month opens today's month (it opened the month of the week's Monday) and is
+  read ahead in week view, so its first render is the month, not the held-over week. The days
+  after the test date stay empty here because this seed's plan ends on the test day; past the
+  test date, a month view shows what the server's 14-day plan horizon holds (handoff, calendar
+  vertical).
+- (b) new shot `paid-block-sheet`: the block sheet as a modal dialog with Close, focus on Close.
+- (c), (d) new shot `paid-week-mid` at 700, 1024 and 1280 (extra viewports): the header laid out
+  against the calendar column (stacked under 700px of column, title over controls from 700px, one
+  row from 920px) and block cards whose text stays inside them.
+- (e) the right panel without "Your schedule"; (f) no "+ Add block" under the test-day card;
+  (g) the projected range on one line (`paid-week`, `paid-week-full`).
+
+OQ-66 (c), owner ruling (Karl, 2026-10-07): "the calendar header is at most two rows at 1024px.
+Below ~1200px, move Edit schedule and Regenerate plan into a \"⋯\" menu." Re-captured after the
+change (56 rows, 0px horizontal overflow in all). Before/after pairs are in
+`../../qa-2026-10-07/oq66-c-calendar-header/`.
+- Below a 1200px viewport the two buttons are in a "⋯" menu ("More actions"): at 1024
+  (`paid-week-mid--w1024`) and 390 (`paid-week--mobile`) the header is two rows, the range title
+  with "⋯" at its right end over the view controls (it was three); at 700 the title over the
+  controls with "⋯" at the right. At 1280 and 1440 the buttons, unchanged.
+- New shot `paid-more-menu`: the menu open at 1024 (extra viewport) and 390, light and dark, in
+  the page's theme; at 1440 (control) no "⋯", the two buttons.
+- `paid-regenerate` at 390 now chooses Regenerate plan from the menu and reopens it: the item
+  reads "Plan regenerated".

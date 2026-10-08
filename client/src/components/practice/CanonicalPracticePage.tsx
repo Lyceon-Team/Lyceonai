@@ -43,6 +43,11 @@ import { BookOpen, Calculator, Loader2, MessageCircle } from "lucide-react";
 import QuestionRenderer from "@/components/question-renderer";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
+import {
+  CHECKING_LABEL,
+  LOADING_LABEL,
+  SKIPPING_LABEL,
+} from "@/lib/pending-copy";
 import { FocusBarContext } from "@/components/layout/FocusShell";
 import {
   useCanonicalPractice,
@@ -219,6 +224,7 @@ export default function CanonicalPracticePage(props: {
     freeResponseAnswer,
     setFreeResponseAnswer,
     isSubmitting,
+    submitKind,
     showResult,
     isCorrect,
     correctOptionId,
@@ -244,6 +250,12 @@ export default function CanonicalPracticePage(props: {
   // W4-4: LISA is open on every question; "Hide LISA" hides it for the
   // current one only. Derived per item, so it returns on the next.
   const [tutorHiddenForItem, setTutorHiddenForItem] = React.useState<
+    string | null
+  >(null);
+  // QA 2026-10-07 item 8: the item whose LISA toggle the student last pressed. A panel that
+  // mounts for it was opened by Show LISA, so on the phone layout (LISA stacked under the
+  // question) it opens scrolled into view; LISA shown on load (W4-4) is not.
+  const [tutorOpenedForItem, setTutorOpenedForItem] = React.useState<
     string | null
   >(null);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
@@ -404,6 +416,7 @@ export default function CanonicalPracticePage(props: {
         sessionItemId={sessionItemId}
         questionLabel={position ?? `Question ${currentIndex + 1}`}
         onHide={() => setTutorHiddenForItem(sessionItemId)}
+        revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}
       />
     ) : null;
 
@@ -418,30 +431,35 @@ export default function CanonicalPracticePage(props: {
         />
         <span
           data-testid="runner-session-name"
-          className="hidden min-w-0 truncate font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong sm:block"
+          className="hidden min-w-0 max-w-[45%] shrink-0 truncate font-lyc-serif text-[19px] font-semibold text-lyc-ink-strong sm:block"
         >
           {props.title}
         </span>
         <span className="flex-1" aria-hidden="true" />
         {position !== null && typeof totalQuestions === "number" ? (
           <>
+            {/* QA 2026-10-07: a 54-question review made the bar 239px wider than a 1440 screen
+                and 26px wider than a phone. On a phone the word "Question" is dropped from view
+                (screen readers still hear it); the strip's segments shrink to fit, never below
+                2px, instead of holding 14px each. */}
             <span
               data-testid="runner-position"
               className="shrink-0 whitespace-nowrap text-lyc-body text-lyc-ink"
             >
-              {position}
+              <span className="sr-only sm:not-sr-only">Question </span>
+              {position.replace(/^Question /, "")}
             </span>
             <span
               aria-hidden="true"
               data-testid="runner-progress"
-              className="hidden shrink-0 gap-1 lg:flex"
+              className="hidden min-w-0 shrink gap-1 lg:flex"
             >
               {progressSegments(currentIndex, totalQuestions).map((tone, i) => (
                 <span
                   key={i}
                   data-segment={tone}
                   className={cn(
-                    "h-1.5 w-3.5 rounded-[3px]",
+                    "h-1.5 w-3.5 min-w-[2px] shrink rounded-[3px]",
                     SEGMENT_TONE[tone],
                   )}
                 />
@@ -478,9 +496,11 @@ export default function CanonicalPracticePage(props: {
           <button
             type="button"
             className={BAR_BUTTON}
-            onClick={() =>
-              setTutorHiddenForItem(tutorVisible ? sessionItemId : null)
-            }
+            onClick={() => {
+              setTutorHiddenForItem(tutorVisible ? sessionItemId : null);
+              // Read only while LISA is visible, so a hide may set it too.
+              setTutorOpenedForItem(sessionItemId);
+            }}
             aria-expanded={tutorVisible}
             data-testid="practice-tutor-toggle"
           >
@@ -615,9 +635,11 @@ export default function CanonicalPracticePage(props: {
                 size="lyc"
                 className="h-12 px-[18px]"
                 disabled={runnerBusy}
+                pending={submitKind === "skip"}
                 onClick={() => void submitAnswer({ skipped: true })}
+                data-testid="runner-skip"
               >
-                Skip
+                {submitKind === "skip" ? SKIPPING_LABEL : "Skip"}
               </Button>
             ) : null}
             <Button
@@ -625,9 +647,11 @@ export default function CanonicalPracticePage(props: {
               size="lyc"
               className="h-12 px-[26px] text-[17px] disabled:opacity-45"
               disabled={runnerBusy || !canSubmit}
+              pending={submitKind === "answer"}
               onClick={() => void submitAnswer({ skipped: false })}
+              data-testid="runner-submit"
             >
-              Submit
+              {submitKind === "answer" ? CHECKING_LABEL : "Submit"}
             </Button>
           </>
         ) : (
@@ -636,9 +660,15 @@ export default function CanonicalPracticePage(props: {
             size="lyc"
             className="h-12 px-[26px] text-[17px]"
             disabled={runnerBusy}
+            pending={isLoading}
             onClick={goNext}
+            data-testid="runner-next"
           >
-            {isLastQuestion ? "Done" : "Next question"}
+            {isLoading
+              ? LOADING_LABEL
+              : isLastQuestion
+                ? "Done"
+                : "Next question"}
           </Button>
         )}
       </div>

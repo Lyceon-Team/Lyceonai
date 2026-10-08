@@ -8,13 +8,13 @@
  *        design/prototype/Lisa.dc.html (plan paid and free); OQ-4 (390px, light and dark)]
  *        | @implemented [2026-10-03]
  *
- * plain English: the group asks for the "lisa-history" seed (seed.ts `seedLisaHistory`): four
+ * plain English: the group asks for the "lisa-history" seed (seed.ts `seedLisaHistory`): five
  * conversations for the paid student created through the real create route, the newest with
- * the prototype's four turns, the oldest ended. No tutor turn ever runs: the typing shot types
- * into the composer, presses Send, and the browser holds `POST /api/tutor/messages` unanswered
- * (`holdRequest`) while the page shows the student's bubble and LISA's typing indicator; the
- * harness server refuses that route anyway. The New session shot creates a conversation through
- * the real route (one per capture), so it runs after the other paid shots. Under 13 is not
+ * the prototype's four turns, one ended, the oldest crisis-flagged. No tutor turn ever runs: the
+ * typing shot types into the composer, presses Send, and the browser holds
+ * `POST /api/tutor/messages` unanswered (`holdRequest`) while the page shows the student's
+ * bubble, LISA's typing indicator and Send's pending state; the harness server refuses that
+ * route anyway. New session creates nothing (QA 2026-10-07 item 9). Under 13 is not
  * captured: both harness personas are 13 or older (the age state is covered by
  * chat.ui56.test.tsx).
  */
@@ -72,7 +72,7 @@ export const UI_56: PageGroup = {
     {
       id: "paid-typing",
       title:
-        "Click path (paid): type a message and press Send; the student's bubble shows at once, then LISA's typing bubble (three dots, still under reduced motion), Send disabled. The request is held in the browser, so no turn runs",
+        "Click path (paid): type a message and press Send; the student's bubble shows at once, then LISA's typing bubble (three dots, still under reduced motion), and Send reads 'Sending…', disabled and busy, from the click (QA 2026-10-07 item 5). The request is held in the browser, so no turn runs",
       persona: "paid",
       route: CONVERSATION,
       waitFor: TUTOR_BUBBLE,
@@ -89,7 +89,7 @@ export const UI_56: PageGroup = {
           },
         },
       ],
-      expectVisible: '[data-testid="lisa-typing"]',
+      expectVisible: 'button[aria-label="Send message"][data-pending="true"]',
       prototype: {
         kind: "screen",
         file: "Lisa.dc.html",
@@ -100,7 +100,7 @@ export const UI_56: PageGroup = {
     {
       id: "paid-new-session",
       title:
-        'Click path (paid): New session creates a conversation (real POST /api/tutor/conversations) and opens its empty column under "New session"; the history gains it',
+        'Click path (paid): New session opens an empty column under "New session" with the short prompt (QA 2026-10-07 items 9 and 15: nothing is created until the first message, so the history does not gain a blank session)',
       persona: "paid",
       route: CONVERSATION,
       waitFor: TUTOR_BUBBLE,
@@ -113,6 +113,7 @@ export const UI_56: PageGroup = {
         },
       ],
       expectGone: '[data-testid="tutor-bubble"]',
+      expectVisible: '[data-testid="lisa-empty-prompt"]',
       prototype: {
         kind: "screen",
         file: "Lisa.dc.html",
@@ -120,6 +121,33 @@ export const UI_56: PageGroup = {
         steps: ['button:has-text("New session")'],
         state: "new-session",
         note: "LISA, plan = paid, New session clicked (the canvas does not clear its column)",
+      },
+    },
+    {
+      id: "paid-pick-session",
+      title:
+        'QA 2026-10-07 item 15 and titles: from the empty column, pick "Slope from standard form" in the history. On a phone (the history under the composer) the conversation and its composer come into view; at 1440 the column shows its last turn and the list keeps the pick in view. The history shows the crisis-flagged session as "Conversation", never its first message',
+      persona: "paid",
+      route: "/chat",
+      waitFor: {
+        desktop: '[data-testid="lisa-empty-prompt"]',
+        mobile: '[data-testid="lisa-empty-prompt"]',
+      },
+      steps: [
+        {
+          click: {
+            desktop:
+              '[data-testid="lisa-history-item"]:has-text("Slope from standard form")',
+            mobile:
+              '[data-testid="lisa-history-item"]:has-text("Slope from standard form")',
+          },
+        },
+      ],
+      expectVisible: '[data-testid="tutor-bubble"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Lisa.dc.html is a fixed 1440x900 canvas with no phone layout and no crisis-flagged history row (QA 2026-10-07 items 15 and 1).",
       },
     },
     {

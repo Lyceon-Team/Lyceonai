@@ -73,6 +73,8 @@ export type FreshSession = {
   engine: "practice" | "review";
   body: Readonly<Record<string, unknown>>;
   mcqFirst?: boolean;
+  /** QA 2026-10-07: the reverse of `mcqFirst`, for a grid-in shot (retries until one leads). */
+  gridInFirst?: true;
 };
 
 export type PrototypePairing =
@@ -150,9 +152,19 @@ export type Shot = {
    * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
    * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`
    * waits). The request never reaches the harness server. Steps then wait a fixed settle time
-   * instead of network idle, which a held request would never reach.
+   * instead of network idle, which a held request would never reach. A `*` in `path` stands for
+   * one path segment (QA item 5: a calendar block's launch, whose block id is unknown ahead).
    */
-  holdRequest?: { method: "POST" | "GET"; path: string };
+  holdRequest?: {
+    method: "POST" | "GET";
+    path: string;
+    /**
+     * QA 2026-10-07: "pattern" reads `path` as a RegExp source over the pathname, for a request
+     * whose name is not known in advance (a route's hashed code chunk, `/assets/mastery-*.js`,
+     * held so the route-level skeleton can be shot). Default "exact".
+     */
+    match?: "exact" | "pattern";
+  };
   /**
    * UI-58: a request the browser answers itself with a fixed body, for a page whose real answer
    * needs a third party the harness never calls (`GET /api/billing/plans` reads prices from
@@ -214,6 +226,9 @@ export type PageGroup = {
    * "bare-pages" (UI-59): three more students (personas.ts BARE_PAGE_PERSONAS: an incomplete
    * profile, an unlinked under-13, a pending deletion through the real SQL writer), the deletion
    * lifecycle flag on and the deletion routes mounted in the harness server.
+   * "notifications" (QA 2026-10-07, UI-41): three unread in-app notifications for the paid
+   * student, emitted through the real SQL fan-out (`public.emit_notification_event` with
+   * `public.notification_event_id`), so the bell's badge and the popover's items are real rows.
    * Off by default, so the other groups' payloads do not change.
    */
   seed?:
@@ -222,7 +237,8 @@ export type PageGroup = {
     | "calendar-goal"
     | "lisa-history"
     | "mastery-skills"
-    | "bare-pages";
+    | "bare-pages"
+    | "notifications";
   /**
    * Where the group's evidence goes, relative to the repo root. Defaults to the student-UI Wave 5
    * evidence directory; the SEO vertical's groups write under docs/plans/seo/evidence/.

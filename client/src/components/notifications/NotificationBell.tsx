@@ -12,6 +12,18 @@
  * the recent items and links to /notifications for history, archive and mark-all-read
  * (owner brief 2026-09-15 Part B1); the fetchers, keys and time formatting are shared with
  * that page through @/lib/notificationsApi so the two surfaces cannot drift.
+ *
+ * TONE. @spec [production QA 2026-10-07 items 12 and 13 (Karl: the popover on the student tokens
+ * and fonts, nothing under 14px, a skeleton not "Loading…", an unread badge on the bell, and dark
+ * mode); item 14 (the rail shows the current section on /notifications); DESIGN.md §1; register
+ * §8 F-70 (an overlay follows the page theme)] | @implemented [2026-10-07]
+ * `tone="student"` (the App shell) portals the popover into its own `.lyc` root carrying the
+ * shell's theme lock, as the avatar menu does since F-70, and draws it, the badge and the
+ * loading skeleton with the student tokens at 14px and up; on a desktop rail it opens beside the
+ * rail. `current` marks the bell as the current section (aria-current="page") on the
+ * notifications page, which has no rail item of its own. The guardian shell keeps the default
+ * `app` tone: its pages use the app-wide tokens. The badge count is still the server's unread
+ * count (`GET /api/notifications/unread-count`), never a client-side guess.
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +35,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { PHONE_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
+import { useActiveThemeLock } from "@/components/layout/theme-lock";
 import {
   NOTIFICATIONS_BELL_PAGE_LIMIT,
   NOTIFICATIONS_FEED_KEY,
@@ -39,10 +53,106 @@ import type { NotificationFeedItem } from "@lyceon/shared/notifications-schema";
 const FEED_KEY = NOTIFICATIONS_FEED_KEY;
 const UNREAD_KEY = NOTIFICATIONS_UNREAD_KEY;
 
-export function NotificationBell() {
+type BellTone = "app" | "student";
+
+type ToneClasses = {
+  readonly badge: string;
+  readonly content: string;
+  readonly header: string;
+  readonly heading: string;
+  readonly muted: string;
+  readonly list: string;
+  readonly item: string;
+  readonly title: string;
+  readonly time: string;
+  readonly body: string;
+  readonly footer: string;
+  readonly link: string;
+  readonly bar: string;
+};
+
+const TONE: Readonly<Record<BellTone, ToneClasses>> = {
+  app: {
+    badge:
+      "absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-primary text-primary-foreground text-[0.65rem] leading-[1.1rem] text-center",
+    content: "w-80 p-0",
+    header: "px-4 py-3 border-b",
+    heading: "font-semibold text-sm",
+    muted: "p-4 text-sm text-muted-foreground",
+    list: "divide-y",
+    item: "w-full text-left px-4 py-3 hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    title: "text-sm font-medium",
+    time: "text-xs text-muted-foreground whitespace-nowrap",
+    body: "mt-1 text-xs text-muted-foreground",
+    footer: "border-t px-4 py-2",
+    link: "text-sm font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm",
+    bar: "rounded bg-muted",
+  },
+  // DESIGN.md §1: the student tokens only, the student fonts, nothing below 14px. The badge sits
+  // on the rail (or the phone top bar), which is --rail in both themes, so it takes the rail's
+  // "on" pair, the same contrast as the current rail item.
+  student: {
+    badge:
+      "absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-lyc-rail-on-bg px-1 font-lyc-sans text-lyc-meta font-semibold leading-none text-lyc-rail-on-ink",
+    content:
+      "w-[340px] max-w-[calc(100vw-32px)] border-lyc-rule bg-lyc-sheet p-0 font-lyc-sans text-lyc-ink",
+    header: "border-b border-lyc-rule px-4 py-3",
+    heading:
+      "m-0 font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong",
+    muted: "m-0 p-4 text-lyc-body text-lyc-muted",
+    list: "divide-y divide-lyc-rule",
+    item: "w-full px-4 py-3 text-left hover:bg-lyc-hover focus-visible:bg-lyc-hover focus-visible:outline-none",
+    title: "text-lyc-body font-semibold text-lyc-ink-strong",
+    time: "whitespace-nowrap text-lyc-meta text-lyc-muted",
+    body: "m-0 mt-1 text-lyc-meta text-lyc-muted",
+    footer: "border-t border-lyc-rule px-4 py-3",
+    link: "rounded-sm text-lyc-meta-lg font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline",
+    bar: "rounded-md bg-lyc-seg-empty",
+  },
+};
+
+/** QA 13: the feed's loading state, three item-shaped placeholders (no motion, DESIGN.md §1). */
+function FeedSkeleton({ t }: { t: ToneClasses }): JSX.Element {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Loading notifications"
+      aria-busy="true"
+      data-testid="notifications-loading"
+    >
+      <ul aria-hidden="true" className={`m-0 list-none p-0 ${t.list}`}>
+        {[0, 1, 2].map((i) => (
+          <li key={i} className="flex flex-col gap-2 px-4 py-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className={`${t.bar} h-4 w-3/5`} />
+              <div className={`${t.bar} h-3.5 w-12`} />
+            </div>
+            <div className={`${t.bar} h-3.5 w-4/5`} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function NotificationBell({
+  tone = "app",
+  current = false,
+}: {
+  /** QA 12/13: `student` draws the popover in the student tokens, inside the page's theme. */
+  tone?: BellTone;
+  /** QA 14: the notifications page is open, so the bell is the current section. */
+  current?: boolean;
+} = {}) {
   const [open, setOpen] = useState(false);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  // F-65 / F-70: the portal takes the lock of the shell on screen (layout/theme-lock.tsx).
+  const themeLock = useActiveThemeLock();
+  // On the desktop rail the bell sits low in a 96px column: open beside it, not over it.
+  const phoneLayout = useMediaQuery(PHONE_LAYOUT_QUERY, false);
+  const t = TONE[tone];
 
   const unreadQuery = useQuery({
     queryKey: UNREAD_KEY,
@@ -99,6 +209,7 @@ export function NotificationBell() {
   };
 
   const items = feedQuery.data?.items ?? [];
+  const student = tone === "student";
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -110,12 +221,14 @@ export function NotificationBell() {
           aria-label={
             unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
           }
+          aria-current={current ? "page" : undefined}
           data-testid="button-notifications"
         >
           <Bell className="h-5 w-5" />
           {unread > 0 && (
             <span
-              className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-primary text-primary-foreground text-[0.65rem] leading-[1.1rem] text-center"
+              aria-hidden="true"
+              className={t.badge}
               data-testid="notification-badge"
             >
               {unread > 9 ? "9+" : unread}
@@ -125,73 +238,72 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-80 p-0"
+        className={t.content}
         data-testid="notification-feed"
+        {...(student
+          ? {
+              portalClassName: "lyc contents",
+              portalThemeLock: themeLock,
+              side: phoneLayout ? "bottom" : "right",
+            }
+          : {})}
       >
-        <div className="px-4 py-3 border-b">
-          <h3 className="font-semibold text-sm">Notifications</h3>
+        <div className={t.header}>
+          <h3 className={t.heading}>Notifications</h3>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {feedQuery.isLoading ? (
-            <p
-              className="p-4 text-sm text-muted-foreground"
-              data-testid="notifications-loading"
-            >
-              Loading…
-            </p>
+            <FeedSkeleton t={t} />
           ) : feedQuery.isError ? (
             <div className="p-4 space-y-2" data-testid="notifications-error">
-              <p className="text-sm text-muted-foreground">
+              <p
+                className={
+                  student
+                    ? "m-0 text-lyc-body text-lyc-muted"
+                    : "text-sm text-muted-foreground"
+                }
+              >
                 Could not load notifications.
               </p>
               <Button
                 size="sm"
-                variant="outline"
+                variant={student ? "lyc-outline" : "outline"}
                 onClick={() => void feedQuery.refetch()}
               >
                 Try again
               </Button>
             </div>
           ) : items.length === 0 ? (
-            <p
-              className="p-4 text-sm text-muted-foreground"
-              data-testid="notifications-empty"
-            >
+            <p className={t.muted} data-testid="notifications-empty">
               You're all caught up.
             </p>
           ) : (
-            <ul className="divide-y">
+            <ul className={student ? `m-0 list-none p-0 ${t.list}` : t.list}>
               {items.map((item) => (
                 <li key={item.messageId}>
                   <button
                     type="button"
                     onClick={() => handleItemClick(item)}
-                    className={`w-full text-left px-4 py-3 hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                      item.readAt ? "opacity-80" : ""
-                    }`}
+                    className={`${t.item} ${item.readAt ? "opacity-80" : ""}`}
                     data-testid={`notification-item-${item.messageId}`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-medium">{item.title}</span>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      <span className={t.title}>{item.title}</span>
+                      <span className={t.time}>
                         {relativeTime(item.createdAt)}
                       </span>
                     </div>
-                    {item.body && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {item.body}
-                      </p>
-                    )}
+                    {item.body && <p className={t.body}>{item.body}</p>}
                   </button>
                 </li>
               ))}
             </ul>
           )}
         </div>
-        <div className="border-t px-4 py-2">
+        <div className={t.footer}>
           <Link
             href="/notifications"
-            className="text-sm font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+            className={t.link}
             onClick={() => setOpen(false)}
             data-testid="link-notifications-see-all"
           >

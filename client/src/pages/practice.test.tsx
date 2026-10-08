@@ -80,6 +80,8 @@ const net = vi.hoisted(() => ({
   handlers: [] as Array<
     (url: string, init: RequestInit | undefined) => Response | undefined
   >,
+  /** QA item 5: requests matching `pattern` wait for `gate` (a slow server). */
+  hold: null as null | { pattern: RegExp; gate: Promise<void> },
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -92,6 +94,7 @@ function json(body: unknown, status = 200): Response {
 vi.mock("@/lib/csrf", () => ({
   csrfFetch: async (url: string, init?: RequestInit): Promise<Response> => {
     net.log.push(`${init?.method ?? "GET"} ${url}`);
+    if (net.hold !== null && net.hold.pattern.test(url)) await net.hold.gate;
     if (typeof init?.body === "string") {
       net.bodies.push({ url, body: JSON.parse(init.body) as unknown });
     }
@@ -474,6 +477,7 @@ beforeEach(() => {
   net.log.length = 0;
   net.bodies.length = 0;
   net.handlers = [];
+  net.hold = null;
   auth.user = {
     id: STUDENT,
     email: "sam@example.test",
@@ -755,6 +759,7 @@ describe("Recent practice (OQ-23: /api/review/pool)", () => {
     const rows = await screen.findAllByTestId("practice-recent-row");
     expect(gets()).toContain("/api/review/pool");
     expect(rows).toHaveLength(1);
+    // OQ-66 (g): "Fri, Sep 25, 12:49 PM", the ruling's own example.
     expect(rows[0]?.textContent).toContain("Fri, Sep 25, 12:49 PM");
     // The row's criteria are not read here (UI-51 choice): the line is the row's own kind.
     expect(rows[0]?.textContent).toContain("Practice");
@@ -829,5 +834,38 @@ describe("no bank counts, no percentages, no Domain Library", () => {
     expect(text).not.toContain("327");
     expect(text.match(/\d+\s+questions?/gi)).toEqual(["10 questions"]);
     expect(text).not.toMatch(/Domain Library|Topic Explorer/);
+  });
+});
+
+// ── Owner QA list (Karl, 2026-10-07) item 5 ───────────────────────────────────────────────────
+
+describe("QA item 5: Practice's Start shows a pending state from the first click", () => {
+  it("'Starting…', disabled and busy while the create is in flight; one create", async () => {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern: /^\/api\/practice\/sessions$/,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const { history } = await mount("free", { quota: 12 });
+    const start = (await screen.findByTestId(
+      "practice-start",
+    )) as HTMLButtonElement;
+    await waitFor(() => expect(start.disabled).toBe(false));
+    expect(start.textContent).toBe("Start 10 questions");
+    fireEvent.click(start);
+    expect(start.textContent).toBe("Starting…");
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-busy")).toBe("true");
+    expect(within(start).getByTestId("button-pending-spinner")).toBeTruthy();
+    fireEvent.click(start);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() =>
+      expect(history.at(-1)).toBe(`/practice/session/${NEW_SESSION}`),
+    );
+    expect(startBodies()).toHaveLength(1);
   });
 });

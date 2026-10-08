@@ -19,8 +19,9 @@
  * at once. The check runs BEFORE the start's request, so a start that is cancelled at the notice
  * sends nothing and creates no session.
  *
- * NEVER BLOCKS. The notice is one tap. Closing it (the Modal's Close button, Esc, a tap on the
- * scrim) only cancels this start: the student stays where they were, and the same control asks
+ * NEVER BLOCKS. The notice is one tap. Closing it (the Modal's Close button, the quiet "Not now"
+ * beside Continue anyway — owner QA list, Karl, 2026-10-07, item 15 — Esc, a tap on the scrim)
+ * only cancels this start: the student stays where they were, and the same control asks
  * again. The exam's own pages (session hub, module, report) never use this check: a sitting that
  * has started is never interrupted by it.
  *
@@ -35,11 +36,12 @@
  */
 import { useCallback, useRef, useState, type MouseEvent } from "react";
 import { useLocation } from "wouter";
-import { Modal } from "@/components/student-ui";
+import { Modal, ModalClose } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { PHONE_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
 import {
   PHONE_NOTICE_CONTINUE,
+  PHONE_NOTICE_NOT_NOW,
   PHONE_NOTICE_TEXT,
   readPhoneNoticeContinued,
   rememberPhoneNoticeContinued,
@@ -112,15 +114,28 @@ export function useFullLengthPhonePrecheck(): FullLengthPhonePrecheck {
       title={PHONE_NOTICE_TEXT}
       data-testid="full-length-phone-notice"
       footer={
-        <Button
-          type="button"
-          variant="lyc-outline"
-          size="lyc"
-          onClick={continueAnyway}
-          data-testid="full-length-phone-continue"
-        >
-          {PHONE_NOTICE_CONTINUE}
-        </Button>
+        <>
+          <Button
+            type="button"
+            variant="lyc-outline"
+            size="lyc"
+            onClick={continueAnyway}
+            data-testid="full-length-phone-continue"
+          >
+            {PHONE_NOTICE_CONTINUE}
+          </Button>
+          {/* QA item 15 (2026-10-07): "Not now" closes the notice as Close does. */}
+          <ModalClose asChild>
+            <Button
+              type="button"
+              variant="lyc-quiet"
+              size="lyc"
+              data-testid="full-length-phone-not-now"
+            >
+              {PHONE_NOTICE_NOT_NOW}
+            </Button>
+          </ModalClose>
+        </>
       }
     />
   );

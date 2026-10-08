@@ -45,6 +45,7 @@ import {
   type RenewalDecision,
   type RenewalPromptView,
 } from "../../../packages/shared/src/exam-score-renewal-schema";
+import { formatDate } from "@/lib/format-date";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,13 +54,14 @@ const SURFACE_KEY = ["/api/score-report"] as const;
 
 type SurfaceResponse = { data: RenewalPromptView };
 
-function formatDate(localDate: string): string {
-  // A plain calendar date, rendered without a Date parse: `new Date("2026-09-12")` is midnight
-  // UTC, which is the day before in every western-hemisphere zone — and this string is already
-  // the student's own local date.
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
-  if (match === null) return localDate;
-  return `${Number(match[3])}/${Number(match[2])}/${match[1]}`;
+/**
+ * OQ-66 (g) (Karl, 2026-10-07: US dates through the shared formatter) | @implemented
+ * [2026-10-07]: "September 12, 2026", where this page printed its own day-first "12/9/2026".
+ * The occasion is the student's own local `YYYY-MM-DD`, which the shared formatter treats as a
+ * calendar day and never shifts by the viewer's zone.
+ */
+function occasionDate(localDate: string): string {
+  return formatDate(localDate, "month-day-year") ?? localDate;
 }
 
 export default function ScoreReportPage(): JSX.Element {
@@ -157,8 +159,8 @@ export default function ScoreReportPage(): JSX.Element {
       <header>
         <h1 className="text-xl font-semibold">
           {prompt.anchor === "exam_date"
-            ? `Your SAT on ${formatDate(prompt.occasion_key)}`
-            : `Your subscription renews on ${formatDate(prompt.occasion_key)}`}
+            ? `Your SAT on ${occasionDate(prompt.occasion_key)}`
+            : `Your subscription renews on ${occasionDate(prompt.occasion_key)}`}
         </h1>
         <p className="mt-2 text-muted-foreground">
           {prompt.anchor === "exam_date"

@@ -78,7 +78,11 @@ export function NumericEntryInput({
         value={value}
         onChange={handleChange}
         disabled={disabled || showResult}
-        className={`h-12 max-w-xs border-lyc-input-bd bg-lyc-sheet text-[19px] text-lyc-ink placeholder:text-lyc-muted ${inputBorder}`}
+        // QA 2026-10-07 item 12: once submitted the field is disabled, and the shared Input faded a
+        // disabled field to half opacity and dropped it to 14px from md up, so the student's own
+        // submitted answer was the faintest text on a dark page. It stays at full ink and 19px;
+        // the cursor says it no longer takes input.
+        className={`h-12 max-w-xs border-lyc-input-bd bg-lyc-sheet text-[19px] text-lyc-ink placeholder:text-lyc-muted disabled:cursor-default disabled:opacity-100 md:text-[19px] ${inputBorder}`}
       />
       {showFormatHint && !showResult && (
         <p className="text-lyc-meta text-lyc-danger">
