@@ -182,6 +182,42 @@ export function useReviewPool(): {
 export type ReviewOpenSession = ReviewOpenSessionsResponse["sessions"][number];
 
 /**
+ * QA2-A (owner re-test, Karl, 2026-10-08) | @implemented [2026-10-08]: the one client path to a
+ * review session's runner, `/review/session/:id` (App.tsx), the page that resumes it. The server's
+ * calendar adapter has its own `resumeHref` for the same route (adapters/review.ts); the client
+ * had none, so every caller wrote the template. Create, Continue and resume all use this.
+ */
+export function reviewSessionHref(sessionId: string): string {
+  return `/review/session/${encodeURIComponent(sessionId)}`;
+}
+
+/**
+ * QA2-A: where a student goes to end a review session from another page: Review, with its open
+ * sessions (each with End) scrolled into view and focused. `ReviewPage` reads the query.
+ */
+export const REVIEW_OPEN_SESSIONS_FOCUS = "open-sessions";
+export const REVIEW_OPEN_SESSIONS_HREF = `/review?focus=${REVIEW_OPEN_SESSIONS_FOCUS}`;
+
+/**
+ * QA2-A: the most recently started open review session, or null when none is known. Chosen by
+ * `created_at` here rather than by the server's list order, so a reordered list cannot make
+ * "Continue your open session" open an older one.
+ */
+export function latestOpenReviewSession(
+  sessions: readonly ReviewOpenSession[],
+): ReviewOpenSession | null {
+  let latest: ReviewOpenSession | null = null;
+  for (const s of sessions) {
+    if (
+      latest === null ||
+      Date.parse(s.created_at) > Date.parse(latest.created_at)
+    )
+      latest = s;
+  }
+  return latest;
+}
+
+/**
  * Ruling 17, enforced on the wire payload before it is parsed: a session that is not
  * `created` or `active` is removed, not rendered and not thrown over. Everything else
  * passes through untouched so the schema still judges it.
@@ -333,7 +369,11 @@ export function useCreateReviewSession(): {
           },
         };
       }
-      if (res.status === 403 && parsed.code === "SESSION_LIMIT_EXCEEDED") {
+      // QA2-A (owner re-test, 2026-10-08): the concurrent-session cap is recognised by its CODE,
+      // never its status. Production answers 403 today (review-canonical.ts
+      // `startOrReplayReviewSession`); the review vertical is moving it to 409, and the cap UI
+      // must not go dark on the day it does.
+      if (!res.ok && parsed.code === "SESSION_LIMIT_EXCEEDED") {
         return {
           ok: false,
           failure: {
@@ -367,8 +407,17 @@ export function useCreateReviewSession(): {
       return { ok: true, sessionId };
     },
     onSuccess: (result) => {
-      if (!result.ok) return;
-      invalidateSessionReads(queryClient);
+      if (result.ok) {
+        invalidateSessionReads(queryClient);
+        return;
+      }
+      // QA2-A: a cap refusal means the open list the page holds may be short of the server's
+      // (a session opened elsewhere: another tab, a calendar launch). Ask again, so "Continue
+      // your open session" and Review's End rows name the sessions the server counted.
+      if (result.failure.kind === "session_limit")
+        void queryClient.invalidateQueries({
+          queryKey: [REVIEW_OPEN_SESSIONS_QUERY_KEY],
+        });
     },
   });
 

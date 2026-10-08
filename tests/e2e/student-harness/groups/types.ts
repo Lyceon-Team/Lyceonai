@@ -146,8 +146,38 @@ export type Shot = {
   extraViewports?: readonly ExtraViewport[];
   /** UI-56: a selector the page must show after `steps` (the capture fails otherwise). */
   expectVisible?: string;
+  /**
+   * QA2-D (2026-10-08): a selector whose top edge must be inside the viewport after `steps`, not
+   * merely rendered somewhere down the page (the phone LISA panel brought into view by a tap).
+   * The capture fails otherwise, naming where the top edge was.
+   */
+  expectInView?: string;
+  /**
+   * QA2-F (2026-10-08, Karl: "Full-Length cards: no layout shift on load"): the page's layout
+   * shift during load, summed from a `PerformanceObserver` of `layout-shift` entries (those
+   * without recent input) installed before the first byte, read after the page settles. The
+   * capture records the sum and its largest shifts in the index and fails the run (after writing
+   * the index) when the sum exceeds `max`. `apiDelayMs` answers every `/api/` request that much
+   * later, as a real network does, so the loading state is painted before the data lands (the
+   * harness answers in a few ms, which hides a shift a student sees).
+   */
+  layoutShift?: { max: number; apiDelayMs?: number };
   /** UI-56: a selector the page must NOT show after `steps` (e.g. no bubbles in a new column). */
   expectGone?: string;
+  /**
+   * QA2-A (owner re-test, 2026-10-08): a selector that must, after `steps`, lie wholly inside the
+   * viewport (its bounding box between the top and bottom of the window): the review cap's message
+   * shown at the clicked button, never below the fold. The capture fails otherwise, naming the box.
+   */
+  expectInViewport?: string;
+  /**
+   * QA2-A (owner re-test, 2026-10-08): the persona is at the concurrent review-session cap before
+   * every capture. capture.ts opens review sessions through the REAL create route
+   * (`POST /api/review/sessions`, queue mode) until the server itself refuses one with
+   * `SESSION_LIMIT_EXCEEDED`, and ends the ones it opened through the real terminate route after
+   * the screenshot. The refusal the page then meets is the server's own, not a stub.
+   */
+  reviewCap?: true;
   /**
    * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
    * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`

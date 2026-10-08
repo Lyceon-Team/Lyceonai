@@ -184,7 +184,10 @@ export function ReconsentModal({
                   >
                     {doc.title}
                   </a>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  {/* UI-62 (14px floor) | @implemented [2026-10-08]: was text-xs; size only,
+                      no copy change. The in-app re-consent prompt over signed-in pages, not
+                      a public legal page. */}
+                  <p className="mt-1 text-[14px] text-muted-foreground">
                     Version {doc.version} · Effective{" "}
                     {formatEffectiveDate(doc.effectiveDate)}
                     {doc.acceptedVersion

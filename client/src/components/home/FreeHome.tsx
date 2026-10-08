@@ -46,6 +46,7 @@ import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { usePracticeQuota } from "@/hooks/usePracticeQuota";
 import { FullLengthCard } from "./FullLengthCard";
+import { HomeLoading } from "./HomeLoading";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
 import { answeredLine, freeHomeStage } from "./home-model";
 
@@ -112,6 +113,12 @@ export function FreeHome({
   };
 
   const failed = projection.isError || practice.isError || quota.isError;
+  // QA2-F (Karl, 2026-10-08: "Full-Length cards: no layout shift on load"): the stage (the
+  // diagnostic card above "How Lyceon works") and the panel come from these reads, so the page
+  // is drawn once they have answered or failed (HomeLoading.tsx).
+  const settled =
+    !projection.isLoading && !practice.isLoading && !quota.isLoading;
+  if (!settled) return <HomeLoading />;
 
   return (
     <div className="flex flex-col gap-12" data-testid="home" data-plan="free">

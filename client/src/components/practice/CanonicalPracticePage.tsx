@@ -162,6 +162,28 @@ function useMinWidth(px: number): boolean {
   return matches;
 }
 
+/**
+ * QA2-D (2026-10-08): enough of the panel's top that its header (the question chip and Hide
+ * LISA, ~48px) can be read.
+ */
+const TUTOR_HEADER_VISIBLE_PX = 48;
+
+/**
+ * QA2-D: is the LISA panel's top (its header) inside the runner's scroll area? The panel's
+ * column (`practice-tutor-aside`) starts where the panel does. A missing element reads as not
+ * in view, so a tap reveals rather than closes. 1px of slack for the sub-pixel position
+ * `scrollIntoView` leaves.
+ */
+function panelTopInView(
+  panel: HTMLElement | null,
+  scroller: HTMLElement | null,
+): boolean {
+  if (panel === null || scroller === null) return false;
+  const top = panel.getBoundingClientRect().top;
+  const area = scroller.getBoundingClientRect();
+  return top >= area.top - 1 && top <= area.bottom - TUTOR_HEADER_VISIBLE_PX;
+}
+
 function useSplitEnabled(): boolean {
   return useMinWidth(SPLIT_BREAKPOINT);
 }
@@ -247,8 +269,9 @@ export default function CanonicalPracticePage(props: {
 
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
   const [isReferenceOpen, setIsReferenceOpen] = React.useState(false);
-  // W4-4: LISA is open on every question; "Hide LISA" hides it for the
-  // current one only. Derived per item, so it returns on the next.
+  // W4-4: side by side (from 1024) LISA is open on every question; "Hide LISA" hides it for
+  // the current one only. Derived per item, so it returns on the next. On the phone layout it
+  // starts closed instead (QA2-D, `tutorShownForItem` below).
   const [tutorHiddenForItem, setTutorHiddenForItem] = React.useState<
     string | null
   >(null);
@@ -258,6 +281,23 @@ export default function CanonicalPracticePage(props: {
   const [tutorOpenedForItem, setTutorOpenedForItem] = React.useState<
     string | null
   >(null);
+  /**
+   * @spec [production QA 2026-10-08 item D (Karl: "Phone: the LISA panel defaults closed;
+   *       tapping the icon always brings it into view."); W4-4 (LISA open on every question)
+   *       kept where LISA sits beside the question] | @implemented [2026-10-08]
+   * plain English: on the phone layout (below TUTOR_SIDE_BY_SIDE_BREAKPOINT, where LISA stacks
+   * under the question) LISA starts closed on every question, and is open only for the item the
+   * student opened it on. Side by side (from 1024) nothing changes: open on every question,
+   * hidden for the current one by the toggle (`tutorHiddenForItem`). `tutorRevealKey` is bumped
+   * when the icon is tapped while LISA is open but scrolled out of view: the panel reveals itself
+   * again instead of closing (see the toggle below).
+   */
+  const [tutorShownForItem, setTutorShownForItem] = React.useState<
+    string | null
+  >(null);
+  const [tutorRevealKey, setTutorRevealKey] = React.useState(0);
+  const runnerScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const tutorAsideRef = React.useRef<HTMLDivElement | null>(null);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
     unknown | null
   >(null);
@@ -404,7 +444,11 @@ export default function CanonicalPracticePage(props: {
   // LISA and no entry point: `features.tutor` is off there.
   const canAskTutor = engine.features.tutor && !!sessionItemId && !!question;
   const tutorVisible =
-    canAskTutor && !!sessionItemId && tutorHiddenForItem !== sessionItemId;
+    canAskTutor &&
+    !!sessionItemId &&
+    (tutorSideBySide
+      ? tutorHiddenForItem !== sessionItemId
+      : tutorShownForItem === sessionItemId);
   const position =
     typeof totalQuestions === "number"
       ? questionPosition(currentIndex, totalQuestions)
@@ -415,8 +459,12 @@ export default function CanonicalPracticePage(props: {
         sourceSurface={engine.domain === "review" ? "review" : "practice"}
         sessionItemId={sessionItemId}
         questionLabel={position ?? `Question ${currentIndex + 1}`}
-        onHide={() => setTutorHiddenForItem(sessionItemId)}
+        onHide={() => {
+          setTutorHiddenForItem(sessionItemId);
+          setTutorShownForItem(null);
+        }}
         revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}
+        revealKey={tutorRevealKey}
       />
     ) : null;
 
@@ -497,9 +545,24 @@ export default function CanonicalPracticePage(props: {
             type="button"
             className={BAR_BUTTON}
             onClick={() => {
-              setTutorHiddenForItem(tutorVisible ? sessionItemId : null);
-              // Read only while LISA is visible, so a hide may set it too.
-              setTutorOpenedForItem(sessionItemId);
+              if (tutorSideBySide) {
+                // Side by side: a plain toggle, as before.
+                setTutorHiddenForItem(tutorVisible ? sessionItemId : null);
+                return;
+              }
+              // QA2-D, phone layout: the icon always brings LISA into view. Closed: open it,
+              // revealed. Open but scrolled away: reveal it again (never close what the student
+              // cannot see). Open and in view: close it.
+              if (!tutorVisible) {
+                setTutorShownForItem(sessionItemId);
+                setTutorOpenedForItem(sessionItemId);
+              } else if (
+                !panelTopInView(tutorAsideRef.current, runnerScrollRef.current)
+              ) {
+                setTutorRevealKey((k) => k + 1);
+              } else {
+                setTutorShownForItem(null);
+              }
             }}
             aria-expanded={tutorVisible}
             data-testid="practice-tutor-toggle"
@@ -824,6 +887,7 @@ export default function CanonicalPracticePage(props: {
       >
         {/* LISA is never unmounted by the calculator: covered, not closed. */}
         <div
+          ref={tutorAsideRef}
           className={calcOverTutor ? "invisible h-full" : "h-full"}
           aria-hidden={calcOverTutor || undefined}
           data-testid="practice-tutor-aside"
@@ -854,7 +918,11 @@ export default function CanonicalPracticePage(props: {
       data-testid="canonical-practice-runner"
     >
       {bar}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={runnerScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto"
+        data-testid="runner-scroll"
+      >
         {tutorVisible ? reviewTutorLayout : standardLayout}
       </div>
       {footer}

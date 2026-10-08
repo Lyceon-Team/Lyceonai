@@ -136,6 +136,7 @@ export function FocusShell({
       </header>
       <main
         id="main"
+        data-route-scroll=""
         data-testid="focus-shell-main"
         className="relative min-h-0 flex-1 overflow-y-auto"
       >

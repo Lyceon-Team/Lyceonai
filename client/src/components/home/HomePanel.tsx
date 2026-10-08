@@ -11,6 +11,7 @@
  * the server's values. Every heading is a panel heading (h2, 20px serif) as in the prototype.
  * The page renders these inside `AppShellPanel`, so on a phone they stack under the main column.
  */
+import { Fragment, type ReactNode } from "react";
 import { Link } from "wouter";
 import type { CalendarDay } from "@lyceon/shared/calendar";
 import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
@@ -22,11 +23,12 @@ import { ABSENT_COPY } from "@/features/calendar/components/Chrome";
 import { dayOfMonth, shortWeekday } from "@/features/calendar/lib/dates";
 import type { ProjectedRange } from "@/features/calendar/lib/projection";
 import { STARTING_LABEL } from "@/lib/pending-copy";
-import { dayHeaderLabel, sourceEngineLabel } from "@/lib/review-session-picker";
+import { dayHeaderLabel } from "@/lib/review-session-picker";
 import { cn } from "@/lib/utils";
 import {
   quotaLine,
   rangeText,
+  recentSessionTitle,
   toReviewLine,
   weekSummary,
   type FreeHomeStage,
@@ -151,13 +153,18 @@ const REVIEW_SESSION_LABEL = "Review this session";
 
 /**
  * "Recent sessions" (OQ-23: the `/api/review/pool` rows, which are the student's sessions that
- * still have questions to review): kind, when, and "N to review". The raw `filters` the row
- * carries are never read here (F-52).
+ * still have questions to review): the session's name, when, and "N to review".
+ *
+ * UI-66 (OQ-53 (e), owner ruling Karl 2026-10-05) | @implemented [2026-10-08]: the name is the
+ * canonical criteria title (`recentSessionTitle` → `sessionTitle`, "Algebra", "Review session",
+ * "Full-Length Test 1"), as the open-session rows print it, where it used to be the engine label
+ * ("Practice"). The row's `filters` is read only through that helper: since F-52 the server sends
+ * the strict four-array criteria (or a full-length row's form name), never the stored object.
  *
  * OQ-66 (h) (Karl, 2026-10-07): the row's action is explicit — a visible "Review this session"
  * text link (outline style, like the panel's other links; Home keeps its one filled primary),
  * where the whole row used to be an unlabelled button. Its accessible name carries the row
- * ("Review this session: Practice, Today, 10:37 AM") so five rows never share one name; the
+ * ("Review this session: Algebra, Today, 10:37 AM") so five rows never share one name; the
  * visible words lead that name (label in name). Pressing it starts the same review as before,
  * and the pressed one reads "Starting…" while the others wait.
  */
@@ -167,6 +174,8 @@ export function RecentSessionsSection({
   onReview,
   startingId,
   failure,
+  capFor,
+  cap,
 }: {
   sessions: readonly ReviewPoolSourceSession[];
   todayKey: string;
@@ -180,6 +189,13 @@ export function RecentSessionsSection({
   startingId: string | null;
   /** Why the last start failed, in the student's words, or null. */
   failure: string | null;
+  /**
+   * QA2-A (owner re-test, Karl, 2026-10-08) | @implemented [2026-10-08]: the row whose start the
+   * review cap refused (`recentRowKey`), drawn directly under that row; null when none.
+   */
+  capFor: string | null;
+  /** The cap's refusal (`ReviewCapNotice`), shown under the `capFor` row. */
+  cap: ReactNode;
 }): JSX.Element {
   return (
     <section
@@ -198,45 +214,51 @@ export function RecentSessionsSection({
                 ? dayHeaderLabel(s.local_date, todayKey)
                 : `${dayHeaderLabel(s.local_date, todayKey)}, ${s.local_time}`;
             const starting = startingId === s.source_session_id;
-            const kind = sourceEngineLabel(s.source_engine);
+            const title = recentSessionTitle(s);
             return (
-              <li
-                key={`${s.source_engine}:${s.source_session_id}`}
-                className="flex items-center justify-between gap-3 border-b border-lyc-rule-soft px-1 py-[9px]"
-                data-testid="home-recent-row"
-              >
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-base font-semibold text-lyc-ink">
-                    {kind}
-                  </span>
-                  <span className="text-lyc-meta text-lyc-muted">
-                    {/* Two unbreakable halves: a narrow panel wraps between them, never
-                        inside "2 to review". */}
-                    <span className="whitespace-nowrap">{when} ·</span>{" "}
-                    <span className="whitespace-nowrap">
-                      {toReviewLine(s.open_count)}
+              <Fragment key={recentRowKey(s)}>
+                <li
+                  className="flex items-center justify-between gap-3 border-b border-lyc-rule-soft px-1 py-[9px]"
+                  data-testid="home-recent-row"
+                >
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-base font-semibold text-lyc-ink">
+                      {title}
+                    </span>
+                    <span className="text-lyc-meta text-lyc-muted">
+                      {/* Two unbreakable halves: a narrow panel wraps between them, never
+                          inside "2 to review". */}
+                      <span className="whitespace-nowrap">{when} ·</span>{" "}
+                      <span className="whitespace-nowrap">
+                        {toReviewLine(s.open_count)}
+                      </span>
                     </span>
                   </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onReview(s)}
-                  disabled={startingId !== null}
-                  aria-busy={starting ? true : undefined}
-                  aria-label={
-                    starting
-                      ? undefined
-                      : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`
-                  }
-                  className={cn(
-                    LYC_FOCUS,
-                    "shrink-0 whitespace-nowrap rounded-sm bg-transparent p-0 text-base font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline disabled:cursor-default disabled:no-underline",
-                  )}
-                  data-testid="home-recent-review"
-                >
-                  {starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}
-                </button>
-              </li>
+                  <button
+                    type="button"
+                    onClick={() => onReview(s)}
+                    disabled={startingId !== null}
+                    aria-busy={starting ? true : undefined}
+                    aria-label={
+                      starting
+                        ? undefined
+                        : `${REVIEW_SESSION_LABEL}: ${title}, ${when}`
+                    }
+                    className={cn(
+                      LYC_FOCUS,
+                      "shrink-0 whitespace-nowrap rounded-sm bg-transparent p-0 text-base font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline disabled:cursor-default disabled:no-underline",
+                    )}
+                    data-testid="home-recent-review"
+                  >
+                    {starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}
+                  </button>
+                </li>
+                {capFor === recentRowKey(s) ? (
+                  <li className="px-1 py-2" data-testid="home-recent-cap">
+                    {cap}
+                  </li>
+                ) : null}
+              </Fragment>
             );
           })}
         </ul>
@@ -251,6 +273,11 @@ export function RecentSessionsSection({
       </Link>
     </section>
   );
+}
+
+/** QA2-A: one recent-session row's identity (its source engine and session). */
+export function recentRowKey(row: ReviewPoolSourceSession): string {
+  return `${row.source_engine}:${row.source_session_id}`;
 }
 
 /**
