@@ -369,10 +369,12 @@ const POOL = reviewPoolSummaryResponseSchema.parse({
       local_date: "2026-09-30",
       local_time: "2:40 PM",
       mode: "custom",
+      // As review-pool.ts sends it since F-52: the four criteria arrays only. UI-66 prints the
+      // narrowest (the skill) as the row's name.
       filters: {
-        sections: [],
-        domains: ["Raw Filter Domain"],
-        skills: [],
+        sections: ["M"],
+        domains: ["Algebra"],
+        skills: ["Linear functions"],
         difficulties: [],
       },
       open_count: 4,
@@ -763,9 +765,11 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     // explicit action.
     const sat26 = formatDate("2026-09-26", "short-weekday-month-day") ?? "";
     expect(sat26).toBe("Sat, Sep 26");
+    // UI-66 (OQ-53 (e)): each row is named by its criteria, as the open rows are; the review
+    // row carries none (`filters: null`) and falls back to "Review session".
     expect(recent.map((r) => r.textContent)).toEqual([
-      "PracticeYesterday, 2:40 PM · 4 to reviewReview this session",
-      `Review${sat26}, 2:12 AM · 1 to reviewReview this session`,
+      "Linear functionsYesterday, 2:40 PM · 4 to reviewReview this session",
+      `Review session${sat26}, 2:12 AM · 1 to reviewReview this session`,
     ]);
 
     // The slim legal footer is on (the shell's prop).
@@ -980,9 +984,6 @@ describe("Home shows no raw accuracy, bank count or confidence (register §2; F-
     // Presence: the payloads carry what must not be shown.
     expect(PROJECTION_ROUTE.estimate?.confidenceBand).toBe("Medium");
     expect(FORMS.forms[0]?.question_count).toBe(98);
-    expect(JSON.stringify(POOL.sessions[0]?.filters)).toContain(
-      "Raw Filter Domain",
-    );
 
     const text = document.body.textContent ?? "";
     expect(text).not.toContain("%");
@@ -991,7 +992,6 @@ describe("Home shows no raw accuracy, bank count or confidence (register §2; F-
     expect(text).not.toMatch(/confidence/i);
     expect(text).not.toMatch(/\bMedium\b/);
     expect(text).not.toContain("98");
-    expect(text).not.toContain("Raw Filter Domain");
     // The range is the sections' sum, not /api/progress/projection's estimate.
     expect(text).toContain("1140–1300");
     expect(text).not.toContain("1130");
@@ -1456,8 +1456,8 @@ describe("QA item 14: Home's mastery rows and recent sessions go somewhere", () 
       name: /^Review this session: /,
     });
     expect(actions.map((b) => b.getAttribute("aria-label"))).toEqual([
-      "Review this session: Practice, Yesterday, 2:40 PM",
-      `Review this session: Review, ${sat26}, 2:12 AM`,
+      "Review this session: Linear functions, Yesterday, 2:40 PM",
+      `Review this session: Review session, ${sat26}, 2:12 AM`,
     ]);
     // The visible label is the start of the accessible name (label in name), and no two
     // rows share one.

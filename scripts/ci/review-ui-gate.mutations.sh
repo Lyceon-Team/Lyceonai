@@ -141,6 +141,11 @@ FILES=(
   "client/src/features/calendar/components/MonthGrid.tsx"
   "client/src/lib/theme.ts"
   "client/src/components/home/HomeLoading.tsx"
+  "client/src/components/billing/PremiumUpgradePrompt.tsx"
+  "client/src/components/home/home-model.ts"
+  "client/src/components/math/FloatingPanel.tsx"
+  "client/src/components/legal/ReconsentModal.tsx"
+  "server/routes/legacy/progress.ts"
 )
 
 snapshot_all() {
@@ -2923,10 +2928,11 @@ plant "OQ66-H1" "a recent-session row hides its action again (no \"Review this s
 assert s.count(a) == 1
 s = s.replace(a, "{starting ? STARTING_LABEL : toReviewLine(s.open_count)}", 1)'
 
+# Re-pointed 2026-10-08 (W6 UI-66): the row's name is now `title` (its criteria), was `kind`.
 plant "OQ66-H2" "every recent row's action has the same accessible name" \
   "$OQ66_HOME" \
   "client/src/components/home/HomePanel.tsx" \
-  'a = "                        : `${REVIEW_SESSION_LABEL}: ${kind}, ${when}`\n"
+  'a = "                        : `${REVIEW_SESSION_LABEL}: ${title}, ${when}`\n"
 assert s.count(a) == 1
 s = s.replace(a, "                        : REVIEW_SESSION_LABEL\n", 1)'
 
@@ -3634,6 +3640,126 @@ plant "QA2-F9" "Home's placeholder no longer reserves the screen (the footer is 
   'a = "    <div className=\"min-h-[100dvh]\" data-testid=\"home-loading\">\n"
 assert s.count(a) == 1
 s = s.replace(a, "    <div data-testid=\"home-loading\">\n", 1)'
+
+# ── W6 UI-65 — the daily-limit billing card on the student tokens (OQ-52 (c)) ─────────────
+# @spec [student-UI register UI-65; OQ-52 (c), owner ruling 2026-10-05] | @implemented [2026-10-08]
+W6_UI65="client/src/components/billing/PremiumUpgradePrompt.tokens.test.tsx"
+
+plant "W6-UI65-1" "the card goes back to the shadcn card colours" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-6 sm:px-7"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg border border-primary/30 bg-card px-5 py-6 sm:px-7", 1)'
+
+plant "W6-UI65-2" "the card's action becomes a second filled primary on Practice" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "        variant=\"lyc-outline\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "        variant=\"lyc-primary\"\n", 1)'
+
+plant "W6-UI65-3" "the floating dismiss button keeps the 14px shadcn base size" \
+  "$W6_UI65" \
+  "client/src/components/billing/PremiumUpgradePrompt.tsx" \
+  'a = "            className=\"text-lyc-body\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+# ── W6 UI-66 — recent-session rows named by their criteria (OQ-53 (e)) ───────────────────────
+# @spec [student-UI register UI-66; OQ-53 (e), owner ruling 2026-10-05] | @implemented [2026-10-08]
+W6_UI66_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+W6_UI66_PRACTICE="client/src/pages/practice.test.tsx"
+W6_UI66_MODEL="client/src/components/home/home-model.test.ts"
+
+plant "W6-UI66-H1" "Home's recent row prints the engine label again, not the criteria" \
+  "$W6_UI66_HOME" \
+  "client/src/components/home/HomePanel.tsx" \
+  'a = "            const title = recentSessionTitle(s);\n"
+assert s.count(a) == 1
+s = s.replace(a, "            const title = s.source_engine === \"review\" ? \"Review\" : \"Practice\";\n", 1)'
+
+plant "W6-UI66-P1" "Practice's recent row prints \"Practice\" again, not the criteria" \
+  "$W6_UI66_PRACTICE" \
+  "client/src/pages/practice.tsx" \
+  'a = "                  {recentSessionTitle(s)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                  {\"Practice\"}\n", 1)'
+
+plant "W6-UI66-M1" "the row helper ignores the criteria the row carries" \
+  "$W6_UI66_MODEL $W6_UI66_HOME $W6_UI66_PRACTICE" \
+  "client/src/components/home/home-model.ts" \
+  'a = "    filters !== null && \"sections\" in filters ? filters : NO_CRITERIA;\n"
+assert s.count(a) == 1
+s = s.replace(a, "    NO_CRITERIA;\n", 1)'
+
+plant "W6-UI66-M2" "a full-length row loses its form name" \
+  "$W6_UI66_MODEL" \
+  "client/src/components/home/home-model.ts" \
+  'a = "      ? displayFormName(filters.test_form_name)\n"
+assert s.count(a) == 1
+s = s.replace(a, "      ? sourceEngineLabel(\"full_length\")\n", 1)'
+
+plant "W6-UI66-M3" "a review row with no criteria is named like a practice row" \
+  "$W6_UI66_MODEL $W6_UI66_HOME" \
+  "client/src/components/home/home-model.ts" \
+  'a = "    row.source_engine === \"review\" ? \"review\" : \"practice\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "    \"practice\",\n", 1)'
+
+# ── W6 UI-62 — the 14px floor: the exam calculator panel and the re-consent version line ──────
+# @spec [student-UI register UI-62 (invariant sweep)] | @implemented [2026-10-08]
+W6_UI62_PANEL="client/src/components/math/FloatingPanel.type-floor.test.tsx"
+W6_UI62_RECONSENT="client/src/components/legal/ReconsentGate.test.tsx"
+
+plant "W6-UI62-1" "the calculator panel's title goes back to 13px" \
+  "$W6_UI62_PANEL" \
+  "client/src/components/math/FloatingPanel.tsx" \
+  'a = "<span id={`${id}-title`} className=\"text-[14px] font-semibold\">"
+assert s.count(a) == 1
+s = s.replace(a, "<span id={`${id}-title`} className=\"text-[13px] font-semibold\">", 1)'
+
+plant "W6-UI62-2" "the calculator panel's Expand goes back to 13px" \
+  "$W6_UI62_PANEL" \
+  "client/src/components/math/FloatingPanel.tsx" \
+  'a = "rounded-lg px-3 text-[14px] font-medium text-[var(--exam-muted)]"
+assert s.count(a) == 1
+s = s.replace(a, "rounded-lg px-3 text-[13px] font-medium text-[var(--exam-muted)]", 1)'
+
+plant "W6-UI62-3" "the re-consent version line goes back to text-xs" \
+  "$W6_UI62_RECONSENT" \
+  "client/src/components/legal/ReconsentModal.tsx" \
+  'a = "<p className=\"mt-1 text-[14px] text-muted-foreground\">"
+assert s.count(a) == 1
+s = s.replace(a, "<p className=\"mt-1 text-xs text-muted-foreground\">", 1)'
+
+# ── W6 UI-10 — the projection route's entitlement-read catch logs, and still fails closed ──────
+# @spec [student-UI register UI-10; Coding Standards §13, §12.1; Doc-05C §7.4] | @implemented [2026-10-08]
+# The one server plant in this gate (UI-10's exception to the UI-only scope).
+W6_UI10="tests/ci/kpi.gating.contract.test.ts"
+
+plant "W6-UI10-1" "the entitlement-read catch is silent again (no structured warning)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "          \"score_estimate_entitlement_read_failed\",\n"
+assert s.count(a) == 1
+i = s.index("        logger.warn(\n          \"PROGRESS\",\n          \"score_estimate_entitlement_read_failed\"")
+j = s.index("        canSeeLiveProgression = false;\n", i)
+s = s[:i] + s[j:]'
+
+plant "W6-UI10-2" "the warning writes the error's message (unredacted)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "            errorName: error instanceof Error ? error.name : typeof error,\n"
+assert s.count(a) == 1
+s = s.replace(a, "            errorName: error instanceof Error ? error.message : typeof error,\n", 1)'
+
+plant "W6-UI10-3" "the catch fails open (serves the paid view on a failed read)" \
+  "$W6_UI10" \
+  "server/routes/legacy/progress.ts" \
+  'a = "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = false;\n"
+assert s.count(a) == 1
+s = s.replace(a, "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = true;\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
