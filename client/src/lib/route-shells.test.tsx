@@ -64,7 +64,6 @@ vi.mock("@/pages/admin/CrisisReviewDetail", pageStub);
 vi.mock("@/pages/admin/CrisisReviewList", pageStub);
 vi.mock("@/pages/blog", pageStub);
 vi.mock("@/pages/blog-post", pageStub);
-vi.mock("@/pages/browse-topics", pageStub);
 vi.mock("@/pages/calendar", pageStub);
 vi.mock("@/pages/chat", pageStub);
 vi.mock("@/pages/digital-sat", pageStub);
@@ -401,8 +400,10 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/account/recover",
       "/guardian-required",
     ]);
-    // The topic explorer is not rebuilt (OQ-3 open): it stays pinned light.
-    expect(STUDENT_ROUTE_SHELLS["/practice/topics"].themeLock).toBe("light");
+    // OQ-68 (a) (Karl, 2026-10-08): the topic explorer, the last page pinned light by OQ-49, is
+    // retired; its address is a redirect and keys no shell.
+    expect(Object.keys(STUDENT_ROUTE_SHELLS)).not.toContain("/practice/topics");
+    expect(SHELL_EXCLUDED_ROUTES["/practice/topics"]).toBe("redirect");
   });
 
   it("UI-53: both runners follow the device theme (the review runner's LISA panel is on the student tokens: OQ-54 (a), ruling 2026-10-05)", () => {
@@ -638,6 +639,25 @@ describe("a redirect lands in its target's shell", () => {
     expect(window.location.pathname).toBe("/profile");
     expect(window.location.search).toBe("");
     expect(window.location.hash).toBe("");
+  });
+
+  /**
+   * @spec [OQ-68 (a) (Karl, 2026-10-08): "/practice/topics is retired, with a redirect to
+   *        /practice"] | @implemented [2026-10-08]
+   * plain English: a history REPLACE (Back must not bounce back through the retired address),
+   * landing in Practice's own App shell. /practice reads no query, so the query is dropped.
+   */
+  it("OQ-68 (a): /practice/topics replaces itself with /practice, dropping the query", async () => {
+    const before = window.history.length;
+    renderAt("/practice/topics?section=math");
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/practice");
+    expect(window.location.search).toBe("");
+    // Replaced, not pushed: no entry was added behind /practice.
+    expect(window.history.length).toBe(before);
+    const shells = document.querySelectorAll("[data-shell]");
+    expect(shells).toHaveLength(1);
+    expectShell(STUDENT_ROUTE_SHELLS["/practice"], shells[0] as Element);
   });
 
   it("/signup redirects to /login, a bare card", async () => {

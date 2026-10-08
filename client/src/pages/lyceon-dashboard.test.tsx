@@ -296,7 +296,27 @@ const DIAGNOSTIC_ID = "22222222-2222-4222-8222-222222222222";
 const REVIEW_ID = "33333333-3333-4333-8333-333333333333";
 const EXAM_SESSION_ID = "44444444-4444-4444-8444-444444444444";
 
-function practiceOpen(withPractice: boolean, diagnosticAnswered: number) {
+/**
+ * The practice config numbers the routes carry (OQ-68 (d), UI-64): `daily_quota_free` on the
+ * quota read, `diagnostic_total_questions` / `diagnostic_per_domain` on `/sessions/open`. The
+ * seeded production values by default; a scenario may set others to prove the copy follows them.
+ */
+type PracticeConfigNumbers = {
+  dailyLimit: number;
+  diagnosticTotal: number;
+  diagnosticPerDomain: number;
+};
+const SEEDED_CONFIG: PracticeConfigNumbers = {
+  dailyLimit: 40,
+  diagnosticTotal: 40,
+  diagnosticPerDomain: 5,
+};
+
+function practiceOpen(
+  withPractice: boolean,
+  diagnosticAnswered: number,
+  config: PracticeConfigNumbers = SEEDED_CONFIG,
+) {
   return practiceOpenSessionsResponseSchema.parse({
     sessions: [
       ...(withPractice
@@ -324,13 +344,15 @@ function practiceOpen(withPractice: boolean, diagnosticAnswered: number) {
         mode: "diagnostic",
         status: "active",
         created_at: "2026-09-29T14:00:00Z",
-        target_question_count: 40,
-        total_items: 40,
+        target_question_count: config.diagnosticTotal,
+        total_items: config.diagnosticTotal,
         answered_items: diagnosticAnswered,
         criteria: toSessionCriteria(null),
       },
     ],
     maxConcurrentSessions: 3,
+    diagnosticTotalQuestions: config.diagnosticTotal,
+    diagnosticPerDomain: config.diagnosticPerDomain,
     requestId: "r",
   });
 }
@@ -414,7 +436,7 @@ const FORMS = examFormsResponseSchema.parse({
   ],
 });
 
-function quota(remaining: number | "unlimited") {
+function quota(remaining: number | "unlimited", dailyLimit = 40) {
   const result = toPracticeQuota(
     remaining === "unlimited"
       ? {
@@ -435,14 +457,16 @@ function quota(remaining: number | "unlimited") {
           code: "PRACTICE_QUOTA_OK",
           message: "",
           limitType: "practice",
-          current: 40 - remaining,
-          limit: 40,
+          current: dailyLimit - remaining,
+          limit: dailyLimit,
           remaining,
           resetAt: "2026-10-02T05:00:00.000Z",
           cooldownUntil: null,
           reservationId: null,
           duplicate: false,
         },
+    // `freeDailyLimitFor`: the free decision's own limit; the config row for the unlimited one.
+    dailyLimit,
   );
   if (!result.ok) throw new Error("quota fixture did not serialize");
   return result.value;
@@ -462,6 +486,10 @@ type Scenario = {
   projection?: "projected" | "none";
   diagnosticAnswered?: number;
   quota?: number | "unlimited";
+  /** OQ-68 (d): the config numbers the routes carry; the seeded values when absent. */
+  config?: PracticeConfigNumbers;
+  /** OQ-68 (d): the two reads that carry config numbers fail (500). */
+  configReadsFail?: boolean;
   /** OQ-63: today is the fixture's Saturday, its full-length block not started. */
   fullLengthToday?: boolean;
   /** QA item 15: the fixture week as of another day (its Sunday has no blocks). */
@@ -507,14 +535,27 @@ function install(s: Scenario): void {
         );
       if (path === "/api/progress/projection")
         return json(estimateStatusBody(s.estimateStatus ?? "computed"));
+      if (
+        s.configReadsFail === true &&
+        (path === "/api/practice/sessions/open" ||
+          path === "/api/practice/quota")
+      )
+        return json({ error: "boom" }, 500);
       if (path === "/api/practice/sessions/open")
         return json(
-          practiceOpen(s.calendar !== undefined, s.diagnosticAnswered ?? 12),
+          practiceOpen(
+            s.calendar !== undefined,
+            s.diagnosticAnswered ?? 12,
+            s.config,
+          ),
         );
       if (path === "/api/review/sessions/open") return json(REVIEW_OPEN);
       if (path === "/api/review/pool") return json(POOL);
       if (path === "/api/tests/forms") return json(FORMS);
-      if (path === "/api/practice/quota") return json(quota(s.quota ?? 12));
+      if (path === "/api/practice/quota")
+        return json(
+          quota(s.quota ?? 12, (s.config ?? SEEDED_CONFIG).dailyLimit),
+        );
       if (
         method === "POST" &&
         path === `/api/calendar/blocks/${TODAY_REVIEW_BLOCK}/launch`
@@ -910,6 +951,86 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
       await new Promise((r) => setTimeout(r, 50));
     });
     expect(screen.queryByTestId("home-quota")).toBeNull();
+  });
+
+  // OQ-68 (d), UI-64 (owner ruling, Karl, 2026-10-08): "The '40 questions' copy reads the server
+  // quota value (the same source as the 402)". Config values that are not the seeded 40 must
+  // reach every sentence that states one; a failed read prints the sentence with no number.
+  it("UI-64: the diagnostic's length and the daily limit are the config the routes carry, not 40", async () => {
+    await mount("free", {
+      estimateStatus: "no_baseline",
+      projection: "none",
+      quota: 12,
+      config: { dailyLimit: 37, diagnosticTotal: 48, diagnosticPerDomain: 6 },
+    });
+    const card = await screen.findByTestId("home-diagnostic");
+    // Presence first: the card's own count proves the config fixture reached the page.
+    await waitFor(() =>
+      expect(within(card).getByText("12 of 48 answered")).toBeTruthy(),
+    );
+    expect(within(card).getByTestId("home-diagnostic-length").textContent).toBe(
+      "48 questions, six from each of the eight SAT domains. When you finish, you'll see your projected SAT score.",
+    );
+    const how = screen.getByTestId("home-how");
+    expect(
+      within(how).getByText(
+        "48 questions across every domain give you a projected score and a starting point.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(how).getByText(
+        "37 practice questions a day, and every question you miss comes back until you get it right.",
+      ),
+    ).toBeTruthy();
+    const q = await screen.findByTestId("home-quota");
+    expect(
+      within(q).getByText("12 of 37 practice questions left"),
+    ).toBeTruthy();
+    expect(screen.getByTestId("home").textContent ?? "").not.toMatch(
+      /\b40\b|forty/i,
+    );
+  });
+
+  it("UI-64: a diagnostic length that is not a whole number of per-domain draws drops the per-domain clause", async () => {
+    await mount("free", {
+      estimateStatus: "no_baseline",
+      projection: "none",
+      config: { dailyLimit: 40, diagnosticTotal: 37, diagnosticPerDomain: 5 },
+    });
+    const card = await screen.findByTestId("home-diagnostic");
+    await waitFor(() =>
+      expect(within(card).getByText("12 of 37 answered")).toBeTruthy(),
+    );
+    expect(within(card).getByTestId("home-diagnostic-length").textContent).toBe(
+      "37 questions across the SAT domains. When you finish, you'll see your projected SAT score.",
+    );
+  });
+
+  it("UI-64: when the reads that carry the numbers fail, the copy prints no number at all", async () => {
+    await mount("free", {
+      estimateStatus: "no_baseline",
+      projection: "none",
+      configReadsFail: true,
+    });
+    await screen.findByTestId("home-load-error");
+    const card = screen.getByTestId("home-diagnostic");
+    expect(within(card).getByTestId("home-diagnostic-length").textContent).toBe(
+      "Questions from every SAT domain. When you finish, you'll see your projected SAT score.",
+    );
+    const how = screen.getByTestId("home-how");
+    expect(
+      within(how).getByText(
+        "Questions across every domain give you a projected score and a starting point.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(how).getByText(
+        "Practice questions every day, and every question you miss comes back until you get it right.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByTestId("home").textContent ?? "").not.toMatch(
+      /\b40\b|forty/i,
+    );
   });
 
   it("See what's included opens the upgrade modal for mastery_detail, with no request", async () => {

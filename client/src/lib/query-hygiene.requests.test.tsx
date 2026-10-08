@@ -123,21 +123,25 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
           currentPeriodEnd: null,
         },
       });
-    case "/api/progress/kpis":
-      return json({ week: { accuracy: 0, questionsSolved: 0 }, metrics: [] });
     case "/api/guardian/students":
       return json({ students: [] });
     // Home's other reads (UI-50), in the shapes their routes write (the shared schemas).
     case "/api/students/00000000-0000-4000-8000-000000000001/projections/sections":
       return json({ ok: true, sections: [], requestId: "req-test" });
     case "/api/practice/sessions/open":
-      return json({ sessions: [], maxConcurrentSessions: 3 });
+      return json({
+        sessions: [],
+        maxConcurrentSessions: 3,
+        diagnosticTotalQuestions: 40,
+        diagnosticPerDomain: 5,
+      });
     case "/api/practice/quota":
       return json({
         unlimited: false,
         limit: 40,
         remaining: 40,
         resetAt: "2026-09-02T05:00:00.000Z",
+        freeDailyLimit: 40,
       });
     default:
       return json({});

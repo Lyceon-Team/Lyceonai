@@ -33,7 +33,7 @@
  * Reading/Math start buttons), the Domain Library card and its "Open Topic Explorer" link, the
  * "Weekly Activity" card (day streak, questions in 7 days), "Quick Actions", and the diagnostic
  * CTA (DESIGN.md §4 Practice has none; Home's diagnostic card is the one diagnostic entry).
- * `/practice/topics` itself stays routed (OQ-3 is open).
+ * `/practice/topics` was retired with a redirect here (OQ-68 (a), Karl, 2026-10-08).
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";

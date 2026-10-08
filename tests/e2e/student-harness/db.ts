@@ -230,6 +230,34 @@ async function addBarePagePersonas(pg: Client): Promise<void> {
  * real `GET /api/notifications` turn them into titles and bodies, so nothing here is copy. Only
  * the `in_app` channel: the harness sends no email.
  */
+/**
+ * W6 UI-64 (`seed: "quota-config"`; owner ruling OQ-68 (d), Karl, 2026-10-08): config values that
+ * are not the seeded 40, so the captures show the copy following the server config. Written AFTER
+ * the base seed (whose paid diagnostic is answered at the seeded 8 × 5), through the config rows
+ * the routes read: `daily_quota_free` 37 (read per request, like the SQL quota function) and the
+ * diagnostic 6 per domain, 48 in all (read through the practice config, cached for 30 s, so the
+ * caller waits that out before announcing ready). Nothing here starts a diagnostic at 48.
+ */
+const QUOTA_CONFIG_VALUES = {
+  daily_quota_free: 37,
+  diagnostic_per_domain: 6,
+  diagnostic_total_questions: 48,
+} as const;
+
+export async function applyQuotaConfig(pg: Client): Promise<void> {
+  for (const [key, value] of Object.entries(QUOTA_CONFIG_VALUES)) {
+    const r = await pg.query(
+      `UPDATE public.practice_runtime_config SET value = $2::jsonb WHERE key = $1`,
+      [key, String(value)],
+    );
+    if (r.rowCount !== 1) {
+      throw new Error(
+        `applyQuotaConfig: no practice_runtime_config row ${key}`,
+      );
+    }
+  }
+}
+
 export async function seedPaidNotifications(pg: Client): Promise<void> {
   const paid = PERSONAS.paid.id;
   const link = await pg.query<{ id: string }>(
