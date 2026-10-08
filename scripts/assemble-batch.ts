@@ -456,8 +456,25 @@ function validateRecord(
     );
   }
 
+  // EMPTY_STEM — stem is missing or whitespace-only
   if (!rec.stem || rec.stem.trim().length === 0) {
-    v("stem", "stem is empty");
+    v("stem", "EMPTY_STEM: stem is empty or whitespace-only.");
+  }
+
+  // STEM_EQUALS_PASSAGE — stem is a verbatim copy of passage (caught 17
+  // published Transitions questions whose prompt was overwritten by the passage).
+  // DB CHECK constraint questions_stem_ne_passage blocks these at publish;
+  // the gate rejects them at authoring so batches don't fail at publish time.
+  if (
+    typeof rec.stem === "string" &&
+    typeof rec.passage === "string" &&
+    rec.stem.trim().length > 0 &&
+    rec.stem.trim() === rec.passage.trim()
+  ) {
+    v(
+      "stem",
+      `STEM_EQUALS_PASSAGE: stem is identical to passage after trimming. The stem must contain the question prompt, not a copy of the passage.`,
+    );
   }
 
   if (!rec.explanation || rec.explanation.trim().length === 0) {
@@ -592,6 +609,8 @@ function validateRecord(
         `OPTION_POSITION_REF: references an option by position ("${posMatch[0].trim()}"). Options are shuffled at serve; reference by content only.`,
       );
     }
+  }
+
   // Tripwire: flag explanations that MAY reference options by letter (A/B/C/D).
   // Options are shuffled at serve (Feature-8 option_order); letter refs are gibberish.
   // This regex is a detection aid — it flags for human/LLM review, not auto-reject,

@@ -150,6 +150,30 @@ Both are checked on `stem` and `explanation`.
 
 ---
 
+## Stem Integrity (12–13) — Gate HARD-FAIL
+
+### 12. EMPTY_STEM — Missing or whitespace-only stem
+
+**Defect:** The `stem` field is empty, null, or contains only whitespace. The student sees no question prompt.
+
+**Rule:** Every question must have a non-empty stem that contains the question prompt.
+
+**Gate detector:** `!rec.stem || rec.stem.trim().length === 0` → FAIL.
+
+**Codex check:** Flag any question whose stem is blank or contains no recognizable question prompt.
+
+### 13. STEM_EQUALS_PASSAGE — Stem is a verbatim copy of the passage
+
+**Defect:** `trim(stem) === trim(passage)`. The stem was overwritten by a copy of the passage — the student sees the passage twice and no question prompt. Found in 17 published Transitions questions. A DB CHECK constraint (`questions_stem_ne_passage`) now blocks publishing these; the gate rejects them at authoring so batches don't fail at publish time.
+
+**Rule:** The stem must contain the actual question prompt, not a copy of the passage. For R&W questions, the stem asks the question ("Which choice completes the text…"); the passage provides the context. They must be distinct.
+
+**Gate detector:** `typeof stem === 'string' && typeof passage === 'string' && stem.trim() === passage.trim()` → FAIL.
+
+**Codex check:** For every R&W question, verify the stem contains an actual question prompt (e.g., "Which choice completes the text…" or "Which choice best states the main idea…") and is not a duplicate of the passage. For any question where stem and passage appear identical or near-identical, flag as **REJECT**.
+
+---
+
 ## Lower-Priority Guidance (10) — Authoring Convention
 
 ### 10. Math Delimiter Standardization

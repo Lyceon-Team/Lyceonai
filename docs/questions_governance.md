@@ -337,6 +337,12 @@ RW prose money uses `\$` (never bare `$`); never wrap multi-word prose in `$…$
 **4. No doubled backslash before a command/delimiter (`DOUBLED_BACKSLASH_BEFORE_CMD`).**
 Use a single backslash for LaTeX commands; `\\` is only valid as a row break in `cases`/`aligned` environments (followed by whitespace). Gate detector (post-parse): `/\\\\[A-Za-z${%({\[]/` = FAIL. (`\\` followed by whitespace is allowed.)
 
+**12. Non-empty stem (`EMPTY_STEM`).**
+Every question must have a non-empty stem containing the question prompt. An empty or whitespace-only stem means the student sees no question. Gate detector: `stem` is falsy or `stem.trim().length === 0` → FAIL.
+
+**13. Stem ≠ passage (`STEM_EQUALS_PASSAGE`).**
+The stem must not be a verbatim copy of the passage. When `trim(stem) === trim(passage)`, the student sees the passage twice and no question prompt. This caught 17 published Transitions questions whose prompt was overwritten by a copy of the passage. A DB CHECK constraint (`questions_stem_ne_passage`) blocks these at publish; the gate rejects them at authoring so batches don't fail at publish time. Gate detector: `stem.trim() === passage.trim()` → FAIL. _(Added 2026-10-08.)_
+
 ### Math delimiter convention (Rule 10)
 
 Standardize on `$…$` for inline math and `$$…$$` for display math across the entire bank. Do not use `\(…\)` or `\[…\]` notation. Existing content should be migrated to `$…$` during remediation. Explanations should state why each distractor is wrong, not just why the correct answer is correct.
