@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
@@ -565,7 +565,9 @@ describe("every student route renders inside exactly the shell the table names",
 
 describe("excluded public and admin routes render no student shell", () => {
   const rendered = excludedKeys.filter(
-    (k) => SHELL_EXCLUDED_ROUTES[k] !== "redirect",
+    (k) =>
+      SHELL_EXCLUDED_ROUTES[k] !== "redirect" &&
+      SHELL_EXCLUDED_ROUTES[k] !== "not-found",
   );
 
   it("has routes to check (negative control)", () => {
@@ -579,7 +581,53 @@ describe("excluded public and admin routes render no student shell", () => {
   });
 });
 
+/**
+ * @spec [production re-test 2026-10-08 item E (Karl: "restyle the 404 page with student tokens,
+ *        fonts and theme"); DESIGN.md §2 "Bare card"] | @implemented [2026-10-08]
+ */
+describe("QA2-E: the 404 is a Bare-card page", () => {
+  it("the catch-all renders the page inside exactly one Bare card, with no theme lock", async () => {
+    expect(SHELL_EXCLUDED_ROUTES[NOT_FOUND_ROUTE]).toBe("not-found");
+    renderAt(urlFor(NOT_FOUND_ROUTE));
+    const page = await screen.findByTestId("page-stub");
+    const shells = document.querySelectorAll("[data-shell]");
+    expect(shells).toHaveLength(1);
+    const shell = shells[0];
+    if (shell === undefined) throw new Error("unreachable");
+    expect(shell.contains(page)).toBe(true);
+    expectShell({ shell: "bare", themeLock: null }, shell);
+  });
+});
+
 describe("a redirect lands in its target's shell", () => {
+  /**
+   * @spec [production re-test 2026-10-08 item E (Karl: "Redirect /settings → /profile")]
+   *        | @implemented [2026-10-08]
+   * plain English: a history REPLACE (Back must not bounce back through /settings), keeping the
+   * query `/profile` reads (`?tab=`) and the hash, and landing in Settings' own App shell.
+   */
+  it("QA2-E: /settings replaces itself with /profile, keeping the query and hash", async () => {
+    const before = window.history.length;
+    renderAt("/settings?tab=billing#plan");
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/profile");
+    expect(window.location.search).toBe("?tab=billing");
+    expect(window.location.hash).toBe("#plan");
+    // Replaced, not pushed: no entry was added behind /profile.
+    expect(window.history.length).toBe(before);
+    const shells = document.querySelectorAll("[data-shell]");
+    expect(shells).toHaveLength(1);
+    expectShell(STUDENT_ROUTE_SHELLS["/profile"], shells[0] as Element);
+  });
+
+  it("QA2-E: a bare /settings lands on /profile with no stray query or hash", async () => {
+    renderAt("/settings");
+    await screen.findByTestId("page-stub");
+    expect(window.location.pathname).toBe("/profile");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
+  });
+
   it("/signup redirects to /login, a bare card", async () => {
     renderAt("/signup");
     await screen.findByTestId("page-stub");

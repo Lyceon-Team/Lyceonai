@@ -1,5 +1,5 @@
 import { Component, ReactNode, Suspense, lazy } from "react";
-import { Switch, Route, Redirect, useLocation } from "wouter";
+import { Switch, Route, Redirect, useLocation, useSearch } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
@@ -128,9 +128,41 @@ function AccountRecoverRoute() {
     </StudentRouteFrame>
   );
 }
-/** The SEO 404 (F6/F2), as the static 404.html renders it: no student shell (PR 1069 merge). */
-function NotFoundRoute() {
-  return <NotFound />;
+/**
+ * @spec [production re-test 2026-10-08 item E (Karl: "restyle the 404 page with student tokens,
+ *        fonts and theme"); DESIGN.md §2 "Bare card" (the 404 is a Bare-card page); SEO F6/F2]
+ *        | @implemented [2026-10-08; replaces the unshelled SEO card of the PR 1069 merge]
+ * plain English: the catch-all, framed in the Bare card here (it has no path, so it has no row in
+ * the student route table for `StudentRouteFrame` to look up), as the error screen and the
+ * pending-deletion screen are. The static 404.html is this same render, so it gets the card too,
+ * in the theme the boot script in index.html sets before the first paint. Exported for the
+ * bare-page suite, which renders the 404 the way the router does.
+ */
+export function NotFoundRoute(): JSX.Element {
+  return (
+    <BareCard>
+      <NotFound />
+    </BareCard>
+  );
+}
+
+/**
+ * @spec [production re-test 2026-10-08 item E (Karl: "Redirect /settings → /profile")]
+ *        | @implemented [2026-10-08]
+ * plain English: Settings lives at `/profile` (UI-58); `/settings` used to fall through to the
+ * 404. It now replaces itself with `/profile` (a history replace, so Back does not bounce back
+ * through it), keeping the query (`?tab=` picks the section) and the hash. Admission is
+ * `/profile`'s own guard's; this route renders nothing of its own.
+ */
+function SettingsRedirect(): JSX.Element {
+  const search = useSearch();
+  const hash = typeof window === "undefined" ? "" : window.location.hash;
+  return (
+    <Redirect
+      to={`/profile${search === "" ? "" : `?${search}`}${hash}`}
+      replace
+    />
+  );
 }
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
@@ -409,6 +441,8 @@ export function Router() {
             </RequireRole>
           )}
         />
+        {/* QA2-E: the old Settings address lands on Settings. */}
+        <Route path="/settings" component={SettingsRedirect} />
         {/* UI-58 (OQ-46): the Help page; the rail, the avatar menu and the footer land here. */}
         <Route
           path="/help"

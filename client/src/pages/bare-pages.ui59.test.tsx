@@ -88,8 +88,7 @@ const { default: ProfileComplete } = await import("./profile-complete");
 const { default: UpdatePassword } = await import("./update-password");
 const { default: AccountRecover } = await import("./account-recover");
 const { default: GuardianRequired } = await import("./guardian-required");
-const { default: NotFound } = await import("./not-found");
-const { DeletionGate, ErrorBoundary } = await import("@/App");
+const { DeletionGate, ErrorBoundary, NotFoundRoute } = await import("@/App");
 
 const noop = async (): Promise<void> => undefined;
 
@@ -486,18 +485,61 @@ describe("/guardian-required", () => {
 });
 
 describe("404", () => {
-  // The catch-all renders the SEO page (main, F6/F2; owner choice 2026-10-05 when PR 1069 merged
-  // main): the same page as the static 404.html, its own card, no student shell. Its words and
-  // link are pinned here and, prerendered, by tests/seo.prerender-output.test.ts.
-  it("the approved SEO copy and a link home, with no developer message", () => {
-    render(<NotFound />, { wrapper: ({ children }) => <>{children}</> });
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Page not found",
-    );
-    expect(screen.getByText("Sorry, we couldn't find that page.")).toBeTruthy();
-    const home = screen.getByRole("link", { name: "Go to the homepage" });
-    expect(home.getAttribute("href")).toBe("/");
+  // The catch-all renders the SEO page (main, F6/F2): the same page as the static 404.html. Its
+  // words and its signed-out link are pinned here and, prerendered, by
+  // tests/seo.prerender-output.test.ts.
+  // @spec [production re-test 2026-10-08 item E (Karl: "restyle the 404 page with student tokens,
+  //        fonts and theme"); DESIGN.md §1, §2 "Bare card"] | @implemented [2026-10-08]
+  // Rendered the way the router renders it (App's `NotFoundRoute`): a Bare-card page on the
+  // student tokens in the device theme, with one way out that fits who is looking.
+  function renderNotFound(): HTMLElement {
+    window.history.replaceState(null, "", "/no-such-page");
+    render(<NotFoundRoute />);
+    const shell = bareShell();
+    expectOneH1(shell, "Page not found");
+    expect(
+      within(shell).getByText("Sorry, we couldn't find that page."),
+    ).toBeTruthy();
     expect(document.body.textContent ?? "").not.toContain("router");
+    expectNoOwnFrame(shell);
+    expectStudentTokensOnly(shell);
+    // The card's heading block: the student serif H1 (BareCardHeader), not the old Poppins one.
+    expect(shell.querySelector("h1")?.className.split(/\s+/)).toContain(
+      "font-lyc-serif",
+    );
+    return shell;
+  }
+
+  it("signed out: the approved SEO copy and the homepage as the one filled action", () => {
+    signedOut();
+    const shell = renderNotFound();
+    expectOnePrimary(shell, "Go to the homepage");
+    const home = within(shell).getByRole("link", {
+      name: "Go to the homepage",
+    });
+    expect(home.getAttribute("href")).toBe("/");
+  });
+
+  it("signed-in student: back to Home (/dashboard) is the one filled action, no homepage link", () => {
+    signedInStudent();
+    const shell = renderNotFound();
+    expectOnePrimary(shell, "Back to Home");
+    const home = within(shell).getByRole("link", { name: "Back to Home" });
+    expect(home.getAttribute("href")).toBe("/dashboard");
+    expect(
+      within(shell).queryByRole("link", { name: "Go to the homepage" }),
+    ).toBeNull();
+  });
+
+  it("signed-in guardian: back to the guardian home", () => {
+    signedInStudent({ role: "guardian" });
+    const shell = renderNotFound();
+    expectOnePrimary(shell, "Back to Home");
+    expect(
+      within(shell)
+        .getByRole("link", { name: "Back to Home" })
+        .getAttribute("href"),
+    ).toBe("/guardian");
   });
 });
 

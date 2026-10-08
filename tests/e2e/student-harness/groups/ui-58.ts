@@ -244,6 +244,21 @@ export const UI_58: PageGroup = {
       },
     },
     {
+      id: "settings-redirect",
+      title:
+        "QA2-E (production re-test 2026-10-08): /settings?tab=billing lands on Settings → Billing at /profile (a history replace; the query kept)",
+      persona: "paid",
+      route: "/settings?tab=billing",
+      waitFor: PAGE,
+      expectPath: "^/profile$",
+      expectVisible: '[data-testid="settings-billing-self"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "A redirect: the screenshot is where /settings landed (Billing on /profile), proven by its pathname and the section on screen.",
+      },
+    },
+    {
       id: "help",
       title:
         "Help: the seven questions (the first open), Still need help? with Contact support, the Policies, the footer",

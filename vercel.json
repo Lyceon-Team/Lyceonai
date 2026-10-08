@@ -229,6 +229,10 @@
       "dest": "/app.html"
     },
     {
+      "src": "^/settings/?$",
+      "dest": "/app.html"
+    },
+    {
       "src": "^/guardian/?$",
       "dest": "/app.html"
     },
