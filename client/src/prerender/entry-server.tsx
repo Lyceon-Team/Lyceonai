@@ -56,7 +56,7 @@ import {
 } from "@/lib/legal-content";
 import { BLOG_PAGES, BLOG_POSTS } from "@shared/content/blog";
 import { resolvePublicMeta } from "@shared/seo/public-meta";
-import { toArchiveIndex } from "@shared/qotd/projection";
+import { stemRepeatsPassage, toArchiveIndex } from "@shared/qotd/projection";
 import { qotdToday } from "../../../server/services/qotd/qotd-service";
 import {
   qotdArchiveDayQueryOptions,
@@ -114,6 +114,8 @@ export type PrerenderedSite = {
   qotdArchive: {
     source: QotdArchiveSource["source"];
     days: QotdArchiveResponse[];
+    /** Past days not published because the question's stem repeats its passage. */
+    withheldStemRepeatsPassage: string[];
   };
 };
 
@@ -203,10 +205,18 @@ async function loadPageQueries(
       );
       queryClient.setQueryData(qotdArchiveIndexQueryOptions().queryKey, index);
       for (const block of samples) {
-        for (const date of qotdSampleDates(index.days, block.filter, block.limit)) {
+        for (const date of qotdSampleDates(
+          index.days,
+          block.filter,
+          block.limit,
+        )) {
           const day = qotdDays.find((d) => d.qotd_date === date);
-          if (!day) throw new Error(`prerender: no archive payload for ${date}`);
-          queryClient.setQueryData(qotdArchiveDayQueryOptions(date).queryKey, day);
+          if (!day)
+            throw new Error(`prerender: no archive payload for ${date}`);
+          queryClient.setQueryData(
+            qotdArchiveDayQueryOptions(date).queryKey,
+            day,
+          );
         }
       }
     }
@@ -264,7 +274,9 @@ export function assertContentPagesPublishable(
     problems.push(...contentPageProblems(content, ctx));
     const built = pages.find((p) => p.path === content.path);
     if (!built) {
-      problems.push(`${content.path}: no prerendered page (is it in the registry?)`);
+      problems.push(
+        `${content.path}: no prerendered page (is it in the registry?)`,
+      );
       continue;
     }
     problems.push(...renderedPageProblems(content.path, built.html, ctx));
@@ -296,7 +308,15 @@ export async function prerenderSite(options: {
     : await loadQotdArchiveForBuild(process.env, globalThis.fetch);
   // The one canonical QOTD day helper (America/Chicago), shared with the API.
   const today = qotdToday(options.now);
-  const qotdDays = loaded.days.filter((d) => d.qotd_date < today);
+  const pastDays = loaded.days.filter((d) => d.qotd_date < today);
+  // Owner 2026-10-08: a past day whose question has no prompt (the stem repeats the passage) is
+  // not published, so neither its page nor its sitemap entry nor its hub link exists. The test is
+  // on content, not on the date: once the questions vertical repairs the question, the next
+  // build publishes the day again.
+  const withheld = pastDays.filter((d) =>
+    stemRepeatsPassage(d.question.stem, d.question.passage),
+  );
+  const qotdDays = pastDays.filter((d) => !withheld.includes(d));
 
   const realFetch = globalThis.fetch;
   globalThis.fetch = legalFetch(path.join(options.repoRoot, "legal"));
@@ -342,7 +362,11 @@ export async function prerenderSite(options: {
       ),
       shellHtml: options.template,
       sitemapXml: buildSitemapXml(pages, BASE_URL),
-      qotdArchive: { source: loaded.source, days: qotdDays },
+      qotdArchive: {
+        source: loaded.source,
+        days: qotdDays,
+        withheldStemRepeatsPassage: withheld.map((d) => d.qotd_date),
+      },
     };
   } finally {
     globalThis.fetch = realFetch;

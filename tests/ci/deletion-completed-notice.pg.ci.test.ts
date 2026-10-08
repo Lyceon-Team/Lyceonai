@@ -47,13 +47,35 @@ type CapturedRequest = {
 };
 const fakeResend = {
   mode: "ok" as "ok" | "reject",
+  /** Email sends only (`POST /emails`). */
   requests: [] as CapturedRequest[],
+  /**
+   * The marketing lane's contact removal (`DELETE /contacts/{address}`, step 6.5), kept apart
+   * from the sends so every count above stays a count of emails.
+   */
+  contactDeletes: [] as string[],
+  /** Every provider path in arrival order, for the notice-before-removal assertion. */
+  order: [] as string[],
   nextId: 1,
 };
 async function fakeFetch(
   input: string | URL | Request,
   init?: RequestInit,
 ): Promise<Response> {
+  const url = typeof input === "string" ? input : input.toString();
+  const path = url.replace(/^https?:\/\/[^/]+/, "");
+  fakeResend.order.push(
+    `${init?.method ?? "GET"} ${path.split("/").slice(0, 2).join("/")}`,
+  );
+  if (init?.method === "DELETE" && path.startsWith("/contacts/")) {
+    fakeResend.contactDeletes.push(
+      decodeURIComponent(path.slice("/contacts/".length)),
+    );
+    return new Response(
+      JSON.stringify({ object: "contact", contact: "c_1", deleted: true }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
   fakeResend.requests.push({
     url: typeof input === "string" ? input : input.toString(),
     headers: Object.fromEntries(
@@ -189,6 +211,8 @@ describe.skipIf(!PG_AVAILABLE)(
     beforeEach(async () => {
       fakeResend.mode = "ok";
       fakeResend.requests = [];
+      fakeResend.contactDeletes = [];
+      fakeResend.order = [];
       fakeResend.nextId = 1;
       captured.length = 0;
       callOrder.length = 0;
@@ -247,6 +271,9 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(fakeResend.requests).toHaveLength(1);
       const req = fakeResend.requests[0]!;
       expect(req.body.to).toEqual([EMAIL_A]);
+      // Step 6.5: the marketing contact for that address is removed, after the notice.
+      expect(fakeResend.contactDeletes).toEqual([EMAIL_A]);
+      expect(fakeResend.order).toEqual(["POST /emails", "DELETE /contacts"]);
       expect(req.body.from).toBe(FROM_EMAIL);
       expect(req.headers["Idempotency-Key"]).toBe(
         `account-deletion-completed:${requestId}`,

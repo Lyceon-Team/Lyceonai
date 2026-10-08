@@ -337,6 +337,12 @@ RW prose money uses `\$` (never bare `$`); never wrap multi-word prose in `$…$
 **4. No doubled backslash before a command/delimiter (`DOUBLED_BACKSLASH_BEFORE_CMD`).**
 Use a single backslash for LaTeX commands; `\\` is only valid as a row break in `cases`/`aligned` environments (followed by whitespace). Gate detector (post-parse): `/\\\\[A-Za-z${%({\[]/` = FAIL. (`\\` followed by whitespace is allowed.)
 
+**12. Non-empty stem (`EMPTY_STEM`).**
+Every question must have a non-empty stem containing the question prompt. An empty or whitespace-only stem means the student sees no question. Gate detector: `stem` is falsy or `stem.trim().length === 0` → FAIL.
+
+**13. Stem ≠ passage (`STEM_EQUALS_PASSAGE`).**
+The stem must not be a verbatim copy of the passage. When `trim(stem) === trim(passage)`, the student sees the passage twice and no question prompt. This caught 17 published Transitions questions whose prompt was overwritten by a copy of the passage. A DB CHECK constraint (`questions_stem_ne_passage`) blocks these at publish; the gate rejects them at authoring so batches don't fail at publish time. Gate detector: `stem.trim() === passage.trim()` → FAIL. _(Added 2026-10-08.)_
+
 ### Math delimiter convention (Rule 10)
 
 Standardize on `$…$` for inline math and `$$…$$` for display math across the entire bank. Do not use `\(…\)` or `\[…\]` notation. Existing content should be migrated to `$…$` during remediation. Explanations should state why each distractor is wrong, not just why the correct answer is correct.
@@ -385,6 +391,8 @@ Never reference a visual that is not attached — no "the graph shows", "in the 
 ### Distractor design
 
 Every wrong option must represent a plausible, categorizable error — never a random or absurd answer. Each distractor maps to a label from `distractor_taxonomy_v1` (genesis DDL, `00000000000000_genesis.sql:533-549`).
+
+**RW option-length constraint (hard authoring rule):** For all Reading & Writing MCQs, the correct answer MUST NOT be the strictly longest option. Write distractors to comparable length — ideally the correct answer sits mid-pack, and at least one distractor is as long as or longer than the key. The correct option being the longest is the single most exploitable SAT tell; option shuffling does not hide a length signal. The assembly gate fails the batch if >35% of RW MCQs have the correct option strictly longest (`RW_LONGEST_ANSWER_TELL`), but authors must target well under that threshold per-question — every RW MCQ should satisfy this constraint individually, not rely on batch-level averaging. Fix direction: lengthen distractors to match or exceed the key, not trim the key. _(Elevated from guidance to hard constraint 2026-10-05; trend 20.8%→30%→33.3% over batches 076–078.)_
 
 **Words in Context / vocabulary items (single-defensible-answer sharpening):** a distractor is only valid if substituting it into the blank produces an incoherent or meaning-wrong sentence in context. A distractor that produces a coherent sentence but is "less precise" than the key is a defect — the item then has two defensible answers. Diagnostic tell: if the explanation defends the key as "more precise" or says a distractor "captures [a real reading] but…", the item is defective. Real SAT WiC items have exactly one word that fits on meaning/connotation; replace any distractor that merely "fits less well" with one that fails on meaning. _(Added 2026-07-20 after Codex REJECT on SATRW2O432ST — batch 004 streak candidate 2.)_
 
@@ -448,7 +456,7 @@ Every question must have an explanation that:
 
 **Tone:** CB-instructional — clear, direct, educational. Second person ("you") is acceptable but not required.
 
-**No letter references (hard rule):** Explanations reference answer content, never position. Never name an option by letter (A/B/C/D) or say "the correct answer is \<letter\>." Refer to the correct answer and every distractor by content — use a pronoun or short descriptor to avoid redundancy. Options are shuffled at serve and letters are never shown to the student; a letter reference is gibberish in context. _(Added 2026-08-14 for Feature-8 option_order shuffle compatibility.)_
+**No letter or positional references (hard rule — shuffle-invariant):** Explanations and stems must reference answer options BY CONTENT ONLY — name the actual text, claim, or value of the choice. Never reference by letter (A/B/C/D) or by position (first/second/third/fourth/last option/choice/response). Options are Fisher-Yates shuffled at serve; letter and positional references point at the wrong choice once shuffled. This is a hard stop equal in severity to anti-leak checks. The assembly gate hard-fails any record matching `/(Option|Choice)\s+\(?[A-D][\s.),]/` (letter) or `/\b(the\s+)?(first|second|third|fourth|last)\s+(option|choice|response)\b/i` (position) in stem or explanation. _(Elevated from letter-only to letter+position hard-fail 2026-10-05; prod scan found 11 violations, almost all RW positional phrasing.)_
 
 **Prohibited patterns:**
 - Condescending language ("This is a simple problem", "Obviously...")
@@ -458,6 +466,7 @@ Every question must have an explanation that:
 - Emotional language ("Great question!", "Don't worry about...")
 - Revealing meta-information about question design or distractor intent
 - **Option letter references** ("Option A", "the correct answer is B", "(C)", "D is wrong") — refer to options by content only
+- **Option positional references** ("the second option", "the first choice", "the last response") — refer to options by content only
 
 **Example (Math, Easy):**
 ```
