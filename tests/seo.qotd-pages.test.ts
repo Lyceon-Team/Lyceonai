@@ -12,16 +12,25 @@
  *   * no QOTD page describes how questions are chosen or scheduled (doctrine §0.2).
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import type { PrerenderedSite } from "../client/src/prerender/entry-server";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import {
+  prerenderSite,
+  type PrerenderedSite,
+} from "../client/src/prerender/entry-server";
+import { toArchiveResponse } from "../shared/qotd/projection";
 import { BASE_URL } from "../shared/seo/structured-data";
 import {
+  REPO_ROOT,
   bodyText,
   getPrerenderedSite,
   jsonLdBlocks,
 } from "./lib/prerendered-site";
 import {
   QOTD_ARCHIVE_ROWS,
+  QOTD_FIXTURE_NOW,
   QOTD_FIXTURE_TODAY,
+  qotdArchiveDays,
   qotdTodayRow,
 } from "./lib/qotd-fixture";
 
@@ -115,6 +124,55 @@ describe("archive pages (Q3)", () => {
     const p = page(`${HUB}/${QOTD_ARCHIVE_ROWS[0]?.qotd_date ?? ""}`);
     expect(p.html).toContain('class="katex"');
     expect(bodyText(p.html)).not.toMatch(/\$[^$]+\$/);
+  });
+});
+
+describe("a past day whose stem repeats its passage is not published (owner 2026-10-08)", () => {
+  // The real renderer over the fixture's archive plus one broken day: a real archive row with a
+  // passage, copied to an unused past date with its stem replaced by its passage.
+  const withPassage = QOTD_ARCHIVE_ROWS.find((r) => r.passage);
+  const BROKEN_DATE = "2026-10-01";
+  let withBroken: PrerenderedSite;
+  beforeAll(async () => {
+    if (!withPassage?.passage)
+      throw new Error("fixture has no archive row with a passage");
+    withBroken = await prerenderSite({
+      repoRoot: REPO_ROOT,
+      template: readFileSync(resolve(REPO_ROOT, "client/index.html"), "utf8"),
+      qotdArchive: [
+        ...qotdArchiveDays(),
+        toArchiveResponse({
+          ...withPassage,
+          qotd_date: BROKEN_DATE,
+          stem: withPassage.passage,
+        }),
+      ],
+      now: QOTD_FIXTURE_NOW,
+    });
+  }, 60_000);
+
+  it("no page, no sitemap entry, no hub link; the build names the day it withheld", () => {
+    const built = withBroken.pages.map((p) => p.path);
+    // Presence before absence: every fixture archive day is still built, including the one
+    // that shares the broken day's passage but has a real stem.
+    for (const row of QOTD_ARCHIVE_ROWS)
+      expect(built).toContain(`${HUB}/${row.qotd_date}`);
+    expect(built).not.toContain(`${HUB}/${BROKEN_DATE}`);
+    expect(withBroken.sitemapXml).toContain(
+      `${HUB}/${String(withPassage?.qotd_date)}<`,
+    );
+    expect(withBroken.sitemapXml).not.toContain(`${HUB}/${BROKEN_DATE}<`);
+    expect(withBroken.qotdArchive.days.map((d) => d.qotd_date)).not.toContain(
+      BROKEN_DATE,
+    );
+    expect(bodyText(page(HUB).html)).not.toContain(BROKEN_DATE);
+    expect(withBroken.qotdArchive.withheldStemRepeatsPassage).toEqual([
+      BROKEN_DATE,
+    ]);
+  });
+
+  it("the normal build withholds nothing", () => {
+    expect(site.qotdArchive.withheldStemRepeatsPassage).toEqual([]);
   });
 });
 

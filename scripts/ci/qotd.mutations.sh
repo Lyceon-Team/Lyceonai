@@ -37,6 +37,7 @@ FILES=(
   "shared/qotd/social.ts"
   "scripts/qotd-social/generate.ts"
   "server/services/qotd/schedule-job.ts"
+  "server/routes/public-qotd-routes.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -232,6 +233,31 @@ plant server/services/qotd/schedule-job.ts \
   "      if (false) {" || { bad "M14 STALE"; exit 1; }
 OUT="$(ts_check "$SCHED")"; RC=$?
 expect_red "M14 prompt-less question scheduled" "skips a question whose stem repeats its passage" "$OUT" "$RC"
+restore
+
+# Owner 2026-10-08: a past day whose stem repeats its passage is not published.
+echo "=== (15) the build publishes a prompt-less past day (page + sitemap) ==="
+plant client/src/prerender/entry-server.tsx \
+  "    stemRepeatsPassage(d.question.stem, d.question.passage)," \
+  "    false," || { bad "M15 STALE"; exit 1; }
+OUT="$(ts_check "$PAGES")"; RC=$?
+expect_red "M15 broken day prerendered" "no page, no sitemap entry, no hub link" "$OUT" "$RC"
+restore
+
+echo "=== (16) the hub's archive list links a prompt-less past day ==="
+plant server/services/qotd/qotd-service.ts \
+  "  return parsed.data.filter((r) => isPublishableArchiveRow(r));" \
+  "  return parsed.data;" || { bad "M16 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M16 broken day listed" "not in GET /archive and 404 on GET /:date while broken" "$OUT" "$RC"
+restore
+
+echo "=== (17) GET /:date serves a prompt-less past day ==="
+plant server/routes/public-qotd-routes.ts \
+  "      if (!row || !isPublishableArchiveRow(row)) {" \
+  "      if (!row) {" || { bad "M17 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M17 broken day served" "not in GET /archive and 404 on GET /:date while broken" "$OUT" "$RC"
 restore
 
 echo "=== RESTORED: re-check green ==="

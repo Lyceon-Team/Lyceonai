@@ -38,6 +38,7 @@ import { explanationNamesChoiceLetter } from "../../../shared/practice/letter-re
 import {
   qotdCorrectOptionId,
   qotdRowSchema,
+  stemRepeatsPassage,
   toArchiveIndex,
   toArchiveResponse,
   type QotdRow,
@@ -117,7 +118,18 @@ export async function readQotdArchive(
     .safeParse(Array.isArray(data) ? data : []);
   if (!parsed.success)
     throw new QotdUnavailableError("qotd_archive returned an unexpected row");
-  return parsed.data;
+  // Owner 2026-10-08: a day whose question has no prompt is not published (the prerender skips
+  // it too), so the hub never links to a page that does not exist.
+  return parsed.data.filter((r) => isPublishableArchiveRow(r));
+}
+
+/**
+ * A past day is published only while its question has a prompt (stem not a copy of the
+ * passage; shared/qotd/projection.ts). Checked on content each time, so a repaired question
+ * is published again with no other change.
+ */
+export function isPublishableArchiveRow(row: QotdRow): boolean {
+  return !stemRepeatsPassage(row.stem, row.passage);
 }
 
 /** The hub's archive list: date, section and domain only, newest first. */
