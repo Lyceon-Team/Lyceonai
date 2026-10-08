@@ -113,3 +113,8 @@ horizontal overflow in all). Before/after pairs are in `../../qa-2026-10-08/C/` 
   "Rev 7", "Math 5", "R&W 5" whole at 1024 (it was "Revi…"); at 390 the same labels where it was
   "R…", "M…", "F…". A full-length test keeps its words (OQ-62 (b)) and wraps after the hyphen.
   At 1440 the full wording, as before.
+- G ("disable 'Items to clear' while the block is in progress"): new shot `paid-review-launch`
+  starts today's review block through the real launch (it lands in `/review/session/<id>`), and
+  `paid-block-sheet-in-progress` (1440, 1024, 390) opens its sheet: Items to clear disabled
+  (`aria-disabled`), with "You can't change this while the block is in progress." under it, and
+  Resume. The capture's `expectVisible` asserts the disabled select and the note together.

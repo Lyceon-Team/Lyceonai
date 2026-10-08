@@ -3230,6 +3230,37 @@ plant "QA2C-7" "the month is no longer a size container (its chips never go comp
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
+# G: "Calendar block panel: disable 'Items to clear' while the block is in progress."
+TQA2G="client/src/features/calendar/components/BlockSheet.test.tsx"
+
+plant "QA2G-1" "Items to clear stays enabled while the block is in progress" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "                disabled={locked}\n                aria-disabled={locked ? \"true\" : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "                disabled={false}\n                aria-disabled={locked ? \"true\" : undefined}\n", 1)'
+
+plant "QA2G-2" "the locked Items to clear is not marked aria-disabled" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "                aria-disabled={locked ? \"true\" : undefined}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QA2G-3" "no note says why Items to clear is locked" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "              {inProgress ? (\n                <p\n"
+assert s.count(a) == 1
+s = s.replace(a, "              {false ? (\n                <p\n", 1)'
+
+plant "QA2G-4" "a finished block is called in progress" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "  const inProgress = block.started && !complete;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const inProgress = block.started;\n", 1)'
+
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"

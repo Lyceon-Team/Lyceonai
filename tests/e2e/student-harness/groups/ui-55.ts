@@ -57,6 +57,12 @@ const FULL_LENGTH_BLOCK_AT = {
   desktop: FULL_LENGTH_BLOCK,
   mobile: FULL_LENGTH_BLOCK,
 } as const;
+/** QA2-G: today's review block (the first `rev` card; the days before today are rest days). */
+const REVIEW_BLOCK = "button.block.rev";
+const REVIEW_BLOCK_AT = {
+  desktop: REVIEW_BLOCK,
+  mobile: REVIEW_BLOCK,
+} as const;
 /** The block sheet's Start (or Resume, once started): its one primary button. */
 const SHEET_START =
   '[data-testid="calendar-block-sheet"] footer button.primary';
@@ -252,6 +258,43 @@ export const UI_55: PageGroup = {
         kind: "none",
         reason:
           "A click path; its proof is the landing path (the prototype's blocks are not wired).",
+      },
+    },
+    {
+      id: "paid-review-launch",
+      title:
+        "Click path (QA2-G set-up): today's review block, Start: the calendar launch runs (POST /api/calendar/blocks/:id/launch) and the student lands in the review session. The first capture starts the session; later ones find the block started and resume it",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: REVIEW_BLOCK_AT,
+      steps: [
+        { click: REVIEW_BLOCK_AT, ariaDisabledOk: true },
+        { click: { desktop: SHEET_START, mobile: SHEET_START } },
+      ],
+      expectPath: "^/review",
+      prototype: {
+        kind: "none",
+        reason:
+          "A click path that puts today's review block in progress for the next shot; its proof is the landing path.",
+      },
+    },
+    {
+      id: "paid-block-sheet-in-progress",
+      title:
+        'QA2-G (Karl, 2026-10-08: "disable \'Items to clear\' while the block is in progress"): today\'s review block, started by the shot before (the server\'s §13 status `in_progress`; "🔒 started" on the card), its sheet open: Items to clear disabled, with "You can\'t change this while the block is in progress." under it; Resume',
+      persona: "paid",
+      route: "/calendar",
+      waitFor: REVIEW_BLOCK_AT,
+      steps: [{ click: REVIEW_BLOCK_AT, ariaDisabledOk: true }],
+      expectVisible:
+        '[data-testid="calendar-block-sheet"] select[aria-label="Items to clear"][disabled][aria-disabled="true"] ~ [data-testid="calendar-items-locked-note"]',
+      extraViewports: [
+        { name: "w1024", width: 1024, height: 768, selectors: "desktop" },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototype's blocks open no sheet; the locked control is Karl's production re-test item G (2026-10-08).",
       },
     },
     {

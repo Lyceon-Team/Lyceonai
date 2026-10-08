@@ -1087,6 +1087,19 @@
   font: inherit;
   color: var(--ink);
 }
+/* QA2-G (Karl, 2026-10-08): a control the block's state locks reads as locked, not merely
+   unresponsive, and the note under it says why. */
+.lyceon-calendar.lyc-cal .field select:disabled,
+.lyceon-calendar.lyc-cal .field input:disabled {
+  color: var(--muted);
+  background: var(--margin);
+  cursor: not-allowed;
+}
+.lyceon-calendar.lyc-cal .field-note {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
 .lyceon-calendar.lyc-cal .mixrow {
   display: grid;
   grid-template-columns: 1fr 92px 30px;
