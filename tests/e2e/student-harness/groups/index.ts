@@ -17,6 +17,7 @@ import { UI_59 } from "./ui-59";
 import { SEO_Q6 } from "./seo-q6";
 import { QA2_A } from "./qa2-a";
 import { W6_UI_65, W6_UI_66 } from "./w6-code";
+import { W6_OQ_68A } from "./oq68";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -34,4 +35,5 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [QA2_A.id]: QA2_A,
   [W6_UI_65.id]: W6_UI_65,
   [W6_UI_66.id]: W6_UI_66,
+  [W6_OQ_68A.id]: W6_OQ_68A,
 };

@@ -171,7 +171,6 @@ const Calendar = lazy(() => import("@/pages/calendar"));
 // Guardian pages (the student calendar and exam results included) are routed by
 // GUARDIAN_ROUTES (`features/guardian/routes.tsx`), which lazy-loads them itself.
 const ScoreReport = lazy(() => import("@/pages/score-report"));
-const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
@@ -323,16 +322,12 @@ export function Router() {
             </RequireRole>
           )}
         />
-        <Route
-          path="/practice/topics"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <StudentRouteFrame route="/practice/topics">
-                <BrowseTopics />
-              </StudentRouteFrame>
-            </RequireRole>
-          )}
-        />
+        {/* OQ-68 (a) (Karl, 2026-10-08): the topic browser is retired; its address replaces itself
+            with /practice (history replace, so Back does not bounce through it). The query is
+            dropped: /practice reads none. Admission is /practice's own guard's. */}
+        <Route path="/practice/topics">
+          {() => <Redirect to="/practice" replace />}
+        </Route>
         <Route path="/practice/math">
           {() => <Redirect to="/practice" replace />}
         </Route>

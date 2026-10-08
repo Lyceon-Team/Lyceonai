@@ -3761,6 +3761,42 @@ plant "W6-UI10-3" "the catch fails open (serves the paid view on a failed read)"
 assert s.count(a) == 1
 s = s.replace(a, "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = true;\n", 1)'
 
+# ── OQ-68 (a) — /practice/topics is retired, with a redirect to /practice (Karl, 2026-10-08) ──────
+# @spec [OQ-68 (a), owner ruling 2026-10-08] | @implemented [2026-10-08]
+# The topic browser (pages/browse-topics.tsx) is deleted; its address replaces itself with
+# /practice and nothing in the client links there any more.
+OQ68A_SHELLS="client/src/lib/route-shells.test.tsx"
+OQ68A_SWEEP="tests/ci/practice-topics-retired.contract.test.ts"
+
+plant "OQ68A-1" "the retired address pushes /practice instead of replacing itself (Back bounces)" \
+  "$OQ68A_SHELLS $OQ68A_SWEEP" \
+  "client/src/App.tsx" \
+  'a = "        <Route path=\"/practice/topics\">\n          {() => <Redirect to=\"/practice\" replace />}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        <Route path=\"/practice/topics\">\n          {() => <Redirect to=\"/practice\" />}\n", 1)'
+
+plant "OQ68A-2" "the retired address keeps its query on the way to /practice (which reads none)" \
+  "$OQ68A_SHELLS" \
+  "client/src/App.tsx" \
+  'a = "        <Route path=\"/practice/topics\">\n          {() => <Redirect to=\"/practice\" replace />}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        <Route path=\"/practice/topics\">\n          {() => <Redirect to={`/practice${window.location.search}`} replace />}\n", 1)'
+
+plant "OQ68A-3" "the shell table forgets the retired address is a redirect" \
+  "$OQ68A_SHELLS $OQ68A_SWEEP" \
+  "client/src/lib/route-shells.ts" \
+  'a = "  \"/practice/topics\": \"redirect\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "OQ68A-4" "Practice links to the retired topic browser again" \
+  "$OQ68A_SWEEP client/src/pages/practice.test.tsx" \
+  "client/src/pages/practice.tsx" \
+  'a = "        <Link href=\"/review\" className={TEXT_LINK}>\n          Review what you missed\n        </Link>\n"
+assert s.count(a) == 1
+s = s.replace(a, a + "        <Link href=\"/practice/topics\" className={TEXT_LINK}>\n          Browse topics\n        </Link>\n", 1)'
+
+
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
 echo "failures:               $FAIL"

@@ -124,7 +124,6 @@ export const STUDENT_ROUTE_SHELLS = {
   "/dashboard": app(360, true, "column", null),
   // UI-51 (2026-10-03): Practice is rebuilt on the student tokens only; off the light lock too.
   "/practice": app(360, true, "column", null),
-  "/practice/topics": app(null, false),
   // UI-52 (2026-10-03): Review is rebuilt on the student tokens only; off the light lock too.
   "/review": app(360, true, "column", null),
   // UI-54 (2026-10-03): Full-Length home is rebuilt on the student tokens only; off the lock too.
@@ -217,6 +216,9 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/practice/math": "redirect",
   "/practice/reading-writing": "redirect",
   "/practice/random": "redirect",
+  // OQ-68 (a) (Karl, 2026-10-08): the topic browser is retired; /practice/topics replaces itself
+  // with /practice.
+  "/practice/topics": "redirect",
   "/math-practice": "redirect",
   "/reading-writing-practice": "redirect",
   "/admin/crisis-review/:id": "admin",
@@ -282,7 +284,6 @@ export function studentShellAt(pathname: string): ShellSpec | null {
 const APP_PAGE_NAMES: Readonly<Record<string, string>> = {
   "/dashboard": "Home",
   "/practice": "Practice",
-  "/practice/topics": "Practice",
   "/review": "Review",
   "/tests": "Full-Length",
   "/calendar": "Calendar",

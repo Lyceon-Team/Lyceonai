@@ -71,7 +71,7 @@ This document records, for those routes:
 | `/tests/:sessionId/report` | student, admin | entitled (lapsed = 200 `unavailable`, Doc 04C §11.5b) | ExamReportPage | `/api/tests/sessions/:session_id/report`, `/api/tests/sessions/:session_id/report/status` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis` | ACTIVE |
-| `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/reference/questions` | ACTIVE |
+| `/practice/topics` | public | free | Redirect→`/practice` (client, history replace; query dropped; OQ-68 (a), Karl 2026-10-08: the topic browser, BrowseTopics, is retired) | N/A | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |

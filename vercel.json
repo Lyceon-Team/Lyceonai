@@ -141,6 +141,10 @@
       "dest": "/app.html"
     },
     {
+      "src": "^/practice/topics/?$",
+      "dest": "/app.html"
+    },
+    {
       "src": "^/math-practice/?$",
       "dest": "/app.html"
     },
@@ -158,10 +162,6 @@
     },
     {
       "src": "^/practice/?$",
-      "dest": "/app.html"
-    },
-    {
-      "src": "^/practice/topics/?$",
       "dest": "/app.html"
     },
     {

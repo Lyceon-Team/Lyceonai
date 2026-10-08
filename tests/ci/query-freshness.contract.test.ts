@@ -123,15 +123,13 @@ describe("UI-14 — consumers take freshness from the config", () => {
     const sites = sitesOf(
       /queryKey:\s*\[\s*["']\/api\/practice\/topics["']\s*\]/,
     );
-    // Presence before absence: the sweep must find the two known call sites, or it is proving
+    // Presence before absence: the sweep must find the one known call site, or it is proving
     // nothing. UI-51 (2026-10-03) moved Practice's and Review's inline reads into the one hook
-    // (`hooks/usePracticeTopics.ts`); browse-topics keeps its own until OQ-3 is decided.
-    expect(sites.map((s) => s.file).sort()).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("client/src/hooks/usePracticeTopics.ts"),
-        expect.stringContaining("client/src/pages/browse-topics.tsx"),
-      ]),
-    );
+    // (`hooks/usePracticeTopics.ts`); browse-topics kept its own until OQ-68 (a) (Karl,
+    // 2026-10-08) retired the page, so the hook is now the only reader.
+    expect(sites.map((s) => s.file)).toEqual([
+      expect.stringContaining("client/src/hooks/usePracticeTopics.ts"),
+    ]);
     expect(
       sites.some(
         (s) =>

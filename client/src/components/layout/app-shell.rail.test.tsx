@@ -321,7 +321,8 @@ describe("the rail (DESIGN.md §2 order)", () => {
 
   it("marks only the active item aria-current=page", async () => {
     const map = await serverMap({ paid: true, under13: false });
-    renderShell(map, { path: "/practice/topics" });
+    // A nested path marks its section (OQ-68 (a) retired /practice/topics, the old example).
+    renderShell(map, { path: "/practice/session/s1" });
     for (const item of RAIL) {
       const el = screen.getByTestId(`rail-${item.key}`);
       expect(el.getAttribute("aria-current")).toBe(
