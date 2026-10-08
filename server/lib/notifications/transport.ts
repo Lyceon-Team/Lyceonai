@@ -123,7 +123,11 @@ function createResendRequest(options: TransportOptions): ResendRequest {
       let providerMessage = `HTTP ${response.status}`;
       try {
         const errorBody: unknown = await response.json();
-        if (errorBody && typeof errorBody === "object" && "message" in errorBody) {
+        if (
+          errorBody &&
+          typeof errorBody === "object" &&
+          "message" in errorBody
+        ) {
           const m = (errorBody as { message?: unknown }).message;
           if (typeof m === "string") {
             providerMessage = `HTTP ${response.status}: ${m}`;
@@ -465,4 +469,198 @@ export function defaultSuppressionTransport(): SuppressionTransport {
     defaultSuppression = createResendSuppressionTransport();
   }
   return defaultSuppression;
+}
+
+// ── Marketing contacts and segments ─────────────────────────────────────────────────────────
+//
+// @spec [contracts/notifications.contract.md §0.2 (this is the only module that talks to
+//        Resend), §0 marketing lane and C14 (amended 2026-10-07); owner brief "SEO vertical —
+//        email lane" 2026-10-07] | @implemented [2026-10-07]
+//
+// plain English: the four calls the daily marketing reconcile needs, on the same request helper
+// as the email send and the suppression list. Contacts are created straight into their segment
+// (`segments: [{ id }]`) and are never moved: a contact in the wrong segment is deleted and
+// created again, so there is no add/remove-membership call to keep correct. `unsubscribed` is
+// always written `false` on create: a create only ever follows a logged opt-in in Lyceon.
+//
+// Endpoints (Resend API reference, 2026-10-07):
+//   list    GET    /contacts?limit=100[&after=<id>][&segment_id=<id>] → { object, has_more, data[] }
+//   create  POST   /contacts { email, unsubscribed, segments:[{id}] } → { object, id }
+//   delete  DELETE /contacts/{id|email}                              → { object, contact, deleted }
+//   list    GET    /segments?limit=100[&after=<id>]                   → { object, has_more, data[] }
+//
+// Logging: the contact id and the profile id, never the address. The address is an argument and
+// a parsed field, held in memory for the length of one call.
+
+export const resendContactSchema = z
+  .object({
+    id: z.string().min(1),
+    email: z.string().min(1),
+    unsubscribed: z.boolean(),
+  })
+  .passthrough();
+export type ResendContact = z.infer<typeof resendContactSchema>;
+
+export const resendSegmentSchema = z
+  .object({ id: z.string().min(1), name: z.string() })
+  .passthrough();
+export type ResendSegment = z.infer<typeof resendSegmentSchema>;
+
+const resendListSchema = z
+  .object({ has_more: z.boolean().optional(), data: z.array(z.unknown()) })
+  .passthrough();
+const resendContactCreateSchema = z
+  .object({ id: z.string().min(1) })
+  .passthrough();
+
+/** Upper bound on pages per list, so a provider that always answers `has_more` cannot spin. */
+const RESEND_LIST_MAX_PAGES = 1000;
+const RESEND_LIST_PAGE_SIZE = 100;
+
+export type ContactsFailure = EmailSendFailure;
+
+export type ContactsTransport = {
+  /** Every contact, or every contact in one segment. All pages. */
+  listContacts: (filter: {
+    segmentId?: string;
+  }) => Promise<Result<ResendContact[], ContactsFailure>>;
+  listSegments: () => Promise<Result<ResendSegment[], ContactsFailure>>;
+  createContact: (
+    email: string,
+    segmentId: string,
+    context: SuppressionLogContext,
+  ) => Promise<Result<{ id: string }, ContactsFailure>>;
+  /** By id or address. `deleted: false` when there was no such contact (404). */
+  deleteContact: (
+    idOrEmail: string,
+    context: SuppressionLogContext,
+  ) => Promise<Result<{ deleted: boolean }, ContactsFailure>>;
+};
+
+export function createResendContactsTransport(
+  options: TransportOptions = {},
+): ContactsTransport {
+  const request = createResendRequest(options);
+
+  async function listAll<T>(
+    basePath: string,
+    params: Record<string, string>,
+    itemSchema: z.ZodType<T>,
+  ): Promise<Result<T[], ContactsFailure>> {
+    const items: T[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < RESEND_LIST_MAX_PAGES; page += 1) {
+      const query = new URLSearchParams({
+        ...params,
+        limit: String(RESEND_LIST_PAGE_SIZE),
+        ...(after !== null ? { after } : {}),
+      });
+      const response = await request("GET", `${basePath}?${query.toString()}`);
+      if (!response.ok) return response;
+      const list = resendListSchema.safeParse(response.value);
+      if (!list.success) {
+        return err({
+          kind: "malformed_response",
+          message: `2xx without a list from ${basePath}`,
+        });
+      }
+      let lastId: string | null = null;
+      for (const raw of list.data.data) {
+        const item = itemSchema.safeParse(raw);
+        if (!item.success) {
+          return err({
+            kind: "malformed_response",
+            message: `malformed item from ${basePath}: ${item.error.issues
+              .map((i) => `${i.path.join(".")} ${i.message}`)
+              .join("; ")}`,
+          });
+        }
+        items.push(item.data);
+        const id = (raw as { id?: unknown }).id;
+        lastId = typeof id === "string" ? id : lastId;
+      }
+      if (list.data.has_more !== true || lastId === null) return ok(items);
+      after = lastId;
+    }
+    return err({
+      kind: "malformed_response",
+      message: `${basePath} still reported more pages after ${RESEND_LIST_MAX_PAGES}`,
+    });
+  }
+
+  return {
+    listContacts(filter) {
+      return listAll(
+        "/contacts",
+        filter.segmentId !== undefined ? { segment_id: filter.segmentId } : {},
+        resendContactSchema,
+      );
+    },
+
+    listSegments() {
+      return listAll("/segments", {}, resendSegmentSchema);
+    },
+
+    async createContact(email, segmentId, context) {
+      const response = await request("POST", "/contacts", {
+        email: normaliseAddress(email),
+        unsubscribed: false,
+        segments: [{ id: segmentId }],
+      });
+      if (!response.ok) {
+        logger.warn(
+          "MARKETING_EMAIL",
+          "contact_create_failed",
+          "Resend did not accept the contact",
+          {
+            recipientProfileId: context.recipientProfileId,
+            kind: response.error.kind,
+            status: response.error.status,
+          },
+        );
+        return response;
+      }
+      const created = resendContactCreateSchema.safeParse(response.value);
+      if (!created.success) {
+        return err({
+          kind: "malformed_response",
+          message: "2xx without a contact id",
+        });
+      }
+      return ok({ id: created.data.id });
+    },
+
+    async deleteContact(idOrEmail, context) {
+      const target = idOrEmail.includes("@")
+        ? normaliseAddress(idOrEmail)
+        : idOrEmail;
+      const response = await request(
+        "DELETE",
+        `/contacts/${encodeURIComponent(target)}`,
+      );
+      if (!response.ok) {
+        if (response.error.status === 404) return ok({ deleted: false });
+        logger.warn(
+          "MARKETING_EMAIL",
+          "contact_delete_failed",
+          "Resend did not accept the contact deletion",
+          {
+            recipientProfileId: context.recipientProfileId,
+            kind: response.error.kind,
+            status: response.error.status,
+          },
+        );
+        return response;
+      }
+      return ok({ deleted: true });
+    },
+  };
+}
+
+let defaultContacts: ContactsTransport | null = null;
+
+/** The process-wide contacts client, built from the environment on first use. */
+export function defaultContactsTransport(): ContactsTransport {
+  if (!defaultContacts) defaultContacts = createResendContactsTransport();
+  return defaultContacts;
 }

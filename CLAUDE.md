@@ -313,3 +313,4 @@ When compacting, always preserve: the spec sections referenced this session, the
   (renamed 2026-06-06 from `lyceon-coding-standards (1).md` — the space/"(1)" that
    previously broke this `@import` parse is gone, so the standards now auto-load)
 - Domain skills load on demand once promoted into `.claude/skills/` (see SKILL-BUILD-PLAN.md): anti-leak, auth-entitlements, determinism-idempotency, stripe-billing, practice-engine, mastery-kpi, tutor-runtime, frontend, testing-audit
+- Marketing and content requests from Slack (#marketing) route to the `ai-cmo` skill (`.claude/skills/ai-cmo/SKILL.md`); it proposes and drafts, never publishes. Post-launch (Karl, 2026-10-07).

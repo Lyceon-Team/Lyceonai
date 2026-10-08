@@ -412,6 +412,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-consent-reviews.mutations.sh
 
+      # Marketing email lane (contract §14): plants the age rule and the pending-deletion
+      # exclusion out of the audience, a lost replay dedupe, a complaint logged as an
+      # unsubscribe, a provider grant, a signature bypass, ignored unsubscribes / complaints,
+      # deletion without bringing the unsubscribe back, a kept opt-out, the wrong segment, acting
+      # on a partial read, an address in a log and account deletion keeping the contact. Each
+      # must turn its test red by name.
+      - name: Marketing email lane mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/marketing-email-sync.mutations.sh
+
       # A gate that has stopped biting is indistinguishable from a passing one, so the
       # placement gates are planted rather than trusted. Each case builds its own
       # throwaway database, because the pipeline is not idempotent.

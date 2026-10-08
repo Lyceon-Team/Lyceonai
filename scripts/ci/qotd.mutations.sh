@@ -34,6 +34,10 @@ FILES=(
   "packages/shared/src/qotd-schema.ts"
   "client/src/prerender/entry-server.tsx"
   "client/src/components/qotd/QotdWidget.tsx"
+  "shared/qotd/social.ts"
+  "scripts/qotd-social/generate.ts"
+  "server/services/qotd/schedule-job.ts"
+  "server/routes/public-qotd-routes.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -82,6 +86,8 @@ ts_check() { pnpm exec vitest run "$@" 2>&1; }
 ROUTES=tests/ci/public-qotd-routes.contract.test.ts
 PAGES=tests/seo.qotd-pages.test.ts
 WIDGET=client/src/components/qotd/QotdWidget.test.tsx
+SOCIAL=tests/ci/qotd-social.test.ts
+SCHED=tests/ci/qotd-schedule-job.test.ts
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -102,8 +108,8 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET")"; RC=$?
-[ "$RC" = 0 ] && ok "route + page + widget tests green" || { bad "route + page + widget tests not green"; echo "$OUT" | tail -30; }
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED")"; RC=$?
+[ "$RC" = 0 ] && ok "route + page + widget + social + scheduler tests green" || { bad "route + page + widget + social + scheduler tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "QOTD MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 if [ "$HAVE_PG" = 1 ]; then
@@ -134,9 +140,11 @@ echo "=== (4) pre-submit answer leak through a loosened schema (service AND sche
 plant server/services/qotd/qotd-service.ts \
   "      correct_answer: projected.correct_answer," \
   "      correct_answer: row.correct_answer," || { bad "M4 STALE"; exit 1; }
+# Anchored on the pre-submit schema's own options line: qotdSocialInputSchema also has a
+# `correct_answer: z.null(),` line (2026-10-07), and a bare anchor would be ambiguous.
 plant packages/shared/src/qotd-schema.ts \
-  "    correct_answer: z.null()," \
-  "    correct_answer: z.string().nullable()," || { bad "M4 STALE"; exit 1; }
+  $'    options: z.array(qotdServedOptionSchema),\n    correct_answer: z.null(),' \
+  $'    options: z.array(qotdServedOptionSchema),\n    correct_answer: z.string().nullable(),' || { bad "M4 STALE"; exit 1; }
 OUT="$(ts_check "$ROUTES")"; RC=$?
 expect_red "M4 schema + service leak" "returns the question with correct_answer and explanation null" "$OUT" "$RC"
 restore
@@ -185,8 +193,75 @@ OUT="$(ts_check "$WIDGET")"; RC=$?
 expect_red "M9 no lock" "one answer per visit" "$OUT" "$RC"
 restore
 
+# Social assets (owner decisions 2026-10-07): the leak check must catch the answer in a caption,
+# the archive's answer must not ride into the input, and no future day may be built.
+echo "=== (10) socialAssetLeaks stops checking the grid-in answer ==="
+plant shared/qotd/social.ts \
+  "      containsPhrase(haystack, keyed) &&" \
+  "      false &&" || { bad "M10 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M10 grid-in answer in caption passes" "grid-in: the keyed value in the caption" "$OUT" "$RC"
+restore
+
+echo "=== (11) socialAssetLeaks stops checking the caption for the correct choice ==="
+plant shared/qotd/social.ts \
+  "    if (correct && containsPhrase(normalize(output.caption), correct.text)) {" \
+  "    if (false) {" || { bad "M11 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M11 correct choice in caption passes" "MCQ: the correct choice's text in the caption" "$OUT" "$RC"
+restore
+
+echo "=== (12) LEAK: the archive's correct choice rides into the social input ==="
+plant shared/qotd/social.ts \
+  "    options: q.options.map((o) => ({ text: o.text }))," \
+  "    options: q.options.map((o) => ({ text: o.text, correct: o.id === q.correct_option_id }))," || { bad "M12 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M12 answer in input" "drops the archive's answer and explanation before anything is built" "$OUT" "$RC"
+restore
+
+echo "=== (13) a day that has not passed can be built (< becomes <=) ==="
+plant scripts/qotd-social/generate.ts \
+  "  return date < today" \
+  "  return date <= today" || { bad "M13 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M13 today buildable by date" "a date is buildable only once it has passed in America/Chicago" "$OUT" "$RC"
+restore
+
+echo "=== (14) the scheduler stops skipping a stem that repeats its passage (owner 2026-10-08) ==="
+plant server/services/qotd/schedule-job.ts \
+  '      if (stemRepeatsPassage(c.stem ?? "", c.passage)) {' \
+  "      if (false) {" || { bad "M14 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M14 prompt-less question scheduled" "skips a question whose stem repeats its passage" "$OUT" "$RC"
+restore
+
+# Owner 2026-10-08: a past day whose stem repeats its passage is not published.
+echo "=== (15) the build publishes a prompt-less past day (page + sitemap) ==="
+plant client/src/prerender/entry-server.tsx \
+  "    stemRepeatsPassage(d.question.stem, d.question.passage)," \
+  "    false," || { bad "M15 STALE"; exit 1; }
+OUT="$(ts_check "$PAGES")"; RC=$?
+expect_red "M15 broken day prerendered" "no page, no sitemap entry, no hub link" "$OUT" "$RC"
+restore
+
+echo "=== (16) the hub's archive list links a prompt-less past day ==="
+plant server/services/qotd/qotd-service.ts \
+  "  return parsed.data.filter((r) => isPublishableArchiveRow(r));" \
+  "  return parsed.data;" || { bad "M16 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M16 broken day listed" "not in GET /archive and 404 on GET /:date while broken" "$OUT" "$RC"
+restore
+
+echo "=== (17) GET /:date serves a prompt-less past day ==="
+plant server/routes/public-qotd-routes.ts \
+  "      if (!row || !isPublishableArchiveRow(row)) {" \
+  "      if (!row) {" || { bad "M17 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M17 broken day served" "not in GET /archive and 404 on GET /:date while broken" "$OUT" "$RC"
+restore
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET")"; RC=$?
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "QOTD MUTATIONS: $PASS passed, $FAIL failed"

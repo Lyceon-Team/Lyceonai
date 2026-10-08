@@ -358,5 +358,45 @@ export const resendWebhookEventSchema = z
   .passthrough();
 export type ResendWebhookEvent = z.infer<typeof resendWebhookEventSchema>;
 
+/**
+ * @spec [contracts/notifications.contract.md C7.4 and §14 (marketing lane, amended 2026-10-07);
+ *       owner Step 0 decision 4, 2026-10-07 ("a complaint turns the opt-in off")]
+ *       | @implemented [2026-10-07]
+ *
+ * plain English: the receiver first reads only the envelope, so a contact event (which has no
+ * `email_id`) is not rejected as malformed. Then:
+ *   - `contact.updated` with `unsubscribed: true` → the marketing opt-out (source
+ *     `email_unsubscribe`). Any other contact update is acknowledged and not recorded.
+ *   - `email.complained` → the delivery status as before, AND the marketing opt-out for each
+ *     recipient (source `email_complaint`): a complaint about any Lyceon email withdraws
+ *     marketing consent, the direction that fails toward not mailing.
+ * The address on either event is compared with profiles in SQL and never stored or logged.
+ */
+export const resendWebhookEnvelopeSchema = z
+  .object({
+    type: z.string().min(1),
+    created_at: z.string().min(1),
+    data: z.object({}).passthrough(),
+  })
+  .passthrough();
+
+export const RESEND_CONTACT_UPDATED = "contact.updated";
+export const RESEND_EMAIL_COMPLAINED = "email.complained";
+
+export const resendContactUpdatedDataSchema = z
+  .object({
+    id: z.string().min(1),
+    email: z.string().min(1),
+    unsubscribed: z.boolean(),
+  })
+  .passthrough();
+
+/** `to` is an array on Resend's email events; a bare string is accepted as one recipient. */
+export const resendComplaintRecipientsSchema = z
+  .object({
+    to: z.union([z.array(z.string().min(1)).min(1), z.string().min(1)]),
+  })
+  .passthrough();
+
 /** Contract §7.2 — Svix signature freshness window, in seconds. */
 export const RESEND_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;

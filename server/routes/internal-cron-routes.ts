@@ -30,6 +30,7 @@ import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
 import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
 import { runQotdSchedule } from "../services/qotd/schedule-job.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
+import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -651,6 +652,49 @@ router.get(
         err,
       );
       res.status(500).json({ error: "qotd_schedule_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/marketing-email-reconcile
+ * @spec [contracts/notifications.contract.md §14 (marketing lane, amended 2026-10-07); owner
+ *        Step 0 decision 1, 2026-10-07 ("daily reconcile only, no new Cloud Tasks queue")]
+ *        | @implemented [2026-10-07]
+ *
+ * plain English: makes Resend's two marketing segments equal to `marketing_email_audience()`,
+ * bringing any unsubscribe back to Lyceon before the contact carrying it is deleted. Opt-outs
+ * made in Lyceon reach Resend at the next run; unsubscribes made in Resend reach Lyceon
+ * immediately through the webhook. Safe to rerun: the plan is computed from state.
+ *
+ * Answers 500 when the run stopped before writing (missing config, a missing segment, a failed
+ * read) or when any single write failed, so the cron run shows as failed and is looked at; the
+ * summary carries counts only.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/marketing-email-reconcile",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await reconcileMarketingContacts(
+        req.requestId === undefined ? {} : { requestId: req.requestId },
+      );
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "marketing_email_reconcile", summary });
+    } catch (err) {
+      logger.error(
+        "MARKETING_EMAIL",
+        "marketing_email_reconcile_job_error",
+        "Scheduled marketing contact reconcile failed",
+        err,
+      );
+      res.status(500).json({ error: "marketing_email_reconcile_failed" });
     }
   },
 );

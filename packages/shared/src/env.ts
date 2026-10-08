@@ -65,6 +65,15 @@ export const envSchema = z.object({
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
 
+  // Marketing email lane (contracts/notifications.contract.md §14). Read at:
+  //   RESEND_SEGMENT_ID_STUDENTS   server/lib/marketing-email-sync.ts
+  //   RESEND_SEGMENT_ID_GUARDIANS  server/lib/marketing-email-sync.ts
+  // The ids of the Resend segments "Marketing — students" and "Marketing — guardians". Not
+  // secrets. Optional in the shape: until both are set, the daily reconcile refuses with
+  // `config_missing` (and answers 500, so the cron run shows as failed) instead of guessing.
+  RESEND_SEGMENT_ID_STUDENTS: z.string().min(1).optional(),
+  RESEND_SEGMENT_ID_GUARDIANS: z.string().min(1).optional(),
+
   // Product analytics (Doc 07A §7.1, §9; SCL-201). Read at:
   //   POSTHOG_API_KEY   server/lib/analytics/emit-event.ts (the PostHog project key, `phc_…`)
   //   POSTHOG_HOST      server/lib/analytics/emit-event.ts (US region ingestion host)
@@ -88,6 +97,13 @@ export const notificationEnvSchema = envSchema.pick({
   NOTIFICATION_FROM_EMAIL: true,
 });
 export type NotificationEnv = z.infer<typeof notificationEnvSchema>;
+
+/** The marketing email lane's segment ids, parsed by the daily reconcile. */
+export const marketingEmailEnvSchema = envSchema.pick({
+  RESEND_SEGMENT_ID_STUDENTS: true,
+  RESEND_SEGMENT_ID_GUARDIANS: true,
+});
+export type MarketingEmailEnv = z.infer<typeof marketingEmailEnvSchema>;
 
 /** The analytics lane's variables, parsed by the emission wrapper (Doc 07A §9). */
 export const analyticsEnvSchema = envSchema.pick({

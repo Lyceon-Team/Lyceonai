@@ -42,6 +42,7 @@
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
     "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts",
     "generate:vercel-routes": "tsx scripts/build/generate-vercel-routes.ts",
+    "build:counsel-pdf": "node scripts/compliance/build-counsel-pdf.mjs",
     "gate:seo-output": "tsx scripts/ci/seo-output-gate.ts",
     "gate:event-registry-parity": "tsx scripts/ci/event-schema-registry-parity.ts",
     "gate:pii-redaction": "tsx scripts/ci/pii-redaction-conformance.ts",
