@@ -1,6 +1,6 @@
 # UI-58 Settings (each section; paid self-billing, free, guardian-managed), Help, Notifications and the plans page (both NOT PROTOTYPED); light and dark, 1440 and 390
 
-Generated 2026-10-08T02:26:32.936Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-58` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-08T03:43:23.851Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-58` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -56,7 +56,7 @@ Prototype: `Settings.dc.html` (Settings, plan = paid, Guardian clicked (the canv
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![settings-guardian-paid desktop light](settings-guardian-paid--desktop--light--built.png)<br>`/profile`, 99 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png), 79 KB |
+| desktop | light | ![settings-guardian-paid desktop light](settings-guardian-paid--desktop--light--built.png)<br>`/profile`, 100 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png), 79 KB |
 | desktop | dark | ![settings-guardian-paid desktop dark](settings-guardian-paid--desktop--dark--built.png)<br>`/profile`, 102 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--paid--dark--guardian.png), 80 KB |
 | mobile | light | ![settings-guardian-paid mobile light](settings-guardian-paid--mobile--light--built.png)<br>`/profile`, 104 KB, horizontal overflow 0px | ![prototype light](proto--Settings--paid--light--guardian.png)<br>desktop prototype (no phone layout), 79 KB |
 | mobile | dark | ![settings-guardian-paid mobile dark](settings-guardian-paid--mobile--dark--built.png)<br>`/profile`, 106 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--paid--dark--guardian.png)<br>desktop prototype (no phone layout), 80 KB |
@@ -69,10 +69,10 @@ Prototype: `Settings.dc.html` (Settings, plan = free, Guardian clicked); clicked
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![settings-guardian-free desktop light](settings-guardian-free--desktop--light--built.png)<br>`/profile`, 105 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--guardian.png), 80 KB |
-| desktop | dark | ![settings-guardian-free desktop dark](settings-guardian-free--desktop--dark--built.png)<br>`/profile`, 107 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--guardian.png), 81 KB |
-| mobile | light | ![settings-guardian-free mobile light](settings-guardian-free--mobile--light--built.png)<br>`/profile`, 99 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--guardian.png)<br>desktop prototype (no phone layout), 80 KB |
-| mobile | dark | ![settings-guardian-free mobile dark](settings-guardian-free--mobile--dark--built.png)<br>`/profile`, 101 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--guardian.png)<br>desktop prototype (no phone layout), 81 KB |
+| desktop | light | ![settings-guardian-free desktop light](settings-guardian-free--desktop--light--built.png)<br>`/profile`, 104 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--guardian.png), 80 KB |
+| desktop | dark | ![settings-guardian-free desktop dark](settings-guardian-free--desktop--dark--built.png)<br>`/profile`, 106 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--guardian.png), 81 KB |
+| mobile | light | ![settings-guardian-free mobile light](settings-guardian-free--mobile--light--built.png)<br>`/profile`, 98 KB, horizontal overflow 0px | ![prototype light](proto--Settings--free--light--guardian.png)<br>desktop prototype (no phone layout), 80 KB |
+| mobile | dark | ![settings-guardian-free mobile dark](settings-guardian-free--mobile--dark--built.png)<br>`/profile`, 100 KB, horizontal overflow 0px | ![prototype dark](proto--Settings--free--dark--guardian.png)<br>desktop prototype (no phone layout), 81 KB |
 
 ## Settings → Billing, paid and self-managed: the status and Manage billing (not clicked: it opens Stripe)
 
@@ -216,6 +216,7 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): built to the shell spec; these 
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"6fe65a99-4f80-4f4e-90a2-7bbfb667f06b","openPracticeSessionId":"2cdb8354-7765-46fa-b64c-6c00764a8a6b","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"9ac8c64a-0e3c-4939-8417-d9a852b2090c","openPracticeSessionId":"ba8679b4-3054-40f2-bc27-d0110e954426","openReviewSessionId":null,"diagnosticSessionId":"5af485b0-ded5-42f9-936e-5c72733aeb2b","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"447c8599-284b-4d61-bbef-02e1acf6da85","openPracticeSessionId":"7572cd05-d496-422e-8d18-125b06bf5aa4","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"e52e4acf-a2e2-4216-a181-c97430cc2696","openPracticeSessionId":"979dcf2a-3356-4429-940e-bb3e4310f71f","openReviewSessionId":null,"diagnosticSessionId":"39990afa-7542-41fa-900c-c01b8bd99e3e","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
+- Desmos (QA2-B, opt-in `STUDENT_HARNESS_DESMOS=1`): not loaded (a local-only run; the calculator shows its unavailable line)
 - External hosts blocked: none

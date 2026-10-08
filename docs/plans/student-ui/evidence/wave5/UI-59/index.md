@@ -1,6 +1,6 @@
 # UI-59 Bare-card pages (sign in, sign up, reset, profile completion, update password, account recovery, guardian required, 404, pending deletion, error screen), all NOT PROTOTYPED; light and dark, 1440 and 390
 
-Generated 2026-10-08T02:19:15.002Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-08T03:45:32.007Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts UI-59` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -130,7 +130,7 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 122 KB, horizontal overflow 0px | none |
+| desktop | light | ![guardian-required desktop light](guardian-required--desktop--light--built.png)<br>`/guardian-required`, 121 KB, horizontal overflow 0px | none |
 | desktop | dark | ![guardian-required desktop dark](guardian-required--desktop--dark--built.png)<br>`/guardian-required`, 124 KB, horizontal overflow 0px | none |
 | mobile | light | ![guardian-required mobile light](guardian-required--mobile--light--built.png)<br>`/guardian-required`, 105 KB, horizontal overflow 0px | none |
 | mobile | dark | ![guardian-required mobile dark](guardian-required--mobile--dark--built.png)<br>`/guardian-required`, 108 KB, horizontal overflow 0px | none |
@@ -178,8 +178,8 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 |---|---|---|---|
 | desktop | light | ![not-found-home desktop light](not-found-home--desktop--light--built.png)<br>`/dashboard`, 139 KB, horizontal overflow 0px | none |
 | desktop | dark | ![not-found-home desktop dark](not-found-home--desktop--dark--built.png)<br>`/dashboard`, 140 KB, horizontal overflow 0px | none |
-| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/dashboard`, 54 KB, horizontal overflow 0px | none |
-| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/dashboard`, 54 KB, horizontal overflow 0px | none |
+| mobile | light | ![not-found-home mobile light](not-found-home--mobile--light--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
+| mobile | dark | ![not-found-home mobile dark](not-found-home--mobile--dark--built.png)<br>`/dashboard`, 55 KB, horizontal overflow 0px | none |
 
 ## The pending-deletion screen: a student on whom the real request_account_deletion has run, opening /dashboard
 
@@ -210,6 +210,7 @@ Prototype: none. NOT PROTOTYPED (DESIGN.md §4): the bare-card pages and the pen
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"c2a4b339-867a-4eba-9d2f-67b45ce43569","openPracticeSessionId":"b375f5d3-33f6-4474-babd-e8c5e4908580","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"9aa83bcd-5707-4f79-9140-213821bab2ab","openPracticeSessionId":"610e4c09-9e99-4d7e-85f9-29193f4ba7d2","openReviewSessionId":null,"diagnosticSessionId":"ec2f81f2-09f2-443b-bd13-eebcb0a9f242","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"cf7108ae-dd9a-4b71-97cd-02162cb525e0","openPracticeSessionId":"b296c634-8e02-4c97-89b3-85e4133bf6ce","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"51fa3da1-5146-46f6-9090-4d4c2dcc56fe","openPracticeSessionId":"a9644b2e-fda4-4f2e-b1e1-58be275e0678","openReviewSessionId":null,"diagnosticSessionId":"61d180c6-219a-4374-bf2e-78de49e08e58","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
+- Desmos (QA2-B, opt-in `STUDENT_HARNESS_DESMOS=1`): not loaded (a local-only run; the calculator shows its unavailable line)
 - External hosts blocked: none
