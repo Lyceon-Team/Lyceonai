@@ -259,6 +259,9 @@ export type PageGroup = {
    * "notifications" (QA 2026-10-07, UI-41): three unread in-app notifications for the paid
    * student, emitted through the real SQL fan-out (`public.emit_notification_event` with
    * `public.notification_event_id`), so the bell's badge and the popover's items are real rows.
+   * "quota-config" (W6 UI-64, OQ-68 (d)): `daily_quota_free` 37 and the diagnostic 6 × 8 = 48 in
+   * the harness database after the base seed (db.ts `applyQuotaConfig`), so the copy's numbers
+   * visibly come from the server config.
    * Off by default, so the other groups' payloads do not change.
    */
   seed?:
@@ -268,7 +271,8 @@ export type PageGroup = {
     | "lisa-history"
     | "mastery-skills"
     | "bare-pages"
-    | "notifications";
+    | "notifications"
+    | "quota-config";
   /**
    * Where the group's evidence goes, relative to the repo root. Defaults to the student-UI Wave 5
    * evidence directory; the SEO vertical's groups write under docs/plans/seo/evidence/.

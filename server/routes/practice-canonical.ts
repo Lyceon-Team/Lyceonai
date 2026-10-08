@@ -14,7 +14,11 @@ import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
 } from "../../apps/api/src/lib/rate-limit-ledger";
-import { dryRunPracticeQuota, toPracticeQuota } from "../lib/practice-quota";
+import {
+  dryRunPracticeQuota,
+  freeDailyLimitFor,
+  toPracticeQuota,
+} from "../lib/practice-quota";
 import {
   hasCanonicalOptionSet,
   buildServedOptions,
@@ -2241,10 +2245,13 @@ async function serveNextForSession(args: {
  * under-13 link gate here); no entitlement gate, because the free student is the reader. The
  * number comes from `dryRunPracticeQuota`, the call the session-start 402 makes, so the read and
  * the refusal cannot disagree; a dry run writes no ledger row. Body: `{unlimited, limit,
- * remaining, resetAt}` (`practiceQuotaSchema`). A paid student, and an admin (the wrapper's admin
- * bypass), read `unlimited: true` with nulls. Since the OQ-43 / F-61 ruling (Karl, 2026-10-03)
- * the count is answers submitted in the current America/Chicago day and `resetAt` the next
- * Chicago midnight (Doc 02B §13); the SQL function changed, this handler did not.
+ * remaining, resetAt, freeDailyLimit}` (`practiceQuotaSchema`). A paid student, and an admin (the
+ * wrapper's admin bypass), read `unlimited: true` with nulls, plus `freeDailyLimit`: the free
+ * plan's limit for the plan copy, which every reader gets (OQ-68 (d), Karl, 2026-10-08, UI-64;
+ * `freeDailyLimitFor`: the dry run's own `limit` for a free student, the same
+ * `daily_quota_free` row read directly for the other two). Since the OQ-43 / F-61 ruling (Karl,
+ * 2026-10-03) the count is answers submitted in the current America/Chicago day and `resetAt`
+ * the next Chicago midnight (Doc 02B §13); the SQL function changed, this handler did not.
  * edge cases: ledger unavailable, or a decision without numbers → 503 (fail closed, never a
  * guessed number), like the 402 sites. Logs carry the user id and the decision code, nothing else.
  */
@@ -2277,7 +2284,11 @@ router.get(
         userId: user.id,
         role: user.role,
       });
-      const quota = toPracticeQuota(decision);
+      // OQ-68 (d) / UI-64: the free plan's daily limit for the plan copy, on every shape.
+      const quota = toPracticeQuota(
+        decision,
+        await freeDailyLimitFor(decision),
+      );
       if (!quota.ok) {
         logger.error(
           "PRACTICE_QUOTA",
@@ -2404,6 +2415,13 @@ router.get(
     return res.json({
       sessions: enhancedSessions,
       maxConcurrentSessions: openConfig.maxConcurrentSessions,
+      // @spec [owner ruling OQ-68 (d), Karl, 2026-10-08, register row UI-64; Doc 05P §10.1
+      //        (8 domains × `diagnostic_per_domain`)] | @implemented [2026-10-08] | plain
+      // English: the diagnostic's length and per-domain count, the config numbers
+      // `POST /diagnostic/sessions` sizes the diagnostic with (the same `loadPracticeConfig`),
+      // so Home's diagnostic card prints them instead of a literal 40. Config, not student data.
+      diagnosticTotalQuestions: openConfig.diagnosticTotalQuestions,
+      diagnosticPerDomain: openConfig.diagnosticPerDomain,
       requestId,
     });
   },

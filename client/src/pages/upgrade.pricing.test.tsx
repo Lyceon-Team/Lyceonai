@@ -38,6 +38,11 @@ const getBillingPlansMock = vi.fn();
 const startSubscriptionCheckoutMock = vi.fn();
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+// OQ-68 (d): the page reads the quota's free daily limit for its free sentence. No signed-in
+// student here, so that read stays off; these tests are about prices only.
+vi.mock("@/contexts/SupabaseAuthContext", () => ({
+  useSupabaseAuth: () => ({ user: null, authLoading: false }),
+}));
 vi.mock("@/lib/billing-client", () => ({
   getBillingPlans: (...args: unknown[]) => getBillingPlansMock(...args),
   startSubscriptionCheckout: (...args: unknown[]) =>

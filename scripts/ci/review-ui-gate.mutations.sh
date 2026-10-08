@@ -146,6 +146,8 @@ FILES=(
   "client/src/components/math/FloatingPanel.tsx"
   "client/src/components/legal/ReconsentModal.tsx"
   "server/routes/legacy/progress.ts"
+  "client/src/hooks/usePracticeQuota.ts"
+  "server/lib/practice-quota.ts"
 )
 
 snapshot_all() {
@@ -1748,12 +1750,14 @@ s = s.replace(a, "          onClick={() => undefined}", 1)'
 
 # OQ-61 (e): the free box shows the approved Help FAQ wording from `@/lib/plan-copy`. Each plant
 # puts one line back to the Settings prototype's variant, the drift the shared constants prevent.
+# Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
+# (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
 plant "UI58-B4" "the Billing free box's free line drifts from the approved wording" \
   "$T58" \
   "client/src/components/settings/BillingSection.tsx" \
-  'a = "        {PLAN_FREE_INCLUDES}\n"
+  'a = "        {planFreeIncludes(freeDailyLimit)}\n"
 assert s.count(a) == 1
-s = s.replace(a, "        The diagnostic, your projected score, 40 practice questions a day and unlimited review.\n", 1)'
+s = s.replace(a, "        The diagnostic, your projected score, {freeDailyLimit} practice questions a day and unlimited review.\n", 1)'
 
 plant "UI58-B5" "the Billing free box's paid line drifts from the approved wording" \
   "$T58" \
@@ -1825,12 +1829,14 @@ plant "UI58-H1" "HELP_PATH back on the legal hub (OQ-46)" \
 assert s.count(a) == 1
 s = s.replace(a, "export const HELP_PATH = \"/legal\";", 1)'
 
+# Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
+# (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
 plant "UI58-H2" "an approved answer is reworded" \
   "$H58" \
   "client/src/lib/plan-copy.ts" \
-  'a = "40 practice questions a day and unlimited review."
+  'a = "${practice} and unlimited review."
 assert s.count(a) == 1
-s = s.replace(a, "40 questions a day and unlimited review.", 1)'
+s = s.replace(a, "${practice} and review.", 1)'
 
 plant "UI58-H3" "a question is dropped (six, not seven)" \
   "$H58" \
@@ -1889,7 +1895,7 @@ s = s.replace(a, "        description=\"One secure checkout flow for monthly, qu
 plant "UI58-U4" "the free line replaced by the shipped 'projection access' bullet" \
   "client/src/pages/upgrade.page.test.tsx" \
   "client/src/pages/upgrade.tsx" \
-  'a = "        {PLAN_FREE_INCLUDES}"
+  'a = "        {planFreeIncludes(freeDailyLimit)}"
 assert s.count(a) == 1
 s = s.replace(a, "        Full KPI + mastery + projection access", 1)'
 
@@ -1900,19 +1906,21 @@ plant "UI58-U5" "a card lists the projection as paid again" \
 assert s.count(a) == 1
 s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + projection access\n", 1)'
 
+# Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
+# (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
 plant "UI58-U6" "the shared free sentence drops the projection" \
   "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
   "client/src/lib/plan-copy.ts" \
-  'a = "the diagnostic, your projected score, 40 practice"
+  'a = "the diagnostic, your projected score, ${practice}"
 assert s.count(a) == 1
-s = s.replace(a, "the diagnostic, 40 practice", 1)'
+s = s.replace(a, "the diagnostic, ${practice}", 1)'
 
 plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
   "client/src/pages/upgrade.page.test.tsx" \
   "client/src/pages/help.tsx" \
-  'a = "    a: `${PLAN_FREE_INCLUDES} ${PLAN_PAID_ADDS}`,"
+  'a = "      a: `${planFreeIncludes(freeDailyLimit)} ${PLAN_PAID_ADDS}`,"
 assert s.count(a) == 1
-s = s.replace(a, "    a: `${PLAN_FREE_INCLUDES} Paid plans add more.`,", 1)'
+s = s.replace(a, "      a: `${planFreeIncludes(freeDailyLimit)} Paid plans add more.`,", 1)'
 
 plant "UI58-N1" "a notification's time drops to 12px" \
   "client/src/pages/notifications.test.tsx" \
@@ -3760,6 +3768,91 @@ plant "W6-UI10-3" "the catch fails open (serves the paid view on a failed read)"
   'a = "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = false;\n"
 assert s.count(a) == 1
 s = s.replace(a, "          { requestId: req.requestId },\n        );\n        canSeeLiveProgression = true;\n", 1)'
+
+# ── W6 UI-64 — configured numbers in student copy come from the server (OQ-68 (d)) ────────────
+# @spec [student-UI register UI-64; owner ruling OQ-68 (d) (Karl, 2026-10-08): "The '40 questions'
+#        copy reads the server quota value (the same source as the 402)"] | @implemented [2026-10-08]
+# Each plant puts a remembered number (or no server number) back at one call site; the test that
+# serves a non-40 config value (37; the diagnostic 48 / 6) must go red. W6-UI64-9 and -10 are the
+# server mapping (no database: the contract test mocks the config read); the route and the
+# /sessions/open fields are proven over real Postgres outside this gate (practice-quota.pg and
+# practice-config-copy.pg), whose plants are recorded in the UI-64 report.
+W6_UI64_PLAN="client/src/lib/plan-copy.test.ts"
+W6_UI64_HELP="client/src/pages/help.test.tsx"
+W6_UI64_SETTINGS="client/src/pages/settings.test.tsx"
+W6_UI64_UPGRADE="client/src/pages/upgrade.page.test.tsx"
+W6_UI64_HOME="client/src/pages/lyceon-dashboard.test.tsx"
+W6_UI64_SERVER="tests/ci/practice-quota-free-limit.contract.test.ts"
+
+plant "W6-UI64-1" "the plan copy prints a literal 40 again, whatever number it is given" \
+  "$W6_UI64_PLAN" \
+  "client/src/lib/plan-copy.ts" \
+  'a = "      : `${freeDailyLimit} practice ${freeDailyLimit === 1 ? \"question\" : \"questions\"} a day`;\n"
+assert s.count(a) == 1
+s = s.replace(a, "      : \"40 practice questions a day\";\n", 1)'
+
+plant "W6-UI64-2" "Help builds the plans answer without the served limit" \
+  "$W6_UI64_HELP" \
+  "client/src/pages/help.tsx" \
+  'a = "  const faqs = helpFaqs(useFreeDailyLimit());\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const faqs = helpFaqs(40);\n", 1)'
+
+plant "W6-UI64-3" "Settings → Billing's free box prints a remembered 40" \
+  "$W6_UI64_SETTINGS" \
+  "client/src/components/settings/BillingSection.tsx" \
+  'a = "        {planFreeIncludes(freeDailyLimit)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {planFreeIncludes(40)}\n", 1)'
+
+plant "W6-UI64-4" "/upgrade prints a remembered 40" \
+  "$W6_UI64_UPGRADE" \
+  "client/src/pages/upgrade.tsx" \
+  'a = "        {planFreeIncludes(freeDailyLimit)}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        {planFreeIncludes(40)}\n", 1)'
+
+plant "W6-UI64-5" "Home's diagnostic card prints a literal length instead of the served one" \
+  "$W6_UI64_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "            {diagnosticCardLine(\n              practice.diagnosticTotalQuestions,\n"
+assert s.count(a) == 1
+s = s.replace(a, "            {diagnosticCardLine(\n              40,\n", 1)'
+
+plant "W6-UI64-6" "Home's How Lyceon works prints a remembered daily limit" \
+  "$W6_UI64_HOME" \
+  "client/src/components/home/FreeHome.tsx" \
+  'a = "  const freeDailyLimit = quota.data?.freeDailyLimit ?? null;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const freeDailyLimit = 40;\n", 1)'
+
+plant "W6-UI64-7" "the per-domain clause is printed even when the total is not whole draws" \
+  "$W6_UI64_HOME" \
+  "client/src/components/home/home-model.ts" \
+  'a = "  if (perDomain !== null && perDomain > 0 && total % perDomain === 0) {\n"
+assert s.count(a) == 1
+s = s.replace(a, "  if (perDomain !== null && perDomain > 0) {\n", 1)'
+
+plant "W6-UI64-8" "a missing quota answer falls back to a remembered 40" \
+  "$W6_UI64_HELP" \
+  "client/src/hooks/usePracticeQuota.ts" \
+  'a = "  return usePracticeQuota().data?.freeDailyLimit ?? null;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return usePracticeQuota().data?.freeDailyLimit ?? 40;\n", 1)'
+
+plant "W6-UI64-9" "a paid reader gets the per-session cap as the free daily limit" \
+  "$W6_UI64_SERVER" \
+  "server/lib/practice-quota.ts" \
+  'a = "  if (UNLIMITED_PRACTICE_DECISION_CODES.has(decision.code)) {\n    return getPracticeDailyFreeQuota();\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "W6-UI64-10" "the unlimited shape drops freeDailyLimit" \
+  "$W6_UI64_SERVER" \
+  "server/lib/practice-quota.ts" \
+  'a = "        resetAt: null,\n        freeDailyLimit,\n      }\n"
+assert s.count(a) == 1
+s = s.replace(a, "        resetAt: null,\n      }\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

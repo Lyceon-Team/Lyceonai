@@ -58,7 +58,8 @@ import {
   PROFILE_QUERY_KEY,
   type ProfileHydration,
 } from "@/hooks/useProfileQuery";
-import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
+import { practiceQuotaSchema } from "@lyceon/shared/practice-quota";
+import { PLAN_PAID_ADDS, planFreeIncludes } from "@/lib/plan-copy";
 import { getQueryFn } from "@/lib/queryClient";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
@@ -243,6 +244,19 @@ function calendarProfileBody(exists: boolean): unknown {
 const LINK_CODE_URL = `/api/students/${STUDENT}/link-code`;
 const LINKS_URL = `/api/students/${STUDENT}/links`;
 
+/**
+ * `GET /api/practice/quota` for a free student, with a config value that is not the seeded 40
+ * (OQ-68 (d), UI-64: the plan copy's daily number is the server's `freeDailyLimit`).
+ */
+const FREE_DAILY_LIMIT = 37;
+const FREE_QUOTA = practiceQuotaSchema.parse({
+  unlimited: false,
+  limit: FREE_DAILY_LIMIT,
+  remaining: 30,
+  resetAt: "2026-10-09T05:00:00.000Z",
+  freeDailyLimit: FREE_DAILY_LIMIT,
+});
+
 type Serve = {
   billing?: BillingStatus;
   calendarProfile?: boolean;
@@ -309,6 +323,9 @@ function serve(opts: Serve): void {
     }
     if (path === "/api/billing/portal") {
       return json({ error: { code: "TEST_STOP", message: "stop" } }, 409);
+    }
+    if (path === "/api/practice/quota") {
+      return json(FREE_QUOTA);
     }
     return undefined;
   };
@@ -808,7 +825,13 @@ describe("Billing: three states from managedBy and the plan (UI-S7 / F-40)", () 
     // OQ-61 (e): the approved Help FAQ wording, the same sentences `/help` and `/upgrade` show,
     // each a whole paragraph — not the Settings prototype's variant ("a study calendar",
     // "full-length tests and LISA.").
-    expect(within(box).getByText(PLAN_FREE_INCLUDES).tagName).toBe("P");
+    // OQ-68 (d), UI-64: the daily number is the quota read's `freeDailyLimit` (37 here).
+    const freeLine = await within(box).findByText(
+      planFreeIncludes(FREE_DAILY_LIMIT),
+    );
+    expect(freeLine.tagName).toBe("P");
+    expect(freeLine.textContent).toContain("37 practice questions a day");
+    expect(box.textContent).not.toMatch(/\b40\b|forty/i);
     expect(within(box).getByText(PLAN_PAID_ADDS).tagName).toBe("P");
     expect(box.textContent).not.toContain("a study calendar");
     expect(screen.queryByTestId("button-manage-billing")).toBeNull();
