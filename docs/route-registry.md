@@ -63,14 +63,14 @@ This document records, for those routes:
 | `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
 | `/privacy` | public | free | Redirect→`/legal/privacy-policy` | N/A | ACTIVE |
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
-| `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection` | ACTIVE |
+| `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/projection` | ACTIVE |
 | `/calendar` | student, admin | entitled† | CalendarPage | `/api/calendar`, `/api/calendar/profile`, `/api/calendar/plan/regenerate`, `/api/calendar/days/:date` (+`/regenerate`, `/reset`), `/api/calendar/blocks/:id/launch` (+`/do-it-now`, `/move`), `/api/calendar/acknowledge` | ACTIVE |
 | `/tests` | student, admin | entitled (exam_full_length, enforced by every backing route) | TestsHomePage | `/api/tests/forms`, `/api/tests/sessions`, `/api/tests/sessions/:session_id/sections/:section/modules/:module/start` | ACTIVE |
 | `/tests/:sessionId` | student, admin | entitled (exam_full_length) | ExamSessionPage (begin, Module 2 hand-off, break) | `/api/tests/sessions/:session_id/state`, `…/modules/:module/start`, `/api/tests/forms` | ACTIVE |
 | `/tests/:sessionId/:section/:module` | student, admin | entitled (exam_full_length) | ExamModulePage (the URL only shows the server's position; any other module redirects) | `…/state`, `…/modules/:module/items`, `…/modules/:module/workspace` (GET, PUT), `/api/tests/answer`, `…/sections/:section/heartbeat`, `…/modules/:module/submit`, `…/modules/:module/start` | ACTIVE |
 | `/tests/:sessionId/report` | student, admin | entitled (lapsed = 200 `unavailable`, Doc 04C §11.5b) | ExamReportPage | `/api/tests/sessions/:session_id/report`, `/api/tests/sessions/:session_id/report/status` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
-| `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis` | ACTIVE |
+| `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics` | ACTIVE |
 | `/practice/topics` | public | free | Redirect→`/practice` (client, history replace; query dropped; OQ-68 (a), Karl 2026-10-08: the topic browser, BrowseTopics, is retired) | N/A | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
@@ -321,10 +321,9 @@ Expected: **0 hits** for both
 **Verify active endpoints are in use:**
 ```bash
 grep -n "/api/profile" client/src/pages/UserProfile.tsx
-grep -nE "/api/progress/kpis|/api/progress/projection" client/src/pages/lyceon-dashboard.tsx
 ```
 
-Expected: **2+ hits** for each
+Expected: **2+ hits** (the KPI read is gone from the client since OQ-68 (c), 2026-10-08)
 
 ---
 

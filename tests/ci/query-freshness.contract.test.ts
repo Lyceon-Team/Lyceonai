@@ -150,28 +150,38 @@ describe("UI-14 — consumers take freshness from the config", () => {
     }
   });
 
-  it("the KPI read lives in one hook that takes its freshness from the config", () => {
+  /**
+   * @spec [OQ-68 (c) (Karl, 2026-10-08): delete the client hook for `GET /api/progress/kpis`;
+   *        the route's removal is handed to cleanup] | @implemented [2026-10-08]
+   * plain English: UI-50 and UI-51 (2026-10-03) took the last KPI tiles off Home and Practice;
+   * the read hook (`hooks/useProgressKpis.ts`) then had no reader, only two session-completion
+   * invalidations of a query nobody held. Both are gone; no client code names the endpoint.
+   */
+  it("OQ-68 (c): no client code reads or invalidates /api/progress/kpis", () => {
     const sources = clientSources();
-    const hook = sources.find((s) =>
-      s.file.endsWith("client/src/hooks/useProgressKpis.ts"),
-    );
-    expect(hook).toBeDefined();
-    expect(hook!.code).toContain("QUERY_FRESHNESS.kpis");
-    expect(hook!.code).not.toMatch(/refetchInterval/);
-    // Presence before absence: the endpoint is named, and only in the hook.
-    const naming = sources
-      .filter((s) => s.code.includes("/api/progress/kpis"))
-      .map((s) => s.file);
-    expect(naming).toEqual([hook!.file]);
-    // UI-50 (2026-10-03) took the KPI tiles off Home and UI-51 (2026-10-03) took "Weekly
-    // Activity" off Practice; DESIGN.md §4 gives neither page a KPI tile. The hook still has
-    // its callers (they invalidate or read it), so "only the hook names the endpoint" above is
-    // the rule that remains; here, the two rebuilt pages are pinned to reading no KPI at all.
-    for (const page of ["pages/practice.tsx", "pages/lyceon-dashboard.tsx"]) {
-      const src = sources.find((s) => s.file.endsWith(`client/src/${page}`));
-      expect(src, page).toBeDefined();
-      expect(src?.code, page).not.toContain("useProgressKpis");
+    // Presence before absence: the sweep reads the two former call sites (each still marks its
+    // own reads stale on completion), so their silence is read, not assumed.
+    for (const [file, stillThere] of [
+      [
+        "client/src/hooks/useCanonicalPractice.ts",
+        "invalidateSessionReads(queryClient",
+      ],
+      [
+        "client/src/features/exam/pages/ExamModulePage.tsx",
+        "queryClient.invalidateQueries",
+      ],
+    ] as const) {
+      const src = sources.find((s) => s.file === file);
+      expect(src, file).toBeDefined();
+      expect(src?.code, file).toContain(stillThere);
     }
+    const naming = sources
+      .filter((s) => /\/api\/progress\/kpis\b|ProgressKpis/.test(s.code))
+      .map((s) => s.file);
+    expect(naming).toEqual([]);
+    expect(
+      fs.existsSync(path.join(CLIENT_SRC, "hooks/useProgressKpis.ts")),
+    ).toBe(false);
   });
 
   it("the calendar reads take freshness from the config, with no local numbers", () => {

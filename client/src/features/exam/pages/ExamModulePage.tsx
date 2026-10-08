@@ -44,7 +44,6 @@ import {
 } from "@/components/math/calculator-layout";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
 import {
   buildExamModuleKeymap,
   useKeyboardShortcuts,
@@ -315,8 +314,6 @@ function ModuleRunner(props: {
       }
       if (sessionState === "completed") {
         leaving.current = true;
-        // Owner ruling 2026-10-01: the KPI read no longer polls; a completed exam marks it stale.
-        void invalidateProgressKpis(queryClient);
         navigate(reportPath(sessionId), { replace: true });
         return;
       }

@@ -146,6 +146,7 @@ FILES=(
   "client/src/components/math/FloatingPanel.tsx"
   "client/src/components/legal/ReconsentModal.tsx"
   "server/routes/legacy/progress.ts"
+  "client/src/features/exam/pages/ExamModulePage.tsx"
 )
 
 snapshot_all() {
@@ -3795,6 +3796,27 @@ plant "OQ68A-4" "Practice links to the retired topic browser again" \
   'a = "        <Link href=\"/review\" className={TEXT_LINK}>\n          Review what you missed\n        </Link>\n"
 assert s.count(a) == 1
 s = s.replace(a, a + "        <Link href=\"/practice/topics\" className={TEXT_LINK}>\n          Browse topics\n        </Link>\n", 1)'
+
+
+# ── OQ-68 (c) — no client read or invalidation of GET /api/progress/kpis (Karl, 2026-10-08) ──────
+# @spec [OQ-68 (c), owner ruling 2026-10-08] | @implemented [2026-10-08]
+# The read hook (hooks/useProgressKpis.ts) had no reader since UI-50/UI-51; its two
+# session-completion invalidations are gone with it. The route's removal is cleanup's.
+OQ68C_SWEEP="tests/ci/query-freshness.contract.test.ts"
+
+plant "OQ68C-1" "a completed exam marks the KPIs stale again" \
+  "$OQ68C_SWEEP" \
+  "client/src/features/exam/pages/ExamModulePage.tsx" \
+  'a = "        leaving.current = true;\n        navigate(reportPath(sessionId), { replace: true });\n"
+assert s.count(a) == 1
+s = s.replace(a, "        leaving.current = true;\n        void queryClient.invalidateQueries({ queryKey: [\"/api/progress/kpis\"] });\n        navigate(reportPath(sessionId), { replace: true });\n", 1)'
+
+plant "OQ68C-2" "the answer that completes a practice or review session marks the KPIs stale again" \
+  "$OQ68C_SWEEP" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "        if (data.state) setSessionState(data.state);\n\n        if (data.stats) {\n"
+assert s.count(a) == 1
+s = s.replace(a, "        if (data.state) setSessionState(data.state);\n        if (data.state === \"completed\")\n          void queryClient.invalidateQueries({ queryKey: [\"/api/progress/kpis\"] });\n\n        if (data.stats) {\n", 1)'
 
 
 printf '\n────────────────────────────────\n'

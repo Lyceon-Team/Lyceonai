@@ -123,8 +123,6 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
           currentPeriodEnd: null,
         },
       });
-    case "/api/progress/kpis":
-      return json({ week: { accuracy: 0, questionsSolved: 0 }, metrics: [] });
     case "/api/guardian/students":
       return json({ students: [] });
     // Home's other reads (UI-50), in the shapes their routes write (the shared schemas).
