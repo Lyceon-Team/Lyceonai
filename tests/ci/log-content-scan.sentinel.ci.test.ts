@@ -22,8 +22,6 @@
 import { describe, it, expect } from "vitest";
 import { redactSensitive } from "../../server/logger";
 
-const REDACTION_STRING = "[REDACTED]";
-
 // Build synthetic secrets from fragments so the hook's regex does not match
 // the SOURCE text. The assembled values match the content scanner's patterns.
 const PEM_BEGIN = "-----BEGIN " + "PRIVATE KEY-----";

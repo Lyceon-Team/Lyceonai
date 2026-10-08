@@ -19,17 +19,17 @@ type MathReferenceSheetProps = {
 const geometryFormulas: { label: string; latex: string }[] = [
   { label: "Circle area", latex: "$A = \\pi r^2$" },
   { label: "Circle circumference", latex: "$C = 2\\pi r$" },
-  { label: "Rectangle area", latex: "$A = lw$" },
+  { label: "Rectangle area", latex: "$A = \\ell w$" },
   { label: "Triangle area", latex: "$A = \\frac{1}{2}bh$" },
-  { label: "Pythagorean theorem", latex: "$a^2 + b^2 = c^2$" },
+  { label: "Pythagorean theorem", latex: "$c^2 = a^2 + b^2$" },
 ];
 
 const volumeFormulas: { label: string; latex: string }[] = [
-  { label: "Rectangular prism", latex: "$V = lwh$" },
+  { label: "Rectangular prism", latex: "$V = \\ell wh$" },
   { label: "Cylinder", latex: "$V = \\pi r^2 h$" },
   { label: "Sphere", latex: "$V = \\frac{4}{3}\\pi r^3$" },
   { label: "Cone", latex: "$V = \\frac{1}{3}\\pi r^2 h$" },
-  { label: "Pyramid", latex: "$V = \\frac{1}{3}lwh$" },
+  { label: "Pyramid", latex: "$V = \\frac{1}{3}\\ell wh$" },
 ];
 
 const reminders: string[] = [
@@ -55,6 +55,32 @@ function FormulaList({
   );
 }
 
+/** A side or angle label in a figure: 14px at the figure's drawn size (DESIGN.md §1). */
+function FigureText({
+  x,
+  y,
+  anchor = "start",
+  children,
+}: {
+  x: number;
+  y: number;
+  anchor?: "start" | "middle" | "end";
+  children: string;
+}): React.ReactElement {
+  return (
+    <text x={x} y={y} fontSize="14" fill="currentColor" textAnchor={anchor}>
+      {children}
+    </text>
+  );
+}
+
+/**
+ * QA 2026-10-07 item 2: drawn to its real angles and labelled as the College Board sheet labels
+ * it. The right angle is at (30,140); the base runs 156 to the right and the vertical leg 90 up
+ * (156 / 90 = 1.733, i.e. √3), so the angle at the right-hand vertex is 30° and the one at the
+ * top 60°. The side opposite 30° (the vertical leg) is x, the side opposite 60° (the base) is
+ * x√3, the hypotenuse 2x. It used to draw a 3:4:5 triangle with x and x√3 on the wrong legs.
+ */
 function SpecialTriangle3060({
   className,
 }: {
@@ -66,59 +92,50 @@ function SpecialTriangle3060({
         30-60-90 Triangle
       </p>
       <svg
-        viewBox="0 0 200 160"
+        viewBox="0 0 210 165"
         className="w-full max-w-[220px] mx-auto"
         aria-label="30-60-90 special right triangle with sides x, x√3, 2x"
         role="img"
       >
-        {/* Triangle */}
         <polygon
-          points="20,140 180,140 20,20"
+          points="30,140 186,140 30,50"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
         />
         {/* Right angle marker */}
         <polyline
-          points="20,125 35,125 35,140"
+          points="30,128 42,128 42,140"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
         />
-        {/* Side labels */}
-        <text x="5" y="85" fontSize="14" fill="currentColor" textAnchor="end">
-          x√3
-        </text>
-        <text
-          x="100"
-          y="155"
-          fontSize="14"
-          fill="currentColor"
-          textAnchor="middle"
-        >
+        {/* Side labels: opposite 30° is x, opposite 60° is x√3, the hypotenuse 2x. */}
+        <FigureText x={22} y={100} anchor="end">
           x
-        </text>
-        <text
-          x="108"
-          y="72"
-          fontSize="14"
-          fill="currentColor"
-          textAnchor="start"
-        >
+        </FigureText>
+        <FigureText x={108} y={158} anchor="middle">
+          x√3
+        </FigureText>
+        <FigureText x={115} y={83}>
           2x
-        </text>
+        </FigureText>
         {/* Angle labels */}
-        <text x="35" y="18" fontSize="12" fill="currentColor">
+        <FigureText x={36} y={80}>
           60°
-        </text>
-        <text x="155" y="137" fontSize="12" fill="currentColor">
+        </FigureText>
+        <FigureText x={140} y={134}>
           30°
-        </text>
+        </FigureText>
       </svg>
     </div>
   );
 }
 
+/**
+ * QA 2026-10-07 item 2: isosceles (both legs 120; it used to draw legs of 140 and 120, so its
+ * "45°" angles were 41° and 49°). s on both legs, s√2 on the hypotenuse.
+ */
 function SpecialTriangle4545({
   className,
 }: {
@@ -130,54 +147,41 @@ function SpecialTriangle4545({
         45-45-90 Triangle
       </p>
       <svg
-        viewBox="0 0 180 160"
+        viewBox="0 0 180 165"
         className="w-full max-w-[200px] mx-auto"
         aria-label="45-45-90 special right triangle with sides s, s, s√2"
         role="img"
       >
-        {/* Triangle */}
         <polygon
-          points="20,140 160,140 20,20"
+          points="30,140 150,140 30,20"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
         />
         {/* Right angle marker */}
         <polyline
-          points="20,125 35,125 35,140"
+          points="30,128 42,128 42,140"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
         />
         {/* Side labels */}
-        <text x="8" y="85" fontSize="14" fill="currentColor" textAnchor="end">
+        <FigureText x={22} y={85} anchor="end">
           s
-        </text>
-        <text
-          x="90"
-          y="155"
-          fontSize="14"
-          fill="currentColor"
-          textAnchor="middle"
-        >
+        </FigureText>
+        <FigureText x={90} y={158} anchor="middle">
           s
-        </text>
-        <text
-          x="98"
-          y="72"
-          fontSize="14"
-          fill="currentColor"
-          textAnchor="start"
-        >
+        </FigureText>
+        <FigureText x={100} y={70}>
           s√2
-        </text>
+        </FigureText>
         {/* Angle labels */}
-        <text x="30" y="25" fontSize="12" fill="currentColor">
+        <FigureText x={36} y={60}>
           45°
-        </text>
-        <text x="130" y="137" fontSize="12" fill="currentColor">
+        </FigureText>
+        <FigureText x={108} y={134}>
           45°
-        </text>
+        </FigureText>
       </svg>
     </div>
   );

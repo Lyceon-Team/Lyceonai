@@ -28,7 +28,6 @@
  * Exits 0 when every model responds; exits 1 when any model fails.
  */
 
-/* eslint-disable no-console -- standalone CLI diagnostic */
 
 import { GoogleGenAI } from "@google/genai";
 

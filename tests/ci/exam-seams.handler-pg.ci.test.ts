@@ -310,7 +310,6 @@ describe.skipIf(!PG_AVAILABLE)("E9 exam seams → real PG, through the handlers"
     expect(report.body.data.report_state).toBe("scored");
     expect(report.body.data.score.total_scaled).toBe(run[0].total_scaled);
 
-    // eslint-disable-next-line no-console -- evidence for the PR
     console.log("E9 EVIDENCE " + JSON.stringify({
       outbox, score_run: run[0], review_by_outcome: review, review_total: reviewTotal,
       review_expected: expected[0].n, review_sample: sample, answered: answered[0].n,

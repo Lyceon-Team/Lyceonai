@@ -47,6 +47,7 @@ import {
 } from "@/lib/engine-config";
 import CanonicalPracticePage from "./CanonicalPracticePage";
 import { MISS_NOTE } from "@/components/question-renderer";
+import { queryClient as appQueryClient } from "@/lib/queryClient";
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the shortened-session sentence, verbatim. */
 const SHORTER_SESSION_NOTE =
@@ -469,6 +470,36 @@ describe("UI-53 runner: bar, steps, keys", () => {
     expect(segments()).toEqual(["done", "current", "todo"]);
   });
 
+  it("QA 2026-10-07: a long session fits the bar — the strip and its segments shrink, the title holds, and a phone hides only the word 'Question'", async () => {
+    installNetwork({ total: 54 });
+    mountRunner();
+    await loaded();
+    const strip = screen.getByTestId("runner-progress");
+    // Presence first: one segment per question.
+    expect(strip.querySelectorAll("[data-segment]")).toHaveLength(54);
+    // The strip may shrink (a 54-question review was 239px wider than 1440 with fixed 14px
+    // segments); each segment shrinks to a 2px floor instead of holding its width.
+    const stripClasses = strip.className.split(/\s+/);
+    expect(stripClasses).toEqual(expect.arrayContaining(["min-w-0", "shrink"]));
+    expect(stripClasses).not.toContain("shrink-0");
+    for (const seg of Array.from(strip.querySelectorAll("[data-segment]"))) {
+      expect(seg.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(["shrink", "min-w-[2px]"]),
+      );
+    }
+    // The session name keeps its width (up to a cap) instead of truncating to "Review …".
+    expect(
+      screen.getByTestId("runner-session-name").className.split(/\s+/),
+    ).toEqual(expect.arrayContaining(["shrink-0", "max-w-[45%]"]));
+    // On a phone "Question" is visually hidden; the full words stay for screen readers.
+    const position = screen.getByTestId("runner-position");
+    expect(position.textContent).toBe("Question 1 of 54");
+    const word = within(position).getByText("Question", { exact: false });
+    expect(word.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["sr-only", "sm:not-sr-only"]),
+    );
+  });
+
   it("Skip resolves the item and serves the next one, with no feedback panel", async () => {
     const net = installNetwork({ total: 3 });
     mountRunner();
@@ -600,9 +631,12 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(Object.keys(props).sort()).toEqual([
       "onHide",
       "questionLabel",
+      "revealOnOpen",
       "sessionItemId",
       "sourceSurface",
     ]);
+    // QA-8: LISA is simply there on load (W4-4), so it is not scrolled to.
+    expect(props.revealOnOpen).toBe(false);
     expect(props.sourceSurface).toBe("review");
     expect(props.sessionItemId).toBe("item-1");
     expect(props.questionLabel).toBe("Question 1 of 3");
@@ -610,5 +644,199 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
       expect(serialised).not.toContain(leak);
     }
+  });
+
+  // QA 2026-10-07 item 8 (Karl: "Phone LISA in the runner: opening it brings the panel into
+  // view"). The panel itself scrolls on mount when told to (ScopedTutorPanel.contract.test.tsx);
+  // this pins the runner telling it: only when the student opened it, only on the phone layout.
+  it("QA-8: Show LISA on the phone layout opens the panel told to reveal itself; on load it is not", async () => {
+    // The test DOM's default matchMedia answers "no match": below `lg`, LISA stacks.
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    expect(tutorProps.last?.revealOnOpen).toBe(false);
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    await click(toggle);
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealOnOpen).toBe(true);
+  });
+
+  it("QA-8: side by side (from lg) Show LISA does not scroll anything", async () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query: string) =>
+        ({
+          matches: /min-width:\s*1024px/.test(query),
+          media: query,
+          onchange: null,
+          addListener: () => undefined,
+          removeListener: () => undefined,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+          dispatchEvent: () => false,
+        }) as MediaQueryList,
+    );
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    await click(toggle);
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealOnOpen).toBe(false);
+  });
+});
+
+/**
+ * QA item 5 (owner QA list, Karl, 2026-10-07) | @implemented [2026-10-07]. Holds every request
+ * whose path matches `pattern` until `release()` is called, over the network `installNetwork`
+ * scripted (its answers are unchanged, only delayed): a request in flight, as a slow server
+ * leaves it.
+ */
+function holdRequests(pattern: RegExp): { release: () => void } {
+  const spy = vi.mocked(globalThis.fetch);
+  const answer = spy.getMockImplementation();
+  if (answer === undefined) throw new Error("installNetwork first");
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  spy.mockImplementation(async (input, init) => {
+    if (pattern.test(pathOf(input))) await gate;
+    return answer(input, init);
+  });
+  return { release: () => open() };
+}
+
+describe("QA item 5 (2026-10-07): the runner's footer shows a pending state from the first click", () => {
+  it("Skip: 'Skipping…', disabled and busy while the skip is in flight; a second click sends nothing", async () => {
+    const net = installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const held = holdRequests(/\/skip$/);
+    await click(screen.getByRole("button", { name: "Skip" }));
+    const pending = screen.getByTestId("runner-skip") as HTMLButtonElement;
+    expect(pending.textContent).toBe("Skipping…");
+    expect(pending.disabled).toBe(true);
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    expect(within(pending).getByTestId("button-pending-spinner")).toBeTruthy();
+    // Submit is not the pressed control: it keeps its own label.
+    expect(screen.getByTestId("runner-submit").textContent).toBe("Submit");
+    await click(pending);
+    await act(async () => {
+      held.release();
+    });
+    await loaded(2);
+    // The network log records a request once it is answered: one skip, however many clicks.
+    expect(net.calls.filter((c) => /POST .*\/skip$/.test(c))).toHaveLength(1);
+    expect(screen.getByTestId("runner-skip").textContent).toBe("Skip");
+  });
+
+  it("Submit: 'Checking…', disabled and busy while the answer is checked; one request", async () => {
+    const net = installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    await click(choice(CORRECT_TEXT));
+    const held = holdRequests(/\/answer$/);
+    await click(submitButton());
+    const pending = screen.getByTestId("runner-submit") as HTMLButtonElement;
+    expect(pending.textContent).toBe("Checking…");
+    expect(pending.disabled).toBe(true);
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    await click(pending);
+    await act(async () => {
+      held.release();
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("runner-next").textContent).toBe(
+        "Next question",
+      ),
+    );
+    expect(net.answerBodies).toHaveLength(1);
+  });
+
+  it("Next question: 'Loading…' while the next item loads", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await waitFor(() => expect(screen.getByTestId("runner-next")).toBeTruthy());
+    const held = holdRequests(/\/next$/);
+    await click(screen.getByTestId("runner-next"));
+    const pending = screen.getByTestId("runner-next") as HTMLButtonElement;
+    expect(pending.textContent).toBe("Loading…");
+    expect(pending.disabled).toBe(true);
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    await act(async () => {
+      held.release();
+    });
+    await loaded(2);
+  });
+});
+
+/**
+ * QA item 6 (owner QA list, Karl, 2026-10-07) | @implemented [2026-10-07]. The reads an answer,
+ * a skip or leaving the runner changes, keyed exactly as the pages that show them key them:
+ * Home's and Practice's open-session list, Review's, the review pool (its URL carries `?tz=`),
+ * today's plan (the calendar range) and this session's own state (resume-practice.tsx).
+ */
+function seedSessionReads(): readonly (readonly unknown[])[] {
+  const keys: readonly (readonly unknown[])[] = [
+    ["/api/practice/sessions/open"],
+    ["/api/review/sessions/open"],
+    ["/api/review/pool?tz=America%2FChicago"],
+    ["calendar", "range", "2026-09-28", "2026-10-04", "UTC"],
+    [`/api/practice/sessions/${SESSION_ID}/state?client_instance_id=c-1`],
+  ];
+  for (const key of keys) appQueryClient.setQueryData(key, { seeded: true });
+  return keys;
+}
+
+function invalidated(key: readonly unknown[]): boolean {
+  return appQueryClient.getQueryState(key)?.isInvalidated === true;
+}
+
+describe("QA item 6 (2026-10-07): answering, skipping and leaving mark the session reads stale", () => {
+  afterEach(() => {
+    appQueryClient.clear();
+  });
+
+  it("an answer marks every list stale (the pool by its ?tz= key) and this session's state, refetching none", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const keys = seedSessionReads();
+    // Presence: seeded, and fresh before the answer.
+    expect(keys.map(invalidated)).toEqual([false, false, false, false, false]);
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await waitFor(() => expect(screen.getByTestId("runner-next")).toBeTruthy());
+    expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
+    // Nothing on this page reads them, and the state is never refetched under the runner.
+    expect(appQueryClient.getQueryState(keys[4] ?? [])?.fetchStatus).toBe(
+      "idle",
+    );
+  });
+
+  it("a skip marks them stale too", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const keys = seedSessionReads();
+    await click(screen.getByRole("button", { name: "Skip" }));
+    await loaded(2);
+    expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
+  });
+
+  it("leaving the runner (unmount) marks them stale", async () => {
+    installNetwork({ total: 3 });
+    const { unmount } = mountRunner();
+    await loaded();
+    const keys = seedSessionReads();
+    expect(keys.map(invalidated)).toEqual([false, false, false, false, false]);
+    unmount();
+    expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
   });
 });

@@ -21,8 +21,9 @@
  * (`lyceon-dashboard.tsx`), so a free student never calls a gated route from Home.
  *
  * edge cases: a calendar with no setup shows "Set up your study calendar" (DESIGN.md §4
- * Settings wording) as the primary, linking to /calendar; a rest day says "Rest day" (the
- * calendar's own words); a day with every block done offers no primary; empty "Pick up" and
+ * Settings wording) as the primary, linking to /calendar; a day with no blocks says the one
+ * empty-day sentence, "No study planned" (`EMPTY_DAY_MESSAGE`, owner QA list 2026-10-07 item 15;
+ * it said "Rest day", untrue of a day the student cleared); a day with every block done offers no primary; empty "Pick up" and
  * failed reads render nothing invented (the page shows one recovery notice).
  *
  * PHONE NOTICE (owner ruling, Karl, 2026-10-05, OQ-63: "show it for every full-length start on a
@@ -35,13 +36,19 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import type { CalendarReadyResponse } from "@lyceon/shared/calendar";
+import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
 import { displayFormName } from "@lyceon/shared/exam-form-display";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
-import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import {
+  canonicalDomainNodes,
+  masteryDomainHref,
+} from "@/components/mastery/domain-nodes";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
+import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { useCalendar, useLaunchBlock } from "@/features/calendar/api";
 import { primaryActionLabel } from "@/features/calendar/lib/blocks";
 import { addDays, startOfWeek } from "@/features/calendar/lib/dates";
@@ -54,7 +61,11 @@ import {
 } from "@/features/exam/lib/useFullLengthPhonePrecheck";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
-import { useActiveReviewSessions, useReviewPool } from "@/hooks/useReview";
+import {
+  useActiveReviewSessions,
+  useCreateReviewSession,
+  useReviewPool,
+} from "@/hooks/useReview";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { FullLengthCard } from "./FullLengthCard";
@@ -114,6 +125,28 @@ export function PaidHome({
   const { launch, pendingBlockId } = useLaunchBlock(navigate);
   const [launchFailed, setLaunchFailed] = useState(false);
   const precheck = useFullLengthPhonePrecheck();
+  // QA item 14 (2026-10-07): a "Recent sessions" row reviews that session's open questions,
+  // the same start as Review's "Redo a past session".
+  const createReview = useCreateReviewSession();
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviewFailure, setReviewFailure] = useState<string | null>(null);
+  const reviewRecent = async (row: ReviewPoolSourceSession): Promise<void> => {
+    setReviewing(row.source_session_id);
+    setReviewFailure(null);
+    const result = await createReview.startSession({
+      mode: "session",
+      filters: {
+        source_engine: row.source_engine,
+        source_session_id: row.source_session_id,
+      },
+    });
+    if (result.ok) {
+      navigate(`/review/session/${result.sessionId}`);
+      return;
+    }
+    setReviewing(null);
+    setReviewFailure(result.failure.message);
+  };
 
   const ready: CalendarReadyResponse | null =
     calendar.data?.status === "ready" ? calendar.data : null;
@@ -253,7 +286,7 @@ export function PaidHome({
                       levelKey={node.levelKey}
                       displayName={node.displayName}
                       variant="wide"
-                      href="/mastery"
+                      href={masteryDomainHref(node)}
                     />
                   ),
                 )}
@@ -281,6 +314,9 @@ export function PaidHome({
           <RecentSessionsSection
             sessions={pool.pool?.sessions ?? []}
             todayKey={today}
+            onReview={(row) => void reviewRecent(row)}
+            startingId={reviewing}
+            failure={reviewFailure}
           />
         </div>
       </AppShellPanel>
@@ -332,8 +368,11 @@ function TodayPlan({
           </Button>
         </div>
       ) : plan.blocks.length === 0 ? (
-        <p className="m-0 border-t border-lyc-rule pt-5 text-[17px] text-lyc-muted">
-          Rest day
+        <p
+          className="m-0 border-t border-lyc-rule pt-5 text-[17px] text-lyc-muted"
+          data-testid="home-plan-empty"
+        >
+          {EMPTY_DAY_MESSAGE}
         </p>
       ) : (
         <ReadyPlan
@@ -362,6 +401,11 @@ function ReadyPlan({
   onStart: (block: Block) => void;
 }): JSX.Element {
   const first = firstOpenBlock(blocks);
+  // Which control started the pending launch: the primary and the first row launch the same
+  // block, and only the one that was pressed shows "Starting…".
+  const [startedFromPrimary, setStartedFromPrimary] = useState(false);
+  const primaryPending =
+    first !== null && pendingBlockId === first.block_id && startedFromPrimary;
   return (
     <>
       <ol className="m-0 list-none border-t border-lyc-rule p-0">
@@ -385,14 +429,22 @@ function ReadyPlan({
                 ) : null}
               </div>
               <span className="text-[17px] text-lyc-ink">{row.time ?? ""}</span>
+              {/* QA item 5 (2026-10-07): the pressed row says it is starting, from the click. */}
               <Button
                 type="button"
                 variant="lyc-outline"
                 disabled={row.completed || pendingBlockId !== null}
-                onClick={() => onStart(entry.block)}
+                pending={pendingBlockId === row.blockId && !startedFromPrimary}
+                onClick={() => {
+                  setStartedFromPrimary(false);
+                  onStart(entry.block);
+                }}
                 aria-label={`${label}: ${row.title}`}
+                data-testid="home-plan-start"
               >
-                {label}
+                {pendingBlockId === row.blockId && !startedFromPrimary
+                  ? STARTING_LABEL
+                  : label}
               </Button>
             </li>
           );
@@ -410,10 +462,14 @@ function ReadyPlan({
             variant="lyc-primary"
             size="lyc-lg"
             disabled={pendingBlockId !== null}
-            onClick={() => onStart(first)}
+            pending={primaryPending}
+            onClick={() => {
+              setStartedFromPrimary(true);
+              onStart(first);
+            }}
             data-testid="home-start-plan"
           >
-            Start today&apos;s plan
+            {primaryPending ? STARTING_LABEL : "Start today's plan"}
           </Button>
         </div>
       ) : null}

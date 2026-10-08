@@ -48,11 +48,6 @@
  * Connection via standard PG* env. Usage:
  *   tsx scripts/ci/calendar-parity.ts [--suite-n 3000] [--suite-seed 1]
  */
-/* eslint-disable no-console -- CI gate: its console output IS its interface, and the
-   14 statements this rule already flagged here are every line an operator reads when
-   the gate fails. Disabled at the file, in the same form scripts/probe/*.ts uses, rather
-   than one disable-next-line per report line. The standing rule is that a wave
-   lint-cleans the files it touches. */
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

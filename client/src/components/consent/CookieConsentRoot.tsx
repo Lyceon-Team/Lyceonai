@@ -63,10 +63,10 @@ import {
 } from "@/lib/analytics/posthog-client";
 
 /**
- * The Cookie Policy is published before launch (owner decision 6, 2026-10-05). Until it is, the
- * link opens the Privacy Policy; on publication this becomes "/legal/cookie-policy".
+ * The Cookie Policy, published 2026-10-07 (owner decision 6, 2026-10-05; SCL-221) at
+ * `legal/cookie-policy`. Before publication this link opened the Privacy Policy.
  */
-export const COOKIE_POLICY_HREF = "/legal/privacy-policy";
+export const COOKIE_POLICY_HREF = "/legal/cookie-policy";
 
 const GPC_NOTICE_DISMISSED_KEY = "lyceon.gpc-notice.dismissed";
 

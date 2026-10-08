@@ -70,7 +70,10 @@ import {
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
-import { canonicalDomainNodes } from "@/components/mastery/domain-nodes";
+import {
+  canonicalDomainNodes,
+  masteryDomainHref,
+} from "@/components/mastery/domain-nodes";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -78,6 +81,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import { fetchMasteryDomains, type MasterySection } from "@/lib/masteryApi";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { cn } from "@/lib/utils";
 import { sectionDisplayLabel } from "@shared/section-display";
 import {
@@ -206,6 +210,7 @@ export default function TestsHomePage(): JSX.Element {
           <FreeUpgradeCard reason={examLocked.reason} />
         ) : examGranted ? (
           <>
+            <TimingChoice mode={mode} onModeChange={setMode} />
             <section
               aria-labelledby="tests-h"
               className="flex flex-col gap-3.5"
@@ -243,7 +248,7 @@ export default function TestsHomePage(): JSX.Element {
               )}
             </section>
 
-            <BeforeYouStart mode={mode} onModeChange={setMode} />
+            <BeforeYouStart mode={mode} />
           </>
         ) : null}
 
@@ -275,7 +280,7 @@ export default function TestsHomePage(): JSX.Element {
                             levelKey={node.levelKey}
                             displayName={node.displayName}
                             variant="compact"
-                            href="/mastery"
+                            href={masteryDomainHref(node)}
                           />
                         ),
                       )}
@@ -536,12 +541,13 @@ function StartButton({
         type="button"
         variant={variant}
         size={size}
-        disabled={pending}
+        pending={pending}
         // OQ-63: the shared phone pre-start check runs before the create request.
         onClick={() => precheck.run(() => void start())}
         data-testid="tests-start"
       >
-        {label}
+        {/* QA item 5 (2026-10-07): the pressed Start says so until the sitting opens. */}
+        {pending ? STARTING_LABEL : label}
       </Button>
       {precheck.dialog}
       {error !== null ? (
@@ -554,10 +560,42 @@ function StartButton({
 }
 
 /**
- * "Before you start" (prototype list) and the timing choice the create request carries (Doc 04A
- * §7.3; the pre-redesign start panel's two options, its copy unchanged).
+ * "Before you start" (prototype list). Its second line names the timing the student chose above
+ * the list of tests (`TimingChoice`).
  */
-function BeforeYouStart({
+function BeforeYouStart({ mode }: { mode: ExamMode }): JSX.Element {
+  return (
+    <section
+      aria-labelledby="before-h"
+      className="flex flex-col gap-3.5"
+      data-testid="tests-before"
+    >
+      <h2 id="before-h" className={SECTION_H2}>
+        Before you start
+      </h2>
+      <ol className="m-0 flex list-decimal flex-col gap-2.5 pl-[22px] text-[18px] leading-relaxed text-lyc-ink">
+        <li>{BEFORE_YOU_START_FIRST}</li>
+        <li data-testid="tests-before-timing">
+          {BEFORE_YOU_START_TIMING[mode]}
+        </li>
+        {BEFORE_YOU_START_REST.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/**
+ * The timing choice the create request carries (Doc 04A §7.3; the pre-redesign start panel's two
+ * options, its copy unchanged).
+ *
+ * @spec [owner QA list (Karl, 2026-10-07) item 15: "the Full-Length timing choice above Start"]
+ *       | @implemented [2026-10-07]
+ * plain English: drawn above the list of tests, so the choice is made before any Start is
+ * pressed; it used to sit under the list, below every Start that sends it.
+ */
+function TimingChoice({
   mode,
   onModeChange,
 }: {
@@ -592,41 +630,26 @@ function BeforeYouStart({
     </label>
   );
   return (
-    <section
-      aria-labelledby="before-h"
-      className="flex flex-col gap-3.5"
-      data-testid="tests-before"
+    <fieldset
+      data-testid="tests-timing"
+      className="m-0 flex flex-col gap-2.5 border-0 p-0"
     >
-      <h2 id="before-h" className={SECTION_H2}>
-        Before you start
-      </h2>
-      <ol className="m-0 flex list-decimal flex-col gap-2.5 pl-[22px] text-[18px] leading-relaxed text-lyc-ink">
-        <li>{BEFORE_YOU_START_FIRST}</li>
-        <li data-testid="tests-before-timing">
-          {BEFORE_YOU_START_TIMING[mode]}
-        </li>
-        {BEFORE_YOU_START_REST.map((line) => (
-          <li key={line}>{line}</li>
-        ))}
-      </ol>
-      <fieldset className="m-0 mt-2 flex flex-col gap-2.5 border-0 p-0">
-        <legend className="mb-2.5 text-lyc-meta-lg font-semibold text-lyc-muted">
-          Timing
-        </legend>
-        <div className="flex flex-col gap-3 md:flex-row">
-          {option(
-            "strict",
-            "Test-day timing",
-            "The clock keeps running if you close the tab. Nothing pauses.",
-          )}
-          {option(
-            "lenient",
-            "Practice timing",
-            "The clock pauses when you step away. Your report says so.",
-          )}
-        </div>
-      </fieldset>
-    </section>
+      <legend className="mb-2.5 text-lyc-meta-lg font-semibold text-lyc-muted">
+        Timing
+      </legend>
+      <div className="flex flex-col gap-3 md:flex-row">
+        {option(
+          "strict",
+          "Test-day timing",
+          "The clock keeps running if you close the tab. Nothing pauses.",
+        )}
+        {option(
+          "lenient",
+          "Practice timing",
+          "The clock pauses when you step away. Your report says so.",
+        )}
+      </div>
+    </fieldset>
   );
 }
 

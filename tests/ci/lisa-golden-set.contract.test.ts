@@ -22,7 +22,7 @@
  *   Split cases (Class 1 component, pending Phase B): 20 cases
  *   Pure Class 2 (not tested here): 6 cases (05, 19, 20, 21, 31, 34)
  */
-import { describe, it, expect, vi, afterAll } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import {
   buildSystemInstruction,
@@ -42,7 +42,6 @@ import {
   PURE_CLASS1_CASES,
   PURE_CLASS2_CASES,
   SPLIT_CASES,
-  SHORT_NUMBER_PRECISION_CASES,
   HEURISTIC_PERSONA_ADOPTION,
   reportCoverage,
 } from "./lisa-golden-set-helpers";
@@ -86,7 +85,7 @@ function cannedLeakText(fixture: GoldenFixture): string {
 
 // ── Canned clean text (no answer) ──────────────────────────────────────
 
-function cannedCleanText(fixture: GoldenFixture): string {
+function cannedCleanText(): string {
   return "Let's think about this step by step. What do you notice about the first part of the problem?";
 }
 
@@ -147,7 +146,7 @@ describe("Class 1 — anti-leak scanner coverage", () => {
       });
 
       it("hasAnswerLeak does NOT flag clean tutoring prose", () => {
-        const cleanText = cannedCleanText(fixture);
+        const cleanText = cannedCleanText();
         const detected = hasAnswerLeak(cleanText, fixture.correctAnswer!);
         expect(detected).toBe(false);
       });
@@ -244,16 +243,17 @@ describe("Pure Class 2 — fixture verification only", () => {
 // Coverage report (§3.1 — honest split)
 // ═══════════════════════════════════════════════════════════════════════
 
-afterAll(() => {
-  const results = CLASS1_FIXTURES.map((f) => ({
-    id: f.id,
-    passed: true,
-  }));
-
-  const coverage = reportCoverage(results);
-  console.log("\n" + "=".repeat(72));
-  console.log("GOLDEN-SET CLASS 1 COVERAGE REPORT (§3.1)");
-  console.log("=".repeat(72));
-  console.log(coverage.summary);
-  console.log("=".repeat(72) + "\n");
+// This was printed to stdout in an afterAll. A tutor-touching test does not print
+// (Coding Standards §12.1; eslint no-console is an error for *lisa* tests), so the
+// coverage it reported is asserted instead of displayed: every case the helpers
+// classify as pure Class 1 or split has a fixture exercised above.
+describe("coverage report (§3.1)", () => {
+  it("every pure Class 1 and split case has a fixture", () => {
+    const coverage = reportCoverage(
+      CLASS1_FIXTURES.map((f) => ({ id: f.id, passed: true })),
+    );
+    expect(PURE_CLASS1_CASES.size).toBeGreaterThan(0);
+    expect(coverage.pureClass1.total).toBe(PURE_CLASS1_CASES.size);
+    expect(coverage.splitClass1Component.total).toBe(SPLIT_CASES.size);
+  });
 });

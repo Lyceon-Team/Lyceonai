@@ -428,7 +428,7 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
         _supabaseAdmin = createClient(url, key);
       }
     }
-    const value = (_supabaseAdmin as any)[prop];
+    const value: unknown = Reflect.get(_supabaseAdmin, prop);
     if (typeof value === "function") {
       return value.bind(_supabaseAdmin);
     }
@@ -781,7 +781,7 @@ export function requireSupabaseAdmin(
       "User attempted to access admin route without permission",
       {
         userId: req.user?.id,
-        role: (req.user as any)?.role,
+        role: req.user?.role,
       },
     );
 

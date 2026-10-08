@@ -1,7 +1,7 @@
 import { supabaseServer } from "./supabase-server";
 
 type RpcClient = {
-  rpc?: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: any }>;
+  rpc?: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
 };
 
 export interface RateLimitDecision {

@@ -40,7 +40,7 @@ async function verifyRls() {
 
     console.log(`📜 Security Policies (${policies.rows.length} total):\n`);
     
-    const policiesByTable: Record<string, any[]> = {};
+    const policiesByTable: Record<string, PolicyRow[]> = {};
     policies.rows.forEach(row => {
       if (!policiesByTable[row.tablename]) {
         policiesByTable[row.tablename] = [];

@@ -165,9 +165,9 @@ export const CASE_03: GoldenFixture = {
   }),
   correctAnswer: "3",
   denyPatterns: [
-    /\b[−\-]3\b/,
-    /\b[−\-]4\b/,
-    /\(x\s*[−\-]\s*3\)\s*\(x\s*[−\-]\s*4\)/,
+    /\b[−-]3\b/,
+    /\b[−-]4\b/,
+    /\(x\s*[−-]\s*3\)\s*\(x\s*[−-]\s*4\)/,
     /negative\s+times\s+(?:a\s+)?negative\s+is\s+(?:a\s+)?positive/i,
   ],
   denyDescription:
@@ -1491,7 +1491,7 @@ export const CASE_35: GoldenFixture = {
     ],
   }),
   correctAnswer: "-2",
-  denyPatterns: [/\by\s*=\s*[−\-]2\b/, /\b[−\-]2\b/],
+  denyPatterns: [/\by\s*=\s*[−-]2\b/, /\b[−-]2\b/],
   denyDescription: "Must not answer Q14 or give y. Pre-submit rules re-engage.",
   surface: "review",
   isPostSubmit: false,

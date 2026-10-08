@@ -29,7 +29,6 @@ import {
   feedbackAudienceFor,
   reviewAudienceFor,
   type FeedbackSubmit,
-  type ReviewAudience,
   type ReviewPromptQuery,
   type ReviewPromptResponse,
   type ReviewPromptState,

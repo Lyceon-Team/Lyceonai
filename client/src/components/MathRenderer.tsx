@@ -89,6 +89,19 @@ function processMixedContentSafely(content: string, defaultDisplayMode: boolean)
     }
 
     const mathSpan = document.createElement('span');
+    /**
+     * @spec [owner QA list (Karl, 2026-10-07) item 15: "math expressions don't break
+     *        mid-expression (keep each expression on one line via white-space: nowrap on the
+     *        rendered math span)"] | @implemented [2026-10-07]
+     * plain English: KaTeX lays an inline expression out as a row of inline blocks, and the
+     * browser may wrap between any two of them, splitting "3x + 11 = 47" across lines. An inline
+     * expression is kept on one line; the text around it still wraps. Display math is its own
+     * block and is left alone.
+     */
+    if (!token.displayMode) {
+      mathSpan.style.whiteSpace = 'nowrap';
+      mathSpan.dataset.mathInline = 'true';
+    }
     try {
       katex.render(token.content, mathSpan, {
         displayMode: token.displayMode,

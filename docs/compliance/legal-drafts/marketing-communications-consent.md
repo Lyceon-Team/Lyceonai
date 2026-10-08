@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **INTERNAL TEMPLATE — NOT PUBLISHED.** Approved by Karl, the approver (there is no external counsel), 2026-10-07; SCL-221.
 
 # **LYCEON Marketing Communications Consent**
 
-**Version 1** · **Effective date:** [●]
+**Version 1** · **Effective date:** 2026-10-07
 
 ## **1. Consent Checkbox**
 
@@ -44,7 +44,7 @@ We process unsubscribe requests promptly, and in any case within 10 business day
 
 ## **6. Sender Identification**
 
-Each marketing email identifies LYCEON as the sender, includes our postal address, [POSTAL ADDRESS], and contains an unsubscribe link.
+Each marketing email identifies LYCEON as the sender, includes our postal address, 5650 Central Ave # E7, Toledo, OH 43615, and contains an unsubscribe link.
 
 ## **7. Consent Records**
 
@@ -60,10 +60,10 @@ We record your choice, the date and time you made it, and where you made it.
 * UK PECR regulation 22 and ICO direct marketing guidance — https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/
 * RFC 8058, *Signaling One-Click Functionality for List Email Headers* — https://www.rfc-editor.org/rfc/rfc8058
 
-## Counsel checklist
+## Decisions (Karl, 2026-10-07)
 
-1. Confirm that marketing to students aged 13 to 17 who opt in is permitted in each launch market, and whether parental notice is required.
-2. Confirm that the checkbox wording meets CASL's express consent requirements.
-3. Insert the postal address in Section 6 (CAN-SPAM §7704(a)(5); CASL).
-4. Confirm the consent record fields and their retention period after opt-out.
-5. Confirm the unsubscribe processing wording.
+1. Students aged 13 to 17 who opt in may receive marketing email in the US (CAN-SPAM); no separate parental notice is required. Under-13 users are never shown the checkbox.
+2. CASL: not applicable; the service is US-only at launch.
+3. Postal address (Section 6): filled 2026-10-07 with the address Karl supplied.
+4. Consent record: the choice, date and time, source and wording version (as built in `marketing_consent_log`); kept while the account is open and deleted with it.
+5. Unsubscribe: processed promptly and within 10 business days (CAN-SPAM). The one-click unsubscribe link must exist before the first marketing email is sent; the Settings toggle is live today.

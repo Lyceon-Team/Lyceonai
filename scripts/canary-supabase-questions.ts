@@ -4,7 +4,7 @@ import { generateCanonicalId } from "../apps/api/src/lib/canonicalId";
 (async () => {
   const canonical_id = generateCanonicalId("SAT", "RW", "1");
 
-  const row: any = {
+  const row: Record<string, unknown> = {
     canonical_id,
     status: "draft",
     // `questions.section` is CHECK-constrained to 'M'/'RW', and there is no

@@ -40,6 +40,7 @@ import {
   rulerFill,
 } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
@@ -189,11 +190,11 @@ export function FreeHome({
               type="button"
               variant="lyc-primary"
               size="lyc-lg"
-              disabled={diagnostic.isStarting}
+              pending={diagnostic.isStarting}
               onClick={() => void startDiagnostic()}
               data-testid="home-start-diagnostic"
             >
-              Start diagnostic
+              {diagnostic.isStarting ? STARTING_LABEL : "Start diagnostic"}
             </Button>
             <span className="text-base text-lyc-muted">
               You can stop and pick up where you left off.

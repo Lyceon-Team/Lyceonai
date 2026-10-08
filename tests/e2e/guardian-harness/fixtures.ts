@@ -55,6 +55,10 @@ const fixtures = {
   // overrides, on the pinned date.
   calendarWeek: guardianCalendarWeek(E2E_TODAY),
   studentCalendar: studentCalendarWeek(E2E_TODAY),
+  // Production QA 2026-10-07 item 11(c) (`student-calendar.spec.ts`): the SAME week read the day
+  // after E2E_TODAY, when Wednesday's Geometry block is partly done — a started block, so the
+  // week draws its "🔒 started" tag for the overflow check to measure.
+  studentCalendarStarted: studentCalendarWeek("2026-10-01"),
   masteryDomains: masteryDomains(),
   examList: examList(),
   // G5-09: every report the Dashboard may read, by session id (scores only come from here).
