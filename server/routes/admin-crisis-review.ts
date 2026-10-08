@@ -39,7 +39,6 @@ import {
   claimCaseForReview,
   getBreachedCases,
   getCaseAuditLog,
-  writeAuditLogEntry,
 } from "../services/crisis-review-queue";
 import { logger } from "../logger";
 

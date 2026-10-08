@@ -180,18 +180,22 @@ describe("O2 — the four production states", () => {
     expect(outstandingSlugs(CURRENT_TWO, {})).toEqual([]);
   });
 
-  // @spec [owner ruling 2026-10-05 (v5 rulings 1): publish Privacy Policy v5 and every user
-  //       re-accepts] | @implemented [2026-10-05]
-  // A user who accepted Privacy Policy 4.0 and is current on Student Terms owes exactly the
-  // Privacy Policy again, at the version legal/ now publishes (5.0).
-  it("accepted Privacy Policy v4 — re-asked for v5, and only for that", () => {
-    expect(CURRENT["privacy-policy"]).toBe("5.0");
-    const ACCEPTED_V4 = [
-      { doc_key: "student_terms", doc_version: CURRENT["student-terms"]! },
-      { doc_key: "privacy_policy", doc_version: "4.0" },
-    ];
-    expect(outstandingSlugs(ACCEPTED_V4, {})).toEqual(["privacy-policy"]);
-  });
+  // @spec [owner ruling 2026-10-05 (v5 rulings 1): every user re-accepts a new Privacy Policy;
+  //       owner ruling 2026-10-07: v6 is the launch version, folding in the SEO vertical] |
+  //       @implemented [2026-10-07]
+  // A user who accepted Privacy Policy 5.0 (or 4.0) and is current on Student Terms owes exactly
+  // the Privacy Policy again, at the version legal/ now publishes (6.0).
+  it.each(["5.0", "4.0"])(
+    "accepted Privacy Policy %s — re-asked for v6, and only for that",
+    (accepted) => {
+      expect(CURRENT["privacy-policy"]).toBe("6.0");
+      const ACCEPTED_OLDER = [
+        { doc_key: "student_terms", doc_version: CURRENT["student-terms"]! },
+        { doc_key: "privacy_policy", doc_version: accepted },
+      ];
+      expect(outstandingSlugs(ACCEPTED_OLDER, {})).toEqual(["privacy-policy"]);
+    },
+  );
 
   it("a payer who is current on both Terms still owes Billing Terms", () => {
     expect(outstandingSlugs(CURRENT_TWO, { hasEverPaid: true })).toEqual([

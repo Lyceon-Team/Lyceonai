@@ -34,6 +34,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -56,6 +57,7 @@ import { masteryDomainsResponseSchema } from "@lyceon/shared/mastery-levels";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { AppShell } from "@/components/layout/app-shell";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
+import { formatDate } from "@/lib/format-date";
 import { getQueryFn } from "@/lib/queryClient";
 import { resolveFeatureAccess } from "../../../../../server/lib/feature-access";
 import {
@@ -71,6 +73,8 @@ const net = vi.hoisted(() => ({
   handler: null as
     | null
     | ((url: string, init: RequestInit | undefined) => Response | undefined),
+  /** QA item 5: requests matching `pattern` wait for `gate` (a slow server). */
+  hold: null as null | { pattern: RegExp; gate: Promise<void> },
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -83,6 +87,7 @@ function json(body: unknown, status = 200): Response {
 vi.mock("@/lib/csrf", () => ({
   csrfFetch: async (url: string, init?: RequestInit): Promise<Response> => {
     net.log.push(`${init?.method ?? "GET"} ${url}`);
+    if (net.hold !== null && net.hold.pattern.test(url)) await net.hold.gate;
     if (typeof init?.body === "string") {
       net.bodies.push({ url, body: JSON.parse(init.body) as unknown });
     }
@@ -503,6 +508,7 @@ beforeEach(() => {
   net.log.length = 0;
   net.bodies.length = 0;
   net.handler = null;
+  net.hold = null;
   window.sessionStorage.clear();
 });
 
@@ -552,7 +558,7 @@ describe("paid: the test list (DESIGN.md §4)", () => {
     const card = row("Full-Length Test 1");
     await waitFor(() =>
       expect(within(card).getByTestId("exam-form-state").textContent).toBe(
-        "Completed 26 September. Score 1120.",
+        `Completed ${formatDate("2026-09-26T15:00:00Z", "month-day") ?? ""}. Score 1120.`,
       ),
     );
     const note = within(card).getByTestId("exam-disclosure");
@@ -728,7 +734,7 @@ describe("paid: the right panel", () => {
     );
     expect(rows[0]!.textContent).toBe(
       "Full-Length Test 11120" +
-        "26 September. Reading & Writing 620, Math 500",
+        "September 26. Reading & Writing 620, Math 500",
     );
     expect(within(history).getByTestId("exam-disclosure").textContent).toBe(
       FIXTURE_DISCLOSURE.summary,
@@ -813,8 +819,9 @@ describe("phone widths: the shared pre-start check (OQ-63)", () => {
     // An outline, never a filled primary: it acknowledges a note.
     expect(button.className).toContain("border-lyc-ink-strong");
     expect(button.className).not.toContain("bg-lyc-primary-bg");
-    // Exactly the ruling's words, plus the Modal's named Close.
-    expect(notice.textContent).toBe(PHONE_TEXT + "Continue anywayClose");
+    // Exactly the ruling's words, "Not now" (owner QA list, 2026-10-07, item 15), plus the
+    // Modal's named Close.
+    expect(notice.textContent).toBe(PHONE_TEXT + "Continue anywayNot nowClose");
     // The check runs BEFORE the start: nothing has been created.
     expect(createRequests()).toEqual([]);
     expect(history.at(-1)).toBe("/tests");
@@ -977,5 +984,91 @@ describe("phone widths: the shared pre-start check (OQ-63)", () => {
         /useFullLengthPhonePrecheck|phone-notice|PHONE_LAYOUT_QUERY/,
       ).filter((f) => /Exam(Session|Module|Report)Page/.test(f)),
     ).toEqual([]);
+  });
+});
+
+// ── Owner QA list (Karl, 2026-10-07) item 5 ───────────────────────────────────────────────────
+
+describe("QA item 5: Full-Length's Start shows a pending state from the first click", () => {
+  it("'Starting…', disabled and busy while the create is in flight; one create", async () => {
+    let release: () => void = () => undefined;
+    net.hold = {
+      pattern: /^\/api\/tests\/sessions$/,
+      gate: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    };
+    const { history } = await mount("paid", {
+      inProgress: false,
+      scored: false,
+    });
+    const start = (await within(row("Full-Length Test 1")).findByRole(
+      "button",
+      { name: "Start" },
+    )) as HTMLButtonElement;
+    fireEvent.click(start);
+    expect(start.textContent).toBe("Starting…");
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-busy")).toBe("true");
+    expect(within(start).getByTestId("button-pending-spinner")).toBeTruthy();
+    fireEvent.click(start);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(history.at(-1)).toBe(`/tests/${NEW_SESSION}`));
+    expect(
+      net.bodies.filter((b) => b.url === "/api/tests/sessions"),
+    ).toHaveLength(1);
+  });
+});
+
+describe("QA item 15: the timing choice comes before any Start", () => {
+  it("the Timing fieldset precedes the list of tests and every Start in reading order", async () => {
+    await mount("paid", { inProgress: false, scored: false });
+    const timing = await screen.findByTestId("tests-timing");
+    const starts = await screen.findAllByTestId("tests-start");
+    // Presence: there are Starts to come after it.
+    expect(starts.length).toBeGreaterThan(0);
+    for (const start of [screen.getByTestId("tests-list"), ...starts]) {
+      expect(
+        timing.compareDocumentPosition(start) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    // "Before you start" still names the chosen timing, after the list.
+    fireEvent.click(screen.getByLabelText(/Practice timing/));
+    expect(screen.getByTestId("tests-before-timing").textContent).toBe(
+      "The clock pauses when you step away. Your report says so.",
+    );
+  });
+});
+
+describe("QA item 15: the phone notice has a 'Not now' that closes it like Close", () => {
+  it("'Not now' (quiet) closes the notice and starts nothing; Continue anyway stays outline; Start asks again", async () => {
+    const { history } = await mount(
+      "paid",
+      { inProgress: false, scored: false },
+      "phone",
+    );
+    const start = within(row("Full-Length Test 1")).getByRole("button", {
+      name: "Start",
+    });
+    fireEvent.click(start);
+    const notice = await screen.findByTestId("full-length-phone-notice");
+    const notNow = within(notice).getByRole("button", { name: "Not now" });
+    const proceed = within(notice).getByRole("button", {
+      name: "Continue anyway",
+    });
+    expect(notNow.className).toContain("bg-transparent");
+    expect(notNow.className).not.toContain("border-lyc-ink-strong");
+    expect(proceed.className).toContain("border-lyc-ink-strong");
+    expect(proceed.className).not.toContain("bg-lyc-primary-bg");
+    fireEvent.click(notNow);
+    await waitFor(() => expect(phoneNotice()).toBeNull());
+    expect(createRequests()).toEqual([]);
+    expect(history.at(-1)).toBe("/tests");
+    fireEvent.click(start);
+    expect(await screen.findByTestId("full-length-phone-notice")).toBeTruthy();
+    expect(createRequests()).toEqual([]);
   });
 });

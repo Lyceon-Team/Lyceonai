@@ -213,7 +213,10 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
   });
 
   // ── Test 1: New session creates a new conversation ─────────────────
-  it("1. new session creates a new conversation (not reopening a previous one)", async () => {
+  // QA 2026-10-07 item 9 (Karl): "LISA 'New session': don't create a conversation until the
+  // first message is sent (no blank sessions)". New session opens the empty column; the create
+  // (with its idempotency key) happens on the first message.
+  it("1. new session opens an empty column and creates nothing (QA-9); the first message creates one", async () => {
     const { createMut } = setupDefaultMocks({
       conversations: [
         {
@@ -237,27 +240,9 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
     // W4-11: the page calls `mutate` and reads failures off `.error` — the
     // `mutateAsync` + empty `catch {}` that swallowed the 403 is gone.
     createMut.mutate = vi.fn();
-    const created = {
-      conversation_id: "new-conv-999",
-      reused: false,
-      entry_mode: "general",
-      source_surface: "dashboard",
-      surface: "standalone",
-      status: "active",
-      title: null,
-      crisis_flagged: false,
-      crisis_paused_at: null,
-      resolved_scope: {},
-      created_at: "2026-09-23T10:10:00Z",
-      updated_at: "2026-09-23T10:10:00Z",
-    };
-    createMut.mutate.mockImplementation(
-      (_input: unknown, opts?: { onSuccess?: (c: typeof created) => void }) =>
-        opts?.onSuccess?.(created),
-    );
 
     const { default: ChatPage } = await import("./chat");
-    render(<ChatPage />, { wrapper: createWrapper() });
+    const view = render(<ChatPage />, { wrapper: createWrapper() });
 
     const newSessionBtn = screen.getAllByRole("button", {
       name: /new session/i,
@@ -267,6 +252,19 @@ describe("PR B §6 — Standalone LISA Chat UI", () => {
       fireEvent.click(newSessionBtn);
     });
 
+    // The empty column (no conversation in the URL), and no create.
+    expect(mockSetLocation).toHaveBeenLastCalledWith("/chat");
+    expect(createMut.mutate).not.toHaveBeenCalled();
+
+    // The page at /chat with no conversation: the first message creates one, once.
+    mockSearch = "";
+    view.rerender(<ChatPage />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "hello" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    });
     expect(createMut.mutate).toHaveBeenCalledOnce();
     const callArgs = createMut.mutate.mock.calls[0][0];
     expect(callArgs.entry_mode).toBe("general");

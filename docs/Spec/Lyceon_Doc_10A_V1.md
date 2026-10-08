@@ -149,7 +149,7 @@ Content is how Lyceon earns search and AI-search traffic and builds trust: usefu
 
 ## **8.3 The AI CMO**
 
-An AI CMO in Slack (Claude Tag) runs the content workflow with the team: ideas, briefs, drafts and approvals in one place. It proposes; people approve. This is part of launch.
+An AI CMO in Slack (Claude Tag) runs the content workflow with the team: ideas, briefs, drafts and approvals in one place. It proposes; people approve. Planned for after launch, when Lyceon moves to Slack Pro (and a Claude Team plan for Claude Tag). Until then the same workflow runs through Claude Code sessions using the AI CMO skill.
 
 ## **8.4 Video**
 
@@ -226,11 +226,11 @@ Tools are expected to change as Lyceon grows; free and low-cost options are pref
 
 ## **13.1 At launch**
 
-The public site with its first content, the homepage and its experiments, the Question of the Day, consent and analytics, the review and feedback prompt, marketing opt-in, the AI CMO workflow, and search tools connected. Before launch, the legal documents are counsel-reviewed and published (Doc 10 §9) and the source repository is private.
+The public site with its first content, the homepage and its experiments, the Question of the Day, consent and analytics, the review and feedback prompt, marketing opt-in, and search tools connected. Before launch, the legal documents are counsel-reviewed and published (Doc 10 §9) and the source repository is private.
 
 ## **13.2 After launch**
 
-Ideas Lyceon intends to pursue: outcome statistics once real data supports them (Doc 10 §6), comparison pages against named competitors with substantiation, a fuller social presence (owned subreddit, LISA as a public voice, on-camera video), progress-sharing that students choose to post, more experiments and audiences, and growth in schools and programs. None of these is a commitment to a date or form.
+Ideas Lyceon intends to pursue: outcome statistics once real data supports them (Doc 10 §6), the AI CMO in Slack, comparison pages against named competitors with substantiation, a fuller social presence (owned subreddit, LISA as a public voice, on-camera video), progress-sharing that students choose to post, more experiments and audiences, and growth in schools and programs. None of these is a commitment to a date or form.
 
 ---
 

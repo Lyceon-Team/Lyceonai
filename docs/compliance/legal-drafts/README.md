@@ -1,5 +1,26 @@
 # Legal drafts for counsel (internal)
 
+## Status (2026-10-07, SCL-221)
+
+Karl is the approver; there is no external counsel. Every draft below was resolved on 2026-10-07 with the standard answers for a US-only consumer edtech service for minors with guardian involvement.
+
+| Draft | Where it went |
+|---|---|
+| `privacy-policy-v5.md` | Retired; its launch items are in `legal/privacy-policy/v6` (SCL-220) |
+| `childrens-privacy-notice.md` | Folded into Privacy Policy v6 §4 |
+| `ca-notice-at-collection.md` | Folded into Privacy Policy v6 §8.1 |
+| `ca-do-not-sell-share-gpc.md` | Folded into Privacy Policy v6 §5.4, §8.1 |
+| `sub-processor-list.md` | Folded into Privacy Policy v6 §5.2 |
+| `cookie-policy.md` | Published: `legal/cookie-policy/v1` |
+| `ai-content-disclosure.md` | Published: `legal/ai-content-disclosure/v1` |
+| `billing-terms-v3.md` | Published: `legal/billing-terms/v3` |
+| `cookie-banner-text.md` | Internal: the banner text in the product; decisions in the file |
+| `school-data-privacy-addendum.md` | Internal template, signed per school; decisions in the file |
+| `parental-consent-mechanism.md` | Internal: the consent flow in the product; decisions in the file |
+| `marketing-communications-consent.md` | Internal: the wording in the product; decisions in the file |
+
+The rest of this file describes the folder as it was drafted.
+
 **Nothing in this folder is published.** The folder is outside `legal/`, so the legal registry, the legal gates and the build never read it; it is not copied to `dist/public` and is linked from nothing in the product.
 
 A draft is published only after counsel signs off and the owner approves; its text is then copied into `legal/<slug>/<version>/` through the normal legal versioning process. Status is tracked in `docs/compliance/README.md` → "Legal drafts and counsel sign-offs".

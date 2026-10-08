@@ -27,7 +27,8 @@ import type { SessionCriteria } from "@lyceon/shared/session-criteria";
 import type { EstimateStatus } from "@lyceon/shared/diagnostic-state";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { minutesFor } from "@/features/calendar/lib/blocks";
-import { daysBetween, weekdayDayMonth } from "@/features/calendar/lib/dates";
+import { daysBetween } from "@/features/calendar/lib/dates";
+import { formatDate } from "@/lib/format-date";
 
 type DayBlock = CalendarDay["blocks"][number];
 
@@ -46,16 +47,17 @@ export function greetingLine(hour: number, name: string | null): string {
 }
 
 /**
- * "Monday, 28 September. 68 days until your SAT on Saturday, 5 December." The countdown is
+ * "Monday, September 28. 68 days until your SAT on Saturday, December 5." (US style, OQ-66 (g)) The countdown is
  * omitted when the profile has no test date (wiring table §3) or the date is not ahead.
  */
 export function dateLine(today: string, testDate: string | null): string {
-  const head = `${weekdayDayMonth(today)}.`;
+  // QA 2026-10-07 item 15 / OQ-66 (g): the one student date formatter, US style.
+  const head = `${formatDate(today, "weekday-month-day") ?? ""}.`;
   if (testDate === null) return head;
   const days = daysBetween(today, testDate);
   if (days <= 0) return head;
   const unit = days === 1 ? "day" : "days";
-  return `${head} ${days} ${unit} until your SAT on ${weekdayDayMonth(testDate)}.`;
+  return `${head} ${days} ${unit} until your SAT on ${formatDate(testDate, "weekday-month-day") ?? ""}.`;
 }
 
 /** "A", "A and B", "A, B, and C" — the prototype's list form. */

@@ -508,15 +508,16 @@ export async function seedPracticeHistory(
 /**
  * UI-56 (`seed: "lisa-history"`): the paid student's LISA history.
  *
- * plain English: four standalone conversations, each created through the REAL
+ * plain English: five standalone conversations, each created through the REAL
  * `POST /api/tutor/conversations` (entitlement gate, Zod parse, scope resolution, insert), the
  * route the page's New session calls. Their turns cannot go through `POST /api/tutor/messages`:
  * that route calls the model (the tutor orchestrator) and Google's safety services, which this
  * harness never reaches. So the turns are written as rows, the way the tutor's own route tests
  * seed them (tests/helpers/fake-tutor-db.ts), with the title and times the message route would
  * have left. The words are the prototype's illustrative conversation (Lisa.dc.html), so the
- * side-by-side compares like with like. The oldest is ended (OQ-39 (f): the history includes
- * ended sessions). Returns the conversation with turns.
+ * side-by-side compares like with like. "Feeling stuck on transitions" is ended (OQ-39 (f): the
+ * history includes ended sessions), and the oldest is crisis-flagged (QA 2026-10-07: the page
+ * shows it as "Conversation"). Returns the conversation with turns.
  */
 export async function seedLisaHistory(
   base: string,
@@ -532,8 +533,19 @@ export async function seedLisaHistory(
     title: string;
     at: string;
     ended: boolean;
+    /** QA 2026-10-07 (titles): flagged by a crisis turn; the page never shows its title. */
+    crisisFlagged?: true;
     turns: ReadonlyArray<readonly ["student" | "tutor", string]>;
   }> = [
+    {
+      // A conversation a crisis turn flagged: the server titled it with the student's first
+      // message (its rule), and the page shows it as "Conversation" (QA 2026-10-07).
+      title: "I can't do this anymore",
+      at: day(9, 0),
+      ended: false,
+      crisisFlagged: true,
+      turns: [["student", "I can't do this anymore"]],
+    },
     {
       title: "Feeling stuck on transitions",
       at: day(9, 5),
@@ -611,9 +623,10 @@ export async function seedLisaHistory(
         `UPDATE public.tutor_conversations
             SET title = $2, updated_at = $3::timestamptz,
                 status = CASE WHEN $4::boolean THEN 'ended' ELSE status END,
-                ended_at = CASE WHEN $4::boolean THEN $3::timestamptz ELSE ended_at END
+                ended_at = CASE WHEN $4::boolean THEN $3::timestamptz ELSE ended_at END,
+                crisis_flagged = $5::boolean
           WHERE id = $1::uuid`,
-        [id, conv.title, conv.at, conv.ended],
+        [id, conv.title, conv.at, conv.ended, conv.crisisFlagged === true],
       );
     } finally {
       await pg.query(

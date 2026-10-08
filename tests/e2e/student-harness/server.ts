@@ -32,7 +32,7 @@ import express, {
 } from "express";
 import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
-import { buildStudentHarnessDb } from "./db";
+import { buildStudentHarnessDb, seedPaidNotifications } from "./db";
 import {
   BARE_PAGE_PERSONAS,
   isBarePagePersona,
@@ -281,7 +281,6 @@ async function main(): Promise<void> {
 
   // Anything else the client asks for is outside this harness; capture.ts lists each miss.
   app.use("/api", (req, res) => {
-    // eslint-disable-next-line no-console -- harness diagnostics: which endpoints a page wanted
     console.log(`student harness: not served ${req.method} ${req.path}`);
     res.status(404).json({
       error: {
@@ -310,15 +309,16 @@ async function main(): Promise<void> {
         }
         // UI-59: the bare-page personas' current legal acceptance (seed.ts).
         if (BARE_PAGES) await seedBarePagePersonas(`http://localhost:${PORT}`);
+        // QA 2026-10-07 (UI-41): unread in-app notifications for the paid student (db.ts).
+        if (process.env.STUDENT_HARNESS_SEED === "notifications")
+          await seedPaidNotifications(pg);
         return seeded;
       })
       .then(
         (seeded) => {
-          // eslint-disable-next-line no-console -- the readiness line capture.ts waits for
           console.log(`student harness ready ${JSON.stringify(seeded)}`);
         },
         (err: unknown) => {
-          // eslint-disable-next-line no-console -- a failed seed must stop the run, loudly
           console.error("student harness seed failed:", err);
           server.close();
           process.exit(1);

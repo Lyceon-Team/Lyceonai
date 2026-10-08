@@ -123,6 +123,24 @@ export const UI_52: PageGroup = {
         note: "Review, plan = free, 'Past sessions' clicked open on the canvas",
       },
     },
+    // The pending shot runs before the click path: each click-path capture leaves a real
+    // session open, and four of them reach the open-session limit that disables Start.
+    {
+      id: "click-paid-start-pending",
+      title:
+        "QA item 5: Start reviewing pressed, the create held in flight: 'Starting…' with a spinner; the other starts wait",
+      persona: "paid",
+      route: "/review",
+      waitFor: REVIEW,
+      holdRequest: { method: "POST", path: "/api/review/sessions" },
+      steps: [both('[data-testid="button-start-queue"]')],
+      expectVisible: '[data-testid="button-start-queue"][aria-busy="true"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "A pending state the prototype does not draw (owner QA list, 2026-10-07, item 5).",
+      },
+    },
     {
       id: "click-paid-start",
       title: "Click path (paid): Start reviewing lands in the review runner",

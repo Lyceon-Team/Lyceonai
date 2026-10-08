@@ -1,8 +1,8 @@
-> **DRAFT — NOT PUBLISHED — FOR COUNSEL REVIEW**
+> **RETIRED 2026-10-07 — published as `legal/billing-terms/v3` (v2 plus the corrected Section 1 sentence; nothing else changed).** Approved by Karl, the approver (there is no external counsel); SCL-221. Kept for history; do not edit.
 
 # **LYCEON Billing Terms**
 
-**Version 3** · **Effective date:** [●]
+**Version 3** · **Effective date:** 2026-10-07
 
 These Billing Terms are the Auto-Renewal Offer Terms for LYCEON subscriptions. They are presented before you complete checkout, and you are asked to agree to them separately from the LYCEON Terms of Use.
 

@@ -10,8 +10,16 @@
  * own `GuardianShell`. The App shell is the student's chrome, so for a guardian viewer the frame
  * renders the page alone; the bare routes (update password, profile completion) wrap every role.
  * A display choice only: the route guard and the server decide access.
+ *
+ * @spec [production QA 2026-10-07 item 5 (Karl: route-level lazy loading with page skeletons
+ *        "inside the page's own shell")] | @implemented [2026-10-07]
+ * Every page is a lazy chunk. The frame puts the page's Suspense boundary INSIDE the shell, so
+ * while a page's chunk loads the real shell stays on screen (the rail with its current item, the
+ * bars, the theme) and only the content area shows the page skeleton (RouteSkeleton.tsx), where
+ * it used to fall through to the router's full-page loader. A page laid out edge to edge
+ * (Calendar, LISA) and a Focus page get the reading column's padding around the skeleton.
  */
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
   STUDENT_ROUTE_SHELLS,
@@ -21,6 +29,7 @@ import {
 import { AppShell } from "./app-shell";
 import { BareCard } from "./BareCardShell";
 import { FocusShell } from "./FocusShell";
+import { PageSkeleton } from "./RouteSkeleton";
 
 export function StudentRouteFrame({
   route,
@@ -41,7 +50,11 @@ export function StudentRouteFrame({
           content={spec.content}
           themeLock={spec.themeLock}
         >
-          {children}
+          <Suspense
+            fallback={<PageSkeleton padded={spec.content === "full"} />}
+          >
+            {children}
+          </Suspense>
         </AppShell>
       );
     case "focus":
@@ -52,10 +65,14 @@ export function StudentRouteFrame({
           back={spec.back}
           themeLock={spec.themeLock}
         >
-          {children}
+          <Suspense fallback={<PageSkeleton padded />}>{children}</Suspense>
         </FocusShell>
       );
     case "bare":
-      return <BareCard themeLock={spec.themeLock}>{children}</BareCard>;
+      return (
+        <BareCard themeLock={spec.themeLock}>
+          <Suspense fallback={<PageSkeleton card />}>{children}</Suspense>
+        </BareCard>
+      );
   }
 }

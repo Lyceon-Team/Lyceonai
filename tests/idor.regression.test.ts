@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
+import type { Request, Response } from "express";
 import request from "supertest";
 import app from "../server/index";
 
 vi.mock("../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
   generateToken: () => "test-csrf-token",
 }));
 
@@ -88,20 +89,20 @@ describe("IDOR Regression Invariants", () => {
         questionId,
         selectedAnswer: "A",
       },
-    } as any;
+    } as unknown as Request;
 
     let statusCode = 0;
-    let jsonBody: any = null;
+    let jsonBody: unknown = null;
     const res = {
       status(code: number) {
         statusCode = code;
         return this;
       },
-      json(obj: any) {
+      json(obj: unknown) {
         jsonBody = obj;
         return this;
       },
-    } as any;
+    } as unknown as Response;
 
     await submitPracticeAnswer(req, res);
 

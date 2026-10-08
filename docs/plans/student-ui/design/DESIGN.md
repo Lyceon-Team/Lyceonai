@@ -41,7 +41,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - **Left rail,** 96px, `--rail` background:
   - top: logo mark with the "Lyceon" wordmark under it;
   - then Home, Practice, Review, Full-Length, Calendar, LISA, with icon above label;
-  - bottom: Help, then the account avatar (opens Settings).
+  - bottom: Help, then the account avatar. The avatar opens the account menu (**Settings, Help, Sign out**) at every width, desktop included (owner QA list, Karl, 2026-10-07, item 3; it used to open Settings directly, which left desktop with no Sign out in the shell).
 - **Middle column:** the only part that scrolls. Content max-width 800px, padding 56px 72px.
 - **Right panel,** 360px (Calendar 340px, LISA 320px), `--margin` background, hairline left rule. Its content depends on the page.
 - **Fit to screen:** the rail and the right panel are fixed to the viewport height. The right panel scrolls on its own only when its content is taller than the screen. Only the middle column scrolls the page.
@@ -124,7 +124,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - "Knowledge and skills" with seven segments per domain. Domain weight lines come from College Board's published specification. **No percentiles, no correct/total.**
 
 **Calendar** (Canvas-style).
-- Header: Week/Month, Today and the arrows on the left; the date range centered (`M/D – M/D`); Edit schedule and **Regenerate plan** (`POST /api/calendar/plan/regenerate`) on the right.
+- Header: Week/Month, Today and the arrows on the left; the date range centered (`M/D – M/D`); Edit schedule and **Regenerate plan** (`POST /api/calendar/plan/regenerate`) on the right. At most two rows at 1024px; below a ~1200px viewport Edit schedule and Regenerate plan move into a "⋯" menu ("More actions"), on a phone too (owner ruling, Karl, 2026-10-07, OQ-66 (c)).
 - Week grid with category-striped blocks, and Month view.
 - **The test day is starred** in week view, month view and the mini month.
 - Right panel:

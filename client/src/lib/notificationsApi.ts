@@ -25,6 +25,7 @@ import {
   type NotificationUnreadCountResponse,
 } from "@lyceon/shared/notifications-schema";
 import { apiRequest } from "./queryClient";
+import { formatDate } from "@/lib/format-date";
 
 export const NOTIFICATIONS_QUERY_ROOT = "/api/notifications" as const;
 /** The bell's recent-items page (inbox, first page only). */
@@ -126,12 +127,10 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
   return `${days}d ago`;
 }
 
-/** The absolute time behind a relative label (hover / long-press), in the viewer's locale. */
+/**
+ * The absolute time behind a relative label (hover / long-press), in the viewer's zone, through
+ * the one student date formatter (QA 2026-10-07 item 15).
+ */
 export function absoluteTime(iso: string): string {
-  const then = new Date(iso);
-  if (Number.isNaN(then.getTime())) return iso;
-  return then.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return formatDate(iso, "date-time") ?? iso;
 }

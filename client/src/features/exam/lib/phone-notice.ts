@@ -20,6 +20,12 @@
 export const PHONE_NOTICE_TEXT =
   "Full-length tests are built for a laptop or tablet, like test day.";
 export const PHONE_NOTICE_CONTINUE = "Continue anyway";
+/**
+ * Owner QA list (Karl, 2026-10-07) item 15 | @implemented [2026-10-07]: the notice's second
+ * button, which closes it as Close does (the start is cancelled). The app's modals' own words
+ * for that action (the upgrade modal's "Not now").
+ */
+export const PHONE_NOTICE_NOT_NOW = "Not now";
 
 const STORAGE_KEY = "lyceon.full-length.phone-notice.continued";
 

@@ -19,18 +19,25 @@
  */
 import { useEffect } from "react";
 
-let depth = 0;
+// @spec [Production QA 2026-10-07 item 7: "a back link's label must match its destination"]
+// | @implemented [2026-10-07] | plain English: besides the count, the in-app paths are kept as a
+// stack (the current page last), so the back arrow can NAME the page it returns to. The count is
+// the stack's length minus one, so the two can never disagree. A pop removes the top and then
+// trusts the browser's own location for the new top (a forward step counted as a back step stays
+// harmless: the label then names where the browser actually is behind us, or the section home).
+let paths: string[] = [];
 
 /** Starts counting. Mounted once, by the app's route switch. Restarting resets the count. */
 export function useInAppHistoryTracking(): void {
   // Subscribing to an external event source (the History API): an effect is the right tool.
   useEffect(() => {
-    depth = 0;
+    paths = [window.location.pathname];
     const onPush = (): void => {
-      depth += 1;
+      paths.push(window.location.pathname);
     };
     const onPop = (): void => {
-      depth = Math.max(0, depth - 1);
+      if (paths.length > 1) paths.pop();
+      paths[paths.length - 1] = window.location.pathname;
     };
     window.addEventListener("pushState", onPush);
     window.addEventListener("popstate", onPop);
@@ -43,5 +50,10 @@ export function useInAppHistoryTracking(): void {
 
 /** True when the entry behind the current one was reached by an in-app navigation. */
 export function hasInAppHistory(): boolean {
-  return depth > 0;
+  return paths.length > 1;
+}
+
+/** The in-app page behind the current one (its pathname), or null when there is none. */
+export function previousInAppPath(): string | null {
+  return paths.length > 1 ? (paths[paths.length - 2] ?? null) : null;
 }

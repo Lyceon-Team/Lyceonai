@@ -139,9 +139,12 @@ export default function CalendarPage(): JSX.Element {
 
   // §17.7. Warm the neighbouring ranges once the browser is idle, so the NEXT arrow press
   // has its rows already. Only once the current range is a READY plan: a free student's
-  // pre-setup answer has no neighbours worth reading.
+  // pre-setup answer has no neighbours worth reading. In week view the month the Month toggle
+  // opens is warmed as well (QA 2026-10-07 item 11(a)), so the month's first render is the
+  // whole month rather than the week held over while its own read is in flight.
   usePrefetchAdjacentRange(view, cursor, {
     enabled: calendar.isSuccess && calendar.data.status === "ready",
+    today,
   });
   // No streak read: the student calendar draws no streak line (SCL-211, OQ-56).
 

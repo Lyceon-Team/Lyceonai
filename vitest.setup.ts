@@ -33,7 +33,7 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
     unobserve() {}
     disconnect() {}
   }
-  (globalThis as any).ResizeObserver = ResizeObserverMock;
+  Reflect.set(globalThis, 'ResizeObserver', ResizeObserverMock);
 }
 
 /**

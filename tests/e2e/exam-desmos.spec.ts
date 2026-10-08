@@ -16,6 +16,12 @@
  * cloud containers refuse desmos.com at the proxy), the refusal is logged and the spec
  * asserts only the wiring: that is NOT G-EX-08, and the PR says so.
  *
+ * E2E_DESMOS_STUB=1 (the nightly `exam-calendar-e2e` CI job, 2026-10-07; CI holds no Desmos
+ * key): calculator.js is answered by the shared stand-in (tests/e2e/desmos-stub.ts, the one
+ * page-csp-flows uses), so the panel mounts a calculator and the spec drives it as where
+ * Desmos is reachable. That proves the app's wiring end to end with no network; it is still
+ * NOT G-EX-08 (the real Desmos runtime), and the evidence line says which mode ran.
+ *
  * run: start the harness + Vite (tests/e2e/exam-harness/server.ts), then
  *   E2E_BASE_URL=http://localhost:5173 E2E_SHOT_DIR=<dir> \
  *     pnpm exec playwright test tests/e2e/exam-desmos.spec.ts
@@ -24,17 +30,26 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
+import { answerCookieBanner } from "./exam-harness/consent";
+import { DESMOS_STUBBED, stubDesmos } from "./desmos-stub";
 
 if (process.env.E2E_CHROMIUM)
   test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
 test.use({ viewport: { width: 1280, height: 832 } });
 test.setTimeout(3 * 60_000);
+// The cookie banner, answered, so it is not fixed over the controls the walk clicks (2026-10-07).
+test.beforeEach(async ({ context, baseURL }) => {
+  await answerCookieBanner(context, baseURL ?? "http://localhost:5173");
+  if (DESMOS_STUBBED) await stubDesmos(context);
+});
 
 const SHOTS =
   process.env.E2E_SHOT_DIR ?? path.resolve("test-results/exam-desmos-shots");
 fs.mkdirSync(SHOTS, { recursive: true });
 const FORM = "e7b00000-0000-4000-8000-0000000000f1";
 const REACHABLE = process.env.E2E_DESMOS_REACHABLE === "1";
+/** A calculator mounts in the panel: the real Desmos (REACHABLE) or the stand-in (stubbed). */
+const LOADS = REACHABLE || DESMOS_STUBBED;
 
 async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(SHOTS, `${name}.png`) });
@@ -109,7 +124,7 @@ test("Math module: calculator from the tools row, resume with it open, reference
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   const panel = page.locator("#exam-calculator-panel");
   await expect(panel).toBeVisible();
-  if (REACHABLE) {
+  if (LOADS) {
     await expect(panel.locator(".dcg-container").first()).toBeVisible({
       timeout: 20_000,
     });
@@ -191,7 +206,7 @@ test("Math module: calculator from the tools row, resume with it open, reference
   // Expand, then back.
   await panel.getByRole("button", { name: "Expand" }).click();
   await expect(panel).toHaveAttribute("data-expanded", "true");
-  await page.waitForTimeout(REACHABLE ? 1_000 : 300);
+  await page.waitForTimeout(LOADS ? 1_000 : 300);
   await shot(page, "01c-calculator-expanded");
   await panel.getByRole("button", { name: "Collapse" }).click();
 
@@ -227,7 +242,7 @@ test("Math module: calculator from the tools row, resume with it open, reference
   await expect(panel).toBeHidden();
   await page.getByRole("button", { name: "Calculator", exact: true }).click();
   await expect(panel).toBeVisible();
-  await page.waitForTimeout(REACHABLE ? 2_000 : 1_000);
+  await page.waitForTimeout(LOADS ? 2_000 : 1_000);
   await shot(page, "02-after-reload-calculator-reopened");
   await page.getByRole("button", { name: "Close calculator" }).click();
 
@@ -239,12 +254,12 @@ test("Math module: calculator from the tools row, resume with it open, reference
   await page.waitForTimeout(500);
   await shot(page, "03-math-reference-sheet");
 
-  // eslint-disable-next-line no-console -- evidence line
   console.log(
     "E10 EVIDENCE " +
       JSON.stringify({
         session: sid,
         desmos_reachable: REACHABLE,
+        desmos_stubbed: DESMOS_STUBBED,
         desmos_request_failures: desmosFailures,
       }),
   );

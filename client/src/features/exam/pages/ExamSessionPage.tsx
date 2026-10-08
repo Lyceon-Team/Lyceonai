@@ -24,6 +24,7 @@ import type {
 } from "@lyceon/shared/exam-runtime-schema";
 import { FocusBarContext } from "@/components/layout/FocusShell";
 import { Button } from "@/components/ui/button";
+import { STARTING_LABEL } from "@/lib/pending-copy";
 import { sectionDisplayLabel } from "@shared/section-display";
 import {
   fetchExamForms,
@@ -171,12 +172,14 @@ function StartModule({
           variant="lyc-primary"
           size="lyc-lg"
           onClick={() => void start()}
-          disabled={pending}
+          pending={pending}
           data-testid="exam-begin"
         >
-          {module === "1"
-            ? `Begin ${sectionDisplayLabel(section) ?? ""}`
-            : "Continue to Module 2"}
+          {pending
+            ? STARTING_LABEL
+            : module === "1"
+              ? `Begin ${sectionDisplayLabel(section) ?? ""}`
+              : "Continue to Module 2"}
         </Button>
       </div>
     </Shell>
@@ -259,10 +262,10 @@ function BreakScreen({ session }: { session: ExamSessionResponse }) {
           variant="lyc-primary"
           size="lyc-lg"
           onClick={() => void start()}
-          disabled={pending}
+          pending={pending}
           data-testid="exam-resume-now"
         >
-          Resume testing now
+          {pending ? STARTING_LABEL : "Resume testing now"}
         </Button>
       </div>
     </Shell>

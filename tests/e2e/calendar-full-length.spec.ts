@@ -20,6 +20,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { Client } from "pg";
 import fs from "fs";
 import path from "path";
+import { answerCookieBanner } from "./exam-harness/consent";
 
 test.describe.configure({ mode: "serial" });
 if (process.env.E2E_CHROMIUM)
@@ -27,6 +28,10 @@ if (process.env.E2E_CHROMIUM)
 // The harness student's calendar is in UTC; the browser agrees, so "today" is one date.
 test.use({ timezoneId: "UTC", viewport: { width: 1280, height: 900 } });
 test.setTimeout(5 * 60_000);
+// The cookie banner, answered, so it is not fixed over the controls the walk clicks (2026-10-07).
+test.beforeEach(async ({ context, baseURL }) => {
+  await answerCookieBanner(context, baseURL ?? "http://localhost:5173");
+});
 
 const SHOTS =
   process.env.E2E_SHOT_DIR ?? path.resolve("test-results/calendar-shots");
@@ -83,11 +88,12 @@ test("the student adds a full-length test to today, choosing the test and the ti
   await page.getByTestId("calendar-create-engine-full_length").click();
   const form = page.locator("#calendar-create-fl-form-select");
   await expect(form).toHaveValue("next");
-  // Both published tests are offered by name, after "Next unused test".
+  // Both published tests are offered by name, after "Next unused full-length test" (display
+  // names per the owner ruling of 2026-10-05, fadbab51).
   await expect(form.locator("option")).toHaveText([
-    "Next unused test",
-    "Practice Test 1",
-    "Practice Test 2",
+    "Next unused full-length test",
+    "Full-Length Test 1",
+    "Full-Length Test 2",
   ]);
   await expect(
     page.getByTestId("calendar-create-fl-mode-strict"),
@@ -147,7 +153,6 @@ test("Start launches a real exam session and records the launch", async ({
   expect(links).toEqual([
     { launch_sequence: 1, engine: "full_length", engine_session_id: sessionId },
   ]);
-  // eslint-disable-next-line no-console -- evidence for the PR
   console.log(
     "E9b UI EVIDENCE " +
       JSON.stringify({

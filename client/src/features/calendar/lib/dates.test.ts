@@ -7,13 +7,16 @@
  * boundary is the day a local-`Date` implementation gets wrong.
  */
 import { describe, expect, it } from "vitest";
+import { formatDate } from "@/lib/format-date";
 import {
   WEEKDAY_HEADERS,
   addDays,
+  dayAndMonth,
   dayOfMonth,
   daysBetween,
   isSameMonth,
   longDate,
+  monthCursorForWeek,
   monthGridDates,
   monthName,
   rangeForView,
@@ -23,6 +26,7 @@ import {
   startOfMonth,
   startOfWeek,
   weekDates,
+  weekdayDayMonth,
 } from "./dates";
 
 /** Monday 2026-09-21 … Sunday 2026-09-27 — one whole week, verified against the calendar. */
@@ -246,6 +250,25 @@ describe("rangeForView", () => {
   });
 });
 
+describe("monthCursorForWeek (QA 2026-10-07 item 11(a))", () => {
+  it("opens today's month when the week holds today, even if the week starts in the month before", () => {
+    // Thursday 1 October; the week is 28 September – 4 October.
+    expect(monthCursorForWeek("2026-09-28", "2026-10-01")).toBe("2026-10-01");
+    expect(
+      rangeForView("month", monthCursorForWeek("2026-09-28", "2026-10-01")),
+    ).toEqual({
+      from: "2026-09-28",
+      to: "2026-11-08",
+    });
+  });
+
+  it("opens the month of the week's Thursday when the week does not hold today", () => {
+    expect(monthCursorForWeek("2026-09-28", "2026-10-20")).toBe("2026-10-01");
+    expect(monthCursorForWeek("2026-10-26", "2026-10-07")).toBe("2026-10-29");
+    expect(monthCursorForWeek("2026-08-31", "2026-10-07")).toBe("2026-09-03");
+  });
+});
+
 describe("rangeLabel", () => {
   it("names the day range inside one month", () => {
     expect(rangeLabel("week", "2026-09-22")).toBe("21 – 27 September");
@@ -281,12 +304,12 @@ describe("daysBetween", () => {
 });
 
 describe("longDate and shortDate", () => {
-  it('formats the side sheet line as "Monday 21 September"', () => {
-    expect(longDate("2026-09-21")).toBe("Monday 21 September");
+  it('formats the side sheet line in US style, "Monday, September 21" (OQ-66 (g))', () => {
+    expect(longDate("2026-09-21")).toBe("Monday, September 21");
   });
 
   it("formats a Sunday with the right weekday name", () => {
-    expect(longDate("2026-09-27")).toBe("Sunday 27 September");
+    expect(longDate("2026-09-27")).toBe("Sunday, September 27");
   });
 
   it('formats the compact line as "Mon 21 Sep"', () => {
@@ -295,8 +318,27 @@ describe("longDate and shortDate", () => {
   });
 
   it("does not zero-pad the day of the month", () => {
-    expect(longDate("2026-09-01")).toBe("Tuesday 1 September");
+    expect(longDate("2026-09-01")).toBe("Tuesday, September 1");
     expect(shortDate("2026-09-01")).toBe("Tue 1 Sep");
+  });
+});
+
+describe("the calendar's sentence dates go through the one student formatter (OQ-66 (g))", () => {
+  // shortDate and rangeLabel are the guardian calendar's rail and top bar (not student scope);
+  // the compact grid labels (numericRangeLabel's M/D, column heads, day numbers) are not
+  // sentences. Everything a student reads as a date is the formatter's output.
+  it.each(["2026-09-01", "2026-09-28", "2026-12-05", "2027-01-31"])(
+    "%s: longDate, weekdayDayMonth and dayAndMonth are formatDate's US forms",
+    (day) => {
+      expect(longDate(day)).toBe(formatDate(day, "weekday-month-day"));
+      expect(weekdayDayMonth(day)).toBe(formatDate(day, "weekday-month-day"));
+      expect(dayAndMonth(day)).toBe(formatDate(day, "month-day"));
+    },
+  );
+
+  it("the student's test-date star and cadence sentence read month first", () => {
+    expect(weekdayDayMonth("2026-12-05")).toBe("Saturday, December 5");
+    expect(dayAndMonth("2026-12-05")).toBe("December 5");
   });
 });
 

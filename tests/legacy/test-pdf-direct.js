@@ -1,6 +1,5 @@
 // Direct test of PDF processing
 import fs from 'fs';
-import path from 'path';
 
 // Import the PDF processor directly
 async function testPDFProcessing() {

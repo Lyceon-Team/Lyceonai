@@ -14,6 +14,7 @@
  * minor can travel anywhere from this control.
  */
 import { useState } from "react";
+import { formatDate } from "@/lib/format-date";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Modal, ModalClose } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
@@ -187,7 +188,8 @@ export function StudentGuardiansPanel({
                   {guardianLabel(link)}
                 </p>
                 <p className="m-0 text-lyc-meta-lg text-lyc-muted">
-                  Linked {new Date(link.linked_at).toLocaleDateString()}
+                  {/* QA 2026-10-07 item 15: the one student date formatter. */}
+                  Linked {formatDate(link.linked_at, "month-day-year") ?? ""}
                 </p>
               </div>
               <Button

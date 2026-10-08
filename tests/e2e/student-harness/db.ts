@@ -214,3 +214,63 @@ async function addBarePagePersonas(pg: Client): Promise<void> {
   )
     throw new Error("bare-pages: the deleting persona has no pending deletion");
 }
+
+/**
+ * QA 2026-10-07 (`seed: "notifications"`, UI-41): three unread in-app notifications for the paid
+ * student, so the bell's unread badge and the popover's items are real rows.
+ *
+ * @spec [contracts/notifications.contract.md §2 (one event row fans out per recipient and
+ *        channel), §5 (deterministic `event_id` from `notification_event_id`), §8.1 payloads]
+ *        | @implemented [2026-10-07]
+ *
+ * plain English: written through the REAL SQL producer, `public.emit_notification_event`, with
+ * the event id from `public.notification_event_id(type, source)`, exactly as the production
+ * writers call it; the payloads parse under the shared schemas' shapes (`guardian_linked`:
+ * link id and display name; `full_length_*`: block id and local date). The renderers on the
+ * real `GET /api/notifications` turn them into titles and bodies, so nothing here is copy. Only
+ * the `in_app` channel: the harness sends no email.
+ */
+export async function seedPaidNotifications(pg: Client): Promise<void> {
+  const paid = PERSONAS.paid.id;
+  const link = await pg.query<{ id: string }>(
+    `SELECT id FROM public.guardian_links
+      WHERE student_profile_id = $1 AND status = 'active' LIMIT 1`,
+    [paid],
+  );
+  const linkId = link.rows[0]?.id;
+  if (linkId === undefined)
+    throw new Error(
+      "seedPaidNotifications: the paid student has no active guardian link",
+    );
+  const blockId = "00000000-0000-4000-8000-00000000a7e1";
+  const events: readonly { type: string; source: string; payload: unknown }[] =
+    [
+      {
+        type: "guardian_linked",
+        source: linkId,
+        payload: {
+          link_id: linkId,
+          student_display_name: PERSONAS.paid.displayName,
+        },
+      },
+      {
+        type: "full_length_week",
+        source: blockId,
+        payload: { block_id: blockId, local_date: "2026-10-17" },
+      },
+      {
+        type: "full_length_tomorrow",
+        source: blockId,
+        payload: { block_id: blockId, local_date: "2026-10-17" },
+      },
+    ];
+  for (const e of events) {
+    await pg.query(
+      `SELECT public.emit_notification_event(
+         public.notification_event_id($1, $2), $1, $3::uuid,
+         jsonb_build_array(jsonb_build_object('profile_id', $3::text, 'channels', jsonb_build_array('in_app'))),
+         $4::jsonb)`,
+      [e.type, e.source, paid, JSON.stringify(e.payload)],
+    );
+  }
+}

@@ -59,6 +59,16 @@ describe("stripComments", () => {
     const src = 'const a = 1;\nconst b = "two";\n';
     expect(stripComments(src)).toBe(src);
   });
+
+  it("keepLines keeps line N of the output on line N of the source", () => {
+    const src = "/**\n * doc\n */\nconst a = 1; /* x\n y */\ncall();\n";
+    const out = stripComments(src, { keepLines: true });
+    expect(out.split("\n")).toHaveLength(src.split("\n").length);
+    expect(out.split("\n")[5]).toBe("call();");
+    expect(out).not.toContain("doc");
+    // Default unchanged: a multi-line block comment still collapses to one space.
+    expect(stripComments(src).split("\n")).toHaveLength(4);
+  });
 });
 
 describe("stripHclComments", () => {
