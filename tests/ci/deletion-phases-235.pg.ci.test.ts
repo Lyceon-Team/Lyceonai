@@ -40,24 +40,46 @@ import {
 const DB_NAME = "deletion_phases_235_ci";
 const FROM_EMAIL = "notifications@send.example.test";
 
-const SUBJECT = { id: "a0000000-0000-4000-8000-000000000001", email: "subject@phases.test" };
-const OTHER = { id: "b0000000-0000-4000-8000-000000000002", email: "other@phases.test" };
+const SUBJECT = {
+  id: "a0000000-0000-4000-8000-000000000001",
+  email: "subject@phases.test",
+};
+const OTHER = {
+  id: "b0000000-0000-4000-8000-000000000002",
+  email: "other@phases.test",
+};
 
 let pg: Client;
 
 // ── Logger recorder: the sweeps' zero-row lines are an assertion target ──────
-type LogLine = { level: string; component: string; event: string; data: unknown };
+type LogLine = {
+  level: string;
+  component: string;
+  event: string;
+  data: unknown;
+};
 const logged: LogLine[] = [];
 vi.mock("../../server/logger", () => {
   const rec =
     (level: string) =>
-    (component: string, event: string, _message?: unknown, a?: unknown, b?: unknown): void => {
+    (
+      component: string,
+      event: string,
+      _message?: unknown,
+      a?: unknown,
+      b?: unknown,
+    ): void => {
       // logger.info/warn take (component, event, message, data); logger.error takes
       // (component, event, message, error, data). Keep the last argument either way.
       logged.push({ level, component, event, data: b ?? a });
     };
   return {
-    logger: { info: rec("info"), warn: rec("warn"), error: rec("error"), debug: rec("debug") },
+    logger: {
+      info: rec("info"),
+      warn: rec("warn"),
+      error: rec("error"),
+      debug: rec("debug"),
+    },
   };
 });
 function lines(component: string, event: string): LogLine[] {
@@ -94,7 +116,10 @@ function providerJson(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-async function fakeFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+async function fakeFetch(
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> {
   const url = typeof input === "string" ? input : input.toString();
   const path = url.replace(/^https?:\/\/[^/]+/, "");
   const method = (init?.method ?? "GET").toUpperCase();
@@ -142,13 +167,24 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
     }
   }
 
+  // The marketing lane's contact removal after a deletion (contract C14.8): modelled as the
+  // provider answers it, so these suites exercise the path production takes.
+  if (method === "DELETE" && /^\/contacts\/[^/?]+$/.test(path)) {
+    provider.calls.push({ method, path, body });
+    return providerJson({ object: "contact", contact: "c_1", deleted: true });
+  }
+
   provider.calls.push({ method, path, body });
   return providerJson({ message: `unexpected ${method} ${path}` }, 500);
 }
 /** POST /emails and POST /suppressions in the order they actually reached the provider. */
 function sendAndSuppressSequence(): string[] {
   return provider.calls
-    .filter((c) => c.method === "POST" && (c.path === "/emails" || c.path === "/suppressions"))
+    .filter(
+      (c) =>
+        c.method === "POST" &&
+        (c.path === "/emails" || c.path === "/suppressions"),
+    )
     .map((c) => c.path);
 }
 
@@ -189,7 +225,8 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
 // thing the routes are allowed to trust — the address is never read from the request.
 let sessionUser: { id: string; email: string } | null = null;
 async function accountApp(): Promise<express.Express> {
-  const { default: accountRoutes } = await import("../../server/routes/account-routes");
+  const { default: accountRoutes } =
+    await import("../../server/routes/account-routes");
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -221,14 +258,21 @@ async function runExecutor(): Promise<{
   skippedCount: number;
   failedCount: number;
 }> {
-  const { executeDueDeletions } = await import("../../server/lib/account-deletion-execute");
+  const { executeDueDeletions } =
+    await import("../../server/lib/account-deletion-execute");
   const base = makePgSupabase(pg);
   const client = { from: base.from, rpc: base.rpc, storage: storageStub() };
   return executeDueDeletions(client as never, "phases-ci");
 }
 
-async function seedUser(u: { id: string; email: string }, role = "student"): Promise<void> {
-  await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [u.id, u.email]);
+async function seedUser(
+  u: { id: string; email: string },
+  role = "student",
+): Promise<void> {
+  await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [
+    u.id,
+    u.email,
+  ]);
   await pg.query(
     `INSERT INTO public.profiles (id, email, role, display_name) VALUES ($1, $2, $3, 'Someone')`,
     [u.id, u.email, role],
@@ -243,11 +287,14 @@ async function seedConsent(profileId: string): Promise<void> {
     [profileId],
   );
 }
-async function request(profileId: string, suppression = false): Promise<{ requestId: string; logId: string }> {
-  await pg.query(`SELECT * FROM public.request_account_deletion($1, $1, $2, 7)`, [
-    profileId,
-    `hash-${profileId}`,
-  ]);
+async function request(
+  profileId: string,
+  suppression = false,
+): Promise<{ requestId: string; logId: string }> {
+  await pg.query(
+    `SELECT * FROM public.request_account_deletion($1, $1, $2, 7)`,
+    [profileId, `hash-${profileId}`],
+  );
   const r = await pg.query(
     `UPDATE public.account_deletion_requests SET scheduled_hard_delete_at = now() - interval '1 hour'
       WHERE profile_id = $1 AND status = 'pending' RETURNING id, log_id`,
@@ -262,7 +309,9 @@ async function request(profileId: string, suppression = false): Promise<{ reques
   }
   return { requestId: String(r.rows[0]?.id), logId };
 }
-async function auditRows(action?: string): Promise<Array<Record<string, unknown>>> {
+async function auditRows(
+  action?: string,
+): Promise<Array<Record<string, unknown>>> {
   const r = await pg.query(
     `SELECT xmin::text AS x, actor_profile_id, target_profile_id, action, context
        FROM public.audit_logs ${action ? "WHERE action = $1" : ""} ORDER BY created_at`,
@@ -303,7 +352,9 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
       `DO $$ BEGIN PERFORM set_config('lyceon.audit_logs_retention','on',true);
          DELETE FROM public.audit_logs; END $$;`,
     );
-    await pg.query(`DELETE FROM public.profiles WHERE email LIKE '%@phases.test'`);
+    await pg.query(
+      `DELETE FROM public.profiles WHERE email LIKE '%@phases.test'`,
+    );
     await pg.query(`DELETE FROM auth.users WHERE email LIKE '%@phases.test'`);
   });
   afterEach(() => {
@@ -314,12 +365,16 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
   it("P3.1 audit_logs refuses UPDATE and DELETE — the trigger fires, for service_role too", async () => {
     await pg.query(`INSERT INTO public.audit_logs (action) VALUES ('probe')`);
     await expect(
-      pg.query(`UPDATE public.audit_logs SET action = 'x' WHERE action = 'probe'`),
+      pg.query(
+        `UPDATE public.audit_logs SET action = 'x' WHERE action = 'probe'`,
+      ),
     ).rejects.toThrow(/append-only/);
     await expect(
       pg.query(`DELETE FROM public.audit_logs WHERE action = 'probe'`),
     ).rejects.toThrow(/append-only/);
-    const still = await pg.query(`SELECT count(*)::int AS n FROM public.audit_logs WHERE action='probe'`);
+    const still = await pg.query(
+      `SELECT count(*)::int AS n FROM public.audit_logs WHERE action='probe'`,
+    );
     expect(still.rows[0]?.n).toBe(1);
   });
 
@@ -330,14 +385,17 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
       [SUBJECT.id],
     );
     const stripped = await pg.query(
-      `SELECT public.apply_audit_logs_retention('strip_identity', $1) AS r`, [SUBJECT.id],
+      `SELECT public.apply_audit_logs_retention('strip_identity', $1) AS r`,
+      [SUBJECT.id],
     );
     expect((stripped.rows[0]?.r as { rows: number }).rows).toBe(1);
     const after = await auditRows("probe_old");
     expect(after[0]?.actor_profile_id).toBeNull();
     expect(after[0]?.target_profile_id).toBeNull();
 
-    const purged = await pg.query(`SELECT public.apply_audit_logs_retention('purge_expired') AS r`);
+    const purged = await pg.query(
+      `SELECT public.apply_audit_logs_retention('purge_expired') AS r`,
+    );
     const p = purged.rows[0]?.r as { rows: number; cutoff: string };
     expect(p.rows).toBe(1);
     expect(p.cutoff).toBeTruthy();
@@ -356,7 +414,9 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
       CREATE OR REPLACE FUNCTION public._impostor_audit_purge() RETURNS void
       LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
       BEGIN DELETE FROM public.audit_logs WHERE action = 'probe2'; END; $f$;`);
-    await expect(pg.query(`SELECT public._impostor_audit_purge()`)).rejects.toThrow(/append-only/);
+    await expect(
+      pg.query(`SELECT public._impostor_audit_purge()`),
+    ).rejects.toThrow(/append-only/);
     await pg.query(`DROP FUNCTION public._impostor_audit_purge()`);
 
     // The structural half: only one function in the schema may open the gate at all. This is
@@ -367,7 +427,9 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
           AND p.prosrc LIKE '%lyceon.audit_logs_retention%'
           AND p.prosrc LIKE '%set_config%'`,
     );
-    expect(setters.rows.map((r) => r.proname)).toEqual(["apply_audit_logs_retention"]);
+    expect(setters.rows.map((r) => r.proname)).toEqual([
+      "apply_audit_logs_retention",
+    ]);
   });
 
   it("P3.4 profile_soft_deleted at request and profile_restored on both recovery paths, with real ids", async () => {
@@ -375,19 +437,31 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     await request(SUBJECT.id);
     const soft = await auditRows("profile_soft_deleted");
     expect(soft).toHaveLength(1);
-    expect(soft[0]).toMatchObject({ actor_profile_id: SUBJECT.id, target_profile_id: SUBJECT.id });
-    expect((soft[0]?.context as Record<string, unknown>).source).toBe("request_account_deletion");
+    expect(soft[0]).toMatchObject({
+      actor_profile_id: SUBJECT.id,
+      target_profile_id: SUBJECT.id,
+    });
+    expect((soft[0]?.context as Record<string, unknown>).source).toBe(
+      "request_account_deletion",
+    );
 
     await pg.query(`SELECT public.cancel_account_deletion($1)`, [SUBJECT.id]);
     let restored = await auditRows("profile_restored");
     expect(restored).toHaveLength(1);
-    expect((restored[0]?.context as Record<string, unknown>).path).toBe("in_app");
+    expect((restored[0]?.context as Record<string, unknown>).path).toBe(
+      "in_app",
+    );
 
-    await pg.query(`SELECT * FROM public.request_account_deletion($1, $1, 'tok2', 7)`, [SUBJECT.id]);
+    await pg.query(
+      `SELECT * FROM public.request_account_deletion($1, $1, 'tok2', 7)`,
+      [SUBJECT.id],
+    );
     await pg.query(`SELECT public.restore_account_deletion('tok2')`);
     restored = await auditRows("profile_restored");
     expect(restored).toHaveLength(2);
-    expect((restored[1]?.context as Record<string, unknown>).path).toBe("recovery_token");
+    expect((restored[1]?.context as Record<string, unknown>).path).toBe(
+      "recovery_token",
+    );
   });
 
   it("P3.5 profile_hard_deleted is written in T3 with a NULL target and shares no xmin with any actor_id-side row", async () => {
@@ -405,7 +479,11 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     );
     await request(SUBJECT.id);
 
-    expect(await runExecutor()).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    expect(await runExecutor()).toEqual({
+      executedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+    });
 
     const hard = await auditRows("profile_hard_deleted");
     expect(hard).toHaveLength(1);
@@ -436,7 +514,11 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     await seedUser(SUBJECT);
     await request(SUBJECT.id, true);
 
-    expect(await runExecutor()).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    expect(await runExecutor()).toEqual({
+      executedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+    });
 
     // THE ASSERTION THAT MATTERS. Resend applies its suppression list to every send, so a build
     // that suppressed first would have the provider swallow the one message confirming we did
@@ -463,7 +545,11 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     await request(SUBJECT.id, true);
     await request(OTHER.id, false);
 
-    expect(await runExecutor()).toEqual({ executedCount: 2, skippedCount: 0, failedCount: 0 });
+    expect(await runExecutor()).toEqual({
+      executedCount: 2,
+      skippedCount: 0,
+      failedCount: 0,
+    });
 
     const adds = provider.calls.filter(
       (c) => c.method === "POST" && c.path === "/suppressions",
@@ -486,10 +572,15 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     provider.failAddSuppression = true;
 
     // THE DELETION IS THE LEGALLY MEANINGFUL ACT. A vendor being down does not stop the clock.
-    expect(await runExecutor()).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
-    const gone = await pg.query(`SELECT count(*)::int AS n FROM public.profiles WHERE id = $1`, [
-      SUBJECT.id,
-    ]);
+    expect(await runExecutor()).toEqual({
+      executedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+    });
+    const gone = await pg.query(
+      `SELECT count(*)::int AS n FROM public.profiles WHERE id = $1`,
+      [SUBJECT.id],
+    );
     expect(gone.rows[0]?.n).toBe(0);
 
     const row = await pg.query(
@@ -530,14 +621,19 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     const rows = await pg.query(
       `SELECT subject_email, suppression_status FROM public.deletion_request_log ORDER BY subject_email`,
     );
-    expect(rows.rows.map((r) => r.suppression_status)).toEqual(["applied", "applied"]);
+    expect(rows.rows.map((r) => r.suppression_status)).toEqual([
+      "applied",
+      "applied",
+    ]);
     expect(lines("DELETION", "suppression_retried")).toHaveLength(2);
 
     // AND IT STOPS. A row that reached 'applied' is never re-sent, which is what keeps a subject
     // who has since re-consented from being silently re-suppressed by tonight's pass.
     provider.calls.length = 0;
     await runExecutor();
-    expect(provider.calls.filter((c) => c.path === "/suppressions")).toHaveLength(0);
+    expect(
+      provider.calls.filter((c) => c.path === "/suppressions"),
+    ).toHaveLength(0);
   });
 
   it("P2.5 clearing from account settings calls the remove endpoint and records affirmative re-consent", async () => {
@@ -549,16 +645,24 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     // the surface first: it reports the suppression and that this one is the subject's to lift
     const shown = await httpRequest(app).get("/api/account/email-suppression");
     expect(shown.status).toBe(200);
-    expect(shown.body).toMatchObject({ suppressed: true, origin: "manual", clearable: true });
+    expect(shown.body).toMatchObject({
+      suppressed: true,
+      origin: "manual",
+      clearable: true,
+    });
 
     provider.calls.length = 0;
-    const cleared = await httpRequest(app).post("/api/account/email-suppression/clear");
+    const cleared = await httpRequest(app).post(
+      "/api/account/email-suppression/clear",
+    );
     expect(cleared.status).toBe(200);
     expect(cleared.body).toMatchObject({ cleared: true });
 
     const removals = provider.calls.filter((c) => c.method === "DELETE");
     expect(removals).toHaveLength(1);
-    expect(removals[0]?.path).toBe(`/suppressions/${encodeURIComponent(SUBJECT.email)}`);
+    expect(removals[0]?.path).toBe(
+      `/suppressions/${encodeURIComponent(SUBJECT.email)}`,
+    );
     expect(provider.suppressed.has(SUBJECT.email)).toBe(false);
 
     // THE RE-CONSENT RECORD: the subject, on their own account, from the settings surface.
@@ -574,7 +678,9 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     provider.suppressed.add(SUBJECT.email);
     provider.origin = "complaint";
     provider.calls.length = 0;
-    const refused = await httpRequest(app).post("/api/account/email-suppression/clear");
+    const refused = await httpRequest(app).post(
+      "/api/account/email-suppression/clear",
+    );
     expect(refused.status).toBe(409);
     expect(refused.body).toMatchObject({ code: "SUPPRESSION_NOT_CLEARABLE" });
     expect(provider.calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
@@ -588,19 +694,30 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     await seedUser(SUBJECT);
     await seedConsent(SUBJECT.id);
     const { logId } = await request(SUBJECT.id);
-    expect(await runExecutor()).toEqual({ executedCount: 1, skippedCount: 0, failedCount: 0 });
+    expect(await runExecutor()).toEqual({
+      executedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+    });
     await pg.query(
       `UPDATE public.deletion_request_log SET responded_on = (now() - interval '25 months')::date
-        WHERE log_id = $1`, [logId],
+        WHERE log_id = $1`,
+      [logId],
     );
 
-    const swept = await pg.query(`SELECT * FROM public.sweep_deletion_evidence(100)`);
-    expect(swept.rows[0]).toMatchObject({ stripped_log_rows: 1, stripped_consent_rows: 1 });
+    const swept = await pg.query(
+      `SELECT * FROM public.sweep_deletion_evidence(100)`,
+    );
+    expect(swept.rows[0]).toMatchObject({
+      stripped_log_rows: 1,
+      stripped_consent_rows: 1,
+    });
 
     const row = await pg.query(
       `SELECT subject_email, requester_email, status, denial_basis,
               requested_on::text AS requested_on, responded_on::text AS responded_on
-         FROM public.deletion_request_log WHERE log_id = $1`, [logId],
+         FROM public.deletion_request_log WHERE log_id = $1`,
+      [logId],
     );
     expect(row.rowCount).toBe(1); // stripped, NOT deleted
     expect(row.rows[0]?.subject_email).toBeNull();
@@ -612,14 +729,18 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     const consent = await pg.query(
       `SELECT ip_address, user_agent, doc_key, doc_version, actor_type, minor, consent_source,
               accepted_on::text AS accepted_on
-         FROM public.deletion_consent_evidence WHERE log_id = $1`, [logId],
+         FROM public.deletion_consent_evidence WHERE log_id = $1`,
+      [logId],
     );
     expect(consent.rowCount).toBe(1);
     expect(consent.rows[0]?.ip_address).toBeNull();
     expect(consent.rows[0]?.user_agent).toBeNull();
     expect(consent.rows[0]).toMatchObject({
-      doc_key: "student-terms", doc_version: "v2", actor_type: "student",
-      minor: true, consent_source: "email_signup_form",
+      doc_key: "student-terms",
+      doc_version: "v2",
+      actor_type: "student",
+      minor: true,
+      consent_source: "email_signup_form",
     });
   });
 
@@ -630,27 +751,42 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     await runExecutor();
     await pg.query(
       `UPDATE public.deletion_request_log SET responded_on = (now() - interval '729 days')::date
-        WHERE log_id = $1`, [logId],
+        WHERE log_id = $1`,
+      [logId],
     );
-    const swept = await pg.query(`SELECT * FROM public.sweep_deletion_evidence(100)`);
-    expect(swept.rows[0]).toMatchObject({ stripped_log_rows: 0, stripped_consent_rows: 0 });
+    const swept = await pg.query(
+      `SELECT * FROM public.sweep_deletion_evidence(100)`,
+    );
+    expect(swept.rows[0]).toMatchObject({
+      stripped_log_rows: 0,
+      stripped_consent_rows: 0,
+    });
     const row = await pg.query(
-      `SELECT subject_email FROM public.deletion_request_log WHERE log_id = $1`, [logId],
+      `SELECT subject_email FROM public.deletion_request_log WHERE log_id = $1`,
+      [logId],
     );
     expect(row.rows[0]?.subject_email).toBe(SUBJECT.email);
     const consent = await pg.query(
-      `SELECT ip_address FROM public.deletion_consent_evidence WHERE log_id = $1`, [logId],
+      `SELECT ip_address FROM public.deletion_consent_evidence WHERE log_id = $1`,
+      [logId],
     );
     expect(consent.rows[0]?.ip_address).toBe("203.0.113.0/24");
   });
 
   it("P5.4 both sweeps log a run that changed nothing, with counts and cutoff", async () => {
     logged.length = 0;
-    expect(await runExecutor()).toEqual({ executedCount: 0, skippedCount: 0, failedCount: 0 });
+    expect(await runExecutor()).toEqual({
+      executedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+    });
 
     const evidence = lines("DELETION", "evidence_sweep_complete");
     expect(evidence).toHaveLength(1);
-    expect(evidence[0]?.data).toMatchObject({ strippedLogRows: 0, strippedConsentRows: 0 });
+    expect(evidence[0]?.data).toMatchObject({
+      strippedLogRows: 0,
+      strippedConsentRows: 0,
+    });
     expect((evidence[0]?.data as { cutoff: string }).cutoff).toBeTruthy();
 
     const audit = lines("DELETION", "audit_purge_complete");
@@ -698,7 +834,9 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     const remaining = await pg.query(
       `SELECT action FROM public.audit_logs ORDER BY action`,
     );
-    expect(remaining.rows.map((r) => r.action)).toEqual([...consentActions].sort());
+    expect(remaining.rows.map((r) => r.action)).toEqual(
+      [...consentActions].sort(),
+    );
   });
 
   it("P5.5 the audit purge runs only through the exempt function, and takes the configured window", async () => {
@@ -708,11 +846,15 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     );
     // a direct delete of the same rows is refused
     await expect(
-      pg.query(`DELETE FROM public.audit_logs WHERE created_at < now() - interval '365 days'`),
+      pg.query(
+        `DELETE FROM public.audit_logs WHERE created_at < now() - interval '365 days'`,
+      ),
     ).rejects.toThrow(/append-only/);
 
     await runExecutor();
-    const remaining = await pg.query(`SELECT action FROM public.audit_logs ORDER BY action`);
+    const remaining = await pg.query(
+      `SELECT action FROM public.audit_logs ORDER BY action`,
+    );
     expect(remaining.rows.map((r) => r.action)).toEqual(["young_row"]);
 
     // the window comes from the seeded config, not a literal
@@ -720,10 +862,18 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
       `UPDATE public.account_deletion_runtime_config SET value = '5'::jsonb
         WHERE key = 'anonymization_retention_days'`,
     );
-    const days = await pg.query(`SELECT public.audit_logs_retention_days() AS d`);
+    const days = await pg.query(
+      `SELECT public.audit_logs_retention_days() AS d`,
+    );
     expect(days.rows[0]?.d).toBe(5);
     await runExecutor();
-    expect((await pg.query(`SELECT count(*)::int AS n FROM public.audit_logs WHERE action='young_row'`)).rows[0]?.n).toBe(0);
+    expect(
+      (
+        await pg.query(
+          `SELECT count(*)::int AS n FROM public.audit_logs WHERE action='young_row'`,
+        )
+      ).rows[0]?.n,
+    ).toBe(0);
     await pg.query(
       `UPDATE public.account_deletion_runtime_config SET value = '365'::jsonb
         WHERE key = 'anonymization_retention_days'`,
@@ -740,29 +890,40 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
       "scheduled_deletion_job_cron",
     ]);
 
-    const { getDeletionGraceDays } = await import("../../server/lib/account-deletion-runtime-config");
+    const { getDeletionGraceDays } =
+      await import("../../server/lib/account-deletion-runtime-config");
     expect(await getDeletionGraceDays()).toBe(7);
 
     // an operator change is honoured
-    await pg.query(`UPDATE public.account_deletion_runtime_config SET value='14'::jsonb WHERE key='grace_period_days'`);
+    await pg.query(
+      `UPDATE public.account_deletion_runtime_config SET value='14'::jsonb WHERE key='grace_period_days'`,
+    );
     expect(await getDeletionGraceDays()).toBe(14);
     // a value outside App A.5's bounds is refused in favour of the default, loudly
-    await pg.query(`UPDATE public.account_deletion_runtime_config SET value='0'::jsonb WHERE key='grace_period_days'`);
+    await pg.query(
+      `UPDATE public.account_deletion_runtime_config SET value='0'::jsonb WHERE key='grace_period_days'`,
+    );
     logged.length = 0;
     expect(await getDeletionGraceDays()).toBe(7);
     expect(lines("DELETION", "grace_period_out_of_range")).toHaveLength(1);
-    await pg.query(`UPDATE public.account_deletion_runtime_config SET value='7'::jsonb WHERE key='grace_period_days'`);
+    await pg.query(
+      `UPDATE public.account_deletion_runtime_config SET value='7'::jsonb WHERE key='grace_period_days'`,
+    );
 
     // the declared schedule and the deployed one cannot drift apart silently
     const declared = String(
-      (await pg.query(
-        `SELECT value #>> '{}' AS v FROM public.account_deletion_runtime_config WHERE key='scheduled_deletion_job_cron'`,
-      )).rows[0]?.v,
+      (
+        await pg.query(
+          `SELECT value #>> '{}' AS v FROM public.account_deletion_runtime_config WHERE key='scheduled_deletion_job_cron'`,
+        )
+      ).rows[0]?.v,
     );
     const vercel = JSON.parse(
       fs.readFileSync(path.resolve(process.cwd(), "vercel.json"), "utf8"),
     ) as { crons: Array<{ path: string; schedule: string }> };
-    const deployed = vercel.crons.find((c) => c.path === "/api/internal/execute-deletions");
+    const deployed = vercel.crons.find(
+      (c) => c.path === "/api/internal/execute-deletions",
+    );
     expect(deployed?.schedule).toBe("0 2 * * *");
     expect(declared).toBe("daily_at_02_utc");
   });

@@ -259,6 +259,61 @@ END;
 $$;
 
 
+--
+-- Name: apply_marketing_email_optout(text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.apply_marketing_email_optout(p_provider_event_id text, p_event_type text, p_resend_contact_id text, p_email text) RETURNS text
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_source  text;
+  v_profile uuid;
+  v_result  jsonb;
+  v_outcome text;
+BEGIN
+  IF p_event_type = 'email.complained' THEN
+    v_source := 'email_complaint';
+  ELSIF p_event_type IN ('contact.updated', 'reconcile.unsubscribed') THEN
+    v_source := 'email_unsubscribe';
+  ELSE
+    RAISE EXCEPTION 'apply_marketing_email_optout: unknown event type %', p_event_type
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  INSERT INTO public.marketing_email_webhook_events (provider_event_id, event_type, outcome)
+  VALUES (p_provider_event_id, p_event_type, 'unmatched')
+  ON CONFLICT (provider_event_id) DO NOTHING;
+  IF NOT FOUND THEN
+    RETURN 'duplicate';
+  END IF;
+
+  IF p_resend_contact_id IS NOT NULL THEN
+    SELECT c.profile_id INTO v_profile
+      FROM public.marketing_email_contacts c
+     WHERE c.resend_contact_id = p_resend_contact_id;
+  END IF;
+  IF v_profile IS NULL AND p_email IS NOT NULL AND btrim(p_email) <> '' THEN
+    SELECT p.id INTO v_profile
+      FROM public.profiles p
+     WHERE lower(p.email) = lower(btrim(p_email))
+       AND p.deleted_at IS NULL;
+  END IF;
+  IF v_profile IS NULL THEN
+    RETURN 'unmatched';
+  END IF;
+
+  v_result := public.set_marketing_consent(v_profile, false, v_source, NULL);
+  v_outcome := CASE WHEN (v_result ->> 'changed')::boolean THEN 'applied' ELSE 'unchanged' END;
+  UPDATE public.marketing_email_webhook_events
+     SET outcome = v_outcome
+   WHERE provider_event_id = p_provider_event_id;
+  RETURN v_outcome;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -8343,6 +8398,92 @@ $$;
 
 
 --
+-- Name: marketing_email_audience(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marketing_email_audience() RETURNS TABLE(profile_id uuid, email text, segment text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT p.id,
+         lower(btrim(p.email)),
+         CASE p.role WHEN 'student' THEN 'students' ELSE 'guardians' END
+    FROM public.profiles p
+   WHERE p.marketing_opt_in
+     AND public.marketing_opt_in_age_eligible(p.date_of_birth)
+     AND p.deleted_at IS NULL
+     AND p.role IN ('student', 'guardian')
+     AND p.email IS NOT NULL
+     AND btrim(p.email) <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM public.account_deletion_requests r
+        WHERE r.profile_id = p.id AND r.status = 'pending'
+     )
+   ORDER BY p.id;
+$$;
+
+
+--
+-- Name: marketing_email_contact_forget(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marketing_email_contact_forget(p_resend_contact_id text) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  DELETE FROM public.marketing_email_contacts WHERE resend_contact_id = p_resend_contact_id;
+$$;
+
+
+--
+-- Name: marketing_email_contact_record(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marketing_email_contact_record(p_profile_id uuid, p_resend_contact_id text, p_segment text) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.marketing_email_contacts (profile_id, resend_contact_id, segment, synced_at)
+  VALUES (p_profile_id, p_resend_contact_id, p_segment, now())
+  ON CONFLICT (profile_id) DO UPDATE
+    SET resend_contact_id = EXCLUDED.resend_contact_id,
+        segment           = EXCLUDED.segment,
+        synced_at         = now();
+$$;
+
+
+--
+-- Name: marketing_email_contacts_list(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marketing_email_contacts_list() RETURNS TABLE(profile_id uuid, resend_contact_id text, segment text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT c.profile_id, c.resend_contact_id, c.segment
+    FROM public.marketing_email_contacts c
+   ORDER BY c.profile_id;
+$$;
+
+
+--
+-- Name: marketing_email_webhook_events_purge(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marketing_email_webhook_events_purge() RETURNS integer
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH gone AS (
+    DELETE FROM public.marketing_email_webhook_events
+     WHERE received_at < now() - interval '30 days'
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM gone;
+$$;
+
+
+--
 -- Name: marketing_opt_in_age_eligible(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11702,8 +11843,13 @@ DECLARE
   v_dob date;
   v_was boolean;
 BEGIN
-  IF p_source NOT IN ('signup', 'settings') THEN
+  IF p_source NOT IN ('signup', 'settings', 'email_unsubscribe', 'email_complaint') THEN
     RAISE EXCEPTION 'set_marketing_consent: unknown source %', p_source
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  -- A provider event can only withdraw. Nothing Resend sends may turn marketing on.
+  IF p_granted AND p_source IN ('email_unsubscribe', 'email_complaint') THEN
+    RAISE EXCEPTION 'set_marketing_consent: source % can only withdraw', p_source
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
 
@@ -14224,7 +14370,7 @@ CREATE TABLE public.marketing_consent_log (
     captured_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT marketing_consent_log_consent_version_check CHECK (((consent_version IS NULL) OR (consent_version ~ '^\d+\.\d+\.\d+$'::text))),
     CONSTRAINT marketing_consent_log_grant_versioned CHECK (((granted = false) OR (source = 'backfill'::text) OR (consent_version IS NOT NULL))),
-    CONSTRAINT marketing_consent_log_source_check CHECK ((source = ANY (ARRAY['signup'::text, 'settings'::text, 'backfill'::text, 'age_clear'::text, 'system'::text])))
+    CONSTRAINT marketing_consent_log_source_check CHECK ((source = ANY (ARRAY['signup'::text, 'settings'::text, 'backfill'::text, 'age_clear'::text, 'system'::text, 'email_unsubscribe'::text, 'email_complaint'::text])))
 );
 
 
@@ -14247,6 +14393,49 @@ ALTER TABLE public.marketing_consent_log ALTER COLUMN id ADD GENERATED ALWAYS AS
     NO MAXVALUE
     CACHE 1
 );
+
+
+--
+-- Name: marketing_email_contacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.marketing_email_contacts (
+    profile_id uuid NOT NULL,
+    resend_contact_id text NOT NULL,
+    segment text NOT NULL,
+    synced_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT marketing_email_contacts_resend_contact_id_check CHECK (((char_length(resend_contact_id) >= 1) AND (char_length(resend_contact_id) <= 128))),
+    CONSTRAINT marketing_email_contacts_segment_check CHECK ((segment = ANY (ARRAY['students'::text, 'guardians'::text])))
+);
+
+
+--
+-- Name: TABLE marketing_email_contacts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.marketing_email_contacts IS 'Marketing email lane: the Resend contact Lyceon created for an eligible, opted-in profile. Provider id and segment only, never the address. Written only by the daily reconcile. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: marketing_email_webhook_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.marketing_email_webhook_events (
+    provider_event_id text NOT NULL,
+    event_type text NOT NULL,
+    outcome text NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT marketing_email_webhook_events_event_type_check CHECK ((event_type = ANY (ARRAY['contact.updated'::text, 'email.complained'::text, 'reconcile.unsubscribed'::text]))),
+    CONSTRAINT marketing_email_webhook_events_outcome_check CHECK ((outcome = ANY (ARRAY['applied'::text, 'unchanged'::text, 'unmatched'::text]))),
+    CONSTRAINT marketing_email_webhook_events_provider_event_id_check CHECK (((char_length(provider_event_id) >= 1) AND (char_length(provider_event_id) <= 256)))
+);
+
+
+--
+-- Name: TABLE marketing_email_webhook_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.marketing_email_webhook_events IS 'Marketing email lane: dedupe ledger for Resend unsubscribe / complaint events (svix-id) and reconcile-detected unsubscribes. Purged after 30 days by the daily reconcile.';
 
 
 --
@@ -16686,6 +16875,30 @@ ALTER TABLE ONLY public.legal_acceptances
 
 ALTER TABLE ONLY public.marketing_consent_log
     ADD CONSTRAINT marketing_consent_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: marketing_email_contacts marketing_email_contacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_email_contacts
+    ADD CONSTRAINT marketing_email_contacts_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: marketing_email_contacts marketing_email_contacts_resend_contact_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_email_contacts
+    ADD CONSTRAINT marketing_email_contacts_resend_contact_id_key UNIQUE (resend_contact_id);
+
+
+--
+-- Name: marketing_email_webhook_events marketing_email_webhook_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_email_webhook_events
+    ADD CONSTRAINT marketing_email_webhook_events_pkey PRIMARY KEY (provider_event_id);
 
 
 --
@@ -19426,6 +19639,14 @@ ALTER TABLE ONLY public.marketing_consent_log
 
 
 --
+-- Name: marketing_email_contacts marketing_email_contacts_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.marketing_email_contacts
+    ADD CONSTRAINT marketing_email_contacts_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: mastery_constants_history mastery_constants_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20590,6 +20811,18 @@ ALTER TABLE public.legal_acceptances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketing_consent_log ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: marketing_email_contacts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.marketing_email_contacts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: marketing_email_webhook_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.marketing_email_webhook_events ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mastery_constants; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -21693,6 +21926,14 @@ GRANT ALL ON FUNCTION public.apply_audit_logs_retention(p_action text, p_profile
 
 
 --
+-- Name: FUNCTION apply_marketing_email_optout(p_provider_event_id text, p_event_type text, p_resend_contact_id text, p_email text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.apply_marketing_email_optout(p_provider_event_id text, p_event_type text, p_resend_contact_id text, p_email text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.apply_marketing_email_optout(p_provider_event_id text, p_event_type text, p_resend_contact_id text, p_email text) TO service_role;
+
+
+--
 -- Name: TABLE student_skill_mastery; Type: ACL; Schema: public; Owner: -
 --
 
@@ -22617,6 +22858,46 @@ GRANT SELECT,UPDATE ON TABLE public.notification_messages TO authenticated;
 
 REVOKE ALL ON FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id uuid, p_seen boolean, p_read boolean, p_archived boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.mark_notification(p_recipient_id uuid, p_message_id uuid, p_seen boolean, p_read boolean, p_archived boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION marketing_email_audience(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marketing_email_audience() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marketing_email_audience() TO service_role;
+
+
+--
+-- Name: FUNCTION marketing_email_contact_forget(p_resend_contact_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marketing_email_contact_forget(p_resend_contact_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marketing_email_contact_forget(p_resend_contact_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION marketing_email_contact_record(p_profile_id uuid, p_resend_contact_id text, p_segment text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marketing_email_contact_record(p_profile_id uuid, p_resend_contact_id text, p_segment text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marketing_email_contact_record(p_profile_id uuid, p_resend_contact_id text, p_segment text) TO service_role;
+
+
+--
+-- Name: FUNCTION marketing_email_contacts_list(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marketing_email_contacts_list() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marketing_email_contacts_list() TO service_role;
+
+
+--
+-- Name: FUNCTION marketing_email_webhook_events_purge(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marketing_email_webhook_events_purge() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marketing_email_webhook_events_purge() TO service_role;
 
 
 --
@@ -24221,6 +24502,20 @@ GRANT ALL ON TABLE public.legal_acceptances TO service_role;
 --
 
 GRANT SELECT,INSERT ON TABLE public.marketing_consent_log TO service_role;
+
+
+--
+-- Name: TABLE marketing_email_contacts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.marketing_email_contacts TO service_role;
+
+
+--
+-- Name: TABLE marketing_email_webhook_events; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.marketing_email_webhook_events TO service_role;
 
 
 --
