@@ -117,6 +117,7 @@ FILES=(
   "client/src/features/calendar/components/FullLengthFields.tsx"
   "packages/shared/src/exam-form-display.ts"
   "client/src/features/calendar/components/BlockSheet.tsx"
+  "client/src/features/calendar/lib/members.ts"
   "client/src/components/math/MathReferenceSheet.tsx"
   "client/src/components/math/DesmosCalculator.tsx"
   "client/src/components/practice/NumericEntryInput.tsx"
@@ -3380,6 +3381,20 @@ plant "QA2G-4" "a finished block is called in progress" \
   'a = "  const inProgress = block.started && !complete;\n"
 assert s.count(a) == 1
 s = s.replace(a, "  const inProgress = block.started;\n", 1)'
+
+plant "QA2G-5" "a 7-item review block reads 5 items again (current count not offered)" \
+  "$TQA2G" \
+  "client/src/features/calendar/components/BlockSheet.tsx" \
+  'a = "{reviewCountChoices(block.target).map((count) => ("
+assert s.count(a) == 1
+s = s.replace(a, "{reviewCountChoices().map((count) => (", 1)'
+
+plant "QA2G-6" "the review choices drop the current count" \
+  "$TQA2G" \
+  "client/src/features/calendar/lib/members.ts" \
+  'a = "  if (current === undefined || steps.includes(current)) return steps;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return steps;\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

@@ -304,6 +304,18 @@ describe("QA2-G — Items to clear while the review block is in progress", () =>
     expect(screen.queryByTestId("calendar-items-locked-note")).toBeNull();
   });
 
+  it("a block whose planned count is not a step shows its real count (7 items, not 5)", () => {
+    open(TODAY, review({ title: "Review · 7 items", target: 7 }));
+    const select = screen.getByRole("combobox", {
+      name: "Items to clear",
+    }) as HTMLSelectElement;
+    expect(select.value).toBe("7");
+    expect(select.selectedOptions[0]?.textContent).toBe("7 items");
+    expect(
+      Array.from(select.options).map((option) => Number(option.value)),
+    ).toEqual([5, 7, 10, 15, 20, 25, 30]);
+  });
+
   it("a finished block stays locked (§12.2) but is not called in progress", () => {
     open(
       TODAY,

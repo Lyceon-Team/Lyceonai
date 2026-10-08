@@ -271,7 +271,7 @@ export function BlockSheet({
                   actions.onEditReviewCount(Number(event.target.value))
                 }
               >
-                {reviewCountChoices().map((count) => (
+                {reviewCountChoices(block.target).map((count) => (
                   <option key={count} value={count}>
                     {count} items
                   </option>
