@@ -26,7 +26,6 @@ import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
 import type { SessionCriteria } from "@lyceon/shared/session-criteria";
 import type { MasteryDomainNode } from "@/lib/masteryApi";
 import { joinList } from "@/components/home/home-model";
-import { sourceEngineLabel } from "@/lib/review-session-picker";
 
 /** "Questions per session": 5 to 30 in steps of 5 (DESIGN.md §4; the prototype's select). */
 export const QUESTIONS_PER_SESSION_OPTIONS = [5, 10, 15, 20, 25, 30] as const;
@@ -140,14 +139,4 @@ export function sessionLimitLine(max: number): string {
 /** The shipped "End this session?" confirmation body (pre-redesign practice.tsx). */
 export function endSessionBody(answered: number, total: number): string {
   return `This will terminate the session. Your progress so far (${answered} of ${total} questions) is saved, but you will not be able to resume it.`;
-}
-
-/**
- * The second line of a "Recent practice" row. The row's raw `filters` are never read (F-52:
- * they carry pool sizes and internal keys; Home's recent sessions read none either), so the
- * line names what the row's own `mode` says: "Diagnostic", or the engine's shipped label
- * ("Practice"). The prototype's "Mixed" is not used: it would be untrue of a filtered session.
- */
-export function recentPracticeScope(mode: string | null): string {
-  return mode === "diagnostic" ? "Diagnostic" : sourceEngineLabel("practice");
 }

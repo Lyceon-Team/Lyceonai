@@ -35,11 +35,29 @@
  * the PageCard layout, the section Select with counts, the single-select domain and skill chips,
  * the "Review a past session" card with its "Show more sessions" button, the open-sessions card
  * with the Trash icon and mode badge, and the aside's "Total" row and "How review works" card.
+ *
+ * THE REVIEW CAP (owner re-test, Karl, 2026-10-08, item A) | @implemented [2026-10-08]: a start
+ * the server refuses for the concurrent-session cap (`SESSION_LIMIT_EXCEEDED`, recognised by code
+ * in `useCreateReviewSession`) is answered by `ReviewCapNotice` directly under the control that
+ * was pressed (Start reviewing, the topic picker's start, or that past session's Redo), scrolled
+ * into view, with "Continue your open session" and "End a session" (this page's own open
+ * sessions, scrolled to and focused). It replaces the page-level limit notice and the starts
+ * disabled at the limit: Karl asked for the refusal at the button the student pressed, which a
+ * disabled button cannot be, and the server, not the client's copy of the open list, decides the
+ * cap. `/review?focus=open-sessions` (`REVIEW_OPEN_SESSIONS_HREF`, Home's "End a session") opens
+ * the page with the open sessions in view and focused.
  */
-import { useMemo, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { studentResourceUrl } from "@lyceon/shared/student-resources";
 import type { PracticeTopicsResponse } from "@lyceon/shared/practice-reference-schema";
 import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
@@ -68,6 +86,7 @@ import {
   topicSummary,
   visiblePastGroups,
 } from "@/components/review/review-landing-model";
+import { ReviewCapNotice } from "@/components/review/ReviewCapNotice";
 import { Modal, Notice, PageHeader } from "@/components/student-ui";
 import {
   domainOptions,
@@ -79,7 +98,9 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { usePracticeTopics } from "@/hooks/usePracticeTopics";
 import {
+  REVIEW_OPEN_SESSIONS_FOCUS,
   browserTimeZone,
+  reviewSessionHref,
   useActiveReviewSessions,
   useCreateReviewSession,
   useReviewPool,
@@ -156,9 +177,23 @@ export default function ReviewPage(): JSX.Element {
     [pool.pool?.byDomain],
   );
 
-  const atLimit =
-    open.maxConcurrentSessions !== null &&
-    open.sessions.length >= open.maxConcurrentSessions;
+  // QA2-A: which start the last failure belongs to, so the cap is drawn at THAT control.
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+
+  // QA2-A: "End a session" brings this page's open sessions (each with End) into view, focused.
+  const openHeadingRef = useRef<HTMLHeadingElement>(null);
+  const showOpenSessions = (): void => revealHeading(openHeadingRef.current);
+  // `/review?focus=open-sessions` (Home's "End a session"): once, when the rows are drawn.
+  const search = useSearch();
+  const focusOpen =
+    new URLSearchParams(search).get("focus") === REVIEW_OPEN_SESSIONS_FOCUS;
+  const focusedOpen = useRef(false);
+  const openRowsDrawn = open.sessions.length > 0;
+  useEffect(() => {
+    if (!focusOpen || !openRowsDrawn || focusedOpen.current) return;
+    focusedOpen.current = true;
+    revealHeading(openHeadingRef.current);
+  }, [focusOpen, openRowsDrawn]);
 
   async function start(spec: ReviewStartSpec): Promise<void> {
     setStarting(reviewStartKey(spec));
@@ -166,14 +201,26 @@ export default function ReviewPage(): JSX.Element {
     const result = await create.startSession(spec);
     if (result.ok) {
       // The id goes in the URL, so refresh / back / new tab all resume (brief R4 §2.2).
-      navigate(`/review/session/${result.sessionId}`);
+      navigate(reviewSessionHref(result.sessionId));
       return;
     }
     setStarting(null);
+    setFailedKey(reviewStartKey(spec));
     setStartFailure(result.failure);
   }
 
-  const canStart = !create.isStarting && starting === null && !atLimit;
+  // The server decides the cap (QA2-A): no start is disabled for it here.
+  const canStart = !create.isStarting && starting === null;
+  // QA2-A: the cap's refusal, and the start it is drawn under.
+  const capKey = startFailure?.kind === "session_limit" ? failedKey : null;
+  const cap =
+    startFailure?.kind === "session_limit" ? (
+      <ReviewCapNotice
+        message={startFailure.message}
+        sessions={open.sessions}
+        onEndSession={showOpenSessions}
+      />
+    ) : null;
   const emptyQueue = (
     <EmptyState
       variant="lyc"
@@ -245,28 +292,17 @@ export default function ReviewPage(): JSX.Element {
                 </Button>
               </div>
             )}
+            {capKey === "queue" ? <div className="mt-3">{cap}</div> : null}
           </section>
 
-          {atLimit ? (
-            <Notice
-              tone="warning"
-              title={`You have ${open.sessions.length} open review sessions. Finish or end one first.`}
-              data-testid="review-limit"
-            />
-          ) : null}
-
-          {startFailure !== null ? (
+          {startFailure !== null && startFailure.kind !== "session_limit" ? (
             <div data-testid="review-start-failure">
               {startFailure.kind === "pool_empty" ? (
                 emptyQueue
               ) : (
                 <Notice
                   tone="warning"
-                  title={
-                    startFailure.kind === "session_limit"
-                      ? "Too many open sessions"
-                      : "Couldn't start that session"
-                  }
+                  title="Couldn't start that session"
                   message={startFailure.message}
                 />
               )}
@@ -277,7 +313,13 @@ export default function ReviewPage(): JSX.Element {
             <OpenSessions
               rows={open.sessions}
               ending={open.isTerminating}
-              onEnd={(id) => open.terminateSession(id)}
+              headingRef={openHeadingRef}
+              onEnd={(id) => {
+                // QA2-A: ending one lifts the cap, so its message goes with it.
+                if (startFailure?.kind === "session_limit")
+                  setStartFailure(null);
+                open.terminateSession(id);
+              }}
             />
           ) : null}
 
@@ -289,6 +331,7 @@ export default function ReviewPage(): JSX.Element {
               canStart={canStart}
               starting={starting === "filter"}
               onStart={(spec) => void start(spec)}
+              cap={capKey === "filter" ? cap : null}
             />
           ) : null}
 
@@ -301,6 +344,8 @@ export default function ReviewPage(): JSX.Element {
               onNextPage={pool.loadMoreSessions}
               canStart={canStart}
               startingKey={starting}
+              capKey={capKey}
+              cap={cap}
               onRedo={(row) =>
                 void start({
                   mode: "session",
@@ -388,13 +433,28 @@ export default function ReviewPage(): JSX.Element {
   );
 }
 
+/**
+ * QA2-A | @implemented [2026-10-08]: scrolls a section heading to the top of the view and moves
+ * focus to it (the heading carries `tabIndex={-1}`), so "End a session" lands the student, and a
+ * screen reader, on the open sessions. Skips the scroll where the browser has no `scrollIntoView`.
+ */
+function revealHeading(heading: HTMLElement | null): void {
+  if (heading === null) return;
+  if (typeof heading.scrollIntoView === "function")
+    heading.scrollIntoView({ block: "start" });
+  heading.focus({ preventScroll: true });
+}
+
 function OpenSessions({
   rows,
   ending,
+  headingRef,
   onEnd,
 }: {
   rows: readonly ReviewOpenSession[];
   ending: boolean;
+  /** QA2-A: the heading "End a session" scrolls to and focuses. */
+  headingRef: RefObject<HTMLHeadingElement>;
   onEnd: (sessionId: string) => void;
 }): JSX.Element {
   const [confirming, setConfirming] = useState<ReviewOpenSession | null>(null);
@@ -404,7 +464,12 @@ function OpenSessions({
       className="flex flex-col gap-3.5"
       data-testid="review-open-sessions"
     >
-      <h2 id="review-open-h" className={SECTION_H2}>
+      <h2
+        id="review-open-h"
+        ref={headingRef}
+        tabIndex={-1}
+        className={cn(SECTION_H2, "scroll-mt-20 outline-none")}
+      >
         Pick up where you left off
       </h2>
       <ul className="m-0 list-none border-t border-lyc-rule p-0">
@@ -442,7 +507,7 @@ function OpenSessions({
                 >
                   End
                 </Button>
-                <Link href={`/review/session/${s.id}`} className={TEXT_LINK}>
+                <Link href={reviewSessionHref(s.id)} className={TEXT_LINK}>
                   Continue
                 </Link>
               </div>
@@ -493,6 +558,7 @@ function ReviewByTopic({
   canStart,
   starting,
   onStart,
+  cap,
 }: {
   taxonomy: PracticeTopicsResponse;
   bySection: ReadonlyMap<string, number>;
@@ -501,6 +567,8 @@ function ReviewByTopic({
   /** This picker's start is in flight (QA item 5). */
   starting: boolean;
   onStart: (spec: ReviewStartSpec) => void;
+  /** QA2-A: the review cap's refusal of this picker's start, drawn under it; else null. */
+  cap: ReactNode;
 }): JSX.Element {
   const sections = sectionOptions(taxonomy);
   // The prototype opens on Math (`section: 'M'`).
@@ -628,6 +696,7 @@ function ReviewByTopic({
             {starting ? STARTING_LABEL : topicCta(count)}
           </Button>
         </div>
+        {cap}
       </div>
     </section>
   );
@@ -641,6 +710,8 @@ function PastSessions({
   onNextPage,
   canStart,
   startingKey,
+  capKey,
+  cap,
   onRedo,
 }: {
   rows: readonly ReviewPoolSourceSession[];
@@ -651,6 +722,9 @@ function PastSessions({
   canStart: boolean;
   /** The start in flight (`reviewStartKey`), so the pressed Redo says "Starting…". */
   startingKey: string | null;
+  /** QA2-A: the start the review cap refused (`reviewStartKey`); its row draws `cap`. */
+  capKey: string | null;
+  cap: ReactNode;
   onRedo: (row: ReviewPoolSourceSession) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
@@ -735,6 +809,9 @@ function PastSessions({
                             : "Redo"}
                         </Button>
                       </span>
+                      {capKey === redoStartKey(row) ? (
+                        <div className="basis-full">{cap}</div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

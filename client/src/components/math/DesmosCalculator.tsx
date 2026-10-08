@@ -17,7 +17,9 @@ import React, {
   useRef,
   useState,
   useCallback,
+  useSyncExternalStore,
 } from "react";
+import { readPaintedThemeAt, subscribePaintedTheme } from "@/lib/theme";
 
 declare global {
   interface DesmosCalculatorInstance {
@@ -27,6 +29,7 @@ declare global {
     destroy: () => void;
     observeEvent: (event: string, cb: () => void) => void;
     unobserveEvent: (event: string, cb: () => void) => void;
+    updateSettings: (settings: Record<string, unknown>) => void;
   }
 
   interface Window {
@@ -189,6 +192,30 @@ export default function DesmosCalculator({
   const modeStateRef = useRef<PerModeState>(parseInitialState(initialState));
   const activeModeRef = useRef<CalculatorMode>("graphing");
 
+  /**
+   * @spec [production QA 2026-10-08 item B (Karl: "Desmos: invertedColors when the app theme is
+   *       dark (Graphing and Scientific)"); DESIGN.md §1 (light and dark), §2 (the timed module
+   *       is light only)] | @implemented [2026-10-08]
+   * plain English: Desmos draws its own UI, white whatever the page. Its `invertedColors`
+   * setting is its dark look, so it is on exactly when the host is painted dark: the theme
+   * setting is dark and the host's `.lyc` root is not pinned light (readPaintedThemeAt; the
+   * timed module is pinned light, so its calculator stays light). Read from the DOM through the
+   * same store the cookie surface uses, so a change in Settings, or a root that (un)locks,
+   * re-renders this component. Both calculators are constructed with the current value (a ref,
+   * so a theme change never re-runs the construction effect), and a later change is applied
+   * live with `updateSettings`, so the calculator, its expressions and its viewport survive.
+   * On the first render the host is not mounted yet and reads light; React re-reads the
+   * snapshot when it subscribes after mount, before Desmos (loaded asynchronously) exists.
+   */
+  const invertedColors =
+    useSyncExternalStore(
+      subscribePaintedTheme,
+      () => readPaintedThemeAt(hostRef.current),
+      () => "light" as const,
+    ) === "dark";
+  const invertedColorsRef = useRef(invertedColors);
+  invertedColorsRef.current = invertedColors;
+
   const initialStateKey = useMemo(
     () => JSON.stringify(initialState ?? null),
     [initialState],
@@ -266,6 +293,7 @@ export default function DesmosCalculator({
           settingsMenu: true,
           zoomButtons: true,
           lockViewport: false,
+          invertedColors: invertedColorsRef.current,
         });
 
         calcRef.current = calculator;
@@ -325,6 +353,11 @@ export default function DesmosCalculator({
     if (!calculator) return;
     window.setTimeout(() => calculator.resize(), 0);
   }, [expanded]);
+
+  // QA2-B: a theme change after construction is applied live (see invertedColors above).
+  useEffect(() => {
+    calcRef.current?.updateSettings({ invertedColors });
+  }, [invertedColors]);
 
   useEffect(() => {
     const host = hostRef.current;

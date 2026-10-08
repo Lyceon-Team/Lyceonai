@@ -24,11 +24,14 @@
  */
 import type { CalendarDay, PlanningEstimates } from "@lyceon/shared/calendar";
 import type { SessionCriteria } from "@lyceon/shared/session-criteria";
+import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
+import { displayFormName } from "@lyceon/shared/exam-form-display";
 import type { EstimateStatus } from "@lyceon/shared/diagnostic-state";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { minutesFor } from "@/features/calendar/lib/blocks";
 import { daysBetween } from "@/features/calendar/lib/dates";
 import { formatDate } from "@/lib/format-date";
+import { sourceEngineLabel } from "@/lib/review-session-picker";
 
 type DayBlock = CalendarDay["blocks"][number];
 
@@ -183,6 +186,47 @@ export function sessionTitle(
   if (sections.length > 0) return sections.join(", ");
   if (kind === "review") return "Review session";
   return sectionDisplayLabel(section) ?? "Practice";
+}
+
+/** No criteria chosen: `sessionTitle`'s fallback input. */
+const NO_CRITERIA: SessionCriteria = {
+  sections: [],
+  domains: [],
+  skills: [],
+  difficulties: [],
+};
+
+/**
+ * A recent-session row (`/api/review/pool` `sessions[]`) named the way the open-session rows are.
+ *
+ * @spec [student-UI register UI-66; OQ-53 (e), owner ruling (Karl) 2026-10-05: "print the
+ *        canonical criteria on Practice and Home recent rows"; OQ-22 (criteria shape); F-52 (the
+ *        row's `filters` is the strict four-array criteria, or a full-length row's
+ *        `{test_form_name}`)] | @implemented [2026-10-08]
+ *
+ * plain English: a practice or review row is named by `sessionTitle` from the criteria the row
+ * carries ("Algebra", "Math", "Review session"), exactly as "Pick up where you left off" names an
+ * open session. Fallbacks, the open rows' own: no criteria (`filters: null`, the source row gone)
+ * gives sessionTitle's empty-criteria answer ("Practice" / "Review session"); a full-length row
+ * is named by its form ("Full-Length Test 1", as Home's open full-length row), else "Full-length
+ * test". A diagnostic row keeps the shipped "Diagnostic" (its criteria name no choice the
+ * student made). The pool row carries no `section`, so none is passed.
+ */
+export function recentSessionTitle(row: ReviewPoolSourceSession): string {
+  if (row.mode === "diagnostic") return "Diagnostic";
+  const filters = row.filters;
+  if (row.source_engine === "full_length") {
+    return filters !== null && "test_form_name" in filters
+      ? displayFormName(filters.test_form_name)
+      : sourceEngineLabel("full_length");
+  }
+  const criteria =
+    filters !== null && "sections" in filters ? filters : NO_CRITERIA;
+  return sessionTitle(
+    row.source_engine === "review" ? "review" : "practice",
+    criteria,
+    null,
+  );
 }
 
 /** "7 of 26 answered" — the student's own session. */

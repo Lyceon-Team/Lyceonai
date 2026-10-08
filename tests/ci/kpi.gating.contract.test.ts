@@ -209,7 +209,10 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getStatus, getBody } = createRes();
 
-    await getScoreEstimate(req as unknown as Request, res as unknown as Response);
+    await getScoreEstimate(
+      req as unknown as Request,
+      res as unknown as Response,
+    );
 
     expect(getStatus()).toBe(200);
     const payload = getBody();
@@ -258,7 +261,10 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getBody, getStatus } = createRes();
 
-    await getScoreEstimate(req as unknown as Request, res as unknown as Response);
+    await getScoreEstimate(
+      req as unknown as Request,
+      res as unknown as Response,
+    );
 
     expect(getStatus()).toBe(200);
     const payload = getBody();
@@ -295,6 +301,9 @@ describe("KPI Gating Contract", () => {
 
     const { getScoreEstimate } =
       await import("../../server/routes/legacy/progress");
+    // UI-10 (student-UI register; Coding Standards §13): the degrade is logged, not silent.
+    const { logger } = await import("../../server/logger");
+    const warn = vi.spyOn(logger, "warn");
 
     const req = {
       user: {
@@ -307,7 +316,10 @@ describe("KPI Gating Contract", () => {
     };
     const { res, getBody, getStatus } = createRes();
 
-    await getScoreEstimate(req as unknown as Request, res as unknown as Response);
+    await getScoreEstimate(
+      req as unknown as Request,
+      res as unknown as Response,
+    );
 
     // MUST NOT 500 — must degrade to unpaid view.
     expect(getStatus()).toBe(200);
@@ -320,6 +332,23 @@ describe("KPI Gating Contract", () => {
     expect(payload.estimate).toBeNull();
     // buildScoreEstimateFromCanonical must NOT be called on entitlement failure.
     expect(buildScoreEstimateFromCanonical).not.toHaveBeenCalled();
+
+    // UI-10: exactly one structured warning for the degrade, redacted: the request id, the
+    // feature and the error's class name; never the user id or the error's message.
+    const degrade = warn.mock.calls.filter(
+      (c) => c[1] === "score_estimate_entitlement_read_failed",
+    );
+    expect(degrade).toHaveLength(1);
+    expect(degrade[0]?.[0]).toBe("PROGRESS");
+    expect(degrade[0]?.[3]).toEqual({
+      feature: "mastery_detail",
+      errorName: "Error",
+    });
+    expect(degrade[0]?.[4]).toEqual({ requestId: "req-fail-closed" });
+    const written = JSON.stringify(degrade[0]);
+    expect(written).not.toContain("student-1");
+    expect(written).not.toContain("entitlement_rpc_exploded");
+    warn.mockRestore();
   }, 15_000);
 
   // Q1 consolidation (2026-08-12): historical_trends gate now uses canAccessFeature

@@ -41,7 +41,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - **Left rail,** 96px, `--rail` background:
   - top: logo mark with the "Lyceon" wordmark under it;
   - then Home, Practice, Review, Full-Length, Calendar, LISA, with icon above label;
-  - bottom: Help, then the account avatar. The avatar opens the account menu (**Settings, Help, Sign out**) at every width, desktop included (owner QA list, Karl, 2026-10-07, item 3; it used to open Settings directly, which left desktop with no Sign out in the shell).
+  - bottom: the bell, labelled **Notifications** and drawn as a rail item (icon above label, the rail's shared current style on `/notifications`, light and dark; production re-test, Karl, 2026-10-08, item H), then Help, then the account avatar. The avatar opens the account menu (**Settings, Help, Sign out**) at every width, desktop included (owner QA list, Karl, 2026-10-07, item 3; it used to open Settings directly, which left desktop with no Sign out in the shell).
 - **Middle column:** the only part that scrolls. Content max-width 800px, padding 56px 72px.
 - **Right panel,** 360px (Calendar 340px, LISA 320px), `--margin` background, hairline left rule. Its content depends on the page.
 - **Fit to screen:** the rail and the right panel are fixed to the viewport height. The right panel scrolls on its own only when its content is taller than the screen. Only the middle column scrolls the page.
@@ -125,7 +125,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 
 **Calendar** (Canvas-style).
 - Header: Week/Month, Today and the arrows on the left; the date range centered (`M/D – M/D`); Edit schedule and **Regenerate plan** (`POST /api/calendar/plan/regenerate`) on the right. At most two rows at 1024px; below a ~1200px viewport Edit schedule and Regenerate plan move into a "⋯" menu ("More actions"), on a phone too (owner ruling, Karl, 2026-10-07, OQ-66 (c)).
-- Week grid with category-striped blocks, and Month view.
+- Week grid with category-striped blocks, and Month view. Where a column is too narrow for a block's full title (under 130px), the card and the month chip show the compact label that keeps the count, in the block's colour: "Rev 15", "Math 5", "R&W 15"; a full-length test keeps its words. Never a single letter, never a word split; a scope chip keeps one line and cuts its name with an ellipsis, its count whole. The full title stays in the accessible name (owner ruling, Karl, 2026-10-08, production re-test item C).
 - **The test day is starred** in week view, month view and the mini month.
 - Right panel:
   - mini month, navigable;

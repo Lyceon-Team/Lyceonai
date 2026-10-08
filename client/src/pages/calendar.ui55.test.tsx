@@ -796,12 +796,16 @@ describe("paid: the header and card layout rules (QA 2026-10-07 items 11(c), 11(
     expect(css).toContain("@container lyc-cal-body (min-width: 920px) {");
   });
 
-  it("(c) a card's text breaks rather than overflow, and the started tag is cut", () => {
+  it("(c) a card's text wraps between words, never inside one, and the started tag is cut", () => {
     const css = studentCss();
     // The QA block's `.block` rule (the first is the base card's).
     const block = css.slice(css.indexOf("QA 2026-10-07 item 11(c)"));
-    expect(rule(block, ".lyceon-calendar.lyc-cal .block")).toContain(
-      "overflow-wrap: anywhere;",
+    // QA2-C (Karl, 2026-10-08): "no mid-word breaks"; `anywhere` split "Conventi/ons".
+    const card = rule(block, ".lyceon-calendar.lyc-cal .block");
+    expect(card).toContain("overflow-wrap: normal;");
+    expect(card).not.toContain("anywhere");
+    expect(css).not.toMatch(
+      /overflow-wrap:\s*anywhere|word-break:\s*break-all/,
     );
     expect(rule(block, ".lyceon-calendar.lyc-cal .block .ttl")).toContain(
       "flex-wrap: wrap;",
@@ -809,9 +813,69 @@ describe("paid: the header and card layout rules (QA 2026-10-07 items 11(c), 11(
     const lock = rule(block, ".lyceon-calendar.lyc-cal .block .lock");
     expect(lock).toContain("text-overflow: ellipsis;");
     expect(lock).toContain("max-width: 100%;");
-    expect(rule(block, ".lyceon-calendar.lyc-cal .block .dom span")).toContain(
-      "max-width: 100%;",
+    const chip = rule(block, ".lyceon-calendar.lyc-cal .block .dom > span");
+    expect(chip).toContain("max-width: 100%;");
+    // A word wider than the chip is cut with an ellipsis, not split.
+    expect(chip).toContain("overflow: hidden;");
+    expect(chip).toContain("text-overflow: ellipsis;");
+  });
+
+  /** The body of the first `@container` block that opens with exactly this prelude. */
+  function containerBody(css: string, prelude: string): string {
+    const at = css.indexOf(`${prelude} {`);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("\n}\n", at));
+  }
+
+  it("(QA2-C) a narrow week column and a narrow month draw the compact label; a narrow chip keeps one line", () => {
+    const css = studentCss();
+    // The week: the seven-column rules under 910px (a column under 130px).
+    const week = containerBody(css, "@container (max-width: 909px)");
+    expect(week).toMatch(/\.ttl-full \{\s*display: none;/);
+    expect(week).toMatch(/\.ttl-short \{\s*display: inline;/);
+    expect(week).toMatch(/\.dname \{[^}]*text-overflow: ellipsis;/);
+    expect(week).toMatch(/\.dcount \{\s*flex: none;/);
+    expect(week).toMatch(/> span \{[^}]*white-space: nowrap;/);
+    // Elsewhere the compact title is not drawn.
+    expect(rule(css, ".lyceon-calendar.lyc-cal .block .ttl-short")).toContain(
+      "display: none;",
     );
+    // The month is its own size container, and swaps under 910px.
+    expect(css).toContain(
+      ".lyceon-calendar.lyc-cal .month {\n  container: lyc-cal-month / inline-size;\n}",
+    );
+    const month = containerBody(
+      css,
+      "@container lyc-cal-month (max-width: 909.98px)",
+    );
+    expect(month).toMatch(/\.mchip \.full \{\s*display: none;/);
+    expect(month).toMatch(/\.mchip \.short \{\s*display: inline;/);
+    // Under 560px (the phone's 55px cells) the count may go under the label, at the space.
+    const phone = containerBody(
+      css,
+      "@container lyc-cal-month (max-width: 559.98px)",
+    );
+    expect(phone).toMatch(/\.mchip > span \{\s*white-space: normal;/);
+  });
+
+  it("(QA2-C) the cards carry the compact label from the canonical table, hidden from assistive technology", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    const shorts = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".lyceon-calendar .block .ttl-short",
+      ),
+    );
+    // Presence first.
+    expect(shorts.length).toBeGreaterThan(0);
+    for (const short of shorts) {
+      expect(short.getAttribute("aria-hidden")).toBe("true");
+      expect(short.textContent).toMatch(/^(Rev|Math|R&W) \d+$/);
+      const card = short.closest(".block");
+      const full = card?.querySelector(".ttl-full")?.textContent ?? "";
+      expect(full.length).toBeGreaterThan(short.textContent?.length ?? 0);
+      expect(card?.getAttribute("aria-label")?.startsWith(full)).toBe(true);
+    }
   });
 });
 

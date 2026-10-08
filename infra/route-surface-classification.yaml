@@ -806,6 +806,18 @@ routes:
     requires_hmac: false
     prerender: false
     indexable: false
+  # client redirect to /profile (Settings), query and hash kept; production re-test 2026-10-08 item E
+  - path_pattern: /settings
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-10-08
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
   - path_pattern: /guardian
     surface_class: authenticated_guardian
     clarity_allowed: false
