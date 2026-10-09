@@ -426,6 +426,17 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-email-sync.mutations.sh
 
+      # Owner brief "Question of the Day on Home" (2026-10-08/09): each locked rule (one per
+      # Chicago day, replay, quota exclusion, streak sources, prompt rules, 17:00 across DST,
+      # sunset, signed unsubscribe, SAT dates) is planted and must turn its named test red.
+      - name: Home QOTD, streak, email and SAT dates mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/home-qotd.mutations.sh
+
       # A gate that has stopped biting is indistinguishable from a passing one, so the
       # placement gates are planted rather than trusted. Each case builds its own
       # throwaway database, because the pipeline is not idempotent.

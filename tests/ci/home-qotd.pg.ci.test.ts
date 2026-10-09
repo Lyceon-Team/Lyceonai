@@ -880,6 +880,27 @@ describe.skipIf(!PG_AVAILABLE)(
         ).toBe(1);
       });
 
+      it("the claim is insert-once: two runs racing for the same student and day get one send", async () => {
+        // The candidate read already skips a student with a send today; this is the guard for
+        // two runs that read candidates before either claimed (concurrent cron invocations).
+        const claim = async () =>
+          (
+            await pg.query<{ id: string | null }>(
+              `SELECT public.qotd_email_claim($1, 'daily', '2026-07-20T22:00:00Z'::timestamptz) AS id`,
+              [MAILED_ANSWERED],
+            )
+          ).rows[0]?.id ?? null;
+        const first = await claim();
+        expect(first).toMatch(/^[0-9a-f-]{36}$/);
+        expect(await claim()).toBeNull();
+        expect(
+          await count(
+            `SELECT count(*)::int AS n FROM public.qotd_email_sends WHERE student_id = $1 AND send_date = '2026-07-20'`,
+            [MAILED_ANSWERED],
+          ),
+        ).toBe(1);
+      });
+
       it("after the pause email, the student gets nothing the next day", async () => {
         const before = sent.length;
         await run("2026-07-15T22:00:00Z");
