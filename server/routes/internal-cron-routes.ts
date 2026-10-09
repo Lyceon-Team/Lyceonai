@@ -28,7 +28,12 @@ import {
 import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
 import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
 import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
-import { runQotdSchedule } from "../services/qotd/schedule-job.js";
+import {
+  defaultOpsAlertDeps,
+  defaultSendAlert,
+  runMonitoredQotdSchedule,
+} from "../services/qotd/qotd-health.js";
+import { sendOpsAlert } from "../lib/ops-alerts.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
 import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
 import {
@@ -632,6 +637,9 @@ router.get(
  * SCHEDULED AT 07:15 UTC: after America/Chicago midnight in both CST (06:00 UTC) and CDT
  * (05:00 UTC), so the build it triggers sees the day that just ended as an archive day. Because
  * the schedule is filled a week ahead, a missed run never leaves today without a question.
+ * The run is monitored (QOTD resilience brief, Karl 2026-10-09; qotd-health.ts): one summary
+ * line, every unfilled day at ERROR, and an owner alert (Slack + email, once per condition per
+ * day) when it throws, leaves a day unfilled, or leaves the horizon under 7 days.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
  */
@@ -643,11 +651,20 @@ router.get(
       return;
     }
     try {
-      const summary = await runQotdSchedule({
+      // QOTD resilience brief (Karl, 2026-10-09): one summary line per run, every failure at
+      // ERROR, an alert on a throw, an unfilled day or a horizon under 7 (qotd-health.ts).
+      const { summary, health } = await runMonitoredQotdSchedule({
         client: getSupabaseAdmin() as unknown as QotdDbClient,
         deployHookUrl: process.env.VERCEL_DEPLOY_HOOK_URL,
+        sendAlert: defaultSendAlert(),
       });
-      res.json({ ok: true, job: "qotd_schedule", summary });
+      res.json({
+        ok: true,
+        job: "qotd_schedule",
+        summary,
+        horizon: health.horizon.horizon,
+        runsOutOn: health.horizon.runs_out_on,
+      });
     } catch (err) {
       logger.error(
         "QOTD",
@@ -745,6 +762,51 @@ router.get(
         err,
       );
       res.status(500).json({ error: "qotd_daily_email_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/ops-alert-test — the owner's test alert.
+ *
+ * @spec [owner brief "QOTD resilience" (Karl, 2026-10-09) "Production proof": "Karl confirms he
+ *       received one test alert, triggered by an owner-only test command; no fake production
+ *       data"] | @implemented [2026-10-09]
+ *
+ * plain English: sends ONE test message through the real ops alert path (Slack and email, the
+ * same ledger), condition `ops_test`, so it goes at most once a day like every other alert. It
+ * writes no QOTD data. Owner-only because it is CRON_SECRET-gated like the rest of this file
+ * (unauthorized => 404); run it with the secret:
+ *   curl -H "Authorization: Bearer $CRON_SECRET" https://lyceon.ai/api/internal/ops-alert-test
+ */
+router.get(
+  "/ops-alert-test",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const outcome = await sendOpsAlert(
+        {
+          condition: "ops_test",
+          title: "Test alert (owner-triggered)",
+          lines: [
+            "This is a test of the Lyceon ops alert path. Nothing is wrong.",
+            "Real alerts: QOTD schedule failures, a horizon under 7 days, no question today, and the recovery message.",
+          ],
+        },
+        defaultOpsAlertDeps(),
+      );
+      res.json({ ok: true, job: "ops_alert_test", outcome });
+    } catch (err) {
+      logger.error(
+        "OPS_ALERT",
+        "ops_alert_test_error",
+        "Ops test alert failed",
+        err,
+      );
+      res.status(500).json({ error: "ops_alert_test_failed" });
     }
   },
 );

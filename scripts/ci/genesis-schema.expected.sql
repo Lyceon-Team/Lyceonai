@@ -8741,6 +8741,42 @@ COMMENT ON FUNCTION public.operational_log_retention_days() IS 'Privacy Policy v
 
 
 --
+-- Name: ops_alert_claim(text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ops_alert_claim(p_condition text, p_channel text, p_now timestamp with time zone DEFAULT now()) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  INSERT INTO public.ops_alert_deliveries (condition, alert_day, channel, created_at)
+  VALUES (p_condition, public.chicago_day(p_now), p_channel, p_now)
+  ON CONFLICT (condition, alert_day, channel) DO UPDATE
+     SET status = 'pending', created_at = EXCLUDED.created_at, finished_at = NULL
+   WHERE public.ops_alert_deliveries.status = 'failed'
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END;
+$$;
+
+
+--
+-- Name: ops_alert_record(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ops_alert_record(p_id uuid, p_status text, p_now timestamp with time zone DEFAULT now()) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.ops_alert_deliveries
+     SET status = p_status, finished_at = p_now
+   WHERE id = p_id AND status = 'pending';
+$$;
+
+
+--
 -- Name: password_recovery_live(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9619,6 +9655,32 @@ $$;
 
 
 --
+-- Name: qotd_horizon(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_horizon(p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH t AS (SELECT public.chicago_day(p_now) AS today),
+  gap AS (
+    SELECT COALESCE(
+             (SELECT min((SELECT today FROM t) + k)
+                FROM generate_series(0, 61) AS k
+               WHERE NOT public.qotd_servable((SELECT today FROM t) + k)),
+             (SELECT today FROM t) + 62
+           ) AS first_gap
+  )
+  SELECT jsonb_build_object(
+    'today', (SELECT today FROM t),
+    'today_covered', (SELECT first_gap FROM gap) > (SELECT today FROM t),
+    'runs_out_on', (SELECT first_gap FROM gap),
+    'horizon', GREATEST((SELECT first_gap FROM gap) - (SELECT today FROM t) - 1, 0)
+  );
+$$;
+
+
+--
 -- Name: qotd_question_for(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9686,6 +9748,25 @@ $$;
 
 
 --
+-- Name: qotd_recovery_due(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_recovery_due() RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.ops_alert_deliveries a
+     WHERE a.condition IN ('qotd_schedule_failed', 'qotd_horizon_low', 'qotd_no_question_today')
+       AND a.created_at > COALESCE(
+             (SELECT max(r.created_at) FROM public.ops_alert_deliveries r
+               WHERE r.condition = 'qotd_recovered' AND r.status = 'sent'),
+             '-infinity'::timestamptz)
+  );
+$$;
+
+
+--
 -- Name: qotd_schedule_candidates(text, text, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9733,6 +9814,25 @@ BEGIN
   END IF;
   RETURN 'taken';
 END
+$$;
+
+
+--
+-- Name: qotd_servable(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_servable(p_date date) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.qotd_schedule s
+      JOIN public.questions q ON q.id = s.question_id
+     WHERE s.qotd_date = p_date
+       AND q.status = 'published'
+       AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
+  );
 $$;
 
 
@@ -15619,6 +15719,31 @@ CREATE TABLE public.observability_runtime_config_history (
 
 
 --
+-- Name: ops_alert_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ops_alert_deliveries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    condition text NOT NULL,
+    alert_day date NOT NULL,
+    channel text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT ops_alert_deliveries_channel_check CHECK ((channel = ANY (ARRAY['slack'::text, 'email'::text, 'log'::text]))),
+    CONSTRAINT ops_alert_deliveries_condition_check CHECK ((condition = ANY (ARRAY['qotd_schedule_failed'::text, 'qotd_horizon_low'::text, 'qotd_no_question_today'::text, 'qotd_recovered'::text, 'ops_test'::text, 'ops_slack_unconfigured'::text, 'ops_email_unconfigured'::text]))),
+    CONSTRAINT ops_alert_deliveries_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: TABLE ops_alert_deliveries; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ops_alert_deliveries IS 'Ops alerts (QOTD resilience brief, Karl 2026-10-09): one row per (condition, America/Chicago day, channel), claimed before sending, so a condition alerts at most once a day per channel. No content, no student data.';
+
+
+--
 -- Name: password_recovery_grants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -17828,6 +17953,22 @@ ALTER TABLE ONLY public.observability_runtime_config_history
 
 ALTER TABLE ONLY public.observability_runtime_config
     ADD CONSTRAINT observability_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: ops_alert_deliveries ops_alert_deliveries_once_per_day; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ops_alert_deliveries
+    ADD CONSTRAINT ops_alert_deliveries_once_per_day UNIQUE (condition, alert_day, channel);
+
+
+--
+-- Name: ops_alert_deliveries ops_alert_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ops_alert_deliveries
+    ADD CONSTRAINT ops_alert_deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -21799,6 +21940,12 @@ ALTER TABLE public.observability_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.observability_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: ops_alert_deliveries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ops_alert_deliveries ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: password_recovery_grants; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -23878,6 +24025,22 @@ GRANT ALL ON FUNCTION public.operational_log_retention_days() TO service_role;
 
 
 --
+-- Name: FUNCTION ops_alert_claim(p_condition text, p_channel text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ops_alert_claim(p_condition text, p_channel text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ops_alert_claim(p_condition text, p_channel text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION ops_alert_record(p_id uuid, p_status text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ops_alert_record(p_id uuid, p_status text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ops_alert_record(p_id uuid, p_status text, p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION password_recovery_live(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -24102,6 +24265,14 @@ GRANT ALL ON FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now tim
 
 
 --
+-- Name: FUNCTION qotd_horizon(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_question_for(p_date date); Type: ACL; Schema: public; Owner: -
 --
 
@@ -24126,6 +24297,14 @@ GRANT ALL ON FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean)
 
 
 --
+-- Name: FUNCTION qotd_recovery_due(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_recovery_due() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_recovery_due() TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_schedule_candidates(p_section text, p_domain text, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -24139,6 +24318,14 @@ GRANT ALL ON FUNCTION public.qotd_schedule_candidates(p_section text, p_domain t
 
 REVOKE ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_servable(p_date date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_servable(p_date date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_servable(p_date date) TO service_role;
 
 
 --
@@ -25928,6 +26115,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config T
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE ops_alert_deliveries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.ops_alert_deliveries TO service_role;
 
 
 --

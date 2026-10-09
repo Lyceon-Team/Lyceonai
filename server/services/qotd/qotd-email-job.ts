@@ -33,7 +33,8 @@ import {
   type DispatchSummary,
 } from "../../lib/notifications/dispatch";
 import { logger } from "../../logger";
-import { QOTD_TIME_ZONE } from "./qotd-service";
+import { checkQotdHealth, defaultSendAlert } from "./qotd-health";
+import { QOTD_TIME_ZONE, qotdToday } from "./qotd-service";
 import type { RpcClient } from "../../lib/rpc-client";
 
 const COMPONENT = "QOTD_EMAIL";
@@ -48,7 +49,7 @@ export type QotdEmailJobSummary = {
   ok: boolean;
   rolled_exam_dates: number;
   chicago_hour: number;
-  skipped?: "not_send_hour";
+  skipped?: "not_send_hour" | "no_question";
   emitted: number;
   mailable: number;
   paused_notices: number;
@@ -60,7 +61,20 @@ export type QotdEmailJobDeps = {
   db: RpcClient;
   dispatch: (options: DispatchOptions) => Promise<DispatchSummary>;
   now: Date;
+  /** The QOTD health checks (qotd-health.ts): alerts the owner; never fails the job. */
+  health: (checks: {
+    noQuestionToday: boolean;
+    horizon: boolean;
+  }) => Promise<unknown>;
 };
+
+/**
+ * QOTD resilience brief (Karl, 2026-10-09) §3: this job is the INDEPENDENT check. Every run asks
+ * "is there a question today" (the 06:05 UTC run is just after Chicago midnight); the runs from
+ * noon Chicago on also check the horizon, because by then the 07:15 UTC fill should have run (at
+ * 06:05 the new +7 day is legitimately not filled yet).
+ */
+export const HORIZON_CHECK_FROM_CHICAGO_HOUR = 12;
 
 /** The America/Chicago wall-clock hour (0-23) at `now`. DST is the zone database's job. */
 export function chicagoHour(now: Date): number {
@@ -104,8 +118,46 @@ export async function runQotdEmailJob(
   }
   summary.rolled_exam_dates = z.number().int().min(0).parse(rolled);
 
+  try {
+    await deps.health({
+      noQuestionToday: true,
+      horizon: summary.chicago_hour >= HORIZON_CHECK_FROM_CHICAGO_HOUR,
+    });
+  } catch (error: unknown) {
+    // The health check must never stop the date roll or the reminder; its failure is an ERROR.
+    logger.error(
+      COMPONENT,
+      "qotd_health_check_failed",
+      "QOTD health check failed",
+      undefined,
+      { reason: error instanceof Error ? error.message : "unknown" },
+    );
+  }
+
   if (summary.chicago_hour !== QOTD_EMAIL_SEND_HOUR_CHICAGO) {
     return { ...summary, skipped: "not_send_hour" };
+  }
+
+  // No servable question today (no row, or its question was unpublished): no reminder at all.
+  // Nothing is dispatched on this path either; email rows queued earlier are retried by the daily
+  // notification-dispatch-sweep cron (internal-cron-routes.ts).
+  const { data: servable, error: servableError } = await db.rpc(
+    "qotd_servable",
+    { p_date: qotdToday(now) },
+  );
+  if (servableError) {
+    throw new Error(`qotd_servable failed: ${servableError.message}`);
+  }
+  if (!z.boolean().parse(servable)) {
+    logger.info(COMPONENT, "qotd_daily_rule_done", "Daily question rule run", {
+      emitted: 0,
+      mailable: 0,
+      sent: 0,
+      failed: 0,
+      pausedNotices: 0,
+      skippedNoQuestion: true,
+    });
+    return { ...summary, skipped: "no_question" };
   }
 
   for (;;) {
@@ -141,6 +193,7 @@ export async function runQotdEmailJob(
     pausedNotices: summary.paused_notices,
     sent: summary.sent,
     failed: summary.failed,
+    skippedNoQuestion: false,
   });
   return summary;
 }
@@ -152,5 +205,13 @@ export function defaultQotdEmailJobDeps(
     db: supabaseServer,
     dispatch: (options) => dispatchQueuedMessages(options),
     now,
+    health: (checks) =>
+      checkQotdHealth({
+        db: supabaseServer,
+        now,
+        sendAlert: defaultSendAlert(now),
+        checks,
+        source: "daily_job",
+      }),
   };
 }

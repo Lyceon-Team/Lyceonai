@@ -65,6 +65,15 @@ export const envSchema = z.object({
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
 
+  // Ops alerts to the owner (QOTD resilience brief, Karl 2026-10-09). Read at:
+  //   SLACK_ALERTS_WEBHOOK_URL  server/services/qotd/qotd-health.ts (Production only; a Slack
+  //                             incoming webhook — a credential, never logged)
+  //   OPS_ALERT_EMAIL           server/services/qotd/qotd-health.ts (the owner's address)
+  // Optional: either unset means that channel is skipped with one WARN a day
+  // (server/lib/ops-alerts.ts), and the other channel still sends.
+  SLACK_ALERTS_WEBHOOK_URL: z.string().url().optional(),
+  OPS_ALERT_EMAIL: z.string().email().optional(),
+
   // Marketing email lane (contracts/notifications.contract.md §14). Read at:
   //   RESEND_SEGMENT_ID_STUDENTS   server/lib/marketing-email-sync.ts
   //   RESEND_SEGMENT_ID_GUARDIANS  server/lib/marketing-email-sync.ts

@@ -1169,6 +1169,7 @@ jobs:
             tests/ci/marketing-consent-routes.pg.ci.test.ts \
             tests/ci/marketing-email-sync.pg.ci.test.ts \
             tests/ci/home-qotd.pg.ci.test.ts \
+            tests/ci/qotd-resilience.pg.ci.test.ts \
             tests/ci/signup-analytics.pg.ci.test.ts \
             tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             tests/ci/exam-shell-server.handler-pg.ci.test.ts \
@@ -1241,6 +1242,7 @@ jobs:
             --file tests/ci/marketing-consent-routes.pg.ci.test.ts \
             --file tests/ci/marketing-email-sync.pg.ci.test.ts \
             --file tests/ci/home-qotd.pg.ci.test.ts \
+            --file tests/ci/qotd-resilience.pg.ci.test.ts \
             --file tests/ci/signup-analytics.pg.ci.test.ts \
             --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts \
