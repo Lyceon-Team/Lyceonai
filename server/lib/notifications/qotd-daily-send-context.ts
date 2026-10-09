@@ -23,9 +23,9 @@
  * (contract §2A; F-83 withdrawal intent).
  */
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
+import { qotdEmailPreferenceSchema } from "../../../packages/shared/src/home-qotd-schema";
 import { qotdDailyPayloadSchema } from "../../../packages/shared/src/notifications-schema";
 import { err, ok, type Result } from "../../../packages/shared/src/result";
-import { getQotdEmailPreference } from "../../services/qotd/home-qotd-service";
 import { qotdEmailLinkUrl } from "../../services/qotd/qotd-email-links";
 import { qotdToday, readQotd } from "../../services/qotd/qotd-service";
 import type { RenderContext } from "./templates";
@@ -54,7 +54,15 @@ export async function qotdDailySendContext(
     });
   }
   try {
-    const preference = await getQotdEmailPreference(recipientProfileId);
+    // The same SQL read Settings shows (qotd_daily_email_preference). Called directly, not through
+    // the QOTD service, so the dispatcher never imports the route layer.
+    const { data, error } = await supabaseServer.rpc(
+      "qotd_daily_email_preference",
+      { p_student_id: recipientProfileId },
+    );
+    if (error)
+      throw new Error(`qotd_daily_email_preference failed: ${error.message}`);
+    const preference = qotdEmailPreferenceSchema.parse(data);
     if (!preference.enabled || !preference.eligible) {
       return err({
         reason:
