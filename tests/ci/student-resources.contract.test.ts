@@ -67,13 +67,7 @@ let streakRpc:
 
 function resetRows() {
   rows.student_domain_mastery = [
-    {
-      section: "M",
-      domain: "Algebra",
-      mastery_level: 2,
-      computed_at: "2026-08-01",
-      ...POISON,
-    },
+    { section: "M", domain: "Algebra", mastery_level: 2, computed_at: "2026-08-01", ...POISON },
   ];
   rows.student_skill_mastery = [
     {
@@ -96,22 +90,13 @@ function resetRows() {
     { feature_key: "calendar_access", required_tier: "premium", enabled: true },
   ];
   rows.canonical_skill_catalog = [
-    {
-      section: "M",
-      domain: "Algebra",
-      skill: "Linear Equations in One Variable",
-    },
+    { section: "M", domain: "Algebra", skill: "Linear Equations in One Variable" },
   ];
   // ALL SIX rows. The loader validates that every level 0-4 plus `unmeasured` is present and
   // throws otherwise — correctly, since a missing label would render as a silent gap. A
   // three-row fixture 500s every mastery route, which is how these cases first failed.
   rows.mastery_levels = [
-    {
-      level_key: "unmeasured",
-      level: null,
-      display_name: "Not enough answers yet",
-      sort_order: 0,
-    },
+    { level_key: "unmeasured", level: null, display_name: "Not enough answers yet", sort_order: 0 },
     { level_key: "L0", level: 0, display_name: "Beginning", sort_order: 1 },
     { level_key: "L1", level: 1, display_name: "Developing", sort_order: 2 },
     { level_key: "L2", level: 2, display_name: "Approaching", sort_order: 3 },
@@ -119,63 +104,25 @@ function resetRows() {
     { level_key: "L4", level: 4, display_name: "Advanced", sort_order: 5 },
   ];
   rows.student_section_kpi = [
-    {
-      section: "M",
-      events_total: 40,
-      accuracy_overall: 0.75,
-      current_streak_days: 3,
-      last_active_at: "2026-08-01",
-      ...POISON,
-    },
+    { section: "M", events_total: 40, accuracy_overall: 0.75, current_streak_days: 3, last_active_at: "2026-08-01", ...POISON },
   ];
   rows.student_domain_kpi = [
-    {
-      section: "M",
-      domain: "Algebra",
-      events_total: 20,
-      accuracy_overall: 0.5,
-      last_active_at: "2026-08-01",
-      ...POISON,
-    },
+    { section: "M", domain: "Algebra", events_total: 20, accuracy_overall: 0.5, last_active_at: "2026-08-01", ...POISON },
   ];
   rows.student_overall_kpi = [
     {
-      events_total: 40,
-      events_last_7d: 12,
-      events_last_30d: 30,
-      accuracy_overall: 0.7,
-      accuracy_last_7d: 0.75,
-      accuracy_last_30d: 0.7,
-      current_streak_days: 3,
-      longest_streak_days: 9,
-      sections_active: 2,
+      events_total: 40, events_last_7d: 12, events_last_30d: 30,
+      accuracy_overall: 0.7, accuracy_last_7d: 0.75, accuracy_last_30d: 0.7,
+      current_streak_days: 3, longest_streak_days: 9, sections_active: 2,
       // Active NOW, so the stored streak of 3 is current (G-NEW-16 zeroes a stale one).
-      last_active_at: new Date().toISOString(),
-      ...POISON,
+      last_active_at: new Date().toISOString(), ...POISON,
     },
   ];
   rows.student_section_projections = [
-    {
-      section: "M",
-      projected_score_mid: 600,
-      projected_score_low: 570,
-      projected_score_high: 630,
-      relevant_question_count: 40,
-      computed_at: "2026-08-01",
-      ...POISON,
-    },
+    { section: "M", projected_score_mid: 600, projected_score_low: 570, projected_score_high: 630, relevant_question_count: 40, computed_at: "2026-08-01", ...POISON },
   ];
   rows.student_section_projection_snapshots = [
-    {
-      section: "M",
-      projected_score_mid: 590,
-      projected_score_low: 560,
-      projected_score_high: 620,
-      relevant_question_count: 35,
-      snapshot_at: "2026-07-01",
-      snapshot_kind: "periodic",
-      ...POISON,
-    },
+    { section: "M", projected_score_mid: 590, projected_score_low: 560, projected_score_high: 620, relevant_question_count: 35, snapshot_at: "2026-07-01", snapshot_kind: "periodic", ...POISON },
   ];
   // The KPI view labels its windows with the platform-wide zone from
   // practice_runtime_config (Doc 02B §41). The accessor throws when the row is missing,
@@ -230,11 +177,7 @@ function resetRows() {
     },
   ];
   rows.calendar_plan_versions = [
-    {
-      version_no: 3,
-      input_snapshot: { profile: { study_days_mask: 127 } },
-      ...POISON,
-    },
+    { version_no: 3, input_snapshot: { profile: { study_days_mask: 127 } }, ...POISON },
   ];
   rows.calendar_current_plan = [
     {
@@ -256,10 +199,7 @@ function resetRows() {
       section: "M",
       // `explanation_key` at BOTH levels, which is what §16 withholds — the block's own key
       // and the per-domain one inside the mix. The guardian projection must drop both.
-      scope: {
-        level: "domain",
-        mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }],
-      },
+      scope: { level: "domain", mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }] },
       target_count: 20,
       source: "auto",
       derived_from_block_id: null,
@@ -295,13 +235,8 @@ function fakeClient() {
       let columns = "";
       const failed = (): boolean => failingReads.has(`${table}:${columns}`);
       const readError = { message: "planted read failure" };
-      const result = (): {
-        data: unknown[] | null;
-        error: { message: string } | null;
-      } =>
-        failed()
-          ? { data: null, error: readError }
-          : { data: rows[table] ?? [], error: null };
+      const result = (): { data: unknown[] | null; error: { message: string } | null } =>
+        failed() ? { data: null, error: readError } : { data: rows[table] ?? [], error: null };
       const one = async () =>
         failed()
           ? { data: null, error: readError }
@@ -328,26 +263,18 @@ function fakeClient() {
         insert: async () => ({ error: null }),
         single: one,
         maybeSingle: one,
-        then: (f?: (v: ReturnType<typeof result>) => unknown) =>
-          Promise.resolve(result()).then(f),
+        then: (f?: (v: ReturnType<typeof result>) => unknown) => Promise.resolve(result()).then(f),
       });
       return builder;
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
-      if (fn === "guardian_view_decision")
-        return { data: decision(args), error: null };
+      if (fn === "guardian_view_decision") return { data: decision(args), error: null };
       if (fn === "entitlement_active") return { data: true, error: null };
       if (fn === "student_streak") {
         return streakRpc.kind === "error"
           ? { data: null, error: { message: "student_streak unavailable" } }
           : {
-              data: [
-                {
-                  current_streak: streakRpc.current,
-                  today_done: streakRpc.todayDone,
-                  broken: false,
-                },
-              ],
+              data: [{ current_streak: streakRpc.current, today_done: streakRpc.todayDone, broken: false }],
               error: null,
             };
       }
@@ -356,9 +283,7 @@ function fakeClient() {
   };
 }
 
-vi.mock("../../apps/api/src/lib/supabase-server", () => ({
-  supabaseServer: fakeClient(),
-}));
+vi.mock("../../apps/api/src/lib/supabase-server", () => ({ supabaseServer: fakeClient() }));
 // `apps/api/src/lib/supabase-admin` is the accessor every apps/api service uses; the
 // server-side services use `apps/api/src/lib/supabase-server`. Both are faked, because a
 // route that reached a real client would hang for five seconds and then 500 — which is how
@@ -382,8 +307,7 @@ type Req = express.Request & {
 };
 
 async function call(principal: string, studentId: string, path: string) {
-  const router = (await import("../../server/routes/student-resources"))
-    .default;
+  const router = (await import("../../server/routes/student-resources")).default;
   const app = express();
   app.use((req, _res, next) => {
     const r = req as Req;
@@ -523,26 +447,10 @@ describe("subject-scoped resources — one route, two callers", () => {
     // (Driven through projections since SCL-188: the KPI routes now answer a guardian with
     // the streak only, by design, so they are no longer a parity route.)
     rows.student_section_projections = [
-      {
-        section: "M",
-        projected_score_mid: 600,
-        projected_score_low: 570,
-        projected_score_high: 630,
-        relevant_question_count: 40,
-        computed_at: "2026-08-01",
-        freshlyAddedField: "x",
-      },
+      { section: "M", projected_score_mid: 600, projected_score_low: 570, projected_score_high: 630, relevant_question_count: 40, computed_at: "2026-08-01", freshlyAddedField: "x" },
     ];
-    const self = await call(
-      STUDENT,
-      STUDENT,
-      STUDENT_RESOURCE_PATHS.projectionsSections,
-    );
-    const guardian = await call(
-      GUARDIAN,
-      STUDENT,
-      STUDENT_RESOURCE_PATHS.projectionsSections,
-    );
+    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
+    const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.projectionsSections);
     expect(guardian.body).toEqual(self.body);
     expect(JSON.stringify(self.body)).not.toContain("freshlyAddedField");
   });
@@ -550,11 +458,7 @@ describe("subject-scoped resources — one route, two callers", () => {
   // -- SCL-188 / G3-01: A GUARDIAN GETS THE STREAK, AND ONLY THE STREAK ------------
   describe("G3-01 — the KPI routes answer a guardian with the streak only", () => {
     it("PRESENCE FIRST — the student's own kpi/overall still carries every counter", async () => {
-      const self = await call(
-        STUDENT,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
-      );
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
       expect(self.status).toBe(200);
       // Non-vacuity: the fixture row has non-zero 7-day and 30-day counters, and they arrive.
       expect(self.body.week.questionsSolved).toBe(12);
@@ -563,20 +467,12 @@ describe("subject-scoped resources — one route, two callers", () => {
       // production parse STRIPS, so a builder field added without a schema update would be
       // dropped silently for a student; this asserts the parse is the identity on real route
       // output, at every depth, so that field fails CI instead.
-      expect(studentKpiOverallResponseSchema.parse(self.body)).toEqual(
-        self.body,
-      );
-      expect(allKeys(self.body).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(
-        true,
-      );
+      expect(studentKpiOverallResponseSchema.parse(self.body)).toEqual(self.body);
+      expect(allKeys(self.body).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
     });
 
     it("WIRE — the guardian kpi/overall is exactly { ok, currentStreakDays, requestId }", async () => {
-      const guardian = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
-      );
+      const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
       expect(guardian.status).toBe(200);
       // The value is the daily streak's (SCL-226), not a default: the stubbed student_streak is 3.
       expect(guardian.body.currentStreakDays).toBe(3);
@@ -586,42 +482,24 @@ describe("subject-scoped resources — one route, two callers", () => {
         "requestId",
       ]);
       // STRICT: a removed field reappearing fails the shared schema, not only this list.
-      expect(
-        guardianKpiOverallResponseSchema.safeParse(guardian.body).success,
-      ).toBe(true);
+      expect(guardianKpiOverallResponseSchema.safeParse(guardian.body).success).toBe(true);
     });
 
     for (const path of GUARDIAN_NARROWED_KPI_PATHS) {
       it(`WIRE ${path} — no events_*, accuracy_* or week_* key at any depth, as GUARDIAN`, async () => {
         const guardian = await call(GUARDIAN, STUDENT, path);
         expect(guardian.status).toBe(200);
-        expect(
-          allKeys(guardian.body).filter((k) => REMOVED_COUNTER_KEY.test(k)),
-        ).toEqual([]);
+        expect(allKeys(guardian.body).filter((k) => REMOVED_COUNTER_KEY.test(k))).toEqual([]);
         // And no metric id naming one, which is how `week_questions` travelled before.
-        expect(JSON.stringify(guardian.body)).not.toMatch(
-          /week_|accuracy|events/i,
-        );
+        expect(JSON.stringify(guardian.body)).not.toMatch(/week_|accuracy|events/i);
       });
     }
 
     it("sections and domains are 200 and empty for a guardian (Doc 05B §10.4 semantics)", async () => {
-      const selfSections = await call(
-        STUDENT,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiSections,
-      );
+      const selfSections = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
       expect(selfSections.body.sections.length).toBeGreaterThan(0); // presence, student side
-      const sections = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiSections,
-      );
-      const domains = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiDomains,
-      );
+      const sections = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiSections);
+      const domains = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiDomains);
       expect(sections.status).toBe(200);
       expect(sections.body.sections).toEqual([]);
       expect(domains.status).toBe(200);
@@ -629,15 +507,12 @@ describe("subject-scoped resources — one route, two callers", () => {
     });
 
     it("STUDENT, production posture: an unknown key is dropped at any depth and logged once, never a 500", async () => {
-      const { toStudentKpiOverallWire } =
-        await import("../../server/services/canonical-runtime-views");
+      const { toStudentKpiOverallWire } = await import(
+        "../../server/services/canonical-runtime-views"
+      );
       const { logger } = await import("../../server/logger");
       // The REAL builder's output, through the real route, plus two keys no schema names.
-      const self = await call(
-        STUDENT,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
-      );
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
       const { ok: _ok, requestId: _rid, ...view } = self.body;
       const planted = {
         ...view,
@@ -665,30 +540,15 @@ describe("subject-scoped resources — one route, two callers", () => {
     });
 
     it("the identity check itself goes red when a key is stripped (gate self-check)", async () => {
-      const self = await call(
-        STUDENT,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
-      );
-      const planted = {
-        ...self.body,
-        week: { ...self.body.week, surpriseNested: 2 },
-      };
-      expect(studentKpiOverallResponseSchema.parse(planted)).not.toEqual(
-        planted,
-      );
+      const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const planted = { ...self.body, week: { ...self.body.week, surpriseNested: 2 } };
+      expect(studentKpiOverallResponseSchema.parse(planted)).not.toEqual(planted);
     });
 
     it("the strict schema itself refuses a reappearing counter (gate self-check)", () => {
       const planted = { ok: true, currentStreakDays: 3, events_last_7d: 12 };
-      expect(guardianKpiOverallResponseSchema.safeParse(planted).success).toBe(
-        false,
-      );
-      expect(
-        allKeys({ a: [{ accuracyPct: 1 }] }).some((k) =>
-          REMOVED_COUNTER_KEY.test(k),
-        ),
-      ).toBe(true);
+      expect(guardianKpiOverallResponseSchema.safeParse(planted).success).toBe(false);
+      expect(allKeys({ a: [{ accuracyPct: 1 }] }).some((k) => REMOVED_COUNTER_KEY.test(k))).toBe(true);
     });
   });
 
@@ -697,34 +557,16 @@ describe("subject-scoped resources — one route, two callers", () => {
     const DAY_MS = 24 * 60 * 60 * 1000;
     const lastActive = (daysAgo: number): void => {
       const row = rows.student_overall_kpi![0] as Record<string, unknown>;
-      row.last_active_at = new Date(
-        Date.now() - daysAgo * DAY_MS,
-      ).toISOString();
+      row.last_active_at = new Date(Date.now() - daysAgo * DAY_MS).toISOString();
     };
     const streaks = async (): Promise<unknown[]> => {
-      const guardianKpi = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
+      const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+      const metric = (studentKpi.body.metrics as { id: string; value: number }[]).find(
+        (m) => m.id === "current_streak",
       );
-      const studentKpi = await call(
-        STUDENT,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
-      );
-      const calendar = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.calendar,
-      );
-      const metric = (
-        studentKpi.body.metrics as { id: string; value: number }[]
-      ).find((m) => m.id === "current_streak");
-      return [
-        guardianKpi.body.currentStreakDays,
-        metric?.value,
-        calendar.body.streak.current,
-      ];
+      return [guardianKpi.body.currentStreakDays, metric?.value, calendar.body.streak.current];
     };
 
     it("every surface carries the daily streak's number", async () => {
@@ -746,30 +588,12 @@ describe("subject-scoped resources — one route, two callers", () => {
       // Presence first: with the read healthy the streak is a real number on every surface.
       expect(await streaks()).toEqual([3, 3, 3]);
       streakRpc = { kind: "error" };
-      const guardianKpi = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
-      );
-      const studentKpi = await call(
-        STUDENT,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.kpiOverall,
-      );
-      const calendar = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.calendar,
-      );
-      expect([guardianKpi.status, studentKpi.status, calendar.status]).toEqual([
-        200, 200, 200,
-      ]);
-      expect(
-        guardianKpiOverallResponseSchema.safeParse(guardianKpi.body).success,
-      ).toBe(true);
-      expect(
-        studentKpiOverallResponseSchema.safeParse(studentKpi.body).success,
-      ).toBe(true);
+      const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
+      const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);
+      expect([guardianKpi.status, studentKpi.status, calendar.status]).toEqual([200, 200, 200]);
+      expect(guardianKpiOverallResponseSchema.safeParse(guardianKpi.body).success).toBe(true);
+      expect(studentKpiOverallResponseSchema.safeParse(studentKpi.body).success).toBe(true);
       expect(await streaks()).toEqual([null, null, null]);
     });
   });
@@ -789,11 +613,7 @@ describe("subject-scoped resources — one route, two callers", () => {
     async (_label, outcome) => {
       const { logger } = await import("../../server/logger");
       decision.mockReturnValue(outcome);
-      const guardian = await call(
-        GUARDIAN,
-        STUDENT,
-        STUDENT_RESOURCE_PATHS.masterySkills,
-      );
+      const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);
       expect(guardian.status).toBe(403);
       expect(guardian.body.error).toBe("Student access required");
       expect(guardian.body).not.toHaveProperty("skills");
@@ -808,30 +628,19 @@ describe("subject-scoped resources — one route, two callers", () => {
   );
 
   it("SKILLS — the student gets their rows from the same route", async () => {
-    const self = await call(
-      STUDENT,
-      STUDENT,
-      STUDENT_RESOURCE_PATHS.masterySkills,
-    );
+    const self = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.masterySkills);
     expect(self.status).toBe(200);
     expect(self.body.skills.length).toBeGreaterThan(0);
     // FLAT: every node carries its own section and domain, so the drill-down filters in the
     // client from one fetch (Doc 05B §10.3 names the resource without a path segment).
-    expect(self.body.skills[0]).toMatchObject({
-      section: "M",
-      domain: "Algebra",
-    });
+    expect(self.body.skills[0]).toMatchObject({ section: "M", domain: "Algebra" });
   });
 
   // -- STATUS CODES -----------------------------------------------------------
   it("404 for an unrelated caller, and the body does not vary by studentId", async () => {
     decision.mockReturnValue("not_linked");
     const a = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
-    const b = await call(
-      GUARDIAN,
-      OTHER_STUDENT,
-      STUDENT_RESOURCE_PATHS.kpiOverall,
-    );
+    const b = await call(GUARDIAN, OTHER_STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
     expect(a.status).toBe(404);
     expect(b.status).toBe(404);
     // MUTATION: interpolate the studentId into either message and this reds. A body that
@@ -841,11 +650,7 @@ describe("subject-scoped resources — one route, two callers", () => {
 
   it("402 when the subject's entitlement lapsed — the ruled deviation from 404", async () => {
     decision.mockReturnValue("student_unentitled");
-    const res = await call(
-      GUARDIAN,
-      STUDENT,
-      STUDENT_RESOURCE_PATHS.kpiOverall,
-    );
+    const res = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
     expect(res.status).toBe(402);
     expect(res.body.code).toBe("PAYMENT_REQUIRED");
   });
@@ -949,39 +754,33 @@ describe("subject-scoped resources — one route, two callers", () => {
     // SCL-185 (UI-01): same 402, same flat shape; the code is the platform's paid-feature
     // denial and `details.feature` is the table's key for THIS path — read back through the
     // one reader the client uses.
-    it.each(gated)(
-      "402s %s when its feature (%s) is denied",
-      async (path, key) => {
-        decision.mockReturnValue("allow");
-        rows.entitlement_features = []; // unknown key -> canAccessFeature fails closed
-        const res = await call(STUDENT, STUDENT, path);
-        expect(res.status).toBe(402);
-        expect(res.body).toEqual({
-          error: "Subscription required",
-          code: "entitlement_required",
-          message: "An active subscription is required to see this.",
-          details: { feature: key },
-          requestId: "req-sr",
-        });
-        expect(readEntitlementDenial(res.body)).toEqual({
-          feature: key,
-          message: "An active subscription is required to see this.",
-        });
-      },
-    );
+    it.each(gated)("402s %s when its feature (%s) is denied", async (path, key) => {
+      decision.mockReturnValue("allow");
+      rows.entitlement_features = []; // unknown key -> canAccessFeature fails closed
+      const res = await call(STUDENT, STUDENT, path);
+      expect(res.status).toBe(402);
+      expect(res.body).toEqual({
+        error: "Subscription required",
+        code: "entitlement_required",
+        message: "An active subscription is required to see this.",
+        details: { feature: key },
+        requestId: "req-sr",
+      });
+      expect(readEntitlementDenial(res.body)).toEqual({
+        feature: key,
+        message: "An active subscription is required to see this.",
+      });
+    });
 
     it.each([
       STUDENT_RESOURCE_PATHS.masteryDomains,
       STUDENT_RESOURCE_PATHS.masterySkills,
-    ])(
-      "UI-01 allow: a paid student is served %s (mastery_detail granted)",
-      async (path) => {
-        decision.mockReturnValue("allow");
-        const res = await call(STUDENT, STUDENT, path);
-        expect(res.status).toBe(200);
-        expect(readEntitlementDenial(res.body)).toBeNull();
-      },
-    );
+    ])("UI-01 allow: a paid student is served %s (mastery_detail granted)", async (path) => {
+      decision.mockReturnValue("allow");
+      const res = await call(STUDENT, STUDENT, path);
+      expect(res.status).toBe(200);
+      expect(readEntitlementDenial(res.body)).toBeNull();
+    });
 
     it.each(open)("still serves %s under the same denial", async (path) => {
       decision.mockReturnValue("allow");
@@ -992,11 +791,8 @@ describe("subject-scoped resources — one route, two callers", () => {
   });
 
   it("400 for a malformed studentId, before any read", async () => {
-    const res = await call(
-      STUDENT,
-      "not-a-uuid",
-      STUDENT_RESOURCE_PATHS.kpiOverall,
-    );
+    const res = await call(STUDENT, "not-a-uuid", STUDENT_RESOURCE_PATHS.kpiOverall);
     expect(res.status).toBe(400);
   });
 });
+
