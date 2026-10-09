@@ -66,10 +66,7 @@ export type BillingPlanPricing = {
  * basis for a percentage, so none is returned.
  */
 export function deriveBillingPlanPricing(
-  plan: Pick<
-    BillingPlanMetadata,
-    "amountCents" | "interval" | "intervalCount"
-  >,
+  plan: Pick<BillingPlanMetadata, "amountCents" | "interval" | "intervalCount">,
   monthlyAmountCents: number | null,
 ): BillingPlanPricing {
   const months = monthsInInterval(plan.interval, plan.intervalCount);
@@ -124,8 +121,9 @@ export function bestValuePlan(
         ? { plan: p.plan, perMonth: p.amountCents / months }
         : null;
     })
-    .filter((r): r is { plan: BillingPlanMetadata["plan"]; perMonth: number } =>
-      r !== null,
+    .filter(
+      (r): r is { plan: BillingPlanMetadata["plan"]; perMonth: number } =>
+        r !== null,
     )
     .sort((a, b) => a.perMonth - b.perMonth);
 

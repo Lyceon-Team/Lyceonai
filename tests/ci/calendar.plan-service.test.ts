@@ -35,17 +35,12 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
-const {
-  regeneratePlan,
-  regenerateDay,
-  editDay,
-  doItNow,
-  acknowledgeVersion,
-} = await import("../../server/services/calendar/plan-service");
-const { getStudentActivityStreak } = await import("../../server/services/activity-streak");
-const { loadCalendarConfig, CalendarConfigError, CALENDAR_CONFIG_KEYS } = await import(
-  "../../server/services/calendar/config"
-);
+const { regeneratePlan, regenerateDay, editDay, doItNow, acknowledgeVersion } =
+  await import("../../server/services/calendar/plan-service");
+const { getStudentActivityStreak } =
+  await import("../../server/services/activity-streak");
+const { loadCalendarConfig, CalendarConfigError, CALENDAR_CONFIG_KEYS } =
+  await import("../../server/services/calendar/config");
 
 function withRpc(replies: Record<string, unknown>): void {
   client = makeFakeClient({
@@ -59,7 +54,10 @@ function withRpc(replies: Record<string, unknown>): void {
 describe("§12.1 — each trigger reaches its own writer", () => {
   it("routes a horizon trigger to calendar_persist_version", async () => {
     withRpc({
-      calendar_persist_version: okReply({ version_no: 4, validator_result: "accepted" }),
+      calendar_persist_version: okReply({
+        version_no: 4,
+        validator_result: "accepted",
+      }),
     });
 
     const result = await regeneratePlan({
@@ -81,7 +79,10 @@ describe("§12.1 — each trigger reaches its own writer", () => {
 
   it("routes day_regenerate and day_reset to calendar_regenerate_day, differing only in the trigger", async () => {
     withRpc({
-      calendar_regenerate_day: okReply({ version_no: 9, validator_result: "accepted" }),
+      calendar_regenerate_day: okReply({
+        version_no: 9,
+        validator_result: "accepted",
+      }),
     });
 
     await regenerateDay({
@@ -104,11 +105,19 @@ describe("§12.1 — each trigger reaches its own writer", () => {
     expect(client.rpcs[0]?.args.p_trigger).toBe("day_regenerate");
     expect(client.rpcs[1]?.args.p_trigger).toBe("day_reset");
     const [first, second] = client.rpcs;
-    expect({ ...first?.args, p_trigger: null }).toEqual({ ...second?.args, p_trigger: null });
+    expect({ ...first?.args, p_trigger: null }).toEqual({
+      ...second?.args,
+      p_trigger: null,
+    });
   });
 
   it("sends the day-edit member list as jsonb, cleared day included", async () => {
-    withRpc({ calendar_edit_day: okReply({ version_no: 2, validator_result: "accepted" }) });
+    withRpc({
+      calendar_edit_day: okReply({
+        version_no: 2,
+        validator_result: "accepted",
+      }),
+    });
 
     await editDay({
       student_id: STUDENT,
@@ -123,7 +132,12 @@ describe("§12.1 — each trigger reaches its own writer", () => {
   });
 
   it("routes do-it-now to calendar_do_it_now with the block id", async () => {
-    withRpc({ calendar_do_it_now: okReply({ version_no: 6, validator_result: "accepted" }) });
+    withRpc({
+      calendar_do_it_now: okReply({
+        version_no: 6,
+        validator_result: "accepted",
+      }),
+    });
 
     await doItNow({
       student_id: STUDENT,
@@ -159,7 +173,8 @@ const V05 = {
 const V10 = {
   rule: "V-10",
   date: null,
-  detail: "the horizon creates 3 full-lengths, above max_full_length_per_horizon 2",
+  detail:
+    "the horizon creates 3 full-lengths, above max_full_length_per_horizon 2",
 } as const;
 
 describe("§18 — a rejected plan is a rejection, never a retry", () => {
@@ -282,10 +297,25 @@ describe("§18 — a rejected plan is a rejection, never a retry", () => {
 
 describe("the writers' own refusals become domain failures, not 500s", () => {
   const cases: { message: string; kind: string }[] = [
-    { message: "calendar_regenerate_day: 2026-09-01 is in the past and cannot be regenerated", kind: "past_date" },
-    { message: "calendar_regenerate_day: 2027-01-01 is beyond the 14 day horizon and is not planned yet", kind: "beyond_horizon" },
-    { message: "calendar_regenerate_day: student x has no study profile; nothing is generated", kind: "no_profile" },
-    { message: "calendar_do_it_now: block x does not belong to student y", kind: "not_found" },
+    {
+      message:
+        "calendar_regenerate_day: 2026-09-01 is in the past and cannot be regenerated",
+      kind: "past_date",
+    },
+    {
+      message:
+        "calendar_regenerate_day: 2027-01-01 is beyond the 14 day horizon and is not planned yet",
+      kind: "beyond_horizon",
+    },
+    {
+      message:
+        "calendar_regenerate_day: student x has no study profile; nothing is generated",
+      kind: "no_profile",
+    },
+    {
+      message: "calendar_do_it_now: block x does not belong to student y",
+      kind: "not_found",
+    },
     { message: "deadlock detected", kind: "write_failed" },
   ];
 
@@ -337,7 +367,11 @@ describe("§14 / sheet item 11 — the streak reads 05B and computes nothing", (
 
     const streak = await getStudentActivityStreak(STUDENT);
 
-    expect(streak).toEqual({ current: 6, longest: 21, history_complete: false });
+    expect(streak).toEqual({
+      current: 6,
+      longest: 21,
+      history_complete: false,
+    });
     // Served without a calendar_access check (INV-08-20): no entitlement table and no
     // calendar_access feature row is read. Since G-NEW-16 the one other read is the student's
     // ZONE (`student_study_profile.timezone`, falling back to the platform zone), because
@@ -349,7 +383,9 @@ describe("§14 / sheet item 11 — the streak reads 05B and computes nothing", (
   });
 
   it("reports unknown rather than zero for a student with no KPI row", async () => {
-    client = makeFakeClient({ tables: { student_overall_kpi: () => okReply(null) } });
+    client = makeFakeClient({
+      tables: { student_overall_kpi: () => okReply(null) },
+    });
 
     expect(await getStudentActivityStreak(STUDENT)).toEqual({
       current: null,
@@ -369,11 +405,15 @@ describe("§14 / sheet item 11 — the streak reads 05B and computes nothing", (
 
 describe("§18 — a missing config is a loud failure at the accessor", () => {
   it("reads every key it needs in ONE query PER TABLE, never one per key", async () => {
-    client = makeFakeClient({ tables: { calendar_runtime_config: () => okReply(CONFIG_ROWS) } });
+    client = makeFakeClient({
+      tables: { calendar_runtime_config: () => okReply(CONFIG_ROWS) },
+    });
 
     const config = await loadCalendarConfig();
 
-    expect(config.bounds.daily_minutes_presets).toEqual([15, 30, 45, 60, 90, 120]);
+    expect(config.bounds.daily_minutes_presets).toEqual([
+      15, 30, 45, 60, 90, 120,
+    ]);
     expect(config.horizonDays).toBe(14);
     expect(config.generatorVersion).toBe(GENERATOR);
     expect(config.estimates).toEqual({
@@ -387,11 +427,17 @@ describe("§18 — a missing config is a loud failure at the accessor", () => {
     // it rather than restating it, so a second table means a second query; copying the value
     // into calendar_runtime_config to avoid it would be the drift §20 exists to prevent.
     // Asserted PER TABLE, so adding a per-key round trip still reddens this.
-    const byTable = client.queries.reduce<Record<string, number>>((counts, query) => {
-      counts[query.table] = (counts[query.table] ?? 0) + 1;
-      return counts;
-    }, {});
-    expect(byTable).toEqual({ calendar_runtime_config: 1, practice_runtime_config: 1 });
+    const byTable = client.queries.reduce<Record<string, number>>(
+      (counts, query) => {
+        counts[query.table] = (counts[query.table] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    );
+    expect(byTable).toEqual({
+      calendar_runtime_config: 1,
+      practice_runtime_config: 1,
+    });
   });
 
   for (const key of CALENDAR_CONFIG_KEYS) {
@@ -403,7 +449,9 @@ describe("§18 — a missing config is a loud failure at the accessor", () => {
         },
       });
 
-      await expect(loadCalendarConfig()).rejects.toBeInstanceOf(CalendarConfigError);
+      await expect(loadCalendarConfig()).rejects.toBeInstanceOf(
+        CalendarConfigError,
+      );
     });
   }
 
@@ -413,13 +461,17 @@ describe("§18 — a missing config is a loud failure at the accessor", () => {
         calendar_runtime_config: () =>
           okReply(
             CONFIG_ROWS.map((row) =>
-              row.key === "daily_minutes_min" ? { key: row.key, value: 999 } : row,
+              row.key === "daily_minutes_min"
+                ? { key: row.key, value: 999 }
+                : row,
             ),
           ),
       },
     });
 
-    await expect(loadCalendarConfig()).rejects.toBeInstanceOf(CalendarConfigError);
+    await expect(loadCalendarConfig()).rejects.toBeInstanceOf(
+      CalendarConfigError,
+    );
   });
 
   it("throws on a read failure rather than serving a calendar built on defaults", async () => {
@@ -427,6 +479,8 @@ describe("§18 — a missing config is a loud failure at the accessor", () => {
       tables: { calendar_runtime_config: () => errReply("connection reset") },
     });
 
-    await expect(loadCalendarConfig()).rejects.toBeInstanceOf(CalendarConfigError);
+    await expect(loadCalendarConfig()).rejects.toBeInstanceOf(
+      CalendarConfigError,
+    );
   });
 });

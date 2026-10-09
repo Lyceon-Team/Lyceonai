@@ -43,10 +43,18 @@ vi.mock("../../server/services/calendar/plan-service", () => ({
   regeneratePlan: (...args: unknown[]) => regenerateMock(...args),
 }));
 
-const { runWeeklyRegeneration, weeklyIdempotencyKey, JOB_OUTCOMES, WEEKLY_JOB } =
-  await import("../../server/services/calendar/weekly-job");
+const {
+  runWeeklyRegeneration,
+  weeklyIdempotencyKey,
+  JOB_OUTCOMES,
+  WEEKLY_JOB,
+} = await import("../../server/services/calendar/weekly-job");
 
-type Candidate = { student_id: string; period_key: string; outcome: string | null };
+type Candidate = {
+  student_id: string;
+  period_key: string;
+  outcome: string | null;
+};
 
 // `regenerateMock` is module-scoped, so without this every assertion on its call count
 // reads the whole file's history and passes or fails by test order.
@@ -54,7 +62,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-function scenario(candidates: Candidate[], options?: { candidatesFail?: boolean }): void {
+function scenario(
+  candidates: Candidate[],
+  options?: { candidatesFail?: boolean },
+): void {
   jobRuns.length = 0;
   client = makeFakeClient({
     tables: {
@@ -102,8 +113,12 @@ describe("§12.5 — every student considered is recorded, skips included", () =
       "skipped_custom",
       "skipped_no_entitlement",
     ]);
-    expect(new Set(jobRuns.map((row) => row.job))).toEqual(new Set([WEEKLY_JOB]));
-    expect(new Set(jobRuns.map((row) => row.period_key))).toEqual(new Set([MONDAY]));
+    expect(new Set(jobRuns.map((row) => row.job))).toEqual(
+      new Set([WEEKLY_JOB]),
+    );
+    expect(new Set(jobRuns.map((row) => row.period_key))).toEqual(
+      new Set([MONDAY]),
+    );
   });
 
   it("generates only for the candidates the SQL left as null", async () => {
@@ -121,7 +136,10 @@ describe("§12.5 — every student considered is recorded, skips included", () =
   });
 
   it("every outcome it writes is one the calendar_job_runs CHECK admits", async () => {
-    regenerateMock.mockResolvedValue({ ok: false, error: { kind: "rejected", violations: [] } });
+    regenerateMock.mockResolvedValue({
+      ok: false,
+      error: { kind: "rejected", violations: [] },
+    });
     scenario([
       { student_id: A, period_key: MONDAY, outcome: null },
       { student_id: B, period_key: MONDAY, outcome: "skipped_fresh" },
@@ -153,9 +171,15 @@ describe("§12.1 — the weekly run is system-initiated, so it raises the §17.4
 
 describe("§4.2 — a rerun in the same local week is a replay", () => {
   it("derives the key from (student, period_key) and nothing else", () => {
-    expect(weeklyIdempotencyKey(A, MONDAY)).toBe(weeklyIdempotencyKey(A, MONDAY));
-    expect(weeklyIdempotencyKey(A, MONDAY)).not.toBe(weeklyIdempotencyKey(B, MONDAY));
-    expect(weeklyIdempotencyKey(A, MONDAY)).not.toBe(weeklyIdempotencyKey(A, "2026-09-28"));
+    expect(weeklyIdempotencyKey(A, MONDAY)).toBe(
+      weeklyIdempotencyKey(A, MONDAY),
+    );
+    expect(weeklyIdempotencyKey(A, MONDAY)).not.toBe(
+      weeklyIdempotencyKey(B, MONDAY),
+    );
+    expect(weeklyIdempotencyKey(A, MONDAY)).not.toBe(
+      weeklyIdempotencyKey(A, "2026-09-28"),
+    );
   });
 
   it("produces a well-formed uuid, because the ledger column is one", () => {
@@ -198,7 +222,10 @@ describe("per-student isolation — one bad row does not unplan everybody after 
 
   it("continues past a student the writer REFUSED, and records why", async () => {
     regenerateMock
-      .mockResolvedValueOnce({ ok: false, error: { kind: "rejected", violations: ["V-05"] } })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { kind: "rejected", violations: ["V-05"] },
+      })
       .mockResolvedValue({ ok: true, value: { version_no: 9 } });
     scenario([
       { student_id: A, period_key: MONDAY, outcome: null },
@@ -240,7 +267,9 @@ describe("the population read", () => {
   it("throws rather than reporting a clean pass it did not make", async () => {
     scenario([], { candidatesFail: true });
 
-    await expect(runWeeklyRegeneration()).rejects.toThrow(/calendar_weekly_candidates/);
+    await expect(runWeeklyRegeneration()).rejects.toThrow(
+      /calendar_weekly_candidates/,
+    );
     expect(regenerateMock).not.toHaveBeenCalled();
   });
 

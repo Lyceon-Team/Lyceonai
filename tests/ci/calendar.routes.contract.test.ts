@@ -89,17 +89,16 @@ vi.mock("../../server/services/calendar/launch-deps", () => ({
 // The limiter has its own ledger tests; here it only has to prove it is WIRED, and to which
 // bucket. A real one would need the rate_limit ledger tables.
 vi.mock("../../server/middleware/rate-limit", () => ({
-  singleBucketRateLimit: (bucketKey: string) => (_req: unknown, _res: unknown, next: () => void) => {
-    rateLimitCalls.push(bucketKey);
-    next();
-  },
+  singleBucketRateLimit:
+    (bucketKey: string) => (_req: unknown, _res: unknown, next: () => void) => {
+      rateLimitCalls.push(bucketKey);
+      next();
+    },
   applyRateLimitHeaders: vi.fn(),
   denyRateLimited: vi.fn(),
 }));
 
-const { calendarRouter } = await import(
-  "../../server/routes/calendar-routes"
-);
+const { calendarRouter } = await import("../../server/routes/calendar-routes");
 
 /** @param authenticated false mounts no user, so `callerOf` must answer 401. */
 function buildApp(authenticated = true) {
@@ -138,13 +137,31 @@ const OK_DAY = {
   extra_count: 0,
 };
 
+/**
+ * A profile whose calendar setup is complete, parsed through the canonical wire schema so the
+ * mock is a shape `readStudyProfile` can emit. (It was `{ timezone }` alone; since SCL-223 the
+ * route asks whether setup is COMPLETE, which a partial object cannot answer.)
+ */
+const COMPLETED_PROFILE = studyProfileSchema.parse({
+  timezone: "America/Chicago",
+  target_exam_date: null,
+  target_exam_dates: [],
+  target_score: null,
+  study_days_mask: 62,
+  daily_minutes: 60,
+  full_length_weekday: null,
+  full_length_interval_weeks: null,
+  planner_mode: "auto",
+  setup_completed_at: "2026-10-01T12:00:00.000Z",
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   rateLimitCalls.length = 0;
   entitled = true;
   // A profile EXISTS by default, so the §16 cases below still exercise the gated path.
   // Setup-before-the-gate is the exception and says so explicitly.
-  readProfileMock.mockResolvedValue({ timezone: "America/Chicago" });
+  readProfileMock.mockResolvedValue(COMPLETED_PROFILE);
   readCalendarMock.mockResolvedValue({
     ok: true,
     value: {
@@ -163,7 +180,10 @@ beforeEach(() => {
   doItNowMock.mockResolvedValue({ ok: true, value: { version_no: 7 } });
   moveBlockMock.mockResolvedValue({ ok: true, value: { version_no: 8 } });
   acknowledgeMock.mockResolvedValue({ ok: true, value: true });
-  upsertProfileMock.mockResolvedValue({ ok: true, value: { profile: {}, version_no: 8 } });
+  upsertProfileMock.mockResolvedValue({
+    ok: true,
+    value: { profile: {}, version_no: 8 },
+  });
   launchBlockMock.mockResolvedValue({
     ok: true,
     value: {
@@ -183,15 +203,64 @@ beforeEach(() => {
  * "setup runs before the entitlement gate" — removed from this list rather than deleted,
  * because an ungated route with no assertion at all is how a gate goes missing.
  */
-const MUTATIONS: { name: string; call: (app: express.Express) => request.Test }[] = [
-  { name: "POST /plan/regenerate", call: (app) => request(app).post("/api/calendar/plan/regenerate").send({ idempotency_key: KEY }) },
-  { name: "POST /days/:date/regenerate", call: (app) => request(app).post(`/api/calendar/days/${TODAY}/regenerate`).send({ idempotency_key: KEY }) },
-  { name: "POST /days/:date/reset", call: (app) => request(app).post(`/api/calendar/days/${TODAY}/reset`).send({ idempotency_key: KEY }) },
-  { name: "PUT /days/:date", call: (app) => request(app).put(`/api/calendar/days/${TODAY}`).send({ members: [], idempotency_key: KEY }) },
-  { name: "POST /blocks/:id/launch", call: (app) => request(app).post(`/api/calendar/blocks/${BLOCK_ID}/launch`).send({ client_instance_id: "c1", platform: "web" }) },
-  { name: "POST /blocks/:id/do-it-now", call: (app) => request(app).post(`/api/calendar/blocks/${BLOCK_ID}/do-it-now`).send({ idempotency_key: KEY }) },
-  { name: "POST /blocks/:id/move", call: (app) => request(app).post(`/api/calendar/blocks/${BLOCK_ID}/move`).send({ to_date: TODAY, idempotency_key: KEY }) },
-  { name: "POST /acknowledge", call: (app) => request(app).post("/api/calendar/acknowledge").send({ version_no: 3 }) },
+const MUTATIONS: {
+  name: string;
+  call: (app: express.Express) => request.Test;
+}[] = [
+  {
+    name: "POST /plan/regenerate",
+    call: (app) =>
+      request(app)
+        .post("/api/calendar/plan/regenerate")
+        .send({ idempotency_key: KEY }),
+  },
+  {
+    name: "POST /days/:date/regenerate",
+    call: (app) =>
+      request(app)
+        .post(`/api/calendar/days/${TODAY}/regenerate`)
+        .send({ idempotency_key: KEY }),
+  },
+  {
+    name: "POST /days/:date/reset",
+    call: (app) =>
+      request(app)
+        .post(`/api/calendar/days/${TODAY}/reset`)
+        .send({ idempotency_key: KEY }),
+  },
+  {
+    name: "PUT /days/:date",
+    call: (app) =>
+      request(app)
+        .put(`/api/calendar/days/${TODAY}`)
+        .send({ members: [], idempotency_key: KEY }),
+  },
+  {
+    name: "POST /blocks/:id/launch",
+    call: (app) =>
+      request(app)
+        .post(`/api/calendar/blocks/${BLOCK_ID}/launch`)
+        .send({ client_instance_id: "c1", platform: "web" }),
+  },
+  {
+    name: "POST /blocks/:id/do-it-now",
+    call: (app) =>
+      request(app)
+        .post(`/api/calendar/blocks/${BLOCK_ID}/do-it-now`)
+        .send({ idempotency_key: KEY }),
+  },
+  {
+    name: "POST /blocks/:id/move",
+    call: (app) =>
+      request(app)
+        .post(`/api/calendar/blocks/${BLOCK_ID}/move`)
+        .send({ to_date: TODAY, idempotency_key: KEY }),
+  },
+  {
+    name: "POST /acknowledge",
+    call: (app) =>
+      request(app).post("/api/calendar/acknowledge").send({ version_no: 3 }),
+  },
 ];
 
 describe("§16 — every calendar route is gated on calendar_access", () => {
@@ -238,7 +307,15 @@ describe("§16 — every calendar route is gated on calendar_access", () => {
       expect(res.status).toBe(402);
       expect(res.body.code).toBe("entitlement_required");
       expect(res.body.details).toEqual({ feature: "calendar_access" });
-      for (const mock of [regeneratePlanMock, regenerateDayMock, editDayMock, doItNowMock, launchBlockMock, upsertProfileMock, acknowledgeMock]) {
+      for (const mock of [
+        regeneratePlanMock,
+        regenerateDayMock,
+        editDayMock,
+        doItNowMock,
+        launchBlockMock,
+        upsertProfileMock,
+        acknowledgeMock,
+      ]) {
         expect(mock).not.toHaveBeenCalled();
       }
     });
@@ -250,7 +327,9 @@ describe("§8.1 — the caller is the session, never the body", () => {
     const app = buildApp(false);
 
     const statuses = await Promise.all([
-      request(app).get("/api/calendar").then((r) => r.status),
+      request(app)
+        .get("/api/calendar")
+        .then((r) => r.status),
       ...MUTATIONS.map((m) => m.call(app).then((r) => r.status)),
     ]);
 
@@ -260,7 +339,10 @@ describe("§8.1 — the caller is the session, never the body", () => {
   it("refuses a body that even MENTIONS a student id — the schema is strict", async () => {
     const res = await request(buildApp())
       .post("/api/calendar/plan/regenerate")
-      .send({ idempotency_key: KEY, student_id: "99999999-9999-9999-9999-999999999999" });
+      .send({
+        idempotency_key: KEY,
+        student_id: "99999999-9999-9999-9999-999999999999",
+      });
 
     // Stronger than ignoring it: a client that tries to name a subject is told no, rather
     // than being silently served its own plan and left believing the field works.
@@ -270,12 +352,18 @@ describe("§8.1 — the caller is the session, never the body", () => {
 
   it("passes the SESSION's student id to every service", async () => {
     const app = buildApp();
-    await request(app).post("/api/calendar/plan/regenerate").send({ idempotency_key: KEY });
-    await request(app).post(`/api/calendar/blocks/${BLOCK_ID}/launch`).send({ client_instance_id: "c1", platform: "web" });
+    await request(app)
+      .post("/api/calendar/plan/regenerate")
+      .send({ idempotency_key: KEY });
+    await request(app)
+      .post(`/api/calendar/blocks/${BLOCK_ID}/launch`)
+      .send({ client_instance_id: "c1", platform: "web" });
 
     expect(regeneratePlanMock.mock.calls[0]?.[0].student_id).toBe(STUDENT);
     expect(launchBlockMock.mock.calls[0]?.[0].student_id).toBe(STUDENT);
-    expect(readCalendarMock.mock.calls[0]?.[0]?.student_id ?? STUDENT).toBe(STUDENT);
+    expect(readCalendarMock.mock.calls[0]?.[0]?.student_id ?? STUDENT).toBe(
+      STUDENT,
+    );
   });
 });
 
@@ -296,19 +384,28 @@ describe("§15 — the happy paths and their shapes", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.version_no).toBe(4);
-    expect(regeneratePlanMock.mock.calls[0]?.[0].trigger).toBe("student_refresh");
+    expect(regeneratePlanMock.mock.calls[0]?.[0].trigger).toBe(
+      "student_refresh",
+    );
     expect(regeneratePlanMock.mock.calls[0]?.[0].initiated_by).toBe("student");
   });
 
   it("regenerate and reset differ only in the trigger", async () => {
     const app = buildApp();
-    await request(app).post(`/api/calendar/days/${TODAY}/regenerate`).send({ idempotency_key: KEY });
-    await request(app).post(`/api/calendar/days/${TODAY}/reset`).send({ idempotency_key: KEY });
+    await request(app)
+      .post(`/api/calendar/days/${TODAY}/regenerate`)
+      .send({ idempotency_key: KEY });
+    await request(app)
+      .post(`/api/calendar/days/${TODAY}/reset`)
+      .send({ idempotency_key: KEY });
 
     const [first, second] = regenerateDayMock.mock.calls;
     expect(first?.[0].trigger).toBe("day_regenerate");
     expect(second?.[0].trigger).toBe("day_reset");
-    expect({ ...first?.[0], trigger: null }).toEqual({ ...second?.[0], trigger: null });
+    expect({ ...first?.[0], trigger: null }).toEqual({
+      ...second?.[0],
+      trigger: null,
+    });
   });
 
   it("PUT /days/:date reads the day BACK rather than echoing the edit", async () => {
@@ -329,12 +426,16 @@ describe("§15 — the happy paths and their shapes", () => {
       .send({ client_instance_id: "c1", platform: "web" });
 
     expect(res.status).toBe(200);
-    expect(res.body.next).toBe("/practice/session/5f0a6b1c-2d3e-4f50-8a9b-0c1d2e3f4a5b");
+    expect(res.body.next).toBe(
+      "/practice/session/5f0a6b1c-2d3e-4f50-8a9b-0c1d2e3f4a5b",
+    );
     expect(res.body.resumed).toBe(false);
   });
 
   it("POST /acknowledge answers { ok: true }", async () => {
-    const res = await request(buildApp()).post("/api/calendar/acknowledge").send({ version_no: 3 });
+    const res = await request(buildApp())
+      .post("/api/calendar/acknowledge")
+      .send({ version_no: 3 });
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
@@ -354,7 +455,11 @@ describe("§15.1 — the launch body carries no idempotency key", () => {
   it("refuses a body carrying one, because the schema is strict", async () => {
     const res = await request(buildApp())
       .post(`/api/calendar/blocks/${BLOCK_ID}/launch`)
-      .send({ client_instance_id: "c1", platform: "web", idempotency_key: KEY });
+      .send({
+        client_instance_id: "c1",
+        platform: "web",
+        idempotency_key: KEY,
+      });
 
     expect(res.status).toBe(400);
     expect(launchBlockMock).not.toHaveBeenCalled();
@@ -363,40 +468,78 @@ describe("§15.1 — the launch body carries no idempotency key", () => {
 
 describe("§7 / §15 — the regenerate routes are rate limited, the others are not", () => {
   it("wires the plan bucket to /plan/regenerate", async () => {
-    await request(buildApp()).post("/api/calendar/plan/regenerate").send({ idempotency_key: KEY });
+    await request(buildApp())
+      .post("/api/calendar/plan/regenerate")
+      .send({ idempotency_key: KEY });
 
     expect(rateLimitCalls).toEqual(["calendar_plan_regenerate"]);
   });
 
   it("wires the day bucket to both day routes", async () => {
     const app = buildApp();
-    await request(app).post(`/api/calendar/days/${TODAY}/regenerate`).send({ idempotency_key: KEY });
-    await request(app).post(`/api/calendar/days/${TODAY}/reset`).send({ idempotency_key: KEY });
+    await request(app)
+      .post(`/api/calendar/days/${TODAY}/regenerate`)
+      .send({ idempotency_key: KEY });
+    await request(app)
+      .post(`/api/calendar/days/${TODAY}/reset`)
+      .send({ idempotency_key: KEY });
 
-    expect(rateLimitCalls).toEqual(["calendar_day_regenerate", "calendar_day_regenerate"]);
+    expect(rateLimitCalls).toEqual([
+      "calendar_day_regenerate",
+      "calendar_day_regenerate",
+    ]);
   });
 
   it("leaves the read, the day edit and the launch unlimited", async () => {
     const app = buildApp();
     await request(app).get("/api/calendar");
-    await request(app).put(`/api/calendar/days/${TODAY}`).send({ members: [], idempotency_key: KEY });
-    await request(app).post(`/api/calendar/blocks/${BLOCK_ID}/launch`).send({ client_instance_id: "c1", platform: "web" });
+    await request(app)
+      .put(`/api/calendar/days/${TODAY}`)
+      .send({ members: [], idempotency_key: KEY });
+    await request(app)
+      .post(`/api/calendar/blocks/${BLOCK_ID}/launch`)
+      .send({ client_instance_id: "c1", platform: "web" });
 
     expect(rateLimitCalls).toEqual([]);
   });
 });
 
 describe("§15's error list — every failure gets its own status", () => {
-  const planCases: { kind: string; extra?: Record<string, unknown>; status: number; code: string }[] = [
-    { kind: "past_date", extra: { date: "2026-09-01" }, status: 409, code: "CALENDAR_PAST_DATE" },
-    { kind: "beyond_horizon", extra: { date: "2027-01-01" }, status: 404, code: "CALENDAR_BEYOND_HORIZON" },
+  const planCases: {
+    kind: string;
+    extra?: Record<string, unknown>;
+    status: number;
+    code: string;
+  }[] = [
+    {
+      kind: "past_date",
+      extra: { date: "2026-09-01" },
+      status: 409,
+      code: "CALENDAR_PAST_DATE",
+    },
+    {
+      kind: "beyond_horizon",
+      extra: { date: "2027-01-01" },
+      status: 404,
+      code: "CALENDAR_BEYOND_HORIZON",
+    },
     { kind: "no_profile", status: 404, code: "CALENDAR_NO_PROFILE" },
     { kind: "not_found", status: 404, code: "CALENDAR_NOT_FOUND" },
     // SYSTEM-authored: the student asked for a fresh day, but WE composed it
     // (`calendar_regenerate_day` validates in `day_regenerate` mode). Our generator
     // emitting an invalid plan is a fault, so this one stays 500 and keeps §18's alert.
-    { kind: "rejected", extra: { authored: "system", violations: [], unreadable: 0 }, status: 500, code: "CALENDAR_PLAN_REJECTED" },
-    { kind: "write_failed", extra: { detail: "boom" }, status: 500, code: "CALENDAR_ERROR" },
+    {
+      kind: "rejected",
+      extra: { authored: "system", violations: [], unreadable: 0 },
+      status: 500,
+      code: "CALENDAR_PLAN_REJECTED",
+    },
+    {
+      kind: "write_failed",
+      extra: { detail: "boom" },
+      status: 500,
+      code: "CALENDAR_ERROR",
+    },
   ];
 
   for (const testCase of planCases) {
@@ -426,7 +569,12 @@ describe("§15's error list — every failure gets its own status", () => {
   it("a rejected plan tells the student their CURRENT plan is unchanged", async () => {
     regenerateDayMock.mockResolvedValue({
       ok: false,
-      error: { kind: "rejected", authored: "system", violations: [V05], unreadable: 0 },
+      error: {
+        kind: "rejected",
+        authored: "system",
+        violations: [V05],
+        unreadable: 0,
+      },
     });
 
     const res = await request(buildApp())
@@ -444,7 +592,12 @@ describe("§15's error list — every failure gets its own status", () => {
     it("answers 409, not 500 — the request was understood and declined", async () => {
       editDayMock.mockResolvedValue({
         ok: false,
-        error: { kind: "rejected", authored: "student", violations: [V05], unreadable: 0 },
+        error: {
+          kind: "rejected",
+          authored: "student",
+          violations: [V05],
+          unreadable: 0,
+        },
       });
 
       const res = await request(buildApp())
@@ -460,7 +613,12 @@ describe("§15's error list — every failure gets its own status", () => {
     it("carries the violations, so the refusal can be explained", async () => {
       editDayMock.mockResolvedValue({
         ok: false,
-        error: { kind: "rejected", authored: "student", violations: [V05], unreadable: 0 },
+        error: {
+          kind: "rejected",
+          authored: "student",
+          violations: [V05],
+          unreadable: 0,
+        },
       });
 
       const res = await request(buildApp())
@@ -478,7 +636,12 @@ describe("§15's error list — every failure gets its own status", () => {
       // managed to parse the reasons.
       editDayMock.mockResolvedValue({
         ok: false,
-        error: { kind: "rejected", authored: "student", violations: [], unreadable: 2 },
+        error: {
+          kind: "rejected",
+          authored: "student",
+          violations: [],
+          unreadable: 2,
+        },
       });
 
       const res = await request(buildApp())
@@ -507,12 +670,37 @@ describe("§15's error list — every failure gets its own status", () => {
     });
   });
 
-  const launchCases: { kind: string; extra?: Record<string, unknown>; status: number; code: string }[] = [
+  const launchCases: {
+    kind: string;
+    extra?: Record<string, unknown>;
+    status: number;
+    code: string;
+  }[] = [
     { kind: "not_found", status: 404, code: "CALENDAR_NOT_FOUND" },
-    { kind: "already_complete", extra: { target: 20, actual: 20 }, status: 409, code: "CALENDAR_ALREADY_COMPLETE" },
-    { kind: "engine_unavailable", extra: { engine: "review" }, status: 409, code: "CALENDAR_ENGINE_UNAVAILABLE" },
-    { kind: "engine_error", extra: { engine: "practice" }, status: 502, code: "CALENDAR_ENGINE_ERROR" },
-    { kind: "link_failed", extra: { detail: "boom" }, status: 502, code: "CALENDAR_ENGINE_ERROR" },
+    {
+      kind: "already_complete",
+      extra: { target: 20, actual: 20 },
+      status: 409,
+      code: "CALENDAR_ALREADY_COMPLETE",
+    },
+    {
+      kind: "engine_unavailable",
+      extra: { engine: "review" },
+      status: 409,
+      code: "CALENDAR_ENGINE_UNAVAILABLE",
+    },
+    {
+      kind: "engine_error",
+      extra: { engine: "practice" },
+      status: 502,
+      code: "CALENDAR_ENGINE_ERROR",
+    },
+    {
+      kind: "link_failed",
+      extra: { detail: "boom" },
+      status: 502,
+      code: "CALENDAR_ENGINE_ERROR",
+    },
   ];
 
   for (const testCase of launchCases) {
@@ -581,14 +769,19 @@ describe("§15's error list — every failure gets its own status", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("setup_required");
-    expect(res.body.defaults.daily_minutes_presets).toEqual([15, 30, 45, 60, 90, 120]);
+    expect(res.body.defaults.daily_minutes_presets).toEqual([
+      15, 30, 45, 60, 90, 120,
+    ]);
     expect(res.body.error).toBeUndefined();
   });
 
   it("the 404 that remains is the MUTATION path, under its own code", async () => {
     // A write against a student with no study profile at all. A correct client never
     // issues it, and it must not be conflated with the pre-setup read.
-    regenerateDayMock.mockResolvedValue({ ok: false, error: { kind: "no_profile" } });
+    regenerateDayMock.mockResolvedValue({
+      ok: false,
+      error: { kind: "no_profile" },
+    });
 
     const res = await request(buildApp())
       .post(`/api/calendar/days/${TODAY}/regenerate`)
@@ -599,7 +792,9 @@ describe("§15's error list — every failure gets its own status", () => {
   });
 
   it("a thrown service is a 500 with a correlation id and no detail", async () => {
-    readCalendarMock.mockRejectedValue(new Error("calendar_runtime_config: horizon_days is not seeded"));
+    readCalendarMock.mockRejectedValue(
+      new Error("calendar_runtime_config: horizon_days is not seeded"),
+    );
 
     const res = await request(buildApp()).get("/api/calendar");
 
@@ -620,7 +815,9 @@ describe("§8.1 step 3 — bad input is 400 before any work", () => {
   });
 
   it("refuses a mutation with no idempotency key (§4.2)", async () => {
-    const res = await request(buildApp()).post("/api/calendar/plan/regenerate").send({});
+    const res = await request(buildApp())
+      .post("/api/calendar/plan/regenerate")
+      .send({});
 
     expect(res.status).toBe(400);
     expect(regeneratePlanMock).not.toHaveBeenCalled();
@@ -710,7 +907,6 @@ describe("POST /blocks/:id/move (§12.2, §12.4)", () => {
   });
 });
 
-
 // ── Setup before the gate (owner ruling 2026-09-24, SCL-130) ────────────────
 
 describe("setup runs before the entitlement gate", () => {
@@ -719,7 +915,10 @@ describe("setup runs before the entitlement gate", () => {
     readProfileMock.mockResolvedValue(null);
     readCalendarMock.mockResolvedValue({
       ok: true,
-      value: { status: "setup_required", defaults: { timezone: "America/Chicago" } },
+      value: {
+        status: "setup_required",
+        defaults: { timezone: "America/Chicago" },
+      },
     });
 
     const res = await request(buildApp()).get("/api/calendar");
@@ -732,7 +931,7 @@ describe("setup runs before the entitlement gate", () => {
 
   it("GET /api/calendar still answers 402 to a free student who HAS a profile — the plan is gated", async () => {
     entitled = false;
-    readProfileMock.mockResolvedValue({ timezone: "America/Chicago" });
+    readProfileMock.mockResolvedValue(COMPLETED_PROFILE);
 
     const res = await request(buildApp()).get("/api/calendar");
 
@@ -744,9 +943,31 @@ describe("setup runs before the entitlement gate", () => {
     expect(readCalendarMock).not.toHaveBeenCalled();
   });
 
+  it("SCL-223: a row holding only SAT dates is still pre-setup — the free student gets the setup form, not 402", async () => {
+    entitled = false;
+    readProfileMock.mockResolvedValue(
+      studyProfileSchema.parse({
+        ...COMPLETED_PROFILE,
+        target_exam_date: "2026-12-05",
+        target_exam_dates: ["2026-12-05"],
+        study_days_mask: null,
+        daily_minutes: null,
+        setup_completed_at: null,
+      }),
+    );
+
+    const res = await request(buildApp()).get("/api/calendar");
+
+    expect(res.status).not.toBe(402);
+    expect(readCalendarMock).toHaveBeenCalled();
+  });
+
   it("PUT /profile SAVES a free student's answers rather than answering 402", async () => {
     entitled = false;
-    upsertProfileMock.mockResolvedValue({ ok: true, value: { status: "ready" } });
+    upsertProfileMock.mockResolvedValue({
+      ok: true,
+      value: { status: "ready" },
+    });
 
     const res = await request(buildApp())
       .put("/api/calendar/profile")
@@ -760,11 +981,18 @@ describe("setup runs before the entitlement gate", () => {
 
   it("a free student pressing straight through — no target score, no exam date — is still saved", async () => {
     entitled = false;
-    upsertProfileMock.mockResolvedValue({ ok: true, value: { status: "ready" } });
+    upsertProfileMock.mockResolvedValue({
+      ok: true,
+      value: { status: "ready" },
+    });
 
     const res = await request(buildApp())
       .put("/api/calendar/profile")
-      .send({ target_score: null, target_exam_date: null, idempotency_key: KEY });
+      .send({
+        target_score: null,
+        target_exam_date: null,
+        idempotency_key: KEY,
+      });
 
     expect(res.status).toBe(200);
     expect(upsertProfileMock).toHaveBeenCalled();
@@ -787,6 +1015,7 @@ describe("OQ-25 — GET /profile serves the study profile to any tier, and never
   const SAVED_PROFILE = studyProfileSchema.parse({
     timezone: "America/Chicago",
     target_exam_date: "2027-03-13",
+    target_exam_dates: ["2027-03-13"],
     target_score: 1400,
     study_days_mask: 62,
     daily_minutes: 60,
@@ -852,9 +1081,8 @@ describe("OQ-25 — GET /profile serves the study profile to any tier, and never
   it("does not ask the entitlement service — the read is ungated by construction", async () => {
     entitled = false;
     readProfileMock.mockResolvedValue(SAVED_PROFILE);
-    const { EntitlementService } = await import(
-      "../../server/services/entitlement-service"
-    );
+    const { EntitlementService } =
+      await import("../../server/services/entitlement-service");
 
     const res = await request(buildApp()).get("/api/calendar/profile");
 
@@ -878,7 +1106,9 @@ describe("OQ-25 — GET /profile serves the study profile to any tier, and never
   });
 
   it("a thrown read is a 500 with a correlation id and no detail", async () => {
-    readProfileMock.mockRejectedValue(new Error("study_profile_read_failed: boom"));
+    readProfileMock.mockRejectedValue(
+      new Error("study_profile_read_failed: boom"),
+    );
 
     const res = await request(buildApp()).get("/api/calendar/profile");
 
@@ -908,9 +1138,8 @@ describe("OQ-25 — GET /profile serves the study profile to any tier, and never
     // The real `requireStudentOrAdmin`, mounted as server/index.ts mounts it. A guardian
     // reads the exam date and target through the guardian calendar, which carries the
     // link-active AND entitlement-active derivation; this route does not, so it is closed.
-    const { requireStudentOrAdmin } = await import(
-      "../../server/middleware/supabase-auth"
-    );
+    const { requireStudentOrAdmin } =
+      await import("../../server/middleware/supabase-auth");
     const app = express();
     app.use((req, _res, next) => {
       req.requestId = "req-test";

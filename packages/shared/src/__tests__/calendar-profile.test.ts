@@ -25,13 +25,16 @@ const BOUNDS: StudyProfileBounds = {
 const KEY = "4b3f1a9c-2d5e-4c7b-9a1f-8e6d5c4b3a21";
 
 function upsert(body: unknown, localToday = "2026-09-17") {
-  return makeStudyProfileUpsertSchema({ bounds: BOUNDS, localToday }).safeParse(body);
+  return makeStudyProfileUpsertSchema({ bounds: BOUNDS, localToday }).safeParse(
+    body,
+  );
 }
 
 describe("study profile read shape", () => {
   const row = {
     timezone: "America/Los_Angeles",
     target_exam_date: "2026-11-07",
+    target_exam_dates: ["2026-11-07"],
     target_score: 1400,
     study_days_mask: 62,
     daily_minutes: 45,
@@ -49,16 +52,24 @@ describe("study profile read shape", () => {
   });
 
   it("refuses a target score off the step of 10", () => {
-    expect(studyProfileSchema.safeParse({ ...row, target_score: 1405 }).success).toBe(false);
+    expect(
+      studyProfileSchema.safeParse({ ...row, target_score: 1405 }).success,
+    ).toBe(false);
   });
 
   it("refuses a target score outside 400…1600", () => {
-    expect(studyProfileSchema.safeParse({ ...row, target_score: 1610 }).success).toBe(false);
-    expect(studyProfileSchema.safeParse({ ...row, target_score: 390 }).success).toBe(false);
+    expect(
+      studyProfileSchema.safeParse({ ...row, target_score: 1610 }).success,
+    ).toBe(false);
+    expect(
+      studyProfileSchema.safeParse({ ...row, target_score: 390 }).success,
+    ).toBe(false);
   });
 
   it("refuses a study_days_mask of 0 — a plan needs at least one study day", () => {
-    expect(studyProfileSchema.safeParse({ ...row, study_days_mask: 0 }).success).toBe(false);
+    expect(
+      studyProfileSchema.safeParse({ ...row, study_days_mask: 0 }).success,
+    ).toBe(false);
   });
 
   // INVERTED 2026-09-24 (SCL-130, R-08-17 reversed). This case used to assert the
@@ -84,15 +95,20 @@ describe("study profile read shape", () => {
 
   it("allows a null target score with setup not yet complete", () => {
     expect(
-      studyProfileSchema.safeParse({ ...row, target_score: null, setup_completed_at: null })
-        .success,
+      studyProfileSchema.safeParse({
+        ...row,
+        target_score: null,
+        setup_completed_at: null,
+      }).success,
     ).toBe(true);
   });
 
   it("refuses a key the table does not have", () => {
     expect(
-      studyProfileSchema.safeParse({ ...row, last_acknowledged_nonstudent_version_no: 3 })
-        .success,
+      studyProfileSchema.safeParse({
+        ...row,
+        last_acknowledged_nonstudent_version_no: 3,
+      }).success,
     ).toBe(false);
   });
 });
@@ -118,7 +134,8 @@ describe("bounds", () => {
 
   it("refuses a max below the min", () => {
     expect(
-      studyProfileBoundsSchema.safeParse({ ...BOUNDS, daily_minutes_max: 10 }).success,
+      studyProfileBoundsSchema.safeParse({ ...BOUNDS, daily_minutes_max: 10 })
+        .success,
     ).toBe(false);
   });
 
@@ -134,7 +151,9 @@ describe("bounds", () => {
 
 describe("profile upsert", () => {
   it("accepts a single changed field with an idempotency key", () => {
-    expect(upsert({ daily_minutes: 45, idempotency_key: KEY }).success).toBe(true);
+    expect(upsert({ daily_minutes: 45, idempotency_key: KEY }).success).toBe(
+      true,
+    );
   });
 
   it("refuses a body that changes nothing", () => {
@@ -146,44 +165,50 @@ describe("profile upsert", () => {
   });
 
   it("refuses daily_minutes that is not one of the offered presets", () => {
-    expect(upsert({ daily_minutes: 50, idempotency_key: KEY }).success).toBe(false);
+    expect(upsert({ daily_minutes: 50, idempotency_key: KEY }).success).toBe(
+      false,
+    );
   });
 
   it("refuses daily_minutes outside the configured bounds even when the column allows it", () => {
     // The column CHECK is 5…600; the configured bound is 15…180.
-    expect(upsert({ daily_minutes: 10, idempotency_key: KEY }).success).toBe(false);
+    expect(upsert({ daily_minutes: 10, idempotency_key: KEY }).success).toBe(
+      false,
+    );
   });
 
   it("accepts an exam date inside the window and refuses one beyond it", () => {
-    expect(upsert({ target_exam_date: "2026-11-07", idempotency_key: KEY }).success).toBe(
-      true,
-    );
+    expect(
+      upsert({ target_exam_date: "2026-11-07", idempotency_key: KEY }).success,
+    ).toBe(true);
     // 2026-09-17 + 540 days = 2028-03-10.
-    expect(upsert({ target_exam_date: "2028-03-10", idempotency_key: KEY }).success).toBe(
-      true,
-    );
-    expect(upsert({ target_exam_date: "2028-03-11", idempotency_key: KEY }).success).toBe(
-      false,
-    );
+    expect(
+      upsert({ target_exam_date: "2028-03-10", idempotency_key: KEY }).success,
+    ).toBe(true);
+    expect(
+      upsert({ target_exam_date: "2028-03-11", idempotency_key: KEY }).success,
+    ).toBe(false);
   });
 
   it("refuses an exam date in the past and accepts today", () => {
-    expect(upsert({ target_exam_date: "2026-09-16", idempotency_key: KEY }).success).toBe(
-      false,
-    );
-    expect(upsert({ target_exam_date: "2026-09-17", idempotency_key: KEY }).success).toBe(
-      true,
-    );
+    expect(
+      upsert({ target_exam_date: "2026-09-16", idempotency_key: KEY }).success,
+    ).toBe(false);
+    expect(
+      upsert({ target_exam_date: "2026-09-17", idempotency_key: KEY }).success,
+    ).toBe(true);
   });
 
   it("accepts an explicit null exam date — 'not yet' is an answer", () => {
-    expect(upsert({ target_exam_date: null, idempotency_key: KEY }).success).toBe(true);
+    expect(
+      upsert({ target_exam_date: null, idempotency_key: KEY }).success,
+    ).toBe(true);
   });
 
   it("refuses a field the profile does not have", () => {
-    expect(upsert({ planner_mode: "auto", streak: 4, idempotency_key: KEY }).success).toBe(
-      false,
-    );
+    expect(
+      upsert({ planner_mode: "auto", streak: 4, idempotency_key: KEY }).success,
+    ).toBe(false);
   });
 });
 
@@ -223,7 +248,10 @@ describe("the exam schedule is one setting (full_length_pair)", () => {
   });
 
   it("refuses a cadence with no weekday, and says which field is missing", () => {
-    const result = upsert({ full_length_interval_weeks: 2, idempotency_key: KEY });
+    const result = upsert({
+      full_length_interval_weeks: 2,
+      idempotency_key: KEY,
+    });
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues.map((issue) => issue.path.join("."))).toContain(
@@ -244,10 +272,11 @@ describe("the exam schedule is one setting (full_length_pair)", () => {
   });
 
   it("leaves a body that names NEITHER half alone — the pair it does not touch stays valid", () => {
-    expect(upsert({ daily_minutes: 60, idempotency_key: KEY }).success).toBe(true);
+    expect(upsert({ daily_minutes: 60, idempotency_key: KEY }).success).toBe(
+      true,
+    );
   });
 });
-
 
 /**
  * The count behind "about N practice tests before 5 December". One function, shared with

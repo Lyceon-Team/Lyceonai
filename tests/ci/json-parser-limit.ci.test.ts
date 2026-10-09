@@ -46,9 +46,11 @@ describe("CI parser limit guardrails", () => {
   });
 
   it("oversize JSON request to a representative JSON route returns parser rejection", async () => {
-    const res = await request(app).post("/api/tutor/conversations").send({
-      message: "x".repeat(1_050_000),
-    });
+    const res = await request(app)
+      .post("/api/tutor/conversations")
+      .send({
+        message: "x".repeat(1_050_000),
+      });
 
     // 413 from express.json limit, or 401 from auth middleware — either means
     // the oversize payload did not reach business logic

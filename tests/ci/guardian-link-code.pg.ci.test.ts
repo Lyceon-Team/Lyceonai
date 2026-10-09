@@ -109,9 +109,8 @@ async function buildApp(): Promise<express.Express> {
 
 /** Issue a code directly through the domain module and read it back from the row. */
 async function currentCode(): Promise<string> {
-  const { issueStudentLinkCode } = await import(
-    "../../server/lib/student-link-code"
-  );
+  const { issueStudentLinkCode } =
+    await import("../../server/lib/student-link-code");
   const issued = await issueStudentLinkCode(STUDENT);
   expect(issued).not.toBeNull();
   return issued!.code;
@@ -124,156 +123,183 @@ async function activeLinks(): Promise<number> {
   return r.rows[0].c as number;
 }
 
-describe.skipIf(!PG_AVAILABLE)("guardian linking by code — real Postgres", () => {
-  beforeAll(async () => {
-    pg = await bootstrapPgDatabase(DB_NAME);
+describe.skipIf(!PG_AVAILABLE)(
+  "guardian linking by code — real Postgres",
+  () => {
+    beforeAll(async () => {
+      pg = await bootstrapPgDatabase(DB_NAME);
 
-    await pg.query(
-      `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4),($5,$6)`,
-      [
-        GUARDIAN, "g@example.test",
-        GUARDIAN_B, "g2@example.test",
-        STUDENT, "s@example.test",
-      ],
-    );
-    await pg.query(
-      // G1-02 (R10): a guardian redeems only with an adult date of birth on file.
-      `INSERT INTO public.profiles (id, email, role, date_of_birth) VALUES
+      await pg.query(
+        `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4),($5,$6)`,
+        [
+          GUARDIAN,
+          "g@example.test",
+          GUARDIAN_B,
+          "g2@example.test",
+          STUDENT,
+          "s@example.test",
+        ],
+      );
+      await pg.query(
+        // G1-02 (R10): a guardian redeems only with an adult date of birth on file.
+        `INSERT INTO public.profiles (id, email, role, date_of_birth) VALUES
          ($1,$2,'guardian','1980-01-01'),($3,$4,'guardian','1980-01-01'),($5,$6,'student','2000-01-01')`,
-      // The student is an adult so the own-code case below reaches the own-code refusal, not the age rule.
-      [
-        GUARDIAN, "g@example.test",
-        GUARDIAN_B, "g2@example.test",
-        STUDENT, "s@example.test",
-      ],
-    );
-  });
+        // The student is an adult so the own-code case below reaches the own-code refusal, not the age rule.
+        [
+          GUARDIAN,
+          "g@example.test",
+          GUARDIAN_B,
+          "g2@example.test",
+          STUDENT,
+          "s@example.test",
+        ],
+      );
+    });
 
-  afterAll(async () => {
-    if (pg) await pg.end();
-  });
+    afterAll(async () => {
+      if (pg) await pg.end();
+    });
 
-  beforeEach(async () => {
-    session.id = GUARDIAN;
-    session.role = "guardian";
-    await pg.query(`DELETE FROM public.guardian_links`);
-    await pg.query(`DELETE FROM public.notification_events`);
-    await pg.query(`DELETE FROM public.rate_limit_ledger`);
-    await pg.query(
-      `UPDATE public.profiles SET student_link_code = NULL, student_link_code_issued_at = NULL`,
-    );
-  });
+    beforeEach(async () => {
+      session.id = GUARDIAN;
+      session.role = "guardian";
+      await pg.query(`DELETE FROM public.guardian_links`);
+      await pg.query(`DELETE FROM public.notification_events`);
+      await pg.query(`DELETE FROM public.rate_limit_ledger`);
+      await pg.query(
+        `UPDATE public.profiles SET student_link_code = NULL, student_link_code_issued_at = NULL`,
+      );
+    });
 
-  it("a guardian redeems a code and the link is ACTIVE immediately — no pending state", async () => {
-    const code = await currentCode();
-    const res = await request(await buildApp())
-      .post("/api/guardian/link/redeem")
-      .send({ code, acceptParentGuardianTerms: true });
+    it("a guardian redeems a code and the link is ACTIVE immediately — no pending state", async () => {
+      const code = await currentCode();
+      const res = await request(await buildApp())
+        .post("/api/guardian/link/redeem")
+        .send({ code, acceptParentGuardianTerms: true });
 
-    expect(res.status).toBe(201);
-    const row = await pg.query(
-      `SELECT status, guardian_profile_id, student_profile_id, accepted_at
+      expect(res.status).toBe(201);
+      const row = await pg.query(
+        `SELECT status, guardian_profile_id, student_profile_id, accepted_at
          FROM public.guardian_links`,
-    );
-    expect(row.rowCount).toBe(1);
-    expect(row.rows[0].status).toBe("active");
-    expect(row.rows[0].guardian_profile_id).toBe(GUARDIAN);
-    expect(row.rows[0].student_profile_id).toBe(STUDENT);
-    // No handshake to wait for, so acceptance is recorded at creation.
-    expect(row.rows[0].accepted_at).not.toBeNull();
-  });
+      );
+      expect(row.rowCount).toBe(1);
+      expect(row.rows[0].status).toBe("active");
+      expect(row.rows[0].guardian_profile_id).toBe(GUARDIAN);
+      expect(row.rows[0].student_profile_id).toBe(STUDENT);
+      // No handshake to wait for, so acceptance is recorded at creation.
+      expect(row.rows[0].accepted_at).not.toBeNull();
+    });
 
-  it("spends the code: the SAME code cannot be redeemed twice", async () => {
-    const code = await currentCode();
-    const app = await buildApp();
+    it("spends the code: the SAME code cannot be redeemed twice", async () => {
+      const code = await currentCode();
+      const app = await buildApp();
 
-    expect((await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true })).status).toBe(201);
+      expect(
+        (
+          await request(app)
+            .post("/api/guardian/link/redeem")
+            .send({ code, acceptParentGuardianTerms: true })
+        ).status,
+      ).toBe(201);
 
-    session.id = GUARDIAN_B;
-    const second = await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true });
-    expect(second.status).toBe(400);
-    expect(second.body.error.code).toBe("GUARDIAN_LINK_CODE_REFUSED");
-    expect(await activeLinks()).toBe(1);
-  });
+      session.id = GUARDIAN_B;
+      const second = await request(app)
+        .post("/api/guardian/link/redeem")
+        .send({ code, acceptParentGuardianTerms: true });
+      expect(second.status).toBe(400);
+      expect(second.body.error.code).toBe("GUARDIAN_LINK_CODE_REFUSED");
+      expect(await activeLinks()).toBe(1);
+    });
 
-  /**
-   * EDGE CASE 4 — the one no mocked query layer can establish. Both requests reach one
-   * conditional UPDATE against one row; Postgres serialises them.
-   */
-  it("two guardians racing one code produce exactly ONE link", async () => {
-    const code = await currentCode();
-    const appA = await buildApp();
+    /**
+     * EDGE CASE 4 — the one no mocked query layer can establish. Both requests reach one
+     * conditional UPDATE against one row; Postgres serialises them.
+     */
+    it("two guardians racing one code produce exactly ONE link", async () => {
+      const code = await currentCode();
+      const appA = await buildApp();
 
-    const [a, b] = await Promise.all([
-      request(appA).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true }),
-      request(appA).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true }),
-    ]);
+      const [a, b] = await Promise.all([
+        request(appA)
+          .post("/api/guardian/link/redeem")
+          .send({ code, acceptParentGuardianTerms: true }),
+        request(appA)
+          .post("/api/guardian/link/redeem")
+          .send({ code, acceptParentGuardianTerms: true }),
+      ]);
 
-    const statuses = [a.status, b.status].sort();
-    expect(statuses).toEqual([201, 400]);
-    expect(await activeLinks()).toBe(1);
-  });
+      const statuses = [a.status, b.status].sort();
+      expect(statuses).toEqual([201, 400]);
+      expect(await activeLinks()).toBe(1);
+    });
 
-  /** EDGE CASE 1 — used, expired and never-real are indistinguishable from outside. */
-  it("gives the SAME response for a code that never existed as for one already spent", async () => {
-    const app = await buildApp();
-    const never = await request(app)
-      .post("/api/guardian/link/redeem")
-      .send({ code: "ZZZZZZ", acceptParentGuardianTerms: true });
+    /** EDGE CASE 1 — used, expired and never-real are indistinguishable from outside. */
+    it("gives the SAME response for a code that never existed as for one already spent", async () => {
+      const app = await buildApp();
+      const never = await request(app)
+        .post("/api/guardian/link/redeem")
+        .send({ code: "ZZZZZZ", acceptParentGuardianTerms: true });
 
-    const code = await currentCode();
-    await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true });
-    session.id = GUARDIAN_B;
-    const spent = await request(app).post("/api/guardian/link/redeem").send({ code, acceptParentGuardianTerms: true });
+      const code = await currentCode();
+      await request(app)
+        .post("/api/guardian/link/redeem")
+        .send({ code, acceptParentGuardianTerms: true });
+      session.id = GUARDIAN_B;
+      const spent = await request(app)
+        .post("/api/guardian/link/redeem")
+        .send({ code, acceptParentGuardianTerms: true });
 
-    expect(never.status).toBe(spent.status);
-    expect(never.body.error.code).toBe(spent.body.error.code);
-    expect(never.body.error.message).toBe(spent.body.error.message);
-  });
+      expect(never.status).toBe(spent.status);
+      expect(never.body.error.code).toBe(spent.body.error.code);
+      expect(never.body.error.message).toBe(spent.body.error.message);
+    });
 
-  /** EDGE CASE 2 — already linked is a 409, and writes nothing further. */
-  it("409s a guardian already linked to that student, and writes no second row", async () => {
-    const app = await buildApp();
-    await request(app).post("/api/guardian/link/redeem").send({ code: await currentCode(), acceptParentGuardianTerms: true });
-
-    const again = await request(app)
-      .post("/api/guardian/link/redeem")
-      .send({ code: await currentCode(), acceptParentGuardianTerms: true });
-
-    expect(again.status).toBe(409);
-    expect(await activeLinks()).toBe(1);
-  });
-
-  /** EDGE CASE 3 — your own code links nobody. */
-  it("refuses a student's own code and creates no link", async () => {
-    const code = await currentCode();
-    session.id = STUDENT;
-    session.role = "guardian"; // an account holding both roles: the identity check, not the role gate
-
-    const res = await request(await buildApp())
-      .post("/api/guardian/link/redeem")
-      .send({ code, acceptParentGuardianTerms: true });
-
-    expect(res.status).toBe(400);
-    expect(await activeLinks()).toBe(0);
-  });
-
-  /** EDGE CASE 6 / F2 — the cycle the old constraint made impossible after one round. */
-  it("supports revoke → re-link → revoke, more than once", async () => {
-    const app = await buildApp();
-    for (let round = 0; round < 3; round += 1) {
-      const res = await request(app)
+    /** EDGE CASE 2 — already linked is a 409, and writes nothing further. */
+    it("409s a guardian already linked to that student, and writes no second row", async () => {
+      const app = await buildApp();
+      await request(app)
         .post("/api/guardian/link/redeem")
         .send({ code: await currentCode(), acceptParentGuardianTerms: true });
-      expect(res.status).toBe(201);
-      await pg.query(
-        `UPDATE public.guardian_links SET status='revoked' WHERE status='active'`,
+
+      const again = await request(app)
+        .post("/api/guardian/link/redeem")
+        .send({ code: await currentCode(), acceptParentGuardianTerms: true });
+
+      expect(again.status).toBe(409);
+      expect(await activeLinks()).toBe(1);
+    });
+
+    /** EDGE CASE 3 — your own code links nobody. */
+    it("refuses a student's own code and creates no link", async () => {
+      const code = await currentCode();
+      session.id = STUDENT;
+      session.role = "guardian"; // an account holding both roles: the identity check, not the role gate
+
+      const res = await request(await buildApp())
+        .post("/api/guardian/link/redeem")
+        .send({ code, acceptParentGuardianTerms: true });
+
+      expect(res.status).toBe(400);
+      expect(await activeLinks()).toBe(0);
+    });
+
+    /** EDGE CASE 6 / F2 — the cycle the old constraint made impossible after one round. */
+    it("supports revoke → re-link → revoke, more than once", async () => {
+      const app = await buildApp();
+      for (let round = 0; round < 3; round += 1) {
+        const res = await request(app)
+          .post("/api/guardian/link/redeem")
+          .send({ code: await currentCode(), acceptParentGuardianTerms: true });
+        expect(res.status).toBe(201);
+        await pg.query(
+          `UPDATE public.guardian_links SET status='revoked' WHERE status='active'`,
+        );
+      }
+      expect(await activeLinks()).toBe(0);
+      const revoked = await pg.query(
+        `SELECT count(*)::int AS c FROM public.guardian_links WHERE status='revoked'`,
       );
-    }
-    expect(await activeLinks()).toBe(0);
-    const revoked = await pg.query(
-      `SELECT count(*)::int AS c FROM public.guardian_links WHERE status='revoked'`,
-    );
-    expect(revoked.rows[0].c).toBe(3);
-  });
-});
+      expect(revoked.rows[0].c).toBe(3);
+    });
+  },
+);

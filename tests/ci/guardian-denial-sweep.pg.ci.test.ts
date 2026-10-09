@@ -167,111 +167,118 @@ function concrete(path: string): string {
   );
 }
 
-describe.skipIf(!PG_AVAILABLE)("G1-11 guardian denial sweep (routes read from the router)", () => {
-  beforeAll(async () => {
-    pg = await bootstrapPgDatabase(DB_NAME);
-    await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [
-      GUARDIAN_ID,
-      "sweep-guardian@example.test",
-    ]);
-    await pg.query(
-      `INSERT INTO public.profiles (id, email, role, date_of_birth)
+describe.skipIf(!PG_AVAILABLE)(
+  "G1-11 guardian denial sweep (routes read from the router)",
+  () => {
+    beforeAll(async () => {
+      pg = await bootstrapPgDatabase(DB_NAME);
+      await pg.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [
+        GUARDIAN_ID,
+        "sweep-guardian@example.test",
+      ]);
+      await pg.query(
+        `INSERT INTO public.profiles (id, email, role, date_of_birth)
        VALUES ($1, $2, 'guardian', DATE '1980-01-01')`,
-      [GUARDIAN_ID, "sweep-guardian@example.test"],
-    );
-    // Presence before absence: the principal every case presents is a real guardian row.
-    const back = await pg.query(
-      `SELECT role::text AS role FROM public.profiles WHERE id = $1`,
-      [GUARDIAN_ID],
-    );
-    expect(back.rows[0]?.role).toBe("guardian");
-  });
+        [GUARDIAN_ID, "sweep-guardian@example.test"],
+      );
+      // Presence before absence: the principal every case presents is a real guardian row.
+      const back = await pg.query(
+        `SELECT role::text AS role FROM public.profiles WHERE id = $1`,
+        [GUARDIAN_ID],
+      );
+      expect(back.rows[0]?.role).toBe("guardian");
+    });
 
-  afterAll(async () => {
-    if (pg) await pg.end();
-  });
+    afterAll(async () => {
+      if (pg) await pg.end();
+    });
 
-  it("the sweep is non-trivial: it found the routes a guardian must never reach", () => {
-    // Presence before absence: these anchors exist, so an empty sweep cannot pass.
-    const has = (m: string, p: string) =>
-      gated.some((e) => e.method === m && e.path === p);
-    expect(has("post", "/api/practice/answer")).toBe(true);
-    expect(has("post", "/api/tutor/messages")).toBe(true);
-    expect(has("put", "/api/calendar/profile")).toBe(true);
-    expect(has("post", "/api/tests/sessions")).toBe(true);
-    expect(has("post", "/api/review/answer")).toBe(true);
-    expect(tutor.length).toBeGreaterThan(0);
-    expect(gated.length).toBeGreaterThanOrEqual(50);
-  });
+    it("the sweep is non-trivial: it found the routes a guardian must never reach", () => {
+      // Presence before absence: these anchors exist, so an empty sweep cannot pass.
+      const has = (m: string, p: string) =>
+        gated.some((e) => e.method === m && e.path === p);
+      expect(has("post", "/api/practice/answer")).toBe(true);
+      expect(has("post", "/api/tutor/messages")).toBe(true);
+      expect(has("put", "/api/calendar/profile")).toBe(true);
+      expect(has("post", "/api/tests/sessions")).toBe(true);
+      expect(has("post", "/api/review/answer")).toBe(true);
+      expect(tutor.length).toBeGreaterThan(0);
+      expect(gated.length).toBeGreaterThanOrEqual(50);
+    });
 
-  it("every /api/tutor route is gated", () => {
-    const ungatedTutor = tutor
-      .filter((e) => e.gates.length === 0)
-      .map((e) => `${e.method.toUpperCase()} ${e.path}`);
-    expect(ungatedTutor).toEqual([]);
-  });
+    it("every /api/tutor route is gated", () => {
+      const ungatedTutor = tutor
+        .filter((e) => e.gates.length === 0)
+        .map((e) => `${e.method.toUpperCase()} ${e.path}`);
+      expect(ungatedTutor).toEqual([]);
+    });
 
-  it("every /api endpoint is either student-gated or on a guardian-reachable prefix", () => {
-    const unclassified = endpoints
-      .filter((e) => e.gates.length === 0)
-      .filter(
-        (e) =>
-          !GUARDIAN_REACHABLE.some((p) => e.path === p || e.path.startsWith(p)),
-      )
-      .map((e) => `${e.method.toUpperCase()} ${e.path}`);
-    expect(unclassified).toEqual([]);
-  });
+    it("every /api endpoint is either student-gated or on a guardian-reachable prefix", () => {
+      const unclassified = endpoints
+        .filter((e) => e.gates.length === 0)
+        .filter(
+          (e) =>
+            !GUARDIAN_REACHABLE.some(
+              (p) => e.path === p || e.path.startsWith(p),
+            ),
+        )
+        .map((e) => `${e.method.toUpperCase()} ${e.path}`);
+      expect(unclassified).toEqual([]);
+    });
 
-  it("every skill-level endpoint is student-gated, whatever prefix it lives under", () => {
-    // Presence before absence: the guardian-reachable skills read and a student-only one.
-    const has = (m: string, p: string) =>
-      skillReads.some((e) => e.method === m && e.path === p);
-    expect(has("get", "/api/students/:studentId/mastery/skills")).toBe(true);
-    expect(
-      has("get", "/api/practice/diagnostic/sessions/:sessionId/weakest-skills"),
-    ).toBe(true);
-    const ungatedSkills = skillReads
-      .filter((e) => e.gates.length === 0)
-      .map((e) => `${e.method.toUpperCase()} ${e.path}`);
-    expect(ungatedSkills).toEqual([]);
-  });
+    it("every skill-level endpoint is student-gated, whatever prefix it lives under", () => {
+      // Presence before absence: the guardian-reachable skills read and a student-only one.
+      const has = (m: string, p: string) =>
+        skillReads.some((e) => e.method === m && e.path === p);
+      expect(has("get", "/api/students/:studentId/mastery/skills")).toBe(true);
+      expect(
+        has(
+          "get",
+          "/api/practice/diagnostic/sessions/:sessionId/weakest-skills",
+        ),
+      ).toBe(true);
+      const ungatedSkills = skillReads
+        .filter((e) => e.gates.length === 0)
+        .map((e) => `${e.method.toUpperCase()} ${e.path}`);
+      expect(ungatedSkills).toEqual([]);
+    });
 
-  it.each(skillReads.map((e) => [e.method.toUpperCase(), e.path, e] as const))(
-    "guardian → 403 on skill-level %s %s",
-    async (_m, p, e) => {
+    it.each(
+      skillReads.map((e) => [e.method.toUpperCase(), e.path, e] as const),
+    )("guardian → 403 on skill-level %s %s", async (_m, p, e) => {
       expect(e.method, `unswept skill method on ${p}`).toBe("get");
       const res = await request(app).get(concrete(e.path));
       expect(res.status).toBe(403);
       expect(res.body).not.toHaveProperty("skills");
-    },
-  );
+    });
 
-  it.each(gated.map((e) => [e.method.toUpperCase(), e.path, e] as const))(
-    "guardian → 403 on %s %s",
-    async (_m, _p, e) => {
-      const agent = request(app);
-      const url = concrete(e.path);
-      const call =
-        e.method === "get"
-          ? agent.get(url)
-          : e.method === "post"
-            ? agent.post(url).send({})
-            : e.method === "put"
-              ? agent.put(url).send({})
-              : e.method === "patch"
-                ? agent.patch(url).send({})
-                : e.method === "delete"
-                  ? agent.delete(url)
-                  : null;
-      expect(call, `unsupported method ${e.method}`).not.toBeNull();
-      const res = await call!;
-      expect(res.status).toBe(403);
-      // The ROLE gate's refusal, not a CSRF or any other 403.
-      if (e.gates[0] === "student_only") {
-        expect(res.body.code).toBe("ROLE_NOT_PERMITTED");
-      } else {
-        expect(res.body.error).toBe("Student access required");
-      }
-    },
-  );
-});
+    it.each(gated.map((e) => [e.method.toUpperCase(), e.path, e] as const))(
+      "guardian → 403 on %s %s",
+      async (_m, _p, e) => {
+        const agent = request(app);
+        const url = concrete(e.path);
+        const call =
+          e.method === "get"
+            ? agent.get(url)
+            : e.method === "post"
+              ? agent.post(url).send({})
+              : e.method === "put"
+                ? agent.put(url).send({})
+                : e.method === "patch"
+                  ? agent.patch(url).send({})
+                  : e.method === "delete"
+                    ? agent.delete(url)
+                    : null;
+        expect(call, `unsupported method ${e.method}`).not.toBeNull();
+        const res = await call!;
+        expect(res.status).toBe(403);
+        // The ROLE gate's refusal, not a CSRF or any other 403.
+        if (e.gates[0] === "student_only") {
+          expect(res.body.code).toBe("ROLE_NOT_PERMITTED");
+        } else {
+          expect(res.body.error).toBe("Student access required");
+        }
+      },
+    );
+  },
+);

@@ -110,8 +110,8 @@ export default function SatQuestionOfTheDayPage(): JSX.Element {
         <Section title="About the SAT">
           <div className="space-y-4 leading-relaxed">
             <p>
-              The SAT is shorter, it is taken on a computer, and each
-              section adapts at the module level.
+              The SAT is shorter, it is taken on a computer, and each section
+              adapts at the module level.
             </p>
             <SourceLinks sources={[CB_STRUCTURE]} />
             <p>

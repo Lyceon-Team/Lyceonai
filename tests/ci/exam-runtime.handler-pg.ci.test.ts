@@ -144,9 +144,20 @@ vi.mock("../../server/services/entitlement-service", () => ({
 // SEO F10 / Doc 07A §6.6: the wrapper is replaced by a recorder, so the walk can assert what the
 // REAL service passed it at each real SQL outcome — the wrapper itself is proved in
 // tests/ci/analytics-emit-event.contract.test.ts.
-const emitted = vi.hoisted(() => [] as { profileId: string; event: string; payload: Record<string, unknown> }[]);
+const emitted = vi.hoisted(
+  () =>
+    [] as {
+      profileId: string;
+      event: string;
+      payload: Record<string, unknown>;
+    }[],
+);
 vi.mock("../../server/lib/analytics/emit-event", () => ({
-  emitEvent: async (profileId: string, event: string, payload: Record<string, unknown>) => {
+  emitEvent: async (
+    profileId: string,
+    event: string,
+    payload: Record<string, unknown>,
+  ) => {
     emitted.push({ profileId, event, payload });
     return { ok: true };
   },
@@ -426,7 +437,9 @@ describe.skipIf(!PG_AVAILABLE)("Exam runtime handlers → real PG", () => {
           WHERE aggregate_id = $1 ORDER BY created_at, event_type`,
         [sid],
       );
-      expect(outbox.rows.map((r) => [r.event_type, r.status, r.has_student])).toEqual([
+      expect(
+        outbox.rows.map((r) => [r.event_type, r.status, r.has_student]),
+      ).toEqual([
         ["test_session_completed", "published", false],
         ["test_session_scored", "published", false],
       ]);
@@ -465,16 +478,20 @@ describe.skipIf(!PG_AVAILABLE)("Exam runtime handlers → real PG", () => {
         },
       ]);
       const submits = mine.filter((e) => e.event === "exam_section_submitted");
-      expect(submits.map((e) => [e.payload.section, e.payload.module])).toEqual([
-        ["RW", "1"],
-        ["RW", `2${s.rw_module2_path}`],
-        ["M", "1"],
-        ["M", `2${s.math_module2_path}`],
-      ]);
+      expect(submits.map((e) => [e.payload.section, e.payload.module])).toEqual(
+        [
+          ["RW", "1"],
+          ["RW", `2${s.rw_module2_path}`],
+          ["M", "1"],
+          ["M", `2${s.math_module2_path}`],
+        ],
+      );
       for (const e of submits) {
         expect(e.payload.test_session_id).toBe(sid);
         expect(Number.isInteger(e.payload.section_duration_ms)).toBe(true);
-        expect(e.payload.section_duration_ms as number).toBeGreaterThanOrEqual(0);
+        expect(e.payload.section_duration_ms as number).toBeGreaterThanOrEqual(
+          0,
+        );
       }
 
       evidence.push(

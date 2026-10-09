@@ -51,14 +51,23 @@ const STUDENT_ID = "8a8a8a8a-1111-4111-8111-111111111111";
 const VERSION_ID = "8a8a8a8a-2222-4222-8222-222222222222";
 const BLOCK_ID = "8a8a8a8a-3333-4333-8333-333333333333";
 /** `questions_id_check` is `^SAT(M|RW)[12][A-Z0-9]{6}$` — six chars after the form digit. */
-const QUESTIONS = ["SATM1CRR001", "SATM1CRR002", "SATM1CRR003", "SATM1CRR004"] as const;
+const QUESTIONS = [
+  "SATM1CRR001",
+  "SATM1CRR002",
+  "SATM1CRR003",
+  "SATM1CRR004",
+] as const;
 const DOMAIN = "Algebra";
 
 // ── HS256 JWT, the shape a Supabase service key carries ─────────────────────
 
 function mintJwt(role: string, secret: string): string {
   const b64 = (o: unknown) =>
-    Buffer.from(JSON.stringify(o)).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+    Buffer.from(JSON.stringify(o))
+      .toString("base64")
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
   const header = b64({ alg: "HS256", typ: "JWT" });
   const payload = b64({
     role,
@@ -77,7 +86,9 @@ function mintJwt(role: string, secret: string): string {
 }
 
 /** Rewrites /rest/v1/* to /* and proxies verbatim. Nothing else is altered. */
-function startRestShim(upstream: string): Promise<{ url: string; close: () => Promise<void> }> {
+function startRestShim(
+  upstream: string,
+): Promise<{ url: string; close: () => Promise<void> }> {
   const target = new URL(upstream);
   const server = http.createServer((req, res) => {
     const path = (req.url ?? "/").replace(/^\/rest\/v1/, "");
@@ -158,10 +169,10 @@ describeIf("INV-08-18 — a crashed launch heals into ONE session", () => {
 
     await seed(pg, today);
 
-    ({ launchBlock, launchIdempotencyKey } = await import(
-      "../../server/services/calendar/launch-service"
-    ));
-    ({ liveLaunchDeps } = await import("../../server/services/calendar/launch-deps"));
+    ({ launchBlock, launchIdempotencyKey } =
+      await import("../../server/services/calendar/launch-service"));
+    ({ liveLaunchDeps } =
+      await import("../../server/services/calendar/launch-deps"));
 
     process.stdout.write("CALENDAR-POSTGREST-PROOF: EXECUTING\n");
   }, 60_000);
@@ -187,7 +198,9 @@ describeIf("INV-08-18 — a crashed launch heals into ONE session", () => {
     // by asking politely. Every other port below is liveLaunchDeps' own.
     const crashing = {
       ...liveLaunchDeps,
-      linkLaunch: async (): Promise<Result<{ launch_sequence: number; replayed: boolean }, string>> => ({
+      linkLaunch: async (): Promise<
+        Result<{ launch_sequence: number; replayed: boolean }, string>
+      > => ({
         ok: false,
         error: "simulated crash between create and link",
       }),
@@ -201,11 +214,17 @@ describeIf("INV-08-18 — a crashed launch heals into ONE session", () => {
 
     // The engine session EXISTS — that is what makes the retry a real recovery and not
     // a first attempt wearing a disguise.
-    const sessions = await pg.query("SELECT id FROM public.practice_sessions WHERE user_id = $1", [STUDENT_ID]);
+    const sessions = await pg.query(
+      "SELECT id FROM public.practice_sessions WHERE user_id = $1",
+      [STUDENT_ID],
+    );
     expect(sessions.rowCount).toBe(1);
 
     // And nothing was recorded against the block.
-    const launches = await pg.query("SELECT * FROM public.calendar_block_launches WHERE block_id = $1", [BLOCK_ID]);
+    const launches = await pg.query(
+      "SELECT * FROM public.calendar_block_launches WHERE block_id = $1",
+      [BLOCK_ID],
+    );
     expect(launches.rowCount).toBe(0);
   }, 60_000);
 
@@ -229,7 +248,10 @@ describeIf("INV-08-18 — a crashed launch heals into ONE session", () => {
 
     // And the link landed this time, at sequence 1 — not 2. A crash must not consume a
     // sequence number, or the key would differ and the engine would make a new session.
-    const launches = await pg.query<{ launch_sequence: number; engine_session_id: string }>(
+    const launches = await pg.query<{
+      launch_sequence: number;
+      engine_session_id: string;
+    }>(
       "SELECT launch_sequence, engine_session_id FROM public.calendar_block_launches WHERE block_id = $1",
       [BLOCK_ID],
     );
@@ -260,9 +282,15 @@ describeIf("INV-08-18 — a crashed launch heals into ONE session", () => {
     // §15.1 step 3: a live session is handed back, `resumed = true`, and no new link row.
     expect(third.value.resumed).toBe(true);
 
-    const sessions = await pg.query("SELECT id FROM public.practice_sessions WHERE user_id = $1", [STUDENT_ID]);
+    const sessions = await pg.query(
+      "SELECT id FROM public.practice_sessions WHERE user_id = $1",
+      [STUDENT_ID],
+    );
     expect(sessions.rowCount).toBe(1);
-    const launches = await pg.query("SELECT * FROM public.calendar_block_launches WHERE block_id = $1", [BLOCK_ID]);
+    const launches = await pg.query(
+      "SELECT * FROM public.calendar_block_launches WHERE block_id = $1",
+      [BLOCK_ID],
+    );
     expect(launches.rowCount).toBe(1);
   }, 60_000);
 });

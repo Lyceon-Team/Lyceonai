@@ -83,7 +83,8 @@ export function useHeartbeat(options: {
       first.current = false;
       return;
     }
-    if (!enabled || ordinal === null || document.visibilityState !== "visible") return;
+    if (!enabled || ordinal === null || document.visibilityState !== "visible")
+      return;
     sendExamHeartbeat(sessionId, section, ordinal)
       .then((res) => handlers.current.onSectionState(res.section_state))
       .catch((error: unknown) => handlers.current.onError(error));

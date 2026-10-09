@@ -188,12 +188,16 @@ export function dayStatusOf(input: {
   if (!input.is_study_day && !hasBlocks) return "rest";
 
   // 2. complete — every block satisfied.
-  if (hasBlocks && input.blocks.every((block) => block.actual >= block.target)) {
+  if (
+    hasBlocks &&
+    input.blocks.every((block) => block.actual >= block.target)
+  ) {
     return "complete";
   }
 
   // 3. partial — any progress at all, past or present (B5: never `missed`).
-  if (hasBlocks && input.blocks.some((block) => block.actual > 0)) return "partial";
+  if (hasBlocks && input.blocks.some((block) => block.actual > 0))
+    return "partial";
 
   // 4. missed — a past day that asked for work and got none.
   if (input.local_date < input.today && hasBlocks) return "missed";
@@ -212,7 +216,9 @@ export function dayStatusOf(input: {
 
 // ── Building ────────────────────────────────────────────────────────────────
 
-function bucketUnitsByDate(units: readonly ActivityUnit[]): Map<string, ActivityUnit[]> {
+function bucketUnitsByDate(
+  units: readonly ActivityUnit[],
+): Map<string, ActivityUnit[]> {
   const buckets = new Map<string, ActivityUnit[]>();
   for (const unit of units) {
     const bucket = buckets.get(unit.local_date);
@@ -288,7 +294,9 @@ export function buildCalendarRange(input: CalendarRangeInput): CalendarRange {
       linked_sessions: input.linked_sessions,
     });
 
-    const blocksById = new Map(day.blocks.map((block) => [block.block_id, block]));
+    const blocksById = new Map(
+      day.blocks.map((block) => [block.block_id, block]),
+    );
     const blocks: DayBlock[] = [];
     for (const allocated of allocation.blocks) {
       const block = blocksById.get(allocated.block_id);
@@ -301,9 +309,15 @@ export function buildCalendarRange(input: CalendarRangeInput): CalendarRange {
       });
     }
 
-    const plannedCount = blocks.reduce((sum, entry) => sum + entry.block.target_count, 0);
+    const plannedCount = blocks.reduce(
+      (sum, entry) => sum + entry.block.target_count,
+      0,
+    );
     const actualCount = blocks.reduce((sum, entry) => sum + entry.actual, 0);
-    const extraCount = allocation.extra_work.reduce((sum, group) => sum + group.count, 0);
+    const extraCount = allocation.extra_work.reduce(
+      (sum, group) => sum + group.count,
+      0,
+    );
 
     return {
       local_date: day.local_date,

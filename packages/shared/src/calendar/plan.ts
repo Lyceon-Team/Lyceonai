@@ -121,7 +121,9 @@ export type NewBlock = z.infer<typeof newBlockSchema>;
  */
 export const planMemberSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("created"), block: newBlockSchema }).strict(),
-  z.object({ kind: z.literal("carried"), block_id: z.string().uuid() }).strict(),
+  z
+    .object({ kind: z.literal("carried"), block_id: z.string().uuid() })
+    .strict(),
 ]);
 export type PlanMember = z.infer<typeof planMemberSchema>;
 

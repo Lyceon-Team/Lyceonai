@@ -88,8 +88,11 @@ function authStub() {
       next(),
     requireProfileComplete: (_q: Request, _s: Response, next: NextFunction) =>
       next(),
-    requireGuardianLinkForUnder13: (_q: Request, _s: Response, next: NextFunction) =>
-      next(),
+    requireGuardianLinkForUnder13: (
+      _q: Request,
+      _s: Response,
+      next: NextFunction,
+    ) => next(),
     getSupabaseAdmin: () => {
       if (!testPg) throw new Error("PG client not initialised");
       return makePgSupabase(testPg);

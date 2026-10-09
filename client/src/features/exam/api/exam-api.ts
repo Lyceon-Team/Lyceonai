@@ -63,12 +63,8 @@ import { HttpApiError } from "@/lib/api-error";
 const EXAM_ROOT = "/api/tests" as const;
 
 type ExamItemsResponse = z.infer<typeof examItemsResponseSchema>;
-type ExamStartModuleResponse = z.infer<
-  typeof examStartModuleResponseSchema
->;
-type ExamSubmitModuleResponse = z.infer<
-  typeof examSubmitModuleResponseSchema
->;
+type ExamStartModuleResponse = z.infer<typeof examStartModuleResponseSchema>;
+type ExamSubmitModuleResponse = z.infer<typeof examSubmitModuleResponseSchema>;
 export type ExamHeartbeatResponse = z.infer<typeof examHeartbeatResponseSchema>;
 export type ExamSectionStateResponse = ExamHeartbeatResponse["section_state"];
 

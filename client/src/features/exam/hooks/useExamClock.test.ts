@@ -17,7 +17,9 @@ describe("useExamClock", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     let now = 0;
     const onExpire = vi.fn();
-    const { result } = renderHook(() => useExamClock(1_000, onExpire, () => now));
+    const { result } = renderHook(() =>
+      useExamClock(1_000, onExpire, () => now),
+    );
     expect(result.current.remainingMs).toBe(1_000);
     now = 1_500;
     act(() => {

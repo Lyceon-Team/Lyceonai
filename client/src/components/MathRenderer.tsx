@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
+import { useEffect, useRef, useState } from "react";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 import {
   tokenizeContent,
   tokenizeMathContent,
   type MathContentToken,
-} from '@shared/math/tokenize';
+} from "@shared/math/tokenize";
 
 // Re-exported so existing importers keep one path; the tokenizer itself lives in shared/math.
 export { tokenizeMathContent };
@@ -36,7 +36,7 @@ interface MathRendererProps {
  */
 export function MathRenderer({
   content,
-  className = '',
+  className = "",
   displayMode = false,
 }: MathRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -72,23 +72,29 @@ export function MathRenderer({
   return (
     <div className={`math-renderer ${className}`} data-testid="math-content">
       {isLoading && <span className="text-muted-foreground">...</span>}
-      <div ref={containerRef} style={{ display: isLoading ? 'none' : 'block' }} />
+      <div
+        ref={containerRef}
+        style={{ display: isLoading ? "none" : "block" }}
+      />
     </div>
   );
 }
 
-function processMixedContentSafely(content: string, defaultDisplayMode: boolean): DocumentFragment {
+function processMixedContentSafely(
+  content: string,
+  defaultDisplayMode: boolean,
+): DocumentFragment {
   const fragment = document.createDocumentFragment();
   const tokens = tokenizeContent(content, defaultDisplayMode);
 
   for (const token of tokens) {
-    if (token.type === 'text') {
+    if (token.type === "text") {
       // Convert caret exponents in plain text only
       fragment.appendChild(renderCaretSuperscriptsToFragment(token.content));
       continue;
     }
 
-    const mathSpan = document.createElement('span');
+    const mathSpan = document.createElement("span");
     /**
      * @spec [owner QA list (Karl, 2026-10-07) item 15: "math expressions don't break
      *        mid-expression (keep each expression on one line via white-space: nowrap on the
@@ -99,20 +105,20 @@ function processMixedContentSafely(content: string, defaultDisplayMode: boolean)
      * block and is left alone.
      */
     if (!token.displayMode) {
-      mathSpan.style.whiteSpace = 'nowrap';
-      mathSpan.dataset.mathInline = 'true';
+      mathSpan.style.whiteSpace = "nowrap";
+      mathSpan.dataset.mathInline = "true";
     }
     try {
       katex.render(token.content, mathSpan, {
         displayMode: token.displayMode,
         throwOnError: false,
         trust: false,
-        strict: 'warn',
+        strict: "warn",
       });
     } catch {
       // Safe fallback: show original delimiters as text
       const wrapped =
-        token.wrapper === 'slash'
+        token.wrapper === "slash"
           ? token.displayMode
             ? `\\[${token.content}\\]`
             : `\\(${token.content}\\)`
@@ -149,19 +155,25 @@ function renderCaretSuperscriptsToFragment(text: string): DocumentFragment {
   //  - signed digits: -2
   //  - (digits) / (-digits)
   //  - {digits} / {-digits}
-  const expRe = '(\\d+|-\\d+|\\(\\-?\\d+\\)|\\{\\-?\\d+\\})';
+  const expRe = "(\\d+|-\\d+|\\(\\-?\\d+\\)|\\{\\-?\\d+\\})";
 
-  const patterns: Array<{ re: RegExp; render: (m: RegExpExecArray) => Node[] }> = [
+  const patterns: Array<{
+    re: RegExp;
+    render: (m: RegExpExecArray) => Node[];
+  }> = [
     {
       // ( ... )^exp or [ ... ]^exp  (no newlines, no nested of same type)
-      re: new RegExp(`(\\([^\\n()]{1,400}\\)|\\[[^\\n\\[\\]]{1,400}\\])\\^(${expRe})`, 'g'),
+      re: new RegExp(
+        `(\\([^\\n()]{1,400}\\)|\\[[^\\n\\[\\]]{1,400}\\])\\^(${expRe})`,
+        "g",
+      ),
       render: (m) => {
         const base = m[1];
         let exp = m[2];
 
         if (
-          (exp.startsWith('(') && exp.endsWith(')')) ||
-          (exp.startsWith('{') && exp.endsWith('}'))
+          (exp.startsWith("(") && exp.endsWith(")")) ||
+          (exp.startsWith("{") && exp.endsWith("}"))
         ) {
           exp = exp.slice(1, -1);
         }
@@ -169,7 +181,7 @@ function renderCaretSuperscriptsToFragment(text: string): DocumentFragment {
         const nodes: Node[] = [];
         nodes.push(document.createTextNode(base));
 
-        const sup = document.createElement('sup');
+        const sup = document.createElement("sup");
         sup.textContent = exp;
         nodes.push(sup);
 
@@ -178,14 +190,14 @@ function renderCaretSuperscriptsToFragment(text: string): DocumentFragment {
     },
     {
       // single-character base: x^exp, 5^exp, )^exp, ]^exp
-      re: new RegExp(`([A-Za-z0-9\\)\\]])\\^(${expRe})`, 'g'),
+      re: new RegExp(`([A-Za-z0-9\\)\\]])\\^(${expRe})`, "g"),
       render: (m) => {
         const base = m[1];
         let exp = m[2];
 
         if (
-          (exp.startsWith('(') && exp.endsWith(')')) ||
-          (exp.startsWith('{') && exp.endsWith('}'))
+          (exp.startsWith("(") && exp.endsWith(")")) ||
+          (exp.startsWith("{") && exp.endsWith("}"))
         ) {
           exp = exp.slice(1, -1);
         }
@@ -193,7 +205,7 @@ function renderCaretSuperscriptsToFragment(text: string): DocumentFragment {
         const nodes: Node[] = [];
         nodes.push(document.createTextNode(base));
 
-        const sup = document.createElement('sup');
+        const sup = document.createElement("sup");
         sup.textContent = exp;
         nodes.push(sup);
 
@@ -205,9 +217,12 @@ function renderCaretSuperscriptsToFragment(text: string): DocumentFragment {
   let cursor = 0;
 
   while (cursor < text.length) {
-    let bestMatch:
-      | { idx: number; len: number; m: RegExpExecArray; p: typeof patterns[number] }
-      | null = null;
+    let bestMatch: {
+      idx: number;
+      len: number;
+      m: RegExpExecArray;
+      p: (typeof patterns)[number];
+    } | null = null;
 
     for (const p of patterns) {
       p.re.lastIndex = cursor;
@@ -218,7 +233,11 @@ function renderCaretSuperscriptsToFragment(text: string): DocumentFragment {
       const len = m[0].length;
 
       // prefer earliest; if tie, prefer longer (more specific)
-      if (!bestMatch || idx < bestMatch.idx || (idx === bestMatch.idx && len > bestMatch.len)) {
+      if (
+        !bestMatch ||
+        idx < bestMatch.idx ||
+        (idx === bestMatch.idx && len > bestMatch.len)
+      ) {
         bestMatch = { idx, len, m, p };
       }
     }
@@ -228,7 +247,8 @@ function renderCaretSuperscriptsToFragment(text: string): DocumentFragment {
     const before = text.slice(cursor, bestMatch.idx);
     if (before) fragment.appendChild(document.createTextNode(before));
 
-    for (const node of bestMatch.p.render(bestMatch.m)) fragment.appendChild(node);
+    for (const node of bestMatch.p.render(bestMatch.m))
+      fragment.appendChild(node);
 
     cursor = bestMatch.idx + bestMatch.len;
   }

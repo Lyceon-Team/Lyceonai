@@ -150,7 +150,9 @@ describe("allocator fixtures", () => {
   });
 
   it("gives every case a unique id", () => {
-    expect(new Set(fixtures.cases.map((c) => c.id)).size).toBe(fixtures.cases.length);
+    expect(new Set(fixtures.cases.map((c) => c.id)).size).toBe(
+      fixtures.cases.length,
+    );
   });
 
   for (const fixture of fixtures.cases) {
@@ -177,7 +179,10 @@ describe("allocator fixtures", () => {
         const input = calendarRangeInputSchema.parse(fixture.input);
         const expected = expectedRangeSchema.parse(fixture.expected);
         const range = buildCalendarRange(input);
-        expect(projectRange(range)).toEqual({ days: expected.days, facts: expected.facts });
+        expect(projectRange(range)).toEqual({
+          days: expected.days,
+          facts: expected.facts,
+        });
         if (expected.unit_ids !== undefined) {
           for (const [blockId, unitIds] of Object.entries(expected.unit_ids)) {
             const day = input.days.find((candidate) =>
@@ -196,7 +201,9 @@ describe("allocator fixtures", () => {
               local_date: day.local_date,
               today: input.today,
               blocks: day.blocks,
-              units: input.units.filter((unit) => unit.local_date === day.local_date),
+              units: input.units.filter(
+                (unit) => unit.local_date === day.local_date,
+              ),
               launches: input.launches,
               linked_sessions: input.linked_sessions,
             });
@@ -222,7 +229,10 @@ const ENGINES = ["practice", "review", "full_length"] as const;
 function generateCase(seed: number): DayAllocationInput {
   const random = createRng(`calendar-allocator-${seed}`);
   const pick = <T>(items: readonly T[]): T => {
-    const index = Math.min(Math.floor(random() * items.length), items.length - 1);
+    const index = Math.min(
+      Math.floor(random() * items.length),
+      items.length - 1,
+    );
     const value = items[index];
     if (value === undefined) throw new Error("cannot pick from an empty list");
     return value;
@@ -247,13 +257,19 @@ function generateCase(seed: number): DayAllocationInput {
 
     if (engine === "practice") {
       const section = pick(["M", "RW"] as const);
-      const sectionDomains = CANONICAL_DOMAINS.filter((d) => DOMAIN_SECTION[d] === section);
+      const sectionDomains = CANONICAL_DOMAINS.filter(
+        (d) => DOMAIN_SECTION[d] === section,
+      );
       if (random() < 0.3) {
         blocks.push({
           ...common,
           block_type: "practice",
           section,
-          scope: { level: "section", count: between(5, 20), explanation_key: "cold_start" },
+          scope: {
+            level: "section",
+            count: between(5, 20),
+            explanation_key: "cold_start",
+          },
           target_count: between(1, 20),
         });
       } else {
@@ -282,11 +298,14 @@ function generateCase(seed: number): DayAllocationInput {
         ...common,
         block_type: "review",
         section: null,
-        scope: random() < 0.5 ? { mode: "queue" } : {
-          mode: "session",
-          source_engine: "practice",
-          source_session_id: "s-1",
-        },
+        scope:
+          random() < 0.5
+            ? { mode: "queue" }
+            : {
+                mode: "session",
+                source_engine: "practice",
+                source_session_id: "s-1",
+              },
         target_count: between(1, 20),
       });
       continue;
@@ -309,7 +328,8 @@ function generateCase(seed: number): DayAllocationInput {
   const unitCount = between(0, 40);
   for (let index = 0; index < unitCount; index += 1) {
     const engine = pick(ENGINES);
-    const section = engine === "full_length" ? null : pick(["M", "RW"] as const);
+    const section =
+      engine === "full_length" ? null : pick(["M", "RW"] as const);
     const domain =
       section === null
         ? null
@@ -400,8 +420,14 @@ describe("unit conservation (§13, INV-08-21)", () => {
       );
       const allocation = allocateDay(input);
 
-      const allocated = allocation.blocks.reduce((sum, block) => sum + block.actual, 0);
-      const extra = allocation.extra_work.reduce((sum, group) => sum + group.count, 0);
+      const allocated = allocation.blocks.reduce(
+        (sum, block) => sum + block.actual,
+        0,
+      );
+      const extra = allocation.extra_work.reduce(
+        (sum, group) => sum + group.count,
+        0,
+      );
 
       expect(allocation.units_considered).toBe(identities.size);
       expect(allocated + extra).toBe(allocation.units_considered);
@@ -433,7 +459,8 @@ describe("unit conservation (§13, INV-08-21)", () => {
       for (const block of allocation.blocks) {
         const linkedHere = [...identities].filter((identity) => {
           const unit = input.units.find(
-            (candidate) => `${candidate.engine}|${candidate.unit_id}` === identity,
+            (candidate) =>
+              `${candidate.engine}|${candidate.unit_id}` === identity,
           );
           // `block.engine` as well as the block id: a link whose engine differs from the
           // block's is NOT claimable (the allocator keeps §13's engine-first clause), and a

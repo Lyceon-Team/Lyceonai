@@ -52,7 +52,10 @@ afterEach(() => {
 describe("PR 2.2 — crisis SLA sweep has a scheduled caller", () => {
   it("Terraform schedules an hourly OIDC POST to /api/internal/crisis-sla-sweep", () => {
     const tf = fs.readFileSync(
-      path.resolve(__dirname, "../../infra/terraform/cloud-scheduler-crisis.tf"),
+      path.resolve(
+        __dirname,
+        "../../infra/terraform/cloud-scheduler-crisis.tf",
+      ),
       "utf-8",
     );
     const start = tf.indexOf(

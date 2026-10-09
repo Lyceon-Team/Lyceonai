@@ -360,12 +360,20 @@ describe("F1 suite B — agreement with the published policy and the SQL", () =>
   it("F1.11 — Doc 07E §6's two rows are consumed verbatim, not restated", () => {
     const spec07e = read(SPEC_07E).replace(/\\_/g, "_");
     const checks: [string, string, string | number][] = [
-      ["RPOL-ANALYTICS-01", "canonical_owner_doc_and_section", "Doc 07E V1.0 §5.1"],
+      [
+        "RPOL-ANALYTICS-01",
+        "canonical_owner_doc_and_section",
+        "Doc 07E V1.0 §5.1",
+      ],
       ["RPOL-ANALYTICS-01", "classification", "pii"],
       ["RPOL-ANALYTICS-01", "retention_horizon_months", 12],
       ["RPOL-ANALYTICS-01", "purge_substrate", "doc05d_cascade"],
       ["RPOL-ANALYTICS-01", "purge_lag_allowance_seconds", 604800],
-      ["RPOL-ANALYTICS-02", "canonical_owner_doc_and_section", "Doc 07E V1.0 §5.2"],
+      [
+        "RPOL-ANALYTICS-02",
+        "canonical_owner_doc_and_section",
+        "Doc 07E V1.0 §5.2",
+      ],
       ["RPOL-ANALYTICS-02", "classification", "pseudonymized_personal_data"],
       ["RPOL-ANALYTICS-02", "purge_substrate", "manual"],
       [
@@ -409,7 +417,10 @@ describe("F1 suite C — the alert-registry prerequisite", () => {
   it("F1.13 — the missing registry is named as a prerequisite with its owner", () => {
     expect(prerequisites.length).toBeGreaterThan(0);
     const alert = prerequisites.find((p) => p.path === ALERT_REGISTRY_REL);
-    expect(alert, `${ALERT_REGISTRY_REL} not named in prerequisites`).toBeDefined();
+    expect(
+      alert,
+      `${ALERT_REGISTRY_REL} not named in prerequisites`,
+    ).toBeDefined();
     expect(String(alert?.owning_doc_and_section)).toContain("06C");
     expect(String(alert?.required_by)).toContain("9.3");
     expect(alert?.status).toBe("absent");
@@ -420,9 +431,10 @@ describe("F1 suite C — the alert-registry prerequisite", () => {
     // Not a class of tolerated failures: each one is written down, so a reader
     // does not have to rediscover why the parity gate cannot run yet.
     for (const marker of ["§9.3 (d)", "§9.3 (g)", "§9.3 (i)"]) {
-      expect(REGISTRY, `${marker} not explained in the registry header`).toContain(
-        marker,
-      );
+      expect(
+        REGISTRY,
+        `${marker} not explained in the registry header`,
+      ).toContain(marker);
     }
   });
 });

@@ -182,6 +182,7 @@ function harnessDefaults(): CalendarSetupDefaults {
       "default_full_length_weekday",
     ) as number,
     final_exam_lead_days: config.get("final_exam_lead_days") as number,
+    target_exam_dates: [],
   };
 }
 

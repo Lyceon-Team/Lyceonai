@@ -36,29 +36,24 @@
  * `estimateStatus` is unknown neither the card nor a primary is shown, so nothing is offered on
  * a guess.
  */
-import { useLocation, Link } from "wouter";
+import { useState } from "react";
+import { Link } from "wouter";
 import type { FeatureLockReason } from "@lyceon/shared/feature-access";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
-import {
-  Notice,
-  PageHeader,
-  RulerProgress,
-  rulerFill,
-} from "@/components/student-ui";
+import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
-import { STARTING_LABEL } from "@/lib/pending-copy";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
-import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { usePracticeQuota } from "@/hooks/usePracticeQuota";
 import { FullLengthCard } from "./FullLengthCard";
+import { HomeQotdSection } from "./qotd/HomeQotdSection";
+import { HomeStreakChip } from "./qotd/StreakChip";
 import { HomeLoading } from "./HomeLoading";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
+import { DiagnosticCard } from "./DiagnosticCard";
 import {
-  answeredLine,
-  diagnosticCardLine,
   diagnosticStepBody,
   freeHomeStage,
   practiceStepBody,
@@ -123,22 +118,15 @@ export function FreeHome({
   name,
   masteryLock,
 }: FreeHomeProps): JSX.Element {
-  const [, navigate] = useLocation();
   const upgrade = useUpgradeModal();
+  // The streak chip zooms once when this visit's QOTD answer extended the streak.
+  const [celebrate, setCelebrate] = useState(false);
   const projection = useHomeProjection(studentId);
   const practice = useActiveSessions();
   const quota = usePracticeQuota();
-  const diagnostic = useDiagnosticStart();
   const stage = freeHomeStage(projection.estimateStatus);
 
-  const openDiagnostic =
-    practice.sessions.find((s) => s.mode === "diagnostic") ?? null;
   const trimmed = name?.trim() ?? "";
-
-  const startDiagnostic = async (): Promise<void> => {
-    const sessionId = await diagnostic.startDiagnostic();
-    if (sessionId) navigate(`/practice/session/${sessionId}`);
-  };
 
   const failed = projection.isError || practice.isError || quota.isError;
   // QA2-F (Karl, 2026-10-08: "Full-Length cards: no layout shift on load"): the stage (the
@@ -163,7 +151,12 @@ export function FreeHome({
             ? "Study smarter, score higher. Start with the free diagnostic so your practice begins in the right place."
             : "Study smarter, score higher."
         }
+        actions={<HomeStreakChip celebrate={celebrate} />}
       />
+
+      {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the QOTD card and the
+          SAT-date card come right after the greeting and the streak chip, before the next step. */}
+      <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
 
       {failed ? (
         <Notice
@@ -179,71 +172,7 @@ export function FreeHome({
         />
       ) : null}
 
-      {stage === "diagnostic" ? (
-        <section
-          aria-labelledby="home-diag-h"
-          className="flex flex-col gap-[22px] rounded-lg border border-lyc-rule bg-lyc-sheet px-6 py-7 sm:px-10 sm:py-9"
-          data-testid="home-diagnostic"
-        >
-          <h2
-            id="home-diag-h"
-            className="m-0 font-lyc-serif text-[30px] font-semibold leading-tight text-lyc-ink-strong"
-          >
-            Your free diagnostic
-          </h2>
-          <p
-            className="m-0 max-w-[600px] text-[18px] leading-relaxed text-lyc-ink"
-            data-testid="home-diagnostic-length"
-          >
-            {diagnosticCardLine(
-              practice.diagnosticTotalQuestions,
-              practice.diagnosticPerDomain,
-            )}
-          </p>
-          <div className="flex flex-col gap-2.5">
-            <RulerProgress
-              size="card"
-              filled={
-                openDiagnostic === null
-                  ? 0
-                  : rulerFill(
-                      openDiagnostic.answered_items,
-                      openDiagnostic.total_items,
-                    )
-              }
-              data-testid="home-diagnostic-ruler"
-            />
-            {openDiagnostic !== null ? (
-              <span className="text-base text-lyc-muted">
-                {answeredLine(
-                  openDiagnostic.answered_items,
-                  openDiagnostic.total_items,
-                )}
-              </span>
-            ) : null}
-          </div>
-          {diagnostic.error ? (
-            <p role="alert" className="m-0 text-base text-lyc-danger">
-              {diagnostic.error.message}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-            <Button
-              type="button"
-              variant="lyc-primary"
-              size="lyc-lg"
-              pending={diagnostic.isStarting}
-              onClick={() => void startDiagnostic()}
-              data-testid="home-start-diagnostic"
-            >
-              {diagnostic.isStarting ? STARTING_LABEL : "Start diagnostic"}
-            </Button>
-            <span className="text-base text-lyc-muted">
-              You can stop and pick up where you left off.
-            </span>
-          </div>
-        </section>
-      ) : null}
+      {stage === "diagnostic" ? <DiagnosticCard practice={practice} /> : null}
 
       <section
         aria-labelledby="home-how-h"

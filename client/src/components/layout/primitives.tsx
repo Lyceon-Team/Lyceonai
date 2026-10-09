@@ -8,7 +8,9 @@ interface PageShellProps {
 
 export function PageShell({ children, className }: PageShellProps) {
   return (
-    <div className={cn("min-h-screen bg-background text-foreground", className)}>
+    <div
+      className={cn("min-h-screen bg-background text-foreground", className)}
+    >
       {children}
     </div>
   );
@@ -20,7 +22,11 @@ interface ContainerProps {
   size?: "default" | "narrow" | "wide" | "full";
 }
 
-export function Container({ children, className, size = "default" }: ContainerProps) {
+export function Container({
+  children,
+  className,
+  size = "default",
+}: ContainerProps) {
   const maxWidthClass = {
     narrow: "max-w-3xl",
     default: "max-w-4xl",
@@ -43,17 +49,19 @@ interface SectionProps {
   id?: string;
 }
 
-export function Section({ children, className, title, subtitle, id }: SectionProps) {
+export function Section({
+  children,
+  className,
+  title,
+  subtitle,
+  id,
+}: SectionProps) {
   return (
     <section id={id} className={cn("py-12", className)}>
       {(title || subtitle) && (
         <div className="mb-8">
-          {title && (
-            <h2 className="text-2xl font-semibold mb-2">{title}</h2>
-          )}
-          {subtitle && (
-            <p className="text-muted-foreground">{subtitle}</p>
-          )}
+          {title && <h2 className="text-2xl font-semibold mb-2">{title}</h2>}
+          {subtitle && <p className="text-muted-foreground">{subtitle}</p>}
         </div>
       )}
       {children}
@@ -78,7 +86,10 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
         <React.Fragment key={index}>
           {index > 0 && <span className="mx-2">/</span>}
           {item.href ? (
-            <a href={item.href} className="hover:text-foreground transition-colors">
+            <a
+              href={item.href}
+              className="hover:text-foreground transition-colors"
+            >
               {item.label}
             </a>
           ) : (
@@ -97,13 +108,20 @@ interface CardProps {
   as?: "div" | "article";
 }
 
-export function Card({ children, className, hover = false, as: Component = "div" }: CardProps) {
+export function Card({
+  children,
+  className,
+  hover = false,
+  as: Component = "div",
+}: CardProps) {
   return (
-    <Component className={cn(
-      "p-6 bg-card border border-border rounded-2xl",
-      hover && "hover:border-foreground/30 transition-colors",
-      className
-    )}>
+    <Component
+      className={cn(
+        "p-6 bg-card border border-border rounded-2xl",
+        hover && "hover:border-foreground/30 transition-colors",
+        className,
+      )}
+    >
       {children}
     </Component>
   );

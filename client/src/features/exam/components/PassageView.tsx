@@ -45,7 +45,8 @@ export function PassageView({ passage, highlights, onChange }: Props) {
     const onSelection = () => {
       const root = rootRef.current;
       setHasSelection(
-        root !== null && selectionToPassageRange(document.getSelection(), root) !== null,
+        root !== null &&
+          selectionToPassageRange(document.getSelection(), root) !== null,
       );
     };
     document.addEventListener("selectionchange", onSelection);
@@ -54,7 +55,9 @@ export function PassageView({ passage, highlights, onChange }: Props) {
 
   const currentRange = () => {
     const root = rootRef.current;
-    return root === null ? null : selectionToPassageRange(document.getSelection(), root);
+    return root === null
+      ? null
+      : selectionToPassageRange(document.getSelection(), root);
   };
 
   const onHighlight = () => {
@@ -85,14 +88,35 @@ export function PassageView({ passage, highlights, onChange }: Props) {
 
   return (
     <section aria-label="Passage" className="flex flex-col gap-4">
-      <div role="toolbar" aria-label="Highlighting" className="flex flex-wrap gap-2">
-        <button type="button" className={toolButton} onMouseDown={keepSelection} onClick={onHighlight} disabled={!hasSelection}>
+      <div
+        role="toolbar"
+        aria-label="Highlighting"
+        className="flex flex-wrap gap-2"
+      >
+        <button
+          type="button"
+          className={toolButton}
+          onMouseDown={keepSelection}
+          onClick={onHighlight}
+          disabled={!hasSelection}
+        >
           Highlight
         </button>
-        <button type="button" className={toolButton} onMouseDown={keepSelection} onClick={onRemove} disabled={!hasSelection || highlights.length === 0}>
+        <button
+          type="button"
+          className={toolButton}
+          onMouseDown={keepSelection}
+          onClick={onRemove}
+          disabled={!hasSelection || highlights.length === 0}
+        >
           Remove highlight
         </button>
-        <button type="button" className={toolButton} onClick={() => onChange([])} disabled={highlights.length === 0}>
+        <button
+          type="button"
+          className={toolButton}
+          onClick={() => onChange([])}
+          disabled={highlights.length === 0}
+        >
           Clear all
         </button>
       </div>
@@ -113,7 +137,11 @@ export function PassageView({ passage, highlights, onChange }: Props) {
               data-seg-kind="math"
               data-seg-start={seg.start}
               data-seg-end={seg.end}
-              className={seg.highlighted ? "rounded-sm bg-[var(--exam-highlight)]" : undefined}
+              className={
+                seg.highlighted
+                  ? "rounded-sm bg-[var(--exam-highlight)]"
+                  : undefined
+              }
             >
               <MathRenderer content={seg.source} />
             </span>

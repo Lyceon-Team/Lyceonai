@@ -181,7 +181,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-
     // W3-10 / SCL-144: the explanation MUST NOT reach the model pre-submit —
     // possession is the control, not a directive.
     expect(systemInstruction).not.toContain("[AUTHORED EXPLANATION");
@@ -229,7 +228,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-
     // No authored explanation block when explanation is null
     expect(systemInstruction).not.toContain(
       "[AUTHORED EXPLANATION — INTERNAL USE ONLY]",
@@ -265,7 +263,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
     });
 
     const systemInstruction = buildSystemInstruction(envelope);
-
 
     // Correct answer present
     expect(systemInstruction).toContain("Correct answer: B.");
@@ -304,7 +301,6 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
         reason_snapshot: { reason: "default_deterministic_assignment" },
       },
     });
-
 
     // 1. The envelope values match the audit row (the fix)
     expect(envelope.policy_assignment.policy_family).toBe(
@@ -345,7 +341,6 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       policyVariant: "standard",
       proBudgetCircuitBreakerTripped: false,
     });
-
 
     // 'standard' falls through to flash_class — this was the bug
     expect(modelAlias).toBe("flash_class");

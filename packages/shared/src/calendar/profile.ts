@@ -217,7 +217,10 @@ export const studyProfileBoundsSchema = z
       });
     }
     for (const [index, preset] of bounds.daily_minutes_presets.entries()) {
-      if (preset < bounds.daily_minutes_min || preset > bounds.daily_minutes_max) {
+      if (
+        preset < bounds.daily_minutes_min ||
+        preset > bounds.daily_minutes_max
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["daily_minutes_presets", index],
@@ -333,7 +336,9 @@ export function makeStudyProfileUpsertSchema(
           path: ["daily_minutes"],
           message: `daily_minutes must be between ${context.bounds.daily_minutes_min} and ${context.bounds.daily_minutes_max}`,
         });
-      } else if (!context.bounds.daily_minutes_presets.includes(body.daily_minutes)) {
+      } else if (
+        !context.bounds.daily_minutes_presets.includes(body.daily_minutes)
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["daily_minutes"],
@@ -342,7 +347,10 @@ export function makeStudyProfileUpsertSchema(
       }
     }
 
-    if (body.target_exam_date !== undefined && body.target_exam_dates !== undefined) {
+    if (
+      body.target_exam_date !== undefined &&
+      body.target_exam_dates !== undefined
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["target_exam_dates"],

@@ -124,7 +124,11 @@ describe("the back arrow", () => {
 // runner → '< Review' went to Home." The arrow still returns to the previous in-app page
 // (register §2); its label now names that page.
 describe("QA item 7: the back arrow's label names its destination", () => {
-  function arriveFrom(from: string, section = "Review", home = "/review"): void {
+  function arriveFrom(
+    from: string,
+    section = "Review",
+    home = "/review",
+  ): void {
     window.history.replaceState(null, "", from);
     // The tracker mounts on the page the student starts from…
     render(<Tracker />);

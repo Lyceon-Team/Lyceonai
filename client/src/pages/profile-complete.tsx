@@ -37,7 +37,11 @@ import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
-import { newIntent, useStudyProfileMutation } from "@/features/calendar/api";
+import {
+  calendarKeys,
+  newIntent,
+  putStudyProfile,
+} from "@/features/calendar/api";
 
 /**
  * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (profile completion);
@@ -120,7 +124,6 @@ export default function ProfileComplete() {
     notSure: false,
     dates: [],
   });
-  const satSave = useStudyProfileMutation();
   const [errorMessage, setErrorMessage] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -170,7 +173,8 @@ export default function ProfileComplete() {
   // @implemented [2026-10-09] | plain English: students 13+ answer the SAT question here. An
   // under-13 goes to the guardian gate first, as today, and can add dates later in Settings. The
   // dates are saved through the calendar's one profile write (PUT /api/calendar/profile) after
-  // the profile itself, and never complete calendar setup.
+  // the profile itself, and never complete calendar setup. The question never blocks onboarding:
+  // no answer is the same as "Not sure yet" (Home then offers the date card).
   const satDatesAsked = role === "student" && age !== null && !isUnder13;
   const marketingOptInOffered =
     (role === "student" || role === "guardian") &&
@@ -192,9 +196,12 @@ export default function ProfileComplete() {
       const completed = (await response.json()) as ProfileCompletionResponse;
       if (satDatesAsked && satDates.dates.length > 0) {
         try {
-          await satSave.mutateAsync(
+          await putStudyProfile(
             newIntent({ target_exam_dates: satDates.dates }),
           );
+          await queryClient.invalidateQueries({
+            queryKey: calendarKeys.profile(),
+          });
         } catch {
           // The profile is complete; the dates are a second, separate save. Tell the student
           // it failed and let them carry on — Settings has the same picker.
@@ -252,11 +259,6 @@ export default function ProfileComplete() {
 
     if (!dateOfBirth) {
       setErrorMessage("Please enter your date of birth to continue.");
-      return;
-    }
-
-    if (satDatesAsked && !satDates.notSure && satDates.dates.length === 0) {
-      setErrorMessage('Pick your SAT date, or choose "Not sure yet".');
       return;
     }
 

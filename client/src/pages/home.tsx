@@ -57,7 +57,6 @@ import { LazyQotdWidget } from "@/components/qotd/LazyQotdWidget";
  */
 const FREE_DAILY_PRACTICE_QUESTIONS = 40;
 
-
 const TRUST_ITEMS = [
   "Free daily practice",
   "Worked explanation for every question",

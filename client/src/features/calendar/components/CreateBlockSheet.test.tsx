@@ -13,7 +13,10 @@
 import React from "react";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { newBlockSchema, type CalendarBlockType } from "@lyceon/shared/calendar";
+import {
+  newBlockSchema,
+  type CalendarBlockType,
+} from "@lyceon/shared/calendar";
 import { membersWithNewBlock, type NewBlockDraft } from "../lib/members";
 import { CreateBlockSheet } from "./CreateBlockSheet";
 
@@ -124,21 +127,28 @@ describe("confirming writes exactly one block", () => {
 describe("only enabled engines are offered", () => {
   it("full-length is absent while it is not in enabled_block_types", () => {
     open();
-    expect(screen.queryByTestId("calendar-create-engine-full_length")).toBeNull();
+    expect(
+      screen.queryByTestId("calendar-create-engine-full_length"),
+    ).toBeNull();
     expect(screen.getByTestId("calendar-create-engine-practice")).toBeTruthy();
     expect(screen.getByTestId("calendar-create-engine-review")).toBeTruthy();
   });
 
   it("and appears the day the flag does — no second copy to update", () => {
     open({ enabledBlockTypes: ["practice", "review", "full_length"] });
-    expect(screen.getByTestId("calendar-create-engine-full_length")).toBeTruthy();
+    expect(
+      screen.getByTestId("calendar-create-engine-full_length"),
+    ).toBeTruthy();
   });
 
   it("offers nothing at all rather than inventing one when the list is empty", () => {
     const { created } = open({ enabledBlockTypes: [] });
-    expect(screen.getByTestId("calendar-create-engines").querySelectorAll("button")).toHaveLength(0);
     expect(
-      (screen.getByTestId("calendar-create-confirm") as HTMLButtonElement).disabled,
+      screen.getByTestId("calendar-create-engines").querySelectorAll("button"),
+    ).toHaveLength(0);
+    expect(
+      (screen.getByTestId("calendar-create-confirm") as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
     expect(created).toHaveLength(0);
   });
@@ -163,7 +173,10 @@ describe("the created block's scope validates", () => {
       mix: [{ domain: "Algebra", count: 5 }],
     },
     { block_type: "review", count: 10 },
-    { block_type: "full_length", scope: { form_id: null, exam_mode: "strict" } },
+    {
+      block_type: "full_length",
+      scope: { form_id: null, exam_mode: "strict" },
+    },
   ];
 
   for (const draft of DRAFTS) {

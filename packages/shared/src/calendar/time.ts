@@ -32,7 +32,9 @@ import { z } from "zod";
 const LOCAL_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /** Days in each month, 1-indexed; February is resolved by `isLeapYear`. */
-const DAYS_IN_MONTH = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
+const DAYS_IN_MONTH = [
+  0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+] as const;
 
 function isLeapYear(year: number): boolean {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
@@ -56,7 +58,9 @@ export function isValidLocalDate(value: string): boolean {
 
 export const localDateSchema = z
   .string()
-  .refine(isValidLocalDate, { message: "expected a calendar date as YYYY-MM-DD" });
+  .refine(isValidLocalDate, {
+    message: "expected a calendar date as YYYY-MM-DD",
+  });
 export type LocalDate = z.infer<typeof localDateSchema>;
 
 /**
@@ -124,7 +128,8 @@ function parseInstantParts(value: string): InstantParts | null {
   const minute = Number(match[5]);
   const second = match[6] === undefined ? 0 : Number(match[6]);
   const fraction = match[7] ?? "";
-  const millisecond = fraction === "" ? 0 : Number(fraction.slice(0, 3).padEnd(3, "0"));
+  const millisecond =
+    fraction === "" ? 0 : Number(fraction.slice(0, 3).padEnd(3, "0"));
   if (month < 1 || month > 12) return null;
   if (day < 1 || day > daysInMonth(year, month)) return null;
   // 24:00 is a legal ISO-8601 end-of-day and Postgres never emits it; refusing it keeps the
@@ -178,12 +183,20 @@ export function instantSortKey(value: Instant): number {
 export function postgresDowOfLocalDate(value: LocalDate): number {
   const match = LOCAL_DATE_PATTERN.exec(value);
   if (match === null) return 0;
-  const days = daysFromCivil(Number(match[1]), Number(match[2]), Number(match[3]));
+  const days = daysFromCivil(
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  );
   return (((days + 4) % 7) + 7) % 7;
 }
 
 /** `days_from_civil` inverted (Hinnant's `civil_from_days`). Total for any integer. */
-function civilFromDays(days: number): { year: number; month: number; day: number } {
+function civilFromDays(days: number): {
+  year: number;
+  month: number;
+  day: number;
+} {
   const shifted = days + 719468;
   const era = Math.floor(shifted / 146097);
   const dayOfEra = shifted - era * 146097;
@@ -196,7 +209,8 @@ function civilFromDays(days: number): { year: number; month: number; day: number
   );
   const year = yearOfEra + era * 400;
   const dayOfYear =
-    dayOfEra - (365 * yearOfEra + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100));
+    dayOfEra -
+    (365 * yearOfEra + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100));
   const monthPrime = Math.floor((5 * dayOfYear + 2) / 153);
   const day = dayOfYear - Math.floor((153 * monthPrime + 2) / 5) + 1;
   const month = monthPrime + (monthPrime < 10 ? 3 : -9);

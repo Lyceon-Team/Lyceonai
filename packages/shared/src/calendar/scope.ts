@@ -27,7 +27,10 @@
  * comment: jsonb sorts object keys, so an object would silently re-sort the mix).
  */
 import { z } from "zod";
-import { masterySectionSchema, type MasterySection } from "../mastery-levels.js";
+import {
+  masterySectionSchema,
+  type MasterySection,
+} from "../mastery-levels.js";
 import { examModeSchema } from "../exam-runtime-schema.js";
 import { err, ok, type Result } from "../result.js";
 
@@ -72,7 +75,9 @@ export const canonicalDomainSchema = z.enum(CANONICAL_DOMAINS);
 export type CanonicalDomain = z.infer<typeof canonicalDomainSchema>;
 
 /** Which section each canonical domain belongs to — the `IN` lists of the CHECK, inverted. */
-export const DOMAIN_SECTION: Readonly<Record<CanonicalDomain, CalendarSection>> = {
+export const DOMAIN_SECTION: Readonly<
+  Record<CanonicalDomain, CalendarSection>
+> = {
   Algebra: "M",
   "Advanced Math": "M",
   "Problem Solving and Data Analysis": "M",
@@ -342,7 +347,11 @@ function isCanonicalDomain(value: string): value is CanonicalDomain {
 }
 
 export function addDomainSectionIssues(
-  value: { block_type: CalendarBlockType; section: CalendarSection | null; scope: unknown },
+  value: {
+    block_type: CalendarBlockType;
+    section: CalendarSection | null;
+    scope: unknown;
+  },
   ctx: z.RefinementCtx,
 ): void {
   if (value.block_type !== "practice" || value.section === null) return;
@@ -366,10 +375,15 @@ export function addDomainSectionIssues(
   }
 }
 
-export const calendarBlockScopeSchema =
-  blockScopeUnion.superRefine(addDomainSectionIssues);
+export const calendarBlockScopeSchema = blockScopeUnion.superRefine(
+  addDomainSectionIssues,
+);
 
-export const CALENDAR_BLOCK_TYPES = ["practice", "review", "full_length"] as const;
+export const CALENDAR_BLOCK_TYPES = [
+  "practice",
+  "review",
+  "full_length",
+] as const;
 export const calendarBlockTypeSchema = z.enum(CALENDAR_BLOCK_TYPES);
 export type CalendarBlockType = z.infer<typeof calendarBlockTypeSchema>;
 
@@ -417,7 +431,10 @@ function ruleOfIssue(issue: z.ZodIssue): ScopeRule {
 
 function detailOfIssue(issue: z.ZodIssue): string {
   const separator = issue.message.indexOf(": ");
-  if (separator > 0 && scopeRuleSchema.safeParse(issue.message.slice(0, separator)).success) {
+  if (
+    separator > 0 &&
+    scopeRuleSchema.safeParse(issue.message.slice(0, separator)).success
+  ) {
     return issue.message.slice(separator + 2);
   }
   return issue.message;
@@ -462,7 +479,10 @@ export const guardianPracticeDomainScopeSchema = z
     mix: z
       .array(
         z
-          .object({ domain: canonicalDomainSchema, count: z.number().int().positive() })
+          .object({
+            domain: canonicalDomainSchema,
+            count: z.number().int().positive(),
+          })
           .strict(),
       )
       .min(1),
@@ -479,11 +499,17 @@ export const guardianPracticeScopeSchema = z.discriminatedUnion("level", [
 ]);
 export type GuardianPracticeScope = z.infer<typeof guardianPracticeScopeSchema>;
 
-export function toGuardianPracticeScope(scope: PracticeScope): GuardianPracticeScope {
-  if (scope.level === "section") return { level: "section", count: scope.count };
+export function toGuardianPracticeScope(
+  scope: PracticeScope,
+): GuardianPracticeScope {
+  if (scope.level === "section")
+    return { level: "section", count: scope.count };
   return {
     level: "domain",
-    mix: scope.mix.map((entry) => ({ domain: entry.domain, count: entry.count })),
+    mix: scope.mix.map((entry) => ({
+      domain: entry.domain,
+      count: entry.count,
+    })),
   };
 }
 

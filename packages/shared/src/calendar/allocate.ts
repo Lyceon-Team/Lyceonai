@@ -216,7 +216,10 @@ export type DayAllocation = z.infer<typeof dayAllocationSchema>;
  * optimisation: `unit.engine = engineOf(b)` is the first clause of every adapter's
  * `matches` in §9.2, §9.3 and §9.4.
  */
-export function unitMatchesBlock(unit: ActivityUnit, block: PlanBlock): boolean {
+export function unitMatchesBlock(
+  unit: ActivityUnit,
+  block: PlanBlock,
+): boolean {
   if (unit.engine !== engineOfBlock(block.block_type)) return false;
 
   if (block.block_type === "practice") {
@@ -244,10 +247,12 @@ function unitIdentity(unit: ActivityUnit): string {
 
 /** §13: `sorted by (occurred_at, engine, unit_id)` — immutable engine facts, total order. */
 function compareUnits(left: ActivityUnit, right: ActivityUnit): number {
-  const byTime = instantSortKey(left.occurred_at) - instantSortKey(right.occurred_at);
+  const byTime =
+    instantSortKey(left.occurred_at) - instantSortKey(right.occurred_at);
   if (byTime !== 0) return byTime;
   if (left.engine !== right.engine) return left.engine < right.engine ? -1 : 1;
-  if (left.unit_id !== right.unit_id) return left.unit_id < right.unit_id ? -1 : 1;
+  if (left.unit_id !== right.unit_id)
+    return left.unit_id < right.unit_id ? -1 : 1;
   return 0;
 }
 
@@ -256,7 +261,8 @@ function compareBlocks(left: PlanBlock, right: PlanBlock): number {
   if (left.display_ordinal !== right.display_ordinal) {
     return left.display_ordinal - right.display_ordinal;
   }
-  if (left.block_id !== right.block_id) return left.block_id < right.block_id ? -1 : 1;
+  if (left.block_id !== right.block_id)
+    return left.block_id < right.block_id ? -1 : 1;
   return 0;
 }
 

@@ -193,23 +193,30 @@ vi.mock("../../apps/api/src/lib/supabase-admin", () => ({
   getSupabaseAdmin: () => ({
     from: (table: string) => {
       if (table !== "canonical_skill_catalog") {
-        throw new Error(`Unexpected admin table access in UI-07 test: ${table}`);
+        throw new Error(
+          `Unexpected admin table access in UI-07 test: ${table}`,
+        );
       }
       const rows = new Map<string, BankRow>();
       for (const row of bank.rows) {
         const codes = Array.isArray(row.skill_codes) ? row.skill_codes : [];
         for (const skill of codes) {
-          rows.set(`${String(row.section)}|${String(row.domain)}|${String(skill)}`, {
-            section: row.section,
-            domain: row.domain,
-            skill,
-          });
+          rows.set(
+            `${String(row.section)}|${String(row.domain)}|${String(skill)}`,
+            {
+              section: row.section,
+              domain: row.domain,
+              skill,
+            },
+          );
         }
       }
       const q = {
         select: () => q,
         then: <T>(resolve: (v: { data: BankRow[]; error: null }) => T) =>
-          Promise.resolve({ data: [...rows.values()], error: null }).then(resolve),
+          Promise.resolve({ data: [...rows.values()], error: null }).then(
+            resolve,
+          ),
       };
       return q;
     },

@@ -42,14 +42,37 @@ function session(
 
 describe("examPosition", () => {
   it("maps every session shape to one position", () => {
-    expect(examPosition(session("created", null, "not_started"))).toEqual({ kind: "not_started" });
-    expect(examPosition(session("active", "RW", "module1_active"))).toEqual({ kind: "module", section: "RW", module: "1" });
-    expect(examPosition(session("active", "RW", "module1_submitted"))).toEqual({ kind: "module2_ready", section: "RW" });
-    expect(examPosition(session("active", "RW", "module2_active"))).toEqual({ kind: "module", section: "RW", module: "2" });
-    expect(examPosition(session("section_break", null, "submitted"))).toEqual({ kind: "break" });
-    expect(examPosition(session("active", "M", "submitted", "module2_active"))).toEqual({ kind: "module", section: "M", module: "2" });
-    for (const s of ["completed", "abandoned_final", "partial_scored_abandoned"] as const) {
-      expect(examPosition(session(s, null, "submitted", "submitted"))).toEqual({ kind: "finished" });
+    expect(examPosition(session("created", null, "not_started"))).toEqual({
+      kind: "not_started",
+    });
+    expect(examPosition(session("active", "RW", "module1_active"))).toEqual({
+      kind: "module",
+      section: "RW",
+      module: "1",
+    });
+    expect(examPosition(session("active", "RW", "module1_submitted"))).toEqual({
+      kind: "module2_ready",
+      section: "RW",
+    });
+    expect(examPosition(session("active", "RW", "module2_active"))).toEqual({
+      kind: "module",
+      section: "RW",
+      module: "2",
+    });
+    expect(examPosition(session("section_break", null, "submitted"))).toEqual({
+      kind: "break",
+    });
+    expect(
+      examPosition(session("active", "M", "submitted", "module2_active")),
+    ).toEqual({ kind: "module", section: "M", module: "2" });
+    for (const s of [
+      "completed",
+      "abandoned_final",
+      "partial_scored_abandoned",
+    ] as const) {
+      expect(examPosition(session(s, null, "submitted", "submitted"))).toEqual({
+        kind: "finished",
+      });
     }
   });
 
@@ -58,7 +81,9 @@ describe("examPosition", () => {
     const typed = parseModuleRoute("RW", "1")!;
     expect(routeMatchesPosition(typed, now)).toBe(false);
     expect(pathForPosition(SID, now)).toBe(`/tests/${SID}/RW/2`);
-    const done = examPosition(session("completed", null, "submitted", "submitted"));
+    const done = examPosition(
+      session("completed", null, "submitted", "submitted"),
+    );
     expect(routeMatchesPosition(parseModuleRoute("M", "2")!, done)).toBe(false);
     expect(pathForPosition(SID, done)).toBe(`/tests/${SID}/report`);
   });

@@ -158,7 +158,8 @@ vi.mock("../../server/middleware/supabase-auth", async () => {
 });
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) => next(),
+  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) =>
+    next(),
   generateToken: () => "test-csrf-token",
 }));
 
@@ -177,7 +178,9 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
     from: (table: string) => {
       if (table === "system_event_logs") {
         return {
-          insert: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
+          insert: async (
+            payload: Record<string, unknown> | Record<string, unknown>[],
+          ) => {
             if (Array.isArray(payload)) {
               systemEventInserts.push(...payload);
             } else {
@@ -194,7 +197,9 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
       // the new row shape.
       if (table === "audit_logs") {
         return {
-          insert: async (payload: Record<string, unknown> | Record<string, unknown>[]) => {
+          insert: async (
+            payload: Record<string, unknown> | Record<string, unknown>[],
+          ) => {
             if (Array.isArray(payload)) {
               guardianAuditInserts.push(...payload);
             } else if (payload) {

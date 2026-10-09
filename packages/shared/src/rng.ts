@@ -39,7 +39,10 @@ export function createRng(seed: number | string): () => number {
  * Deterministic Fisher-Yates shuffle. Returns a new array (does not mutate input).
  * Same `seed` → identical permutation; different `seed` → (almost surely) different.
  */
-export function seededShuffle<T>(items: readonly T[], seed: number | string): T[] {
+export function seededShuffle<T>(
+  items: readonly T[],
+  seed: number | string,
+): T[] {
   const out = items.slice();
   const rng = createRng(seed);
   for (let i = out.length - 1; i > 0; i--) {

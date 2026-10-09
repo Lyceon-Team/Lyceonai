@@ -285,7 +285,10 @@ describe("SCL-071 settlement gate", () => {
     // being asserted here is unchanged and is the point of the test: the
     // ineligible country is refused on BOTH settlement events, not one.
     const outcome = await process_(body, signature, "req_async_country");
-    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      status: "remediated_refund_untraceable",
+    });
     expect(stripeApi.subscriptionsCancel).toHaveBeenCalled();
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });

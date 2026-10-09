@@ -168,12 +168,15 @@ describe("customer.deleted revokes the entitlement the Customer funded", () => {
     ] as never);
 
     const { body, signature } = signedCustomerDeleted("cus_guardian");
-    await (await handler())(body, signature);
+    await (
+      await handler()
+    )(body, signature);
 
     expect(revokedProfileIds().sort()).toEqual([STUDENT_A, STUDENT_B].sort());
     for (const call of accountMocks.upsertEntitlement.mock.calls) {
-      expect((call as unknown as [string, { tier: string; status: string }])[1])
-        .toMatchObject({ tier: "free", status: "canceled" });
+      expect(
+        (call as unknown as [string, { tier: string; status: string }])[1],
+      ).toMatchObject({ tier: "free", status: "canceled" });
     }
     // The guardian owns no entitlement row, so nothing is written for them.
     expect(revokedProfileIds()).not.toContain(GUARDIAN_ID);
@@ -211,7 +214,9 @@ describe("customer.deleted revokes the entitlement the Customer funded", () => {
     );
 
     const { body, signature } = signedCustomerDeleted("cus_guardian");
-    await (await handler())(body, signature);
+    await (
+      await handler()
+    )(body, signature);
 
     expect(revokedProfileIds()).toEqual([STUDENT_A]);
     // The self-payer's subscription is never even fanned out.
@@ -230,7 +235,9 @@ describe("customer.deleted revokes the entitlement the Customer funded", () => {
     accountMocks.getProfileIdByStripeCustomerId.mockResolvedValue(null);
 
     const { body, signature } = signedCustomerDeleted("cus_unknown");
-    await (await handler())(body, signature);
+    await (
+      await handler()
+    )(body, signature);
 
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
     expect(accountMocks.getAllGuardianStudentLinks).not.toHaveBeenCalled();
@@ -255,7 +262,9 @@ describe("customer.deleted revokes the entitlement the Customer funded", () => {
     ] as never);
 
     const { body, signature } = signedCustomerDeleted("cus_guardian");
-    await (await handler())(body, signature);
+    await (
+      await handler()
+    )(body, signature);
 
     expect(revokedProfileIds()).toEqual([GUARDIAN_ID]);
     expect(stripeApi.customersRetrieve).not.toHaveBeenCalled();

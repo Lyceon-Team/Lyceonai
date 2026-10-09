@@ -1,13 +1,19 @@
 /** Allowed difficulty values for a practice session. */
 export type PracticeDifficulty = "easy" | "medium" | "hard";
 
-const ALLOWED_DIFFICULTIES = new Set<PracticeDifficulty>(["easy", "medium", "hard"]);
+const ALLOWED_DIFFICULTIES = new Set<PracticeDifficulty>([
+  "easy",
+  "medium",
+  "hard",
+]);
 
 // ---------------------------------------------------------------------------
 // Difficulty helpers
 // ---------------------------------------------------------------------------
 
-export function normalizePracticeDifficulties(raw: string[]): PracticeDifficulty[] {
+export function normalizePracticeDifficulties(
+  raw: string[],
+): PracticeDifficulty[] {
   const seen = new Set<PracticeDifficulty>();
   for (const item of raw) {
     const s = item.trim().toLowerCase();
@@ -15,10 +21,14 @@ export function normalizePracticeDifficulties(raw: string[]): PracticeDifficulty
       seen.add(s as PracticeDifficulty);
     }
   }
-  return (["easy", "medium", "hard"] as PracticeDifficulty[]).filter((d) => seen.has(d));
+  return (["easy", "medium", "hard"] as PracticeDifficulty[]).filter((d) =>
+    seen.has(d),
+  );
 }
 
-export function parseDifficultiesFromSearch(search: string): PracticeDifficulty[] {
+export function parseDifficultiesFromSearch(
+  search: string,
+): PracticeDifficulty[] {
   const normalizedSearch = search.startsWith("?") ? search.slice(1) : search;
   const params = new URLSearchParams(normalizedSearch);
   return normalizePracticeDifficulties(params.getAll("difficulty"));
@@ -46,7 +56,10 @@ export interface PracticeFilters {
   domains?: string[];
 }
 
-export function appendPracticeFilters(path: string, filters: PracticeFilters): string {
+export function appendPracticeFilters(
+  path: string,
+  filters: PracticeFilters,
+): string {
   const [basePath, rawQuery = ""] = path.split("?");
   const params = new URLSearchParams(rawQuery);
 

@@ -60,6 +60,7 @@ const BOUNDS = {
 const PROFILE = {
   timezone: "America/Los_Angeles",
   target_exam_date: "2026-11-07",
+  target_exam_dates: ["2026-11-07"],
   target_score: 1400,
   study_days_mask: 62,
   daily_minutes: 45,
@@ -190,6 +191,7 @@ describe("GET /api/calendar", () => {
         default_full_length_interval_weeks: 2,
         default_full_length_weekday: 6,
         final_exam_lead_days: 7,
+        target_exam_dates: [],
       },
     };
     const parsed = calendarResponseSchema.safeParse(payload);
@@ -405,15 +407,16 @@ describe("mutations", () => {
   });
 
   it("the ungated profile read is the profile or null, and refuses any plan key (OQ-25)", () => {
-    expect(profileReadResponseSchema.safeParse({ profile: PROFILE }).success).toBe(
-      true,
-    );
+    expect(
+      profileReadResponseSchema.safeParse({ profile: PROFILE }).success,
+    ).toBe(true);
     expect(profileReadResponseSchema.safeParse({ profile: null }).success).toBe(
       true,
     );
     // Presence above, absence here: a plan field at either level fails the parse.
     expect(
-      profileReadResponseSchema.safeParse({ profile: PROFILE, days: [] }).success,
+      profileReadResponseSchema.safeParse({ profile: PROFILE, days: [] })
+        .success,
     ).toBe(false);
     expect(
       profileReadResponseSchema.safeParse({ profile: PROFILE, version_no: 8 })
@@ -554,6 +557,7 @@ describe("guardian read (§16, R-08-22)", () => {
           default_full_length_interval_weeks: 2,
           default_full_length_weekday: 6,
           final_exam_lead_days: 7,
+          target_exam_dates: [],
         },
       }).success,
     ).toBe(false);

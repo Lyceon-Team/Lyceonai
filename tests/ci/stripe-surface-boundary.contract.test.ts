@@ -275,7 +275,10 @@ describe("the retrieved Stripe Customer is parsed, not asserted", () => {
       () => null,
       (e: unknown) => (e instanceof Error ? e.message : String(e)),
     );
-    expect(err, "expected a rejection; the call resolved instead").not.toBeNull();
+    expect(
+      err,
+      "expected a rejection; the call resolved instead",
+    ).not.toBeNull();
     expect(err).toContain('{"id":["Required"]}');
     expect(err).not.toContain("Tier-1");
     // The half that matters: the malformed Customer wrote no entitlement.
@@ -412,13 +415,17 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
     console.table(
       handled.map((e) => ({
         event: e,
-        routedBy: BRANCHED.includes(e) ? "explicit branch" : "subscription path",
+        routedBy: BRANCHED.includes(e)
+          ? "explicit branch"
+          : "subscription path",
       })),
     );
 
     expect(unrouted).toEqual([]);
     // Not vacuous: assert the branch lists actually cover the handled set.
-    expect(handled.length).toBe(BRANCHED.length + SUBSCRIPTION_LIFECYCLE.length);
+    expect(handled.length).toBe(
+      BRANCHED.length + SUBSCRIPTION_LIFECYCLE.length,
+    );
   });
 
   it("an event that reaches the subscription path but is not one is REFUSED", async () => {
@@ -451,11 +458,15 @@ describe("the dispatcher is exhaustive over the HANDLED events", () => {
     // test, exactly as promoting an ignored event would.
     const surface = await import("../../server/lib/stripe/event-surface");
     const original = surface.EVENT_DISPOSITION["invoice.payment_succeeded"];
-    Object.defineProperty(surface.EVENT_DISPOSITION, "invoice.payment_succeeded", {
-      value: { kind: "handled" },
-      configurable: true,
-      writable: true,
-    });
+    Object.defineProperty(
+      surface.EVENT_DISPOSITION,
+      "invoice.payment_succeeded",
+      {
+        value: { kind: "handled" },
+        configurable: true,
+        writable: true,
+      },
+    );
 
     try {
       const { body, signature } = signedDelivery(

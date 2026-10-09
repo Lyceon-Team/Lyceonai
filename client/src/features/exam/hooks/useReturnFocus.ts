@@ -20,7 +20,10 @@ export function useReturnFocus(): {
   return {
     onOpenAutoFocus: () => {
       // Runs before Radix moves focus inside: activeElement is still the opener.
-      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      opener.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
     },
     onCloseAutoFocus: (event: Event) => {
       const target = opener.current;

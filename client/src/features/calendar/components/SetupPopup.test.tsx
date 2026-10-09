@@ -29,6 +29,7 @@ const DEFAULTS: CalendarSetupDefaults = {
   default_full_length_interval_weeks: 2,
   default_full_length_weekday: 6,
   final_exam_lead_days: 7,
+  target_exam_dates: [],
 };
 
 const TODAY = "2026-09-24";

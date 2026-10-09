@@ -10,7 +10,11 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      {!TOASTER_MOUNTED && (() => { TOASTER_MOUNTED = true; return <Toaster/> })()}
+      {!TOASTER_MOUNTED &&
+        (() => {
+          TOASTER_MOUNTED = true;
+          return <Toaster />;
+        })()}
     </>
   );
 }

@@ -56,6 +56,7 @@ const BOUNDS: StudyProfileBounds = {
 const PROFILE: StudyProfile = {
   timezone: "America/Chicago",
   target_exam_date: "2026-11-07",
+  target_exam_dates: ["2026-11-07"],
   target_score: 1400,
   study_days_mask: 126,
   daily_minutes: 55,

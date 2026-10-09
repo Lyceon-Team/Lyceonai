@@ -86,20 +86,16 @@ afterEach(() => {
 
 describe("the credential loader names itself when absent", () => {
   it("throws an error containing the variable name", async () => {
-    const { getGcpCredentials } = await import(
-      "../../server/lib/gcp-credentials"
-    );
-    expect(() => getGcpCredentials()).toThrowError(
-      new RegExp(GCP_VAR),
-    );
+    const { getGcpCredentials } =
+      await import("../../server/lib/gcp-credentials");
+    expect(() => getGcpCredentials()).toThrowError(new RegExp(GCP_VAR));
   });
 });
 
 describe("crisis Layer 2 with the credential absent", () => {
   it("returns the non-crisis sentinel rather than a fabricated verdict", async () => {
-    const { classifyCrisis } = await import(
-      "../../server/services/tutor-crisis"
-    );
+    const { classifyCrisis } =
+      await import("../../server/services/tutor-crisis");
 
     const result = await classifyCrisis("I need help with algebra");
 
@@ -111,9 +107,8 @@ describe("crisis Layer 2 with the credential absent", () => {
   });
 
   it("never constructs a model client, so no synthetic response exists", async () => {
-    const { classifyCrisis } = await import(
-      "../../server/services/tutor-crisis"
-    );
+    const { classifyCrisis } =
+      await import("../../server/services/tutor-crisis");
 
     await classifyCrisis("I need help with algebra");
 
@@ -125,9 +120,8 @@ describe("crisis Layer 2 with the credential absent", () => {
    * sees "Layer 2 failed" and has to guess why.
    */
   it("logs the retry and the exhaustion, naming the variable", async () => {
-    const { classifyCrisis } = await import(
-      "../../server/services/tutor-crisis"
-    );
+    const { classifyCrisis } =
+      await import("../../server/services/tutor-crisis");
 
     await classifyCrisis("I need help with algebra");
 

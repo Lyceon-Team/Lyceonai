@@ -129,8 +129,11 @@ function authStub() {
       next(),
     requireProfileComplete: (_q: Request, _s: Response, next: NextFunction) =>
       next(),
-    requireGuardianLinkForUnder13: (_q: Request, _s: Response, next: NextFunction) =>
-      next(),
+    requireGuardianLinkForUnder13: (
+      _q: Request,
+      _s: Response,
+      next: NextFunction,
+    ) => next(),
     getSupabaseAdmin: () => {
       if (!testPg) throw new Error("PG client not initialised");
       return makePgSupabase(testPg);
@@ -579,7 +582,11 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     // Presence: the legacy token is really there before the backfill runs.
     expect(await answers()).toEqual([tokenA, tokenA]);
 
-    type Counts = { phase: string; items_token: number; attempts_token: number };
+    type Counts = {
+      phase: string;
+      items_token: number;
+      attempts_token: number;
+    };
     const countsOf = (results: unknown): Counts[] => {
       const list = Array.isArray(results) ? results : [results];
       const hit = list.find(

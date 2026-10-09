@@ -223,6 +223,7 @@ function billingBody(args: {
 const STUDY_PROFILE = {
   timezone: "America/Chicago",
   target_exam_date: "2026-12-05",
+  target_exam_dates: ["2026-12-05"],
   target_score: 1400,
   study_days_mask: 62,
   daily_minutes: 30,
@@ -480,11 +481,12 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
   it("with a calendar profile: the test date and target show and save through PUT /api/calendar/profile", async () => {
     serve({ calendarProfile: true });
     await mount({});
-    const date = (await screen.findByTestId(
-      "settings-test-date",
-    )) as HTMLInputElement;
+    // SCL-223: the saved date is a ticked option in the shared SAT-date picker.
+    const date = await screen.findByTestId(
+      "settings-test-dates-date-2026-12-05",
+    );
     const target = screen.getByTestId("settings-target") as HTMLInputElement;
-    expect(date.value).toBe("2026-12-05");
+    expect(date.getAttribute("aria-checked")).toBe("true");
     expect(target.value).toBe("1400");
     expect(screen.queryByTestId("settings-goal-setup")).toBeNull();
 
@@ -523,10 +525,32 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     expect(JSON.stringify(net.log)).not.toContain("marketingOptIn");
   });
 
+  it("SCL-223: with no calendar profile the SAT dates still show and save alone, through PUT /api/calendar/profile", async () => {
+    serve({ calendarProfile: false });
+    await mount({});
+    const option = await screen.findByTestId(
+      "settings-test-dates-date-2026-12-05",
+    );
+    // The target score waits for calendar setup (OQ-20); the link to set it up stays.
+    expect(screen.queryByTestId("settings-target")).toBeNull();
+    expect(screen.getByTestId("settings-goal-setup")).toBeTruthy();
+    fireEvent.click(option);
+    fireEvent.click(screen.getByTestId("settings-profile-save"));
+    await screen.findByTestId("settings-profile-saved");
+    const puts = calls("PUT", "/api/calendar/profile");
+    expect(puts).toHaveLength(1);
+    const body = puts[0]?.body as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual([
+      "idempotency_key",
+      "target_exam_dates",
+    ]);
+    expect(body.target_exam_dates).toEqual(["2026-12-05"]);
+  });
+
   it("an unchanged form has nothing to save", async () => {
     serve({ calendarProfile: true });
     await mount({});
-    await screen.findByTestId("settings-test-date");
+    await screen.findByTestId("settings-test-dates");
     expect(
       (screen.getByTestId("settings-profile-save") as HTMLButtonElement)
         .disabled,
@@ -538,7 +562,7 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     await mount({});
     // Presence first: the Profile section rendered its fields.
     expect(await screen.findByTestId("settings-name")).toBeTruthy();
-    await screen.findByTestId("settings-test-date");
+    await screen.findByTestId("settings-test-dates");
     const section = screen.getByTestId("settings-profile");
     for (const text of [
       "About you",

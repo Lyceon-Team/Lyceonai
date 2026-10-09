@@ -1151,10 +1151,14 @@ describe("QA 2026-10-07 item 1: a crisis turn always shows the Support card", ()
     expect(card.getAttribute("data-lane")).toBe("crisis");
     expect(card.textContent).toContain(CRISIS_RESOURCES);
     expect(
-      within(card).getByRole("link", { name: /Call 988/ }).getAttribute("href"),
+      within(card)
+        .getByRole("link", { name: /Call 988/ })
+        .getAttribute("href"),
     ).toBe("tel:988");
     expect(
-      within(card).getByRole("link", { name: /Text 988/ }).getAttribute("href"),
+      within(card)
+        .getByRole("link", { name: /Text 988/ })
+        .getAttribute("href"),
     ).toBe("sms:988");
     // Not paused: no "Continue with LISA" (its /resume would 409), the composer stays.
     expect(screen.queryByText("Tutoring is paused")).toBeNull();

@@ -97,7 +97,8 @@ vi.mock("../../server/lib/entitlement-runtime-config", () => ({
 }));
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) => next(),
+  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) =>
+    next(),
   generateToken: () => "test-csrf-token",
 }));
 
@@ -990,7 +991,8 @@ describe("Identity + Entitlement Runtime Contract", () => {
     expect(res.status).toBe(200);
     expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(1);
 
-    const args = stripeMocks.checkoutCreate.mock.calls[0][0] as Stripe.Checkout.SessionCreateParams;
+    const args = stripeMocks.checkoutCreate.mock
+      .calls[0][0] as Stripe.Checkout.SessionCreateParams;
     expect(args.client_reference_id).toBe(STUDENT_ID);
     expect(args.metadata.student_profile_id).toBe(STUDENT_ID);
     expect(args.subscription_data.metadata.student_profile_id).toBe(STUDENT_ID);
@@ -1328,7 +1330,9 @@ describe("Identity + Entitlement Runtime Contract", () => {
     const res = await request(await billingApp()).get("/api/billing/plans");
 
     expect(res.status).toBe(200);
-    const monthly = res.body.plans.find((p: Record<string, unknown>) => p.plan === "monthly");
+    const monthly = res.body.plans.find(
+      (p: Record<string, unknown>) => p.plan === "monthly",
+    );
     expect(monthly.amountCents).toBe(4242);
     expect(monthly.currency).toBe("usd");
     expect(monthly.intervalLabel).toBe("per month");

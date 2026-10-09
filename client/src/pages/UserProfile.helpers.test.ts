@@ -11,6 +11,8 @@ describe("formatMemberSince", () => {
   });
 
   it("formats valid createdAt values", () => {
-    expect(formatMemberSince("2026-03-24T10:00:00.000Z")).not.toBe("Unavailable");
+    expect(formatMemberSince("2026-03-24T10:00:00.000Z")).not.toBe(
+      "Unavailable",
+    );
   });
 });
