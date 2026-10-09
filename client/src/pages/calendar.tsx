@@ -371,6 +371,9 @@ export default function CalendarPage(): JSX.Element {
         // Doc 05C's rows, straight off the response. The goal card sums them; nothing here
         // touches them.
         projection={response.projection}
+        // Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the paid goal card
+        // shows "🔥 N-day streak", the same daily streak Home shows (SCL-226).
+        goalStreakDays={response.streak.current}
         // Brief 14 Step 4 — the dates the generator refused to place a test on, straight off
         // the payload. The notice names them; nothing here re-derives which days are blocked.
         fullLengthSuppressions={response.full_length_suppressions}
