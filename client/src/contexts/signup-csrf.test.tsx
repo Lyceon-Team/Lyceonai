@@ -115,8 +115,7 @@ describe("G-NEW-12 the first write after sign-up needs no CSRF retry", () => {
 
     await act(async () => {
       await auth!.signUp("new@example.test", "pw-long-enough", {
-        studentTermsAccepted: true,
-        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
       });
     });
     expect(auth!.user?.id).toBe("d708ede4-0000-4000-8000-000000000001");

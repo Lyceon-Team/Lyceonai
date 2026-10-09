@@ -42,9 +42,13 @@ export interface SignupResult {
   };
 }
 
+/**
+ * @spec [SCL-222] | @implemented [2026-10-09] | plain English: the consent source that labels the
+ * acceptance rows the server writes when an account is created. There is no checkbox to report:
+ * the sign-in notice under the buttons is what the person agrees to, and whether a row is written
+ * is decided on the server (account creation), never by this value.
+ */
 export interface SignupLegalConsent {
-  studentTermsAccepted: boolean;
-  privacyPolicyAccepted: boolean;
   consentSource?: ConsentSource;
 }
 
@@ -378,8 +382,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           password,
           displayName,
           legalConsent: {
-            studentTermsAccepted: legalConsent.studentTermsAccepted,
-            privacyPolicyAccepted: legalConsent.privacyPolicyAccepted,
             consentSource: legalConsent.consentSource ?? "email_signup_form",
           },
           // SCL-201 IS 6: the first-touch channel (kept for the tab session only with analytics
@@ -462,15 +464,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async (legalConsent: SignupLegalConsent) => {
-    if (
-      !legalConsent.studentTermsAccepted ||
-      !legalConsent.privacyPolicyAccepted
-    ) {
-      throw new Error(
-        "You must accept Terms and Privacy before continuing with Google",
-      );
-    }
-
     setAuthLoading(true);
     try {
       // Native Supabase OAuth (PKCE). Supabase owns the Google OAuth callback at
@@ -478,7 +471,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // server exchanges the PKCE code for a session. The Google client secret lives only in the
       // Supabase dashboard — never in app code (HALT-3).
       const consentSource =
-        legalConsent.consentSource ?? "google_continue_pre_oauth";
+        legalConsent.consentSource ?? "google_continue_click";
       const callbackParams = new URLSearchParams({
         consentSource,
         // SCL-201 IS 6: recorded by the callback only on a new, not-yet-onboarded account.

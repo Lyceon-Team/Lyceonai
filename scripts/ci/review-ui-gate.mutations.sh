@@ -2002,10 +2002,12 @@ plant "UI59-N3" "the developer line returns to the 404" \
 assert s.count(a) == 1
 s = s.replace(a, "        description=\"Did you forget to add the page to the router? Sorry, we couldn", 1)'
 
-plant "UI59-A1" "Continue with Google is filled (two primaries on sign in)" \
+# SCL-222 (owner ruling 2026-10-09): "Continue with Google" is now the one filled action, so the
+# two-primaries defect is the email Sign In button turning filled beside it.
+plant "UI59-A1" "the email Sign In is filled (two primaries on sign in)" \
   "$B59" \
   "client/src/components/auth/SupabaseAuthForm.tsx" \
-  'a = "              variant=\"lyc-outline\"\n              className=\"w-full\"\n              onClick={handleGoogleSignIn}"
+  'a = "                  variant=\"lyc-outline\"\n                  className=\"w-full\"\n                  disabled={isLoading}\n                  data-testid=\"button-signin\""
 assert s.count(a) == 1
 s = s.replace(a, a.replace("lyc-outline", "lyc-primary"), 1)'
 
