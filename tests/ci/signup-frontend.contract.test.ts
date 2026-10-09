@@ -108,7 +108,43 @@ describe("Signup Frontend Contract", () => {
     });
   });
 
-  it("keeps signup submit disabled until legal consent is checked", async () => {
+  // @spec [SCL-222 (owner ruling 2026-10-09)] | @implemented [2026-10-09] | plain English: no
+  // checkbox at sign-in. Google comes first, filled and never disabled; the email form comes
+  // after the "or" divider; the standard notice sits under the buttons, linked to the current
+  // Terms of Use and Privacy Policy.
+  it("SCL-222: Google is first and never disabled, no consent checkbox, the notice is linked", () => {
+    render(React.createElement(SupabaseAuthForm));
+
+    const googleButton = screen.getByTestId(
+      "button-google-signin",
+    ) as HTMLButtonElement;
+    expect(googleButton.disabled).toBe(false);
+    // First action on the page: it precedes the email tabs in document order.
+    expect(
+      googleButton.compareDocumentPosition(screen.getByTestId("tab-signin")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    expect(screen.queryByTestId("checkbox-google-legal")).toBeNull();
+    fireEvent.click(screen.getByTestId("tab-signup"));
+    expect(screen.queryByTestId("checkbox-signup-legal")).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+
+    const notice = screen.getByTestId("signin-legal-notice");
+    expect(notice.textContent).toBe(
+      "By continuing, you agree to Lyceon's Terms of Use and Privacy Policy.",
+    );
+    const links = Array.from(notice.querySelectorAll("a")).map((a) => [
+      a.textContent,
+      a.getAttribute("href"),
+    ]);
+    expect(links).toEqual([
+      ["Terms of Use", "/legal/student-terms"],
+      ["Privacy Policy", "/legal/privacy-policy"],
+    ]);
+  });
+
+  it("signup submit is enabled by a valid email and password alone (no consent step)", async () => {
     render(React.createElement(SupabaseAuthForm));
     fireEvent.click(screen.getByTestId("tab-signup"));
 
@@ -125,9 +161,6 @@ describe("Signup Frontend Contract", () => {
     const signupButton = screen.getByTestId(
       "button-signup",
     ) as HTMLButtonElement;
-    expect(signupButton.disabled).toBe(true);
-
-    fireEvent.click(screen.getByTestId("checkbox-signup-legal"));
     expect(signupButton.disabled).toBe(false);
   });
 
@@ -150,7 +183,6 @@ describe("Signup Frontend Contract", () => {
     fireEvent.change(screen.getByTestId("input-signup-password"), {
       target: { value: "Password123!" },
     });
-    fireEvent.click(screen.getByTestId("checkbox-signup-legal"));
     fireEvent.click(screen.getByTestId("button-signup"));
 
     await screen.findByTestId("alert-verification-required");
@@ -158,35 +190,20 @@ describe("Signup Frontend Contract", () => {
     expect(signUpMock).toHaveBeenCalledWith(
       "student@example.com",
       "Password123!",
-      {
-        studentTermsAccepted: true,
-        privacyPolicyAccepted: true,
-        consentSource: "email_signup_form",
-      },
+      { consentSource: "email_signup_form" },
       "Student User",
     );
   });
 
-  it("requires explicit Google legal consent and sends canonical consent payload", async () => {
+  it("Continue with Google starts the redirect at once with the canonical consent source", async () => {
     signInWithGoogleMock.mockResolvedValueOnce(undefined);
 
     render(React.createElement(SupabaseAuthForm));
-
-    const googleButton = screen.getByTestId(
-      "button-google-signin",
-    ) as HTMLButtonElement;
-    expect(googleButton.disabled).toBe(true);
-
-    fireEvent.click(screen.getByTestId("checkbox-google-legal"));
-    expect(googleButton.disabled).toBe(false);
-
-    fireEvent.click(googleButton);
+    fireEvent.click(screen.getByTestId("button-google-signin"));
 
     await waitFor(() => {
       expect(signInWithGoogleMock).toHaveBeenCalledWith({
-        studentTermsAccepted: true,
-        privacyPolicyAccepted: true,
-        consentSource: "google_continue_pre_oauth",
+        consentSource: "google_continue_click",
       });
     });
   });
@@ -246,7 +263,6 @@ describe("Signup Frontend Contract", () => {
     fireEvent.change(screen.getByTestId("input-signup-password"), {
       target: { value: "Password123!" },
     });
-    fireEvent.click(screen.getByTestId("checkbox-signup-legal"));
     fireEvent.click(screen.getByTestId("button-signup"));
 
     const alerts = await screen.findAllByTestId("alert-error");
@@ -281,7 +297,6 @@ describe("Signup Frontend Contract", () => {
     fireEvent.change(screen.getByTestId("input-signup-password"), {
       target: { value: "short1" },
     });
-    fireEvent.click(screen.getByTestId("checkbox-signup-legal"));
 
     const button = screen.getByTestId("button-signup") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
