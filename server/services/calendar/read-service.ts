@@ -66,7 +66,6 @@ import {
   type CalendarSetupDefaults,
   type GuardianCalendarResponse,
   type Result,
-  type StudyProfile,
   type UnacknowledgedChange,
   completedStudyProfile,
   type CompletedStudyProfile,

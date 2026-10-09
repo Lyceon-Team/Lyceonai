@@ -46,11 +46,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { classifyError } from "../lib/redact";
 import { getQuotaResetTimezone } from "../lib/account";
-import {
-  isKnownTimeZone,
-  localTodayIn,
-  toIsoTimestamp,
-} from "./calendar/adapters/local-day";
+import { isKnownTimeZone } from "./calendar/adapters/local-day";
 
 /**
  * The student's own zone: their study profile's `timezone` (Doc 05F §7.1), else the platform
