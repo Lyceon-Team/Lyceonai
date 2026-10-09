@@ -684,7 +684,9 @@ BEGIN
     RETURN jsonb_build_object('ok', true, 'changed', false);
   END IF;
   UPDATE public.student_qotd_email_prefs
-     SET consented = false, unsubscribed_at = COALESCE(unsubscribed_at, p_now), updated_at = p_now
+     SET consented = false, unsubscribed_at = COALESCE(unsubscribed_at, p_now),
+         -- An unsubscribe is also "don't ask again": the prompt never re-asks someone who left.
+         never_ask = true, updated_at = p_now
    WHERE student_id = p_student_id;
   IF v_was THEN
     INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version, purpose, captured_at)
@@ -717,13 +719,14 @@ $fn$;
 -- of consecutive previous sends after which the student did not answer that day: at 7 the job
 -- sends the pause notice instead of the question (the sunset).
 CREATE OR REPLACE FUNCTION public.qotd_email_candidates(p_now timestamptz DEFAULT now(), p_limit integer DEFAULT 500)
-RETURNS TABLE (student_id uuid, current_streak integer, unanswered_run integer)
+RETURNS TABLE (student_id uuid, email text, current_streak integer, unanswered_run integer)
 LANGUAGE sql
 STABLE
 SET search_path = public, pg_temp
 AS $fn$
   WITH today AS (SELECT public.chicago_day(p_now) AS d)
   SELECT e.student_id,
+         p.email,
          (SELECT s.current_streak FROM public.student_streak(e.student_id, p_now) s),
          (
            -- The leading run of unanswered sends, most recent first, since the student last

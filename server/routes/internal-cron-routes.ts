@@ -31,6 +31,10 @@ import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
 import { runQotdSchedule } from "../services/qotd/schedule-job.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
 import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
+import {
+  defaultQotdEmailJobDeps,
+  runQotdEmailJob,
+} from "../services/qotd/qotd-email-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -695,6 +699,44 @@ router.get(
         err,
       );
       res.status(500).json({ error: "marketing_email_reconcile_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/qotd-daily-email
+ * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": the job
+ *        runs hourly and sends only in the 17:00 America/Chicago hour, so 5 PM is right in both
+ *        CST and CDT; SCL-223 (the hourly roll of the effective SAT date rides on it)]
+ *        | @implemented [2026-10-09]
+ *
+ * plain English: every hour, rolls the effective SAT dates; in the 17:00 Chicago hour, sends
+ * today's question to each consented student who has not answered anything today (at most one
+ * per student per day, claimed before sending). Safe to rerun: a second run in the same hour finds
+ * every claim and sends nothing. 500 when any send failed, so the run shows as failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/qotd-daily-email",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runQotdEmailJob(defaultQotdEmailJobDeps());
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "qotd_daily_email", summary });
+    } catch (err) {
+      logger.error(
+        "QOTD_EMAIL",
+        "qotd_daily_email_job_error",
+        "Scheduled daily question email failed",
+        err,
+      );
+      res.status(500).json({ error: "qotd_daily_email_failed" });
     }
   },
 );

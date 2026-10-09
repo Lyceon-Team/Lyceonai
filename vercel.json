@@ -47,6 +47,10 @@
     {
       "path": "/api/internal/marketing-email-reconcile",
       "schedule": "45 7 * * *"
+    },
+    {
+      "path": "/api/internal/qotd-daily-email",
+      "schedule": "5 * * * *"
     }
   ],
   "routes": [
