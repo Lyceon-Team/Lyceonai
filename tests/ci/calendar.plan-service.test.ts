@@ -321,8 +321,8 @@ describe("§12.7 acknowledgement", () => {
   });
 });
 
-describe("§14 / sheet item 11 — the streak reads 05B and computes nothing", () => {
-  it("serves student_overall_kpi's two columns with history_complete false", async () => {
+describe("§14 / sheet item 11 — the streak is student_streak's (SCL-226) with 05B's longest", () => {
+  it("serves the daily streak (SCL-226) with 05B's longest, history_complete false", async () => {
     client = makeFakeClient({
       tables: {
         student_overall_kpi: () =>
@@ -331,21 +331,24 @@ describe("§14 / sheet item 11 — the streak reads 05B and computes nothing", (
             longest_streak_days: 21,
             last_active_at: new Date().toISOString(),
           }),
-        student_study_profile: () => okReply({ timezone: "America/Chicago" }),
+      },
+      rpcs: {
+        student_streak: () =>
+          okReply([{ current_streak: 4, today_done: true, broken: false }]),
       },
     });
 
     const streak = await getStudentActivityStreak(STUDENT);
 
-    expect(streak).toEqual({ current: 6, longest: 21, history_complete: false });
+    // `current` is student_streak's (the Chicago-day answer streak, SCL-226), not the stored 6;
+    // `longest` stays 05B's stored value.
+    expect(streak).toEqual({ current: 4, longest: 21, history_complete: false });
     // Served without a calendar_access check (INV-08-20): no entitlement table and no
-    // calendar_access feature row is read. Since G-NEW-16 the one other read is the student's
-    // ZONE (`student_study_profile.timezone`, falling back to the platform zone), because
-    // "as of today" is the student's local today; it gates nothing.
+    // calendar_access feature row is read — the KPI row and the one read-only SQL function.
     expect(client.queries.map((query) => query.table)).toEqual([
       "student_overall_kpi",
-      "student_study_profile",
     ]);
+    expect(client.rpcs.map((call) => call.fn)).toEqual(["student_streak"]);
   });
 
   it("reports unknown rather than zero for a student with no KPI row", async () => {

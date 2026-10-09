@@ -619,7 +619,7 @@ describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
 });
 
 describe("paid: no streak line and no facts strip (SCL-211, OQ-56)", () => {
-  it("the week draws; neither the streak line nor the facts strip does, and no streak is read", async () => {
+  it("the week draws; neither the streak line nor the facts strip does, and no streak is read separately", async () => {
     await mount("paid");
     // Presence first: the grid, the header and the payload's own streak and facts are real.
     const grid = await screen.findByTestId("calendar-week-grid");
@@ -634,7 +634,17 @@ describe("paid: no streak line and no facts strip (SCL-211, OQ-56)", () => {
     // Absence.
     expect(screen.queryByTestId("calendar-facts")).toBeNull();
     expect(document.querySelector('[data-item="streak"]')).toBeNull();
-    expect(document.body.textContent).not.toMatch(/day streak/);
+    // Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the goal card shows
+    // "🔥 N-day streak" from the payload's own streak; it is the only place the streak appears.
+    const goalStreak = screen.queryByTestId("calendar-goal-streak");
+    expect(goalStreak?.textContent ?? null).toBe(
+      (week.streak.current ?? 0) > 0
+        ? `🔥 ${week.streak.current}-day streak`
+        : null,
+    );
+    expect(document.body.textContent?.match(/day streak/g)?.length ?? 0).toBe(
+      goalStreak === null ? 0 : 1,
+    );
     expect(document.body.textContent).not.toMatch(/blocks complete/);
     expect(streakReads()).toEqual([]);
   });

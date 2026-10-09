@@ -261,7 +261,9 @@ async function buildItemSnapshot(
   now: Date,
 ): Promise<Record<string, unknown>> {
   const { data, error } = await supabaseServer
-    .from("questions")
+    // The servable view (published, no issue flags), the read every student-serving path uses
+    // (Doc 02A §16): a scheduled question that has since been flagged is not served.
+    .from("servable_questions")
     .select("*")
     .eq("id", row.question_id)
     .single();
