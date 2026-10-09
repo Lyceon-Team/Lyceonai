@@ -125,16 +125,16 @@ export function createHomeQotdRouter(
 ): Router {
   const router = Router();
 
-  function fail(
-    req: Request,
-    res: Response,
-    op: string,
-    error: unknown,
-  ): Response {
-    logger.error(COMPONENT, `${op}_failed`, "A home QOTD route failed", {
-      requestId: req.requestId,
-      reason: error instanceof Error ? error.message : "unknown",
-    });
+  // QOTD resilience brief (Karl, 2026-10-09) §2: a route failure logs at ERROR with the request
+  // id only (the operation is in the event name).
+  function fail(req: Request, res: Response, op: string): Response {
+    logger.error(
+      COMPONENT,
+      `${op}_failed`,
+      "A home QOTD route failed",
+      undefined,
+      { requestId: req.requestId },
+    );
     return sendError(res, 500, "INTERNAL", "Something went wrong.");
   }
 
@@ -156,8 +156,8 @@ export function createHomeQotdRouter(
           );
         }
         return res.status(200).json({ data });
-      } catch (error) {
-        return fail(req, res, "today", error);
+      } catch {
+        return fail(req, res, "today");
       }
     },
   );
@@ -198,8 +198,8 @@ export function createHomeQotdRouter(
         return res
           .status(signals.answeredNow ? 201 : 200)
           .json({ data: response });
-      } catch (error) {
-        return fail(req, res, "answer", error);
+      } catch {
+        return fail(req, res, "answer");
       }
     },
   );
@@ -251,8 +251,8 @@ export function createHomeQotdRouter(
             show_email_prompt: false,
           }),
         });
-      } catch (error) {
-        return fail(req, res, "email_consent", error);
+      } catch {
+        return fail(req, res, "email_consent");
       }
     },
   );
@@ -266,8 +266,8 @@ export function createHomeQotdRouter(
       try {
         const data = await getQotdEmailPreference(user.id);
         return res.status(200).json({ data });
-      } catch (error) {
-        return fail(req, res, "email_preference_read", error);
+      } catch {
+        return fail(req, res, "email_preference_read");
       }
     },
   );
@@ -309,8 +309,8 @@ export function createHomeQotdRouter(
           { requestId: req.requestId, enabled: parsed.data.enabled },
         );
         return res.status(200).json({ data: result.value });
-      } catch (error) {
-        return fail(req, res, "email_preference_write", error);
+      } catch {
+        return fail(req, res, "email_preference_write");
       }
     },
   );
