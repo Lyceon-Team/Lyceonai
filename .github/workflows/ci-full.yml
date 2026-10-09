@@ -412,6 +412,12 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-consent-reviews.mutations.sh
 
+      # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
+      # new-account test ignoring the account's age, email signup recording only on a client
+      # consent claim, and a disabled Continue with Google. Each must turn its test red by name.
+      - name: Sign-in notice mutations (planted defects must fail)
+        run: bash scripts/ci/signin-notice.mutations.sh
+
       # Marketing email lane (contract §14): plants the age rule and the pending-deletion
       # exclusion out of the audience, a lost replay dedupe, a complaint logged as an
       # unsubscribe, a provider grant, a signature bypass, ignored unsubscribes / complaints,
