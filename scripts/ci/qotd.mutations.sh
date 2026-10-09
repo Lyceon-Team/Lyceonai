@@ -24,12 +24,15 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261020000000_qotd_schema.sql"
+MIG_READ="supabase/migrations/20261031000000_qotd_readability_scheduler.sql"
 DB=qotd_mutations
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/qotd-mut.XXXX)"
 
 FILES=(
   "$MIG"
+  "$MIG_READ"
+  "shared/qotd/readability.ts"
   "server/services/qotd/qotd-service.ts"
   "packages/shared/src/qotd-schema.ts"
   "client/src/prerender/entry-server.tsx"
@@ -88,6 +91,7 @@ PAGES=tests/seo.qotd-pages.test.ts
 WIDGET=client/src/components/qotd/QotdWidget.test.tsx
 SOCIAL=tests/ci/qotd-social.test.ts
 SCHED=tests/ci/qotd-schedule-job.test.ts
+READ=tests/ci/qotd-readability.test.ts
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -108,7 +112,7 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED")"; RC=$?
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?
 [ "$RC" = 0 ] && ok "route + page + widget + social + scheduler tests green" || { bad "route + page + widget + social + scheduler tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "QOTD MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -229,8 +233,8 @@ restore
 
 echo "=== (14) the scheduler stops skipping a stem that repeats its passage (owner 2026-10-08) ==="
 plant server/services/qotd/schedule-job.ts \
-  '      if (stemRepeatsPassage(c.stem ?? "", c.passage)) {' \
-  "      if (false) {" || { bad "M14 STALE"; exit 1; }
+  '  if (stemRepeatsPassage(c.stem ?? "", c.passage)) {' \
+  "  if (false) {" || { bad "M14 STALE"; exit 1; }
 OUT="$(ts_check "$SCHED")"; RC=$?
 expect_red "M14 prompt-less question scheduled" "skips a question whose stem repeats its passage" "$OUT" "$RC"
 restore
@@ -260,8 +264,75 @@ OUT="$(ts_check "$ROUTES")"; RC=$?
 expect_red "M17 broken day served" "not in GET /archive and 404 on GET /:date while broken" "$OUT" "$RC"
 restore
 
+# Owner brief "QOTD — readability filter (Karl's option B)", 2026-10-09: removing each rule turns
+# its test red.
+echo "=== (18) a grid-in is scheduled (multiple choice only removed) ==="
+plant shared/qotd/readability.ts \
+  '  if (q.itemType !== "mcq") return "not_multiple_choice";' \
+  "" || { bad "M18 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M18 grid-in scheduled" "a grid-in is skipped" "$OUT" "$RC"
+restore
+
+echo "=== (19) a paired-passage item is scheduled ==="
+plant shared/qotd/readability.ts \
+  '  if (isPairedPassage(q.passage)) return "paired_passage";' \
+  "" || { bad "M19 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M19 paired passage scheduled" "a paired-passage item" "$OUT" "$RC"
+restore
+
+echo "=== (20) an over-length Math item is scheduled ==="
+plant shared/qotd/readability.ts \
+  '    return total > QOTD_MATH_MAX_CHARS ? "math_too_long" : null;' \
+  "    return null;" || { bad "M20 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M20 long Math scheduled" "an over-length Math item" "$OUT" "$RC"
+restore
+
+echo "=== (21) an over-length Reading and Writing passage is scheduled ==="
+plant shared/qotd/readability.ts \
+  '  return passage.length > QOTD_RW_MAX_PASSAGE_CHARS' \
+  '  return passage.length > Number.MAX_SAFE_INTEGER' || { bad "M21 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M21 long RW scheduled" "an over-length Reading and Writing passage" "$OUT" "$RC"
+restore
+
+echo "=== (22) the scheduler stops paging: readable questions behind a page of long ones are lost ==="
+plant server/services/qotd/schedule-job.ts \
+  "      afterId = last.question_id;" \
+  "      break;" || { bad "M22 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M22 no paging" "pages past a full page of long items" "$OUT" "$RC"
+restore
+
+echo "=== (23) unreadable upcoming days are left in place ==="
+plant server/services/qotd/schedule-job.ts \
+  "    if (reason === null) continue;" \
+  "    continue;" || { bad "M23 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M23 upcoming not replaced" "replaces only UPCOMING days" "$OUT" "$RC"
+restore
+
+echo "=== (24) the social generator stops applying the readability rules ==="
+plant shared/qotd/social.ts \
+  "  if (unreadable !== null) {" \
+  "  if (false) {" || { bad "M24 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M24 social disagrees with the scheduler" "refuses a day the scheduler would refuse" "$OUT" "$RC"
+restore
+
+if [ "$HAVE_PG" = 1 ]; then
+  echo "=== (25) the release guard is removed: past days (and today) can be replaced ==="
+  [ "$(last_definer qotd_schedule_release)" = "$MIG_READ" ] || { bad "M25 targets $MIG_READ but qotd_schedule_release is last defined in $(last_definer qotd_schedule_release)"; exit 1; }
+  plant "$MIG_READ" "  IF p_date <= public.qotd_today() THEN" "  IF false THEN" || { bad "M25 STALE"; exit 1; }
+  OUT="$(sql_check)"; RC=$?
+  expect_red "M25 past day released" "Q-09 a past day was released" "$OUT" "$RC"
+  restore
+fi
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED")"; RC=$?
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "QOTD MUTATIONS: $PASS passed, $FAIL failed"

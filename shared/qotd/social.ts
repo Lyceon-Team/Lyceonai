@@ -39,6 +39,7 @@ import {
 } from "../../packages/shared/src/qotd-schema";
 import { tokenizeMathContent } from "../math/tokenize";
 import { stemRepeatsPassage } from "./projection";
+import { qotdReadabilityProblem } from "./readability";
 import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
@@ -347,9 +348,24 @@ export function buildSocialCopy(input: QotdSocialInput): QotdSocialCopy {
  * posted broken.
  */
 export function socialInputProblems(input: QotdSocialInput): string[] {
-  return stemRepeatsPassage(input.stem, input.passage)
-    ? ["input: the stem repeats the passage word for word (no question prompt)"]
-    : [];
+  const problems: string[] = [];
+  if (stemRepeatsPassage(input.stem, input.passage)) {
+    problems.push(
+      "input: the stem repeats the passage word for word (no question prompt)",
+    );
+  }
+  // Owner brief "QOTD — readability filter (Karl's option B)", 2026-10-09: the same rule and
+  // thresholds as the scheduler (shared/qotd/readability.ts), so the two never disagree.
+  const unreadable = qotdReadabilityProblem({
+    section: input.section_code,
+    itemType: input.item_type,
+    stem: input.stem,
+    passage: input.passage,
+  });
+  if (unreadable !== null) {
+    problems.push(`input: not quick to read (${unreadable})`);
+  }
+  return problems;
 }
 
 /** Wording that reveals or points at an answer. "Answer it free" is the call to action, not one. */

@@ -23,6 +23,17 @@
  *     inserted through qotd_schedule_insert, which re-checks eligibility and does nothing if the
  *     day is already filled. If a domain has nothing left, the next domain in rotation is tried,
  *     then the other section's domains, in the same fixed order.
+ *   * READABILITY (owner brief "QOTD — readability filter (Karl's option B)", Karl 2026-10-09):
+ *     a question is skipped unless it is quick to read — multiple choice, no "Text 1 / Text 2"
+ *     paired passage, Math passage + question text <= 400 characters, Reading and Writing
+ *     passage <= 300 characters (shared/qotd/readability.ts: the thresholds and the one
+ *     predicate, which the social generator shares). Candidates are read a page at a time
+ *     (keyset on the id), so a domain whose first page is all long items is still searched to
+ *     the end; only a domain with NO readable question left moves on to the next domain.
+ *   * Before filling, already-scheduled UPCOMING days (after today, within the window) whose
+ *     question fails the readability rules are released (`qotd_schedule_release`, which refuses
+ *     today and the past on the database's own clock) and refilled by the same selection. The
+ *     summary lists every replaced date. Today and past days never change.
  * The same database state always yields the same schedule. A rerun, or two overlapping runs,
  * change nothing: the date PK and the question_id UNIQUE make a second insert a no-op.
  *
@@ -37,6 +48,10 @@ import {
 } from "../../../shared/seo/banned-phrases";
 import { explanationNamesChoiceLetter } from "../../../shared/practice/letter-reference";
 import { stemRepeatsPassage } from "../../../shared/qotd/projection";
+import {
+  qotdReadabilityProblem,
+  type QotdReadabilityProblem,
+} from "../../../shared/qotd/readability";
 import { parseCanonicalMcOptions } from "../../../shared/question-bank-contract";
 import {
   addDaysToLocalDate,
@@ -71,6 +86,14 @@ export type QotdScheduleSummary = {
   skippedLetterReference: number;
   /** Questions skipped because the stem repeats the passage (no question prompt). */
   skippedStemRepeatsPassage: number;
+  /** Questions skipped as not quick to read (shared/qotd/readability.ts). */
+  skippedUnreadable: number;
+  /** Upcoming days whose scheduled question failed the readability rules and was replaced. */
+  replaced: Array<{
+    date: string;
+    previousQuestionId: string;
+    reason: QotdReadabilityProblem;
+  }>;
   sweptLedgerRows: number;
   deploy: "triggered" | "skipped_no_hook" | "failed";
 };
@@ -98,6 +121,7 @@ export function rotationFor(
 
 type Candidate = {
   question_id: string;
+  item_type: string;
   stem: string | null;
   passage: string | null;
   options: unknown;
@@ -127,67 +151,146 @@ async function rpc(
   return data;
 }
 
+type Counters = {
+  skippedBanned: number;
+  skippedLetterReference: number;
+  skippedStemRepeatsPassage: number;
+  skippedUnreadable: number;
+};
+
+/** True (and counted) when a candidate is skipped; false when it may be scheduled. */
+function skipReason(
+  c: Candidate,
+  section: Section,
+  counters: Counters,
+): boolean {
+  // Owner 2026-10-09 (option B): quick-to-read questions only.
+  if (
+    qotdReadabilityProblem({
+      section,
+      itemType: c.item_type,
+      stem: c.stem,
+      passage: c.passage,
+    }) !== null
+  ) {
+    counters.skippedUnreadable += 1;
+    return true;
+  }
+  // Owner 2026-10-08: a stem that repeats its passage has no question prompt (17 published
+  // questions, the 2026-10-07 QOTD among them). The bank repair is the questions vertical's;
+  // until then the scheduler never picks one.
+  if (stemRepeatsPassage(c.stem ?? "", c.passage)) {
+    counters.skippedStemRepeatsPassage += 1;
+    return true;
+  }
+  // Today's options are shuffled per request (owner ruling 2026-10-05), so an explanation
+  // that says "choice B" would name the wrong option for most visitors: skip the MCQ.
+  if (
+    parseCanonicalMcOptions(c.options).length > 0 &&
+    explanationNamesChoiceLetter(c.explanation)
+  ) {
+    counters.skippedLetterReference += 1;
+    return true;
+  }
+  // F13 (owner ruling 2026-10-05): "score higher" and "real progress" moved from BANNED to
+  // the outcome guard; a scheduled question becomes a public archive page, so it is screened
+  // by both, as every other public page is.
+  if (
+    firstBannedPhrase(publicText(c)) !== null ||
+    firstUnapprovedOutcome(publicText(c)) !== null
+  ) {
+    counters.skippedBanned += 1;
+    return true;
+  }
+  return false;
+}
+
 async function fillDay(
   client: QotdDbClient,
   date: string,
-  counters: {
-    skippedBanned: number;
-    skippedLetterReference: number;
-    skippedStemRepeatsPassage: number;
-  },
+  counters: Counters,
 ): Promise<QotdDayOutcome> {
   for (const { section, domain } of rotationFor(date)) {
-    const data = await rpc(client, "qotd_schedule_candidates", {
-      p_section: section,
-      p_domain: domain,
-      p_limit: CANDIDATE_PAGE,
-    });
-    const candidates = (Array.isArray(data) ? data : []) as Candidate[];
-    for (const c of candidates) {
-      // Owner 2026-10-08: a stem that repeats its passage has no question prompt (17 published
-      // questions, the 2026-10-07 QOTD among them). The bank repair is the questions vertical's;
-      // until then the scheduler never picks one.
-      if (stemRepeatsPassage(c.stem ?? "", c.passage)) {
-        counters.skippedStemRepeatsPassage += 1;
-        continue;
-      }
-      // Today's options are shuffled per request (owner ruling 2026-10-05), so an explanation
-      // that says "choice B" would name the wrong option for most visitors: skip the MCQ.
-      if (
-        parseCanonicalMcOptions(c.options).length > 0 &&
-        explanationNamesChoiceLetter(c.explanation)
-      ) {
-        counters.skippedLetterReference += 1;
-        continue;
-      }
-      // F13 (owner ruling 2026-10-05): "score higher" and "real progress" moved from BANNED to
-      // the outcome guard; a scheduled question becomes a public archive page, so it is screened
-      // by both, as every other public page is.
-      if (
-        firstBannedPhrase(publicText(c)) !== null ||
-        firstUnapprovedOutcome(publicText(c)) !== null
-      ) {
-        counters.skippedBanned += 1;
-        continue;
-      }
-      const result = await rpc(client, "qotd_schedule_insert", {
-        p_date: date,
-        p_question_id: c.question_id,
+    // Page through the domain (keyset on the id): readable questions may sit behind a page of
+    // long ones. A domain with none left is not an error: the next domain is tried.
+    let afterId: string | null = null;
+    for (;;) {
+      const data = await rpc(client, "qotd_schedule_candidate_page", {
+        p_section: section,
+        p_domain: domain,
+        p_after_id: afterId,
+        p_limit: CANDIDATE_PAGE,
       });
-      if (result === "inserted") {
-        return {
-          date,
-          outcome: "inserted",
-          questionId: c.question_id,
-          section,
-          domain,
-        };
+      const candidates = (Array.isArray(data) ? data : []) as Candidate[];
+      for (const c of candidates) {
+        if (skipReason(c, section, counters)) continue;
+        const result = await rpc(client, "qotd_schedule_insert", {
+          p_date: date,
+          p_question_id: c.question_id,
+        });
+        if (result === "inserted") {
+          return {
+            date,
+            outcome: "inserted",
+            questionId: c.question_id,
+            section,
+            domain,
+          };
+        }
+        if (result === "exists") return { date, outcome: "exists" };
+        // 'taken' or 'ineligible': a concurrent run used it, or it changed; try the next one.
       }
-      if (result === "exists") return { date, outcome: "exists" };
-      // 'taken' or 'ineligible': a concurrent run used it, or it changed; try the next one.
+      const last = candidates[candidates.length - 1];
+      if (candidates.length < CANDIDATE_PAGE || last === undefined) break;
+      afterId = last.question_id;
     }
   }
   return { date, outcome: "unfilled" };
+}
+
+type UpcomingRow = {
+  qotd_date: string;
+  question_id: string;
+  section: string;
+  item_type: string;
+  stem: string | null;
+  passage: string | null;
+};
+
+/**
+ * Releases each upcoming day (after `today`, up to `lastDate`) whose scheduled question fails the
+ * readability rules, so the fill below gives it a readable one. Today and past days are never
+ * touched: the window starts after today, and `qotd_schedule_release` itself refuses anything
+ * not strictly after the database's today.
+ */
+async function releaseUnreadableUpcoming(
+  client: QotdDbClient,
+  today: string,
+  lastDate: string,
+): Promise<QotdScheduleSummary["replaced"]> {
+  const data = await rpc(client, "qotd_schedule_upcoming", { p_after: today });
+  const rows = (Array.isArray(data) ? data : []) as UpcomingRow[];
+  const released: QotdScheduleSummary["replaced"] = [];
+  for (const row of rows) {
+    const date = String(row.qotd_date).slice(0, 10);
+    if (date <= today || date > lastDate) continue;
+    if (row.section !== "M" && row.section !== "RW") continue;
+    const reason = qotdReadabilityProblem({
+      section: row.section,
+      itemType: row.item_type,
+      stem: row.stem,
+      passage: row.passage,
+    });
+    if (reason === null) continue;
+    const ok = await rpc(client, "qotd_schedule_release", {
+      p_date: date,
+      p_question_id: row.question_id,
+    });
+    if (ok === true) {
+      released.push({ date, previousQuestionId: row.question_id, reason });
+    }
+  }
+  return released;
 }
 
 export async function runQotdSchedule(params: {
@@ -199,11 +302,29 @@ export async function runQotdSchedule(params: {
 }): Promise<QotdScheduleSummary> {
   const today = qotdToday(params.now ?? new Date());
   const daysAhead = params.daysAhead ?? QOTD_DAYS_AHEAD;
-  const counters = {
+  const counters: Counters = {
     skippedBanned: 0,
     skippedLetterReference: 0,
     skippedStemRepeatsPassage: 0,
+    skippedUnreadable: 0,
   };
+  const replaced = await releaseUnreadableUpcoming(
+    params.client,
+    today,
+    addDaysToLocalDate(today, daysAhead),
+  );
+  if (replaced.length > 0) {
+    // Which upcoming days changed (dates and reasons only; never question text).
+    logger.info(
+      "QOTD",
+      "qotd_schedule_replaced",
+      "Upcoming QOTD days replaced",
+      {
+        dates: replaced.map((r) => r.date),
+        reasons: replaced.map((r) => r.reason),
+      },
+    );
+  }
   const days: QotdDayOutcome[] = [];
   for (let i = 0; i <= daysAhead; i += 1) {
     days.push(
@@ -238,6 +359,8 @@ export async function runQotdSchedule(params: {
     skippedBanned: counters.skippedBanned,
     skippedLetterReference: counters.skippedLetterReference,
     skippedStemRepeatsPassage: counters.skippedStemRepeatsPassage,
+    skippedUnreadable: counters.skippedUnreadable,
+    replaced,
     sweptLedgerRows: Number.isFinite(swept) ? swept : 0,
     deploy,
   };

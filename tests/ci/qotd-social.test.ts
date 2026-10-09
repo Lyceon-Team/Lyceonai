@@ -41,6 +41,7 @@ import {
   toTodayResponse,
 } from "../../server/services/qotd/qotd-service";
 import { pastDateProblem } from "../../scripts/qotd-social/generate";
+import { QOTD_RW_MAX_PASSAGE_CHARS } from "../../shared/qotd/readability";
 import {
   QOTD_ARCHIVE_ROWS,
   QOTD_FIXTURE_NOW,
@@ -284,6 +285,28 @@ describe("caption and alt text", () => {
     const rw = socialInputFromArchive(DAYS.find((d) => d.question.passage)!);
     expect(socialInputProblems(rw)).toEqual([]);
     expect(socialInputProblems({ ...rw, stem: rw.passage! })).toHaveLength(1);
+  });
+
+  // Owner brief "QOTD — readability filter (Karl's option B)", 2026-10-09: the social path
+  // refuses exactly what the scheduler refuses, through the same predicate and thresholds.
+  it("refuses a day the scheduler would refuse as not quick to read", () => {
+    const rw = socialInputFromArchive(DAYS.find((d) => d.question.passage)!);
+    expect(socialInputProblems(rw)).toEqual([]);
+    expect(
+      socialInputProblems({ ...rw, passage: "Text 1: one. Text 2: two." }),
+    ).toEqual(["input: not quick to read (paired_passage)"]);
+    expect(
+      socialInputProblems({
+        ...rw,
+        passage: "p".repeat(QOTD_RW_MAX_PASSAGE_CHARS + 1),
+      }),
+    ).toEqual(["input: not quick to read (rw_passage_too_long)"]);
+    const grid = socialInputFromArchive(
+      DAYS.find((d) => d.question.item_type === "grid_in")!,
+    );
+    expect(socialInputProblems(grid)).toEqual([
+      "input: not quick to read (not_multiple_choice)",
+    ]);
   });
 });
 
