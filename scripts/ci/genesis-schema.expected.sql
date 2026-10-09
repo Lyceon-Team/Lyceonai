@@ -9436,6 +9436,25 @@ $$;
 
 
 --
+-- Name: qotd_schedule_candidate_page(text, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_candidate_page(p_section text, p_domain text, p_after_id text, p_limit integer) RETURNS TABLE(question_id text, item_type text, stem text, passage text, options jsonb, explanation text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT q.id, q.item_type, q.stem, q.passage, q.options, q.explanation
+    FROM public.questions q
+   WHERE q.section = p_section
+     AND q.domain = p_domain
+     AND public.qotd_question_is_eligible(q.id)
+     AND (p_after_id IS NULL OR q.id > p_after_id)
+   ORDER BY q.id
+   LIMIT GREATEST(p_limit, 0)
+$$;
+
+
+--
 -- Name: qotd_schedule_candidates(text, text, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9483,6 +9502,45 @@ BEGIN
   END IF;
   RETURN 'taken';
 END
+$$;
+
+
+--
+-- Name: qotd_schedule_release(date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_release(p_date date, p_question_id text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_n integer;
+BEGIN
+  IF p_date <= public.qotd_today() THEN
+    -- Today and the past are published (Home, the homepage, the archive): never released.
+    RETURN false;
+  END IF;
+  DELETE FROM public.qotd_schedule
+   WHERE qotd_date = p_date AND question_id = p_question_id;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n > 0;
+END;
+$$;
+
+
+--
+-- Name: qotd_schedule_upcoming(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_upcoming(p_after date) RETURNS TABLE(qotd_date date, question_id text, section text, item_type text, stem text, passage text, options jsonb, explanation text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT s.qotd_date, q.id, q.section, q.item_type, q.stem, q.passage, q.options, q.explanation
+    FROM public.qotd_schedule s
+    JOIN public.questions q ON q.id = s.question_id
+   WHERE s.qotd_date > p_after
+   ORDER BY s.qotd_date
 $$;
 
 
@@ -23180,6 +23238,14 @@ GRANT ALL ON FUNCTION public.qotd_record_attempt(p_date date, p_correct boolean)
 
 
 --
+-- Name: FUNCTION qotd_schedule_candidate_page(p_section text, p_domain text, p_after_id text, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_candidate_page(p_section text, p_domain text, p_after_id text, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_schedule_candidate_page(p_section text, p_domain text, p_after_id text, p_limit integer) TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_schedule_candidates(p_section text, p_domain text, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -23193,6 +23259,22 @@ GRANT ALL ON FUNCTION public.qotd_schedule_candidates(p_section text, p_domain t
 
 REVOKE ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_schedule_release(p_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_release(p_date date, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_schedule_release(p_date date, p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_schedule_upcoming(p_after date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_upcoming(p_after date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_schedule_upcoming(p_after date) TO service_role;
 
 
 --
