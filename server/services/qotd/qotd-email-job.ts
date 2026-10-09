@@ -39,7 +39,7 @@ import {
 } from "../../lib/notifications/templates/qotd-daily";
 import { logger } from "../../logger";
 import { qotdEmailLinkUrl } from "./qotd-email-links";
-import { QOTD_TIME_ZONE, readQotd } from "./qotd-service";
+import { QOTD_TIME_ZONE, qotdToday, readQotd } from "./qotd-service";
 import type { RpcClient } from "../../lib/rpc-client";
 
 const COMPONENT = "QOTD_EMAIL";
@@ -129,7 +129,8 @@ export async function runQotdEmailJob(
     return { ...summary, skipped: "not_send_hour" };
   }
 
-  const row = await readQotd(db, null);
+  // The job's own clock decides the day (so a run is reproducible at any instant).
+  const row = await readQotd(db, qotdToday(now));
   if (row === null) return { ...summary, skipped: "no_question_today" };
 
   const { data, error } = await db.rpc("qotd_email_candidates", {

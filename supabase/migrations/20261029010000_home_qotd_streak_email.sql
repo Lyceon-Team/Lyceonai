@@ -29,6 +29,10 @@
 --  5. Every new table keys on profiles(id) ON DELETE CASCADE, so account deletion removes the
 --     attempts, sends and preferences (the FK delete-action guard classifies them).
 --
+-- Replaced bodies: check_and_reserve_practice_quota (was 20261024000000),
+-- practice_session_mode_to_event_kind (was 20260806000000). No mutation plant targets either
+-- (checked: scripts/ci/*.mutations.sh).
+--
 -- OWNER-RUN. Karl applies to prod. DO NOT auto-apply. LYCEON-MIGRATION-REVIEWED
 -- ===========================================================================
 
@@ -40,6 +44,36 @@ BEGIN;
 ALTER TABLE public.practice_sessions DROP CONSTRAINT IF EXISTS practice_sessions_mode_check;
 ALTER TABLE public.practice_sessions ADD CONSTRAINT practice_sessions_mode_check
   CHECK (mode IN ('flow', 'structured', 'balanced', 'timed', 'diagnostic', 'qotd'));
+
+-- Mastery reads every answered practice item through practice_session_mode_to_event_kind, which
+-- RAISEs on an unmapped mode — so without this a student's first QOTD answer would make every
+-- later mastery computation for that skill fail. A QOTD answer is a practice answer (SCL-224):
+-- 'practice_attempt'. Body otherwise identical to 20260806000000; packages/shared
+-- session-mode.ts SESSION_MODES_DB lists 'qotd' in the same change (the two stay in step).
+CREATE OR REPLACE FUNCTION public.practice_session_mode_to_event_kind(p_mode text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE STRICT
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  -- Explicit mapping: every recognized mode → its event_source_kind.
+  -- flow/structured/balanced/timed are practice modes (Doc-02B §14).
+  -- diagnostic is the 40-question initial diagnostic (Doc-05A §11).
+  -- qotd is the Home Question of the Day, a one-item practice session (SCL-224).
+  CASE p_mode
+    WHEN 'flow'       THEN RETURN 'practice_attempt';
+    WHEN 'structured' THEN RETURN 'practice_attempt';
+    WHEN 'balanced'   THEN RETURN 'practice_attempt';
+    WHEN 'timed'      THEN RETURN 'practice_attempt';
+    WHEN 'qotd'       THEN RETURN 'practice_attempt';
+    WHEN 'diagnostic' THEN RETURN 'diagnostic_attempt';
+    ELSE RAISE EXCEPTION 'MASTERY_UNRECOGNIZED_SESSION_MODE: practice_sessions.mode=''%'' has no event_source_kind mapping — add it to practice_session_mode_to_event_kind()', p_mode;
+  END CASE;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.practice_session_mode_to_event_kind(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.practice_session_mode_to_event_kind(text) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.check_and_reserve_practice_quota(
   p_student_user_id uuid,
