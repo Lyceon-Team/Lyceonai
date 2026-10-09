@@ -412,6 +412,12 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-consent-reviews.mutations.sh
 
+      # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
+      # new-account test ignoring the account's age, email signup recording only on a client
+      # consent claim, and a disabled Continue with Google. Each must turn its test red by name.
+      - name: Sign-in notice mutations (planted defects must fail)
+        run: bash scripts/ci/signin-notice.mutations.sh
+
       # Marketing email lane (contract §14): plants the age rule and the pending-deletion
       # exclusion out of the audience, a lost replay dedupe, a complaint logged as an
       # unsubscribe, a provider grant, a signature bypass, ignored unsubscribes / complaints,
@@ -425,6 +431,29 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-email-sync.mutations.sh
+
+      # Owner brief "Question of the Day on Home" (2026-10-08/09): each locked rule (one per
+      # Chicago day, replay, quota exclusion, streak sources, prompt rules, 17:00 across DST,
+      # sunset, signed unsubscribe, SAT dates) is planted and must turn its named test red.
+      - name: Home QOTD, streak, email and SAT dates mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/home-qotd.mutations.sh
+
+      # QOTD resilience (Karl, 2026-10-09): every alert rule (horizon < 7, once per condition per
+      # day, one recovery, the independent check, channel independence, one unset-webhook warning),
+      # the no-question skip, the summary line, no address in logs, and both collapsed cards are
+      # planted and must turn their named test red.
+      - name: QOTD resilience mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/qotd-resilience.mutations.sh
 
       # A gate that has stopped biting is indistinguishable from a passing one, so the
       # placement gates are planted rather than trusted. Each case builds its own

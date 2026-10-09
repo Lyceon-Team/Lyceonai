@@ -101,6 +101,30 @@ function okExchange(): void {
   });
 }
 
+// SCL-222: acceptance is recorded only by the callback that CREATED the account. A brand-new
+// account's auth `created_at` is seconds old; a returning user's is fixed at their first sign-up.
+const NEW_USER = () => ({
+  id: "user-new",
+  email: "new@example.com",
+  created_at: new Date(Date.now() - 5_000).toISOString(),
+});
+const RETURNING_USER = {
+  id: "user-returning",
+  email: "returning@example.com",
+  created_at: "2026-03-01T12:00:00.000Z",
+};
+
+function okExchangeAs(user: {
+  id: string;
+  email: string;
+  created_at: string;
+}): void {
+  exchangeCodeForSessionMock.mockResolvedValueOnce({
+    data: { session: SESSION, user },
+    error: null,
+  });
+}
+
 describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -188,10 +212,10 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
   // AS-1 (decoupling) — when consent is durably captured (even via the outbox after a direct-write
   // failure), the session is kept and the user lands normally. No signOut, no error.
   it("keeps the session and lands normally when consent is durably captured (AS-1)", async () => {
-    okExchange();
+    okExchangeAs(NEW_USER());
     captureLegalMock.mockResolvedValueOnce({ durable: true });
     ensureProfileMock.mockResolvedValueOnce({
-      profile_completed_at: "2026-06-17T00:00:00Z",
+      profile_completed_at: null,
       is_under_13: false,
       role: "student",
     } satisfies ProfileShape);
@@ -200,7 +224,8 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
       "/auth/callback?code=valid-code&consentSource=google_continue_click",
     );
 
-    expect(res.headers.location).toBe("https://lyceon.ai/dashboard");
+    expect(captureLegalMock).toHaveBeenCalledTimes(1);
+    expect(res.headers.location).toBe("https://lyceon.ai/profile/complete");
     expect(res.headers.location).not.toContain("error=");
     expect(signOutMock).not.toHaveBeenCalled();
   });
@@ -208,10 +233,10 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
   // AS1-OUTBOX-DROP-001 — when consent cannot be durably captured ANYWHERE (both stores down), do NOT
   // silently proceed: fail closed (signOut) with a recoverable error rather than dropping compliance.
   it("fails closed when consent cannot be durably captured (AS1-OUTBOX-DROP-001)", async () => {
-    okExchange();
+    okExchangeAs(NEW_USER());
     captureLegalMock.mockResolvedValueOnce({ durable: false });
     ensureProfileMock.mockResolvedValueOnce({
-      profile_completed_at: "2026-06-17T00:00:00Z",
+      profile_completed_at: null,
       is_under_13: false,
       role: "student",
     } satisfies ProfileShape);
@@ -696,5 +721,104 @@ describe("Callback failure codes are distinct per cause (AS-3 / AS-5 / AL-3)", (
     expect(res.headers.location).toBe(
       "https://lyceon.ai/login?error=google_oauth_failed",
     );
+  });
+});
+
+/**
+ * @spec [SCL-222 (owner ruling 2026-10-09)] | @implemented [2026-10-09]
+ *
+ * plain English: the sign-in notice replaced the Terms checkbox, so acceptance is recorded when the
+ * account is created and NEVER by a returning user's sign-in — updated documents reach a returning
+ * user only through the re-acceptance prompt. The returning-user case carries the browser's
+ * `consentSource` (as every real Google click does) to prove the parameter alone records nothing.
+ * Planted defect: dropping the creation check (`isNewlyCreatedAccount(...)` → `true`) turns the
+ * returning-user test red (scripts/ci/signin-notice.mutations.sh).
+ */
+describe("SCL-222 — Google sign-in records acceptance only when it creates the account", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.PUBLIC_SITE_URL = "https://lyceon.ai";
+    captureLegalMock.mockResolvedValue({ durable: true });
+  });
+
+  afterEach(() => {
+    if (baselineSiteUrl === undefined) delete process.env.PUBLIC_SITE_URL;
+    else process.env.PUBLIC_SITE_URL = baselineSiteUrl;
+  });
+
+  it("a new account records Student Terms and the Privacy Policy, stamped google_continue_click", async () => {
+    okExchangeAs(NEW_USER());
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get("/auth/callback?code=valid-code");
+
+    expect(res.headers.location).toBe("https://lyceon.ai/profile/complete");
+    expect(captureLegalMock).toHaveBeenCalledTimes(1);
+    const arg = captureLegalMock.mock.calls[0]?.[1] as {
+      userId: string;
+      consentSource: string;
+      acceptances: Array<{ docKey: string; actorType: string }>;
+    };
+    expect(arg.userId).toBe("user-new");
+    expect(arg.consentSource).toBe("google_continue_click");
+    expect(arg.acceptances.map((a) => a.docKey).sort()).toEqual([
+      "privacy_policy",
+      "student_terms",
+    ]);
+  });
+
+  it("a returning user's sign-in records nothing, even with the browser's consentSource", async () => {
+    okExchangeAs(RETURNING_USER);
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-03-01T12:05:00Z",
+      is_under_13: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&consentSource=google_continue_click",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/dashboard");
+    expect(captureLegalMock).not.toHaveBeenCalled();
+  });
+
+  it("a returning user who never finished onboarding still records nothing", async () => {
+    okExchangeAs(RETURNING_USER);
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&consentSource=google_continue_click",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/profile/complete");
+    expect(captureLegalMock).not.toHaveBeenCalled();
+  });
+
+  it("an email-confirmation handoff records nothing: the email signup already did", async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: SESSION, user: NEW_USER() },
+      error: null,
+    });
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=fresh&type=signup",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/profile/complete");
+    expect(captureLegalMock).not.toHaveBeenCalled();
   });
 });

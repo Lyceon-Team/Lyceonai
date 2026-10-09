@@ -37,6 +37,7 @@ type ProfileRow = {
 const COMPLETE: ProfileRow = {
   timezone: "America/New_York",
   target_exam_date: null,
+  target_exam_dates: [],
   target_score: 1400,
   study_days_mask: 62,
   daily_minutes: 60,

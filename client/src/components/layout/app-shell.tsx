@@ -90,7 +90,6 @@ import {
   CalendarDays,
   CircleHelp,
   ClipboardCheck,
-  GraduationCap,
   House,
   Lock,
   MessageSquare,
@@ -104,6 +103,7 @@ import type {
   LockableFeatureKey,
 } from "@lyceon/shared/feature-access";
 import { SkipLink } from "@/components/common/skip-link";
+import { LyceonMark } from "@/components/common/LyceonMark";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -479,11 +479,7 @@ export function AppShell({
           title="Lyceon home: your dashboard"
           className={`${LYC_FOCUS} flex items-center gap-2 rounded-md text-lyc-rail-on-bg no-underline lg:flex-col lg:gap-1.5 lg:pb-4 lg:pt-1`}
         >
-          <GraduationCap
-            aria-hidden="true"
-            className="h-7 w-7 lg:h-[34px] lg:w-[34px]"
-            strokeWidth={1.5}
-          />
+          <LyceonMark decorative className="h-7 w-7 lg:h-[34px] lg:w-[34px]" />
           <span className="font-lyc-serif text-[18px] font-semibold tracking-[0.01em]">
             Lyceon
           </span>

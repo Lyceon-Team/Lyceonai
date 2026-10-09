@@ -242,12 +242,14 @@ afterEach(() => {
 });
 
 describe("/login (sign in, sign up, reset)", () => {
-  it("sign in: one bare card, one H1, Sign In the one filled action, labelled inputs with autocomplete", () => {
+  // SCL-222 (owner ruling 2026-10-09): "Continue with Google" is the one filled action on /login,
+  // in both tabs; the email Sign In and Sign Up buttons are outline.
+  it("sign in: one bare card, one H1, Continue with Google the one filled action, labelled inputs with autocomplete", () => {
     window.history.replaceState(null, "", "/login");
     renderRoute("/login", <Login />);
     const shell = bareShell();
     expectOneH1(shell, "Lyceon");
-    expectOnePrimary(shell, "Sign In");
+    expectOnePrimary(shell, "Continue with Google");
     expect(screen.getByLabelText("Email").getAttribute("autocomplete")).toBe(
       "email",
     );
@@ -287,7 +289,7 @@ describe("/login (sign in, sign up, reset)", () => {
     expectStudentTokensOnly(bareShell());
   });
 
-  it("sign up: Sign Up the one filled action; name, email and new password keep labels and autocomplete", async () => {
+  it("sign up: Continue with Google the one filled action; name, email and new password keep labels and autocomplete", async () => {
     window.history.replaceState(null, "", "/login");
     renderRoute("/login", <Login />);
     const tab = screen.getByTestId("tab-signup");
@@ -296,7 +298,7 @@ describe("/login (sign in, sign up, reset)", () => {
     await screen.findByTestId("button-signup");
     const shell = bareShell();
     expectOneH1(shell, "Lyceon");
-    expectOnePrimary(shell, "Sign Up");
+    expectOnePrimary(shell, "Continue with Google");
     expect(
       screen.getByLabelText("Display Name").getAttribute("autocomplete"),
     ).toBe("name");

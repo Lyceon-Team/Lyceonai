@@ -278,17 +278,38 @@ describe("Auth Signup Contract", () => {
     expect(signUpMock).not.toHaveBeenCalled();
   });
 
-  it("rejects signup payloads that omit canonical legal consent", async () => {
+  // @spec [SCL-222 (owner ruling 2026-10-09)] | @implemented [2026-10-09] | plain English: the
+  // sign-in notice replaces the checkbox, so a signup carries no consent flags at all, and the
+  // server still records both documents at creation, stamped `email_signup_form`.
+  it("SCL-222: a signup with no legalConsent is accepted and records both documents at creation", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-no-flags", email: "noflags@example.com" },
+        session: null,
+      },
+      error: null,
+    });
     const app = await loadAuthApp();
 
     const res = await signupWithCsrf(app, {
-      email: "student@example.com",
+      email: "noflags@example.com",
       password: "Password123!",
     });
 
-    expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("error");
-    expect(signUpMock).not.toHaveBeenCalled();
+    expect(res.status).toBe(202);
+    expect(signUpMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    const rows = upsertMock.mock.calls[0]?.[0] as Array<
+      Record<string, unknown>
+    >;
+    expect(rows.map((r) => r.doc_key).sort()).toEqual([
+      "privacy_policy",
+      "student_terms",
+    ]);
+    expect(rows.every((r) => r.consent_source === "email_signup_form")).toBe(
+      true,
+    );
+    expect(rows.every((r) => r.user_id === "user-no-flags")).toBe(true);
   });
 
   it("AL-3: invokes native signUp with emailRedirectTo pointing at /auth/callback", async () => {

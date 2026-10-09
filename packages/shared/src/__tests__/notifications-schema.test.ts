@@ -12,6 +12,7 @@ import {
   notificationFeedQuerySchema,
   notificationPatchBodySchema,
   resendWebhookEventSchema,
+  qotdDailyPayloadSchema,
 } from "../notifications-schema";
 
 describe("notifications schema", () => {
@@ -19,8 +20,9 @@ describe("notifications schema", () => {
   // list is the mirror of `notification_events_type_check`, and the value of the assertion is that
   // a type cannot appear in one without somebody naming it in the other. The two practice-test
   // notices joined on 2026-09-27 (Brief 14 Step 5, 20261012000000); the two post-exam notices on
-  // 2026-09-30 (SCL-191, 20261015000000).
-  it("names exactly the six event types, in the CHECK's own order", () => {
+  // 2026-09-30 (SCL-191, 20261015000000); the daily-question reminder `qotd_daily` on 2026-10-09
+  // (owner ruling on #1166 item 1, 20261029020000).
+  it("names exactly the seven event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",
       "guardian_unlinked",
@@ -28,7 +30,25 @@ describe("notifications schema", () => {
       "full_length_tomorrow",
       "exam_score_report_requested",
       "renewal_decision_requested",
+      "qotd_daily",
     ]);
+  });
+
+  // C8.1 for `qotd_daily`: the day, the streak and the email variant — never question content.
+  it("the qotd_daily payload is qotd_date + current_streak + email_variant and nothing else (C8.1)", () => {
+    const base = {
+      qotd_date: "2026-10-09",
+      current_streak: 3,
+      email_variant: "daily",
+    };
+    expect(qotdDailyPayloadSchema.safeParse(base).success).toBe(true);
+    expect(
+      qotdDailyPayloadSchema.safeParse({ ...base, stem: "If 3x + 2 = 11" })
+        .success,
+    ).toBe(false);
+    expect(
+      qotdDailyPayloadSchema.safeParse({ ...base, email: "a@b.test" }).success,
+    ).toBe(false);
   });
 
   // SCL-191 C8.1. The post-exam payload carries the anchor and the occasion and NOTHING else —

@@ -287,6 +287,13 @@ export function studentCalendarWeek(
       timezone: TIMEZONE,
       target_exam_date:
         over.testDate === undefined ? TARGET_EXAM_DATE : over.testDate,
+      // SCL-223: the stored dates; the effective date above is derived from them.
+      target_exam_dates:
+        over.testDate === undefined
+          ? [TARGET_EXAM_DATE]
+          : over.testDate === null
+            ? []
+            : [over.testDate],
       target_score: TARGET_SCORE,
       study_days_mask: 63,
       daily_minutes: 45,

@@ -30,6 +30,7 @@ import { AccountSection } from "@/components/settings/AccountSection";
 import { AppearanceSection } from "@/components/settings/AppearanceSection";
 import { BillingSection } from "@/components/settings/BillingSection";
 import { LinkSection } from "@/components/settings/LinkSection";
+import { NotificationsSection } from "@/components/settings/NotificationsSection";
 import { ProfileSection } from "@/components/settings/ProfileSection";
 import {
   sectionFromSearch,
@@ -144,6 +145,8 @@ function ActiveSection({
       return <LinkSection studentId={studentId} />;
     case "billing":
       return <BillingSection />;
+    case "notifications":
+      return <NotificationsSection />;
     case "appearance":
       return <AppearanceSection />;
   }

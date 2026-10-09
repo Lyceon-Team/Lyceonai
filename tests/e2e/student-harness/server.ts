@@ -68,6 +68,9 @@ const PORT = Number(process.env.HARNESS_PORT ?? "5056");
  */
 const BARE_PAGES = process.env.STUDENT_HARNESS_SEED === "bare-pages";
 if (BARE_PAGES) process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";
+// The Home QOTD's option tokens are an HMAC under the public secret (option-tokens.ts); a
+// throwaway value here, never a real one.
+process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??= "student-harness-only";
 
 type ProfileRow = {
   id: string;
@@ -124,6 +127,8 @@ async function main(): Promise<void> {
     ? (await import("../../../server/routes/account-deletion-routes")).default
     : null;
   const { legalRouter } = await import("../../../server/routes/legal-routes");
+  const { default: homeQotdRoutes } =
+    await import("../../../server/routes/home-qotd-routes");
   const { default: tutorRuntimeRouter } =
     await import("../../../server/routes/tutor-runtime");
   const { TutorConfig } = await import("../../../server/services/tutor-config");
@@ -187,6 +192,13 @@ async function main(): Promise<void> {
   app.use("/api/legal", auth.requireSupabaseAuth, legalRouter);
   app.use("/api/profile", auth.requireSupabaseAuth, profileRoutes);
   app.use("/api/feedback", auth.requireSupabaseAuth, productFeedbackRoutes);
+  // Owner brief "Question of the Day on Home" (2026-10-08/09): as server/index.ts mounts it.
+  app.use(
+    "/api/qotd",
+    auth.requireSupabaseAuth,
+    auth.requireStudentAccount,
+    homeQotdRoutes,
+  );
   app.use(
     NOTIFICATION_API_MOUNT,
     auth.requireSupabaseAuth,

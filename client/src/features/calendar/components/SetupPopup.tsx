@@ -180,7 +180,12 @@ export function SetupPopup({
   const [step, setStep] = useState<1 | 2>(1);
   // Opens on a date roughly a term away, so the control has a sensible position. It is
   // only STORED if the student leaves "I haven't picked a date yet" unchecked.
-  const [examDate, setExamDate] = useState<string>(() => addDays(today, 60));
+  // SCL-223: opens on the next SAT date the student already chose (onboarding or Settings),
+  // when there is one. The field is "your next SAT"; later chosen dates are kept by the write.
+  const [examDate, setExamDate] = useState<string>(
+    () =>
+      defaults.target_exam_dates.find((d) => d >= today) ?? addDays(today, 60),
+  );
   const [noDate, setNoDate] = useState(false);
   const [score, setScore] = useState<number>(OPENING_SCORE);
   const [days, setDays] = useState<readonly number[]>(OPENING_STUDY_DAYS);

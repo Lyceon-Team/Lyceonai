@@ -100,6 +100,7 @@ const READY_BODY = {
   profile: {
     timezone: TZ,
     target_exam_date: "2026-11-07",
+    target_exam_dates: ["2026-11-07"],
     target_score: 1400,
     study_days_mask: 62,
     daily_minutes: 45,
