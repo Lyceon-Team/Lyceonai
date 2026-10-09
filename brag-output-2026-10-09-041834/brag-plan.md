@@ -101,10 +101,10 @@ Sequential/interaction: none · Audio intent: voice
 Transition mood: soft crossfade → Scene 3
 
 ### Scene 3 — Practice + explanation — 12.0–19.0 s
-A practice question answered correctly; a cursor taps the correct choice (13.11 s, beat-locked),
-then the frame pushes onto the worked explanation.
-Sequential/interaction: yes — simulated tap · Audio-coupled idea: one soft click on the tap
-Transition mood: soft crossfade → Scene 4
+The phone screen (390x1300, a practice question answered correctly) is taller than the card:
+it holds on the question, then scrolls down to the worked explanation on the beat (13.11 s, with
+the click) and frames it once it has settled (15.25 s). Explanations run as long as the bank's
+(about 90 words for Math), so the whole explanation is shown rather than cropped.
 
 ### Scene 4 — Review — 19.0–25.0 s
 The Review page (the count and "Start reviewing"), cropped to the main column (no mastery

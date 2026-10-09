@@ -32,32 +32,33 @@ export const WALKTHROUGH_MCQ: Readonly<
       stem: "If $2x + 5 = 17$, what is the value of $x$?",
       options: ["6", "11", "7", "12"],
       explanation:
-        "Subtract 5 from both sides to get $2x = 12$. Then divide both sides by 2: $x = 6$.",
+        "To solve for $x$, undo the operations on it in reverse order. The equation says that 5 more than twice $x$ equals 17, so first subtract 5 from both sides, which gives $2x = 12$. Then divide both sides by 2 to get $x = 6$. Check by substituting: $2(6) + 5 = 12 + 5 = 17$, which matches the right side. A value of 12 comes from stopping before the division, and 11 comes from adding 5 to both sides instead of subtracting it. Neither one makes the original equation true.",
     },
     {
       stem: "Which ordered pair $(x, y)$ satisfies both $x + y = 10$ and $x - y = 2$?",
       options: ["$(6, 4)$", "$(4, 6)$", "$(8, 2)$", "$(5, 5)$"],
       explanation:
-        "Adding the two equations gives $2x = 12$, so $x = 6$. Substituting $x = 6$ into $x + y = 10$ gives $y = 4$.",
+        "Because the $y$-terms have opposite signs, adding the two equations eliminates $y$. The sum is $2x = 12$, so $x = 6$. Substitute $x = 6$ into $x + y = 10$ to get $y = 4$, giving the pair $(6, 4)$. Check it in the second equation: $6 - 4 = 2$, which is true. The pair $(4, 6)$ switches the coordinates, so it satisfies the first equation but gives $-2$ in the second. The pairs $(8, 2)$ and $(5, 5)$ each satisfy only the first equation.",
     },
     {
       stem: "What is the slope of the line $y = 4x - 9$?",
       options: ["4", "-9", "9", "-4"],
       explanation:
-        "In slope-intercept form, $y = mx + b$, the slope is $m$. Here $m = 4$, so the slope is 4.",
+        "This equation is already in slope-intercept form, $y = mx + b$, where $m$ is the slope and $b$ is the $y$-intercept. Matching the parts, $m = 4$ and $b = -9$, so the slope is 4. The slope tells you that each time $x$ increases by 1, $y$ increases by 4. A common mistake is to pick $-9$, which is the $y$-intercept: the point where the line crosses the $y$-axis. The values 9 and $-4$ change a sign and do not match either part of the equation.",
     },
   ],
   "Advanced Math": [
     {
       stem: "If $f(x) = x^2 + 1$, what is the value of $f(3)$?",
       options: ["10", "7", "9", "16"],
-      explanation: "Substitute 3 for $x$: $f(3) = 3^2 + 1 = 9 + 1 = 10$.",
+      explanation:
+        "The notation $f(3)$ means the output of the function when the input is 3. Replace every $x$ in the rule with 3: $f(3) = 3^2 + 1$. Following the order of operations, square first, so $3^2 = 9$, and then add 1 to get 10. A result of 7 comes from computing $3 \\cdot 2 + 1$, which treats the exponent as multiplication by 2. A result of 9 forgets to add the 1, and 16 comes from squaring after adding, that is, $(3 + 1)^2$.",
     },
     {
       stem: "Which expression is equivalent to $(x + 3)(x - 3)$?",
       options: ["$x^2 - 9$", "$x^2 + 9$", "$x^2 - 6x - 9$", "$x^2 + 6x - 9$"],
       explanation:
-        "Multiply each term: $x \\cdot x - 3x + 3x - 9 = x^2 - 9$. The middle terms cancel.",
+        "Multiply each term of the first factor by each term of the second: $x \\cdot x = x^2$, $x \\cdot (-3) = -3x$, $3 \\cdot x = 3x$, and $3 \\cdot (-3) = -9$. The middle terms, $-3x$ and $3x$, add to zero, leaving $x^2 - 9$. This is the difference of squares pattern, $(a + b)(a - b) = a^2 - b^2$, with $a = x$ and $b = 3$. $x^2 + 9$ has the wrong sign on the constant, and the two expressions with a $6x$ term come from adding the middle terms instead of letting them cancel.",
     },
   ],
   "Problem Solving and Data Analysis": [
@@ -65,13 +66,13 @@ export const WALKTHROUGH_MCQ: Readonly<
       stem: "A store sells pencils at 3 for 75 cents. At this rate, how many cents do 12 pencils cost?",
       options: ["300", "225", "250", "900"],
       explanation:
-        "One pencil costs $75 \\div 3 = 25$ cents, so 12 pencils cost $12 \\times 25 = 300$ cents.",
+        "Start by finding the cost of one pencil. If 3 pencils cost 75 cents, one pencil costs $75 \\div 3 = 25$ cents. Then 12 pencils cost $12 \\times 25 = 300$ cents. You can also see it as a ratio: 12 pencils is 4 groups of 3, so the cost is $4 \\times 75 = 300$ cents. A total of 900 comes from multiplying 75 by 12, which treats 75 cents as the price of one pencil. The values 225 and 250 do not follow from the given rate.",
     },
     {
       stem: "A class of 25 students took a survey, and 40% of them chose soccer as their favorite sport. How many students chose soccer?",
       options: ["10", "15", "40", "4"],
       explanation:
-        "40% of 25 is $0.40 \\times 25 = 10$, so 10 students chose soccer.",
+        "To find a percent of a number, write the percent as a decimal and multiply. Forty percent is $0.40$, so the number of students is $0.40 \\times 25 = 10$. Another way: 10% of 25 is 2.5, and 40% is four times that, or 10. Check that the answer makes sense: 10 out of 25 is $\\frac{10}{25} = \\frac{2}{5}$, which is 40%. The value 40 repeats the percent instead of applying it, 4 divides 40 by 10, and 15 is the number of students who did not choose soccer.",
     },
   ],
   "Geometry and Trigonometry": [
@@ -79,13 +80,13 @@ export const WALKTHROUGH_MCQ: Readonly<
       stem: "A rectangle has a length of 9 and a width of 4. What is the area of the rectangle?",
       options: ["36", "26", "13", "18"],
       explanation:
-        "The area of a rectangle is length times width: $9 \\times 4 = 36$.",
+        "The area of a rectangle is the number of unit squares that fit inside it, found by multiplying length by width. Here the area is $9 \\times 4 = 36$ square units. You can picture it as 4 rows of 9 squares each. The value 26 is the perimeter, $2(9 + 4)$, which measures the distance around the rectangle rather than the space inside it. The value 13 is just the sum of the length and width, and 18 is half the area, which would come from using the formula for a triangle instead.",
     },
     {
       stem: "In a right triangle, the two legs have lengths 6 and 8. What is the length of the hypotenuse?",
       options: ["10", "14", "48", "7"],
       explanation:
-        "By the Pythagorean theorem, $c^2 = 6^2 + 8^2 = 36 + 64 = 100$, so $c = 10$.",
+        "In a right triangle, the Pythagorean theorem relates the legs $a$ and $b$ to the hypotenuse $c$: $a^2 + b^2 = c^2$. Substituting the legs gives $6^2 + 8^2 = 36 + 64 = 100$, so $c^2 = 100$ and $c = 10$. This is a multiple of the familiar 3-4-5 right triangle, with every side doubled. The value 14 adds the legs without squaring them, 48 is their product, and 7 is their average. The hypotenuse must also be longer than either leg, which rules out 7.",
     },
   ],
   "Information and Ideas": [
@@ -100,7 +101,7 @@ export const WALKTHROUGH_MCQ: Readonly<
         "Researchers disagree about how honeybees find food.",
       ],
       explanation:
-        "The study found that bees arrived at the usual hour even when the feeder was empty, so the text's main point is that bees seem to track the time of day. The other options either contradict the study or describe things the text never mentions.",
+        "The text describes a pattern beekeepers noticed and then a study that tested it. In the study, bees trained to visit a feeder at 10 a.m. kept arriving at that hour even on days when the feeder was empty. Because food was not there to attract them, the text concludes that the bees were keeping track of the time of day. The best statement of the main idea is therefore that honeybees appear to keep track of time when visiting food sources. The claim that bees visit only when food is present contradicts the study's result. Training bees to avoid flowers and disagreement among researchers are never mentioned, so neither can be the main idea.",
     },
   ],
   "Craft and Structure": [
@@ -110,7 +111,7 @@ export const WALKTHROUGH_MCQ: Readonly<
       stem: "As used in the text, what does the word “flexible” most nearly mean?",
       options: ["adaptable", "fragile", "temporary", "expensive"],
       explanation:
-        "The details that follow (movable shelves, folding walls, rooms that change use) describe a building that can be changed to suit different needs, so “flexible” means adaptable.",
+        "To find a word's meaning in context, look at how the rest of the text develops it. The first sentence says the library was designed to be flexible, and the second sentence explains what that means with three examples: shelves that sit on wheels, walls that fold away, and reading rooms that can become a lecture hall in an afternoon. Each example shows the building changing to serve a different purpose, so “flexible” most nearly means adaptable. Nothing in the text suggests the building breaks easily, so fragile does not fit. Temporary and expensive describe how long something lasts and what it costs, ideas the text never raises.",
     },
   ],
   "Standard English Conventions": [
@@ -120,7 +121,7 @@ export const WALKTHROUGH_MCQ: Readonly<
       stem: "Which choice completes the text so that it conforms to the conventions of Standard English?",
       options: ["counted", "counts", "will count", "are counting"],
       explanation:
-        "The sentence describes something that happened “last year,” so it needs a past-tense verb: “counted.”",
+        "The blank needs a verb whose tense fits the time the sentence describes. The phrase “last year” places the action firmly in the past, and the sentence reports something that was completed: volunteers counting more than four thousand butterflies in a single week. A simple past tense verb, “counted,” is the only form that matches that time frame. “Counts” is present tense and describes something that happens regularly now. “Will count” points to the future, and “are counting” describes an action still in progress. Each of those would clash with “last year” and leave the sentence inconsistent in time, so only the past tense works here.",
     },
   ],
   "Expression of Ideas": [
@@ -135,7 +136,7 @@ export const WALKTHROUGH_MCQ: Readonly<
         "For example, on",
       ],
       explanation:
-        "The second sentence contrasts with the first: the panels do best on clear days, yet they still produce some power on cloudy ones. \u201cHowever\u201d signals that contrast; the other transitions signal a result, a similarity or an example.",
+        "To choose a transition, decide how the second sentence relates to the first. The first sentence says solar panels produce the most power on clear days. The second says that on cloudy days they still generate electricity, just less of it. That is a contrast: the second sentence qualifies the first by pointing out what happens under less favorable conditions. “However” is the transition that signals contrast, so it is the most logical choice. “Therefore” would present the second sentence as a result of the first, “similarly” would suggest the two ideas are alike, and “for example” would introduce an illustration of the first claim. None of these fit.",
     },
   ],
 };
@@ -145,11 +146,11 @@ export const WALKTHROUGH_GRID_IN: readonly WalkthroughGridIn[] = [
   {
     stem: "If $5x - 4 = 1$, what is the value of $x$?",
     explanation:
-      "Add 4 to both sides to get $5x = 5$, then divide both sides by 5: $x = 1$.",
+      "Isolate $x$ by undoing the operations on it in reverse order. The equation says that 4 less than five times $x$ equals 1. First add 4 to both sides, which gives $5x = 5$. Then divide both sides by 5 to get $x = 1$. Check by substituting: $5(1) - 4 = 5 - 4 = 1$, which matches the right side. A common slip is to subtract 4 instead of adding it, which gives $5x = -3$ and a value that does not satisfy the original equation.",
   },
   {
     stem: "A line in the $xy$-plane passes through $(0, -3)$ and $(2, -1)$. What is the slope of the line?",
     explanation:
-      "Slope is the change in $y$ over the change in $x$: $\\frac{-1 - (-3)}{2 - 0} = \\frac{2}{2} = 1$.",
+      "Slope measures how much $y$ changes for each unit change in $x$, so divide the change in $y$ by the change in $x$. Using the two points, the change in $y$ is $-1 - (-3) = 2$, and the change in $x$ is $2 - 0 = 2$. The slope is $\\frac{2}{2} = 1$. Notice that subtracting a negative number turns into addition, which is where sign errors usually happen. You can check by starting at $(0, -3)$: moving 2 units right and 2 units up lands on $(2, -1)$.",
   },
 ];

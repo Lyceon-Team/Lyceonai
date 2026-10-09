@@ -3,8 +3,8 @@
  *       written-for-the-video SAT-style questions with real explanations, never bank items")]
  *       | @implemented [2026-10-09]
  *
- * plain English: the questions the video shows are well-formed (four distinct options, a real
- * explanation), never name a choice letter (the runner's on-screen order differs from the
+ * plain English: the questions the video shows are well-formed (four distinct options, a worked
+ * explanation as long as the bank's: about 90 words for Math, about 110 for Reading and Writing), never name a choice letter (the runner's on-screen order differs from the
  * stored one), cover every SAT domain the fixture bank carries, and appear nowhere in the
  * question bank (content/canonical/): each item's own text (its passage, or its stem when it has
  * none) and its explanation.
@@ -58,6 +58,28 @@ describe("walkthrough content", () => {
     }
     for (const q of WALKTHROUGH_GRID_IN)
       expect(q.explanation.length, q.stem).toBeGreaterThan(40);
+  });
+
+  it("explanations run as long as the bank's: about 90 words for Math, about 110 for Reading and Writing", () => {
+    // Bank medians, content/canonical/ (measured 2026-10-09): Math 87 words over 3,717 items,
+    // Reading and Writing 110 over 2,133. Owner request 2026-10-09: match them.
+    const MATH = DOMAINS.slice(0, 4);
+    const words = (s: string): number => s.split(/\s+/).filter(Boolean).length;
+    const math = [
+      ...MATH.flatMap((d) => WALKTHROUGH_MCQ[d] ?? []),
+      ...WALKTHROUGH_GRID_IN,
+    ];
+    const rw = DOMAINS.slice(4).flatMap((d) => WALKTHROUGH_MCQ[d] ?? []);
+    expect(math.length).toBeGreaterThan(0);
+    expect(rw.length).toBeGreaterThan(0);
+    for (const q of math) {
+      expect(words(q.explanation), q.stem).toBeGreaterThanOrEqual(80);
+      expect(words(q.explanation), q.stem).toBeLessThanOrEqual(100);
+    }
+    for (const q of rw) {
+      expect(words(q.explanation), q.stem).toBeGreaterThanOrEqual(100);
+      expect(words(q.explanation), q.stem).toBeLessThanOrEqual(120);
+    }
   });
 
   it("never names a choice letter in an explanation", () => {

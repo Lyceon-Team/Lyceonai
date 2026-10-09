@@ -118,13 +118,18 @@ const OUT_ROOT = path.join(ROOT, "docs/plans/student-ui/evidence/wave5");
  * folder), `STUDENT_HARNESS_SCALE` captures at a device pixel ratio (2 for a sharp 1920 frame),
  * `STUDENT_HARNESS_THEMES=light` drops dark, and `STUDENT_HARNESS_NO_PROTOTYPE=1` skips the
  * prototype side, which the video does not use, and `STUDENT_HARNESS_VIEWPORTS=mobile` shoots
- * only the named sizes. All unset, a run is unchanged.
+ * only the named sizes. `STUDENT_HARNESS_VIEWPORT_HEIGHT` makes the viewport taller at the same
+ * width, so a screen whose content runs past the fold (a worked explanation under a phone-width
+ * question) is shot whole, as a reader would see it by scrolling. All unset, a run is unchanged.
  */
 const OUT_ROOT_OVERRIDE = process.env.STUDENT_HARNESS_OUT_ROOT;
 const DEVICE_SCALE = Number(process.env.STUDENT_HARNESS_SCALE ?? "1");
 const THEMES_OVERRIDE = process.env.STUDENT_HARNESS_THEMES;
 const NO_PROTOTYPE = process.env.STUDENT_HARNESS_NO_PROTOTYPE === "1";
 const VIEWPORTS_OVERRIDE = process.env.STUDENT_HARNESS_VIEWPORTS?.split(",");
+const HEIGHT_OVERRIDE = process.env.STUDENT_HARNESS_VIEWPORT_HEIGHT
+  ? Number(process.env.STUDENT_HARNESS_VIEWPORT_HEIGHT)
+  : null;
 
 const VIEWPORTS: Readonly<Record<Viewport, { width: number; height: number }>> =
   {
@@ -826,7 +831,7 @@ async function shootBuilt(
     await clearReviewPrompt(persona);
   }
   const context = await browser.newContext({
-    viewport: { width: size.width, height: size.height },
+    viewport: { width: size.width, height: HEIGHT_OVERRIDE ?? size.height },
     deviceScaleFactor: DEVICE_SCALE,
     colorScheme: theme,
     reducedMotion: "reduce",
