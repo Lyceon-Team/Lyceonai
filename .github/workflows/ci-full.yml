@@ -455,6 +455,18 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/qotd-resilience.mutations.sh
 
+      # Chicago-time schedules (Karl, 2026-10-09, SCL-227): the pinned cron times, quiet-hours
+      # deferral to 08:00 Chicago on both sides of DST, the user-triggered exemption, expiry
+      # (exam reminder, qotd_daily), the QOTD-only 17:00 run and the week-notice-after-re-plan
+      # rule are planted (Q1-Q17) and must turn their named test red.
+      - name: Notification quiet hours and expiry mutations (planted defects must fail)
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/notification-quiet-hours.mutations.sh
+
       # A gate that has stopped biting is indistinguishable from a passing one, so the
       # placement gates are planted rather than trusted. Each case builds its own
       # throwaway database, because the pipeline is not idempotent.
