@@ -61,8 +61,8 @@ import path from "node:path";
  * The raw text is already exactly `YYYY-MM-DD`.
  *
  * THE LIMITS, STATED RATHER THAN LEFT TO BE FOUND. This covers the three scalar types the
- * calendar surface reads. It does NOT cover the array forms (`date[]` 1082→1182,
- * `timestamptz[]` 1185), which still arrive as node-pg `Date` objects inside an array; and
+ * calendar surface reads, and `date[]` (1182, added 2026-10-09). It does NOT cover
+ * `timestamptz[]` (1185), which still arrives as node-pg `Date` objects inside an array; and
  * it does not touch `numeric`/`int8`, which node-pg hands back as STRINGS where PostgREST
  * sends JSON numbers — a pre-existing disagreement in the opposite direction, left alone
  * because narrowing it is a change to every suite that reads a count. A test that parses an
@@ -88,6 +88,16 @@ const WIRE_TYPES = {
     format?: unknown,
   ): ((value: string) => unknown) => {
     if (oid === 1082) return (value: string) => value;
+    // `date[]`: PostgREST sends ["YYYY-MM-DD", ...]; the text form is `{2026-11-07,2026-12-05}`
+    // (a date never needs quoting). Added 2026-10-09 for `student_study_profile.target_exam_dates`.
+    if (oid === 1182)
+      return (value: string) =>
+        value === "{}"
+          ? []
+          : value
+              .slice(1, -1)
+              .split(",")
+              .map((d) => (d === "NULL" ? null : d));
     if (oid === 1114) return (value: string) => value.replace(" ", "T");
     if (oid === 1184) return wireTimestamptz;
     return pgTypes.getTypeParser(

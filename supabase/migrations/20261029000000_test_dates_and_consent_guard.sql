@@ -215,14 +215,18 @@ AS $fn$
 DECLARE
   v_today date := public.study_profile_today();
 BEGIN
-  -- EXPAND-PHASE COMPATIBILITY: a build that still writes only the single column. Its date
-  -- replaces the student's future dates (it is what that build's form showed); past dates are
-  -- kept for the post-exam prompt.
+  -- A write of the single column means "my NEXT SAT is this date" (the calendar's own date
+  -- field, the post-exam renewal, and any build from before this change). It becomes the
+  -- effective date: future dates before it are dropped, later ones are kept (a student who
+  -- picked several keeps the rest), past dates stay for the post-exam prompt. NULL means "no
+  -- date": every future date is cleared.
   IF TG_OP = 'UPDATE'
      AND NEW.target_exam_date IS DISTINCT FROM OLD.target_exam_date
      AND NEW.target_exam_dates IS NOT DISTINCT FROM OLD.target_exam_dates THEN
     NEW.target_exam_dates := ARRAY(
-      SELECT d FROM unnest(OLD.target_exam_dates) AS d WHERE d < v_today
+      SELECT d FROM unnest(OLD.target_exam_dates) AS d
+       WHERE d < v_today
+          OR (NEW.target_exam_date IS NOT NULL AND d > NEW.target_exam_date)
     ) || CASE WHEN NEW.target_exam_date IS NULL THEN '{}'::date[]
               ELSE ARRAY[NEW.target_exam_date] END;
   ELSIF TG_OP = 'INSERT'
