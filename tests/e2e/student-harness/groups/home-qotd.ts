@@ -113,6 +113,15 @@ export const HOME_QOTD: PageGroup = {
       waitFor: both('[data-testid="calendar-goal-card"]'),
       prototype: NO_PROTOTYPE,
     },
+  ],
+};
+
+/** The onboarding picker: the onboarding persona exists only under the bare-pages seed (UI-59). */
+export const HOME_QOTD_ONBOARDING: PageGroup = {
+  id: "HOME-QOTD-ONBOARDING",
+  title: "Onboarding: 'When's your SAT?' (light and dark, 1440 and 390)",
+  seed: "bare-pages",
+  shots: [
     {
       id: "onboarding-sat-dates",
       title:
