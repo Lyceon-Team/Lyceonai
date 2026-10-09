@@ -65,7 +65,9 @@ jobs:
           pnpm exec playwright install --with-deps chromium
           sudo apt-get update -q
           sudo apt-get install -y -q ffmpeg
-          shell=$(find "$HOME/.cache/ms-playwright" -type f -name headless_shell -path '*chromium_headless_shell-*' | head -1)
+          # The binary is `headless_shell` in older Playwright builds, `chrome-headless-shell` in newer.
+          shell=$(find "$HOME/.cache/ms-playwright" -type f \( -name headless_shell -o -name chrome-headless-shell \) -path '*chromium_headless_shell-*' | head -1)
+          echo "headless shell: ${shell:-not found}"
           test -x "$shell"
           echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
 
