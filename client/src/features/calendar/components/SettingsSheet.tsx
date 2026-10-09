@@ -39,7 +39,7 @@ import { useState } from "react";
 import {
   type ExamPlanning,
   type PlanningEstimates,
-  type StudyProfile,
+  type CompletedStudyProfile,
   type StudyProfileBounds,
 } from "@lyceon/shared/calendar";
 import { addDays } from "../lib/dates";
@@ -87,7 +87,7 @@ export type SettingsDraft = {
 };
 
 type SettingsSheetProps = {
-  profile: StudyProfile;
+  profile: CompletedStudyProfile;
   bounds: StudyProfileBounds;
   estimates: PlanningEstimates;
   /** §8.1's readout needs `final_exam_lead_days`; §17 forbids a literal for it. */

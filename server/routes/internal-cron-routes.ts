@@ -28,9 +28,18 @@ import {
 import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
 import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
 import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
-import { runQotdSchedule } from "../services/qotd/schedule-job.js";
+import {
+  defaultOpsAlertDeps,
+  defaultSendAlert,
+  runMonitoredQotdSchedule,
+} from "../services/qotd/qotd-health.js";
+import { sendOpsAlert } from "../lib/ops-alerts.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
 import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
+import {
+  defaultQotdEmailJobDeps,
+  runQotdEmailJob,
+} from "../services/qotd/qotd-email-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -628,6 +637,9 @@ router.get(
  * SCHEDULED AT 07:15 UTC: after America/Chicago midnight in both CST (06:00 UTC) and CDT
  * (05:00 UTC), so the build it triggers sees the day that just ended as an archive day. Because
  * the schedule is filled a week ahead, a missed run never leaves today without a question.
+ * The run is monitored (QOTD resilience brief, Karl 2026-10-09; qotd-health.ts): one summary
+ * line, every unfilled day at ERROR, and an owner alert (Slack + email, once per condition per
+ * day) when it throws, leaves a day unfilled, or leaves the horizon under 7 days.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
  */
@@ -639,11 +651,20 @@ router.get(
       return;
     }
     try {
-      const summary = await runQotdSchedule({
+      // QOTD resilience brief (Karl, 2026-10-09): one summary line per run, every failure at
+      // ERROR, an alert on a throw, an unfilled day or a horizon under 7 (qotd-health.ts).
+      const { summary, health } = await runMonitoredQotdSchedule({
         client: getSupabaseAdmin() as unknown as QotdDbClient,
         deployHookUrl: process.env.VERCEL_DEPLOY_HOOK_URL,
+        sendAlert: defaultSendAlert(),
       });
-      res.json({ ok: true, job: "qotd_schedule", summary });
+      res.json({
+        ok: true,
+        job: "qotd_schedule",
+        summary,
+        horizon: health.horizon.horizon,
+        runsOutOn: health.horizon.runs_out_on,
+      });
     } catch (err) {
       logger.error(
         "QOTD",
@@ -695,6 +716,97 @@ router.get(
         err,
       );
       res.status(500).json({ error: "marketing_email_reconcile_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/qotd-daily-email
+ * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": the job
+ *        sends only in the 17:00 America/Chicago hour, so 5 PM is right in both CST and CDT;
+ *        SCL-223 (the roll of the effective SAT date rides on it)] | @implemented [2026-10-09]
+ *
+ * SCHEDULE: three DAILY Vercel crons, not one hourly one — the project's plan allows daily crons
+ * only (Vercel refused `5 * * * *` on the preview deploy, 2026-10-09). 22:00 UTC is 17:00 CDT and
+ * 23:00 UTC is 17:00 CST, so exactly one of the two lands in the 17:00 Chicago hour each day and
+ * the other only rolls dates; 06:05 UTC is just after Chicago midnight in both, so a passed SAT
+ * date hands over to the next at the start of the day. An hourly schedule on a plan that allows
+ * it needs no code change.
+ *
+ * plain English: every run rolls the effective SAT dates; in the 17:00 Chicago hour, runs the
+ * `qotd_daily` notification rule (owner ruling on #1166, 2026-10-09): every student who has
+ * answered nothing today gets the in-app notification, and the email too when its channel is on,
+ * then the notification dispatcher sends the queued emails. Safe to rerun: the event id is
+ * deterministic per (student, day), so a second run the same day emits and sends nothing. 500
+ * when any send failed, so the run shows as failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/qotd-daily-email",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runQotdEmailJob(defaultQotdEmailJobDeps());
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "qotd_daily_email", summary });
+    } catch (err) {
+      logger.error(
+        "QOTD_EMAIL",
+        "qotd_daily_email_job_error",
+        "Scheduled daily question email failed",
+        err,
+      );
+      res.status(500).json({ error: "qotd_daily_email_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/ops-alert-test — the owner's test alert.
+ *
+ * @spec [owner brief "QOTD resilience" (Karl, 2026-10-09) "Production proof": "Karl confirms he
+ *       received one test alert, triggered by an owner-only test command; no fake production
+ *       data"] | @implemented [2026-10-09]
+ *
+ * plain English: sends ONE test message through the real ops alert path (Slack and email, the
+ * same ledger), condition `ops_test`, so it goes at most once a day like every other alert. It
+ * writes no QOTD data. Owner-only because it is CRON_SECRET-gated like the rest of this file
+ * (unauthorized => 404); run it with the secret:
+ *   curl -H "Authorization: Bearer $CRON_SECRET" https://lyceon.ai/api/internal/ops-alert-test
+ */
+router.get(
+  "/ops-alert-test",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const outcome = await sendOpsAlert(
+        {
+          condition: "ops_test",
+          title: "Test alert (owner-triggered)",
+          lines: [
+            "This is a test of the Lyceon ops alert path. Nothing is wrong.",
+            "Real alerts: QOTD schedule failures, a horizon under 7 days, no question today, and the recovery message.",
+          ],
+        },
+        defaultOpsAlertDeps(),
+      );
+      res.json({ ok: true, job: "ops_alert_test", outcome });
+    } catch (err) {
+      logger.error(
+        "OPS_ALERT",
+        "ops_alert_test_error",
+        "Ops test alert failed",
+        err,
+      );
+      res.status(500).json({ error: "ops_alert_test_failed" });
     }
   },
 );

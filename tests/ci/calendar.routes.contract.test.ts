@@ -138,13 +138,31 @@ const OK_DAY = {
   extra_count: 0,
 };
 
+/**
+ * A profile whose calendar setup is complete, parsed through the canonical wire schema so the
+ * mock is a shape `readStudyProfile` can emit. (It was `{ timezone }` alone; since SCL-223 the
+ * route asks whether setup is COMPLETE, which a partial object cannot answer.)
+ */
+const COMPLETED_PROFILE = studyProfileSchema.parse({
+  timezone: "America/Chicago",
+  target_exam_date: null,
+  target_exam_dates: [],
+  target_score: null,
+  study_days_mask: 62,
+  daily_minutes: 60,
+  full_length_weekday: null,
+  full_length_interval_weeks: null,
+  planner_mode: "auto",
+  setup_completed_at: "2026-10-01T12:00:00.000Z",
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   rateLimitCalls.length = 0;
   entitled = true;
   // A profile EXISTS by default, so the §16 cases below still exercise the gated path.
   // Setup-before-the-gate is the exception and says so explicitly.
-  readProfileMock.mockResolvedValue({ timezone: "America/Chicago" });
+  readProfileMock.mockResolvedValue(COMPLETED_PROFILE);
   readCalendarMock.mockResolvedValue({
     ok: true,
     value: {
@@ -732,7 +750,7 @@ describe("setup runs before the entitlement gate", () => {
 
   it("GET /api/calendar still answers 402 to a free student who HAS a profile — the plan is gated", async () => {
     entitled = false;
-    readProfileMock.mockResolvedValue({ timezone: "America/Chicago" });
+    readProfileMock.mockResolvedValue(COMPLETED_PROFILE);
 
     const res = await request(buildApp()).get("/api/calendar");
 
@@ -742,6 +760,25 @@ describe("setup runs before the entitlement gate", () => {
     // The whole point of checking the profile directly: `readCalendar` runs
     // `generateOnFirstOpen`, and an unentitled student must not get a plan generated.
     expect(readCalendarMock).not.toHaveBeenCalled();
+  });
+
+  it("SCL-223: a row holding only SAT dates is still pre-setup — the free student gets the setup form, not 402", async () => {
+    entitled = false;
+    readProfileMock.mockResolvedValue(
+      studyProfileSchema.parse({
+        ...COMPLETED_PROFILE,
+        target_exam_date: "2026-12-05",
+        target_exam_dates: ["2026-12-05"],
+        study_days_mask: null,
+        daily_minutes: null,
+        setup_completed_at: null,
+      }),
+    );
+
+    const res = await request(buildApp()).get("/api/calendar");
+
+    expect(res.status).not.toBe(402);
+    expect(readCalendarMock).toHaveBeenCalled();
   });
 
   it("PUT /profile SAVES a free student's answers rather than answering 402", async () => {
@@ -787,6 +824,7 @@ describe("OQ-25 — GET /profile serves the study profile to any tier, and never
   const SAVED_PROFILE = studyProfileSchema.parse({
     timezone: "America/Chicago",
     target_exam_date: "2027-03-13",
+    target_exam_dates: ["2027-03-13"],
     target_score: 1400,
     study_days_mask: 62,
     daily_minutes: 60,

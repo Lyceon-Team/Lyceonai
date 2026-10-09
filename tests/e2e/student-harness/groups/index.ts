@@ -19,6 +19,8 @@ import { QA2_A } from "./qa2-a";
 import { W6_UI_65, W6_UI_66 } from "./w6-code";
 import { W6_OQ_68A } from "./oq68";
 import { W6_UI_64 } from "./w6-ui-64";
+import { BRAND_MARK } from "./brand-mark";
+import { HOME_QOTD, HOME_QOTD_ONBOARDING } from "./home-qotd";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -38,4 +40,7 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [W6_UI_66.id]: W6_UI_66,
   [W6_OQ_68A.id]: W6_OQ_68A,
   [W6_UI_64.id]: W6_UI_64,
+  [BRAND_MARK.id]: BRAND_MARK,
+  [HOME_QOTD.id]: HOME_QOTD,
+  [HOME_QOTD_ONBOARDING.id]: HOME_QOTD_ONBOARDING,
 };

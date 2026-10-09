@@ -28,6 +28,7 @@
  * carry the thing (a confidence band, a bank-sized count, raw filters) and the page is proven
  * to have rendered the data around it.
  */
+import { homeQotdTodayResponseSchema } from "@lyceon/shared/home-qotd-schema";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -511,6 +512,7 @@ function install(s: Scenario): void {
               default_full_length_interval_weeks: 2,
               default_full_length_weekday: 6,
               final_exam_lead_days: 7,
+              target_exam_dates: [],
             },
             entitled: true,
           }),
@@ -549,6 +551,20 @@ function install(s: Scenario): void {
             s.config,
           ),
         );
+      // Owner brief "Question of the Day on Home" (2026-10-09): Home reads today's question and
+      // the ungated study profile. No question today unless a case says otherwise (the QOTD
+      // states have their own suite: components/home/qotd/HomeQotdSection.test.tsx).
+      if (path === "/api/qotd/today")
+        return json({
+          data: homeQotdTodayResponseSchema.parse({
+            state: "none",
+            streak: { current: 0, today_done: false, broken: false },
+            show_email_prompt: false,
+            show_dont_ask_again: false,
+          }),
+        });
+      if (method === "GET" && path === "/api/calendar/profile")
+        return json({ profile: null, requestId: "r" });
       if (path === "/api/review/sessions/open") return json(REVIEW_OPEN);
       if (path === "/api/review/pool") return json(POOL);
       if (path === "/api/tests/forms") return json(FORMS);
@@ -927,8 +943,14 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
     expect(read).toContain("/api/practice/sessions/open");
     expect(read).toContain(`/api/students/${STUDENT}/projections/sections`);
     expect(read).toContain("/api/progress/projection");
+    // `GET /api/calendar/profile` is NOT a paid route: it is the ungated study-profile read
+    // (OQ-25, SCL-130) the SAT-date card uses (owner brief "Question of the Day on Home").
     expect(
-      read.filter((p) => /^\/api\/(calendar|tests|tutor)|\/mastery\//.test(p)),
+      read.filter(
+        (p) =>
+          p !== "/api/calendar/profile" &&
+          /^\/api\/(calendar|tests|tutor)|\/mastery\//.test(p),
+      ),
     ).toEqual([]);
   });
 
