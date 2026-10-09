@@ -60,6 +60,7 @@ const BOUNDS = {
 const PROFILE = {
   timezone: "America/Los_Angeles",
   target_exam_date: "2026-11-07",
+  target_exam_dates: ["2026-11-07"],
   target_score: 1400,
   study_days_mask: 62,
   daily_minutes: 45,
@@ -190,6 +191,7 @@ describe("GET /api/calendar", () => {
         default_full_length_interval_weeks: 2,
         default_full_length_weekday: 6,
         final_exam_lead_days: 7,
+        target_exam_dates: [],
       },
     };
     const parsed = calendarResponseSchema.safeParse(payload);
@@ -554,6 +556,7 @@ describe("guardian read (§16, R-08-22)", () => {
           default_full_length_interval_weeks: 2,
           default_full_length_weekday: 6,
           final_exam_lead_days: 7,
+          target_exam_dates: [],
         },
       }).success,
     ).toBe(false);

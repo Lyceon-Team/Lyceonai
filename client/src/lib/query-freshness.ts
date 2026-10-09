@@ -83,6 +83,13 @@ export const QUERY_FRESHNESS = {
    * afresh each time it mounts rather than showing the morning's figure.
    */
   practiceQuota: { staleTime: 0 },
+
+  /**
+   * `GET /api/qotd/today` (owner brief "Question of the Day on Home", Karl 2026-10-08/09). The
+   * question changes at America/Chicago midnight and the streak with any answer on another page,
+   * so Home reads it afresh on each mount; the answer mutation writes its result into the cache.
+   */
+  homeQotd: { staleTime: 0 },
 } as const;
 
 export type QueryFreshnessKind = keyof typeof QUERY_FRESHNESS;

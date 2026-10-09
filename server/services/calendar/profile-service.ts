@@ -68,7 +68,7 @@ export const FALLBACK_TIMEZONE = "America/Chicago";
 /** The columns this service reads. Never `*`: `last_acknowledged_nonstudent_version_no`
  *  is the read service's business and the timestamps are nobody's. */
 const PROFILE_COLUMNS =
-  "timezone, target_exam_date, target_score, study_days_mask, daily_minutes, full_length_weekday, full_length_interval_weeks, planner_mode, setup_completed_at";
+  "timezone, target_exam_date, target_exam_dates, target_score, study_days_mask, daily_minutes, full_length_weekday, full_length_interval_weeks, planner_mode, setup_completed_at";
 
 export type ProfileFailure =
   | { kind: "invalid"; details: unknown }
@@ -132,6 +132,7 @@ function parseProfileRow(
   const data = {
     timezone: source.timezone,
     target_exam_date: source.target_exam_date,
+    target_exam_dates: source.target_exam_dates,
     target_score: source.target_score,
     study_days_mask: source.study_days_mask,
     daily_minutes: source.daily_minutes,
@@ -224,13 +225,43 @@ export async function resolveStoredTimezone(
 
 // ── Write ───────────────────────────────────────────────────────────────────
 
-type UpsertRow = Record<string, string | number | null>;
+type UpsertRow = Record<string, string | number | string[] | null>;
 
 /**
- * The §8.1 fields a row cannot be created without. `timezone` is absent because item 19
- * supplies it; these two have no honest fallback (R-08-03).
+ * The §8.1 fields calendar setup cannot complete without. `timezone` is absent because item
+ * 19 supplies it; these two have no honest fallback (R-08-03).
  */
-const REQUIRED_ON_CREATE = ["study_days_mask", "daily_minutes"] as const;
+const REQUIRED_FOR_SETUP = ["study_days_mask", "daily_minutes"] as const;
+
+/**
+ * @spec [SCL-223; owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) Part A2:
+ *       "Saving dates alone must not mark calendar setup complete or require study
+ *       days/minutes"] | @implemented [2026-10-09]
+ * A body that carries only SAT dates (and, optionally, the device zone). Onboarding and
+ * Settings send these; they may create the row, and never complete setup.
+ */
+function isDatesOnly(update: StudyProfileUpsert): boolean {
+  const { idempotency_key: _key, timezone: _tz, ...fields } = update;
+  const named = Object.entries(fields).filter(([, v]) => v !== undefined);
+  return (
+    named.length > 0 &&
+    named.every(
+      ([k]) => k === "target_exam_dates" || k === "target_exam_date",
+    )
+  );
+}
+
+/**
+ * The stored dates after a `target_exam_dates` write: the past ones kept as history, the
+ * future ones replaced by the request. Order and duplicates are the trigger's to normalise.
+ */
+export function mergeExamDates(
+  existing: readonly string[],
+  requested: readonly string[],
+  localToday: string,
+): string[] {
+  return [...existing.filter((d) => d < localToday), ...requested];
+}
 
 export async function upsertStudyProfile(
   studentId: string,
@@ -251,9 +282,13 @@ export async function upsertStudyProfile(
   }
   const update: StudyProfileUpsert = parsed.data;
 
-  if (existing === null) {
-    const missing = REQUIRED_ON_CREATE.filter(
-      (field) => update[field] === undefined,
+  // A write that is not dates-only is calendar setup (or an edit after it), so the schedule
+  // must be present once it lands: sent now, or already stored.
+  const datesOnly = isDatesOnly(update);
+  if (!datesOnly) {
+    const missing = REQUIRED_FOR_SETUP.filter(
+      (field) =>
+        update[field] === undefined && (existing?.[field] ?? null) === null,
     );
     if (missing.length > 0) return err({ kind: "incomplete", missing });
   }
@@ -265,6 +300,13 @@ export async function upsertStudyProfile(
   const row: UpsertRow = { student_id: studentId };
   if (update.target_exam_date !== undefined)
     row.target_exam_date = update.target_exam_date;
+  if (update.target_exam_dates !== undefined) {
+    row.target_exam_dates = mergeExamDates(
+      existing?.target_exam_dates ?? [],
+      update.target_exam_dates,
+      localToday,
+    );
+  }
   if (update.target_score !== undefined) row.target_score = update.target_score;
   if (update.study_days_mask !== undefined)
     row.study_days_mask = update.study_days_mask;
@@ -315,7 +357,10 @@ export async function upsertStudyProfile(
   // writer of this row, and a student with no profile has no settings sheet to reach — the
   // read answers `setup_required` and serves `defaults` instead. So the first write is
   // always setup finishing, whatever it did or did not carry.
-  const completesSetup = existing?.setup_completed_at == null;
+  //
+  // SCL-223: except a dates-only write. Onboarding and Settings save SAT dates before the
+  // student has opened the calendar; that row exists, and setup is still outstanding.
+  const completesSetup = !datesOnly && existing?.setup_completed_at == null;
   if (completesSetup) row.setup_completed_at = new Date().toISOString();
 
   /**

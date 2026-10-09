@@ -22,13 +22,16 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261028000000_marketing_email_sync.sql"
+# set_marketing_consent was REPLACED by 20261029000000 (F-83: a grant needs a version). M5 is
+# re-pointed there; every other object is still last defined in $MIG. need_last checks per plant.
+MIG_F83="supabase/migrations/20261029000000_test_dates_and_consent_guard.sql"
 SYNC="server/lib/marketing-email-sync.ts"
 HOOK="server/routes/resend-webhook.ts"
 EXEC="server/lib/account-deletion-execute.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/mes-mut.XXXX)"
 
-FILES=("$MIG" "$SYNC" "$HOOK" "$EXEC")
+FILES=("$MIG" "$MIG_F83" "$SYNC" "$HOOK" "$EXEC")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -70,7 +73,8 @@ expect_red() {
 
 last_definer() { grep -ln "FUNCTION public\.$1\b" supabase/migrations/*.sql | sort | tail -1; }
 need_last() {
-  [ "$(last_definer "$1")" = "$MIG" ] || { bad "$2 targets $MIG but $1 is last defined in $(last_definer "$1")"; exit 1; }
+  local target="${3:-$MIG}"
+  [ "$(last_definer "$1")" = "$target" ] || { bad "$2 targets $target but $1 is last defined in $(last_definer "$1")"; exit 1; }
 }
 
 run() {
@@ -109,8 +113,8 @@ plant "$MIG" "    v_source := 'email_complaint';" "    v_source := 'email_unsubs
 run "M4 complaint source lost" "W4 email.complained" "$PG_SUITE"
 
 echo "=== (5) a provider event can grant ==="
-need_last set_marketing_consent M5
-plant "$MIG" "  IF p_granted AND p_source IN ('email_unsubscribe', 'email_complaint') THEN" "  IF false THEN" || { bad "M5 STALE"; exit 1; }
+need_last set_marketing_consent M5 "$MIG_F83"
+plant "$MIG_F83" "  IF p_granted AND p_source IN ('email_unsubscribe', 'email_complaint') THEN" "  IF false THEN" || { bad "M5 STALE"; exit 1; }
 run "M5 provider grant allowed" "D1 a provider source can only withdraw" "$PG_SUITE"
 
 echo "=== (6) the webhook skips signature verification ==="

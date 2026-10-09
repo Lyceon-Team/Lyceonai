@@ -2,7 +2,8 @@
 /**
  * UI-58: Settings (`/profile`) for a student, rendered in the real App shell.
  *
- * @spec [student-UI register UI-58, OQ-27 (no Notifications section), OQ-20 (test date and target
+ * @spec [student-UI register UI-58, OQ-27 (no Notifications section; superseded by the owner ruling
+ *        on #1166, 2026-10-09, item 2: one "Daily question email" toggle), OQ-20 (test date and target
  *        only once a calendar profile exists), OQ-28 / F-54 (narrow name save, never
  *        `marketingOptIn`), OQ-26 / OQ-41 (`hasPassword`: true and null show Change password,
  *        false hides it), UI-S4 (the current password is required), UI-S7 / F-40 (Billing's three
@@ -46,6 +47,11 @@ import {
   profileUpsertResponseSchema,
 } from "@lyceon/shared/calendar/api";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
+import {
+  QOTD_EMAIL_CONSENT_VERSION,
+  qotdEmailPreferenceSchema,
+  type QotdEmailPreference,
+} from "@lyceon/shared/home-qotd-schema";
 import { profileNameUpdateResponseSchema } from "@lyceon/shared/profile-name-schema";
 import { studentGuardianLinksViewSchema } from "@lyceon/shared/student-resources";
 import { studentLinkCodeViewSchema } from "@lyceon/shared/student-link-code-schema";
@@ -223,6 +229,7 @@ function billingBody(args: {
 const STUDY_PROFILE = {
   timezone: "America/Chicago",
   target_exam_date: "2026-12-05",
+  target_exam_dates: ["2026-12-05"],
   target_score: 1400,
   study_days_mask: 62,
   daily_minutes: 30,
@@ -399,24 +406,18 @@ afterEach(cleanup);
 
 // ── The section list and the URL ───────────────────────────────────────────────────────────
 
-describe("the section list (DESIGN.md §4; OQ-27)", () => {
-  it("lists Profile, Account, Guardian, Billing and Appearance, and no Notifications section", async () => {
+describe("the section list (DESIGN.md §4; owner ruling on #1166 item 2)", () => {
+  it("lists Profile, Account, Guardian, Billing, Notifications and Appearance", async () => {
     await mount({});
-    // Presence first: the five sections are on screen.
+    // Presence first: the six sections are on screen.
     expect(sectionLabels()).toEqual([
       "Profile",
       "Account",
       "Guardian",
       "Billing",
+      "Notifications",
       "Appearance",
     ]);
-    expect(
-      within(screen.getByTestId("settings-sections")).queryByText(
-        "Notifications",
-      ),
-    ).toBeNull();
-    expect(screen.queryByText("Email notifications")).toBeNull();
-    expect(screen.queryByRole("switch")).toBeNull();
   });
 
   it("an admin sees Account and Appearance only", async () => {
@@ -480,11 +481,12 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
   it("with a calendar profile: the test date and target show and save through PUT /api/calendar/profile", async () => {
     serve({ calendarProfile: true });
     await mount({});
-    const date = (await screen.findByTestId(
-      "settings-test-date",
-    )) as HTMLInputElement;
+    // SCL-223: the saved date is a ticked option in the shared SAT-date picker.
+    const date = await screen.findByTestId(
+      "settings-test-dates-date-2026-12-05",
+    );
     const target = screen.getByTestId("settings-target") as HTMLInputElement;
-    expect(date.value).toBe("2026-12-05");
+    expect(date.getAttribute("aria-checked")).toBe("true");
     expect(target.value).toBe("1400");
     expect(screen.queryByTestId("settings-goal-setup")).toBeNull();
 
@@ -523,10 +525,32 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     expect(JSON.stringify(net.log)).not.toContain("marketingOptIn");
   });
 
+  it("SCL-223: with no calendar profile the SAT dates still show and save alone, through PUT /api/calendar/profile", async () => {
+    serve({ calendarProfile: false });
+    await mount({});
+    const option = await screen.findByTestId(
+      "settings-test-dates-date-2026-12-05",
+    );
+    // The target score waits for calendar setup (OQ-20); the link to set it up stays.
+    expect(screen.queryByTestId("settings-target")).toBeNull();
+    expect(screen.getByTestId("settings-goal-setup")).toBeTruthy();
+    fireEvent.click(option);
+    fireEvent.click(screen.getByTestId("settings-profile-save"));
+    await screen.findByTestId("settings-profile-saved");
+    const puts = calls("PUT", "/api/calendar/profile");
+    expect(puts).toHaveLength(1);
+    const body = puts[0]?.body as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual([
+      "idempotency_key",
+      "target_exam_dates",
+    ]);
+    expect(body.target_exam_dates).toEqual(["2026-12-05"]);
+  });
+
   it("an unchanged form has nothing to save", async () => {
     serve({ calendarProfile: true });
     await mount({});
-    await screen.findByTestId("settings-test-date");
+    await screen.findByTestId("settings-test-dates");
     expect(
       (screen.getByTestId("settings-profile-save") as HTMLButtonElement)
         .disabled,
@@ -538,7 +562,7 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     await mount({});
     // Presence first: the Profile section rendered its fields.
     expect(await screen.findByTestId("settings-name")).toBeTruthy();
-    await screen.findByTestId("settings-test-date");
+    await screen.findByTestId("settings-test-dates");
     const section = screen.getByTestId("settings-profile");
     for (const text of [
       "About you",
@@ -878,5 +902,92 @@ describe("Appearance (UI-47: per device; the timed module stays light)", () => {
       .getByTestId("module-body")
       .closest("[data-shell]") as HTMLElement;
     expect(shell.getAttribute("data-theme-lock")).toBe("light");
+  });
+});
+
+// ── Notifications: one toggle over the one preference ────────────────────────────────────────
+
+describe("Notifications: the 'Daily question email' toggle (owner ruling on #1166 item 2)", () => {
+  /**
+   * GET/PUT /api/qotd/email-preference as the server answers them: the PUT returns the stored
+   * preference, so the switch shows what the server holds after the write.
+   */
+  function servePreference(initial: QotdEmailPreference): {
+    current: () => QotdEmailPreference;
+  } {
+    let stored = qotdEmailPreferenceSchema.parse(initial);
+    net.answer = (method, url, body) => {
+      if (url !== "/api/qotd/email-preference") return undefined;
+      if (method === "PUT") {
+        const enabled =
+          typeof body === "object" && body !== null && "enabled" in body
+            ? body.enabled === true
+            : false;
+        stored = qotdEmailPreferenceSchema.parse({
+          ...stored,
+          enabled,
+          paused: enabled ? false : stored.paused,
+        });
+      }
+      return json({ data: stored });
+    };
+    return { current: () => stored };
+  }
+
+  it("shows the stored preference and turns it on with the consent version, then off", async () => {
+    const server = servePreference({
+      eligible: true,
+      enabled: false,
+      paused: false,
+    });
+    await mount({ path: "/profile?tab=notifications" });
+    const toggle = await screen.findByRole("switch", {
+      name: "Daily question email",
+    });
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    expect(
+      calls("PUT", "/api/qotd/email-preference").map((c) => c.body),
+    ).toEqual([{ enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION }]);
+    expect(server.current().enabled).toBe(true);
+
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-checked", "false"),
+    );
+    expect(
+      calls("PUT", "/api/qotd/email-preference").map((c) => c.body),
+    ).toEqual([
+      { enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION },
+      { enabled: false },
+    ]);
+  });
+
+  it("reads the preference the pop-up or the unsubscribe link wrote (on, and paused by the sunset)", async () => {
+    servePreference({ eligible: true, enabled: true, paused: true });
+    await mount({ path: "/profile?tab=notifications" });
+    const toggle = await screen.findByRole("switch", {
+      name: "Daily question email",
+    });
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(await screen.findByTestId("settings-qotd-email-resume"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("settings-qotd-email-paused")).toBeNull(),
+    );
+    expect(
+      calls("PUT", "/api/qotd/email-preference").map((c) => c.body),
+    ).toEqual([{ enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION }]);
+  });
+
+  it("an account that cannot have the email sees the switch off and disabled", async () => {
+    servePreference({ eligible: false, enabled: false, paused: false });
+    await mount({ path: "/profile?tab=notifications" });
+    await screen.findByTestId("settings-qotd-email-ineligible");
+    expect(
+      screen.getByRole("switch", { name: "Daily question email" }),
+    ).toBeDisabled();
   });
 });
