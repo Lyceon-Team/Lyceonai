@@ -24,7 +24,7 @@
 --     ending today or yesterday. Read-only, computed at read time, nothing stored.
 --  4. The daily email: per-student preferences (consent, prompt state, unsubscribe, pause),
 --     a send ledger written BEFORE the send (one row per student per Chicago day), and the
---     candidate read the hourly job uses. Consent is logged in marketing_consent_log with the
+--     candidate read the daily email job uses. Consent is logged in marketing_consent_log with the
 --     new purpose `qotd_daily_email` and a version.
 --  5. Every new table keys on profiles(id) ON DELETE CASCADE, so account deletion removes the
 --     attempts, sends and preferences (the FK delete-action guard classifies them).

@@ -50,7 +50,15 @@
     },
     {
       "path": "/api/internal/qotd-daily-email",
-      "schedule": "5 * * * *"
+      "schedule": "5 6 * * *"
+    },
+    {
+      "path": "/api/internal/qotd-daily-email",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/internal/qotd-daily-email",
+      "schedule": "0 23 * * *"
     }
   ],
   "routes": [

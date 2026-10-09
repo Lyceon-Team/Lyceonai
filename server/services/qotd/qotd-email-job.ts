@@ -2,13 +2,13 @@
  * The daily-question email job.
  *
  * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email":
- *       5 PM America/Chicago every day, correct across DST — the job runs hourly and sends only
+ *       5 PM America/Chicago every day, correct across DST — the job sends only
  *       in the 17:00 Chicago hour; recipients consented, 13+, no question answered today, not
  *       paused or unsubscribed; idempotent via qotd_email_sends (write before send); the 7-send
- *       sunset; via Resend. SCL-223 (the hourly test-date roll rides on this job)]
+ *       sunset; via Resend. SCL-223 (the test-date roll rides on this job)]
  *       | @implemented [2026-10-09]
  *
- * plain English, every run (hourly):
+ * plain English, every run (three daily runs: 06:05, 22:00 and 23:00 UTC; see the cron route):
  *   1. Roll the study profiles' effective SAT date (`study_profile_roll_exam_dates`), so a date
  *      that has just passed hands over to the next one within the hour.
  *   2. If the America/Chicago hour is not 17, stop. The hour is computed from the zone database,

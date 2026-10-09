@@ -16526,7 +16526,7 @@ COMMENT ON TABLE public.student_study_profile IS 'Doc 05F §7.1. study_days_mask
 -- Name: COLUMN student_study_profile.target_exam_date; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.student_study_profile.target_exam_date IS 'SCL-223: the EFFECTIVE test date, derived from target_exam_dates by trigger study_profile_exam_dates_sync and rolled forward hourly. NULL when no date is on or after today. Not written directly.';
+COMMENT ON COLUMN public.student_study_profile.target_exam_date IS 'SCL-223: the EFFECTIVE test date, derived from target_exam_dates by trigger study_profile_exam_dates_sync and rolled forward by study_profile_roll_exam_dates() each morning (QOTD email job). NULL when no date is on or after today. Not written directly.';
 
 
 --

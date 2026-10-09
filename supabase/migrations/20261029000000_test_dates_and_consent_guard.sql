@@ -19,8 +19,8 @@
 --  2. SAT TEST DATES (SCL-223). `student_study_profile.target_exam_dates date[]` holds every
 --     date the student picked. `target_exam_date` stays and becomes the EFFECTIVE date: the
 --     closest date on or after today in America/Chicago, kept by a BEFORE trigger on every
---     write and rolled forward by `study_profile_roll_exam_dates()` (called hourly by the QOTD
---     email job) when a date passes. Every existing reader of `target_exam_date` — plan
+--     write and rolled forward by `study_profile_roll_exam_dates()` (called by the QOTD
+--     email job just after Chicago midnight) when a date passes. Every existing reader of `target_exam_date` — plan
 --     generation, countdowns, the guardian view — therefore reads the effective date with no
 --     change. EXPAND ONLY: the old column is kept; a build that still writes only
 --     `target_exam_date` is folded into the array by the trigger, so the two never disagree
@@ -152,7 +152,7 @@ ALTER TABLE public.student_study_profile
 COMMENT ON COLUMN public.student_study_profile.target_exam_dates IS
   'SCL-223: every SAT date the student picked, ascending, distinct. target_exam_date is derived from it (the closest date on or after today, America/Chicago).';
 COMMENT ON COLUMN public.student_study_profile.target_exam_date IS
-  'SCL-223: the EFFECTIVE test date, derived from target_exam_dates by trigger study_profile_exam_dates_sync and rolled forward hourly. NULL when no date is on or after today. Not written directly.';
+  'SCL-223: the EFFECTIVE test date, derived from target_exam_dates by trigger study_profile_exam_dates_sync and rolled forward by study_profile_roll_exam_dates() each morning (QOTD email job). NULL when no date is on or after today. Not written directly.';
 
 /** Today in America/Chicago: the brief's one day boundary for test dates. */
 CREATE OR REPLACE FUNCTION public.study_profile_today()
@@ -254,8 +254,8 @@ UPDATE public.student_study_profile
 
 /**
  * Rolls the effective date forward for every student whose date has passed. Idempotent; the
- * hourly QOTD email job calls it, so a passed date is replaced within an hour of Chicago
- * midnight. Returns the number of rows moved.
+ * QOTD email job calls it on every run (one runs just after Chicago midnight), so a passed
+ * date is replaced at the start of the day. Returns the number of rows moved.
  */
 CREATE OR REPLACE FUNCTION public.study_profile_roll_exam_dates()
 RETURNS integer

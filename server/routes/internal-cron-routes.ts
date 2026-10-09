@@ -706,13 +706,19 @@ router.get(
 /**
  * GET /api/internal/qotd-daily-email
  * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": the job
- *        runs hourly and sends only in the 17:00 America/Chicago hour, so 5 PM is right in both
- *        CST and CDT; SCL-223 (the hourly roll of the effective SAT date rides on it)]
- *        | @implemented [2026-10-09]
+ *        sends only in the 17:00 America/Chicago hour, so 5 PM is right in both CST and CDT;
+ *        SCL-223 (the roll of the effective SAT date rides on it)] | @implemented [2026-10-09]
  *
- * plain English: every hour, rolls the effective SAT dates; in the 17:00 Chicago hour, sends
+ * SCHEDULE: three DAILY Vercel crons, not one hourly one — the project's plan allows daily crons
+ * only (Vercel refused `5 * * * *` on the preview deploy, 2026-10-09). 22:00 UTC is 17:00 CDT and
+ * 23:00 UTC is 17:00 CST, so exactly one of the two lands in the 17:00 Chicago hour each day and
+ * the other only rolls dates; 06:05 UTC is just after Chicago midnight in both, so a passed SAT
+ * date hands over to the next at the start of the day. An hourly schedule on a plan that allows
+ * it needs no code change.
+ *
+ * plain English: every run rolls the effective SAT dates; in the 17:00 Chicago hour, sends
  * today's question to each consented student who has not answered anything today (at most one
- * per student per day, claimed before sending). Safe to rerun: a second run in the same hour finds
+ * per student per day, claimed before sending). Safe to rerun: a second run the same day finds
  * every claim and sends nothing. 500 when any send failed, so the run shows as failed.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
