@@ -1060,6 +1060,33 @@ describe.skipIf(!PG_AVAILABLE)(
         ]);
       });
 
+      it("an email queued before the student unsubscribed is not sent; it fails at once", async () => {
+        // MAILED_UNSUB turned the email off (beforeAll). An email row queued anyway (the 17:00
+        // rule ran before the unsubscribe) must not go out.
+        await pg.query(
+          `SELECT public.emit_notification_event(
+             public.notification_event_id('qotd_daily', $1::text || ':2026-07-16'),
+             'qotd_daily', $1::uuid,
+             jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('in_app', 'email'))),
+             jsonb_build_object('qotd_date', '2026-07-16', 'current_streak', 0, 'email_variant', 'daily'))`,
+          [MAILED_UNSUB],
+        );
+        const { dispatchQueuedMessages } =
+          await import("../../server/lib/notifications/dispatch");
+        const before = sent.length;
+        await dispatchQueuedMessages({
+          transport: fakeTransport,
+          now: new Date("2026-07-16T22:05:00Z"),
+        });
+        expect(sent.map((s) => s.to).slice(before)).not.toContain(
+          `${MAILED_UNSUB}@example.test`,
+        );
+        expect(await messages(MAILED_UNSUB, "2026-07-16")).toEqual([
+          { channel: "email", status: "failed" },
+          { channel: "in_app", status: "delivered" },
+        ]);
+      });
+
       it("the in-app reminder renders in the student's notification feed", async () => {
         const { renderInApp } =
           await import("../../server/lib/notifications/templates");

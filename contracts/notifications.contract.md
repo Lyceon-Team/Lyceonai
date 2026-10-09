@@ -131,7 +131,8 @@ ledger here already guarantees one per student per day (C5.1, C5.2, C1.2's uniqu
 *Violated if:* any `pg_proc.prosrc` other than `set_qotd_daily_email` contains an INSERT into or UPDATE of the table; any TypeScript file writes it; an under-13 can be turned on; an off→on change writes no versioned consent row.
 
 **C2A.3 Unsubscribe.** A `qotd_daily` email carries a signed, single-purpose, non-expiring one-click unsubscribe link (`/api/public/qotd-email/unsubscribe`, HMAC token naming the student and the action) in the footer and in `List-Unsubscribe` / `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 2369 / RFC 8058). The dispatcher builds the links and reads the day's stem at send time (`server/lib/notifications/qotd-daily-send-context.ts`); neither is stored. Transactional types carry no unsubscribe: they are not opt-in.
-*Violated if:* a sent `qotd_daily` email lacks either header; a tampered or wrong-action token changes anything; a GET changes anything.
+A withdrawal takes effect at once: the dispatcher re-reads the preference (and 13+ eligibility) before sending a queued `qotd_daily` email and fails it, without retry, when the email is off, as it does an email whose day has passed. The sunset pause is recorded when the rule emits the paused notice.
+*Violated if:* a sent `qotd_daily` email lacks either header; a tampered or wrong-action token changes anything; a GET changes anything; a queued `qotd_daily` email is sent after its recipient turned the email off, or after its day.
 
 **C2.4** `in_app` rows are delivered on insert: `status='delivered'`, `delivered_at = created_at`. The row is the delivery.
 *Violated if:* an `in_app` row exists with `status <> 'delivered'` or `delivered_at IS NULL`.

@@ -191,8 +191,8 @@ async function dispatchOne(
         p_ok: false,
         p_provider_message_id: null,
         p_error: extras.error.reason,
-        // A past day's question is never sent late: fail it now instead of retrying.
-        p_max_attempts: extras.error.stale
+        // A past day's question, or a withdrawn email, is never sent: fail it now, no retry.
+        p_max_attempts: extras.error.final
           ? 1
           : NOTIFICATION_EMAIL_MAX_ATTEMPTS,
       });

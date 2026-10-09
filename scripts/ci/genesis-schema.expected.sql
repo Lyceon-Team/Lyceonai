@@ -9439,7 +9439,7 @@ DECLARE
   v_variant text;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.qotd_schedule q WHERE q.qotd_date = v_today) THEN
-    RETURN jsonb_build_object('emitted', 0, 'with_email', 0, 'paused_notices', 0);
+    RETURN jsonb_build_object('emitted', 0, 'mailable', 0, 'paused_notices', 0);
   END IF;
 
   FOR r IN
@@ -9518,7 +9518,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  RETURN jsonb_build_object('emitted', v_emitted, 'with_email', v_email, 'paused_notices', v_paused);
+  RETURN jsonb_build_object('emitted', v_emitted, 'mailable', v_email, 'paused_notices', v_paused);
 END;
 $$;
 
@@ -12278,6 +12278,7 @@ CREATE FUNCTION public.set_qotd_daily_email(p_student_id uuid, p_enabled boolean
     AS $_$
 DECLARE
   v_today    date := public.chicago_day(p_now);
+  v_student  boolean;
   v_eligible boolean;
   v_was      boolean;
   v_paused   boolean;
@@ -12292,12 +12293,18 @@ BEGIN
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
 
-  SELECT COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+  SELECT p.role = 'student',
+         COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
          AND p.role = 'student' AND p.deleted_at IS NULL
-    INTO v_eligible
+    INTO v_student, v_eligible
     FROM public.profiles p WHERE p.id = p_student_id;
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'profile_missing');
+  END IF;
+  IF NOT v_student AND NOT p_enabled THEN
+    -- Not a student: there is nothing to turn off, so write nothing (a signed link for another
+    -- profile kind is a no-op, not a meaningless row).
+    RETURN jsonb_build_object('ok', true, 'enabled', false, 'changed', false);
   END IF;
 
   -- Serialise concurrent writers for this student (the row may not exist yet, so a row lock

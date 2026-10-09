@@ -207,6 +207,10 @@ echo "=== (25) yesterday's daily email is sent late ==="
 plant "$SEND_CTX" "  if (parsed.data.qotd_date !== qotdToday(now)) {" "  if (false) {" || { bad "N7 STALE"; exit 1; }
 run "N7 never sent late" "never sent late" "$PG_SUITE"
 
+echo "=== (26) an email queued before an unsubscribe is still sent ==="
+plant "$SEND_CTX" "    if (!preference.enabled || !preference.eligible) {" "    if (false) {" || { bad "N8 STALE"; exit 1; }
+run "N8 withdrawal at once" "queued before the student unsubscribed is not sent" "$PG_SUITE"
+
 echo
 echo "HOME QOTD MUTATIONS: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

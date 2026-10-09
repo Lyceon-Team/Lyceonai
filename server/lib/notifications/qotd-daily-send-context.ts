@@ -14,11 +14,18 @@
  * STALE IS FINAL. A daily-question email is about TODAY's question. If its row is still queued
  * once the America/Chicago day has passed (the evening dispatch failed and the next morning's
  * backstop sweep finds it), sending it would deliver yesterday's question in the middle of the
- * night. `stale: true` tells the dispatcher to fail the row at once rather than retry it.
+ * night. `final: true` tells the dispatcher to fail the row at once rather than retry it.
+ *
+ * WITHDRAWN IS FINAL TOO. The preference is re-read at send time (the same read Settings shows):
+ * a student who unsubscribes, or turns the email off in Settings, after the 17:00 rule queued
+ * their email is not sent it, and neither is an account that is no longer 13+-eligible. The rule
+ * decides at emit time; this is the second check that makes a withdrawal take effect at once
+ * (contract §2A; F-83 withdrawal intent).
  */
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { qotdDailyPayloadSchema } from "../../../packages/shared/src/notifications-schema";
 import { err, ok, type Result } from "../../../packages/shared/src/result";
+import { getQotdEmailPreference } from "../../services/qotd/home-qotd-service";
 import { qotdEmailLinkUrl } from "../../services/qotd/qotd-email-links";
 import { qotdToday, readQotd } from "../../services/qotd/qotd-service";
 import type { RenderContext } from "./templates";
@@ -31,22 +38,30 @@ export async function qotdDailySendContext(
 ): Promise<
   Result<
     NonNullable<RenderContext["qotdEmail"]>,
-    { reason: string; stale: boolean }
+    { reason: string; final: boolean }
   >
 > {
   const parsed = qotdDailyPayloadSchema.safeParse(payload);
   if (!parsed.success)
     return err({
       reason: "qotd_daily payload does not match its schema",
-      stale: false,
+      final: false,
     });
   if (parsed.data.qotd_date !== qotdToday(now)) {
     return err({
       reason: "qotd_daily: its day has passed (stale, not sent)",
-      stale: true,
+      final: true,
     });
   }
   try {
+    const preference = await getQotdEmailPreference(recipientProfileId);
+    if (!preference.enabled || !preference.eligible) {
+      return err({
+        reason:
+          "qotd_daily: the email is off for this student (withdrawn, not sent)",
+        final: true,
+      });
+    }
     const stem =
       parsed.data.email_variant === "daily"
         ? ((await readQotd(supabaseServer, parsed.data.qotd_date))?.stem ??
@@ -64,7 +79,7 @@ export async function qotdDailySendContext(
   } catch (error) {
     return err({
       reason: `qotd_daily send context failed: ${error instanceof Error ? error.message : "unknown"}`,
-      stale: false,
+      final: false,
     });
   }
 }

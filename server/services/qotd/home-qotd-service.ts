@@ -528,6 +528,12 @@ export async function getQotdEmailPreference(
   return qotdEmailPreferenceSchema.parse(data);
 }
 
+/** What `set_qotd_daily_email` returns. */
+const setQotdDailyEmailResultSchema = z.union([
+  z.object({ ok: z.literal(true), enabled: z.boolean(), changed: z.boolean() }),
+  z.object({ ok: z.literal(false), reason: z.string() }),
+]);
+
 export async function setQotdEmailPreference(
   studentId: string,
   update: QotdEmailPreferenceUpdate,
@@ -543,16 +549,7 @@ export async function setQotdEmailPreference(
     p_now: now.toISOString(),
   });
   if (error) throw new Error(`set_qotd_daily_email failed: ${error.message}`);
-  const parsed = z
-    .union([
-      z.object({
-        ok: z.literal(true),
-        enabled: z.boolean(),
-        changed: z.boolean(),
-      }),
-      z.object({ ok: z.literal(false), reason: z.string() }),
-    ])
-    .parse(data);
+  const parsed = setQotdDailyEmailResultSchema.parse(data);
   if (!parsed.ok) {
     return err({
       status: 403,

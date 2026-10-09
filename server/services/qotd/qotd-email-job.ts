@@ -50,7 +50,7 @@ export type QotdEmailJobSummary = {
   chicago_hour: number;
   skipped?: "not_send_hour";
   emitted: number;
-  with_email: number;
+  mailable: number;
   paused_notices: number;
   sent: number;
   failed: number;
@@ -74,7 +74,7 @@ export function chicagoHour(now: Date): number {
 
 const notifyResultSchema = z.object({
   emitted: z.number().int().min(0),
-  with_email: z.number().int().min(0),
+  mailable: z.number().int().min(0),
   paused_notices: z.number().int().min(0),
 });
 
@@ -87,7 +87,7 @@ export async function runQotdEmailJob(
     rolled_exam_dates: 0,
     chicago_hour: chicagoHour(now),
     emitted: 0,
-    with_email: 0,
+    mailable: 0,
     paused_notices: 0,
     sent: 0,
     failed: 0,
@@ -116,12 +116,12 @@ export async function runQotdEmailJob(
     if (error) throw new Error(`qotd_daily_notify failed: ${error.message}`);
     const batch = notifyResultSchema.parse(data);
     summary.emitted += batch.emitted;
-    summary.with_email += batch.with_email;
+    summary.mailable += batch.mailable;
     summary.paused_notices += batch.paused_notices;
     if (batch.emitted < NOTIFY_BATCH) break;
   }
 
-  if (summary.with_email > 0) {
+  if (summary.mailable > 0) {
     for (let pass = 0; pass < MAX_DISPATCH_PASSES; pass += 1) {
       const d = await dispatch({ limit: DISPATCH_BATCH, now });
       summary.sent += d.sent;
@@ -137,7 +137,7 @@ export async function runQotdEmailJob(
   summary.ok = summary.ok && summary.failed === 0;
   logger.info(COMPONENT, "qotd_daily_rule_done", "Daily question rule run", {
     emitted: summary.emitted,
-    withEmail: summary.with_email,
+    mailable: summary.mailable,
     pausedNotices: summary.paused_notices,
     sent: summary.sent,
     failed: summary.failed,
