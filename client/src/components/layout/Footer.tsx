@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { GraduationCap } from "lucide-react";
+import { LyceonMark } from "@/components/common/LyceonMark";
 import { openCookieSettings } from "@/lib/analytics/consent";
 
 /**
@@ -60,7 +60,11 @@ export default function Footer({ tone = "default" }: { tone?: FooterTone }) {
               href="/"
               className={`flex items-center gap-2 mb-4 ${navy ? "text-background no-underline" : "text-foreground"}`}
             >
-              <GraduationCap className="h-5 w-5" />
+              <LyceonMark
+                decorative
+                className="h-5 w-5"
+                testId="lyceon-logo-footer"
+              />
               <span className="font-bold">Lyceon</span>
             </Link>
             {/* Slogan approved by Karl 2026-10-05 (F13; claim inventory X1). */}

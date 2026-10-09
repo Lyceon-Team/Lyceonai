@@ -4046,7 +4046,9 @@ BEGIN
     AND psi.status IN ('answered', 'skipped')
     AND psi.occurred_at >= v_today_start
     AND psi.occurred_at < v_tomorrow_start
-    AND ps.mode <> 'diagnostic';
+    -- SCL-224: a Question of the Day answer is practice for mastery and review, but it
+    -- never uses the free daily 40.
+    AND ps.mode NOT IN ('diagnostic', 'qotd');
 
   -- Daily cap check (unpaid only) — the one branch the dry run and the serve share; a
   -- diagnostic serve passes it.
@@ -4169,6 +4171,18 @@ BEGIN
   );
 END;
 $_$;
+
+
+--
+-- Name: chicago_day(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.chicago_day(p_at timestamp with time zone) RETURNS date
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (p_at AT TIME ZONE 'America/Chicago')::date;
+$$;
 
 
 --
@@ -6820,7 +6834,13 @@ CREATE FUNCTION public.exam_score_renewal_candidates(p_offset_days integer, p_ma
            e.cancel_at_period_end,
            e.current_period_end,
            COALESCE(sp.timezone, 'UTC')          AS timezone,
-           sp.target_exam_date,
+           -- SCL-223: the occasion among the student's dates, chosen so that one stored date
+           -- behaves exactly as the single column did (see study_profile_occasion_exam_date).
+           public.study_profile_occasion_exam_date(
+             COALESCE(sp.target_exam_dates, '{}'::date[]),
+             (p_now AT TIME ZONE COALESCE(sp.timezone, 'UTC'))::date,
+             p_max_exam_age_days
+           )                                     AS target_exam_date,
            (p_now AT TIME ZONE COALESCE(sp.timezone, 'UTC'))::date AS today_local
       FROM public.entitlements e
       LEFT JOIN public.student_study_profile sp ON sp.student_id = e.profile_id
@@ -8830,11 +8850,13 @@ BEGIN
   -- Explicit mapping: every recognized mode → its event_source_kind.
   -- flow/structured/balanced/timed are practice modes (Doc-02B §14).
   -- diagnostic is the 40-question initial diagnostic (Doc-05A §11).
+  -- qotd is the Home Question of the Day, a one-item practice session (SCL-224).
   CASE p_mode
     WHEN 'flow'       THEN RETURN 'practice_attempt';
     WHEN 'structured' THEN RETURN 'practice_attempt';
     WHEN 'balanced'   THEN RETURN 'practice_attempt';
     WHEN 'timed'      THEN RETURN 'practice_attempt';
+    WHEN 'qotd'       THEN RETURN 'practice_attempt';
     WHEN 'diagnostic' THEN RETURN 'diagnostic_attempt';
     ELSE RAISE EXCEPTION 'MASTERY_UNRECOGNIZED_SESSION_MODE: practice_sessions.mode=''%'' has no event_source_kind mapping — add it to practice_session_mode_to_event_kind()', p_mode;
   END CASE;
@@ -9187,17 +9209,25 @@ CREATE FUNCTION public.profiles_marketing_consent_guard() RETURNS trigger
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_was boolean := CASE WHEN TG_OP = 'UPDATE' THEN OLD.marketing_opt_in ELSE false END;
+  v_was     boolean := CASE WHEN TG_OP = 'UPDATE' THEN OLD.marketing_opt_in ELSE false END;
+  v_source  text    := NULLIF(current_setting('lyceon.marketing_consent_source', true), '');
+  v_version text    := NULLIF(current_setting('lyceon.marketing_consent_version', true), '');
 BEGIN
   IF NEW.marketing_opt_in AND NOT public.marketing_opt_in_age_eligible(NEW.date_of_birth) THEN
     IF v_was THEN
       -- Already opted in, and the date of birth just became ineligible (deidentify_user nulls
-      -- it during account deletion). Clear, never refuse: see the header, item 1.
+      -- it during account deletion). Clear, never refuse.
       NEW.marketing_opt_in := false;
     ELSE
       RAISE EXCEPTION 'marketing_opt_in requires a known date of birth at least 13 years ago (plan R26)'
         USING ERRCODE = 'check_violation';
     END IF;
+  END IF;
+  -- F-83: turning marketing ON is the person's own act, declared by set_marketing_consent.
+  IF NEW.marketing_opt_in AND NOT v_was
+     AND (v_source IS NULL OR v_source NOT IN ('signup', 'settings') OR v_version IS NULL) THEN
+    RAISE EXCEPTION 'marketing_opt_in may only be granted by set_marketing_consent from a user action with a consent version (F-83)'
+      USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END;
@@ -9369,6 +9399,226 @@ $$;
 
 
 --
+-- Name: qotd_daily_email_preference(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_daily_email_preference(p_student_id uuid) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+    'eligible', COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+                AND p.role = 'student' AND p.deleted_at IS NULL,
+    'enabled', COALESCE(c.enabled, false),
+    'paused', COALESCE(e.paused_at IS NOT NULL, false)
+  )
+    FROM public.profiles p
+    LEFT JOIN public.notification_channel_preferences c
+           ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
+    LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+   WHERE p.id = p_student_id;
+$$;
+
+
+--
+-- Name: qotd_daily_notify(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_daily_notify(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 1000) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_today   date := public.chicago_day(p_now);
+  v_emitted integer := 0;
+  v_email   integer := 0;
+  v_paused  integer := 0;
+  r         record;
+  v_event   uuid;
+  v_run     integer;
+  v_variant text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.qotd_schedule q WHERE q.qotd_date = v_today) THEN
+    RETURN jsonb_build_object('emitted', 0, 'mailable', 0, 'paused_notices', 0);
+  END IF;
+
+  FOR r IN
+    SELECT p.id AS student_id,
+           -- Email: the preference is on, 13+, and not paused by the sunset.
+           (COALESCE(c.enabled, false)
+            AND public.marketing_opt_in_age_eligible(p.date_of_birth)
+            AND e.paused_at IS NULL) AS email_on,
+           e.run_since
+      FROM public.profiles p
+      LEFT JOIN public.notification_channel_preferences c
+             ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
+      LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+     WHERE p.role = 'student' AND p.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
+                        WHERE d.profile_id = p.id AND d.status = 'pending')
+       AND NOT EXISTS (SELECT 1 FROM public.notification_events ev
+                        WHERE ev.event_id = public.notification_event_id('qotd_daily', p.id::text || ':' || v_today::text))
+       AND NOT EXISTS (SELECT 1 FROM public.student_answer_days(p.id, v_today) a WHERE a.day = v_today)
+     ORDER BY p.id
+     LIMIT p_limit
+  LOOP
+    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || v_today::text);
+    v_variant := 'daily';
+    IF r.email_on THEN
+      -- The sunset, from the ledger: the leading run (most recent first) of earlier days on which
+      -- a daily email went out and the student answered nothing, since the last grant or resume.
+      SELECT COALESCE(min(t.rn) FILTER (WHERE t.answered) - 1, count(*))::integer
+        INTO v_run
+        FROM (
+          SELECT row_number() OVER (ORDER BY x.day DESC) AS rn,
+                 EXISTS (SELECT 1 FROM public.student_answer_days(r.student_id, x.day) a
+                          WHERE a.day = x.day) AS answered
+            FROM (
+              SELECT (ev.payload->>'qotd_date')::date AS day
+                FROM public.notification_events ev
+                JOIN public.notification_messages m
+                  ON m.event_id = ev.event_id AND m.channel = 'email'
+                 AND m.recipient_profile_id = r.student_id
+               WHERE ev.event_type = 'qotd_daily' AND ev.subject_profile_id = r.student_id
+                 AND ev.payload->>'email_variant' = 'daily'
+                 AND m.status IN ('sent', 'delivered')
+                 AND (ev.payload->>'qotd_date')::date < v_today
+                 AND (ev.payload->>'qotd_date')::date >= COALESCE(r.run_since, (ev.payload->>'qotd_date')::date)
+               ORDER BY 1 DESC
+               LIMIT 7
+            ) x
+        ) t;
+      IF COALESCE(v_run, 0) >= 7 THEN
+        v_variant := 'paused_notice';
+      END IF;
+    END IF;
+
+    PERFORM public.emit_notification_event(
+      v_event,
+      'qotd_daily',
+      r.student_id,
+      jsonb_build_array(jsonb_build_object(
+        'profile_id', r.student_id,
+        'channels', CASE WHEN r.email_on THEN jsonb_build_array('in_app', 'email')
+                         ELSE jsonb_build_array('in_app') END
+      )),
+      jsonb_build_object(
+        'qotd_date', v_today,
+        'current_streak', COALESCE((SELECT s.current_streak FROM public.student_streak(r.student_id, p_now) s), 0),
+        'email_variant', v_variant
+      )
+    );
+    v_emitted := v_emitted + 1;
+    IF r.email_on THEN v_email := v_email + 1; END IF;
+    IF v_variant = 'paused_notice' THEN
+      UPDATE public.student_qotd_email_prefs
+         SET paused_at = p_now, updated_at = p_now
+       WHERE student_id = r.student_id;
+      v_paused := v_paused + 1;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('emitted', v_emitted, 'mailable', v_email, 'paused_notices', v_paused);
+END;
+$$;
+
+
+--
+-- Name: qotd_email_prompt_state(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_build_object(
+    'eligible', COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+                AND p.role = 'student' AND p.deleted_at IS NULL,
+    'consented', COALESCE(c.enabled, false),
+    'never_ask', COALESCE(e.never_ask, false),
+    'ask_count', COALESCE(e.ask_count, 0),
+    'last_asked_on', e.last_asked_on,
+    'last_decided_on', e.last_decided_on,
+    'today', public.chicago_day(p_now)
+  )
+    FROM public.profiles p
+    LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+    LEFT JOIN public.notification_channel_preferences c
+           ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
+   WHERE p.id = p_student_id;
+$$;
+
+
+--
+-- Name: qotd_email_record_ask(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_email_record_ask(p_student_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS integer
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_today date := public.chicago_day(p_now);
+  v_count integer;
+BEGIN
+  INSERT INTO public.student_qotd_email_prefs (student_id, ask_count, last_asked_on, updated_at)
+  VALUES (p_student_id, 1, v_today, p_now)
+  ON CONFLICT (student_id) DO UPDATE
+     SET ask_count = public.student_qotd_email_prefs.ask_count
+                     + CASE WHEN public.student_qotd_email_prefs.last_asked_on IS DISTINCT FROM v_today THEN 1 ELSE 0 END,
+         last_asked_on = v_today,
+         updated_at = p_now
+  RETURNING ask_count INTO v_count;
+  RETURN v_count;
+END;
+$$;
+
+
+--
+-- Name: qotd_email_resume(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_email_resume(p_student_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_paused boolean;
+  v_result jsonb;
+BEGIN
+  SELECT paused_at IS NOT NULL INTO v_paused
+    FROM public.student_qotd_email_prefs WHERE student_id = p_student_id;
+  IF NOT COALESCE(v_paused, false) THEN
+    RETURN jsonb_build_object('ok', true, 'changed', false);
+  END IF;
+  v_result := public.set_qotd_daily_email(p_student_id, true, 'email_resume', NULL, p_now);
+  RETURN jsonb_build_object('ok', true, 'changed',
+    COALESCE((v_result->>'enabled')::boolean, false) AND COALESCE((v_result->>'changed')::boolean, false));
+END;
+$$;
+
+
+--
+-- Name: qotd_email_unsubscribe(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_student_id) THEN
+    RETURN jsonb_build_object('ok', true, 'changed', false);
+  END IF;
+  v_result := public.set_qotd_daily_email(p_student_id, false, 'email_unsubscribe', NULL, p_now);
+  RETURN jsonb_build_object('ok', true, 'changed', COALESCE((v_result->>'changed')::boolean, false));
+END;
+$$;
+
+
+--
 -- Name: qotd_question_for(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9483,6 +9733,118 @@ BEGIN
   END IF;
   RETURN 'taken';
 END
+$$;
+
+
+--
+-- Name: qotd_student_answer(uuid, uuid, date, text, jsonb, text, boolean, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_student_answer(p_student_id uuid, p_actor_id uuid, p_qotd_date date, p_question_id text, p_item jsonb, p_selected_answer text, p_is_correct boolean, p_idempotency_key text, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_existing public.student_qotd_attempts%ROWTYPE;
+  v_session  uuid;
+  v_item     uuid;
+BEGIN
+  IF p_qotd_date IS DISTINCT FROM public.chicago_day(p_now) THEN
+    RETURN jsonb_build_object('status', 'not_today');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.qotd_schedule s
+     WHERE s.qotd_date = p_qotd_date AND s.question_id = p_question_id
+  ) THEN
+    RETURN jsonb_build_object('status', 'not_today');
+  END IF;
+
+  -- One writer per student per day.
+  PERFORM pg_advisory_xact_lock(hashtextextended('qotd_student_answer:' || p_student_id::text || ':' || p_qotd_date::text, 0));
+
+  SELECT * INTO v_existing FROM public.student_qotd_attempts
+   WHERE student_id = p_student_id AND qotd_date = p_qotd_date;
+  IF FOUND THEN
+    IF v_existing.idempotency_key = p_idempotency_key THEN
+      RETURN jsonb_build_object(
+        'status', 'replay',
+        'practice_session_item_id', v_existing.practice_session_item_id,
+        'selected_answer', v_existing.selected_answer,
+        'is_correct', v_existing.is_correct,
+        'answered_at', v_existing.answered_at
+      );
+    END IF;
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.student_qotd_attempts WHERE idempotency_key = p_idempotency_key) THEN
+    RETURN jsonb_build_object('status', 'conflict');
+  END IF;
+
+  INSERT INTO public.practice_sessions
+    (user_id, actor_id, mode, filters, target_count, platform, status,
+     created_at, updated_at, last_activity_at, completed_at)
+  VALUES
+    (p_student_id, p_actor_id, 'qotd',
+     jsonb_build_object('source', 'qotd', 'qotd_date', p_qotd_date,
+                        'session_start_idempotency_key', p_idempotency_key),
+     1, 'web', 'active', p_now, p_now, p_now, NULL)
+  RETURNING id INTO v_session;
+
+  INSERT INTO public.practice_session_items (
+    session_id, user_id, actor_id, ordinal, question_id,
+    question_stem, question_passage, question_options, question_correct_answer,
+    question_explanation, question_option_metadata, question_domain, question_skill,
+    question_difficulty, question_section, question_item_type, question_correct_variants,
+    question_assets, question_estimated_time_seconds, option_order, option_token_map,
+    status, served_at
+  ) VALUES (
+    v_session, p_student_id, p_actor_id, 1, p_question_id,
+    p_item->>'question_stem', p_item->>'question_passage', p_item->'question_options',
+    p_item->>'question_correct_answer', p_item->>'question_explanation',
+    p_item->'question_option_metadata', p_item->>'question_domain', p_item->>'question_skill',
+    (p_item->>'question_difficulty')::smallint, p_item->>'question_section',
+    p_item->>'question_item_type',
+    CASE WHEN jsonb_typeof(p_item->'question_correct_variants') = 'array'
+         THEN ARRAY(SELECT jsonb_array_elements_text(p_item->'question_correct_variants')) END,
+    p_item->'question_assets', (p_item->>'question_estimated_time_seconds')::integer,
+    CASE WHEN jsonb_typeof(p_item->'option_order') = 'array'
+         THEN ARRAY(SELECT jsonb_array_elements_text(p_item->'option_order')) END,
+    p_item->'option_token_map',
+    'served', p_now
+  ) RETURNING id INTO v_item;
+
+  -- The practice answer path's own write (practice-canonical.ts submitPracticeAnswer): the
+  -- AFTER UPDATE review trigger queues a miss exactly as it does for any practice item.
+  UPDATE public.practice_session_items
+     SET status = 'answered',
+         selected_answer = p_selected_answer,
+         is_correct = p_is_correct,
+         outcome = CASE WHEN p_is_correct THEN 'correct' ELSE 'incorrect' END,
+         answered_at = p_now,
+         occurred_at = p_now,
+         client_attempt_id = p_idempotency_key
+   WHERE id = v_item AND status = 'served';
+
+  UPDATE public.practice_sessions
+     SET status = 'completed', completed_at = p_now, updated_at = p_now, last_activity_at = p_now
+   WHERE id = v_session;
+
+  INSERT INTO public.student_qotd_attempts
+    (student_id, qotd_date, question_id, practice_session_item_id, selected_answer,
+     is_correct, answered_at, idempotency_key)
+  VALUES
+    (p_student_id, p_qotd_date, p_question_id, v_item, p_selected_answer,
+     p_is_correct, p_now, p_idempotency_key);
+
+  RETURN jsonb_build_object(
+    'status', 'created',
+    'practice_session_id', v_session,
+    'practice_session_item_id', v_item,
+    'selected_answer', p_selected_answer,
+    'is_correct', p_is_correct,
+    'answered_at', p_now
+  );
+END;
 $$;
 
 
@@ -11852,6 +12214,12 @@ BEGIN
     RAISE EXCEPTION 'set_marketing_consent: source % can only withdraw', p_source
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  -- F-83: a grant names the wording it was given against, always. Refused here, before any
+  -- write, rather than left to the log's CHECK after the flag has already changed.
+  IF p_granted AND NULLIF(btrim(COALESCE(p_consent_version, '')), '') IS NULL THEN
+    RAISE EXCEPTION 'set_marketing_consent: a grant requires a consent version (F-83)'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
 
   SELECT date_of_birth, marketing_opt_in INTO v_dob, v_was
     FROM public.profiles WHERE id = p_profile_id FOR UPDATE;
@@ -11901,6 +12269,166 @@ $$;
 
 
 --
+-- Name: set_qotd_daily_email(uuid, boolean, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_today    date := public.chicago_day(p_now);
+  v_student  boolean;
+  v_eligible boolean;
+  v_was      boolean;
+  v_paused   boolean;
+BEGIN
+  IF p_source NOT IN ('qotd_prompt', 'settings', 'email_unsubscribe', 'email_resume') THEN
+    RAISE EXCEPTION 'set_qotd_daily_email: unknown source %', p_source
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF (p_source = 'email_unsubscribe' AND p_enabled)
+     OR (p_source IN ('qotd_prompt', 'email_resume') AND NOT p_enabled) THEN
+    RAISE EXCEPTION 'set_qotd_daily_email: source % cannot set enabled=%', p_source, p_enabled
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  SELECT p.role = 'student',
+         COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+         AND p.role = 'student' AND p.deleted_at IS NULL
+    INTO v_student, v_eligible
+    FROM public.profiles p WHERE p.id = p_student_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'profile_missing');
+  END IF;
+  IF NOT v_student AND NOT p_enabled THEN
+    -- Not a student: there is nothing to turn off, so write nothing (a signed link for another
+    -- profile kind is a no-op, not a meaningless row).
+    RETURN jsonb_build_object('ok', true, 'enabled', false, 'changed', false);
+  END IF;
+
+  -- Serialise concurrent writers for this student (the row may not exist yet, so a row lock
+  -- alone cannot): two first grants must not both log a consent.
+  PERFORM pg_advisory_xact_lock(hashtext('set_qotd_daily_email:' || p_student_id::text));
+  SELECT enabled INTO v_was
+    FROM public.notification_channel_preferences
+   WHERE profile_id = p_student_id AND event_type = 'qotd_daily' AND channel = 'email'
+   FOR UPDATE;
+  v_was := COALESCE(v_was, false);
+  SELECT paused_at IS NOT NULL INTO v_paused
+    FROM public.student_qotd_email_prefs WHERE student_id = p_student_id FOR UPDATE;
+  v_paused := COALESCE(v_paused, false);
+
+  IF p_enabled THEN
+    IF p_source = 'email_resume' AND NOT v_was THEN
+      -- The resume link only lifts a pause; it is not a consent.
+      RETURN jsonb_build_object('ok', true, 'enabled', false, 'changed', false);
+    END IF;
+    IF NOT v_eligible THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'ineligible');
+    END IF;
+    IF NOT v_was AND NULLIF(btrim(COALESCE(p_consent_version, '')), '') IS NULL THEN
+      RAISE EXCEPTION 'set_qotd_daily_email: turning the email on requires a consent version'
+        USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF NOT v_was AND p_consent_version !~ '^\d+\.\d+\.\d+$' THEN
+      RAISE EXCEPTION 'set_qotd_daily_email: malformed consent version'
+        USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    INSERT INTO public.notification_channel_preferences
+      (profile_id, event_type, channel, enabled, updated_source, updated_at)
+    VALUES (p_student_id, 'qotd_daily', 'email', true, p_source, p_now)
+    ON CONFLICT (profile_id, event_type, channel) DO UPDATE
+       SET enabled = true, updated_source = EXCLUDED.updated_source, updated_at = p_now;
+    IF NOT v_was OR v_paused THEN
+      -- A fresh start for the sunset count: off→on, or a pause lifted.
+      INSERT INTO public.student_qotd_email_prefs (student_id, last_decided_on, paused_at, run_since, updated_at)
+      VALUES (p_student_id, v_today, NULL, v_today, p_now)
+      ON CONFLICT (student_id) DO UPDATE
+         SET paused_at = NULL, run_since = v_today,
+             last_decided_on = CASE WHEN p_source = 'email_resume'
+                                    THEN public.student_qotd_email_prefs.last_decided_on
+                                    ELSE v_today END,
+             updated_at = p_now;
+    END IF;
+    IF NOT v_was THEN
+      INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version, purpose, captured_at)
+      VALUES (p_student_id, true, p_source, p_consent_version, 'qotd_daily_email', p_now);
+    END IF;
+    RETURN jsonb_build_object('ok', true, 'enabled', true, 'changed', NOT v_was OR v_paused);
+  END IF;
+
+  -- OFF (Settings or the unsubscribe link). Also "don't ask again" (ruling 4).
+  INSERT INTO public.notification_channel_preferences
+    (profile_id, event_type, channel, enabled, updated_source, updated_at)
+  VALUES (p_student_id, 'qotd_daily', 'email', false, p_source, p_now)
+  ON CONFLICT (profile_id, event_type, channel) DO UPDATE
+     SET enabled = false, updated_source = EXCLUDED.updated_source, updated_at = p_now;
+  INSERT INTO public.student_qotd_email_prefs (student_id, last_decided_on, never_ask, updated_at)
+  VALUES (p_student_id, v_today, true, p_now)
+  ON CONFLICT (student_id) DO UPDATE
+     SET never_ask = true, last_decided_on = v_today, updated_at = p_now;
+  IF v_was THEN
+    INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version, purpose, captured_at)
+    VALUES (p_student_id, false, p_source, NULL, 'qotd_daily_email', p_now);
+  END IF;
+  RETURN jsonb_build_object('ok', true, 'enabled', false, 'changed', v_was);
+END;
+$_$;
+
+
+--
+-- Name: set_qotd_email_consent(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_qotd_email_consent(p_student_id uuid, p_decision text, p_consent_version text, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_state  jsonb := public.qotd_email_prompt_state(p_student_id, p_now);
+  v_today  date := public.chicago_day(p_now);
+  v_result jsonb;
+BEGIN
+  IF v_state IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'profile_missing');
+  END IF;
+  IF p_decision NOT IN ('grant', 'not_now', 'never') THEN
+    RAISE EXCEPTION 'set_qotd_email_consent: unknown decision %', p_decision
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF NOT (v_state->>'eligible')::boolean THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'ineligible');
+  END IF;
+
+  IF p_decision = 'grant' THEN
+    IF NULLIF(btrim(COALESCE(p_consent_version, '')), '') IS NULL THEN
+      RAISE EXCEPTION 'set_qotd_email_consent: a grant requires a consent version'
+        USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    v_result := public.set_qotd_daily_email(p_student_id, true, 'qotd_prompt', p_consent_version, p_now);
+    IF NOT (v_result->>'ok')::boolean THEN
+      RETURN v_result;
+    END IF;
+    RETURN jsonb_build_object('ok', true, 'changed', (v_result->>'changed')::boolean);
+  END IF;
+
+  IF p_decision = 'never' AND COALESCE((v_state->>'ask_count')::integer, 0) < 3 THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'never_not_offered');
+  END IF;
+
+  INSERT INTO public.student_qotd_email_prefs (student_id, last_decided_on, never_ask, updated_at)
+  VALUES (p_student_id, v_today, p_decision = 'never', p_now)
+  ON CONFLICT (student_id) DO UPDATE
+     SET last_decided_on = v_today,
+         never_ask = public.student_qotd_email_prefs.never_ask OR (p_decision = 'never'),
+         updated_at = p_now;
+  RETURN jsonb_build_object('ok', true, 'changed', false);
+END;
+$$;
+
+
+--
 -- Name: sever_crisis_audit_conversation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11925,6 +12453,32 @@ COMMENT ON FUNCTION public.sever_crisis_audit_conversation() IS 'Severs the deno
 
 
 --
+-- Name: student_answer_days(uuid, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.student_answer_days(p_student_id uuid, p_since date) RETURNS TABLE(day date)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT DISTINCT public.chicago_day(i.occurred_at)
+    FROM public.practice_session_items i
+   WHERE i.user_id = p_student_id AND i.status = 'answered' AND i.occurred_at IS NOT NULL
+     AND i.occurred_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
+  UNION
+  SELECT DISTINCT public.chicago_day(COALESCE(r.occurred_at, r.answered_at))
+    FROM public.review_session_items r
+   WHERE r.student_id = p_student_id AND r.status = 'answered'
+     AND COALESCE(r.occurred_at, r.answered_at) >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
+  UNION
+  SELECT DISTINCT public.chicago_day(a.created_at)
+    FROM public.test_answer_submissions a
+    JOIN public.test_sessions t ON t.id = a.test_session_id
+   WHERE t.student_id = p_student_id AND a.answer IS NOT NULL
+     AND a.created_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago');
+$$;
+
+
+--
 -- Name: student_diagnostic_state(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11945,6 +12499,153 @@ $$;
 --
 
 COMMENT ON FUNCTION public.student_diagnostic_state(p_student_id uuid) IS 'Diagnostic lifecycle state for one student. Returns not_taken for a student with no diagnostic session, so callers never have to interpret an absent row.';
+
+
+--
+-- Name: student_streak(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS TABLE(current_streak integer, today_done boolean, broken boolean)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH today AS (SELECT public.chicago_day(p_now) AS d),
+  days AS (
+    SELECT day FROM public.student_answer_days(p_student_id, (SELECT d FROM today) - 400)
+     WHERE day <= (SELECT d FROM today)
+  ),
+  anchor AS (
+    -- The run ends today if today has an answer, else yesterday if yesterday has one.
+    SELECT CASE
+             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today)) THEN (SELECT d FROM today)
+             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today) - 1) THEN (SELECT d FROM today) - 1
+           END AS d
+  ),
+  run AS (
+    -- Consecutive days back from the anchor: the anchor minus k is in the set for k = 0..n-1.
+    SELECT count(*)::integer AS n
+      FROM generate_series(0, 400) AS k
+     WHERE (SELECT d FROM anchor) IS NOT NULL
+       AND k < COALESCE((
+             SELECT min(g) FROM generate_series(0, 401) AS g
+              WHERE NOT EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM anchor) - g)
+           ), 401)
+  )
+  SELECT (SELECT n FROM run),
+         EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today)),
+         (SELECT n FROM run) = 0 AND EXISTS (SELECT 1 FROM days);
+$$;
+
+
+--
+-- Name: study_profile_effective_exam_date(date[], date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.study_profile_effective_exam_date(p_dates date[], p_today date) RETURNS date
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT min(d) FROM unnest(COALESCE(p_dates, '{}'::date[])) AS d WHERE d >= p_today;
+$$;
+
+
+--
+-- Name: study_profile_exam_dates_sync(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.study_profile_exam_dates_sync() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_today date := public.study_profile_today();
+BEGIN
+  -- A write of the single column means "my NEXT SAT is this date" (the calendar's own date
+  -- field, the post-exam renewal, and any build from before this change). It becomes the
+  -- effective date: future dates before it are dropped, later ones are kept (a student who
+  -- picked several keeps the rest), past dates stay for the post-exam prompt. NULL means "no
+  -- date": every future date is cleared.
+  IF TG_OP = 'UPDATE'
+     AND NEW.target_exam_date IS DISTINCT FROM OLD.target_exam_date
+     AND NEW.target_exam_dates IS NOT DISTINCT FROM OLD.target_exam_dates THEN
+    NEW.target_exam_dates := ARRAY(
+      SELECT d FROM unnest(OLD.target_exam_dates) AS d
+       WHERE d < v_today
+          OR (NEW.target_exam_date IS NOT NULL AND d > NEW.target_exam_date)
+    ) || CASE WHEN NEW.target_exam_date IS NULL THEN '{}'::date[]
+              ELSE ARRAY[NEW.target_exam_date] END;
+  ELSIF TG_OP = 'INSERT'
+     AND cardinality(COALESCE(NEW.target_exam_dates, '{}'::date[])) = 0
+     AND NEW.target_exam_date IS NOT NULL THEN
+    NEW.target_exam_dates := ARRAY[NEW.target_exam_date];
+  END IF;
+  NEW.target_exam_dates := public.study_profile_normalise_exam_dates(NEW.target_exam_dates);
+  NEW.target_exam_date := public.study_profile_effective_exam_date(NEW.target_exam_dates, v_today);
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: study_profile_normalise_exam_dates(date[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.study_profile_normalise_exam_dates(p_dates date[]) RETURNS date[]
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(array_agg(DISTINCT d ORDER BY d), '{}'::date[])
+    FROM unnest(COALESCE(p_dates, '{}'::date[])) AS d
+   WHERE d IS NOT NULL;
+$$;
+
+
+--
+-- Name: study_profile_occasion_exam_date(date[], date, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.study_profile_occasion_exam_date(p_dates date[], p_today date, p_max_age_days integer) RETURNS date
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT max(d) FROM unnest(COALESCE(p_dates, '{}'::date[])) AS d
+      WHERE d < p_today AND d >= p_today - p_max_age_days),
+    public.study_profile_effective_exam_date(p_dates, p_today),
+    (SELECT max(d) FROM unnest(COALESCE(p_dates, '{}'::date[])) AS d WHERE d < p_today)
+  );
+$$;
+
+
+--
+-- Name: study_profile_roll_exam_dates(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.study_profile_roll_exam_dates() RETURNS integer
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH moved AS (
+    UPDATE public.student_study_profile
+       SET target_exam_dates = target_exam_dates
+     WHERE target_exam_date IS NOT NULL
+       AND target_exam_date < public.study_profile_today()
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM moved;
+$$;
+
+
+--
+-- Name: study_profile_today(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.study_profile_today() RETURNS date
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (now() AT TIME ZONE 'America/Chicago')::date;
+$$;
 
 
 --
@@ -14368,9 +15069,11 @@ CREATE TABLE public.marketing_consent_log (
     source text NOT NULL,
     consent_version text,
     captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    purpose text DEFAULT 'marketing'::text NOT NULL,
     CONSTRAINT marketing_consent_log_consent_version_check CHECK (((consent_version IS NULL) OR (consent_version ~ '^\d+\.\d+\.\d+$'::text))),
     CONSTRAINT marketing_consent_log_grant_versioned CHECK (((granted = false) OR (source = 'backfill'::text) OR (consent_version IS NOT NULL))),
-    CONSTRAINT marketing_consent_log_source_check CHECK ((source = ANY (ARRAY['signup'::text, 'settings'::text, 'backfill'::text, 'age_clear'::text, 'system'::text, 'email_unsubscribe'::text, 'email_complaint'::text])))
+    CONSTRAINT marketing_consent_log_purpose_check CHECK ((purpose = ANY (ARRAY['marketing'::text, 'qotd_daily_email'::text]))),
+    CONSTRAINT marketing_consent_log_source_check CHECK ((source = ANY (ARRAY['signup'::text, 'settings'::text, 'backfill'::text, 'age_clear'::text, 'system'::text, 'email_unsubscribe'::text, 'email_complaint'::text, 'qotd_prompt'::text])))
 );
 
 
@@ -14379,6 +15082,13 @@ CREATE TABLE public.marketing_consent_log (
 --
 
 COMMENT ON TABLE public.marketing_consent_log IS 'Doc 10 §9.21 / plan R26: one row per change of profiles.marketing_opt_in (when, where, which wording). Written only by the profiles_marketing_consent_log trigger. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: COLUMN marketing_consent_log.purpose; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.marketing_consent_log.purpose IS 'SCL-225: what the consent is for. marketing = profiles.marketing_opt_in (product updates and study news); qotd_daily_email = the daily Question of the Day email.';
 
 
 --
@@ -14627,7 +15337,7 @@ CREATE TABLE public.practice_sessions (
     actor_id uuid NOT NULL,
     abandoned_at timestamp with time zone,
     CONSTRAINT practice_sessions_abandoned_not_completed CHECK (((status <> 'abandoned'::text) OR ((completed_at IS NULL) AND (abandoned_at IS NOT NULL)))),
-    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text, 'diagnostic'::text]))),
+    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text, 'diagnostic'::text, 'qotd'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
     CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))
@@ -14797,6 +15507,29 @@ CREATE TABLE public.mobile_auth_config_history (
 
 
 --
+-- Name: notification_channel_preferences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_channel_preferences (
+    profile_id uuid NOT NULL,
+    event_type text NOT NULL,
+    channel text NOT NULL,
+    enabled boolean NOT NULL,
+    updated_source text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_channel_preferences_scope CHECK (((event_type = 'qotd_daily'::text) AND (channel = 'email'::text))),
+    CONSTRAINT notification_channel_preferences_source CHECK ((updated_source = ANY (ARRAY['qotd_prompt'::text, 'settings'::text, 'email_unsubscribe'::text, 'email_resume'::text, 'backfill'::text])))
+);
+
+
+--
+-- Name: TABLE notification_channel_preferences; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.notification_channel_preferences IS 'Notification channel switches per profile, type and channel. Today only (student, qotd_daily, email). Missing row = off. Written ONLY by set_qotd_daily_email (pop-up, Settings, unsubscribe and resume all call it). ON DELETE CASCADE from profiles.';
+
+
+--
 -- Name: notification_delivery_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14830,7 +15563,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text])))
 );
 
 
@@ -15792,6 +16525,56 @@ CREATE TABLE public.student_projection_refresh_state (
 
 
 --
+-- Name: student_qotd_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_qotd_attempts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    qotd_date date NOT NULL,
+    question_id text NOT NULL,
+    practice_session_item_id uuid NOT NULL,
+    selected_answer text NOT NULL,
+    is_correct boolean NOT NULL,
+    answered_at timestamp with time zone DEFAULT now() NOT NULL,
+    idempotency_key text NOT NULL,
+    CONSTRAINT student_qotd_attempts_idempotency_key_check CHECK (((char_length(idempotency_key) >= 8) AND (char_length(idempotency_key) <= 128))),
+    CONSTRAINT student_qotd_attempts_selected_answer_check CHECK (((char_length(selected_answer) >= 1) AND (char_length(selected_answer) <= 64)))
+);
+
+
+--
+-- Name: TABLE student_qotd_attempts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in student answer per America/Chicago day. selected_answer is the canonical option key. The answer itself is the linked practice_session_items row (mode qotd). ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: student_qotd_email_prefs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_qotd_email_prefs (
+    student_id uuid NOT NULL,
+    ask_count integer DEFAULT 0 NOT NULL,
+    last_asked_on date,
+    last_decided_on date,
+    never_ask boolean DEFAULT false NOT NULL,
+    paused_at timestamp with time zone,
+    run_since date,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT student_qotd_email_prefs_ask_count_check CHECK ((ask_count >= 0))
+);
+
+
+--
+-- Name: TABLE student_qotd_email_prefs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.student_qotd_email_prefs IS 'Home QOTD: the email prompt''s server-side state (asks, last asked/decided, never-ask) and the daily email''s sunset pause (paused_at, run_since). Whether the email is ON lives in notification_channel_preferences. ON DELETE CASCADE from profiles.';
+
+
+--
 -- Name: student_section_projection_snapshots_snapshot_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -15840,8 +16623,8 @@ CREATE TABLE public.student_study_profile (
     timezone text NOT NULL,
     target_exam_date date,
     target_score integer,
-    study_days_mask smallint NOT NULL,
-    daily_minutes integer NOT NULL,
+    study_days_mask smallint,
+    daily_minutes integer,
     full_length_weekday smallint,
     planner_mode text DEFAULT 'auto'::text NOT NULL,
     setup_completed_at timestamp with time zone,
@@ -15849,6 +16632,7 @@ CREATE TABLE public.student_study_profile (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     full_length_interval_weeks smallint,
+    target_exam_dates date[] DEFAULT '{}'::date[] NOT NULL,
     CONSTRAINT full_length_pair CHECK (((full_length_interval_weeks IS NULL) = (full_length_weekday IS NULL))),
     CONSTRAINT student_study_profile_daily_minutes_check CHECK (((daily_minutes >= 5) AND (daily_minutes <= 600))),
     CONSTRAINT student_study_profile_full_length_interval_weeks_check CHECK ((full_length_interval_weeks = ANY (ARRAY[1, 2, 3, 4]))),
@@ -15856,7 +16640,9 @@ CREATE TABLE public.student_study_profile (
     CONSTRAINT student_study_profile_last_acknowledged_nonstudent_versio_check CHECK ((last_acknowledged_nonstudent_version_no >= 0)),
     CONSTRAINT student_study_profile_planner_mode_check CHECK ((planner_mode = ANY (ARRAY['auto'::text, 'custom'::text]))),
     CONSTRAINT student_study_profile_study_days_mask_check CHECK (((study_days_mask >= 1) AND (study_days_mask <= 127))),
-    CONSTRAINT student_study_profile_target_score_check CHECK ((((target_score >= 400) AND (target_score <= 1600)) AND ((target_score % 10) = 0)))
+    CONSTRAINT student_study_profile_target_score_check CHECK ((((target_score >= 400) AND (target_score <= 1600)) AND ((target_score % 10) = 0))),
+    CONSTRAINT study_profile_exam_dates_bounded CHECK (((cardinality(target_exam_dates) <= 16) AND (array_position(target_exam_dates, NULL::date) IS NULL))),
+    CONSTRAINT study_profile_setup_answers_present CHECK (((setup_completed_at IS NULL) OR ((study_days_mask IS NOT NULL) AND (daily_minutes IS NOT NULL))))
 );
 
 
@@ -15871,7 +16657,7 @@ COMMENT ON TABLE public.student_study_profile IS 'Doc 05F §7.1. study_days_mask
 -- Name: COLUMN student_study_profile.target_exam_date; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.student_study_profile.target_exam_date IS 'Doc 05F §8.1. OPTIONAL (owner ruling 2026-09-24, SCL-130). NULL means the student has not picked a test date -- setup offers "I haven''t picked a date yet" as a first-class answer. The countdown and the exam-cadence anchor both render an absence rather than a number when it is NULL.';
+COMMENT ON COLUMN public.student_study_profile.target_exam_date IS 'SCL-223: the EFFECTIVE test date, derived from target_exam_dates by trigger study_profile_exam_dates_sync and rolled forward by study_profile_roll_exam_dates() each morning (QOTD email job). NULL when no date is on or after today. Not written directly.';
 
 
 --
@@ -15893,6 +16679,13 @@ COMMENT ON COLUMN public.student_study_profile.setup_completed_at IS 'Doc 05F §
 --
 
 COMMENT ON COLUMN public.student_study_profile.full_length_interval_weeks IS 'Doc 05F §8.1 (R-08-27 as amended): weeks between full-length practice tests, as the student chose it — 1, 2, 3 or 4. NULL means no automatic full-lengths, and `full_length_pair` keeps it NULL exactly when full_length_weekday is. Weeks, not a label: Weekly / Every 2 weeks / Every 3 weeks / Monthly is the UI''s rendering of 1/2/3/4, so a copy change never migrates data.';
+
+
+--
+-- Name: COLUMN student_study_profile.target_exam_dates; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.student_study_profile.target_exam_dates IS 'SCL-223: every SAT date the student picked, ascending, distinct. target_exam_date is derived from it (the closest date on or after today, America/Chicago).';
 
 
 --
@@ -16982,6 +17775,14 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
+-- Name: notification_channel_preferences notification_channel_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_channel_preferences
+    ADD CONSTRAINT notification_channel_preferences_pkey PRIMARY KEY (profile_id, event_type, channel);
+
+
+--
 -- Name: notification_delivery_events notification_delivery_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -17403,6 +18204,38 @@ ALTER TABLE ONLY public.student_overall_kpi
 
 ALTER TABLE ONLY public.student_projection_refresh_state
     ADD CONSTRAINT student_projection_refresh_state_pkey PRIMARY KEY (student_id);
+
+
+--
+-- Name: student_qotd_attempts student_qotd_attempts_idempotency; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_qotd_attempts
+    ADD CONSTRAINT student_qotd_attempts_idempotency UNIQUE (idempotency_key);
+
+
+--
+-- Name: student_qotd_attempts student_qotd_attempts_one_per_day; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_qotd_attempts
+    ADD CONSTRAINT student_qotd_attempts_one_per_day UNIQUE (student_id, qotd_date);
+
+
+--
+-- Name: student_qotd_attempts student_qotd_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_qotd_attempts
+    ADD CONSTRAINT student_qotd_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: student_qotd_email_prefs student_qotd_email_prefs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_qotd_email_prefs
+    ADD CONSTRAINT student_qotd_email_prefs_pkey PRIMARY KEY (student_id);
 
 
 --
@@ -19008,6 +19841,13 @@ CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.rev
 
 
 --
+-- Name: student_study_profile study_profile_exam_dates_sync; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER study_profile_exam_dates_sync BEFORE INSERT OR UPDATE ON public.student_study_profile FOR EACH ROW EXECUTE FUNCTION public.study_profile_exam_dates_sync();
+
+
+--
 -- Name: mastery_constants trg_capture_mastery_constant_change; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -19679,6 +20519,14 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
+-- Name: notification_channel_preferences notification_channel_preferences_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_channel_preferences
+    ADD CONSTRAINT notification_channel_preferences_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: notification_delivery_events notification_delivery_events_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20060,6 +20908,30 @@ ALTER TABLE ONLY public.student_dream_schools
 
 ALTER TABLE ONLY public.student_dream_schools
     ADD CONSTRAINT student_dream_schools_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: student_qotd_attempts student_qotd_attempts_practice_session_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_qotd_attempts
+    ADD CONSTRAINT student_qotd_attempts_practice_session_item_id_fkey FOREIGN KEY (practice_session_item_id) REFERENCES public.practice_session_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: student_qotd_attempts student_qotd_attempts_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_qotd_attempts
+    ADD CONSTRAINT student_qotd_attempts_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: student_qotd_email_prefs student_qotd_email_prefs_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_qotd_email_prefs
+    ADD CONSTRAINT student_qotd_email_prefs_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -20877,6 +21749,12 @@ ALTER TABLE public.mobile_auth_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mobile_auth_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: notification_channel_preferences; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_channel_preferences ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: notification_delivery_events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -21312,6 +22190,18 @@ ALTER TABLE public.student_overall_kpi ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.student_projection_refresh_state ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_qotd_attempts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_qotd_attempts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_qotd_email_prefs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_qotd_email_prefs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: student_section_kpi; Type: ROW SECURITY; Schema: public; Owner: -
@@ -22254,6 +23144,14 @@ GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id 
 
 
 --
+-- Name: FUNCTION chicago_day(p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.chicago_day(p_at timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.chicago_day(p_at timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -23156,6 +24054,54 @@ GRANT ALL ON FUNCTION public.qotd_archive() TO service_role;
 
 
 --
+-- Name: FUNCTION qotd_daily_email_preference(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_daily_email_preference(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_daily_email_preference(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_daily_notify(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_email_record_ask(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_email_record_ask(p_student_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_email_record_ask(p_student_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_email_resume(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_email_resume(p_student_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_email_resume(p_student_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_email_unsubscribe(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_question_for(p_date date); Type: ACL; Schema: public; Owner: -
 --
 
@@ -23193,6 +24139,14 @@ GRANT ALL ON FUNCTION public.qotd_schedule_candidates(p_section text, p_domain t
 
 REVOKE ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_student_answer(p_student_id uuid, p_actor_id uuid, p_qotd_date date, p_question_id text, p_item jsonb, p_selected_answer text, p_is_correct boolean, p_idempotency_key text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_student_answer(p_student_id uuid, p_actor_id uuid, p_qotd_date date, p_question_id text, p_item jsonb, p_selected_answer text, p_is_correct boolean, p_idempotency_key text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_student_answer(p_student_id uuid, p_actor_id uuid, p_qotd_date date, p_question_id text, p_item jsonb, p_selected_answer text, p_is_correct boolean, p_idempotency_key text, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -23529,6 +24483,22 @@ GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
 
 
 --
+-- Name: FUNCTION set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION set_qotd_email_consent(p_student_id uuid, p_decision text, p_consent_version text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_qotd_email_consent(p_student_id uuid, p_decision text, p_consent_version text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_qotd_email_consent(p_student_id uuid, p_decision text, p_consent_version text, p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION sever_crisis_audit_conversation(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -23537,11 +24507,74 @@ GRANT ALL ON FUNCTION public.sever_crisis_audit_conversation() TO service_role;
 
 
 --
+-- Name: FUNCTION student_answer_days(p_student_id uuid, p_since date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.student_answer_days(p_student_id uuid, p_since date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.student_answer_days(p_student_id uuid, p_since date) TO service_role;
+
+
+--
 -- Name: FUNCTION student_diagnostic_state(p_student_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.student_diagnostic_state(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION student_streak(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION study_profile_effective_exam_date(p_dates date[], p_today date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.study_profile_effective_exam_date(p_dates date[], p_today date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.study_profile_effective_exam_date(p_dates date[], p_today date) TO service_role;
+
+
+--
+-- Name: FUNCTION study_profile_exam_dates_sync(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.study_profile_exam_dates_sync() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION study_profile_normalise_exam_dates(p_dates date[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.study_profile_normalise_exam_dates(p_dates date[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.study_profile_normalise_exam_dates(p_dates date[]) TO service_role;
+
+
+--
+-- Name: FUNCTION study_profile_occasion_exam_date(p_dates date[], p_today date, p_max_age_days integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.study_profile_occasion_exam_date(p_dates date[], p_today date, p_max_age_days integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.study_profile_occasion_exam_date(p_dates date[], p_today date, p_max_age_days integer) TO service_role;
+
+
+--
+-- Name: FUNCTION study_profile_roll_exam_dates(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.study_profile_roll_exam_dates() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.study_profile_roll_exam_dates() TO service_role;
+
+
+--
+-- Name: FUNCTION study_profile_today(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.study_profile_today() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.study_profile_today() TO service_role;
 
 
 --
@@ -24863,6 +25896,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config_history TO 
 
 
 --
+-- Name: TABLE notification_channel_preferences; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.notification_channel_preferences TO service_role;
+
+
+--
 -- Name: TABLE notification_delivery_events; Type: ACL; Schema: public; Owner: -
 --
 
@@ -25398,6 +26438,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_kpi_rollups_current TO
 --
 
 GRANT ALL ON TABLE public.student_projection_refresh_state TO service_role;
+
+
+--
+-- Name: TABLE student_qotd_attempts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.student_qotd_attempts TO service_role;
+
+
+--
+-- Name: TABLE student_qotd_email_prefs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.student_qotd_email_prefs TO service_role;
 
 
 --

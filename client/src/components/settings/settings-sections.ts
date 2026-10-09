@@ -3,7 +3,9 @@
  *
  * @spec [DESIGN.md §4 Settings (a section list on the left: Profile, Account, Guardian, Billing,
  *        Notifications, Appearance); student-UI register OQ-27 (owner ruling 2026-10-02: remove
- *        the Settings Notifications section for launch, no storage and no route); OQ-39 (e) and
+ *        the Settings Notifications section for launch, no storage and no route) — SUPERSEDED by
+ *        the owner ruling on #1166 (Karl, 2026-10-09, item 2): Notifications returns with one
+ *        toggle, "Daily question email", over a stored preference; OQ-39 (e) and
  *        UI-44 (`UPGRADE_PLANS_DESTINATION = "/profile?tab=billing"`: "See plans" lands on
  *        Billing, including when the student is already on /profile); UI-58]
  *        | @implemented [2026-10-03]
@@ -14,17 +16,19 @@
  * on Settings, moves the page to Billing. That closes UI-44's known limitation.
  *
  * Who sees what is presentation only; every read and write is authorised by the server:
- *   - a student sees Profile, Account, Guardian, Billing and Appearance;
+ *   - a student sees Profile, Account, Guardian, Billing, Notifications and Appearance;
  *   - an admin (never onboarded as a student: no name save, no link code, no billing status,
  *     each of which the server refuses for an admin) sees Account and Appearance.
- * There is no Notifications section (OQ-27). An unknown, legacy (`progress`, `settings`) or
- * hidden `tab` falls back to the viewer's first section.
+ * Notifications is student-only: its one setting is the daily-question email, a student's
+ * preference. An unknown, legacy (`progress`, `settings`) or hidden `tab` falls back to the
+ * viewer's first section.
  */
 export const SETTINGS_SECTIONS = [
   { id: "profile", label: "Profile" },
   { id: "account", label: "Account" },
   { id: "guardian", label: "Guardian" },
   { id: "billing", label: "Billing" },
+  { id: "notifications", label: "Notifications" },
   { id: "appearance", label: "Appearance" },
 ] as const;
 

@@ -28,7 +28,7 @@
  * route answers every engine refusal as `CALENDAR_ENGINE_ERROR` without the engine's code, so the
  * client cannot tell the cap there (handed to the calendar vertical).
  *
- * edge cases: a calendar with no setup shows "Set up your study calendar" (DESIGN.md §4
+ * edge cases: a calendar with no setup shows "Set up your study plan" (owner brief "Question of the Day on Home", 2026-10-08/09; was DESIGN.md §4
  * Settings wording) as the primary, linking to /calendar; a day with no blocks says the one
  * empty-day sentence, "No study planned" (`EMPTY_DAY_MESSAGE`, owner QA list 2026-10-07 item 15;
  * it said "Rest day", untrue of a day the student cleared); a day with every block done offers no primary; empty "Pick up" and
@@ -79,7 +79,10 @@ import {
 } from "@/hooks/useReview";
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
+import { DiagnosticCard } from "./DiagnosticCard";
 import { FullLengthCard } from "./FullLengthCard";
+import { HomeQotdSection } from "./qotd/HomeQotdSection";
+import { HomeStreakChip } from "./qotd/StreakChip";
 import { HomeLoading } from "./HomeLoading";
 import {
   ProjectionSection,
@@ -91,6 +94,7 @@ import {
   answeredLine,
   dateLine,
   firstOpenBlock,
+  freeHomeStage,
   greetingLine,
   planRowView,
   planTotal,
@@ -119,6 +123,8 @@ export function PaidHome({
   examGranted,
 }: PaidHomeProps): JSX.Element {
   const [, navigate] = useLocation();
+  // The streak chip zooms once when this visit's QOTD answer extended the streak.
+  const [celebrate, setCelebrate] = useState(false);
   const monday = startOfWeek(today);
   const calendar = useCalendar(monday, addDays(monday, 6));
   const mastery = useQuery({
@@ -261,13 +267,20 @@ export function PaidHome({
   ];
 
   if (!settled) return <HomeLoading />;
+  const needsDiagnostic =
+    freeHomeStage(projection.estimateStatus) === "diagnostic";
 
   return (
     <div className="flex flex-col gap-12" data-testid="home" data-plan="paid">
       <PageHeader
         title={greetingLine(hour, name)}
         description={dateLine(today, ready?.profile.target_exam_date ?? null)}
+        actions={<HomeStreakChip celebrate={celebrate} />}
       />
+
+      {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the QOTD card and the
+          SAT-date card come right after the greeting and the streak chip, before the next step. */}
+      <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
 
       {failed ? (
         <Notice
@@ -279,9 +292,15 @@ export function PaidHome({
         />
       ) : null}
 
+      {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) "Home" 5: a paid student
+          with no diagnostic takes it first ("Start diagnostic" is the primary), then sets up
+          their study plan; with a plan, today's plan is the primary. */}
+      {needsDiagnostic ? <DiagnosticCard practice={practice} /> : null}
+
       {plan !== null ? (
         <TodayPlan
           plan={plan}
+          primary={!needsDiagnostic}
           pendingBlockId={pendingBlockId}
           launchFailed={launchFailed}
           onStart={startChecked}
@@ -380,11 +399,14 @@ type PlanState =
 
 function TodayPlan({
   plan,
+  primary,
   pendingBlockId,
   launchFailed,
   onStart,
 }: {
   plan: PlanState;
+  /** False while the diagnostic card holds the page's one primary action. */
+  primary: boolean;
   pendingBlockId: string | null;
   launchFailed: boolean;
   onStart: (block: Block) => void;
@@ -407,9 +429,13 @@ function TodayPlan({
       </div>
       {plan.kind === "setup" ? (
         <div>
-          <Button asChild variant="lyc-primary" size="lyc-lg">
+          <Button
+            asChild
+            variant={primary ? "lyc-primary" : "lyc-outline"}
+            size="lyc-lg"
+          >
             <Link href="/calendar" data-testid="home-plan-setup">
-              Set up your study calendar
+              Set up your study plan
             </Link>
           </Button>
         </div>
@@ -422,6 +448,7 @@ function TodayPlan({
         </p>
       ) : (
         <ReadyPlan
+          primary={primary}
           blocks={plan.blocks}
           ready={plan.ready}
           pendingBlockId={pendingBlockId}
@@ -434,12 +461,14 @@ function TodayPlan({
 }
 
 function ReadyPlan({
+  primary,
   blocks,
   ready,
   pendingBlockId,
   launchFailed,
   onStart,
 }: {
+  primary: boolean;
   blocks: DayBlocks;
   ready: CalendarReadyResponse;
   pendingBlockId: string | null;
@@ -505,7 +534,7 @@ function ReadyPlan({
         <div>
           <Button
             type="button"
-            variant="lyc-primary"
+            variant={primary ? "lyc-primary" : "lyc-outline"}
             size="lyc-lg"
             disabled={pendingBlockId !== null}
             pending={primaryPending}

@@ -33,6 +33,11 @@ import { z } from "zod";
  * besides: they ask two different questions of two different people. The score prompt goes to
  * the student, who has the score; the renewal decision goes to the payer, who is being charged
  * (Doc 01 §36.4). On a self-paid subscription those are one person and only the first is sent.
+ *
+ * `qotd_daily` joined on 2026-10-09 (owner ruling on #1166, item 1: the daily-question reminder
+ * is a notification, not a separate flow). One event per student per America/Chicago day, source
+ * id `<student>:<day>`; in-app always, email only when the student's
+ * `notification_channel_preferences` row for it is on (see qotdDailyPayloadSchema).
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
@@ -41,6 +46,7 @@ export const NOTIFICATION_EVENT_TYPES = [
   "full_length_tomorrow",
   "exam_score_report_requested",
   "renewal_decision_requested",
+  "qotd_daily",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -137,6 +143,26 @@ export const postExamNoticePayloadSchema = z
   })
   .strict();
 export type PostExamNoticePayload = z.infer<typeof postExamNoticePayloadSchema>;
+
+/**
+ * @spec [contracts/notifications.contract.md §8.1; owner ruling on #1166 (Karl, 2026-10-09)
+ *        item 1; SCL-225] @implemented [2026-10-09]
+ *
+ * The daily-question reminder. `qotd_date` is the America/Chicago day it is for (the template
+ * reads that day's stem at send time; the payload never carries question content);
+ * `current_streak` is the streak when the rule ran (the subject line's "Day N"); `email_variant`
+ * is `paused_notice` on the one day the 7-send sunset pauses the email, else `daily`. No
+ * address, no answer, no choice.
+ */
+export const QOTD_DAILY_EMAIL_VARIANTS = ["daily", "paused_notice"] as const;
+export const qotdDailyPayloadSchema = z
+  .object({
+    qotd_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    current_streak: z.number().int().min(0),
+    email_variant: z.enum(QOTD_DAILY_EMAIL_VARIANTS),
+  })
+  .strict();
+export type QotdDailyPayload = z.infer<typeof qotdDailyPayloadSchema>;
 
 // ── DB rows read through the service client ─────────────────────────────────
 

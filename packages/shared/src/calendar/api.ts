@@ -29,6 +29,7 @@ import { planBlockSchema, planMemberSchema } from "./plan.js";
 import {
   fullLengthIntervalWeeksSchema,
   postgresDowSchema,
+  completedStudyProfileSchema,
   studyProfileBoundsSchema,
   studyProfileSchema,
   targetScoreSchema,
@@ -169,6 +170,9 @@ export const calendarSetupDefaultsSchema = z
     // The frequency readout is on the SETUP form too, so the constant it needs travels with
     // the rest of the prefill rather than being fetched separately.
     final_exam_lead_days: z.number().int().positive(),
+    // SCL-223: the SAT dates the student already chose (onboarding or Settings) before
+    // setting up the calendar, so the setup form opens on them. `[]` when none.
+    target_exam_dates: z.array(localDateSchema),
   })
   .strict();
 export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;
@@ -236,7 +240,7 @@ export type ExamPlanning = z.infer<typeof examPlanningSchema>;
 export const calendarReadyResponseSchema = z
   .object({
     status: z.literal("ready"),
-    profile: studyProfileSchema,
+    profile: completedStudyProfileSchema,
     /**
      * §8.1's bounds, so §17.3's settings sheet can offer the SAME minute presets and the
      * same furthest exam date that the server will validate the save against.

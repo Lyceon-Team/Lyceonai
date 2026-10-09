@@ -15,6 +15,7 @@ import {
   guardianLinkedPayloadSchema,
   guardianUnlinkedPayloadSchema,
   postExamNoticePayloadSchema,
+  qotdDailyPayloadSchema,
   type NotificationEventType,
 } from "../../../../packages/shared/src/notifications-schema";
 import { err, ok, type Result } from "../../../../packages/shared/src/result";
@@ -35,6 +36,7 @@ import {
   renewalDecisionRequestedEmail,
   renewalDecisionRequestedInApp,
 } from "./post-exam";
+import { qotdDailyInApp, qotdDailyNotificationEmail } from "./qotd-daily";
 import type { EmailRender, InAppRender, RenderContext } from "./shared";
 
 export type { EmailRender, InAppRender, RenderContext } from "./shared";
@@ -90,6 +92,12 @@ export function renderInApp(
         );
       return ok(renewalDecisionRequestedInApp(parsed.data, ctx));
     }
+    case "qotd_daily": {
+      const parsed = qotdDailyPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("qotd_daily payload does not match its schema");
+      return ok(qotdDailyInApp(parsed.data));
+    }
   }
 }
 
@@ -138,6 +146,12 @@ export function renderEmail(
           "renewal_decision_requested payload does not match its schema",
         );
       return ok(renewalDecisionRequestedEmail(parsed.data, ctx));
+    }
+    case "qotd_daily": {
+      const parsed = qotdDailyPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("qotd_daily payload does not match its schema");
+      return qotdDailyNotificationEmail(parsed.data, ctx);
     }
   }
 }

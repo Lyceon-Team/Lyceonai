@@ -134,10 +134,22 @@ export type PlannerMode = z.infer<typeof plannerModeSchema>;
 export const studyProfileSchema = z
   .object({
     timezone: z.string().min(1),
+    /**
+     * @spec [SCL-223; owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) Part A2]
+     * | @implemented [2026-10-09]
+     * The EFFECTIVE SAT date: the closest of `target_exam_dates` on or after today (America/
+     * Chicago), kept by the database (trigger + the hourly roll). Every planner, countdown and
+     * email reads this one; nothing computes its own.
+     */
     target_exam_date: localDateSchema.nullable(),
+    /** Every SAT date the student chose, ascending; past ones stay until replaced. */
+    target_exam_dates: z.array(localDateSchema),
     target_score: targetScoreSchema.nullable(),
-    study_days_mask: studyDaysMaskSchema,
-    daily_minutes: dailyMinutesSchema,
+    // NULL ONLY BEFORE SETUP (SCL-223). Saving SAT dates alone (onboarding, Settings) creates
+    // the row without the schedule; `study_profile_setup_answers_present` makes a completed
+    // setup carry both. No value is invented for a schedule the student never gave (R-08-03).
+    study_days_mask: studyDaysMaskSchema.nullable(),
+    daily_minutes: dailyMinutesSchema.nullable(),
     full_length_weekday: postgresDowSchema.nullable(),
     // NULLABLE BUT REQUIRED, like its weekday. Present-and-null is how the client learns
     // "this student has no automatic full-lengths"; absent would make it indistinguishable
@@ -160,6 +172,32 @@ export const studyProfileSchema = z
 // existence, never about which values are legal.
 export type StudyProfile = z.infer<typeof studyProfileSchema>;
 
+/**
+ * A profile whose calendar setup is complete: the schedule is present. Every surface that
+ * plans against the profile (the ready calendar, the plan generator) takes this, so the
+ * pre-setup row a dates-only save creates (SCL-223) can never reach a planner.
+ */
+export const completedStudyProfileSchema = studyProfileSchema
+  .extend({
+    study_days_mask: studyDaysMaskSchema,
+    daily_minutes: dailyMinutesSchema,
+    setup_completed_at: z.string(),
+  })
+  .strict();
+export type CompletedStudyProfile = z.infer<typeof completedStudyProfileSchema>;
+
+/** The profile as a completed one, or null while setup is outstanding. */
+export function completedStudyProfile(
+  profile: StudyProfile | null,
+): CompletedStudyProfile | null {
+  if (profile === null) return null;
+  const parsed = completedStudyProfileSchema.safeParse(profile);
+  return parsed.success ? parsed.data : null;
+}
+
+/** At most this many SAT dates are kept (the column CHECK says the same). */
+export const TARGET_EXAM_DATES_MAX = 16;
+
 // ── Bounds (§8.1, from `calendar_runtime_config` — passed in, never inlined) ─
 
 export const studyProfileBoundsSchema = z
@@ -179,7 +217,10 @@ export const studyProfileBoundsSchema = z
       });
     }
     for (const [index, preset] of bounds.daily_minutes_presets.entries()) {
-      if (preset < bounds.daily_minutes_min || preset > bounds.daily_minutes_max) {
+      if (
+        preset < bounds.daily_minutes_min ||
+        preset > bounds.daily_minutes_max
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["daily_minutes_presets", index],
@@ -202,6 +243,15 @@ const studyProfileUpsertBaseSchema = z
   .object({
     timezone: z.string().min(1).optional(),
     target_exam_date: localDateSchema.nullable().optional(),
+    /**
+     * SCL-223. The student's SAT dates, replacing the FUTURE ones (past dates are history and
+     * stay). `[]` clears them ("Not sure yet"). The one write path for test dates: onboarding,
+     * Settings and the calendar all send this through PUT /api/calendar/profile.
+     */
+    target_exam_dates: z
+      .array(localDateSchema)
+      .max(TARGET_EXAM_DATES_MAX)
+      .optional(),
     target_score: targetScoreSchema.nullable().optional(),
     study_days_mask: studyDaysMaskSchema.optional(),
     daily_minutes: dailyMinutesSchema.optional(),
@@ -286,11 +336,39 @@ export function makeStudyProfileUpsertSchema(
           path: ["daily_minutes"],
           message: `daily_minutes must be between ${context.bounds.daily_minutes_min} and ${context.bounds.daily_minutes_max}`,
         });
-      } else if (!context.bounds.daily_minutes_presets.includes(body.daily_minutes)) {
+      } else if (
+        !context.bounds.daily_minutes_presets.includes(body.daily_minutes)
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["daily_minutes"],
           message: `daily_minutes must be one of the offered presets: ${context.bounds.daily_minutes_presets.join(", ")}`,
+        });
+      }
+    }
+
+    if (
+      body.target_exam_date !== undefined &&
+      body.target_exam_dates !== undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["target_exam_dates"],
+        message: "send target_exam_dates or target_exam_date, not both",
+      });
+    }
+    for (const [index, date] of (body.target_exam_dates ?? []).entries()) {
+      if (date < context.localToday) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["target_exam_dates", index],
+          message: "a test date cannot be in the past",
+        });
+      } else if (date > latestExamDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["target_exam_dates", index],
+          message: `a test date cannot be more than ${context.bounds.target_exam_date_max_days} days away`,
         });
       }
     }

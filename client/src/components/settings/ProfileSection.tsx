@@ -21,6 +21,11 @@
  * UI-S8 (the privacy-policy row) to close; until then this section neither renders them nor reads
  * `/api/profile/background` or `/api/reference/*`.
  *
+ * SCL-223 (owner brief "Question of the Day on Home", Karl 2026-10-08/09) | updated [2026-10-09]:
+ * the SAT dates are now ALWAYS shown, as the shared multi-date picker, and saved through the same
+ * PUT /api/calendar/profile with `target_exam_dates` — a dates-only save creates the row without
+ * completing calendar setup. The target score still waits for calendar setup (OQ-20).
+ *
  * edge cases: an unchanged form has nothing to save, so the button is disabled; a failed read of
  * the study profile shows the error instead of guessing which state applies; a refusal shows
  * the server's own message.
@@ -29,7 +34,15 @@ import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { TARGET_SCORE_BOUNDS } from "@lyceon/shared/calendar/profile";
-import type { StudyProfile } from "@lyceon/shared/calendar/profile";
+import {
+  completedStudyProfile,
+  type StudyProfile,
+} from "@lyceon/shared/calendar/profile";
+import { chicagoToday } from "@shared/sat-test-dates";
+import {
+  SatDatePicker,
+  type SatDateChoice,
+} from "@/components/sat-dates/SatDatePicker";
 import { Notice } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,7 +106,16 @@ function ProfileForm({
 }): JSX.Element {
   const queryClient = useQueryClient();
   const [draftName, setDraftName] = useState(name);
-  const [date, setDate] = useState(goal?.target_exam_date ?? "");
+  const today = chicagoToday();
+  const savedDates = (goal?.target_exam_dates ?? [])
+    .filter((d) => d >= today)
+    .sort();
+  const [dates, setDates] = useState<SatDateChoice>({
+    notSure: false,
+    dates: savedDates,
+  });
+  // The target score is a calendar-setup answer (OQ-20); the SAT dates are not (SCL-223).
+  const setupDone = completedStudyProfile(goal) !== null;
   const [score, setScore] = useState(
     goal?.target_score === null || goal?.target_score === undefined
       ? ""
@@ -107,11 +129,11 @@ function ProfileForm({
   const trimmedName = draftName.trim();
   const nameChanged = trimmedName !== name.trim();
   const goalChange: StudyProfileFields = {};
-  if (goal !== null) {
-    const nextDate = date === "" ? null : date;
+  if (dates.dates.join(",") !== savedDates.join(",")) {
+    goalChange.target_exam_dates = dates.dates;
+  }
+  if (goal !== null && setupDone) {
     const nextScore = score === "" ? null : Number(score);
-    if (nextDate !== goal.target_exam_date)
-      goalChange.target_exam_date = nextDate;
     if (nextScore !== goal.target_score) goalChange.target_score = nextScore;
   }
   const goalChanged = Object.keys(goalChange).length > 0;
@@ -169,7 +191,51 @@ function ProfileForm({
         </span>
       </label>
 
-      {goal === null ? (
+      <div className="flex flex-col gap-3" data-testid="settings-goal">
+        <SatDatePicker
+          legend="SAT test date"
+          value={dates}
+          onChange={(next) => {
+            setSaved(false);
+            setDates(next);
+          }}
+          today={today}
+          data-testid="settings-test-dates"
+        />
+        <p className={FIELD_HELP}>
+          Pick every date you might take. We use the next one for your countdown
+          and study plan.
+        </p>
+      </div>
+
+      {setupDone ? (
+        <div
+          className="flex flex-col gap-3"
+          data-testid="settings-target-block"
+        >
+          <label className={FIELD_LABEL}>
+            Target score
+            <input
+              type="number"
+              inputMode="numeric"
+              min={TARGET_SCORE_BOUNDS.min}
+              max={TARGET_SCORE_BOUNDS.max}
+              step={TARGET_SCORE_BOUNDS.step}
+              value={score}
+              onChange={(event) => {
+                setSaved(false);
+                setScore(event.target.value);
+              }}
+              className={FIELD_INPUT}
+              data-testid="settings-target"
+            />
+          </label>
+          <p className={FIELD_HELP}>
+            Your study calendar uses the same test date and target, so changing
+            them here updates your plan.
+          </p>
+        </div>
+      ) : (
         <p
           className="m-0 text-lyc-body text-lyc-ink"
           data-testid="settings-goal-setup"
@@ -181,45 +247,6 @@ function ProfileForm({
             Set up your study calendar
           </Link>
         </p>
-      ) : (
-        <div className="flex flex-col gap-3" data-testid="settings-goal">
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <label className={FIELD_LABEL}>
-              Test date
-              <input
-                type="date"
-                value={date}
-                onChange={(event) => {
-                  setSaved(false);
-                  setDate(event.target.value);
-                }}
-                className={FIELD_INPUT}
-                data-testid="settings-test-date"
-              />
-            </label>
-            <label className={FIELD_LABEL}>
-              Target score
-              <input
-                type="number"
-                inputMode="numeric"
-                min={TARGET_SCORE_BOUNDS.min}
-                max={TARGET_SCORE_BOUNDS.max}
-                step={TARGET_SCORE_BOUNDS.step}
-                value={score}
-                onChange={(event) => {
-                  setSaved(false);
-                  setScore(event.target.value);
-                }}
-                className={FIELD_INPUT}
-                data-testid="settings-target"
-              />
-            </label>
-          </div>
-          <p className={FIELD_HELP}>
-            Your study calendar uses the same test date and target, so changing
-            them here updates your plan.
-          </p>
-        </div>
       )}
 
       {error ? (
