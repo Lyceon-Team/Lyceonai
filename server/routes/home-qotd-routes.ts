@@ -59,19 +59,19 @@ function sendError(
   });
 }
 
-/** Analytics never fail a request; a refusal or error is logged by the emitter itself. */
+/**
+ * Analytics never fail a request; a refusal is logged by the emitter itself. Each call site
+ * passes the emitter call with its event name written as a literal (the event-registry gate reads them).
+ */
 async function emitSafely(
-  studentId: string,
-  event: string,
-  payload: Record<string, unknown>,
+  emission: Promise<unknown>,
   requestId: string | undefined,
 ): Promise<void> {
   try {
-    await emitEvent(studentId, event, payload);
+    await emission;
   } catch (error) {
     logger.warn(COMPONENT, "analytics_emit_failed", "QOTD analytics failed", {
       requestId,
-      event,
       reason: error instanceof Error ? error.message : "unknown",
     });
   }
@@ -88,25 +88,26 @@ async function emitAnswerSignals(
     signals.sectionCode
   ) {
     await emitSafely(
-      studentId,
-      "qotd_answered",
-      { is_correct: signals.isCorrect, section_code: signals.sectionCode },
+      emitEvent(studentId, "qotd_answered", {
+        is_correct: signals.isCorrect,
+        section_code: signals.sectionCode,
+      }),
       requestId,
     );
   }
   if (signals.streakExtendedTo !== null) {
     await emitSafely(
-      studentId,
-      "streak_extended",
-      { streak_current: signals.streakExtendedTo },
+      emitEvent(studentId, "streak_extended", {
+        streak_current: signals.streakExtendedTo,
+      }),
       requestId,
     );
   }
   if (signals.promptShownAsk !== null) {
     await emitSafely(
-      studentId,
-      "qotd_email_prompt_shown",
-      { ask_number: signals.promptShownAsk },
+      emitEvent(studentId, "qotd_email_prompt_shown", {
+        ask_number: signals.promptShownAsk,
+      }),
       requestId,
     );
   }
@@ -143,9 +144,7 @@ export function createHomeQotdRouter(
         );
         if (data.state !== "none") {
           await emitSafely(
-            user.id,
-            "qotd_viewed",
-            { qotd_state: data.state },
+            emitEvent(user.id, "qotd_viewed", { qotd_state: data.state }),
             req.requestId,
           );
         }
@@ -230,9 +229,9 @@ export function createHomeQotdRouter(
           );
         }
         await emitSafely(
-          user.id,
-          "qotd_email_consent",
-          { decision: parsed.data.decision },
+          emitEvent(user.id, "qotd_email_consent", {
+            decision: parsed.data.decision,
+          }),
           req.requestId,
         );
         logger.info(COMPONENT, "qotd_email_decision", "QOTD email decision", {
