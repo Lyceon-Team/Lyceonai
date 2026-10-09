@@ -11,7 +11,7 @@
  * row on a phone. A signed-in visitor sees "Dashboard" instead of the two account buttons.
  */
 import { Link } from "wouter";
-import { GraduationCap } from "lucide-react";
+import { LyceonMark } from "@/components/common/LyceonMark";
 
 const SECTION_LINKS = [
   { label: "How it works", href: "#how-it-works" },
@@ -39,7 +39,7 @@ export function HomeNav({
           href="/"
           className={`${TAP} gap-2.5 text-[22px] font-bold text-foreground`}
         >
-          <GraduationCap className="h-6 w-6" aria-hidden="true" />
+          <LyceonMark decorative className="h-6 w-6" />
           Lyceon
         </Link>
         <div className="flex items-center gap-3 sm:gap-6">

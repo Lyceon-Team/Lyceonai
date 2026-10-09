@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { GraduationCap } from "lucide-react";
+import { LyceonMark } from "@/components/common/LyceonMark";
 
 export default function PublicNavBar() {
   const [location] = useLocation();
@@ -19,7 +19,7 @@ export default function PublicNavBar() {
           href="/"
           className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity"
         >
-          <GraduationCap className="h-6 w-6" />
+          <LyceonMark decorative className="h-6 w-6" />
           <span className="font-bold text-lg">Lyceon</span>
         </Link>
 
