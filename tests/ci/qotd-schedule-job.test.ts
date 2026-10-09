@@ -4,12 +4,15 @@
  *       (Vercel cron; deploy hook; candidates screened against the shared banned-phrase list)]
  *       | @implemented [2026-10-05]
  *
- * plain English: the scheduler over an in-memory stand-in for the three SQL functions it calls,
- * which keeps their contracts — candidates in canonical-id order, never an already-scheduled
- * question; inserts refused for a filled date ("exists") or a used question ("taken"). The SQL
- * itself (eligibility, the date PK, the question_id UNIQUE) is proven on Postgres by
+ * plain English: the scheduler over an in-memory stand-in for the SQL functions it calls, which
+ * keeps their contracts — candidates in canonical-id order a page at a time (keyset on the id),
+ * never an already-scheduled question; inserts refused for a filled date ("exists") or a used
+ * question ("taken"); a release refused for today or the past. The SQL itself (eligibility, the
+ * date PK, the question_id UNIQUE, the release guard) is proven on Postgres by
  * scripts/ci/qotd-schema-gates.sql; this file proves the TypeScript decisions on top: the
- * rotation, determinism, idempotent reruns, the banned-phrase skip, the sweep and the hook.
+ * rotation, determinism, idempotent reruns, the banned-phrase skip, the readability rules
+ * (owner brief "QOTD — readability filter (Karl's option B)", 2026-10-09), the replacement of
+ * upcoming days, the sweep and the hook.
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
@@ -32,6 +35,7 @@ type Q = {
   stem: string;
   passage?: string;
   explanation?: string;
+  itemType?: "mcq" | "grid_in";
 };
 
 function makePool(perDomain: number): Q[] {
@@ -51,31 +55,63 @@ function makePool(perDomain: number): Q[] {
   return pool;
 }
 
-function makeDb(pool: Q[]) {
+function makeDb(pool: Q[], today = "2026-10-05") {
   const schedule = new Map<string, string>();
   const calls: string[] = [];
   const client: QotdDbClient = {
     rpc: async (fn, args = {}) => {
       calls.push(fn);
-      if (fn === "qotd_schedule_candidates") {
+      if (fn === "qotd_schedule_candidate_page") {
         const used = new Set(schedule.values());
+        const after = args.p_after_id === null ? null : String(args.p_after_id);
         const data = pool
           .filter(
             (q) =>
               q.section === args.p_section &&
               q.domain === args.p_domain &&
-              !used.has(q.id),
+              !used.has(q.id) &&
+              (after === null || q.id > after),
           )
           .sort((a, b) => (a.id < b.id ? -1 : 1))
           .slice(0, Number(args.p_limit))
           .map((q) => ({
             question_id: q.id,
+            item_type: q.itemType ?? "mcq",
             stem: q.stem,
             passage: q.passage ?? null,
-            options: [{ key: "A", text: "x" }],
+            options:
+              (q.itemType ?? "mcq") === "mcq" ? [{ key: "A", text: "x" }] : [],
             explanation: q.explanation ?? "e",
           }));
         return { data, error: null };
+      }
+      if (fn === "qotd_schedule_upcoming") {
+        const after = String(args.p_after);
+        const data = [...schedule.entries()]
+          .filter(([d]) => d > after)
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([d, id]) => {
+            const q = pool.find((x) => x.id === id);
+            if (!q) throw new Error(`no question ${id}`);
+            return {
+              qotd_date: d,
+              question_id: id,
+              section: q.section,
+              item_type: q.itemType ?? "mcq",
+              stem: q.stem,
+              passage: q.passage ?? null,
+            };
+          });
+        return { data, error: null };
+      }
+      if (fn === "qotd_schedule_release") {
+        // The SQL guard: never today or the past (the database's own clock).
+        const date = String(args.p_date);
+        if (date <= today) return { data: false, error: null };
+        if (schedule.get(date) !== String(args.p_question_id))
+          return { data: false, error: null };
+        schedule.delete(date);
+        return { data: true, error: null };
       }
       if (fn === "qotd_schedule_insert") {
         const date = String(args.p_date);
@@ -324,6 +360,167 @@ describe("runQotdSchedule", () => {
     };
     await expect(
       runQotdSchedule({ client, now: NOW, daysAhead: 0 }),
-    ).rejects.toThrow("qotd_schedule_candidates failed");
+    ).rejects.toThrow("qotd_schedule_upcoming failed");
+  });
+});
+
+// ── Readability (owner brief "QOTD — readability filter (Karl's option B)", 2026-10-09) ──────
+describe("readability rules", () => {
+  /** The first-choice domain of a day, and its candidates in canonical-id order. */
+  function firstDomain(pool: Q[], date: string): Q[] {
+    const first = rotationFor(date)[0];
+    return pool
+      .filter((q) => q.section === first?.section && q.domain === first?.domain)
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+  }
+  // 2026-10-05 opens with Reading and Writing; 2026-10-06 opens with Math.
+  const RW_DAY = new Date("2026-10-05T17:00:00Z");
+  const M_DAY = new Date("2026-10-06T17:00:00Z");
+
+  async function scheduleOne(
+    pool: Q[],
+    now: Date,
+  ): Promise<string | undefined> {
+    const db = makeDb(pool, qotdDayOf(now));
+    await runQotdSchedule({ client: db.client, now, daysAhead: 0 });
+    return db.schedule.get(qotdDayOf(now));
+  }
+  function qotdDayOf(now: Date): string {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Chicago",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+  }
+
+  it("a grid-in is skipped (multiple choice only)", async () => {
+    const pool = makePool(2);
+    const [grid, mcq] = firstDomain(pool, "2026-10-06");
+    if (!grid || !mcq) throw new Error("no candidates");
+    grid.itemType = "grid_in";
+    expect(await scheduleOne(pool, M_DAY)).toBe(mcq.id);
+  });
+
+  it("a paired-passage item ('Text 1' and 'Text 2') is skipped", async () => {
+    const pool = makePool(2);
+    const [paired, single] = firstDomain(pool, "2026-10-05");
+    if (!paired || !single) throw new Error("no candidates");
+    paired.passage = "Text 1: Bees dance. Text 2: Ants march.";
+    single.passage = "Bees dance to share where food is.";
+    expect(await scheduleOne(pool, RW_DAY)).toBe(single.id);
+  });
+
+  it("an over-length Math item (passage + question > 400) is skipped; one at 400 is scheduled", async () => {
+    const pool = makePool(2);
+    const [long, exact] = firstDomain(pool, "2026-10-06");
+    if (!long || !exact) throw new Error("no candidates");
+    long.passage = "x".repeat(200);
+    long.stem = "y".repeat(200); // 200 + 1 (the joining space) + 200 = 401
+    exact.passage = "x".repeat(200);
+    exact.stem = "y".repeat(199); // 400
+    expect(await scheduleOne(pool, M_DAY)).toBe(exact.id);
+  });
+
+  it("an over-length Reading and Writing passage (> 300) is skipped; one at 300 is scheduled", async () => {
+    const pool = makePool(2);
+    const [long, exact] = firstDomain(pool, "2026-10-05");
+    if (!long || !exact) throw new Error("no candidates");
+    long.passage = "w".repeat(301);
+    exact.passage = `<p>${"w".repeat(300)}</p>`; // tags are not counted
+    expect(await scheduleOne(pool, RW_DAY)).toBe(exact.id);
+  });
+
+  it("a short Reading and Writing item and a short Math item are each scheduled", async () => {
+    const pool = makePool(1);
+    const [rw] = firstDomain(pool, "2026-10-05");
+    const [m] = firstDomain(pool, "2026-10-06");
+    if (!rw || !m) throw new Error("no candidates");
+    rw.passage = "The committee approved the plan after a short debate.";
+    rw.stem = "Which choice best states the main idea of the text?";
+    m.stem = "If 3x + 2 = 11, what is the value of x?";
+    expect(await scheduleOne(pool, RW_DAY)).toBe(rw.id);
+    expect(await scheduleOne(pool, M_DAY)).toBe(m.id);
+  });
+
+  it("a domain with no readable question left is skipped without error: the next domain fills the day", async () => {
+    const pool = makePool(2);
+    for (const q of firstDomain(pool, "2026-10-05"))
+      q.passage = "z".repeat(500);
+    const db = makeDb(pool);
+    const summary = await runQotdSchedule({
+      client: db.client,
+      now: RW_DAY,
+      daysAhead: 0,
+    });
+    const day = summary.days[0];
+    expect(day?.outcome).toBe("inserted");
+    if (day?.outcome === "inserted") {
+      expect(day.domain).toBe(rotationFor("2026-10-05")[1]?.domain);
+    }
+    expect(summary.skippedUnreadable).toBe(2);
+  });
+
+  it("pages past a full page of long items to the readable one behind it in the same domain", async () => {
+    const pool = makePool(60);
+    const inDomain = firstDomain(pool, "2026-10-05");
+    // The first 55 (more than one page of 50) are too long; the 56th is short.
+    inDomain.slice(0, 55).forEach((q) => (q.passage = "z".repeat(500)));
+    const target = inDomain[55];
+    if (!target) throw new Error("no candidate");
+    const db = makeDb(pool);
+    const summary = await runQotdSchedule({
+      client: db.client,
+      now: RW_DAY,
+      daysAhead: 0,
+    });
+    expect(db.schedule.get("2026-10-05")).toBe(target.id);
+    const day = summary.days[0];
+    if (day?.outcome === "inserted") {
+      expect(day.domain).toBe(rotationFor("2026-10-05")[0]?.domain);
+    }
+  });
+
+  it("replaces only UPCOMING days whose question fails the rules; today and past days never change", async () => {
+    const pool = makePool(8);
+    const long = (q: Q | undefined): Q => {
+      if (!q) throw new Error("no candidate");
+      q.itemType = "grid_in";
+      return q;
+    };
+    const ids = pool.map((q) => q.id);
+    const pastQ = long(pool[0]);
+    const todayQ = long(pool[1]);
+    const futureBad = long(pool[2]);
+    const futureGood = pool.find(
+      (q, i) => i > 2 && (q.itemType ?? "mcq") === "mcq",
+    );
+    if (!futureGood) throw new Error("no good question");
+    const db = makeDb(pool, "2026-10-05");
+    db.schedule.set("2026-10-03", pastQ.id);
+    db.schedule.set("2026-10-05", todayQ.id);
+    db.schedule.set("2026-10-07", futureBad.id);
+    db.schedule.set("2026-10-08", futureGood.id);
+    const summary = await runQotdSchedule({ client: db.client, now: NOW });
+    // Past and today keep their (unreadable) questions: never changed.
+    expect(db.schedule.get("2026-10-03")).toBe(pastQ.id);
+    expect(db.schedule.get("2026-10-05")).toBe(todayQ.id);
+    // The readable upcoming day is untouched; the unreadable one got a new, readable question.
+    expect(db.schedule.get("2026-10-08")).toBe(futureGood.id);
+    const replacement = db.schedule.get("2026-10-07");
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(futureBad.id);
+    expect(ids).toContain(replacement);
+    expect(pool.find((q) => q.id === replacement)?.itemType ?? "mcq").toBe(
+      "mcq",
+    );
+    // The summary reports which dates changed, and why.
+    expect(summary.replaced).toEqual([
+      {
+        date: "2026-10-07",
+        previousQuestionId: futureBad.id,
+        reason: "not_multiple_choice",
+      },
+    ]);
   });
 });
