@@ -58,7 +58,7 @@ import type {
   PlanTrigger,
   PlanningEstimates,
   StreakSummary,
-  StudyProfile,
+  CompletedStudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
 import type { SectionProjectionDto } from "@lyceon/shared";
@@ -194,6 +194,12 @@ type CalendarViewProps = {
    */
   streak?: StreakSummary;
   /**
+   * The student goal card's "🔥 N-day streak" (owner brief "Question of the Day on Home", Karl
+   * 2026-10-08/09, which brings the streak back to the paid calendar's goal card only; SCL-211's
+   * streak LINE stays dropped). The daily streak (SCL-226); absent or null draws nothing.
+   */
+  goalStreakDays?: number | null;
+  /**
    * Brief 14 Step 4 — `full_length_suppressions`, straight off the payload. Dates the
    * generator refused to place a practice test on because both the chosen weekday occurrence
    * and the +7-day alternative were blocked out.
@@ -213,7 +219,7 @@ type CalendarViewProps = {
    * write path, and this is a write.
    */
   schedule?: {
-    profile: StudyProfile;
+    profile: CompletedStudyProfile;
     bounds: StudyProfileBounds;
     estimates: PlanningEstimates;
     /** §8.1's frequency readout: the lead window and the prefill cadence, both server-owned. */
@@ -251,6 +257,7 @@ export function CalendarView({
   viewerName,
   targetExamDate,
   streak,
+  goalStreakDays,
   fullLengthSuppressions,
   planUpdate,
   onRangeChange,
@@ -750,6 +757,7 @@ export function CalendarView({
               testDate={targetExamDate}
               targetScore={targetScore}
               projection={projection ?? []}
+              streakDays={goalStreakDays ?? null}
             />
             {/* No "Your schedule" summary here (Karl's ruling on production QA 2026-10-07,
                 item 11(e), amending SCL-211's panel list): the schedule is read and changed

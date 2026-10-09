@@ -53,6 +53,7 @@ FILES=(
   "client/src/components/home/FullLengthCard.tsx"
   "client/src/components/home/PaidHome.tsx"
   "client/src/components/home/FreeHome.tsx"
+  "client/src/components/home/DiagnosticCard.tsx"
   "packages/shared/src/return-path.ts"
   "client/src/features/exam/lib/tests-home-model.ts"
   "client/src/features/exam/pages/TestsHomePage.tsx"
@@ -1632,12 +1633,14 @@ s = s.replace(a, "Levels move as you keep practising.", 1)'
 T58="client/src/pages/settings.test.tsx"
 H58="client/src/pages/help.test.tsx"
 
-plant "UI58-S1" "a Notifications section comes back (OQ-27)" \
+# Re-pointed 2026-10-09: OQ-27 (no Notifications section) is superseded by the owner ruling on
+# #1166 item 2 (one "Daily question email" toggle), so the plant now drops the section.
+plant "UI58-S1" "the Notifications section is dropped (owner ruling on #1166 item 2)" \
   "$T58" \
   "client/src/components/settings/settings-sections.ts" \
-  'a = "  { id: \"billing\", label: \"Billing\" },\n"
+  'a = "  { id: \"notifications\", label: \"Notifications\" },\n"
 assert s.count(a) == 1
-s = s.replace(a, a + "  { id: \"notifications\", label: \"Notifications\" },\n", 1)'
+s = s.replace(a, "", 1)'
 
 plant "UI58-S2" "the ?tab= value is ignored" \
   "$T58" \
@@ -1653,19 +1656,22 @@ plant "UI58-S3" "the section is read once from the page URL, not the router (UI-
 assert s.count(a) == 1
 s = s.replace(a, "  const active = sectionFromSearch(window.location.search, viewer);", 1)'
 
-plant "UI58-P1" "OQ-20 inverted: the goal fields show without a calendar profile" \
+# SCL-223 (2026-10-09): the SAT dates always show; OQ-20 now governs the TARGET only, shown once
+# calendar setup is complete. Re-pointed from `goal === null` (that branch no longer exists).
+plant "UI58-P1" "OQ-20 inverted: the target field shows before calendar setup" \
   "$T58" \
   "client/src/components/settings/ProfileSection.tsx" \
-  'a = "      {goal === null ? ("
+  'a = "      {setupDone ? ("
 assert s.count(a) == 1
-s = s.replace(a, "      {goal !== null ? (", 1)'
+s = s.replace(a, "      {true ? (", 1)'
 
-plant "UI58-P2" "the goal save sends an unchanged test date too" \
+# SCL-223 (2026-10-09): the dates are now `target_exam_dates`, compared as a set of future dates.
+plant "UI58-P2" "the goal save sends unchanged test dates too" \
   "$T58" \
   "client/src/components/settings/ProfileSection.tsx" \
-  'a = "    if (nextDate !== goal.target_exam_date)\n"
+  'a = "  if (dates.dates.join(\",\") !== savedDates.join(\",\")) {\n"
 assert s.count(a) == 1
-s = s.replace(a, "    if (true)\n", 1)'
+s = s.replace(a, "  if (true) {\n", 1)'
 
 plant "UI58-P3" "the name save carries marketingOptIn (F-54)" \
   "$T58" \
@@ -2978,12 +2984,13 @@ plant "QA5-H2" "a plan row's Start draws no pending state" \
 assert s.count(a) == 1
 s = s.replace(a, "pending={false}", 1)'
 
+# The card moved to DiagnosticCard.tsx (2026-10-09, shared by both Homes).
 plant "QA5-H3" "Start diagnostic draws no pending state" \
   "$QA_HOME" \
-  "client/src/components/home/FreeHome.tsx" \
-  'a = "              pending={diagnostic.isStarting}\n"
+  "client/src/components/home/DiagnosticCard.tsx" \
+  'a = "          pending={diagnostic.isStarting}\n"
 assert s.count(a) == 1
-s = s.replace(a, "              disabled={diagnostic.isStarting}\n", 1)'
+s = s.replace(a, "          disabled={diagnostic.isStarting}\n", 1)'
 
 plant "QA5-R1" "the runner's Skip keeps its label while the skip is in flight" \
   "$QA_RUNNER" \
@@ -3874,10 +3881,10 @@ s = s.replace(a, "        {planFreeIncludes(40)}\n", 1)'
 
 plant "W6-UI64-5" "Home's diagnostic card prints a literal length instead of the served one" \
   "$W6_UI64_HOME" \
-  "client/src/components/home/FreeHome.tsx" \
-  'a = "            {diagnosticCardLine(\n              practice.diagnosticTotalQuestions,\n"
+  "client/src/components/home/DiagnosticCard.tsx" \
+  'a = "        {diagnosticCardLine(\n          practice.diagnosticTotalQuestions,\n"
 assert s.count(a) == 1
-s = s.replace(a, "            {diagnosticCardLine(\n              40,\n", 1)'
+s = s.replace(a, "        {diagnosticCardLine(\n          40,\n", 1)'
 
 plant "W6-UI64-6" "Home's How Lyceon works prints a remembered daily limit" \
   "$W6_UI64_HOME" \

@@ -58,6 +58,7 @@ import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
 import publicQotdRoutes from "./routes/public-qotd-routes";
+import publicQotdEmailRoutes from "./routes/public-qotd-email-routes";
 import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -69,6 +70,7 @@ import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import productFeedbackRoutes from "./routes/product-feedback-routes";
+import homeQotdRoutes from "./routes/home-qotd-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -373,6 +375,18 @@ app.use(
   productFeedbackRoutes,
 );
 
+// Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09). Today's question, the answer
+// (a practice answer, SCL-224) and the daily-email prompt decision. Students only
+// (`requireStudentAccount`, ending in the live under-13 link gate); no entitlement gate — the
+// QOTD and streak are free for everyone. Distinct from the public /api/public/qotd.
+app.use(
+  "/api/qotd",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  homeQotdRoutes,
+);
+
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
 // principal; every read/write is a recipient-scoped SQL function.
 app.use(
@@ -505,6 +519,13 @@ app.use("/api/public", publicPricingRoutes);
 // the reads are hashed-IP limited too. See server/routes/public-qotd-routes.ts.
 // CSRF_EXEMPT_REASON: no ambient credential is read; the submit is Turnstile-gated (owner Step 0 decision, 2026-10-05).
 app.use("/api/public/qotd", publicQotdRoutes);
+
+// Daily-question email links (UNAUTHENTICATED BY DESIGN — owner brief "Question of the Day on
+// Home", 2026-10-08/09: "one-click unsubscribe link (signed, single-purpose, no sign-in)"). The
+// GET only renders a button; the POST (also the RFC 8058 List-Unsubscribe-Post target) acts, and
+// only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
+app.use("/api/public/qotd-email", publicQotdEmailRoutes);
 
 // Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
 // Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no

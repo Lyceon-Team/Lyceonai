@@ -31,6 +31,10 @@ import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
 import { runQotdSchedule } from "../services/qotd/schedule-job.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
 import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
+import {
+  defaultQotdEmailJobDeps,
+  runQotdEmailJob,
+} from "../services/qotd/qotd-email-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -695,6 +699,52 @@ router.get(
         err,
       );
       res.status(500).json({ error: "marketing_email_reconcile_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/qotd-daily-email
+ * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": the job
+ *        sends only in the 17:00 America/Chicago hour, so 5 PM is right in both CST and CDT;
+ *        SCL-223 (the roll of the effective SAT date rides on it)] | @implemented [2026-10-09]
+ *
+ * SCHEDULE: three DAILY Vercel crons, not one hourly one — the project's plan allows daily crons
+ * only (Vercel refused `5 * * * *` on the preview deploy, 2026-10-09). 22:00 UTC is 17:00 CDT and
+ * 23:00 UTC is 17:00 CST, so exactly one of the two lands in the 17:00 Chicago hour each day and
+ * the other only rolls dates; 06:05 UTC is just after Chicago midnight in both, so a passed SAT
+ * date hands over to the next at the start of the day. An hourly schedule on a plan that allows
+ * it needs no code change.
+ *
+ * plain English: every run rolls the effective SAT dates; in the 17:00 Chicago hour, runs the
+ * `qotd_daily` notification rule (owner ruling on #1166, 2026-10-09): every student who has
+ * answered nothing today gets the in-app notification, and the email too when its channel is on,
+ * then the notification dispatcher sends the queued emails. Safe to rerun: the event id is
+ * deterministic per (student, day), so a second run the same day emits and sends nothing. 500
+ * when any send failed, so the run shows as failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/qotd-daily-email",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runQotdEmailJob(defaultQotdEmailJobDeps());
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "qotd_daily_email", summary });
+    } catch (err) {
+      logger.error(
+        "QOTD_EMAIL",
+        "qotd_daily_email_job_error",
+        "Scheduled daily question email failed",
+        err,
+      );
+      res.status(500).json({ error: "qotd_daily_email_failed" });
     }
   },
 );
