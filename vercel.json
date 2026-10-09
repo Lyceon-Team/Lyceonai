@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/internal/execute-deletions",
-      "schedule": "0 2 * * *"
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/internal/stale-session-sweep",
@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/internal/notification-dispatch-sweep",
-      "schedule": "30 4 * * *"
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/internal/notification-retention-sweep",
@@ -34,11 +34,11 @@
     },
     {
       "path": "/api/internal/calendar-exam-notify",
-      "schedule": "0 6 * * *"
+      "schedule": "0 21 * * *"
     },
     {
       "path": "/api/internal/exam-score-renewal",
-      "schedule": "30 6 * * *"
+      "schedule": "0 20 * * *"
     },
     {
       "path": "/api/internal/qotd-schedule",

@@ -73,7 +73,8 @@ resource "google_cloud_scheduler_job" "retention_sweep_7d" {
   description = "Tutor retention sweep, 7d tier — Doc 03 §14.2 retention matrix"
 
   # 05:30 UTC, after the last Vercel-scheduled sweep (notification
-  # retention, 0 5) and well after execute-deletions (0 2). Vercel crons
+  # retention, 0 5). execute-deletions moved to 0 15 (owner ruling, Karl
+  # 2026-10-09, schedule audit Step 2), so it now runs after this. Vercel crons
   # are UTC, so pinning this job to UTC keeps one clock across all seven
   # sweeps rather than two.
   schedule  = "30 5 * * *"
