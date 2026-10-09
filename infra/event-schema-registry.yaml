@@ -281,21 +281,21 @@ events:
     json_schema:
       type: object
       additionalProperties: false
-      required: [event_name, timestamp, analytics_user_id, schema_version, is_correct, section_code]
+      required: [event_name, timestamp, analytics_user_id, schema_version, is_correct, section]
       properties:
         event_name:        { type: string, const: "qotd_answered" }
         timestamp:         { type: string, format: date-time }
         analytics_user_id: { type: string, format: uuid }
         schema_version:    { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
         is_correct: { type: boolean }
-        section_code: { type: string, enum: [M, RW] }
+        section:      { type: string, enum: [M, RW] }
     pii_redaction:
       event_name:        not_pii
       timestamp:         not_pii
       analytics_user_id: opaque_id_only
       schema_version:    not_pii
       is_correct: not_pii
-      section_code: not_pii
+      section: not_pii
     retention_class: standard_analytics
 
   - event_name: qotd_email_prompt_shown

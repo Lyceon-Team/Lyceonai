@@ -90,7 +90,7 @@ async function emitAnswerSignals(
     await emitSafely(
       emitEvent(studentId, "qotd_answered", {
         is_correct: signals.isCorrect,
-        section_code: signals.sectionCode,
+        section: signals.sectionCode,
       }),
       requestId,
     );

@@ -15,7 +15,7 @@ import { streakChipText, type Streak } from "@lyceon/shared/home-qotd-schema";
 import { useHomeQotd } from "@/hooks/useHomeQotd";
 import { cn } from "@/lib/utils";
 
-export function StreakChip({
+function StreakChip({
   streak,
   celebrate = false,
 }: {

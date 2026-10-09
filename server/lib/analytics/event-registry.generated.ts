@@ -550,7 +550,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
           "analytics_user_id",
           "schema_version",
           "is_correct",
-          "section_code"
+          "section"
         ],
         "properties": {
           "event_name": {
@@ -572,7 +572,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
           "is_correct": {
             "type": "boolean"
           },
-          "section_code": {
+          "section": {
             "type": "string",
             "enum": [
               "M",
@@ -587,7 +587,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
         "analytics_user_id": "opaque_id_only",
         "schema_version": "not_pii",
         "is_correct": "not_pii",
-        "section_code": "not_pii"
+        "section": "not_pii"
       },
       "retention_class": "standard_analytics"
     },
