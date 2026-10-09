@@ -12,7 +12,14 @@
  * (never the passage, never an option), cut at 160 characters. No tracking pixel, no tags.
  */
 import { qotdEmailSubject } from "../../../../packages/shared/src/home-qotd-schema";
-import { escapeHtml, type EmailRender } from "./shared";
+import type { QotdDailyPayload } from "../../../../packages/shared/src/notifications-schema";
+import { err, ok, type Result } from "../../../../packages/shared/src/result";
+import {
+  escapeHtml,
+  type EmailRender,
+  type InAppRender,
+  type RenderContext,
+} from "./shared";
 
 export const QOTD_PAUSED_SUBJECT = "We've paused your daily question";
 
@@ -104,4 +111,56 @@ export function qotdPausedEmail(input: {
     "</body></html>",
   ].join("");
   return { subject: QOTD_PAUSED_SUBJECT, html, text };
+}
+
+/**
+ * The `qotd_daily` notification (owner ruling on #1166, item 1).
+ *
+ * In-app: a short nudge to Home, with no question content. Email: the daily question email, or on
+ * the sunset day the one "paused" email, plus RFC 8058 one-click List-Unsubscribe headers when a
+ * signed unsubscribe link exists. A daily email whose stem the dispatcher could not read does not
+ * render (the send is recorded as failed and retried by the dispatcher's own rules).
+ */
+export function qotdDailyInApp(payload: QotdDailyPayload): InAppRender {
+  return {
+    title: "Your question is ready",
+    body:
+      payload.current_streak > 0
+        ? `Day ${payload.current_streak} 🔥 Answer today's question on Home.`
+        : "Today's question is waiting on Home.",
+    href: "/dashboard#qotd",
+  };
+}
+
+export function qotdDailyNotificationEmail(
+  payload: QotdDailyPayload,
+  ctx: RenderContext,
+): Result<EmailRender, string> {
+  const extras = ctx.qotdEmail;
+  if (!extras)
+    return err("qotd_daily email rendered without its send-time lookup");
+  const unsubscribeUrl = extras.unsubscribeUrl;
+  const headers: Record<string, string> | undefined = unsubscribeUrl
+    ? {
+        "List-Unsubscribe": `<${unsubscribeUrl}>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      }
+    : undefined;
+  if (payload.email_variant === "paused_notice") {
+    const rendered = qotdPausedEmail({
+      resumeUrl: extras.resumeUrl,
+      unsubscribeUrl,
+    });
+    return ok(headers ? { ...rendered, headers } : rendered);
+  }
+  if (extras.stem === null) {
+    return err("qotd_daily: no question is scheduled for the payload's day");
+  }
+  const rendered = qotdDailyEmail({
+    currentStreak: payload.current_streak,
+    stem: extras.stem,
+    siteUrl: ctx.siteUrl,
+    unsubscribeUrl,
+  });
+  return ok(headers ? { ...rendered, headers } : rendered);
 }

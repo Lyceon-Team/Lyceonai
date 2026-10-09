@@ -9399,71 +9399,126 @@ $$;
 
 
 --
--- Name: qotd_email_candidates(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: qotd_daily_email_preference(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_email_candidates(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 500) RETURNS TABLE(student_id uuid, email text, current_streak integer, unanswered_run integer)
+CREATE FUNCTION public.qotd_daily_email_preference(p_student_id uuid) RETURNS jsonb
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH today AS (SELECT public.chicago_day(p_now) AS d)
-  SELECT e.student_id,
-         p.email,
-         (SELECT s.current_streak FROM public.student_streak(e.student_id, p_now) s),
-         (
-           -- The leading run of unanswered sends, most recent first, since the student last
-           -- granted or resumed (`run_since`). At most 7 are read: 7 is the sunset.
-           SELECT COALESCE(min(t.rn) FILTER (WHERE t.answered) - 1, count(*))::integer
-             FROM (
-               SELECT row_number() OVER (ORDER BY x.send_date DESC) AS rn,
-                      EXISTS (SELECT 1 FROM public.student_answer_days(e.student_id, x.send_date) a
-                               WHERE a.day = x.send_date) AS answered
-                 FROM public.qotd_email_sends x
-                WHERE x.student_id = e.student_id AND x.kind = 'daily' AND x.status = 'sent'
-                  AND x.send_date < (SELECT d FROM today)
-                  AND x.send_date >= COALESCE(e.run_since, x.send_date)
-                ORDER BY x.send_date DESC
-                LIMIT 7
-             ) t
-         )
-    FROM public.student_qotd_email_prefs e
-    JOIN public.profiles p ON p.id = e.student_id
-   WHERE e.consented AND e.unsubscribed_at IS NULL AND e.paused_at IS NULL
-     AND p.role = 'student' AND p.deleted_at IS NULL
-     AND public.marketing_opt_in_age_eligible(p.date_of_birth)
-     AND EXISTS (SELECT 1 FROM public.qotd_schedule q WHERE q.qotd_date = (SELECT d FROM today))
-     AND NOT EXISTS (SELECT 1 FROM public.qotd_email_sends s
-                      WHERE s.student_id = e.student_id AND s.send_date = (SELECT d FROM today))
-     AND NOT EXISTS (SELECT 1 FROM public.student_answer_days(e.student_id, (SELECT d FROM today)) a
-                      WHERE a.day = (SELECT d FROM today))
-     AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests r
-                      WHERE r.profile_id = e.student_id AND r.status = 'pending')
-   ORDER BY e.student_id
-   LIMIT p_limit;
+  SELECT jsonb_build_object(
+    'eligible', COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+                AND p.role = 'student' AND p.deleted_at IS NULL,
+    'enabled', COALESCE(c.enabled, false),
+    'paused', COALESCE(e.paused_at IS NOT NULL, false)
+  )
+    FROM public.profiles p
+    LEFT JOIN public.notification_channel_preferences c
+           ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
+    LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+   WHERE p.id = p_student_id;
 $$;
 
 
 --
--- Name: qotd_email_claim(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+-- Name: qotd_daily_notify(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_email_claim(p_student_id uuid, p_kind text, p_now timestamp with time zone DEFAULT now()) RETURNS uuid
+CREATE FUNCTION public.qotd_daily_notify(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 1000) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_id uuid;
+  v_today   date := public.chicago_day(p_now);
+  v_emitted integer := 0;
+  v_email   integer := 0;
+  v_paused  integer := 0;
+  r         record;
+  v_event   uuid;
+  v_run     integer;
+  v_variant text;
 BEGIN
-  INSERT INTO public.qotd_email_sends (student_id, send_date, kind, status, created_at)
-  VALUES (p_student_id, public.chicago_day(p_now), p_kind, 'pending', p_now)
-  ON CONFLICT (student_id, send_date) DO NOTHING
-  RETURNING id INTO v_id;
-  IF v_id IS NOT NULL AND p_kind = 'paused_notice' THEN
-    UPDATE public.student_qotd_email_prefs
-       SET paused_at = p_now, updated_at = p_now
-     WHERE student_id = p_student_id;
+  IF NOT EXISTS (SELECT 1 FROM public.qotd_schedule q WHERE q.qotd_date = v_today) THEN
+    RETURN jsonb_build_object('emitted', 0, 'with_email', 0, 'paused_notices', 0);
   END IF;
-  RETURN v_id;
+
+  FOR r IN
+    SELECT p.id AS student_id,
+           -- Email: the preference is on, 13+, and not paused by the sunset.
+           (COALESCE(c.enabled, false)
+            AND public.marketing_opt_in_age_eligible(p.date_of_birth)
+            AND e.paused_at IS NULL) AS email_on,
+           e.run_since
+      FROM public.profiles p
+      LEFT JOIN public.notification_channel_preferences c
+             ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
+      LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+     WHERE p.role = 'student' AND p.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
+                        WHERE d.profile_id = p.id AND d.status = 'pending')
+       AND NOT EXISTS (SELECT 1 FROM public.notification_events ev
+                        WHERE ev.event_id = public.notification_event_id('qotd_daily', p.id::text || ':' || v_today::text))
+       AND NOT EXISTS (SELECT 1 FROM public.student_answer_days(p.id, v_today) a WHERE a.day = v_today)
+     ORDER BY p.id
+     LIMIT p_limit
+  LOOP
+    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || v_today::text);
+    v_variant := 'daily';
+    IF r.email_on THEN
+      -- The sunset, from the ledger: the leading run (most recent first) of earlier days on which
+      -- a daily email went out and the student answered nothing, since the last grant or resume.
+      SELECT COALESCE(min(t.rn) FILTER (WHERE t.answered) - 1, count(*))::integer
+        INTO v_run
+        FROM (
+          SELECT row_number() OVER (ORDER BY x.day DESC) AS rn,
+                 EXISTS (SELECT 1 FROM public.student_answer_days(r.student_id, x.day) a
+                          WHERE a.day = x.day) AS answered
+            FROM (
+              SELECT (ev.payload->>'qotd_date')::date AS day
+                FROM public.notification_events ev
+                JOIN public.notification_messages m
+                  ON m.event_id = ev.event_id AND m.channel = 'email'
+                 AND m.recipient_profile_id = r.student_id
+               WHERE ev.event_type = 'qotd_daily' AND ev.subject_profile_id = r.student_id
+                 AND ev.payload->>'email_variant' = 'daily'
+                 AND m.status IN ('sent', 'delivered')
+                 AND (ev.payload->>'qotd_date')::date < v_today
+                 AND (ev.payload->>'qotd_date')::date >= COALESCE(r.run_since, (ev.payload->>'qotd_date')::date)
+               ORDER BY 1 DESC
+               LIMIT 7
+            ) x
+        ) t;
+      IF COALESCE(v_run, 0) >= 7 THEN
+        v_variant := 'paused_notice';
+      END IF;
+    END IF;
+
+    PERFORM public.emit_notification_event(
+      v_event,
+      'qotd_daily',
+      r.student_id,
+      jsonb_build_array(jsonb_build_object(
+        'profile_id', r.student_id,
+        'channels', CASE WHEN r.email_on THEN jsonb_build_array('in_app', 'email')
+                         ELSE jsonb_build_array('in_app') END
+      )),
+      jsonb_build_object(
+        'qotd_date', v_today,
+        'current_streak', COALESCE((SELECT s.current_streak FROM public.student_streak(r.student_id, p_now) s), 0),
+        'email_variant', v_variant
+      )
+    );
+    v_emitted := v_emitted + 1;
+    IF r.email_on THEN v_email := v_email + 1; END IF;
+    IF v_variant = 'paused_notice' THEN
+      UPDATE public.student_qotd_email_prefs
+         SET paused_at = p_now, updated_at = p_now
+       WHERE student_id = r.student_id;
+      v_paused := v_paused + 1;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object('emitted', v_emitted, 'with_email', v_email, 'paused_notices', v_paused);
 END;
 $$;
 
@@ -9479,7 +9534,7 @@ CREATE FUNCTION public.qotd_email_prompt_state(p_student_id uuid, p_now timestam
   SELECT jsonb_build_object(
     'eligible', COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
                 AND p.role = 'student' AND p.deleted_at IS NULL,
-    'consented', COALESCE(e.consented, false) AND e.unsubscribed_at IS NULL,
+    'consented', COALESCE(c.enabled, false),
     'never_ask', COALESCE(e.never_ask, false),
     'ask_count', COALESCE(e.ask_count, 0),
     'last_asked_on', e.last_asked_on,
@@ -9488,23 +9543,9 @@ CREATE FUNCTION public.qotd_email_prompt_state(p_student_id uuid, p_now timestam
   )
     FROM public.profiles p
     LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+    LEFT JOIN public.notification_channel_preferences c
+           ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
    WHERE p.id = p_student_id;
-$$;
-
-
---
--- Name: qotd_email_record(uuid, boolean, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.qotd_email_record(p_send_id uuid, p_ok boolean, p_provider_message_id text, p_now timestamp with time zone DEFAULT now()) RETURNS void
-    LANGUAGE sql
-    SET search_path TO 'public', 'pg_temp'
-    AS $$
-  UPDATE public.qotd_email_sends
-     SET status = CASE WHEN p_ok THEN 'sent' ELSE 'failed' END,
-         provider_message_id = p_provider_message_id,
-         sent_at = CASE WHEN p_ok THEN p_now END
-   WHERE id = p_send_id AND status = 'pending';
 $$;
 
 
@@ -9538,16 +9579,22 @@ $$;
 --
 
 CREATE FUNCTION public.qotd_email_resume(p_student_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
-    LANGUAGE sql
+    LANGUAGE plpgsql
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH r AS (
-    UPDATE public.student_qotd_email_prefs
-       SET paused_at = NULL, run_since = public.chicago_day(p_now), updated_at = p_now
-     WHERE student_id = p_student_id AND paused_at IS NOT NULL AND consented AND unsubscribed_at IS NULL
-    RETURNING 1
-  )
-  SELECT jsonb_build_object('ok', true, 'changed', EXISTS (SELECT 1 FROM r));
+DECLARE
+  v_paused boolean;
+  v_result jsonb;
+BEGIN
+  SELECT paused_at IS NOT NULL INTO v_paused
+    FROM public.student_qotd_email_prefs WHERE student_id = p_student_id;
+  IF NOT COALESCE(v_paused, false) THEN
+    RETURN jsonb_build_object('ok', true, 'changed', false);
+  END IF;
+  v_result := public.set_qotd_daily_email(p_student_id, true, 'email_resume', NULL, p_now);
+  RETURN jsonb_build_object('ok', true, 'changed',
+    COALESCE((v_result->>'enabled')::boolean, false) AND COALESCE((v_result->>'changed')::boolean, false));
+END;
 $$;
 
 
@@ -9560,23 +9607,13 @@ CREATE FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now timestamp
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_was boolean;
+  v_result jsonb;
 BEGIN
-  SELECT consented AND unsubscribed_at IS NULL INTO v_was
-    FROM public.student_qotd_email_prefs WHERE student_id = p_student_id FOR UPDATE;
-  IF NOT FOUND THEN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_student_id) THEN
     RETURN jsonb_build_object('ok', true, 'changed', false);
   END IF;
-  UPDATE public.student_qotd_email_prefs
-     SET consented = false, unsubscribed_at = COALESCE(unsubscribed_at, p_now),
-         -- An unsubscribe is also "don't ask again": the prompt never re-asks someone who left.
-         never_ask = true, updated_at = p_now
-   WHERE student_id = p_student_id;
-  IF v_was THEN
-    INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version, purpose, captured_at)
-    VALUES (p_student_id, false, 'email_unsubscribe', NULL, 'qotd_daily_email', p_now);
-  END IF;
-  RETURN jsonb_build_object('ok', true, 'changed', COALESCE(v_was, false));
+  v_result := public.set_qotd_daily_email(p_student_id, false, 'email_unsubscribe', NULL, p_now);
+  RETURN jsonb_build_object('ok', true, 'changed', COALESCE((v_result->>'changed')::boolean, false));
 END;
 $$;
 
@@ -12232,6 +12269,108 @@ $$;
 
 
 --
+-- Name: set_qotd_daily_email(uuid, boolean, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_today    date := public.chicago_day(p_now);
+  v_eligible boolean;
+  v_was      boolean;
+  v_paused   boolean;
+BEGIN
+  IF p_source NOT IN ('qotd_prompt', 'settings', 'email_unsubscribe', 'email_resume') THEN
+    RAISE EXCEPTION 'set_qotd_daily_email: unknown source %', p_source
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF (p_source = 'email_unsubscribe' AND p_enabled)
+     OR (p_source IN ('qotd_prompt', 'email_resume') AND NOT p_enabled) THEN
+    RAISE EXCEPTION 'set_qotd_daily_email: source % cannot set enabled=%', p_source, p_enabled
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  SELECT COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+         AND p.role = 'student' AND p.deleted_at IS NULL
+    INTO v_eligible
+    FROM public.profiles p WHERE p.id = p_student_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'reason', 'profile_missing');
+  END IF;
+
+  -- Serialise concurrent writers for this student (the row may not exist yet, so a row lock
+  -- alone cannot): two first grants must not both log a consent.
+  PERFORM pg_advisory_xact_lock(hashtext('set_qotd_daily_email:' || p_student_id::text));
+  SELECT enabled INTO v_was
+    FROM public.notification_channel_preferences
+   WHERE profile_id = p_student_id AND event_type = 'qotd_daily' AND channel = 'email'
+   FOR UPDATE;
+  v_was := COALESCE(v_was, false);
+  SELECT paused_at IS NOT NULL INTO v_paused
+    FROM public.student_qotd_email_prefs WHERE student_id = p_student_id FOR UPDATE;
+  v_paused := COALESCE(v_paused, false);
+
+  IF p_enabled THEN
+    IF p_source = 'email_resume' AND NOT v_was THEN
+      -- The resume link only lifts a pause; it is not a consent.
+      RETURN jsonb_build_object('ok', true, 'enabled', false, 'changed', false);
+    END IF;
+    IF NOT v_eligible THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'ineligible');
+    END IF;
+    IF NOT v_was AND NULLIF(btrim(COALESCE(p_consent_version, '')), '') IS NULL THEN
+      RAISE EXCEPTION 'set_qotd_daily_email: turning the email on requires a consent version'
+        USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF NOT v_was AND p_consent_version !~ '^\d+\.\d+\.\d+$' THEN
+      RAISE EXCEPTION 'set_qotd_daily_email: malformed consent version'
+        USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    INSERT INTO public.notification_channel_preferences
+      (profile_id, event_type, channel, enabled, updated_source, updated_at)
+    VALUES (p_student_id, 'qotd_daily', 'email', true, p_source, p_now)
+    ON CONFLICT (profile_id, event_type, channel) DO UPDATE
+       SET enabled = true, updated_source = EXCLUDED.updated_source, updated_at = p_now;
+    IF NOT v_was OR v_paused THEN
+      -- A fresh start for the sunset count: off→on, or a pause lifted.
+      INSERT INTO public.student_qotd_email_prefs (student_id, last_decided_on, paused_at, run_since, updated_at)
+      VALUES (p_student_id, v_today, NULL, v_today, p_now)
+      ON CONFLICT (student_id) DO UPDATE
+         SET paused_at = NULL, run_since = v_today,
+             last_decided_on = CASE WHEN p_source = 'email_resume'
+                                    THEN public.student_qotd_email_prefs.last_decided_on
+                                    ELSE v_today END,
+             updated_at = p_now;
+    END IF;
+    IF NOT v_was THEN
+      INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version, purpose, captured_at)
+      VALUES (p_student_id, true, p_source, p_consent_version, 'qotd_daily_email', p_now);
+    END IF;
+    RETURN jsonb_build_object('ok', true, 'enabled', true, 'changed', NOT v_was OR v_paused);
+  END IF;
+
+  -- OFF (Settings or the unsubscribe link). Also "don't ask again" (ruling 4).
+  INSERT INTO public.notification_channel_preferences
+    (profile_id, event_type, channel, enabled, updated_source, updated_at)
+  VALUES (p_student_id, 'qotd_daily', 'email', false, p_source, p_now)
+  ON CONFLICT (profile_id, event_type, channel) DO UPDATE
+     SET enabled = false, updated_source = EXCLUDED.updated_source, updated_at = p_now;
+  INSERT INTO public.student_qotd_email_prefs (student_id, last_decided_on, never_ask, updated_at)
+  VALUES (p_student_id, v_today, true, p_now)
+  ON CONFLICT (student_id) DO UPDATE
+     SET never_ask = true, last_decided_on = v_today, updated_at = p_now;
+  IF v_was THEN
+    INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version, purpose, captured_at)
+    VALUES (p_student_id, false, p_source, NULL, 'qotd_daily_email', p_now);
+  END IF;
+  RETURN jsonb_build_object('ok', true, 'enabled', false, 'changed', v_was);
+END;
+$_$;
+
+
+--
 -- Name: set_qotd_email_consent(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -12240,8 +12379,9 @@ CREATE FUNCTION public.set_qotd_email_consent(p_student_id uuid, p_decision text
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_state jsonb := public.qotd_email_prompt_state(p_student_id, p_now);
-  v_today date := public.chicago_day(p_now);
+  v_state  jsonb := public.qotd_email_prompt_state(p_student_id, p_now);
+  v_today  date := public.chicago_day(p_now);
+  v_result jsonb;
 BEGIN
   IF v_state IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'profile_missing');
@@ -12259,19 +12399,11 @@ BEGIN
       RAISE EXCEPTION 'set_qotd_email_consent: a grant requires a consent version'
         USING ERRCODE = 'invalid_parameter_value';
     END IF;
-    INSERT INTO public.student_qotd_email_prefs
-      (student_id, consented, consent_version, consented_at, last_decided_on,
-       unsubscribed_at, paused_at, updated_at)
-    VALUES (p_student_id, true, p_consent_version, p_now, v_today, NULL, NULL, p_now)
-    ON CONFLICT (student_id) DO UPDATE
-       SET consented = true, consent_version = EXCLUDED.consent_version,
-           consented_at = p_now, last_decided_on = v_today,
-           unsubscribed_at = NULL, paused_at = NULL, run_since = v_today, updated_at = p_now;
-    IF NOT (v_state->>'consented')::boolean THEN
-      INSERT INTO public.marketing_consent_log (profile_id, granted, source, consent_version, purpose, captured_at)
-      VALUES (p_student_id, true, 'qotd_prompt', p_consent_version, 'qotd_daily_email', p_now);
+    v_result := public.set_qotd_daily_email(p_student_id, true, 'qotd_prompt', p_consent_version, p_now);
+    IF NOT (v_result->>'ok')::boolean THEN
+      RETURN v_result;
     END IF;
-    RETURN jsonb_build_object('ok', true, 'changed', NOT (v_state->>'consented')::boolean);
+    RETURN jsonb_build_object('ok', true, 'changed', (v_result->>'changed')::boolean);
   END IF;
 
   IF p_decision = 'never' AND COALESCE((v_state->>'ask_count')::integer, 0) < 3 THEN
@@ -15368,6 +15500,29 @@ CREATE TABLE public.mobile_auth_config_history (
 
 
 --
+-- Name: notification_channel_preferences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_channel_preferences (
+    profile_id uuid NOT NULL,
+    event_type text NOT NULL,
+    channel text NOT NULL,
+    enabled boolean NOT NULL,
+    updated_source text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_channel_preferences_scope CHECK (((event_type = 'qotd_daily'::text) AND (channel = 'email'::text))),
+    CONSTRAINT notification_channel_preferences_source CHECK ((updated_source = ANY (ARRAY['qotd_prompt'::text, 'settings'::text, 'email_unsubscribe'::text, 'email_resume'::text, 'backfill'::text])))
+);
+
+
+--
+-- Name: TABLE notification_channel_preferences; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.notification_channel_preferences IS 'Notification channel switches per profile, type and channel. Today only (student, qotd_daily, email). Missing row = off. Written ONLY by set_qotd_daily_email (pop-up, Settings, unsubscribe and resume all call it). ON DELETE CASCADE from profiles.';
+
+
+--
 -- Name: notification_delivery_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -15401,7 +15556,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text])))
 );
 
 
@@ -15741,31 +15896,6 @@ CREATE TABLE public.qotd_daily_stats (
 --
 
 COMMENT ON TABLE public.qotd_daily_stats IS 'QOTD (plan R17): aggregate counters per day, atomic increments, no per-person rows.';
-
-
---
--- Name: qotd_email_sends; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.qotd_email_sends (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
-    send_date date NOT NULL,
-    kind text NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
-    provider_message_id text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    sent_at timestamp with time zone,
-    CONSTRAINT qotd_email_sends_kind_check CHECK ((kind = ANY (ARRAY['daily'::text, 'paused_notice'::text]))),
-    CONSTRAINT qotd_email_sends_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'sent'::text, 'failed'::text])))
-);
-
-
---
--- Name: TABLE qotd_email_sends; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.qotd_email_sends IS 'Home QOTD daily email ledger: one row per student per America/Chicago day, written BEFORE the send so a retry or an overlapping run cannot send twice. ON DELETE CASCADE from profiles.';
 
 
 --
@@ -16419,20 +16549,14 @@ COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in stude
 
 CREATE TABLE public.student_qotd_email_prefs (
     student_id uuid NOT NULL,
-    consented boolean DEFAULT false NOT NULL,
-    consent_version text,
-    consented_at timestamp with time zone,
     ask_count integer DEFAULT 0 NOT NULL,
     last_asked_on date,
     last_decided_on date,
     never_ask boolean DEFAULT false NOT NULL,
-    unsubscribed_at timestamp with time zone,
     paused_at timestamp with time zone,
     run_since date,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT qotd_email_prefs_consent_versioned CHECK (((consented = false) OR (consent_version IS NOT NULL))),
-    CONSTRAINT student_qotd_email_prefs_ask_count_check CHECK ((ask_count >= 0)),
-    CONSTRAINT student_qotd_email_prefs_consent_version_check CHECK (((consent_version IS NULL) OR (consent_version ~ '^\d+\.\d+\.\d+$'::text)))
+    CONSTRAINT student_qotd_email_prefs_ask_count_check CHECK ((ask_count >= 0))
 );
 
 
@@ -16440,7 +16564,7 @@ CREATE TABLE public.student_qotd_email_prefs (
 -- Name: TABLE student_qotd_email_prefs; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.student_qotd_email_prefs IS 'Home QOTD daily email: consent state, the server-side prompt state (asks, last asked, never-ask), unsubscribe and sunset pause. ON DELETE CASCADE from profiles.';
+COMMENT ON TABLE public.student_qotd_email_prefs IS 'Home QOTD: the email prompt''s server-side state (asks, last asked/decided, never-ask) and the daily email''s sunset pause (paused_at, run_since). Whether the email is ON lives in notification_channel_preferences. ON DELETE CASCADE from profiles.';
 
 
 --
@@ -17644,6 +17768,14 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
+-- Name: notification_channel_preferences notification_channel_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_channel_preferences
+    ADD CONSTRAINT notification_channel_preferences_pkey PRIMARY KEY (profile_id, event_type, channel);
+
+
+--
 -- Name: notification_delivery_events notification_delivery_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -17817,22 +17949,6 @@ ALTER TABLE ONLY public.psi_occurred_at_backfill_log
 
 ALTER TABLE ONLY public.qotd_daily_stats
     ADD CONSTRAINT qotd_daily_stats_pkey PRIMARY KEY (qotd_date);
-
-
---
--- Name: qotd_email_sends qotd_email_sends_one_per_day; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.qotd_email_sends
-    ADD CONSTRAINT qotd_email_sends_one_per_day UNIQUE (student_id, send_date);
-
-
---
--- Name: qotd_email_sends qotd_email_sends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.qotd_email_sends
-    ADD CONSTRAINT qotd_email_sends_pkey PRIMARY KEY (id);
 
 
 --
@@ -20396,6 +20512,14 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
+-- Name: notification_channel_preferences notification_channel_preferences_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_channel_preferences
+    ADD CONSTRAINT notification_channel_preferences_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: notification_delivery_events notification_delivery_events_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20545,14 +20669,6 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.qotd_daily_stats
     ADD CONSTRAINT qotd_daily_stats_qotd_date_fkey FOREIGN KEY (qotd_date) REFERENCES public.qotd_schedule(qotd_date);
-
-
---
--- Name: qotd_email_sends qotd_email_sends_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.qotd_email_sends
-    ADD CONSTRAINT qotd_email_sends_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -21626,6 +21742,12 @@ ALTER TABLE public.mobile_auth_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mobile_auth_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: notification_channel_preferences; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_channel_preferences ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: notification_delivery_events; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -21761,12 +21883,6 @@ ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.qotd_daily_stats ENABLE ROW LEVEL SECURITY;
-
---
--- Name: qotd_email_sends; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.qotd_email_sends ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: qotd_schedule; Type: ROW SECURITY; Schema: public; Owner: -
@@ -23931,19 +24047,19 @@ GRANT ALL ON FUNCTION public.qotd_archive() TO service_role;
 
 
 --
--- Name: FUNCTION qotd_email_candidates(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION qotd_daily_email_preference(p_student_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.qotd_email_candidates(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.qotd_email_candidates(p_now timestamp with time zone, p_limit integer) TO service_role;
+REVOKE ALL ON FUNCTION public.qotd_daily_email_preference(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_daily_email_preference(p_student_id uuid) TO service_role;
 
 
 --
--- Name: FUNCTION qotd_email_claim(p_student_id uuid, p_kind text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION qotd_daily_notify(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.qotd_email_claim(p_student_id uuid, p_kind text, p_now timestamp with time zone) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.qotd_email_claim(p_student_id uuid, p_kind text, p_now timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p_limit integer) TO service_role;
 
 
 --
@@ -23952,14 +24068,6 @@ GRANT ALL ON FUNCTION public.qotd_email_claim(p_student_id uuid, p_kind text, p_
 
 REVOKE ALL ON FUNCTION public.qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone) TO service_role;
-
-
---
--- Name: FUNCTION qotd_email_record(p_send_id uuid, p_ok boolean, p_provider_message_id text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.qotd_email_record(p_send_id uuid, p_ok boolean, p_provider_message_id text, p_now timestamp with time zone) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.qotd_email_record(p_send_id uuid, p_ok boolean, p_provider_message_id text, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -24365,6 +24473,14 @@ GRANT ALL ON FUNCTION public.set_marketing_consent(p_profile_id uuid, p_granted 
 --
 
 GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
+
+
+--
+-- Name: FUNCTION set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_qotd_daily_email(p_student_id uuid, p_enabled boolean, p_source text, p_consent_version text, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -25773,6 +25889,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config_history TO 
 
 
 --
+-- Name: TABLE notification_channel_preferences; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.notification_channel_preferences TO service_role;
+
+
+--
 -- Name: TABLE notification_delivery_events; Type: ACL; Schema: public; Owner: -
 --
 
@@ -25876,13 +25999,6 @@ GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.qotd_daily_stats TO service_role;
-
-
---
--- Name: TABLE qotd_email_sends; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,UPDATE ON TABLE public.qotd_email_sends TO service_role;
 
 
 --

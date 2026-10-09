@@ -35,7 +35,8 @@ import {
   type NotificationMessageRow,
 } from "../../../packages/shared/src/notifications-schema";
 import { logger } from "../../logger";
-import { renderEmail, siteUrlFromEnv } from "./templates";
+import { qotdDailySendContext } from "./qotd-daily-send-context";
+import { renderEmail, siteUrlFromEnv, type RenderContext } from "./templates";
 import { defaultEmailTransport, type EmailTransport } from "./transport";
 
 export type DispatchSummary = {
@@ -51,6 +52,8 @@ export type DispatchOptions = {
   eventId?: string;
   limit?: number;
   transport?: EmailTransport;
+  /** The dispatcher's clock (a `qotd_daily` email is sent only on its own day). Default: now. */
+  now?: Date;
 };
 
 const DISPATCH_DEFAULT_LIMIT = 100;
@@ -87,6 +90,7 @@ async function recordAttempt(args: RecordArgs): Promise<boolean> {
 async function dispatchOne(
   row: NotificationMessageRow,
   transport: EmailTransport,
+  now: Date,
 ): Promise<"sent" | "failed" | "deferred"> {
   const { data: eventRows, error: eventError } = await supabaseServer
     .from("notification_events")
@@ -160,11 +164,43 @@ async function dispatchOne(
   // list itself, on every send, whether it arrives by API or by SMTP — so a suppressed address is
   // skipped one layer below this one. A second check here would be a copy of the vendor's
   // enforcement that can only disagree with it.
-  const rendered = renderEmail(eventRow.event_type, eventRow.payload, {
+  const siteUrl = siteUrlFromEnv();
+  const ctx: RenderContext = {
     recipientIsSubject:
       row.recipient_profile_id === eventRow.subject_profile_id,
-    siteUrl: siteUrlFromEnv(),
-  });
+    siteUrl,
+  };
+  // owner ruling on #1166 item 1 (2026-10-09): the daily-question email's stem and its signed
+  // unsubscribe/resume links are looked up at send time; the payload carries neither.
+  if (eventRow.event_type === "qotd_daily") {
+    const extras = await qotdDailySendContext(
+      eventRow.payload,
+      row.recipient_profile_id,
+      siteUrl,
+      now,
+    );
+    if (!extras.ok) {
+      logger.error(
+        "NOTIFICATIONS",
+        "dispatch_qotd_context_failed",
+        "Could not prepare a daily-question email",
+        { messageId: row.message_id, reason: extras.error.reason },
+      );
+      await recordAttempt({
+        p_message_id: row.message_id,
+        p_ok: false,
+        p_provider_message_id: null,
+        p_error: extras.error.reason,
+        // A past day's question is never sent late: fail it now instead of retrying.
+        p_max_attempts: extras.error.stale
+          ? 1
+          : NOTIFICATION_EMAIL_MAX_ATTEMPTS,
+      });
+      return "failed";
+    }
+    ctx.qotdEmail = extras.value;
+  }
+  const rendered = renderEmail(eventRow.event_type, eventRow.payload, ctx);
   if (!rendered.ok) {
     await recordAttempt({
       p_message_id: row.message_id,
@@ -183,6 +219,7 @@ async function dispatchOne(
     subject: rendered.value.subject,
     html: rendered.value.html,
     text: rendered.value.text,
+    ...(rendered.value.headers ? { headers: rendered.value.headers } : {}),
   });
 
   if (sent.ok) {
@@ -261,7 +298,11 @@ export async function dispatchQueuedMessages(
 
   summary.selected = rows.data.length;
   for (const row of rows.data) {
-    const outcome = await dispatchOne(row, transport);
+    const outcome = await dispatchOne(
+      row,
+      transport,
+      options.now ?? new Date(),
+    );
     summary[outcome] += 1;
   }
 

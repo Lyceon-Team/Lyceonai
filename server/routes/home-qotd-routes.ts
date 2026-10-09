@@ -14,6 +14,10 @@
  *                        day changed under the client), 400 not one of today's options.
  *   POST /email-consent  { data: { consented, show_email_prompt:false } }: 403 under-13 or not
  *                        eligible; 409 "never" before it is offered (3rd ask).
+ *   GET  /email-preference  { data: QotdEmailPreference } — Settings → Notifications' toggle.
+ *   PUT  /email-preference  { data: QotdEmailPreference }: 403 turning it on for an under-13 /
+ *                        ineligible account. Same preference as the prompt's "Yes" and the
+ *                        unsubscribe link (owner ruling on #1166, 2026-10-09, item 2).
  *
  * Mounted behind requireSupabaseAuth → doubleCsrfProtection → requireStudentAccount (students
  * only; an under-13 without an active guardian link is refused like every student surface). No
@@ -34,12 +38,15 @@ import {
   answerHomeQotd,
   decideHomeQotdEmail,
   getHomeQotdToday,
+  getQotdEmailPreference,
+  setQotdEmailPreference,
   type HomeQotdSignals,
 } from "../services/qotd/home-qotd-service";
 import {
   homeQotdAnswerRequestSchema,
   homeQotdEmailConsentRequestSchema,
   homeQotdEmailConsentResponseSchema,
+  qotdEmailPreferenceUpdateSchema,
 } from "../../packages/shared/src/home-qotd-schema";
 
 const COMPONENT = "HOME_QOTD";
@@ -246,6 +253,64 @@ export function createHomeQotdRouter(
         });
       } catch (error) {
         return fail(req, res, "email_consent", error);
+      }
+    },
+  );
+
+  router.get(
+    "/email-preference",
+    singleBucketRateLimit("qotd_student_read", COMPONENT),
+    async (req: Request, res: Response) => {
+      const user = requireRequestUser(req, res);
+      if (!user) return;
+      try {
+        const data = await getQotdEmailPreference(user.id);
+        return res.status(200).json({ data });
+      } catch (error) {
+        return fail(req, res, "email_preference_read", error);
+      }
+    },
+  );
+
+  router.put(
+    "/email-preference",
+    singleBucketRateLimit("qotd_email_consent", COMPONENT),
+    async (req: Request, res: Response) => {
+      const user = requireRequestUser(req, res);
+      if (!user) return;
+      const parsed = qotdEmailPreferenceUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return sendError(
+          res,
+          400,
+          "INVALID_REQUEST",
+          "Invalid input",
+          parsed.error.flatten(),
+        );
+      }
+      try {
+        const result = await setQotdEmailPreference(
+          user.id,
+          parsed.data,
+          deps.now(),
+        );
+        if (!result.ok) {
+          return sendError(
+            res,
+            result.error.status,
+            result.error.code,
+            result.error.message,
+          );
+        }
+        logger.info(
+          COMPONENT,
+          "qotd_email_preference_set",
+          "QOTD email preference set",
+          { requestId: req.requestId, enabled: parsed.data.enabled },
+        );
+        return res.status(200).json({ data: result.value });
+      } catch (error) {
+        return fail(req, res, "email_preference_write", error);
       }
     },
   );

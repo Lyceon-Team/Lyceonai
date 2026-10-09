@@ -1,6 +1,6 @@
 # Home QOTD, streak, email prompt, SAT dates (light and dark, 1440 and 390)
 
-Generated 2026-10-09T01:55:39.443Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts HOME-QOTD` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-09T03:46:20.692Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts HOME-QOTD` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -92,10 +92,24 @@ Prototype: none. NOT PROTOTYPED: the Home QOTD card, streak chip, email prompt a
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-paid-qotd desktop light](home-paid-qotd--desktop--light--built.png)<br>`/dashboard`, 118 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-paid-qotd desktop dark](home-paid-qotd--desktop--dark--built.png)<br>`/dashboard`, 119 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-paid-qotd mobile light](home-paid-qotd--mobile--light--built.png)<br>`/dashboard`, 227 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-paid-qotd mobile dark](home-paid-qotd--mobile--dark--built.png)<br>`/dashboard`, 232 KB, horizontal overflow 0px | none |
+| desktop | light | ![home-paid-qotd desktop light](home-paid-qotd--desktop--light--built.png)<br>`/dashboard`, 120 KB, horizontal overflow 0px | none |
+| desktop | dark | ![home-paid-qotd desktop dark](home-paid-qotd--desktop--dark--built.png)<br>`/dashboard`, 121 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-paid-qotd mobile light](home-paid-qotd--mobile--light--built.png)<br>`/dashboard`, 233 KB, horizontal overflow 0px | none |
+| mobile | dark | ![home-paid-qotd mobile dark](home-paid-qotd--mobile--dark--built.png)<br>`/dashboard`, 238 KB, horizontal overflow 0px | none |
+
+## Settings → Notifications: the one toggle 'Daily question email' (owner ruling on #1166 item 2, 2026-10-09)
+
+Persona: `free`. Route: `/profile?tab=notifications`.
+Today's question unanswered before each capture (scheduled if missing; the persona's answer, qotd session and email-prompt state deleted).
+Must then show the text `Daily question email` (the capture fails otherwise).
+Prototype: none. NOT PROTOTYPED: the Home QOTD card, streak chip, email prompt and SAT-date card are new in the owner brief of 2026-10-08/09 and built to DESIGN.md's tokens; these screenshots go to Karl before merge.
+
+| Viewport | Theme (as rendered) | Built | Prototype |
+|---|---|---|---|
+| desktop | light | ![settings-notifications desktop light](settings-notifications--desktop--light--built.png)<br>`/profile`, 66 KB, horizontal overflow 0px | none |
+| desktop | dark | ![settings-notifications desktop dark](settings-notifications--desktop--dark--built.png)<br>`/profile`, 67 KB, horizontal overflow 0px | none |
+| mobile | light | ![settings-notifications mobile light](settings-notifications--mobile--light--built.png)<br>`/profile`, 52 KB, horizontal overflow 0px | none |
+| mobile | dark | ![settings-notifications mobile dark](settings-notifications--mobile--dark--built.png)<br>`/profile`, 53 KB, horizontal overflow 0px | none |
 
 ## Calendar (paid): the goal card's '🔥 N-day streak' (after today's answer)
 
@@ -105,14 +119,14 @@ Prototype: none. NOT PROTOTYPED: the Home QOTD card, streak chip, email prompt a
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![calendar-goal-streak desktop light](calendar-goal-streak--desktop--light--built.png)<br>`/calendar`, 141 KB, horizontal overflow 0px | none |
-| desktop | dark | ![calendar-goal-streak desktop dark](calendar-goal-streak--desktop--dark--built.png)<br>`/calendar`, 143 KB, horizontal overflow 0px | none |
-| mobile | light | ![calendar-goal-streak mobile light](calendar-goal-streak--mobile--light--built.png)<br>`/calendar`, 47 KB, horizontal overflow 0px | none |
-| mobile | dark | ![calendar-goal-streak mobile dark](calendar-goal-streak--mobile--dark--built.png)<br>`/calendar`, 47 KB, horizontal overflow 0px | none |
+| desktop | light | ![calendar-goal-streak desktop light](calendar-goal-streak--desktop--light--built.png)<br>`/calendar`, 142 KB, horizontal overflow 0px | none |
+| desktop | dark | ![calendar-goal-streak desktop dark](calendar-goal-streak--desktop--dark--built.png)<br>`/calendar`, 144 KB, horizontal overflow 0px | none |
+| mobile | light | ![calendar-goal-streak mobile light](calendar-goal-streak--mobile--light--built.png)<br>`/calendar`, 48 KB, horizontal overflow 0px | none |
+| mobile | dark | ![calendar-goal-streak mobile dark](calendar-goal-streak--mobile--dark--built.png)<br>`/calendar`, 48 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"d5bb9714-3783-4361-8355-ed04cbc6fc87","openPracticeSessionId":"db2a08ba-1eef-4aaf-a3d4-823fd578cb27","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"7bd58d40-c149-4783-b8ec-cc407ae24677","openPracticeSessionId":"b2957d13-2413-4a1b-810f-5acf5ba18754","openReviewSessionId":null,"diagnosticSessionId":"a97055c4-d3e1-414c-96df-990ab43d1873","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"76eab50a-d877-4737-99bd-3ee1e4c64e43","openPracticeSessionId":"742a86ed-2a9a-4a27-8442-1ec41cf886b0","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"3cf20de7-2c98-4f6b-bc0c-5444663d29c9","openPracticeSessionId":"41df1d76-e591-47fe-9d4e-f771e7a0fb64","openReviewSessionId":null,"diagnosticSessionId":"9c46144a-0b94-4ede-a5f8-2c3fab66eb55","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - Desmos (QA2-B, opt-in `STUDENT_HARNESS_DESMOS=1`): not loaded (a local-only run; the calculator shows its unavailable line)
 - External hosts blocked: none

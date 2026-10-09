@@ -24,9 +24,11 @@ import {
   homeQotdEmailConsentResponseSchema,
   homeQotdTodayResponseSchema,
   QOTD_EMAIL_CONSENT_VERSION,
+  qotdEmailPreferenceSchema,
   type HomeQotdAnswerRequest,
   type HomeQotdAnswerResponse,
   type HomeQotdTodayResponse,
+  type QotdEmailPreference,
 } from "@lyceon/shared/home-qotd-schema";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
@@ -35,6 +37,7 @@ import { apiRequest } from "@/lib/queryClient";
 export const HOME_QOTD_TODAY_PATH = "/api/qotd/today";
 const ANSWER_PATH = "/api/qotd/answer";
 const CONSENT_PATH = "/api/qotd/email-consent";
+export const QOTD_EMAIL_PREFERENCE_PATH = "/api/qotd/email-preference";
 
 async function fetchHomeQotd(): Promise<HomeQotdTodayResponse> {
   const response = await apiRequest(HOME_QOTD_TODAY_PATH);
@@ -135,6 +138,57 @@ export function useQotdEmailDecision(): UseMutationResult<
                 show_dont_ask_again: false,
               },
       );
+      // "Yes" turned on the same preference Settings shows.
+      void queryClient.invalidateQueries({
+        queryKey: [QOTD_EMAIL_PREFERENCE_PATH],
+      });
+    },
+  });
+}
+
+/**
+ * Settings → Notifications, "Daily question email" (owner ruling on #1166, 2026-10-09, item 2):
+ * the read and the write of the one preference the Home prompt and the unsubscribe link also
+ * change. The switch shows the server's answer, never an optimistic guess.
+ */
+export function useQotdEmailPreference(): UseQueryResult<
+  QotdEmailPreference,
+  Error
+> {
+  const { user, authLoading } = useSupabaseAuth();
+  return useQuery<QotdEmailPreference, Error>({
+    queryKey: [QOTD_EMAIL_PREFERENCE_PATH],
+    queryFn: async () => {
+      const response = await apiRequest(QOTD_EMAIL_PREFERENCE_PATH);
+      return qotdEmailPreferenceSchema.parse(dataOf(await response.json()));
+    },
+    enabled: !!user && !authLoading,
+    ...QUERY_FRESHNESS.homeQotd,
+  });
+}
+
+export function useSetQotdEmailPreference(): UseMutationResult<
+  QotdEmailPreference,
+  Error,
+  boolean
+> {
+  const queryClient = useQueryClient();
+  return useMutation<QotdEmailPreference, Error, boolean>({
+    mutationFn: async (enabled) => {
+      const response = await apiRequest(QOTD_EMAIL_PREFERENCE_PATH, {
+        method: "PUT",
+        body: JSON.stringify(
+          enabled
+            ? { enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION }
+            : { enabled: false },
+        ),
+      });
+      return qotdEmailPreferenceSchema.parse(dataOf(await response.json()));
+    },
+    onSuccess: (preference) => {
+      queryClient.setQueryData([QOTD_EMAIL_PREFERENCE_PATH], preference);
+      // Turning it on or off also settles the Home prompt.
+      void queryClient.invalidateQueries({ queryKey: [HOME_QOTD_TODAY_PATH] });
     },
   });
 }

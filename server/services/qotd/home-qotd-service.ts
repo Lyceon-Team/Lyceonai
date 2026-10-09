@@ -31,10 +31,13 @@ import {
   homeQotdAnswerResponseSchema,
   homeQotdTodayResponseSchema,
   QOTD_EMAIL_NEVER_FROM_ASK,
+  qotdEmailPreferenceSchema,
   type HomeQotdAnswerRequest,
   type HomeQotdAnswerResponse,
   type HomeQotdResult,
   type HomeQotdTodayResponse,
+  type QotdEmailPreference,
+  type QotdEmailPreferenceUpdate,
   type Streak,
 } from "../../../packages/shared/src/home-qotd-schema";
 import { err, ok, type Result } from "../../../packages/shared/src/result";
@@ -503,4 +506,59 @@ export async function decideHomeQotdEmail(
     });
   }
   return ok({ consented: decision === "grant" });
+}
+
+/**
+ * Settings → Notifications, "Daily question email" (owner ruling on #1166, item 2).
+ *
+ * plain English: the read and the write of the ONE preference — the email channel of the
+ * `qotd_daily` notification. The write goes through `set_qotd_daily_email`, the same SQL writer
+ * the Home prompt's "Yes" and the unsubscribe link reach, so the three cannot disagree. Turning
+ * it on is a consent given against `QOTD_EMAIL_CONSENT_VERSION` (logged with that version);
+ * turning it off is logged as a withdrawal and also stops the Home prompt.
+ */
+export async function getQotdEmailPreference(
+  studentId: string,
+): Promise<QotdEmailPreference> {
+  const { data, error } = await db().rpc("qotd_daily_email_preference", {
+    p_student_id: studentId,
+  });
+  if (error)
+    throw new Error(`qotd_daily_email_preference failed: ${error.message}`);
+  return qotdEmailPreferenceSchema.parse(data);
+}
+
+export async function setQotdEmailPreference(
+  studentId: string,
+  update: QotdEmailPreferenceUpdate,
+  now: Date = new Date(),
+): Promise<
+  Result<QotdEmailPreference, { status: 403; code: string; message: string }>
+> {
+  const { data, error } = await db().rpc("set_qotd_daily_email", {
+    p_student_id: studentId,
+    p_enabled: update.enabled,
+    p_source: "settings",
+    p_consent_version: update.enabled ? update.consent_version : null,
+    p_now: now.toISOString(),
+  });
+  if (error) throw new Error(`set_qotd_daily_email failed: ${error.message}`);
+  const parsed = z
+    .union([
+      z.object({
+        ok: z.literal(true),
+        enabled: z.boolean(),
+        changed: z.boolean(),
+      }),
+      z.object({ ok: z.literal(false), reason: z.string() }),
+    ])
+    .parse(data);
+  if (!parsed.ok) {
+    return err({
+      status: 403,
+      code: "qotd_email_ineligible",
+      message: "Daily emails aren't available for this account.",
+    });
+  }
+  return ok(await getQotdEmailPreference(studentId));
 }

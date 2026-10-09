@@ -104,6 +104,34 @@ export const HOME_QOTD: PageGroup = {
       prototype: NO_PROTOTYPE,
     },
     {
+      id: "settings-notifications",
+      title:
+        "Settings → Notifications: the one toggle 'Daily question email' (owner ruling on #1166 item 2, 2026-10-09)",
+      persona: "free",
+      route: "/profile?tab=notifications",
+      freshQotd: {},
+      waitFor: both(
+        '[data-testid="settings-qotd-email-toggle"]:not([disabled])',
+      ),
+      expectText: "Daily question email",
+      prototype: NO_PROTOTYPE,
+    },
+    {
+      id: "settings-notifications-on",
+      title:
+        "Settings → Notifications: 'Daily question email' switched on (the same preference the Home prompt's Yes turns on)",
+      persona: "free",
+      route: "/profile?tab=notifications",
+      freshQotd: {},
+      waitFor: both(
+        '[data-testid="settings-qotd-email-toggle"]:not([disabled])',
+      ),
+      steps: [{ click: both('[data-testid="settings-qotd-email-toggle"]') }],
+      expectVisible:
+        '[data-testid="settings-qotd-email-toggle"][aria-checked="true"]:not([disabled])',
+      prototype: NO_PROTOTYPE,
+    },
+    {
       id: "calendar-goal-streak",
       title:
         "Calendar (paid): the goal card's '🔥 N-day streak' (after today's answer)",

@@ -20,12 +20,16 @@
  *   A4 streak: each source extends it; a missed day resets it
  *   A5 prompt: after every answer until granted; "Don't ask again" from the 3rd ask; never for
  *      under-13s; a grant writes consent with a version
- *   A6 email job: ≤1 per student per day; skipped if answered / paused / unsubscribed; the
- *      7-send sunset; 17:00 Chicago across DST
- *   A7 unsubscribe: no sign-in; a tampered link is refused
+ *   A6 the reminder is the `qotd_daily` notification (owner ruling on #1166, 2026-10-09): in-app
+ *      for every student who has not answered (no consent; under-13s too); email only with the
+ *      preference on and never under-13; one per student per day across both crons and reruns
+ *      (the ledger); skipped if answered; the 7-send sunset from the ledger; 17:00 Chicago across
+ *      DST; sent by the notification dispatcher
+ *   A7 unsubscribe: no sign-in; a tampered link is refused. The Settings toggle, the pop-up and
+ *      the unsubscribe link change ONE preference, with one SQL writer
  *   A8 test dates: several stored; the effective date is the closest future one; saving dates
  *      does not complete calendar setup; past dates refused
- *   A9 account deletion removes attempts, sends, prompt state and test dates
+ *   A9 account deletion removes attempts, notifications, the preference, prompt state and dates
  */
 import express, {
   type NextFunction,
@@ -64,6 +68,7 @@ const MAILED_UNSUB = "a7000000-0000-4000-8000-00000000000a";
 const DATES = "a7000000-0000-4000-8000-00000000000b";
 const DELETED = "a7000000-0000-4000-8000-00000000000c";
 const NEVERER = "a7000000-0000-4000-8000-00000000000d";
+const TOGGLER = "a7000000-0000-4000-8000-00000000000e";
 
 const TODAY_Q = "SATM1Q90001";
 const SUMMER_Q = "SATM1Q90002";
@@ -342,6 +347,7 @@ describe.skipIf(!PG_AVAILABLE)(
         DATES,
         DELETED,
         NEVERER,
+        TOGGLER,
       ]) {
         await seedPerson(id, "student", "2008-01-01");
       }
@@ -757,8 +763,10 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     // ── A6 ─────────────────────────────────────────────────────────────────
-    describe("A6: the daily email", () => {
+    // Owner ruling on #1166 (2026-10-09) item 1: the reminder is the `qotd_daily` notification.
+    describe("A6: the daily reminder is a notification (in-app always, email by preference)", () => {
       const sent: {
+        idempotencyKey: string;
         to: string;
         subject: string;
         text: string;
@@ -766,6 +774,7 @@ describe.skipIf(!PG_AVAILABLE)(
         headers?: Record<string, string>;
       }[] = [];
       const fakeTransport = async (input: {
+        idempotencyKey: string;
         to: string;
         subject: string;
         text: string;
@@ -781,10 +790,12 @@ describe.skipIf(!PG_AVAILABLE)(
       async function run(nowIso: string) {
         const { runQotdEmailJob } =
           await import("../../server/services/qotd/qotd-email-job");
+        const { dispatchQueuedMessages } =
+          await import("../../server/lib/notifications/dispatch");
         return runQotdEmailJob({
           db: makePgSupabase(pg),
-          transport: fakeTransport,
-          siteUrl: "https://lyceon.test",
+          dispatch: (options) =>
+            dispatchQueuedMessages({ ...options, transport: fakeTransport }),
           now: new Date(nowIso),
         });
       }
@@ -795,8 +806,25 @@ describe.skipIf(!PG_AVAILABLE)(
         );
         expect(r.rows[0]?.r.ok).toBe(true);
       }
+      /** The qotd_daily messages for a student on a Chicago day, by channel. */
+      async function messages(
+        id: string,
+        day: string,
+      ): Promise<{ channel: string; status: string }[]> {
+        const r = await pg.query<{ channel: string; status: string }>(
+          `SELECT m.channel, m.status
+             FROM public.notification_events e
+             JOIN public.notification_messages m ON m.event_id = e.event_id
+            WHERE e.event_type = 'qotd_daily' AND e.subject_profile_id = $1
+              AND e.payload->>'qotd_date' = $2
+            ORDER BY m.channel`,
+          [id, day],
+        );
+        return r.rows;
+      }
 
       beforeAll(async () => {
+        process.env.PUBLIC_SITE_URL = "https://lyceon.test";
         for (const id of [
           MAILED,
           MAILED_ANSWERED,
@@ -805,34 +833,57 @@ describe.skipIf(!PG_AVAILABLE)(
         ]) {
           await grantAt(id, "2026-07-01T12:00:00Z");
         }
-        // Answered on the send day (summer), so no email.
+        // Answered on the send day (summer), so no notification at all.
         await seedAnswer("practice", MAILED_ANSWERED, "2026-07-14T15:00:00Z");
-        // Seven earlier sends, none followed by an answer that day: the sunset.
+        // Seven earlier daily emails, delivered, none followed by an answer that day: the sunset
+        // reads them from the notification ledger itself.
         for (let d = 7; d <= 13; d += 1) {
+          const day = `2026-07-${String(d).padStart(2, "0")}`;
           await pg.query(
-            `INSERT INTO public.qotd_email_sends (student_id, send_date, kind, status, created_at, sent_at)
-             VALUES ($1, $2::date, 'daily', 'sent', now(), now())`,
-            [MAILED_SUNSET, `2026-07-${String(d).padStart(2, "0")}`],
+            `SELECT public.emit_notification_event(
+               public.notification_event_id('qotd_daily', $1::text || ':' || $2::text),
+               'qotd_daily', $1::uuid,
+               jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('in_app', 'email'))),
+               jsonb_build_object('qotd_date', $2::text, 'current_streak', 0, 'email_variant', 'daily'))`,
+            [MAILED_SUNSET, day],
           );
         }
+        await pg.query(
+          `UPDATE public.notification_messages m SET status = 'delivered', sent_at = now(), delivered_at = now()
+             FROM public.notification_events e
+            WHERE e.event_id = m.event_id AND e.subject_profile_id = $1 AND m.channel = 'email'`,
+          [MAILED_SUNSET],
+        );
         await pg.query(`SELECT public.qotd_email_unsubscribe($1)`, [
           MAILED_UNSUB,
         ]);
+        // An under-13 whose preference row is ON (written around the writer, which refuses it):
+        // the rule must still never email them.
+        await pg.query(
+          `INSERT INTO public.notification_channel_preferences
+             (profile_id, event_type, channel, enabled, updated_source)
+           VALUES ($1, 'qotd_daily', 'email', true, 'backfill')`,
+          [UNDER13],
+        );
         await seedQuestion("SATM1Q90004");
         await pg.query(
           `INSERT INTO public.qotd_schedule (qotd_date, question_id) VALUES ('2026-07-15', 'SATM1Q90004')`,
         );
       });
 
-      it("outside the 17:00 Chicago hour nothing is sent (16:59 CDT)", async () => {
+      it("outside the 17:00 Chicago hour nothing is created or sent (16:59 CDT)", async () => {
         const summary = await run("2026-07-14T21:59:00Z");
         expect(summary.skipped).toBe("not_send_hour");
+        expect(summary.emitted).toBe(0);
         expect(sent).toHaveLength(0);
+        expect(await messages(MAILED, SUMMER_DAY)).toEqual([]);
       });
 
-      it("at 17:00 CDT: one email to each eligible student, none to the answered or unsubscribed; the sunset sends the pause email", async () => {
+      it("at 17:00 CDT: the run emails the consented and the sunset sends the pause email", async () => {
         const summary = await run("2026-07-14T22:00:00Z");
         expect(summary.chicago_hour).toBe(17);
+        expect(summary.emitted).toBeGreaterThanOrEqual(5);
+
         const to = sent.map((s) => s.to).sort();
         // PROMPTED said yes earlier in this file (A5) and has not answered on this day.
         expect(to).toEqual(
@@ -855,61 +906,121 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(daily?.headers?.["List-Unsubscribe-Post"]).toBe(
           "List-Unsubscribe=One-Click",
         );
+        // Sent by the notification dispatcher: Idempotency-Key is the message id.
+        const messageIds = await pg.query<{ message_id: string }>(
+          `SELECT m.message_id FROM public.notification_messages m
+             JOIN public.notification_events e ON e.event_id = m.event_id
+            WHERE e.event_type = 'qotd_daily' AND m.channel = 'email' AND m.recipient_profile_id = $1
+              AND e.payload->>'qotd_date' = $2`,
+          [MAILED, SUMMER_DAY],
+        );
+        expect(daily?.idempotencyKey).toBe(messageIds.rows[0]?.message_id);
+
         const pause = sent.find(
           (s) => s.to === `${MAILED_SUNSET}@example.test`,
         );
         expect(pause?.subject).toBe("We've paused your daily question");
         expect(pause?.text).toContain("/api/public/qotd-email/resume?t=");
+        expect(summary.paused_notices).toBe(1);
         // Privacy: no address and no question text in any log line.
         for (const line of logs) {
           expect(line).not.toContain("@example.test");
           expect(line).not.toContain(STEM);
         }
+        // The payload carries no question content.
+        const payloads = await pg.query<{ payload: Record<string, unknown> }>(
+          `SELECT payload FROM public.notification_events WHERE event_type = 'qotd_daily' AND subject_profile_id = $1`,
+          [MAILED],
+        );
+        expect(Object.keys(payloads.rows[0]?.payload ?? {}).sort()).toEqual([
+          "current_streak",
+          "email_variant",
+          "qotd_date",
+        ]);
       });
 
-      it("a second run in the same hour sends nothing more (claimed before sending)", async () => {
+      it("in-app for a student who never consented, and for an under-13", async () => {
+        expect(await messages(NEVERER, SUMMER_DAY)).toEqual([
+          { channel: "in_app", status: "delivered" },
+        ]);
+        expect(await messages(UNDER13, SUMMER_DAY)).toEqual([
+          { channel: "in_app", status: "delivered" },
+        ]);
+        // Answered today: nothing at all. Guardians: nothing.
+        expect(await messages(MAILED_ANSWERED, SUMMER_DAY)).toEqual([]);
+        expect(await messages(GUARDIAN, SUMMER_DAY)).toEqual([]);
+      });
+
+      it("email only with consent: the consented get it, the never-asked and the unsubscribed do not", async () => {
+        expect(await messages(MAILED, SUMMER_DAY)).toEqual([
+          { channel: "email", status: "sent" },
+          { channel: "in_app", status: "delivered" },
+        ]);
+        expect(await messages(NEVERER, SUMMER_DAY)).toEqual([
+          { channel: "in_app", status: "delivered" },
+        ]);
+        expect(await messages(MAILED_UNSUB, SUMMER_DAY)).toEqual([
+          { channel: "in_app", status: "delivered" },
+        ]);
+      });
+
+      it("never email for an under-13, even with the preference row on", async () => {
+        // Presence first: the under-13's preference row really is on.
+        expect(
+          await count(
+            `SELECT count(*)::int AS n FROM public.notification_channel_preferences
+              WHERE profile_id = $1 AND enabled`,
+            [UNDER13],
+          ),
+        ).toBe(1);
+        expect(
+          (await messages(UNDER13, SUMMER_DAY)).map((m) => m.channel),
+        ).toEqual(["in_app"]);
+        expect(sent.map((s) => s.to)).not.toContain(`${UNDER13}@example.test`);
+      });
+
+      it("one per student per day across both evening crons and a rerun: one event, one in-app, one email, one send", async () => {
         const before = sent.length;
-        const summary = await run("2026-07-14T22:30:00Z");
-        expect(summary.sent + summary.paused).toBe(0);
+        // The two daily UTC crons (22:00Z and 23:00Z) and a rerun inside the hour.
+        const rerun = await run("2026-07-14T22:30:00Z");
+        const late = await run("2026-07-14T23:00:00Z");
+        expect(rerun.emitted).toBe(0);
+        expect(late.skipped).toBe("not_send_hour");
+        // And the rule itself racing with itself (two cron invocations at once).
+        await Promise.all([
+          pg.query(
+            `SELECT public.qotd_daily_notify('2026-07-14T22:00:05Z'::timestamptz, 1000)`,
+          ),
+          pg.query(
+            `SELECT public.qotd_daily_notify('2026-07-14T22:00:06Z'::timestamptz, 1000)`,
+          ),
+        ]);
         expect(sent.length).toBe(before);
         expect(
           await count(
-            `SELECT count(*)::int AS n FROM public.qotd_email_sends WHERE student_id = $1 AND send_date = '2026-07-14'`,
-            [MAILED],
+            `SELECT count(*)::int AS n FROM public.notification_events
+              WHERE event_type = 'qotd_daily' AND subject_profile_id = $1 AND payload->>'qotd_date' = $2`,
+            [MAILED, SUMMER_DAY],
           ),
         ).toBe(1);
-      });
-
-      it("the claim is insert-once: two runs racing for the same student and day get one send", async () => {
-        // The candidate read already skips a student with a send today; this is the guard for
-        // two runs that read candidates before either claimed (concurrent cron invocations).
-        const claim = async () =>
-          (
-            await pg.query<{ id: string | null }>(
-              `SELECT public.qotd_email_claim($1, 'daily', '2026-07-20T22:00:00Z'::timestamptz) AS id`,
-              [MAILED_ANSWERED],
-            )
-          ).rows[0]?.id ?? null;
-        const first = await claim();
-        expect(first).toMatch(/^[0-9a-f-]{36}$/);
-        expect(await claim()).toBeNull();
+        expect(await messages(MAILED, SUMMER_DAY)).toHaveLength(2);
         expect(
-          await count(
-            `SELECT count(*)::int AS n FROM public.qotd_email_sends WHERE student_id = $1 AND send_date = '2026-07-20'`,
-            [MAILED_ANSWERED],
-          ),
-        ).toBe(1);
+          sent.filter((s) => s.to === `${MAILED}@example.test`),
+        ).toHaveLength(1);
       });
 
-      it("after the pause email, the student gets nothing the next day", async () => {
+      it("after the pause email, the student gets the in-app reminder but no email the next day", async () => {
         const before = sent.length;
         await run("2026-07-15T22:00:00Z");
         const fresh = sent.slice(before).map((s) => s.to);
         expect(fresh).toContain(`${MAILED}@example.test`);
         expect(fresh).not.toContain(`${MAILED_SUNSET}@example.test`);
+        expect(await messages(MAILED_SUNSET, "2026-07-15")).toEqual([
+          { channel: "in_app", status: "delivered" },
+        ]);
       });
 
-      it("at 17:00 CST in winter it sends too (23:00Z), and the subject carries the streak", async () => {
+      it("at 17:00 CST in winter it runs too (23:00Z), and the subject carries the streak", async () => {
         await seedAnswer("practice", MAILED, "2026-01-13T18:00:00Z");
         const before = sent.length;
         const summary = await run("2026-01-14T23:00:00Z");
@@ -923,9 +1034,61 @@ describe.skipIf(!PG_AVAILABLE)(
           "not_send_hour",
         );
       });
+
+      it("a daily email still queued after its day is never sent late; it fails at once", async () => {
+        await pg.query(
+          `SELECT public.emit_notification_event(
+             public.notification_event_id('qotd_daily', $1::text || ':2026-07-16'),
+             'qotd_daily', $1::uuid,
+             jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('in_app', 'email'))),
+             jsonb_build_object('qotd_date', '2026-07-16', 'current_streak', 0, 'email_variant', 'daily'))`,
+          [MAILED],
+        );
+        const { dispatchQueuedMessages } =
+          await import("../../server/lib/notifications/dispatch");
+        const before = sent.length;
+        // The next morning's backstop sweep (04:30 UTC = 23:30 CDT on the 16th is still the 16th;
+        // 09:30 UTC on the 17th is the next Chicago day).
+        await dispatchQueuedMessages({
+          transport: fakeTransport,
+          now: new Date("2026-07-17T09:30:00Z"),
+        });
+        expect(sent.length).toBe(before);
+        expect(await messages(MAILED, "2026-07-16")).toEqual([
+          { channel: "email", status: "failed" },
+          { channel: "in_app", status: "delivered" },
+        ]);
+      });
+
+      it("the in-app reminder renders in the student's notification feed", async () => {
+        const { renderInApp } =
+          await import("../../server/lib/notifications/templates");
+        const row = await pg.query<{ payload: unknown }>(
+          `SELECT payload FROM public.notification_events
+            WHERE event_type = 'qotd_daily' AND subject_profile_id = $1 AND payload->>'qotd_date' = $2`,
+          [NEVERER, SUMMER_DAY],
+        );
+        const rendered = renderInApp("qotd_daily", row.rows[0]?.payload, {
+          recipientIsSubject: true,
+          siteUrl: "",
+        });
+        expect(rendered.ok && rendered.value.href).toBe("/dashboard#qotd");
+      });
     });
 
     // ── A7 ─────────────────────────────────────────────────────────────────
+    /** The ONE preference, as the Settings toggle reads it. */
+    async function preference(id: string) {
+      as(id);
+      const res = await request(await app()).get("/api/qotd/email-preference");
+      expect(res.status).toBe(200);
+      return res.body.data as {
+        eligible: boolean;
+        enabled: boolean;
+        paused: boolean;
+      };
+    }
+
     it("A7: unsubscribe needs no sign-in; GET only shows the button; a tampered link is refused", async () => {
       const { qotdEmailLinkToken } =
         await import("../../server/services/qotd/qotd-email-links");
@@ -937,12 +1100,9 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(page.status).toBe(200);
       expect(page.text).toContain('<form method="post"');
       // The GET changed nothing.
-      const still = await pg.query(
-        `SELECT consented FROM public.student_qotd_email_prefs WHERE student_id = $1`,
-        [MAILED],
-      );
-      expect(still.rows[0]?.consented).toBe(true);
+      expect((await preference(MAILED)).enabled).toBe(true);
 
+      as(null);
       const tampered = `${token.slice(0, -2)}xx`;
       const bad = await request(await app()).post(
         `/api/public/qotd-email/unsubscribe?t=${encodeURIComponent(tampered)}`,
@@ -952,28 +1112,20 @@ describe.skipIf(!PG_AVAILABLE)(
         `/api/public/qotd-email/unsubscribe?t=${encodeURIComponent(qotdEmailLinkToken("resume", MAILED))}`,
       );
       expect(wrongAction.status).toBe(400);
-      expect(
-        (
-          await pg.query(
-            `SELECT consented FROM public.student_qotd_email_prefs WHERE student_id = $1`,
-            [MAILED],
-          )
-        ).rows[0]?.consented,
-      ).toBe(true);
+      expect((await preference(MAILED)).enabled).toBe(true);
 
+      as(null);
       const ok = await request(await app()).post(
         `/api/public/qotd-email/unsubscribe?t=${encodeURIComponent(token)}`,
       );
       expect(ok.status).toBe(200);
-      const after = await pg.query(
-        `SELECT consented, unsubscribed_at IS NOT NULL AS unsub, never_ask FROM public.student_qotd_email_prefs WHERE student_id = $1`,
+      expect((await preference(MAILED)).enabled).toBe(false);
+      // Unsubscribing also stops the prompt (ruling 4).
+      const prompt = await pg.query<{ s: { never_ask: boolean } }>(
+        `SELECT public.qotd_email_prompt_state($1) AS s`,
         [MAILED],
       );
-      expect(after.rows[0]).toEqual({
-        consented: false,
-        unsub: true,
-        never_ask: true,
-      });
+      expect(prompt.rows[0]?.s.never_ask).toBe(true);
       const withdrawal = await pg.query(
         `SELECT granted, source, purpose FROM public.marketing_consent_log
           WHERE profile_id = $1 ORDER BY captured_at DESC LIMIT 1`,
@@ -984,6 +1136,102 @@ describe.skipIf(!PG_AVAILABLE)(
         source: "email_unsubscribe",
         purpose: "qotd_daily_email",
       });
+    });
+
+    it("A7: the Settings toggle, the pop-up and the unsubscribe link change the same preference", async () => {
+      const { qotdEmailLinkToken } =
+        await import("../../server/services/qotd/qotd-email-links");
+      expect(await preference(TOGGLER)).toEqual({
+        eligible: true,
+        enabled: false,
+        paused: false,
+      });
+      // Pop-up "Yes" → Settings shows it on.
+      await pg.query(
+        `INSERT INTO public.student_qotd_email_prefs (student_id, ask_count, last_asked_on, updated_at)
+         VALUES ($1, 1, ($2::date - 1), now())`,
+        [TOGGLER, today],
+      );
+      expect((await consent(TOGGLER, "grant")).status).toBe(200);
+      expect((await preference(TOGGLER)).enabled).toBe(true);
+      // Unsubscribe link → Settings shows it off.
+      as(null);
+      expect(
+        (
+          await request(await app()).post(
+            `/api/public/qotd-email/unsubscribe?t=${encodeURIComponent(qotdEmailLinkToken("unsubscribe", TOGGLER))}`,
+          )
+        ).status,
+      ).toBe(200);
+      expect((await preference(TOGGLER)).enabled).toBe(false);
+      // Settings on → the prompt's state reads it as consented, and the rule emails.
+      as(TOGGLER);
+      const on = await request(await app())
+        .put("/api/qotd/email-preference")
+        .send({ enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION });
+      expect(on.status).toBe(200);
+      expect(on.body.data.enabled).toBe(true);
+      const state = await pg.query<{ s: { consented: boolean } }>(
+        `SELECT public.qotd_email_prompt_state($1) AS s`,
+        [TOGGLER],
+      );
+      expect(state.rows[0]?.s.consented).toBe(true);
+      // Settings off → off everywhere, logged as a withdrawal.
+      const off = await request(await app())
+        .put("/api/qotd/email-preference")
+        .send({ enabled: false });
+      expect(off.status).toBe(200);
+      expect((await preference(TOGGLER)).enabled).toBe(false);
+      const log = await pg.query<{ granted: boolean; source: string }>(
+        `SELECT granted, source FROM public.marketing_consent_log
+          WHERE profile_id = $1 AND purpose = 'qotd_daily_email' ORDER BY captured_at, id`,
+        [TOGGLER],
+      );
+      expect(log.rows.map((r) => `${r.granted}:${r.source}`)).toEqual([
+        "true:qotd_prompt",
+        "false:email_unsubscribe",
+        "true:settings",
+        "false:settings",
+      ]);
+      // Turning it on without the consent version is refused at the boundary.
+      expect(
+        (
+          await request(await app())
+            .put("/api/qotd/email-preference")
+            .send({ enabled: true })
+        ).status,
+      ).toBe(400);
+      // An under-13 cannot turn it on.
+      as(UNDER13);
+      const kid = await request(await app())
+        .put("/api/qotd/email-preference")
+        .send({ enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION });
+      expect(kid.status).toBe(403);
+    });
+
+    it("A7: one writer — only set_qotd_daily_email writes the preference", async () => {
+      // The catalog: every function body that writes the table.
+      const writers = await pg.query<{ proname: string }>(
+        `SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public'
+            AND p.prosrc ~* '(insert\\s+into|update)\\s+public\\.notification_channel_preferences'
+          ORDER BY 1`,
+      );
+      expect(writers.rows.map((r) => r.proname)).toEqual([
+        "set_qotd_daily_email",
+      ]);
+      // And the callers: the prompt's grant, the unsubscribe and the resume all go through it.
+      for (const fn of [
+        "set_qotd_email_consent",
+        "qotd_email_unsubscribe",
+        "qotd_email_resume",
+      ]) {
+        const body = await pg.query<{ prosrc: string }>(
+          `SELECT prosrc FROM pg_proc WHERE proname = $1`,
+          [fn],
+        );
+        expect(body.rows[0]?.prosrc).toContain("public.set_qotd_daily_email(");
+      }
     });
 
     // ── A8 ─────────────────────────────────────────────────────────────────
@@ -1056,7 +1304,7 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     // ── A9 ─────────────────────────────────────────────────────────────────
-    it("A9: deleting the account removes attempts, sends, prompt state and test dates", async () => {
+    it("A9: deleting the account removes attempts, notifications, the preference, prompt state and test dates", async () => {
       const { token, qotdDate } = await tokenFor(DELETED, "B");
       expect(
         (
@@ -1072,7 +1320,11 @@ describe.skipIf(!PG_AVAILABLE)(
         QOTD_EMAIL_CONSENT_VERSION,
       ]);
       await pg.query(
-        `INSERT INTO public.qotd_email_sends (student_id, send_date, kind, status) VALUES ($1, '2026-07-01', 'daily', 'sent')`,
+        `SELECT public.emit_notification_event(
+           public.notification_event_id('qotd_daily', $1::text || ':2026-07-01'),
+           'qotd_daily', $1::uuid,
+           jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('in_app', 'email'))),
+           jsonb_build_object('qotd_date', '2026-07-01', 'current_streak', 0, 'email_variant', 'daily'))`,
         [DELETED],
       );
       await pg.query(
@@ -1080,26 +1332,28 @@ describe.skipIf(!PG_AVAILABLE)(
          VALUES ($1, 'America/Chicago', ARRAY['2027-03-06'::date])`,
         [DELETED],
       );
-      const tables = [
-        "student_qotd_attempts",
-        "student_qotd_email_prefs",
-        "qotd_email_sends",
-        "student_study_profile",
+      const tables: [string, string, number][] = [
+        ["student_qotd_attempts", "student_id", 1],
+        ["student_qotd_email_prefs", "student_id", 1],
+        ["notification_channel_preferences", "profile_id", 1],
+        ["notification_events", "subject_profile_id", 1],
+        ["notification_messages", "recipient_profile_id", 2],
+        ["student_study_profile", "student_id", 1],
       ];
       // Presence before absence.
-      for (const t of tables) {
+      for (const [t, col, n] of tables) {
         expect(
           await count(
-            `SELECT count(*)::int AS n FROM public.${t} WHERE student_id = $1`,
+            `SELECT count(*)::int AS n FROM public.${t} WHERE ${col} = $1`,
             [DELETED],
           ),
-        ).toBe(1);
+        ).toBeGreaterThanOrEqual(n);
       }
       await pg.query(`DELETE FROM public.profiles WHERE id = $1`, [DELETED]);
-      for (const t of tables) {
+      for (const [t, col] of tables) {
         expect(
           await count(
-            `SELECT count(*)::int AS n FROM public.${t} WHERE student_id = $1`,
+            `SELECT count(*)::int AS n FROM public.${t} WHERE ${col} = $1`,
             [DELETED],
           ),
         ).toBe(0);

@@ -1,68 +1,64 @@
 /**
- * The daily-question email job.
+ * The daily-question reminder job: the 17:00 Chicago rule of the `qotd_daily` notification.
  *
- * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email":
- *       5 PM America/Chicago every day, correct across DST — the job sends only
- *       in the 17:00 Chicago hour; recipients consented, 13+, no question answered today, not
- *       paused or unsubscribed; idempotent via qotd_email_sends (write before send); the 7-send
- *       sunset; via Resend. SCL-223 (the test-date roll rides on this job)]
+ * @spec [owner rulings on #1166 (Karl, 2026-10-09) item 1: "one scheduled rule at 17:00 Chicago
+ *       (keep the two daily UTC crons): if the student has answered no question today, create the
+ *       notification and deliver on the student's enabled channels; reuse the notification
+ *       system's email sending, ledger, suppression and unsubscribe; keep the 7-day pause rule
+ *       inside the notification rule"; owner brief "Question of the Day on Home" (Karl,
+ *       2026-10-08/09) "Daily email" (5 PM America/Chicago, correct across DST); SCL-223 (the
+ *       test-date roll rides on this job); contracts/notifications.contract.md §2.3, §4]
  *       | @implemented [2026-10-09]
  *
  * plain English, every run (three daily runs: 06:05, 22:00 and 23:00 UTC; see the cron route):
- *   1. Roll the study profiles' effective SAT date (`study_profile_roll_exam_dates`), so a date
- *      that has just passed hands over to the next one within the hour.
- *   2. If the America/Chicago hour is not 17, stop. The hour is computed from the zone database,
- *      so 17:00 CDT (22:00 UTC) in summer and 17:00 CST (23:00 UTC) in winter both qualify.
- *   3. Read today's question; no row → nothing to send.
- *   4. For each candidate from `qotd_email_candidates`: CLAIM today's one send (insert-once on
- *      (student_id, send_date)) BEFORE sending — a second run in the same hour finds the claim
- *      and skips. Then render, send with Resend (Idempotency-Key = the send id) and record.
- *      A student whose last 7 sends went unanswered gets the one "paused" email instead.
+ *   1. Roll the study profiles' effective SAT date (`study_profile_roll_exam_dates`).
+ *   2. If the America/Chicago hour is not 17, stop. 17:00 CDT is 22:00 UTC and 17:00 CST is
+ *      23:00 UTC, so exactly one of the two evening runs passes on any day.
+ *   3. Run the rule, `qotd_daily_notify`, in batches until a batch comes back short: one
+ *      `qotd_daily` event per student who has answered nothing today, in-app always and email on
+ *      the student's enabled channel (the SQL decides who, including the 7-send pause).
+ *   4. Hand the queued emails to the notification dispatcher, the same one every other email
+ *      uses: Idempotency-Key = message id, Resend's suppression list, the attempt cap.
  *
- * A failed send stays `failed` for the day: there is no retry the same day, by design (one email
- * at most). Logs carry counts and send ids; never an address, a subject or a body.
+ * One per student per day is the ledger's guarantee, not this job's: the event id is
+ * deterministic per (student, day), so a second run (or both evening crons) emits nothing new and
+ * the dispatcher never sends a message twice. Logs carry counts only.
  */
 import { z } from "zod";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
+import { QOTD_EMAIL_SEND_HOUR_CHICAGO } from "../../../packages/shared/src/home-qotd-schema";
 import {
-  QOTD_EMAIL_SEND_HOUR_CHICAGO,
-  QOTD_EMAIL_SUNSET_SENDS,
-} from "../../../packages/shared/src/home-qotd-schema";
-import {
-  defaultEmailTransport,
-  type EmailTransport,
-} from "../../lib/notifications/transport";
-import { siteUrlFromEnv } from "../../lib/notifications/templates";
-import {
-  qotdDailyEmail,
-  qotdPausedEmail,
-} from "../../lib/notifications/templates/qotd-daily";
+  dispatchQueuedMessages,
+  type DispatchOptions,
+  type DispatchSummary,
+} from "../../lib/notifications/dispatch";
 import { logger } from "../../logger";
-import { qotdEmailLinkUrl } from "./qotd-email-links";
-import { QOTD_TIME_ZONE, qotdToday, readQotd } from "./qotd-service";
+import { QOTD_TIME_ZONE } from "./qotd-service";
 import type { RpcClient } from "../../lib/rpc-client";
 
 const COMPONENT = "QOTD_EMAIL";
+
+/** Events per `qotd_daily_notify` call; the job calls again while a full batch comes back. */
+const NOTIFY_BATCH = 1000;
+/** Dispatcher passes per run; each pass sends at most DISPATCH_BATCH queued emails. */
+const DISPATCH_BATCH = 100;
+const MAX_DISPATCH_PASSES = 50;
 
 export type QotdEmailJobSummary = {
   ok: boolean;
   rolled_exam_dates: number;
   chicago_hour: number;
-  skipped?: "not_send_hour" | "no_question_today";
-  candidates: number;
+  skipped?: "not_send_hour";
+  emitted: number;
+  with_email: number;
+  paused_notices: number;
   sent: number;
-  paused: number;
   failed: number;
-  already_claimed: number;
 };
 
-/** What the job needs from the database: SQL functions only. */
-export type QotdEmailJobDb = RpcClient;
-
 export type QotdEmailJobDeps = {
-  db: QotdEmailJobDb;
-  transport: EmailTransport;
-  siteUrl: string;
+  db: RpcClient;
+  dispatch: (options: DispatchOptions) => Promise<DispatchSummary>;
   now: Date;
 };
 
@@ -76,42 +72,25 @@ export function chicagoHour(now: Date): number {
   return Number(hour);
 }
 
-const candidateSchema = z.object({
-  student_id: z.string().uuid(),
-  email: z.string().nullable(),
-  current_streak: z.number().int().min(0).nullable(),
-  unanswered_run: z.number().int().min(0).nullable(),
+const notifyResultSchema = z.object({
+  emitted: z.number().int().min(0),
+  with_email: z.number().int().min(0),
+  paused_notices: z.number().int().min(0),
 });
-
-async function record(
-  db: QotdEmailJobDb,
-  sendId: string,
-  ok: boolean,
-  providerMessageId: string | null,
-  now: Date,
-): Promise<void> {
-  const { error } = await db.rpc("qotd_email_record", {
-    p_send_id: sendId,
-    p_ok: ok,
-    p_provider_message_id: providerMessageId,
-    p_now: now.toISOString(),
-  });
-  if (error) throw new Error(`qotd_email_record failed: ${error.message}`);
-}
 
 export async function runQotdEmailJob(
   deps: QotdEmailJobDeps,
 ): Promise<QotdEmailJobSummary> {
-  const { db, transport, siteUrl, now } = deps;
+  const { db, dispatch, now } = deps;
   const summary: QotdEmailJobSummary = {
     ok: true,
     rolled_exam_dates: 0,
     chicago_hour: chicagoHour(now),
-    candidates: 0,
+    emitted: 0,
+    with_email: 0,
+    paused_notices: 0,
     sent: 0,
-    paused: 0,
     failed: 0,
-    already_claimed: 0,
   };
 
   const { data: rolled, error: rollError } = await db.rpc(
@@ -129,89 +108,39 @@ export async function runQotdEmailJob(
     return { ...summary, skipped: "not_send_hour" };
   }
 
-  // The job's own clock decides the day (so a run is reproducible at any instant).
-  const row = await readQotd(db, qotdToday(now));
-  if (row === null) return { ...summary, skipped: "no_question_today" };
-
-  const { data, error } = await db.rpc("qotd_email_candidates", {
-    p_now: now.toISOString(),
-    p_limit: 5000,
-  });
-  if (error) throw new Error(`qotd_email_candidates failed: ${error.message}`);
-  const candidates = z.array(candidateSchema).parse(data ?? []);
-  summary.candidates = candidates.length;
-
-  for (const c of candidates) {
-    const sunset = (c.unanswered_run ?? 0) >= QOTD_EMAIL_SUNSET_SENDS;
-    const kind = sunset ? "paused_notice" : "daily";
-    const { data: claimed, error: claimError } = await db.rpc(
-      "qotd_email_claim",
-      { p_student_id: c.student_id, p_kind: kind, p_now: now.toISOString() },
-    );
-    if (claimError) {
-      throw new Error(`qotd_email_claim failed: ${claimError.message}`);
-    }
-    const sendId = z.string().uuid().nullable().parse(claimed);
-    if (sendId === null) {
-      summary.already_claimed += 1;
-      continue;
-    }
-
-    const address = c.email;
-    if (address === null || address.trim() === "") {
-      await record(db, sendId, false, null, now);
-      summary.failed += 1;
-      continue;
-    }
-    const unsubscribeUrl = qotdEmailLinkUrl(
-      siteUrl,
-      "unsubscribe",
-      c.student_id,
-    );
-    const rendered = sunset
-      ? qotdPausedEmail({
-          resumeUrl: qotdEmailLinkUrl(siteUrl, "resume", c.student_id),
-          unsubscribeUrl,
-        })
-      : qotdDailyEmail({
-          currentStreak: c.current_streak ?? 0,
-          stem: row.stem,
-          siteUrl,
-          unsubscribeUrl,
-        });
-    const sent = await transport({
-      idempotencyKey: `qotd-email:${sendId}`,
-      to: address,
-      recipientProfileId: c.student_id,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
-      ...(unsubscribeUrl
-        ? {
-            headers: {
-              "List-Unsubscribe": `<${unsubscribeUrl}>`,
-              "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-            },
-          }
-        : {}),
+  for (;;) {
+    const { data, error } = await db.rpc("qotd_daily_notify", {
+      p_now: now.toISOString(),
+      p_limit: NOTIFY_BATCH,
     });
-    if (sent.ok) {
-      await record(db, sendId, true, sent.value.providerMessageId, now);
-      if (sunset) summary.paused += 1;
-      else summary.sent += 1;
-    } else {
-      await record(db, sendId, false, null, now);
-      summary.failed += 1;
+    if (error) throw new Error(`qotd_daily_notify failed: ${error.message}`);
+    const batch = notifyResultSchema.parse(data);
+    summary.emitted += batch.emitted;
+    summary.with_email += batch.with_email;
+    summary.paused_notices += batch.paused_notices;
+    if (batch.emitted < NOTIFY_BATCH) break;
+  }
+
+  if (summary.with_email > 0) {
+    for (let pass = 0; pass < MAX_DISPATCH_PASSES; pass += 1) {
+      const d = await dispatch({ limit: DISPATCH_BATCH, now });
+      summary.sent += d.sent;
+      summary.failed += d.failed;
+      if (d.selectFailed) {
+        summary.ok = false;
+        break;
+      }
+      if (d.selected < DISPATCH_BATCH || d.sent === 0) break;
     }
   }
 
-  summary.ok = summary.failed === 0;
-  logger.info(COMPONENT, "qotd_email_job_done", "Daily question email run", {
-    candidates: summary.candidates,
+  summary.ok = summary.ok && summary.failed === 0;
+  logger.info(COMPONENT, "qotd_daily_rule_done", "Daily question rule run", {
+    emitted: summary.emitted,
+    withEmail: summary.with_email,
+    pausedNotices: summary.paused_notices,
     sent: summary.sent,
-    paused: summary.paused,
     failed: summary.failed,
-    alreadyClaimed: summary.already_claimed,
   });
   return summary;
 }
@@ -221,8 +150,7 @@ export function defaultQotdEmailJobDeps(
 ): QotdEmailJobDeps {
   return {
     db: supabaseServer,
-    transport: defaultEmailTransport(),
-    siteUrl: siteUrlFromEnv(),
+    dispatch: (options) => dispatchQueuedMessages(options),
     now,
   };
 }

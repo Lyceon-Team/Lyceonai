@@ -1633,12 +1633,14 @@ s = s.replace(a, "Levels move as you keep practising.", 1)'
 T58="client/src/pages/settings.test.tsx"
 H58="client/src/pages/help.test.tsx"
 
-plant "UI58-S1" "a Notifications section comes back (OQ-27)" \
+# Re-pointed 2026-10-09: OQ-27 (no Notifications section) is superseded by the owner ruling on
+# #1166 item 2 (one "Daily question email" toggle), so the plant now drops the section.
+plant "UI58-S1" "the Notifications section is dropped (owner ruling on #1166 item 2)" \
   "$T58" \
   "client/src/components/settings/settings-sections.ts" \
-  'a = "  { id: \"billing\", label: \"Billing\" },\n"
+  'a = "  { id: \"notifications\", label: \"Notifications\" },\n"
 assert s.count(a) == 1
-s = s.replace(a, a + "  { id: \"notifications\", label: \"Notifications\" },\n", 1)'
+s = s.replace(a, "", 1)'
 
 plant "UI58-S2" "the ?tab= value is ignored" \
   "$T58" \

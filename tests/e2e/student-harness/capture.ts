@@ -589,6 +589,11 @@ async function resetQotd(
       "DELETE FROM public.student_qotd_email_prefs WHERE student_id = $1",
       [id],
     );
+    // The email preference (owner ruling on #1166, 2026-10-09): off, so the prompt can show.
+    await db.query(
+      "DELETE FROM public.notification_channel_preferences WHERE profile_id = $1",
+      [id],
+    );
     if (priorAsks > 0) {
       await db.query(
         `INSERT INTO public.student_qotd_email_prefs (student_id, ask_count, last_asked_on, updated_at)

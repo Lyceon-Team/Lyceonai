@@ -171,6 +171,42 @@ export const homeQotdEmailConsentResponseSchema = z
   .object({ consented: z.boolean(), show_email_prompt: z.literal(false) })
   .strict();
 
+/**
+ * Settings → Notifications: the one toggle, "Daily question email" (owner ruling on #1166,
+ * item 2). It reads and writes the SAME preference the Home prompt's "Yes" and the email's
+ * unsubscribe link change: the email channel of the `qotd_daily` notification.
+ */
+export const QOTD_EMAIL_SETTING_LABEL = "Daily question email";
+
+/** GET /api/qotd/email-preference */
+export const qotdEmailPreferenceSchema = z
+  .object({
+    /** 13+ student: only then can the email be turned on. */
+    eligible: z.boolean(),
+    enabled: z.boolean(),
+    /** On, but paused by the 7-send sunset until turned on again. */
+    paused: z.boolean(),
+  })
+  .strict();
+export type QotdEmailPreference = z.infer<typeof qotdEmailPreferenceSchema>;
+
+/**
+ * PUT /api/qotd/email-preference. Turning it on is a consent given against the same wording
+ * version as the prompt's "Yes".
+ */
+export const qotdEmailPreferenceUpdateSchema = z.discriminatedUnion("enabled", [
+  z
+    .object({
+      enabled: z.literal(true),
+      consent_version: z.literal(QOTD_EMAIL_CONSENT_VERSION),
+    })
+    .strict(),
+  z.object({ enabled: z.literal(false) }).strict(),
+]);
+export type QotdEmailPreferenceUpdate = z.infer<
+  typeof qotdEmailPreferenceUpdateSchema
+>;
+
 /** The streak chip's words (brief, Part B "Home" 2). Pure, so the UI and tests share it. */
 export function streakChipText(streak: Streak): string {
   if (streak.current === 0) {

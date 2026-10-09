@@ -2,7 +2,8 @@
 /**
  * UI-58: Settings (`/profile`) for a student, rendered in the real App shell.
  *
- * @spec [student-UI register UI-58, OQ-27 (no Notifications section), OQ-20 (test date and target
+ * @spec [student-UI register UI-58, OQ-27 (no Notifications section; superseded by the owner ruling
+ *        on #1166, 2026-10-09, item 2: one "Daily question email" toggle), OQ-20 (test date and target
  *        only once a calendar profile exists), OQ-28 / F-54 (narrow name save, never
  *        `marketingOptIn`), OQ-26 / OQ-41 (`hasPassword`: true and null show Change password,
  *        false hides it), UI-S4 (the current password is required), UI-S7 / F-40 (Billing's three
@@ -46,6 +47,11 @@ import {
   profileUpsertResponseSchema,
 } from "@lyceon/shared/calendar/api";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
+import {
+  QOTD_EMAIL_CONSENT_VERSION,
+  qotdEmailPreferenceSchema,
+  type QotdEmailPreference,
+} from "@lyceon/shared/home-qotd-schema";
 import { profileNameUpdateResponseSchema } from "@lyceon/shared/profile-name-schema";
 import { studentGuardianLinksViewSchema } from "@lyceon/shared/student-resources";
 import { studentLinkCodeViewSchema } from "@lyceon/shared/student-link-code-schema";
@@ -400,24 +406,18 @@ afterEach(cleanup);
 
 // ── The section list and the URL ───────────────────────────────────────────────────────────
 
-describe("the section list (DESIGN.md §4; OQ-27)", () => {
-  it("lists Profile, Account, Guardian, Billing and Appearance, and no Notifications section", async () => {
+describe("the section list (DESIGN.md §4; owner ruling on #1166 item 2)", () => {
+  it("lists Profile, Account, Guardian, Billing, Notifications and Appearance", async () => {
     await mount({});
-    // Presence first: the five sections are on screen.
+    // Presence first: the six sections are on screen.
     expect(sectionLabels()).toEqual([
       "Profile",
       "Account",
       "Guardian",
       "Billing",
+      "Notifications",
       "Appearance",
     ]);
-    expect(
-      within(screen.getByTestId("settings-sections")).queryByText(
-        "Notifications",
-      ),
-    ).toBeNull();
-    expect(screen.queryByText("Email notifications")).toBeNull();
-    expect(screen.queryByRole("switch")).toBeNull();
   });
 
   it("an admin sees Account and Appearance only", async () => {
@@ -902,5 +902,92 @@ describe("Appearance (UI-47: per device; the timed module stays light)", () => {
       .getByTestId("module-body")
       .closest("[data-shell]") as HTMLElement;
     expect(shell.getAttribute("data-theme-lock")).toBe("light");
+  });
+});
+
+// ── Notifications: one toggle over the one preference ────────────────────────────────────────
+
+describe("Notifications: the 'Daily question email' toggle (owner ruling on #1166 item 2)", () => {
+  /**
+   * GET/PUT /api/qotd/email-preference as the server answers them: the PUT returns the stored
+   * preference, so the switch shows what the server holds after the write.
+   */
+  function servePreference(initial: QotdEmailPreference): {
+    current: () => QotdEmailPreference;
+  } {
+    let stored = qotdEmailPreferenceSchema.parse(initial);
+    net.answer = (method, url, body) => {
+      if (url !== "/api/qotd/email-preference") return undefined;
+      if (method === "PUT") {
+        const enabled =
+          typeof body === "object" && body !== null && "enabled" in body
+            ? body.enabled === true
+            : false;
+        stored = qotdEmailPreferenceSchema.parse({
+          ...stored,
+          enabled,
+          paused: enabled ? false : stored.paused,
+        });
+      }
+      return json({ data: stored });
+    };
+    return { current: () => stored };
+  }
+
+  it("shows the stored preference and turns it on with the consent version, then off", async () => {
+    const server = servePreference({
+      eligible: true,
+      enabled: false,
+      paused: false,
+    });
+    await mount({ path: "/profile?tab=notifications" });
+    const toggle = await screen.findByRole("switch", {
+      name: "Daily question email",
+    });
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    expect(
+      calls("PUT", "/api/qotd/email-preference").map((c) => c.body),
+    ).toEqual([{ enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION }]);
+    expect(server.current().enabled).toBe(true);
+
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-checked", "false"),
+    );
+    expect(
+      calls("PUT", "/api/qotd/email-preference").map((c) => c.body),
+    ).toEqual([
+      { enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION },
+      { enabled: false },
+    ]);
+  });
+
+  it("reads the preference the pop-up or the unsubscribe link wrote (on, and paused by the sunset)", async () => {
+    servePreference({ eligible: true, enabled: true, paused: true });
+    await mount({ path: "/profile?tab=notifications" });
+    const toggle = await screen.findByRole("switch", {
+      name: "Daily question email",
+    });
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(await screen.findByTestId("settings-qotd-email-resume"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("settings-qotd-email-paused")).toBeNull(),
+    );
+    expect(
+      calls("PUT", "/api/qotd/email-preference").map((c) => c.body),
+    ).toEqual([{ enabled: true, consent_version: QOTD_EMAIL_CONSENT_VERSION }]);
+  });
+
+  it("an account that cannot have the email sees the switch off and disabled", async () => {
+    servePreference({ eligible: false, enabled: false, paused: false });
+    await mount({ path: "/profile?tab=notifications" });
+    await screen.findByTestId("settings-qotd-email-ineligible");
+    expect(
+      screen.getByRole("switch", { name: "Daily question email" }),
+    ).toBeDisabled();
   });
 });

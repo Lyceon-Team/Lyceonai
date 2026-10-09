@@ -716,10 +716,12 @@ router.get(
  * date hands over to the next at the start of the day. An hourly schedule on a plan that allows
  * it needs no code change.
  *
- * plain English: every run rolls the effective SAT dates; in the 17:00 Chicago hour, sends
- * today's question to each consented student who has not answered anything today (at most one
- * per student per day, claimed before sending). Safe to rerun: a second run the same day finds
- * every claim and sends nothing. 500 when any send failed, so the run shows as failed.
+ * plain English: every run rolls the effective SAT dates; in the 17:00 Chicago hour, runs the
+ * `qotd_daily` notification rule (owner ruling on #1166, 2026-10-09): every student who has
+ * answered nothing today gets the in-app notification, and the email too when its channel is on,
+ * then the notification dispatcher sends the queued emails. Safe to rerun: the event id is
+ * deterministic per (student, day), so a second run the same day emits and sends nothing. 500
+ * when any send failed, so the run shows as failed.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
  */

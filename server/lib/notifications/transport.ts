@@ -51,7 +51,8 @@ export type EmailSendInput = {
    * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email":
    *       "a List-Unsubscribe header"; RFC 2369, RFC 8058] | @implemented [2026-10-09]
    * plain English: extra message headers, passed through to Resend's `headers`. Only the
-   * daily-question email sets it (List-Unsubscribe / List-Unsubscribe-Post). Never logged.
+   * `qotd_daily` notification email sets it (List-Unsubscribe / List-Unsubscribe-Post), through
+   * the dispatcher (owner ruling on #1166, 2026-10-09). Never logged.
    */
   headers?: Record<string, string>;
 };
