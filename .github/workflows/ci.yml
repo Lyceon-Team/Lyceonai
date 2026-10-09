@@ -1471,6 +1471,16 @@ jobs:
           set -euo pipefail
           pnpm exec playwright test tests/e2e/qotd-answer-flow.spec.ts --forbid-only --reporter=list
 
+      #  - The homepage walkthrough video (owner decisions 2026-10-09): nothing of the film before
+      #    a click, self-hosted, never autoplays, captions showing once it plays, zero CSP reports.
+      #    Playwright's Chromium has no H.264, so it plays the WebM source.
+      - name: Homepage walkthrough video
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5175
+        run: |
+          set -euo pipefail
+          pnpm exec playwright test tests/e2e/homepage-walkthrough.spec.ts --forbid-only --reporter=list
+
       #  - INV-10A-18: the crawler's-eye check of every sitemap URL (Googlebot and OAI-SearchBot,
       #    no JavaScript): status, own title, self-canonical, JSON-LD, body text; 404s and 301s.
       - name: Crawl check of the built site (INV-10A-18)

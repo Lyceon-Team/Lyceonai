@@ -8,7 +8,7 @@ import { sectionDisplayLabel } from "@shared/section-display";
 import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { HomeNav } from "@/components/marketing/HomeNav";
-import { ProductVisual } from "@/components/marketing/ProductVisual";
+import { WalkthroughVideo } from "@/components/marketing/WalkthroughVideo";
 import {
   MASTERY_METER_SEGMENTS,
   masteryMeterFill,
@@ -243,7 +243,7 @@ export default function HomePage() {
               Practice, review and the parent view.
             </p>
           </div>
-          <ProductVisual />
+          <WalkthroughVideo />
           <ol className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {HOW_IT_WORKS.map((step, i) => (
               <li

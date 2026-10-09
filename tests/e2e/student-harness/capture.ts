@@ -109,12 +109,34 @@ const RUNTIME = path.join(
 const FONTS_DIR = path.join(ROOT, "client/public/fonts");
 const OUT_ROOT = path.join(ROOT, "docs/plans/student-ui/evidence/wave5");
 
+/**
+ * @spec [Lyceon_Doc_10A_V1 §6, §8.4; owner decisions 2026-10-09 on the walkthrough video]
+ *       | @implemented [2026-10-09]
+ *
+ * plain English: walkthrough video footage for the brag composition, never
+ * committed evidence. `STUDENT_HARNESS_OUT_ROOT` writes the run somewhere else (the brag output
+ * folder), `STUDENT_HARNESS_SCALE` captures at a device pixel ratio (2 for a sharp 1920 frame),
+ * `STUDENT_HARNESS_THEMES=light` drops dark, and `STUDENT_HARNESS_NO_PROTOTYPE=1` skips the
+ * prototype side, which the video does not use, and `STUDENT_HARNESS_VIEWPORTS=mobile` shoots
+ * only the named sizes. All unset, a run is unchanged.
+ */
+const OUT_ROOT_OVERRIDE = process.env.STUDENT_HARNESS_OUT_ROOT;
+const DEVICE_SCALE = Number(process.env.STUDENT_HARNESS_SCALE ?? "1");
+const THEMES_OVERRIDE = process.env.STUDENT_HARNESS_THEMES;
+const NO_PROTOTYPE = process.env.STUDENT_HARNESS_NO_PROTOTYPE === "1";
+const VIEWPORTS_OVERRIDE = process.env.STUDENT_HARNESS_VIEWPORTS?.split(",");
+
 const VIEWPORTS: Readonly<Record<Viewport, { width: number; height: number }>> =
   {
     desktop: { width: 1440, height: 900 },
     mobile: { width: 390, height: 844 },
   };
-const THEMES: readonly Theme[] = ["light", "dark"];
+const THEMES: readonly Theme[] =
+  THEMES_OVERRIDE === "light"
+    ? ["light"]
+    : THEMES_OVERRIDE === "dark"
+      ? ["dark"]
+      : ["light", "dark"];
 
 /** A size a shot is captured at: desktop, phone, or a shot's extra size (F-69: tablet). */
 type Size = ExtraViewport;
@@ -805,6 +827,7 @@ async function shootBuilt(
   }
   const context = await browser.newContext({
     viewport: { width: size.width, height: size.height },
+    deviceScaleFactor: DEVICE_SCALE,
     colorScheme: theme,
     reducedMotion: "reduce",
     extraHTTPHeaders:
@@ -1434,7 +1457,11 @@ async function main(): Promise<void> {
     );
   }
   const outDir = path.join(
-    group.outRoot === undefined ? OUT_ROOT : path.join(ROOT, group.outRoot),
+    OUT_ROOT_OVERRIDE !== undefined && OUT_ROOT_OVERRIDE !== ""
+      ? OUT_ROOT_OVERRIDE
+      : group.outRoot === undefined
+        ? OUT_ROOT
+        : path.join(ROOT, group.outRoot),
     group.id,
   );
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -1463,11 +1490,16 @@ async function main(): Promise<void> {
   try {
     for (const shot of shots) {
       // F-69: a shot may name sizes beyond desktop and phone (the exam module at tablet width).
-      const sizes: Size[] = [
+      const allSizes: Size[] = [
         standardSize("desktop"),
         standardSize("mobile"),
         ...(shot.extraViewports ?? []),
       ];
+      // Walkthrough video: `STUDENT_HARNESS_VIEWPORTS=mobile` shoots only the named sizes, so a
+      // one-time flow (the free diagnostic's start) is not consumed by the desktop pass first.
+      const sizes = VIEWPORTS_OVERRIDE
+        ? allSizes.filter((size) => VIEWPORTS_OVERRIDE.includes(size.name))
+        : allSizes;
       for (const size of sizes) {
         const viewport = size.name;
         // UI-54: a shot may name its themes (the timed exam module is light only).
@@ -1482,7 +1514,7 @@ async function main(): Promise<void> {
             fontCss,
           );
           const proto: ProtoResult =
-            shot.prototype.kind === "none"
+            shot.prototype.kind === "none" || NO_PROTOTYPE
               ? { none: "none" }
               : {
                   file: await shootPrototype(

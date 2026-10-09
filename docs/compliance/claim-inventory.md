@@ -146,6 +146,40 @@ Not cited, because the page could not be read or does not say it: Kaplan, Wyzant
 **Also approved by Karl 2026-10-05:** "average" in place of the draft's "middle 50%" on the score pages (W14), and the public nav and footer link changes (nav "SAT Practice" → the hub; footer lists the new pages).
 
 
+## Homepage walkthrough video (approved by Karl 2026-10-09)
+
+**Approval:** the nine-line narration below is Karl's approved script for the homepage "See how it
+works" video (16:9, `client/public/media/walkthrough.*`) and its 9:16 social cut; it is spoken, and
+carried verbatim by each cut's WebVTT track (and burned in on the 9:16). Two phrases are new and
+approved by Karl for this script (decision 9, 2026-10-09): V3's "Practice every day for free" and
+V4's "so they stick". Every other line matches an existing approved row. Scenes 5–8 carry a "Pro"
+tag on screen, so each paid feature is labelled as paid (X5).
+
+**On screen:** test accounts and fixture data only (`tests/e2e/student-harness`, walkthrough mode);
+questions written for the video (`tests/e2e/student-harness/walkthrough-content.ts`), never bank
+items; no real student, name or score. Cropped out before composition: the calendar's target and
+projected-score panel; the report's total, section scores and scoring note (domain bars only); the
+dashboard's projected score; the review runner's LISA panel (decision 4). Painted out of the frame
+after the compliance audit (2026-10-09): the Review page's two lines on how the review list is
+ordered and refilled (mechanism, Doctrine rule 2), the diagnostic's question counter and progress
+dots (its length is not public), and the calendar test-day card's "Good luck. You're ready." (reads
+as a readiness claim). The parent scene is the guardian dashboard Karl approved as the homepage
+product screenshot (open item 5, 2026-10-05: score strip and latest-test card hidden), shown on
+example data; the report's "% of the section, n to m questions" lines are the College Board's
+published blueprint (CB_READING_WRITING, CB_MATH).
+
+| ID | Line | Matches | Cat |
+|---|---|---|---|
+| V1 | "SAT prep that adapts to you." | H32 | e |
+| V2 | "Start with a free diagnostic. See where you stand across every SAT section." | H38 ("Find the gaps" card) | e |
+| V3 | "Practice every day for free, with a worked explanation after every question." | H37, H38; "Practice every day for free" **new, approved by Karl (this script)** | e |
+| V4 | "Review the ones you missed, so they stick." | H41 (review); "so they stick" **new, approved by Karl (this script)** | e |
+| V5 | "Stuck? Ask LISA, your AI tutor, for step-by-step help." (Pro) | H42, X4 | e |
+| V6 | "A study plan that adapts and focuses on your weak areas." (Pro) | H42, X2/X3 | e |
+| V7 | "Take full-length practice tests with a score report after each one." (Pro) | H20, H42 | e |
+| V8 | "Parents can follow along with a read-only progress view." (Pro) | H28, X6 | e |
+| V9 | "Lyceon. Study Smarter, Score Higher. Start free at lyceon.ai." | X1, H43 | e |
+
 ## Before and after
 
 `IDs` match the Step 0 inventory. "Source / approval" names the College Board or research source for a category-d fact, or the approval for everything else ("approved" means the 2026-10-03 approval above).
