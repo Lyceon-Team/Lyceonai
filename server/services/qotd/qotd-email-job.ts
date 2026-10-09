@@ -139,6 +139,8 @@ export async function runQotdEmailJob(
   }
 
   // No servable question today (no row, or its question was unpublished): no reminder at all.
+  // Nothing is dispatched on this path either; email rows queued earlier are retried by the daily
+  // notification-dispatch-sweep cron (internal-cron-routes.ts).
   const { data: servable, error: servableError } = await db.rpc(
     "qotd_servable",
     { p_date: qotdToday(now) },

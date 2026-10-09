@@ -8753,7 +8753,9 @@ DECLARE
 BEGIN
   INSERT INTO public.ops_alert_deliveries (condition, alert_day, channel, created_at)
   VALUES (p_condition, public.chicago_day(p_now), p_channel, p_now)
-  ON CONFLICT (condition, alert_day, channel) DO NOTHING
+  ON CONFLICT (condition, alert_day, channel) DO UPDATE
+     SET status = 'pending', created_at = EXCLUDED.created_at, finished_at = NULL
+   WHERE public.ops_alert_deliveries.status = 'failed'
   RETURNING id INTO v_id;
   RETURN v_id;
 END;
@@ -9758,7 +9760,7 @@ CREATE FUNCTION public.qotd_recovery_due() RETURNS boolean
      WHERE a.condition IN ('qotd_schedule_failed', 'qotd_horizon_low', 'qotd_no_question_today')
        AND a.created_at > COALESCE(
              (SELECT max(r.created_at) FROM public.ops_alert_deliveries r
-               WHERE r.condition = 'qotd_recovered'),
+               WHERE r.condition = 'qotd_recovered' AND r.status = 'sent'),
              '-infinity'::timestamptz)
   );
 $$;

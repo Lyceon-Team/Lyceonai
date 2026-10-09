@@ -536,43 +536,170 @@ describe.skipIf(!PG_AVAILABLE)("QOTD resilience — real Postgres", () => {
   });
 
   // ── Channels ─────────────────────────────────────────────────────────────────
-  it("a Slack failure still sends the email, logged at ERROR; no duplicates on a second run", async () => {
+  it("a Slack failure still sends the email, logged at ERROR; the next check retries Slack only; then no duplicates", async () => {
     const now = new Date("2027-10-10T18:00:00Z");
     const h = harness({ slack: "fail" });
-    const send = await sendAlertFor(now, h, { slack: "fail" });
     const alert = {
       condition: "ops_test" as const,
       title: "Test",
       lines: ["x"],
     };
-    expect(await send(alert)).toEqual({ slack: "failed", email: "sent" });
+    expect(
+      await (
+        await sendAlertFor(now, h, { slack: "fail" })
+      )(alert),
+    ).toEqual({
+      slack: "failed",
+      email: "sent",
+    });
     expect(h.mails).toHaveLength(1);
     expect(errors("slack_failed")).toHaveLength(1);
-    expect(await send(alert)).toEqual({
+    // Later the same day Slack is back: the failed channel is retried, the sent one is not.
+    const later = new Date("2027-10-10T22:00:00Z");
+    const h2 = harness({});
+    expect(await (await sendAlertFor(later, h2, {}))(alert)).toEqual({
+      slack: "sent",
+      email: "already_sent",
+    });
+    expect(h2.slackPosts).toHaveLength(1);
+    expect(h2.mails).toHaveLength(0);
+    // And now both are done for the day.
+    const h3 = harness({});
+    expect(await (await sendAlertFor(later, h3, {}))(alert)).toEqual({
       slack: "already_sent",
       email: "already_sent",
     });
-    expect(h.slackPosts).toHaveLength(1);
-    expect(h.mails).toHaveLength(1);
+    expect(h3.slackPosts).toHaveLength(0);
+    expect(h3.mails).toHaveLength(0);
   });
 
-  it("an email failure still posts to Slack, logged at ERROR; no duplicates on a second run", async () => {
+  it("an email failure still posts to Slack, logged at ERROR; the next check retries the email only; then no duplicates", async () => {
     const now = new Date("2027-10-11T18:00:00Z");
     const h = harness({ mail: "fail" });
-    const send = await sendAlertFor(now, h, { mail: "fail" });
     const alert = {
       condition: "ops_test" as const,
       title: "Test",
       lines: ["x"],
     };
-    expect(await send(alert)).toEqual({ slack: "sent", email: "failed" });
+    expect(await (await sendAlertFor(now, h, { mail: "fail" }))(alert)).toEqual(
+      {
+        slack: "sent",
+        email: "failed",
+      },
+    );
     expect(h.slackPosts).toHaveLength(1);
     expect(errors("email_failed")).toHaveLength(1);
-    expect(await send(alert)).toEqual({
+    const h2 = harness({});
+    expect(await (await sendAlertFor(now, h2, {}))(alert)).toEqual({
+      slack: "already_sent",
+      email: "sent",
+    });
+    expect(h2.slackPosts).toHaveLength(0);
+    expect(h2.mails).toHaveLength(1);
+    const h3 = harness({});
+    expect(await (await sendAlertFor(now, h3, {}))(alert)).toEqual({
       slack: "already_sent",
       email: "already_sent",
     });
-    expect(h.slackPosts).toHaveLength(1);
+  });
+
+  it("a recovery message that failed on both channels stays due and goes out on the next check", async () => {
+    const { checkQotdHealth } =
+      await import("../../server/services/qotd/qotd-health");
+    await schedule(days("2027-12-10", 7));
+    const morning = new Date("2027-12-10T18:00:00Z");
+    // Horizon 6: the alert goes out.
+    const h0 = harness({});
+    await checkQotdHealth({
+      db: makePgSupabase(pg),
+      now: morning,
+      sendAlert: await sendAlertFor(morning, h0, {}),
+      checks: { noQuestionToday: true, horizon: true },
+      source: "schedule_job",
+    });
+    await schedule(["2027-12-17"]);
+    // Recovered, but both channels are down: not counted as recovered.
+    const down = harness({ slack: "fail", mail: "fail" });
+    const first = await checkQotdHealth({
+      db: makePgSupabase(pg),
+      now: new Date("2027-12-10T22:00:00Z"),
+      sendAlert: await sendAlertFor(new Date("2027-12-10T22:00:00Z"), down, {
+        slack: "fail",
+        mail: "fail",
+      }),
+      checks: { noQuestionToday: true, horizon: true },
+      source: "daily_job",
+    });
+    expect(first.recovered).toBe(false);
+    // The next check, channels back: the recovery message goes out once.
+    const up = harness({});
+    const second = await checkQotdHealth({
+      db: makePgSupabase(pg),
+      now: new Date("2027-12-10T23:00:00Z"),
+      sendAlert: await sendAlertFor(new Date("2027-12-10T23:00:00Z"), up, {}),
+      checks: { noQuestionToday: true, horizon: true },
+      source: "daily_job",
+    });
+    expect(second.recovered).toBe(true);
+    expect(up.slackPosts.map((p) => p.text.split("\n")[0])).toEqual([
+      "Lyceon ops: Question of the Day schedule recovered: 7 day(s) ahead",
+    ]);
+    expect(up.mails).toHaveLength(1);
+  });
+
+  it("the owner's test alert never makes a recovery message due", async () => {
+    const now = new Date("2028-01-10T18:00:00Z");
+    const h = harness({});
+    await (
+      await sendAlertFor(now, h, {})
+    )({
+      condition: "ops_test",
+      title: "Test",
+      lines: ["x"],
+    });
+    // Presence first: the test alert is in the ledger.
+    expect((await ledger()).map((r) => r.condition)).toContain("ops_test");
+    const due = await pg.query<{ due: boolean }>(
+      `SELECT public.qotd_recovery_due() AS due`,
+    );
+    expect(due.rows[0]?.due).toBe(false);
+  });
+
+  it("the health check failing after a fill → ERROR and one alert, then the run fails", async () => {
+    const { runMonitoredQotdSchedule } =
+      await import("../../server/services/qotd/qotd-health");
+    const now = new Date("2028-02-10T07:15:00Z");
+    const h = harness({});
+    const real = makePgSupabase(pg);
+    const broken = {
+      rpc: (fn: string, args?: Record<string, unknown>) =>
+        fn === "qotd_horizon"
+          ? Promise.resolve({
+              data: null,
+              error: { message: "statement timeout" },
+            })
+          : real.rpc(fn, args),
+    };
+    await expect(
+      runMonitoredQotdSchedule({
+        client: broken,
+        now,
+        sendAlert: await sendAlertFor(now, h, {}),
+        run: async () => ({
+          today: "2028-02-10",
+          days: [],
+          skippedBanned: 0,
+          skippedLetterReference: 0,
+          skippedStemRepeatsPassage: 0,
+          sweptLedgerRows: 0,
+          deploy: "skipped_no_hook" as const,
+        }),
+      }),
+    ).rejects.toThrow("statement timeout");
+    expect(errors("qotd_health_check_failed")).toHaveLength(1);
+    expect(h.slackPosts.map((p) => p.text.split("\n")[0])).toEqual([
+      "Lyceon ops: The Question of the Day health check could not read the schedule",
+    ]);
     expect(h.mails).toHaveLength(1);
   });
 

@@ -73,7 +73,7 @@ function detailLines(h: QotdHorizon): string[] {
   return [
     `Horizon: ${h.horizon} day(s) of questions scheduled after today (${h.today}, America/Chicago).`,
     `Questions run out on ${h.runs_out_on}: that day has no Question of the Day yet.`,
-    "Check the qotd-schedule job and the published, eligible question pool.",
+    "Check the qotd-schedule job and the published, eligible question pool. If a scheduled question was unpublished, delete that day's qotd_schedule row and rerun the job (it never replaces a filled day).",
   ];
 }
 
@@ -155,7 +155,7 @@ export async function checkQotdHealth(params: {
           runsOutOn: h.runs_out_on,
         },
       );
-      await params.sendAlert({
+      const outcome = await params.sendAlert({
         condition: "qotd_recovered",
         title: `Question of the Day schedule recovered: ${h.horizon} day(s) ahead`,
         lines: [
@@ -163,7 +163,8 @@ export async function checkQotdHealth(params: {
           `Questions now run out on ${h.runs_out_on}.`,
         ],
       });
-      recovered = true;
+      // Recovered only when the message reached someone; a failed one stays due and is retried.
+      recovered = outcome.slack === "sent" || outcome.email === "sent";
     }
   }
 
@@ -204,7 +205,7 @@ export async function runMonitoredQotdSchedule(params: {
       title: "The Question of the Day schedule job failed",
       lines: [
         `The 07:15 UTC fill stopped with an error (${reason.slice(0, 200)}).`,
-        "Today's question may still exist; the horizon check below this job will say.",
+        "Today's question may still exist; the evening daily check will report the horizon.",
       ],
     });
     throw err;
@@ -224,13 +225,38 @@ export async function runMonitoredQotdSchedule(params: {
     );
   }
 
-  const health = await checkQotdHealth({
-    db: params.client,
-    now,
-    sendAlert: params.sendAlert,
-    checks: { noQuestionToday: true, horizon: true },
-    source: "schedule_job",
-  });
+  let health: QotdHealthResult;
+  try {
+    health = await checkQotdHealth({
+      db: params.client,
+      now,
+      sendAlert: params.sendAlert,
+      checks: { noQuestionToday: true, horizon: true },
+      source: "schedule_job",
+    });
+  } catch (err: unknown) {
+    // The monitor itself failing is the one failure the owner could not otherwise hear about.
+    const reason = err instanceof Error ? err.message : "unknown";
+    logger.error(
+      COMPONENT,
+      "qotd_health_check_failed",
+      "QOTD health check failed",
+      undefined,
+      {
+        reason,
+        source: "schedule_job",
+      },
+    );
+    await params.sendAlert({
+      condition: "qotd_schedule_failed",
+      title: "The Question of the Day health check could not read the schedule",
+      lines: [
+        `After the 07:15 UTC fill, the horizon could not be read (${reason.slice(0, 200)}).`,
+        "The evening daily check will try again.",
+      ],
+    });
+    throw err;
+  }
 
   if (unfilled.length > 0) {
     await params.sendAlert({

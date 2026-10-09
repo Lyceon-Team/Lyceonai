@@ -19,8 +19,9 @@
  * transport (sender NOTIFICATION_FROM_EMAIL, Reply-To support, no tracking), with
  * Idempotency-Key = the delivery row id; Slack is a plain incoming-webhook POST, the same channel
  * kind as the crisis alerts (server/services/crisis-notification.ts), but a direct POST rather
- * than a Cloud Tasks hop: an ops alert is already deduplicated by the ledger and retried by the
- * next daily check, so a queue would add nothing. The recipient address (OPS_ALERT_EMAIL) and the
+ * than a Cloud Tasks hop: an ops alert is already deduplicated by the ledger, and a channel whose
+ * send failed is re-claimed (and so retried) by the next check — the same day included, since
+ * `ops_alert_claim` releases a `failed` claim — so a queue would add nothing. The recipient address (OPS_ALERT_EMAIL) and the
  * webhook URL are configuration, never logged. Every alert is also an ERROR log line at its call
  * site, which the error-monitor webhook (server/logger.ts) forwards on its own.
  */

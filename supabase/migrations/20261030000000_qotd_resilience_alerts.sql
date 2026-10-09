@@ -19,8 +19,10 @@
 --  3. `ops_alert_deliveries`: one row per (condition, America/Chicago day, channel), claimed
 --     BEFORE anything is sent. A second check the same day finds the claim and sends nothing,
 --     so each condition alerts at most once a day on each channel, whichever job finds it.
+--     A claim whose send FAILED can be claimed again the same day (nothing was delivered, so a
+--     retry is not a repeat): the evening checks retry a channel that failed in the morning.
 --     Recovery is its own condition: it is due when any QOTD alert row is newer than the last
---     recovery row.
+--     recovery message that was actually SENT on some channel.
 --
 -- No question content and no student data is stored: conditions, dates, a horizon number.
 -- RLS on, service role only.
@@ -99,7 +101,9 @@ ALTER TABLE public.ops_alert_deliveries ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.ops_alert_deliveries FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.ops_alert_deliveries TO service_role;
 
--- Claims (condition, day, channel). Returns the delivery id, or NULL when already claimed.
+-- Claims (condition, day, channel). Returns the delivery id, or NULL when already claimed (sent,
+-- skipped, or in flight). A FAILED claim is re-claimed: nothing was delivered, so retrying it is
+-- not a duplicate.
 CREATE OR REPLACE FUNCTION public.ops_alert_claim(
   p_condition text, p_channel text, p_now timestamptz DEFAULT now()
 )
@@ -112,7 +116,9 @@ DECLARE
 BEGIN
   INSERT INTO public.ops_alert_deliveries (condition, alert_day, channel, created_at)
   VALUES (p_condition, public.chicago_day(p_now), p_channel, p_now)
-  ON CONFLICT (condition, alert_day, channel) DO NOTHING
+  ON CONFLICT (condition, alert_day, channel) DO UPDATE
+     SET status = 'pending', created_at = EXCLUDED.created_at, finished_at = NULL
+   WHERE public.ops_alert_deliveries.status = 'failed'
   RETURNING id INTO v_id;
   RETURN v_id;
 END;
@@ -130,7 +136,8 @@ AS $fn$
    WHERE id = p_id AND status = 'pending';
 $fn$;
 
--- A recovery message is due when any QOTD alert row is newer than the last recovery row.
+-- A recovery message is due when any QOTD alert row is newer than the last recovery message
+-- that actually went out (status 'sent'). A recovery that failed on every channel stays due.
 CREATE OR REPLACE FUNCTION public.qotd_recovery_due()
 RETURNS boolean
 LANGUAGE sql
@@ -142,7 +149,7 @@ AS $fn$
      WHERE a.condition IN ('qotd_schedule_failed', 'qotd_horizon_low', 'qotd_no_question_today')
        AND a.created_at > COALESCE(
              (SELECT max(r.created_at) FROM public.ops_alert_deliveries r
-               WHERE r.condition = 'qotd_recovered'),
+               WHERE r.condition = 'qotd_recovered' AND r.status = 'sent'),
              '-infinity'::timestamptz)
   );
 $fn$;

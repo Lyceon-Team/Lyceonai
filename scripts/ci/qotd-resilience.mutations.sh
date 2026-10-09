@@ -86,7 +86,7 @@ run "R1 horizon < 7 alerts" "horizon 6 → one alert on each channel" "$PG_SUITE
 
 echo "=== (2) the ledger stops being once per day ==="
 need_last ops_alert_claim R2 "$MIG"
-plant "$MIG" "  ON CONFLICT (condition, alert_day, channel) DO NOTHING" "  ON CONFLICT (condition, alert_day, channel) DO UPDATE SET status = 'pending'" || { bad "R2 STALE"; exit 1; }
+plant "$MIG" "   WHERE public.ops_alert_deliveries.status = 'failed'" "   WHERE true" || { bad "R2 STALE"; exit 1; }
 run "R2 once per condition per day" "a second failure the same day → no second alert" "$PG_SUITE"
 
 echo "=== (3) recovery is never due ==="
@@ -133,6 +133,23 @@ run "R12 Home collapsed" "the card collapses to 'on its way'" "$HOME_UI"
 echo "=== (13) the homepage shows the old 'not up yet' line as an error ==="
 plant "$WIDGET" "    if (notYet) {" "    if (false) {" || { bad "R13 STALE"; exit 1; }
 run "R13 homepage collapsed" "a day with no question collapses to 'on its way'" "$WIDGET_UI"
+
+echo "=== (14) a failed channel is never retried the same day ==="
+plant "$MIG" "   WHERE public.ops_alert_deliveries.status = 'failed'" "   WHERE false" || { bad "R14 STALE"; exit 1; }
+run "R14 failed channel retried" "the next check retries Slack only" "$PG_SUITE"
+
+echo "=== (15) a recovery that never reached anyone counts as done ==="
+need_last qotd_recovery_due R15 "$MIG"
+plant "$MIG" "               WHERE r.condition = 'qotd_recovered' AND r.status = 'sent')," "               WHERE r.condition = 'qotd_recovered')," || { bad "R15 STALE"; exit 1; }
+run "R15 failed recovery stays due" "a recovery message that failed on both channels stays due" "$PG_SUITE"
+
+echo "=== (16) the health check failing after a fill is silent ==="
+plant "$HEALTH" $'    await params.sendAlert({
+      condition: "qotd_schedule_failed",
+      title: "The Question of the Day health check could not read the schedule",' $'    void ({
+      condition: "qotd_schedule_failed",
+      title: "The Question of the Day health check could not read the schedule",' || { bad "R16 STALE"; exit 1; }
+run "R16 health-check failure alerts" "the health check failing after a fill" "$PG_SUITE"
 
 echo
 echo "QOTD RESILIENCE MUTATIONS: $PASS passed, $FAIL failed"
