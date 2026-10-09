@@ -126,6 +126,14 @@ export type Shot = {
    */
   freshReviewPrompt?: true;
   /**
+   * Owner brief "Question of the Day on Home" (2026-10-08/09): before every capture, today's
+   * (America/Chicago) question is scheduled in the harness database if it is not, and the
+   * persona's QOTD answer for today, its one-item practice session and its daily-email prompt
+   * state are deleted, so each viewport and theme starts unanswered. `priorAsks` seeds that many
+   * earlier prompt asks (on earlier days), e.g. 2 so the next answer is the 3rd ask.
+   */
+  freshQotd?: { priorAsks?: number };
+  /**
    * The visitor already answered the cookie banner (analytics rejected), so the banner does not
    * cover the page's controls. Written as the real consent cookie, in the current banner version,
    * the way the banner itself writes it. Listed in the index next to the shot.

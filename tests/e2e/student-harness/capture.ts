@@ -555,6 +555,52 @@ async function clearReviewPrompt(persona: StudentPersona): Promise<void> {
   }
 }
 
+/**
+ * Owner brief "Question of the Day on Home" (groups/types.ts `freshQotd`): today's question is
+ * scheduled (harness database only; production's schedule is the SEO job's) and the persona's
+ * answer for today, its qotd practice session and its email-prompt state are removed.
+ */
+async function resetQotd(
+  persona: StudentPersona,
+  priorAsks: number,
+): Promise<void> {
+  const db = await harnessDb();
+  const id = PERSONAS[persona].id;
+  try {
+    await db.query(
+      `INSERT INTO public.qotd_schedule (qotd_date, question_id)
+       SELECT public.chicago_day(now()), q.id
+         FROM public.questions q
+        WHERE q.status = 'published' AND q.item_type = 'mcq'
+          AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)
+        ORDER BY q.id
+        LIMIT 1
+       ON CONFLICT (qotd_date) DO NOTHING`,
+    );
+    await db.query(
+      "DELETE FROM public.student_qotd_attempts WHERE student_id = $1 AND qotd_date = public.chicago_day(now())",
+      [id],
+    );
+    await db.query(
+      "DELETE FROM public.practice_sessions WHERE user_id = $1 AND mode = 'qotd'",
+      [id],
+    );
+    await db.query(
+      "DELETE FROM public.student_qotd_email_prefs WHERE student_id = $1",
+      [id],
+    );
+    if (priorAsks > 0) {
+      await db.query(
+        `INSERT INTO public.student_qotd_email_prefs (student_id, ask_count, last_asked_on, updated_at)
+         VALUES ($1, $2, public.chicago_day(now()) - 1, now())`,
+        [id, priorAsks],
+      );
+    }
+  } finally {
+    await db.end();
+  }
+}
+
 async function apiCall(
   stack: Stack,
   persona: StudentPersona,
@@ -802,6 +848,11 @@ async function shootBuilt(
         `${shot.id}: a fresh review prompt needs a seeded student`,
       );
     await clearReviewPrompt(persona);
+  }
+  if (shot.freshQotd !== undefined) {
+    if (persona === null)
+      throw new Error(`${shot.id}: a fresh QOTD needs a seeded student`);
+    await resetQotd(persona, shot.freshQotd.priorAsks ?? 0);
   }
   const context = await browser.newContext({
     viewport: { width: size.width, height: size.height },
@@ -1271,6 +1322,10 @@ function writeIndex(
     if (shot.expectInViewport !== undefined)
       lines.push(
         `Must then show \`${shot.expectInViewport}\` wholly inside the viewport (the capture fails otherwise).`,
+      );
+    if (shot.freshQotd !== undefined)
+      lines.push(
+        `Today's question unanswered before each capture (scheduled if missing; the persona's answer, qotd session and email-prompt state deleted${shot.freshQotd.priorAsks ? `; ${shot.freshQotd.priorAsks} earlier asks seeded` : ""}).`,
       );
     if (shot.freshReviewPrompt === true)
       lines.push(
