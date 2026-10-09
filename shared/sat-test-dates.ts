@@ -5,20 +5,27 @@
  * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) Part A2: "Official dates
  *       live in shared/sat-test-dates.ts with each date, the College Board source URL and a
  *       'verified on' date. Only future dates are offered. Karl confirms the list."; SCL-223;
- *       Public Disclosure Doctrine 3 (general facts cite real sources)] | @implemented [2026-10-09]
+ *       Public Disclosure Doctrine 3 (general facts cite real sources).
+ *
+ *       Owner ruling on #1166 (Karl, 2026-10-09) item 3: the source is College Board's "SAT dates
+ *       and deadlines" page; every published date, confirmed and anticipated, as far out as
+ *       College Board publishes; no "expected" label; only future dates offered.]
+ *       | @implemented [2026-10-09]
  *
  * plain English: each entry is a date College Board publishes, the page it was read from and the
- * day it was checked. `status` says whether College Board lists the date as confirmed or as
- * anticipated (it publishes the following year's dates as "anticipated" until registration
- * opens). `offeredSatTestDates(today)` returns only the dates after today, ascending — a date
- * that has passed is never offered.
+ * day it was checked. The list runs as far out as the page does (through 2028-06-03 as verified
+ * on 2026-10-09: six confirmed 2026-27 dates and eight anticipated 2027-28 dates). `status`
+ * records which of the two College Board calls it, for maintenance only: no surface shows it,
+ * and a student sees every offered date the same way. `offeredSatTestDates(today)` returns only
+ * the dates after today, ascending; a date that has passed is never offered.
  *
- * Maintenance: when College Board confirms or changes a date, edit the entry and its
- * `verified_on`. A stored student choice is a plain date and is not tied to this list, so an
- * edit here never rewrites anyone's saved dates.
- *
- * KARL CONFIRMS THE LIST (brief). Pending that confirmation, the 2027-28 entries are College
- * Board's anticipated dates.
+ * Maintenance:
+ *   - College Board confirms a date or publishes a new year: edit or add the entries and set
+ *     `VERIFIED_ON` to the day the page was re-read.
+ *   - College Board MOVES a date: change the entry here, then move every student who picked the
+ *     old date with the owner-run data fix `scripts/ops/sat-test-date-move.sql` (it prints the
+ *     counts before and after and fails closed if the old date survives). A stored choice is a
+ *     plain date, so editing this file alone never rewrites anyone's saved dates.
  */
 import { z } from "zod";
 

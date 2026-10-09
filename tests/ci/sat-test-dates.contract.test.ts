@@ -31,6 +31,41 @@ describe("official SAT dates", () => {
     }
   });
 
+  it("lists every date College Board publishes, through June 2028 (verified 2026-10-09)", () => {
+    // Owner ruling on #1166 item 3: confirmed and anticipated, as far out as College Board goes.
+    expect(SAT_TEST_DATES.map((d) => d.date)).toEqual([
+      "2026-10-03",
+      "2026-11-07",
+      "2026-12-05",
+      "2027-03-06",
+      "2027-05-01",
+      "2027-06-05",
+      "2027-08-28",
+      "2027-09-18",
+      "2027-10-09",
+      "2027-11-06",
+      "2027-12-04",
+      "2028-03-04",
+      "2028-05-06",
+      "2028-06-03",
+    ]);
+  });
+
+  it("no surface labels a date as expected or anticipated", () => {
+    const surfaces = [
+      "client/src/components/sat-dates/SatDatePicker.tsx",
+      "client/src/pages/profile-complete.tsx",
+      "client/src/components/settings/ProfileSection.tsx",
+      "client/src/components/home/qotd/HomeQotdSection.tsx",
+    ];
+    for (const f of surfaces) {
+      const src = fs.readFileSync(f, "utf8");
+      // Presence first: the surface really renders SAT dates.
+      expect(src).toMatch(/sat-test-dates|SatDatePicker/);
+      expect(src).not.toMatch(/\b(expected|anticipated)\b/i);
+    }
+  });
+
   it("only dates after today are offered, ascending", () => {
     const offered = offeredSatTestDates("2026-11-07").map((d) => d.date);
     // Presence before absence: later dates are there.
