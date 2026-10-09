@@ -39,11 +39,9 @@
  * refresh, so both numbers are `null` — "unknown", not "zero". Zero would assert that
  * they have studied on no day, which nothing here has established.
  */
-import {
-  streakAsOfToday,
-  streakSummarySchema,
-  type StreakSummary,
-} from "@lyceon/shared";
+import { z } from "zod";
+import { streakSummarySchema, type StreakSummary } from "@lyceon/shared";
+import type { Streak } from "../../packages/shared/src/home-qotd-schema";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { classifyError } from "../lib/redact";
@@ -59,14 +57,18 @@ import {
  * zone (`quota_reset_timezone`, Doc 02B §41) for a student who has not set up a calendar.
  * A failed read throws; the caller decides whether that is fail-open or a 500.
  */
-export async function resolveStudentTimeZone(studentId: string): Promise<string> {
+export async function resolveStudentTimeZone(
+  studentId: string,
+): Promise<string> {
   const { data, error } = await supabaseServer
     .from("student_study_profile")
     .select("timezone")
     .eq("student_id", studentId)
     .maybeSingle();
   if (error) {
-    throw new Error(`student_study_profile timezone read failed: ${error.message}`);
+    throw new Error(
+      `student_study_profile timezone read failed: ${error.message}`,
+    );
   }
   const zone: unknown = (data as { timezone?: unknown } | null)?.timezone;
   if (typeof zone === "string" && isKnownTimeZone(zone)) return zone;
@@ -74,20 +76,54 @@ export async function resolveStudentTimeZone(studentId: string): Promise<string>
 }
 
 /**
+ * THE daily streak (owner brief "Question of the Day on Home", Karl 2026-10-08/09; SCL-226):
+ * consecutive America/Chicago days with at least one answered question from any source —
+ * practice (the Question of the Day and the diagnostic included), review, full-length —
+ * ending today or yesterday. Computed at read time by `public.student_streak`; nothing stored.
+ * `broken` is true when the run is 0 but the student has answered before ("Start a new
+ * streak today").
+ *
+ * Every surface reads it through here (Home, the calendar payloads, `kpi/overall`), so no two
+ * can disagree. Throws on a failed read; `currentStreakAsOfToday` is the fail-open wrapper.
+ */
+export async function readDailyStreak(
+  studentId: string,
+  now: Date = new Date(),
+): Promise<Streak> {
+  const { data, error } = await supabaseServer.rpc("student_streak", {
+    p_student_id: studentId,
+    p_now: now.toISOString(),
+  });
+  if (error) throw new Error(`student_streak failed: ${error.message}`);
+  const row: unknown = Array.isArray(data) ? data[0] : data;
+  const parsed = streakRowSchema.safeParse(row);
+  if (!parsed.success)
+    throw new Error("student_streak returned an unexpected row");
+  return {
+    current: parsed.data.current_streak,
+    today_done: parsed.data.today_done,
+    broken: parsed.data.broken,
+  };
+}
+
+const streakRowSchema = z.object({
+  current_streak: z.number().int().min(0),
+  today_done: z.boolean(),
+  broken: z.boolean(),
+});
+
+/**
  * @spec [Guardian_Closure_Plan G-NEW-16; owner ruling 2026-09-30; owner decision 2026-10-01
- *       (an unreadable zone is an unknown streak, never a 500); SCL-193] | @implemented [2026-09-30]
+ *       (an unreadable streak is an unknown streak, never a 500); SCL-193; SCL-226 (the source is
+ *       now the Chicago-day answer streak)] | @implemented [2026-09-30; source changed 2026-10-09]
  *
- * plain English: the stored streak, as of today in the student's local date — 0 when the last
- * active day is before yesterday (`streakAsOfToday`). EVERY read of the current streak goes
- * through here: the calendar's `streak.current` (student and guardian payloads) and both
- * audiences of `kpi/overall`, so no two surfaces can disagree. A zero stored streak needs
- * no zone and reads nothing more.
+ * plain English: the current streak for the calendar's `streak.current` (student and guardian
+ * payloads) and both audiences of `kpi/overall`. Since SCL-226 it is `readDailyStreak`'s
+ * `current`, so these surfaces show the number Home shows. `stored` and `lastActiveAt` (05B's
+ * KPI columns) are no longer read for the current run; they stay in the signature so the
+ * callers that already pass them need no change.
  *
- * FAILS OPEN, TO `null`, IN ONE PLACE. "Today" needs the student's zone; when that read fails
- * the streak is unknown, and every surface says so the same way — `null`, rendered as no
- * streak. Catching here rather than at each caller is what keeps the three surfaces from
- * disagreeing about failure as well as about the number (before 2026-10-01 the calendar
- * served `null` and both `kpi/overall` audiences a 500).
+ * FAILS OPEN, TO `null`, IN ONE PLACE: a failed read is an unknown streak on every surface.
  */
 export async function currentStreakAsOfToday(args: {
   studentId: string;
@@ -96,26 +132,21 @@ export async function currentStreakAsOfToday(args: {
   now?: Date;
   requestId?: string;
 }): Promise<number | null> {
-  if (args.stored <= 0) return 0;
-  let zone: string;
   try {
-    zone = await resolveStudentTimeZone(args.studentId);
-  } catch (zoneError) {
+    const streak = await readDailyStreak(
+      args.studentId,
+      args.now ?? new Date(),
+    );
+    return streak.current;
+  } catch (readError) {
     logger.warn(
       "ACTIVITY_STREAK",
-      "timezone_read_failed",
-      "the student's zone could not be read; the streak is served as unknown",
-      { ...classifyError(zoneError), requestId: args.requestId },
+      "streak_read_failed",
+      "the daily streak could not be read; the streak is served as unknown",
+      { ...classifyError(readError), requestId: args.requestId },
     );
     return null;
   }
-  const lastActiveIso = toIsoTimestamp(args.lastActiveAt);
-  return streakAsOfToday({
-    stored: args.stored,
-    lastActiveLocalDate:
-      lastActiveIso === null ? null : localTodayIn(zone, new Date(lastActiveIso)),
-    todayLocalDate: localTodayIn(zone, args.now ?? new Date()),
-  });
 }
 
 /**
@@ -161,24 +192,22 @@ export async function getStudentActivityStreak(
     return UNKNOWN;
   }
 
-  // No row: the KPI refresh has not run for this student. Not an error, and not a zero.
-  if (data === null) return UNKNOWN;
-
-  // G-NEW-16: `current` as of today. An unreadable zone is an unknown streak (`null`).
-  let current: unknown = data.current_streak_days;
-  if (typeof current === "number") {
-    current = await currentStreakAsOfToday({
-      studentId,
-      stored: current,
-      lastActiveAt: data.last_active_at,
-      ...(requestId === undefined ? {} : { requestId }),
-    });
-    if (current === null) return UNKNOWN;
-  }
+  // SCL-226: `current` is the daily answer streak, whether or not the KPI refresh has run.
+  // `longest` stays 05B's stored value where there is one, and is never below `current`.
+  const current = await currentStreakAsOfToday({
+    studentId,
+    stored: 0,
+    lastActiveAt: null,
+    ...(requestId === undefined ? {} : { requestId }),
+  });
+  if (current === null) return UNKNOWN;
+  const storedLongest: unknown = data?.longest_streak_days ?? null;
+  const longest =
+    typeof storedLongest === "number" ? Math.max(storedLongest, current) : null;
 
   const parsed = streakSummarySchema.safeParse({
     current,
-    longest: data.longest_streak_days,
+    longest,
     history_complete: HISTORY_COMPLETE,
   });
   if (!parsed.success) {
@@ -188,7 +217,10 @@ export async function getStudentActivityStreak(
       "ACTIVITY_STREAK",
       "kpi_shape_unexpected",
       "student_overall_kpi streak columns are not the non-negative integers this build expects",
-      { requestId, issues: parsed.error.issues.map((issue) => issue.path.join(".")) },
+      {
+        requestId,
+        issues: parsed.error.issues.map((issue) => issue.path.join(".")),
+      },
     );
     return UNKNOWN;
   }
