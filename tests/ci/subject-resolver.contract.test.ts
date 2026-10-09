@@ -47,13 +47,10 @@ async function callAs(
   principalId: string,
   studentId: string,
   role = "guardian",
-): Promise<{
-  status: number;
-  body: Record<string, unknown>;
-  subject: unknown;
-}> {
-  const { resolveSubject } =
-    await import("../../server/middleware/subject-resolver");
+): Promise<{ status: number; body: Record<string, unknown>; subject: unknown }> {
+  const { resolveSubject } = await import(
+    "../../server/middleware/subject-resolver"
+  );
   const app = express();
   app.use((req, _res, next) => {
     const r = req as Req;
@@ -149,10 +146,7 @@ describe("subject resolver — principal to subject, one chokepoint", () => {
   });
 
   it("FAILS CLOSED when the derivation RPC errors", async () => {
-    rpc.mockResolvedValue({
-      data: null,
-      error: { message: "boom", code: "XX000" },
-    });
+    rpc.mockResolvedValue({ data: null, error: { message: "boom", code: "XX000" } });
     const out = await callAs(GUARDIAN, STUDENT);
     expect(out.status).toBe(404);
     expect(out.subject).toBeUndefined();
@@ -167,9 +161,7 @@ describe("subject resolver — principal to subject, one chokepoint", () => {
 
   it("AN UNRECORDED ACCESS DOES NOT HAPPEN — audit write failure is a 500, not a served read", async () => {
     rpc.mockResolvedValue({ data: "allow", error: null });
-    auditInsert.mockResolvedValue({
-      error: { message: "audit down", code: "XX000" },
-    });
+    auditInsert.mockResolvedValue({ error: { message: "audit down", code: "XX000" } });
     const out = await callAs(GUARDIAN, STUDENT);
     // MUTATION: log-and-proceed instead -> this reds. Months later nobody can tell
     // "no guardian read this child's data" from "the write failed". See owner question 1.
@@ -184,8 +176,9 @@ describe("subject resolver — principal to subject, one chokepoint", () => {
   });
 
   it("401 when unauthenticated", async () => {
-    const { resolveSubject } =
-      await import("../../server/middleware/subject-resolver");
+    const { resolveSubject } = await import(
+      "../../server/middleware/subject-resolver"
+    );
     const app = express();
     app.get("/api/students/:studentId/probe", resolveSubject, (_req, res) =>
       res.json({ ok: true }),
@@ -200,9 +193,6 @@ describe("subject resolver — principal to subject, one chokepoint", () => {
     // `via` exists for the audit record, not for behaviour. Anything role-shaped beyond it
     // would be a handler's licence to branch — which the chokepoint gate also forbids
     // statically (scripts/ci/subject-resolver-chokepoint-gate.mjs, R2).
-    expect(Object.keys(out.subject as object).sort()).toEqual([
-      "studentId",
-      "via",
-    ]);
+    expect(Object.keys(out.subject as object).sort()).toEqual(["studentId", "via"]);
   });
 });

@@ -104,9 +104,7 @@ describe("UI-04 — /tutor is retired and redirects to /chat", () => {
     // The Express SSR table this used to read is gone (SEO F4, 2026-10-03); the same claims are
     // now made against the registry and the real prerendered output.
     const site = await getPrerenderedSite();
-    const tutorRow = loadRouteRegistry().find(
-      (r) => r.path_pattern === "/tutor",
-    );
+    const tutorRow = loadRouteRegistry().find((r) => r.path_pattern === "/tutor");
     const trustPage = site.pages.find((p) => p.path === "/trust");
 
     // Presence first: the lists are non-trivial, so absence is not vacuous.

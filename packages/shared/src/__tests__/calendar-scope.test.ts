@@ -14,16 +14,10 @@ import {
   type ScopeRule,
 } from "../calendar/scope";
 
-function rejectionOf(input: unknown): {
-  rule: ScopeRule;
-  detail: string;
-  path: string;
-} {
+function rejectionOf(input: unknown): { rule: ScopeRule; detail: string; path: string } {
   const result = parseBlockScope(input);
   if (result.ok) {
-    throw new Error(
-      `expected a rejection, got ${JSON.stringify(result.value)}`,
-    );
+    throw new Error(`expected a rejection, got ${JSON.stringify(result.value)}`);
   }
   return result.error;
 }
@@ -63,11 +57,7 @@ describe("round-trips a row shaped like the DDL", () => {
           level: "domain",
           mix: [
             { domain: "Algebra", count: 15, explanation_key: "weak" },
-            {
-              domain: "Geometry and Trigonometry",
-              count: 5,
-              explanation_key: "balanced",
-            },
+            { domain: "Geometry and Trigonometry", count: 5, explanation_key: "balanced" },
           ],
         },
       },
@@ -98,19 +88,11 @@ describe("round-trips a row shaped like the DDL", () => {
     },
     {
       name: "full_length with a pinned form",
-      row: {
-        block_type: "full_length",
-        section: null,
-        scope: { form_id: "FORM-A", exam_mode: "strict" },
-      },
+      row: { block_type: "full_length", section: null, scope: { form_id: "FORM-A", exam_mode: "strict" } },
     },
     {
       name: "full_length left to Doc 04 rotation (B3: key present, value null)",
-      row: {
-        block_type: "full_length",
-        section: null,
-        scope: { form_id: null, exam_mode: "lenient" },
-      },
+      row: { block_type: "full_length", section: null, scope: { form_id: null, exam_mode: "lenient" } },
     },
   ] as const;
 
@@ -138,15 +120,15 @@ describe("rejects an invalid practice scope with the rule that failed", () => {
   });
 
   it("an unknown level", () => {
-    expect(
-      rejectionOf({ ...base, scope: { level: "skill", codes: ["LIN"] } }).rule,
-    ).toBe("scope_shape");
+    expect(rejectionOf({ ...base, scope: { level: "skill", codes: ["LIN"] } }).rule).toBe(
+      "scope_shape",
+    );
   });
 
   it("an empty mix (jsonb_array_length >= 1)", () => {
-    expect(
-      rejectionOf({ ...base, scope: { level: "domain", mix: [] } }).rule,
-    ).toBe("scope_shape");
+    expect(rejectionOf({ ...base, scope: { level: "domain", mix: [] } }).rule).toBe(
+      "scope_shape",
+    );
   });
 
   it("a fractional count — the CHECK's ^[1-9][0-9]*$ refuses 10.5", () => {
@@ -215,9 +197,7 @@ describe("rejects an invalid practice scope with the rule that failed", () => {
       ...base,
       scope: {
         level: "domain",
-        mix: [
-          { domain: "Craft and Structure", count: 10, explanation_key: "weak" },
-        ],
+        mix: [{ domain: "Craft and Structure", count: 10, explanation_key: "weak" }],
       },
     });
     expect(rejection.rule).toBe("domain_section_match");
@@ -230,9 +210,7 @@ describe("rejects an invalid practice scope with the rule that failed", () => {
         ...base,
         scope: {
           level: "domain",
-          mix: [
-            { domain: "Linear Equations", count: 10, explanation_key: "weak" },
-          ],
+          mix: [{ domain: "Linear Equations", count: 10, explanation_key: "weak" }],
         },
       }).rule,
     ).toBe("scope_shape");
@@ -242,21 +220,13 @@ describe("rejects an invalid practice scope with the rule that failed", () => {
 describe("rejects an invalid review scope with the rule that failed", () => {
   it("a review block carrying a section", () => {
     expect(
-      rejectionOf({
-        block_type: "review",
-        section: "M",
-        scope: { mode: "queue" },
-      }).rule,
+      rejectionOf({ block_type: "review", section: "M", scope: { mode: "queue" } }).rule,
     ).toBe("section_presence");
   });
 
   it("an unknown mode", () => {
     expect(
-      rejectionOf({
-        block_type: "review",
-        section: null,
-        scope: { mode: "backlog" },
-      }).rule,
+      rejectionOf({ block_type: "review", section: null, scope: { mode: "backlog" } }).rule,
     ).toBe("scope_shape");
   });
 
@@ -285,11 +255,7 @@ describe("rejects an invalid review scope with the rule that failed", () => {
       rejectionOf({
         block_type: "review",
         section: null,
-        scope: {
-          mode: "session",
-          source_engine: "review",
-          source_session_id: "s1",
-        },
+        scope: { mode: "session", source_engine: "review", source_session_id: "s1" },
       }).rule,
     ).toBe("scope_shape");
   });
@@ -299,11 +265,7 @@ describe("rejects an invalid review scope with the rule that failed", () => {
       rejectionOf({
         block_type: "review",
         section: null,
-        scope: {
-          mode: "session",
-          source_engine: null,
-          source_session_id: "s1",
-        },
+        scope: { mode: "session", source_engine: null, source_session_id: "s1" },
       }).rule,
     ).toBe("scope_shape");
   });
@@ -339,11 +301,7 @@ describe("rejects an invalid full_length scope with the rule that failed", () =>
   // SCL-167: exam_mode is the second REQUIRED key, in the exam engine's own vocabulary.
   it("an absent exam_mode key — both keys are required-present (SCL-167)", () => {
     expect(
-      rejectionOf({
-        block_type: "full_length",
-        section: null,
-        scope: { form_id: null },
-      }).rule,
+      rejectionOf({ block_type: "full_length", section: null, scope: { form_id: null } }).rule,
     ).toBe("scope_shape");
   });
 
@@ -371,11 +329,7 @@ describe("rejects an invalid full_length scope with the rule that failed", () =>
 describe("rejects an unknown block type", () => {
   it("names the block_type rule", () => {
     expect(
-      rejectionOf({
-        block_type: "tutor",
-        section: null,
-        scope: { mode: "queue" },
-      }).rule,
+      rejectionOf({ block_type: "tutor", section: null, scope: { mode: "queue" } }).rule,
     ).toBe("block_type");
   });
 

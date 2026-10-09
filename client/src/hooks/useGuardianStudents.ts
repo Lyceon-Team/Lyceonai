@@ -26,14 +26,14 @@
  * (`server/lib/stripe/guardian-checkout.ts:101`). Editing the value in devtools
  * changes what is REQUESTED, never what is GRANTED.
  */
-import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
-import { csrfFetch } from "@/lib/csrf";
-import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { csrfFetch } from '@/lib/csrf';
+import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import {
   guardianStudentsResponseSchema,
   type GuardianStudentsResponse,
   type LinkedStudent,
-} from "../../../packages/shared/src/guardian-student-schema";
+} from '../../../packages/shared/src/guardian-student-schema';
 
 export type { LinkedStudent };
 
@@ -42,7 +42,7 @@ export type { LinkedStudent };
  * with this prefix; the live key also carries the signed-in guardian's id (G1-03), so one
  * guardian's roster can never be served from another's cache entry.
  */
-export const GUARDIAN_STUDENTS_QUERY_KEY = ["guardian-students"] as const;
+export const GUARDIAN_STUDENTS_QUERY_KEY = ['guardian-students'] as const;
 
 function guardianStudentsQueryKey(guardianId: string | null) {
   return [...GUARDIAN_STUDENTS_QUERY_KEY, guardianId] as const;
@@ -60,17 +60,17 @@ export function useGuardianStudents(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: guardianStudentsQueryKey(guardianId),
     queryFn: async (): Promise<GuardianStudentsResponse> => {
-      const res = await csrfFetch("/api/guardian/students", {
-        credentials: "include",
+      const res = await csrfFetch('/api/guardian/students', {
+        credentials: 'include',
       });
-      if (!res.ok) throw new Error("Failed to fetch students");
+      if (!res.ok) throw new Error('Failed to fetch students');
 
       // Parsed, not asserted. `as Promise<...>` told the compiler what to
       // believe and checked nothing at runtime; a renamed column would have
       // reached the dropdown as `undefined`.
       const parsed = guardianStudentsResponseSchema.safeParse(await res.json());
       if (!parsed.success) {
-        throw new Error("Linked students response did not match the contract");
+        throw new Error('Linked students response did not match the contract');
       }
       return parsed.data;
     },
@@ -94,7 +94,7 @@ function queryKeyNamesStudent(key: QueryKey, studentId: string): boolean {
   return key.some(
     (part) =>
       part === studentId ||
-      (typeof part === "string" && part.includes(`/students/${studentId}/`)),
+      (typeof part === 'string' && part.includes(`/students/${studentId}/`)),
   );
 }
 
@@ -104,8 +104,6 @@ export function useForgetGuardianStudent(): (studentId: string) => void {
     queryClient.removeQueries({
       predicate: (query) => queryKeyNamesStudent(query.queryKey, studentId),
     });
-    void queryClient.invalidateQueries({
-      queryKey: GUARDIAN_STUDENTS_QUERY_KEY,
-    });
+    void queryClient.invalidateQueries({ queryKey: GUARDIAN_STUDENTS_QUERY_KEY });
   };
 }

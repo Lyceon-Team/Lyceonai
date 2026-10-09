@@ -64,8 +64,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 
 // Each of these delegates to the REAL implementation unless a case injects a failure.
 vi.mock("../../server/lib/account", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../../server/lib/account")>();
+  const actual = await importOriginal<typeof import("../../server/lib/account")>();
   mocks.createActiveGuardianLink.mockImplementation(
     actual.createActiveGuardianLink,
   );
@@ -82,9 +81,7 @@ vi.mock("../../server/lib/student-link-code", async (importOriginal) => {
 });
 vi.mock("../../server/lib/auth-runtime-config", async (importOriginal) => {
   const actual =
-    await importOriginal<
-      typeof import("../../server/lib/auth-runtime-config")
-    >();
+    await importOriginal<typeof import("../../server/lib/auth-runtime-config")>();
   mocks.getStudentLinkCodeTtlSeconds.mockImplementation(
     actual.getStudentLinkCodeTtlSeconds,
   );
@@ -148,8 +145,9 @@ async function buildApp(): Promise<express.Express> {
 
 /** A live code, issued by the real domain module and stored on the student's real row. */
 async function liveCode(): Promise<string> {
-  const { issueStudentLinkCode } =
-    await import("../../server/lib/student-link-code");
+  const { issueStudentLinkCode } = await import(
+    "../../server/lib/student-link-code"
+  );
   const issued = await issueStudentLinkCode(STUDENT);
   expect(issued).not.toBeNull();
   return issued!.code;
@@ -162,81 +160,78 @@ async function redeem(code: string): Promise<request.Response> {
     .timeout({ response: RESPONSE_DEADLINE_MS });
 }
 
-describe.skipIf(!PG_AVAILABLE)(
-  "G1-05 redeem always answers — real Postgres",
-  () => {
-    beforeAll(async () => {
-      pg = await bootstrapPgDatabase(DB_NAME);
-      await pg.query(
-        `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4)`,
-        [GUARDIAN, "g@example.test", STUDENT, "s@example.test"],
-      );
-      // G1-02: redeem refuses a guardian with no date of birth or under 18, so the guardian
-      // under test is an adult. Fixture only; no case below depends on the age rule.
-      await pg.query(
-        `INSERT INTO public.profiles (id, email, role, date_of_birth) VALUES
+describe.skipIf(!PG_AVAILABLE)("G1-05 redeem always answers — real Postgres", () => {
+  beforeAll(async () => {
+    pg = await bootstrapPgDatabase(DB_NAME);
+    await pg.query(
+      `INSERT INTO auth.users (id, email) VALUES ($1,$2),($3,$4)`,
+      [GUARDIAN, "g@example.test", STUDENT, "s@example.test"],
+    );
+    // G1-02: redeem refuses a guardian with no date of birth or under 18, so the guardian
+    // under test is an adult. Fixture only; no case below depends on the age rule.
+    await pg.query(
+      `INSERT INTO public.profiles (id, email, role, date_of_birth) VALUES
          ($1,$2,'guardian',DATE '1980-01-01'),($3,$4,'student',NULL)`,
-        [GUARDIAN, "g@example.test", STUDENT, "s@example.test"],
-      );
-    });
+      [GUARDIAN, "g@example.test", STUDENT, "s@example.test"],
+    );
+  });
 
-    afterAll(async () => {
-      if (pg) await pg.end();
-    });
+  afterAll(async () => {
+    if (pg) await pg.end();
+  });
 
-    beforeEach(async () => {
-      await pg.query(`DELETE FROM public.guardian_links`);
-      await pg.query(`DELETE FROM public.notification_events`);
-      await pg.query(`DELETE FROM public.rate_limit_ledger`);
-      await pg.query(
-        `UPDATE public.profiles SET student_link_code = NULL, student_link_code_issued_at = NULL`,
-      );
-    });
+  beforeEach(async () => {
+    await pg.query(`DELETE FROM public.guardian_links`);
+    await pg.query(`DELETE FROM public.notification_events`);
+    await pg.query(`DELETE FROM public.rate_limit_ledger`);
+    await pg.query(
+      `UPDATE public.profiles SET student_link_code = NULL, student_link_code_issued_at = NULL`,
+    );
+  });
 
-    it("presence: with nothing injected, the real path links and answers 201", async () => {
-      const res = await redeem(await liveCode());
-      expect(res.status).toBe(201);
-      const links = await pg.query(
-        `SELECT count(*)::int AS c FROM public.guardian_links WHERE status='active'`,
-      );
-      expect(links.rows[0].c).toBe(1);
-    });
+  it("presence: with nothing injected, the real path links and answers 201", async () => {
+    const res = await redeem(await liveCode());
+    expect(res.status).toBe(201);
+    const links = await pg.query(
+      `SELECT count(*)::int AS c FROM public.guardian_links WHERE status='active'`,
+    );
+    expect(links.rows[0].c).toBe(1);
+  });
 
-    it("a non-contract error from the link write returns 500 within the deadline", async () => {
-      mocks.createActiveGuardianLink.mockRejectedValueOnce(
-        new Error("connection reset"),
-      );
-      const res = await redeem(await liveCode());
-      expect(res.status).toBe(500);
-      // The internal message never reaches the client.
-      expect(JSON.stringify(res.body)).not.toContain("connection reset");
-    });
+  it("a non-contract error from the link write returns 500 within the deadline", async () => {
+    mocks.createActiveGuardianLink.mockRejectedValueOnce(
+      new Error("connection reset"),
+    );
+    const res = await redeem(await liveCode());
+    expect(res.status).toBe(500);
+    // The internal message never reaches the client.
+    expect(JSON.stringify(res.body)).not.toContain("connection reset");
+  });
 
-    it("a foreign-instance ALREADY_EXISTS error returns 409 (matched on its code, not its class)", async () => {
-      const { GUARDIAN_LINK_ERROR } =
-        await import("../../packages/shared/src/guardian-link-schema");
-      mocks.createActiveGuardianLink.mockRejectedValueOnce(
-        new ForeignLinkError(GUARDIAN_LINK_ERROR.ALREADY_EXISTS),
-      );
-      const res = await redeem(await liveCode());
-      expect(res.status).toBe(409);
-      expect(res.body.error.code).toBe(GUARDIAN_LINK_ERROR.ALREADY_EXISTS);
-    });
+  it("a foreign-instance ALREADY_EXISTS error returns 409 (matched on its code, not its class)", async () => {
+    const { GUARDIAN_LINK_ERROR } =
+      await import("../../packages/shared/src/guardian-link-schema");
+    mocks.createActiveGuardianLink.mockRejectedValueOnce(
+      new ForeignLinkError(GUARDIAN_LINK_ERROR.ALREADY_EXISTS),
+    );
+    const res = await redeem(await liveCode());
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe(GUARDIAN_LINK_ERROR.ALREADY_EXISTS);
+  });
 
-    it("a throw while spending the code returns 500 within the deadline", async () => {
-      mocks.redeemStudentLinkCode.mockRejectedValueOnce(
-        new Error("socket hang up"),
-      );
-      const res = await redeem(await liveCode());
-      expect(res.status).toBe(500);
-    });
+  it("a throw while spending the code returns 500 within the deadline", async () => {
+    mocks.redeemStudentLinkCode.mockRejectedValueOnce(
+      new Error("socket hang up"),
+    );
+    const res = await redeem(await liveCode());
+    expect(res.status).toBe(500);
+  });
 
-    it("a throw while reading the code TTL returns 500 within the deadline", async () => {
-      mocks.getStudentLinkCodeTtlSeconds.mockRejectedValueOnce(
-        new Error("config read failed"),
-      );
-      const res = await redeem(await liveCode());
-      expect(res.status).toBe(500);
-    });
-  },
-);
+  it("a throw while reading the code TTL returns 500 within the deadline", async () => {
+    mocks.getStudentLinkCodeTtlSeconds.mockRejectedValueOnce(
+      new Error("config read failed"),
+    );
+    const res = await redeem(await liveCode());
+    expect(res.status).toBe(500);
+  });
+});

@@ -50,11 +50,7 @@ vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
   return {
     ...actual,
     getSupabaseAdmin: () => seams.admin,
-    requireSupabaseAuth: (
-      req: Request,
-      _res: ExpressResponse,
-      next: NextFunction,
-    ) => {
+    requireSupabaseAuth: (req: Request, _res: ExpressResponse, next: NextFunction) => {
       req.user = {
         id: USER_ID,
         email: "revoke-test@example.test",
@@ -71,11 +67,8 @@ vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
 });
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (
-    _req: Request,
-    _res: ExpressResponse,
-    next: NextFunction,
-  ) => next(),
+  doubleCsrfProtection: (_req: Request, _res: ExpressResponse, next: NextFunction) =>
+    next(),
 }));
 
 vi.mock(

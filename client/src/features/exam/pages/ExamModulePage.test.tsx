@@ -16,15 +16,7 @@
  * shuffled order under opaque tokens; the canonical letters live only in the fake.
  */
 import React from "react";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Route, Router, Switch } from "wouter";
@@ -65,10 +57,7 @@ function items(): ExamQuestionPayload[] {
     question_type: "multiple_choice" as const,
     stem: `Which choice best completes question ${ordinal + 1}?`,
     passage: `Passage for question ${ordinal + 1}. Kelp forests recover where predators return.`,
-    options: served.map(([id], i) => ({
-      id: `${id}_${ordinal}`,
-      text: `Option text ${i + 1} for ${ordinal + 1}`,
-    })),
+    options: served.map(([id], i) => ({ id: `${id}_${ordinal}`, text: `Option text ${i + 1} for ${ordinal + 1}` })),
     assets: null,
     current_answer: fake.answers.get(ordinal) ?? null,
     correct_answer: null,
@@ -77,11 +66,7 @@ function items(): ExamQuestionPayload[] {
 }
 
 function sectionState() {
-  return {
-    section: "RW" as const,
-    state: fake.rwState,
-    remaining_ms: 1_800_000,
-  };
+  return { section: "RW" as const, state: fake.rwState, remaining_ms: 1_800_000 };
 }
 
 function session(): ExamSessionResponse {
@@ -96,20 +81,8 @@ function session(): ExamSessionResponse {
     is_first_seen_form_attempt: true,
     break_remaining_ms: null,
     sections: [
-      {
-        section: "RW",
-        state: fake.rwState,
-        remaining_ms: 1_800_000,
-        module2_path_locked: false,
-        current_ordinal: fake.currentOrdinal,
-      },
-      {
-        section: "M",
-        state: "not_started",
-        remaining_ms: null,
-        module2_path_locked: false,
-        current_ordinal: null,
-      },
+      { section: "RW", state: fake.rwState, remaining_ms: 1_800_000, module2_path_locked: false, current_ordinal: fake.currentOrdinal },
+      { section: "M", state: "not_started", remaining_ms: null, module2_path_locked: false, current_ordinal: null },
     ],
   };
 }
@@ -119,48 +92,27 @@ vi.mock("../api/exam-api", async (importOriginal) => {
   return {
     ...real,
     fetchExamSession: vi.fn(async () => session()),
-    fetchModuleItems: vi.fn(async () => ({
-      section_state: sectionState(),
-      items: items(),
-    })),
-    fetchModuleWorkspace: vi.fn(async () => ({
-      section_state: sectionState(),
-      items: [...fake.workspace.values()],
-    })),
-    submitExamAnswer: vi.fn(
-      async (body: {
-        ordinal: number;
-        answer: string | null;
-        question_id: string;
-      }) => {
-        fake.answerBodies.push(body);
-        fake.answers.set(body.ordinal, body.answer);
-        return {
-          response_schema_version: "tests-answer-v1" as const,
-          stored: {
-            question_id: body.question_id,
-            ordinal: body.ordinal,
-            answer: body.answer,
-            submitted_at: "2026-09-25T10:00:00Z",
-          },
-          section_state: sectionState(),
-          idempotent_replay: false,
-        };
-      },
-    ),
-    saveItemWorkspace: vi.fn(
-      async (_s: string, _sec: string, _m: string, item: ExamWorkspaceItem) => {
-        fake.workspace.set(item.ordinal, item);
-        return { section_state: sectionState(), item };
-      },
-    ),
-    sendExamHeartbeat: vi.fn(
-      async (_s: string, _sec: string, ordinal: number | null) => {
-        fake.heartbeats.push(ordinal);
-        if (ordinal !== null) fake.currentOrdinal = ordinal;
-        return { section_state: sectionState() };
-      },
-    ),
+    fetchModuleItems: vi.fn(async () => ({ section_state: sectionState(), items: items() })),
+    fetchModuleWorkspace: vi.fn(async () => ({ section_state: sectionState(), items: [...fake.workspace.values()] })),
+    submitExamAnswer: vi.fn(async (body: { ordinal: number; answer: string | null; question_id: string }) => {
+      fake.answerBodies.push(body);
+      fake.answers.set(body.ordinal, body.answer);
+      return {
+        response_schema_version: "tests-answer-v1" as const,
+        stored: { question_id: body.question_id, ordinal: body.ordinal, answer: body.answer, submitted_at: "2026-09-25T10:00:00Z" },
+        section_state: sectionState(),
+        idempotent_replay: false,
+      };
+    }),
+    saveItemWorkspace: vi.fn(async (_s: string, _sec: string, _m: string, item: ExamWorkspaceItem) => {
+      fake.workspace.set(item.ordinal, item);
+      return { section_state: sectionState(), item };
+    }),
+    sendExamHeartbeat: vi.fn(async (_s: string, _sec: string, ordinal: number | null) => {
+      fake.heartbeats.push(ordinal);
+      if (ordinal !== null) fake.currentOrdinal = ordinal;
+      return { section_state: sectionState() };
+    }),
     submitExamModule: vi.fn(),
     startExamModule: vi.fn(),
   };
@@ -174,17 +126,12 @@ import ExamModulePage from "./ExamModulePage";
 
 function mount(path: string) {
   const { hook, history } = memoryLocation({ path, record: true });
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>
       <Router hook={hook}>
         <Switch>
-          <Route
-            path="/tests/:sessionId/:section/:module"
-            component={ExamModulePage}
-          />
+          <Route path="/tests/:sessionId/:section/:module" component={ExamModulePage} />
           <Route path="/tests/:sessionId">
             <p>session hub</p>
           </Route>
@@ -210,17 +157,9 @@ beforeEach(() => {
     workspace: new Map(),
     answerBodies: [],
     heartbeats: [],
-    letters: new Map([
-      ["tok_c7", "C"],
-      ["tok_a2", "A"],
-      ["tok_d9", "D"],
-      ["tok_b4", "B"],
-    ]),
+    letters: new Map([["tok_c7", "C"], ["tok_a2", "A"], ["tok_d9", "D"], ["tok_b4", "B"]]),
   };
-  Object.defineProperty(document, "visibilityState", {
-    configurable: true,
-    get: () => "visible",
-  });
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
 });
 
 afterEach(() => {
@@ -229,51 +168,27 @@ afterEach(() => {
 });
 
 function choiceButtons() {
-  return screen
-    .getAllByTestId("exam-choice")
-    .map((li) => within(li).getAllByRole("button")[0]!);
+  return screen.getAllByTestId("exam-choice").map((li) => within(li).getAllByRole("button")[0]!);
 }
 
 describe("E7b module page plants", () => {
   it("PLANT: elimination on a shuffled option crosses out that same option after reload", async () => {
     mount(RW1);
     await screen.findByTestId("exam-module");
-    const crossOut = screen.getAllByRole("button", {
-      name: "Cross out choice 3",
-    })[0]!;
+    const crossOut = screen.getAllByRole("button", { name: "Cross out choice 3" })[0]!;
     fireEvent.click(crossOut);
-    await waitFor(() =>
-      expect(fake.workspace.get(0)?.eliminated_option_ids).toEqual([
-        "tok_d9_0",
-      ]),
-    );
+    await waitFor(() => expect(fake.workspace.get(0)?.eliminated_option_ids).toEqual(["tok_d9_0"]));
     // The token went to the server, never a letter.
-    expect(
-      fake.workspace
-        .get(0)
-        ?.eliminated_option_ids.some((t) => /^[A-D]$/.test(t)),
-    ).toBe(false);
+    expect(fake.workspace.get(0)?.eliminated_option_ids.some((t) => /^[A-D]$/.test(t))).toBe(false);
 
     await reload(RW1);
     await screen.findByTestId("exam-module");
     const third = screen.getAllByTestId("exam-choice")[2]!;
-    expect(
-      within(third)
-        .getAllByRole("button")[0]!
-        .getAttribute("data-choice-token"),
-    ).toBe("tok_d9_0");
-    expect(
-      within(third)
-        .getByRole("button", { name: "Cross out choice 3" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(within(third).getAllByRole("button")[0]!.getAttribute("data-choice-token")).toBe("tok_d9_0");
+    expect(within(third).getByRole("button", { name: "Cross out choice 3" }).getAttribute("aria-pressed")).toBe("true");
     for (const i of [0, 1, 3]) {
       const li = screen.getAllByTestId("exam-choice")[i]!;
-      expect(
-        within(li)
-          .getByRole("button", { name: `Cross out choice ${i + 1}` })
-          .getAttribute("aria-pressed"),
-      ).toBe("false");
+      expect(within(li).getByRole("button", { name: `Cross out choice ${i + 1}` }).getAttribute("aria-pressed")).toBe("false");
     }
   });
 
@@ -283,22 +198,13 @@ describe("E7b module page plants", () => {
     fireEvent.click(choiceButtons()[1]!);
     await waitFor(() => expect(fake.answers.get(0)).toBe("tok_a2_0"));
     expect(fake.answerBodies).toHaveLength(1);
-    expect(fake.answerBodies[0]).toMatchObject({
-      answer: "tok_a2_0",
-      section: "RW",
-      module: "1",
-      ordinal: 0,
-    });
+    expect(fake.answerBodies[0]).toMatchObject({ answer: "tok_a2_0", section: "RW", module: "1", ordinal: 0 });
 
     await reload(RW1);
     await screen.findByTestId("exam-module");
-    const pressed = choiceButtons().filter(
-      (b) => b.getAttribute("aria-pressed") === "true",
-    );
+    const pressed = choiceButtons().filter((b) => b.getAttribute("aria-pressed") === "true");
     expect(pressed).toHaveLength(1);
-    expect(pressed[0]!.getAttribute("data-choice-token")).toBe(
-      fake.answers.get(0),
-    );
+    expect(pressed[0]!.getAttribute("data-choice-token")).toBe(fake.answers.get(0));
   });
 
   it("RESUME: a reload lands on the question last reported by the heartbeat", async () => {
@@ -309,30 +215,21 @@ describe("E7b module page plants", () => {
     await waitFor(() => expect(fake.currentOrdinal).toBe(2));
     await reload(RW1);
     await screen.findByTestId("exam-module");
-    expect(screen.getByTestId("exam-navigator-open").textContent).toContain(
-      "Question 3 of 3",
-    );
+    expect(screen.getByTestId("exam-navigator-open").textContent).toContain("Question 3 of 3");
   });
 
   it("PLANT: no correct_answer or explanation in client state during a module", async () => {
     const { client } = mount(RW1);
     await screen.findByTestId("exam-module");
-    const cached = client
-      .getQueryCache()
-      .getAll()
-      .map((q) => q.state.data);
+    const cached = client.getQueryCache().getAll().map((q) => q.state.data);
     const text = JSON.stringify(cached);
     expect(text).toContain("SATRW1Q0");
     // Keys are present by contract (Coding Standards §5.2) and always null.
-    for (const m of text.matchAll(
-      /"(correct_answer|explanation|correct_variants)":(.*?)[,}]/g,
-    )) {
+    for (const m of text.matchAll(/"(correct_answer|explanation|correct_variants)":(.*?)[,}]/g)) {
       expect(m[1]).not.toBe("correct_variants");
       expect(m[2]).toBe("null");
     }
-    expect(document.body.textContent ?? "").not.toMatch(
-      /\b(correct|incorrect|explanation)\b/i,
-    );
+    expect(document.body.textContent ?? "").not.toMatch(/\b(correct|incorrect|explanation)\b/i);
   });
 
   it("PLANT: the review page's counts match the navigator's", async () => {
@@ -348,16 +245,13 @@ describe("E7b module page plants", () => {
     const grid = await screen.findByTestId("exam-navigator-grid");
     const cells = within(grid).getAllByTestId("exam-question-cell");
     const nav = {
-      answered: cells.filter((c) => c.getAttribute("data-answered") === "true")
-        .length,
-      marked: cells.filter((c) => c.getAttribute("data-marked") === "true")
-        .length,
+      answered: cells.filter((c) => c.getAttribute("data-answered") === "true").length,
+      marked: cells.filter((c) => c.getAttribute("data-marked") === "true").length,
       total: cells.length,
     };
     fireEvent.click(screen.getByRole("button", { name: "Go to review page" }));
     const counts = await screen.findByTestId("exam-review-counts");
-    const read = (label: string) =>
-      Number(within(counts).getByText(label).nextElementSibling?.textContent);
+    const read = (label: string) => Number(within(counts).getByText(label).nextElementSibling?.textContent);
     expect(nav).toEqual({ answered: 1, marked: 2, total: 3 });
     expect(read("Answered")).toBe(nav.answered);
     expect(read("Unanswered")).toBe(nav.total - nav.answered);
@@ -374,17 +268,12 @@ describe("E7b module page plants", () => {
     fake.rwState = "module2_active";
     mount(`/tests/${SID}/RW/2`);
     await screen.findByTestId("exam-module");
-    expect(screen.getByTestId("exam-module-label").textContent).toBe(
-      "Module 2 of 2",
-    );
+    expect(screen.getByTestId("exam-module-label").textContent).toBe("Module 2 of 2");
     expect(document.body.textContent ?? "").not.toMatch(/harder|easier|2A|2B/);
   });
 
   it("MECHANISM: no heartbeat is sent while the tab is hidden", async () => {
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: () => "hidden",
-    });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       mount(RW1);
@@ -393,10 +282,7 @@ describe("E7b module page plants", () => {
         vi.advanceTimersByTime(20_000);
       });
       expect(fake.heartbeats).toEqual([]);
-      Object.defineProperty(document, "visibilityState", {
-        configurable: true,
-        get: () => "visible",
-      });
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
       await act(async () => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
@@ -436,8 +322,7 @@ describe("exam module keys (UI-45)", () => {
     const { submitExamModule } = await import("../api/exam-api");
     mount(RW1);
     await screen.findByText(stemOf(1));
-    for (let i = 0; i < 3; i += 1)
-      fireEvent.keyDown(window, { key: "ArrowRight" });
+    for (let i = 0; i < 3; i += 1) fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(await screen.findByTestId("exam-review-counts")).toBeTruthy();
     fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "Enter" });
@@ -455,9 +340,7 @@ describe("exam module keys (UI-45)", () => {
     fireEvent.keyDown(choiceButtons()[0]!, { key: "Enter" });
 
     fireEvent.click(screen.getByTestId("exam-navigator-open"));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Go to review page" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Go to review page" }));
     const reviewSubmit = await screen.findByTestId("exam-review-submit");
     fireEvent.keyDown(window, { key: "Enter" });
     expect(screen.queryByTestId("exam-submit-confirm")).toBeNull();

@@ -26,10 +26,7 @@ export type ClockAnchor = {
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const ONE_MINUTE_MS = 60 * 1000;
 
-export function anchorClock(
-  remainingMs: number,
-  monotonicNow: number,
-): ClockAnchor {
+export function anchorClock(remainingMs: number, monotonicNow: number): ClockAnchor {
   return { remainingMs: Math.max(0, remainingMs), at: monotonicNow };
 }
 
@@ -76,9 +73,7 @@ export function crossedAnnouncement(
   previousMs: number,
   currentMs: number,
 ): "five_minutes" | "one_minute" | null {
-  if (previousMs > ONE_MINUTE_MS && currentMs <= ONE_MINUTE_MS)
-    return "one_minute";
-  if (previousMs > FIVE_MINUTES_MS && currentMs <= FIVE_MINUTES_MS)
-    return "five_minutes";
+  if (previousMs > ONE_MINUTE_MS && currentMs <= ONE_MINUTE_MS) return "one_minute";
+  if (previousMs > FIVE_MINUTES_MS && currentMs <= FIVE_MINUTES_MS) return "five_minutes";
   return null;
 }

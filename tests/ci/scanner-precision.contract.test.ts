@@ -15,7 +15,9 @@
  */
 import { describe, it, expect, afterAll } from "vitest";
 
-import { hasAnswerLeak } from "../../shared/tutor-safety-constants";
+import {
+  hasAnswerLeak,
+} from "../../shared/tutor-safety-constants";
 
 // ── Corpus types ─────────────────────────────────────────────────────
 

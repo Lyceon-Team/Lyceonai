@@ -226,12 +226,9 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(res.body.user.id).toBe(KID);
       expect(res.body.user.role).toBe("student");
       expect(res.body.user.guardianConsentRequired).toBe(true);
-      for (const key of LEFTOVERS)
-        expect(res.body.user).not.toHaveProperty(key);
+      for (const key of LEFTOVERS) expect(res.body.user).not.toHaveProperty(key);
       // The stored value reaches the response under no name at all.
-      expect(JSON.stringify(res.body)).not.toContain(
-        "stored-parent@example.test",
-      );
+      expect(JSON.stringify(res.body)).not.toContain("stored-parent@example.test");
     });
 
     it("PATCH /api/profile strips guardianEmail (never written) and returns none of the leftovers", async () => {

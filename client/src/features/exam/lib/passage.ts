@@ -27,27 +27,9 @@ import {
 } from "@lyceon/shared/exam-runtime-schema";
 
 type PassageSegment =
-  | {
-      kind: "text";
-      start: number;
-      end: number;
-      text: string;
-      highlighted: boolean;
-    }
-  | {
-      kind: "math";
-      start: number;
-      end: number;
-      source: string;
-      highlighted: boolean;
-    }
-  | {
-      kind: "escape";
-      start: number;
-      end: number;
-      text: string;
-      highlighted: boolean;
-    };
+  | { kind: "text"; start: number; end: number; text: string; highlighted: boolean }
+  | { kind: "math"; start: number; end: number; source: string; highlighted: boolean }
+  | { kind: "escape"; start: number; end: number; text: string; highlighted: boolean };
 
 type Piece =
   | { kind: "text"; start: number; end: number }
@@ -75,23 +57,14 @@ function passagePieces(passage: string): Piece[] {
     let runStart = 0;
     for (let i = 0; i < raw.length; i++) {
       if (raw[i] === "\\" && raw[i + 1] === "$") {
-        if (i > runStart)
-          pieces.push({
-            kind: "text",
-            start: start + runStart,
-            end: start + i,
-          });
+        if (i > runStart) pieces.push({ kind: "text", start: start + runStart, end: start + i });
         pieces.push({ kind: "escape", start: start + i, end: start + i + 2 });
         i += 1;
         runStart = i + 1;
       }
     }
     if (runStart < raw.length) {
-      pieces.push({
-        kind: "text",
-        start: start + runStart,
-        end: start + raw.length,
-      });
+      pieces.push({ kind: "text", start: start + runStart, end: start + raw.length });
     }
   }
   return pieces;
@@ -116,10 +89,7 @@ function normalizeHighlights(
   return out;
 }
 
-function overlaps(
-  a: { start: number; end: number },
-  b: { start: number; end: number },
-): boolean {
+function overlaps(a: { start: number; end: number }, b: { start: number; end: number }): boolean {
   return a.start < b.end && b.start < a.end;
 }
 
@@ -136,20 +106,8 @@ export function buildPassageSegments(
       const source = cps.slice(piece.start, piece.end).join("");
       segments.push(
         piece.kind === "math"
-          ? {
-              kind: "math",
-              start: piece.start,
-              end: piece.end,
-              source,
-              highlighted,
-            }
-          : {
-              kind: "escape",
-              start: piece.start,
-              end: piece.end,
-              text: "$",
-              highlighted,
-            },
+          ? { kind: "math", start: piece.start, end: piece.end, source, highlighted }
+          : { kind: "escape", start: piece.start, end: piece.end, text: "$", highlighted },
       );
       continue;
     }
@@ -207,8 +165,7 @@ export function addHighlight(
   const range = snapRange(passage, start, end);
   if (range === null) return { ok: false, reason: "empty" };
   const next = normalizeHighlights([...existing, range]);
-  if (next.length > EXAM_WORKSPACE_MAX_HIGHLIGHTS)
-    return { ok: false, reason: "limit" };
+  if (next.length > EXAM_WORKSPACE_MAX_HIGHLIGHTS) return { ok: false, reason: "limit" };
   return { ok: true, highlights: next };
 }
 
@@ -218,9 +175,6 @@ export function removeHighlights(
   start: number,
   end: number,
 ): ExamHighlight[] {
-  const probe = {
-    start: Math.min(start, end),
-    end: Math.max(start, end, Math.min(start, end) + 1),
-  };
+  const probe = { start: Math.min(start, end), end: Math.max(start, end, Math.min(start, end) + 1) };
   return normalizeHighlights(existing).filter((h) => !overlaps(h, probe));
 }

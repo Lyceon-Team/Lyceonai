@@ -1,7 +1,4 @@
-import {
-  AppNotice,
-  type AppNoticeProps,
-} from "@/components/feedback/AppNotice";
+import { AppNotice, type AppNoticeProps } from "@/components/feedback/AppNotice";
 
 type RecoveryNoticeProps = {
   title?: string;

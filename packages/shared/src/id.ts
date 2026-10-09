@@ -10,9 +10,9 @@ export const canonicalId = (docSlug: string, page: number, index: number) =>
 // Helper to create document slug from filename
 export const createDocSlug = (filename: string): string => {
   return filename
-    .replace(/\.pdf$/i, "")
-    .replace(/\s+/g, "-")
-    .replace(/[^a-zA-Z0-9-_]/g, "")
+    .replace(/\.pdf$/i, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-zA-Z0-9-_]/g, '')
     .toLowerCase()
     .substring(0, 50); // Limit length
 };
@@ -22,13 +22,10 @@ type QuestionRef = { questionId?: string; rawId?: string };
 
 export const extractQuestionIndex = (
   questions: readonly QuestionRef[],
-  currentQuestion: QuestionRef,
+  currentQuestion: QuestionRef
 ): number => {
-  return (
-    questions.findIndex(
-      (q) =>
-        q.questionId === currentQuestion.questionId ||
-        q.rawId === currentQuestion.rawId,
-    ) + 1
-  ); // 1-based indexing
+  return questions.findIndex(q =>
+    q.questionId === currentQuestion.questionId ||
+    q.rawId === currentQuestion.rawId
+  ) + 1; // 1-based indexing
 };

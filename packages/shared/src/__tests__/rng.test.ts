@@ -78,14 +78,8 @@ describe("deriveSelectionSeed (Doc 02B §684)", () => {
   it("changing any one input changes the resulting order", () => {
     const pool = Array.from({ length: 40 }, (_, i) => i);
     const order0 = seededShuffle(pool, deriveSelectionSeed(base));
-    expect(
-      seededShuffle(pool, deriveSelectionSeed({ ...base, profileId: "pX" })),
-    ).not.toEqual(order0);
-    expect(
-      seededShuffle(pool, deriveSelectionSeed({ ...base, filterHash: "fX" })),
-    ).not.toEqual(order0);
-    expect(
-      seededShuffle(pool, deriveSelectionSeed({ ...base, sessionId: "sX" })),
-    ).not.toEqual(order0);
+    expect(seededShuffle(pool, deriveSelectionSeed({ ...base, profileId: "pX" }))).not.toEqual(order0);
+    expect(seededShuffle(pool, deriveSelectionSeed({ ...base, filterHash: "fX" }))).not.toEqual(order0);
+    expect(seededShuffle(pool, deriveSelectionSeed({ ...base, sessionId: "sX" }))).not.toEqual(order0);
   });
 });

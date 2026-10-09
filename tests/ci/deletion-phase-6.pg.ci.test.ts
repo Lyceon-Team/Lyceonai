@@ -487,12 +487,7 @@ describe.skipIf(!PG_AVAILABLE)(
     }
 
     async function conversationsAndMessages(): Promise<
-      {
-        id: string;
-        student_id: string | null;
-        crisis_flagged: boolean;
-        messages: number;
-      }[]
+      { id: string; student_id: string | null; crisis_flagged: boolean; messages: number }[]
     > {
       const r = await pg.query(
         `SELECT c.id, c.student_id, c.crisis_flagged,
@@ -559,10 +554,7 @@ describe.skipIf(!PG_AVAILABLE)(
         [C2, SUBJECT],
       );
       await expect(
-        pg.query(
-          `UPDATE public.tutor_conversations SET student_id = NULL WHERE id = $1`,
-          [C2],
-        ),
+        pg.query(`UPDATE public.tutor_conversations SET student_id = NULL WHERE id = $1`, [C2]),
       ).rejects.toThrow(/tutor_conversations_null_student_only_flagged/);
     });
 

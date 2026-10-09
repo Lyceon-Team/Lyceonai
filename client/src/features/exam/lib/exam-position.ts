@@ -39,12 +39,9 @@ export function examPosition(session: ExamSessionResponse): ExamPosition {
       const section = session.active_section;
       const row = session.sections.find((s) => s.section === section);
       if (section === null || row === undefined) return { kind: "not_started" };
-      if (row.state === "module1_active")
-        return { kind: "module", section, module: "1" };
-      if (row.state === "module2_active")
-        return { kind: "module", section, module: "2" };
-      if (row.state === "module1_submitted")
-        return { kind: "module2_ready", section };
+      if (row.state === "module1_active") return { kind: "module", section, module: "1" };
+      if (row.state === "module2_active") return { kind: "module", section, module: "2" };
+      if (row.state === "module1_submitted") return { kind: "module2_ready", section };
       return { kind: "not_started" };
     }
   }
@@ -67,10 +64,7 @@ export function reportPath(sessionId: string): string {
 }
 
 /** The URL the server position belongs at. */
-export function pathForPosition(
-  sessionId: string,
-  position: ExamPosition,
-): string {
+export function pathForPosition(sessionId: string, position: ExamPosition): string {
   switch (position.kind) {
     case "module":
       return modulePath(sessionId, position.section, position.module);
@@ -90,10 +84,7 @@ export function parseModuleRoute(
   section: string | undefined,
   module: string | undefined,
 ): ModuleRoute | null {
-  if (
-    (section === "RW" || section === "M") &&
-    (module === "1" || module === "2")
-  ) {
+  if ((section === "RW" || section === "M") && (module === "1" || module === "2")) {
     return { section, module };
   }
   return null;

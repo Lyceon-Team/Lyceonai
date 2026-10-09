@@ -14,9 +14,7 @@ async function fetchCsrfToken(): Promise<string> {
   }
   const data = (await res.json()) as { csrfToken?: string };
   const parsed = csrfTokenResponseSchema.safeParse(data);
-  setSessionCookieHint(
-    parsed.success ? parsed.data.sessionCookiePresent : null,
-  );
+  setSessionCookieHint(parsed.success ? parsed.data.sessionCookiePresent : null);
   if (!data?.csrfToken) {
     throw new Error("CSRF token missing in response");
   }
@@ -63,9 +61,7 @@ function hasCsrfBlockedCode(payload: unknown): boolean {
   return normalized.includes("csrf_blocked");
 }
 
-async function getCsrfBlockedPayload(
-  response: Response,
-): Promise<unknown | null> {
+async function getCsrfBlockedPayload(response: Response): Promise<unknown | null> {
   if (response.status !== 403) return null;
   try {
     const payload = await response.clone().json();
@@ -77,11 +73,10 @@ async function getCsrfBlockedPayload(
 
 export async function csrfFetch(
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init?: RequestInit
 ): Promise<Response> {
   const method = (init?.method || "GET").toUpperCase();
-  const shouldAttachToken =
-    method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+  const shouldAttachToken = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 
   const makeAttempt = async (): Promise<Response> => {
     const headers = new Headers(init?.headers || {});
@@ -105,7 +100,7 @@ export async function csrfFetch(
   while (attempts <= MAX_CSRF_RECOVERY_RETRIES) {
     const response = await makeAttempt();
     const blockedPayload = await getCsrfBlockedPayload(response);
-
+    
     if (!blockedPayload) {
       return response;
     }
@@ -115,8 +110,7 @@ export async function csrfFetch(
       throw new HttpApiError({
         status: 403,
         code: "csrf_blocked",
-        message:
-          "Your session security token expired. Please refresh and try again.",
+        message: "Your session security token expired. Please refresh and try again.",
         retryable: false,
         details: blockedPayload,
       });
@@ -129,8 +123,7 @@ export async function csrfFetch(
   throw new HttpApiError({
     status: 403,
     code: "csrf_blocked",
-    message:
-      "Your session security token expired. Please refresh and try again.",
+    message: "Your session security token expired. Please refresh and try again.",
     retryable: false,
   });
 }

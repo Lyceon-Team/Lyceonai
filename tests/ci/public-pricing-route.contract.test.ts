@@ -18,9 +18,7 @@ const retrieveMock = vi.fn();
 vi.mock("../../server/lib/stripe/client", () => ({
   getStripeClient: () => ({ prices: { retrieve: retrieveMock } }),
   getConfiguredPriceId: (period: string) =>
-    period === "monthly"
-      ? process.env.STRIPE_PRICE_PARENT_MONTHLY || null
-      : null,
+    period === "monthly" ? process.env.STRIPE_PRICE_PARENT_MONTHLY || null : null,
 }));
 
 vi.mock("../../server/logger", () => ({
@@ -72,10 +70,7 @@ describe("GET /api/public/pricing", () => {
    * arrives, and a per-field check passes right through it.
    */
   it("carries exactly three fields — no price id, no product, no plan list", async () => {
-    retrieveMock.mockResolvedValue({
-      ...MONTHLY_PRICE,
-      id: "price_test_monthly",
-    });
+    retrieveMock.mockResolvedValue({ ...MONTHLY_PRICE, id: "price_test_monthly" });
     const app = await buildApp();
 
     const res = await request(app).get("/api/public/pricing");

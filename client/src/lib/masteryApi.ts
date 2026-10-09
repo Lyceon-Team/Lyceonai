@@ -53,9 +53,7 @@ export type {
  */
 async function parsed<T>(
   response: Response,
-  schema: {
-    safeParse: (v: unknown) => { success: true; data: T } | { success: false };
-  },
+  schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false } },
   resource: string,
 ): Promise<T> {
   const body: unknown = await response.json();

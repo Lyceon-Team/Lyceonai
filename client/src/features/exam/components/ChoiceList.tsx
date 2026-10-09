@@ -24,13 +24,7 @@ type Props = {
   onToggleEliminate: (token: string) => void;
 };
 
-export function ChoiceList({
-  options,
-  selected,
-  eliminated,
-  onSelect,
-  onToggleEliminate,
-}: Props) {
+export function ChoiceList({ options, selected, eliminated, onSelect, onToggleEliminate }: Props) {
   return (
     <fieldset className="m-0 border-0 p-0">
       <legend className="sr-only">Answer choices</legend>
@@ -40,11 +34,7 @@ export function ChoiceList({
           const isOut = eliminated.includes(option.id);
           const position = index + 1;
           return (
-            <li
-              key={option.id}
-              className="flex items-stretch gap-2"
-              data-testid="exam-choice"
-            >
+            <li key={option.id} className="flex items-stretch gap-2" data-testid="exam-choice">
               <button
                 type="button"
                 aria-pressed={isSelected}
@@ -61,23 +51,12 @@ export function ChoiceList({
                   aria-hidden="true"
                   className={[
                     "mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border-2 bg-white",
-                    isSelected
-                      ? "border-[var(--exam-accent)]"
-                      : "border-[var(--exam-line-strong)]",
+                    isSelected ? "border-[var(--exam-accent)]" : "border-[var(--exam-line-strong)]",
                   ].join(" ")}
                 >
-                  <span
-                    className={[
-                      "h-2.5 w-2.5 rounded-full",
-                      isSelected ? "bg-[var(--exam-accent)]" : "bg-transparent",
-                    ].join(" ")}
-                  />
+                  <span className={["h-2.5 w-2.5 rounded-full", isSelected ? "bg-[var(--exam-accent)]" : "bg-transparent"].join(" ")} />
                 </span>
-                <span
-                  className={
-                    isOut ? "text-[var(--exam-muted)] line-through" : undefined
-                  }
-                >
+                <span className={isOut ? "text-[var(--exam-muted)] line-through" : undefined}>
                   <MathRenderer content={option.text} />
                 </span>
                 {isOut && <span className="sr-only">(crossed out)</span>}
@@ -95,16 +74,7 @@ export function ChoiceList({
                     : "border-[var(--exam-line)] bg-[var(--exam-surface)] text-[var(--exam-muted)]",
                 ].join(" ")}
               >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  aria-hidden="true"
-                >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="7" />
                   <path d="M4 20L20 4" />
                 </svg>

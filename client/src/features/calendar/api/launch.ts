@@ -37,7 +37,10 @@ import { useLaunchMutation } from "./mutations";
  * reading the page's literal and the cache slot a launch warms — rather than trusting that
  * they do.
  */
-function practiceStateKey(sessionId: string, clientInstanceId: string): string {
+function practiceStateKey(
+  sessionId: string,
+  clientInstanceId: string,
+): string {
   return `/api/practice/sessions/${sessionId}/state?client_instance_id=${clientInstanceId}`;
 }
 
@@ -45,7 +48,10 @@ function practiceStateKey(sessionId: string, clientInstanceId: string): string {
  * The EXACT key `resume-review.tsx` uses (its line 65). Same rule, same reason: a
  * structured key would warm a slot nothing reads and the spinner would come back silently.
  */
-function reviewStateKey(sessionId: string, clientInstanceId: string): string {
+function reviewStateKey(
+  sessionId: string,
+  clientInstanceId: string,
+): string {
   return `/api/review/sessions/${sessionId}/state?client_instance_id=${clientInstanceId}`;
 }
 

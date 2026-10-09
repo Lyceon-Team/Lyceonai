@@ -8,10 +8,7 @@
  * question, labelled with its number and its state in words ("Question 10,
  * unanswered, marked for review"), so the grid works by keyboard and by ear.
  */
-import type {
-  ExamModule,
-  ExamSection,
-} from "@lyceon/shared/exam-runtime-schema";
+import type { ExamModule, ExamSection } from "@lyceon/shared/exam-runtime-schema";
 import { EXAM_SECTION_LABEL } from "@lyceon/shared/exam-report-schema";
 import {
   Dialog,
@@ -51,13 +48,9 @@ export function NavigatorDialog(props: Props) {
           <StateLegend />
         </div>
         <DialogDescription className="sr-only">
-          {summary.answered} of {summary.total} answered, {summary.marked}{" "}
-          marked for review. Choose a question to go to it.
+          {summary.answered} of {summary.total} answered, {summary.marked} marked for review. Choose a question to go to it.
         </DialogDescription>
-        <ul
-          className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(48px,1fr))] gap-2.5 p-0"
-          data-testid="exam-navigator-grid"
-        >
+        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(48px,1fr))] gap-2.5 p-0" data-testid="exam-navigator-grid">
           {summary.cells.map((cell) => (
             <li key={cell.ordinal}>
               <QuestionCell

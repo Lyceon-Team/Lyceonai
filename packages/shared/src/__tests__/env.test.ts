@@ -27,9 +27,7 @@ describe("envSchema", () => {
   });
 
   it("rejects a malformed SUPABASE_URL", () => {
-    expect(safeParseEnv({ ...valid, SUPABASE_URL: "not-a-url" }).success).toBe(
-      false,
-    );
+    expect(safeParseEnv({ ...valid, SUPABASE_URL: "not-a-url" }).success).toBe(false);
   });
 
   it("rejects an unknown NODE_ENV value", () => {
@@ -37,11 +35,7 @@ describe("envSchema", () => {
   });
 
   it("accepts valid optional provider keys", () => {
-    const env = parseEnv({
-      ...valid,
-      GEMINI_API_KEY: "k",
-      DATABASE_URL: "postgres://h:5432/db",
-    });
+    const env = parseEnv({ ...valid, GEMINI_API_KEY: "k", DATABASE_URL: "postgres://h:5432/db" });
     expect(env.GEMINI_API_KEY).toBe("k");
     expect(env.DATABASE_URL).toBe("postgres://h:5432/db");
   });

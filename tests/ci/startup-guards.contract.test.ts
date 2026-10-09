@@ -118,8 +118,9 @@ describe("GCP credential absence does not stop the process", () => {
 
 describe("PUBLIC_SITE_URL is required of the deployment target, not the build mode", () => {
   it("warns rather than dying on a Vercel preview", async () => {
-    const { evaluateSiteUrl, isProductionDeployment } =
-      await import("../../server/lib/startup-guards");
+    const { evaluateSiteUrl, isProductionDeployment } = await import(
+      "../../server/lib/startup-guards"
+    );
     process.env.NODE_ENV = "production";
     process.env.VERCEL_ENV = "preview";
 
@@ -136,8 +137,9 @@ describe("PUBLIC_SITE_URL is required of the deployment target, not the build mo
    * stops the fix from becoming "remove the guard".
    */
   it("still refuses to start in the production deployment", async () => {
-    const { evaluateSiteUrl, isProductionDeployment } =
-      await import("../../server/lib/startup-guards");
+    const { evaluateSiteUrl, isProductionDeployment } = await import(
+      "../../server/lib/startup-guards"
+    );
     process.env.NODE_ENV = "production";
     process.env.VERCEL_ENV = "production";
 
@@ -155,8 +157,9 @@ describe("PUBLIC_SITE_URL is required of the deployment target, not the build mo
    * production" — that would silently drop the requirement on any other host.
    */
   it("still refuses on a non-Vercel production host", async () => {
-    const { isProductionDeployment } =
-      await import("../../server/lib/startup-guards");
+    const { isProductionDeployment } = await import(
+      "../../server/lib/startup-guards"
+    );
     delete process.env.VERCEL_ENV;
     process.env.NODE_ENV = "production";
 
@@ -164,7 +167,9 @@ describe("PUBLIC_SITE_URL is required of the deployment target, not the build mo
   });
 
   it("still refuses a non-HTTPS site URL in the production deployment", async () => {
-    const { evaluateSiteUrl } = await import("../../server/lib/startup-guards");
+    const { evaluateSiteUrl } = await import(
+      "../../server/lib/startup-guards"
+    );
     const verdict = evaluateSiteUrl({
       publicSiteUrl: "http://lyceon.ai",
       isProductionDeployment: true,
@@ -174,7 +179,9 @@ describe("PUBLIC_SITE_URL is required of the deployment target, not the build mo
   });
 
   it("proceeds, and says so, on a well-formed production URL", async () => {
-    const { evaluateSiteUrl } = await import("../../server/lib/startup-guards");
+    const { evaluateSiteUrl } = await import(
+      "../../server/lib/startup-guards"
+    );
     const verdict = evaluateSiteUrl({
       publicSiteUrl: "https://lyceon.ai",
       isProductionDeployment: true,

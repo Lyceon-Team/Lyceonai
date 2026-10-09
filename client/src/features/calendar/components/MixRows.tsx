@@ -23,11 +23,7 @@
  */
 import type { CanonicalDomain } from "@lyceon/shared/calendar";
 import { domainsForSection } from "../lib/blocks";
-import {
-  MAX_DOMAINS_PER_BLOCK,
-  MIX_GRANULARITY,
-  mixCountChoices,
-} from "../lib/members";
+import { MAX_DOMAINS_PER_BLOCK, MIX_GRANULARITY, mixCountChoices } from "../lib/members";
 
 export type MixEntry = { domain: CanonicalDomain; count: number };
 

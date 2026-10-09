@@ -52,19 +52,13 @@ export const RULE_4_COLUMNS = [
 export type Rule4Column = (typeof RULE_4_COLUMNS)[number];
 
 /** Every key path in an object tree whose leaf key is a RULE-4 column. */
-export function findRule4Keys(
-  value: unknown,
-  prefix = "",
-  into: string[] = [],
-): string[] {
+export function findRule4Keys(value: unknown, prefix = "", into: string[] = []): string[] {
   if (Array.isArray(value)) {
     for (const entry of value) findRule4Keys(entry, `${prefix}[]`, into);
     return into;
   }
   if (value !== null && typeof value === "object") {
-    for (const [key, child] of Object.entries(
-      value as Record<string, unknown>,
-    )) {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
       const path = prefix ? `${prefix}.${key}` : key;
       if ((RULE_4_COLUMNS as readonly string[]).includes(key)) into.push(path);
       findRule4Keys(child, path, into);

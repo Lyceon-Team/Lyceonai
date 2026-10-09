@@ -6,32 +6,30 @@ const posts: readonly BlogPost[] = BLOG_POSTS;
 
 /** Newest first; a copy, so the shared list is never reordered in place. */
 export function getAllPosts(): BlogPost[] {
-  return [...posts].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-  );
+  return [...posts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 export function getPostBySlug(slug: string): BlogPost | undefined {
-  return posts.find((post) => post.slug === slug);
+  return posts.find(post => post.slug === slug);
 }
 
 export function getPostsByTag(tag: string): BlogPost[] {
-  return posts.filter((post) => post.tags.includes(tag));
+  return posts.filter(post => post.tags.includes(tag));
 }
 
 export function getPostsByCategory(category: string): BlogPost[] {
-  return posts.filter((post) => post.category === category);
+  return posts.filter(post => post.category === category);
 }
 
 export function getAllTags(): string[] {
   const tags = new Set<string>();
-  posts.forEach((post) => post.tags.forEach((tag) => tags.add(tag)));
+  posts.forEach(post => post.tags.forEach(tag => tags.add(tag)));
   return Array.from(tags).sort();
 }
 
 export function getAllCategories(): string[] {
   const categories = new Set<string>();
-  posts.forEach((post) => categories.add(post.category));
+  posts.forEach(post => categories.add(post.category));
   return Array.from(categories).sort();
 }
 
@@ -41,10 +39,10 @@ export function getAllCategories(): string[] {
  */
 export function formatDate(dateString: string): string {
   const date = new Date(dateString);
-  return date.toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+  return date.toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
   });
 }

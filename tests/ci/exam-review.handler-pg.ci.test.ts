@@ -653,10 +653,7 @@ describe.skipIf(!PG_AVAILABLE)(
           WHERE sec.test_session_id = $1 AND sec.section = 'M'`,
         [partSid],
       );
-      expect(math.rows[0]).toMatchObject({
-        state: "module1_submitted",
-        m2_served: 0,
-      });
+      expect(math.rows[0]).toMatchObject({ state: "module1_submitted", m2_served: 0 });
       expect(math.rows[0].m1_served).toBeGreaterThan(0);
       const mathQuestions = new Set(
         (

@@ -41,9 +41,7 @@ export async function getPublicMonthlyPrice(): Promise<PublicPricing | null> {
  * price is absent, so a caller cannot accidentally render "null" or "$NaN" —
  * the absence has to be handled as an absence.
  */
-export function formatMonthlyPrice(
-  pricing: PublicPricing | null,
-): string | null {
+export function formatMonthlyPrice(pricing: PublicPricing | null): string | null {
   if (!pricing) return null;
   return new Intl.NumberFormat("en-US", {
     style: "currency",

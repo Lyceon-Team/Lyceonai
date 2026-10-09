@@ -23,8 +23,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { SupabaseUser } from "../../server/middleware/supabase-auth";
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
-  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) =>
-    next(),
+  doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
   generateToken: () => "test-csrf-token",
 }));
 

@@ -276,9 +276,9 @@ describe("useLaunchBlock (§15.1)", () => {
     ) as Record<string, unknown>;
     expect(sent.client_instance_id).toBe(CID);
 
-    expect(queryClient.getQueryData([PRACTICE_STATE_KEY])).toEqual(
-      SESSION_STATE,
-    );
+    expect(
+      queryClient.getQueryData([PRACTICE_STATE_KEY]),
+    ).toEqual(SESSION_STATE);
   });
 
   it("awaits the prefetch BEFORE navigating — a fire-and-forget would race the route change", async () => {
@@ -286,7 +286,9 @@ describe("useLaunchBlock (§15.1)", () => {
     const { queryClient, wrapper } = harness();
     let cacheAtNavigate: unknown;
     const navigate = vi.fn(() => {
-      cacheAtNavigate = queryClient.getQueryData([PRACTICE_STATE_KEY]);
+      cacheAtNavigate = queryClient.getQueryData([
+        PRACTICE_STATE_KEY,
+      ]);
     });
 
     const { result } = renderHook(() => useLaunchBlock(navigate), { wrapper });
@@ -355,7 +357,9 @@ describe("useLaunchBlock (§15.1)", () => {
     });
 
     await waitFor(() =>
-      expect(queryClient.getQueryData([PRACTICE_STATE_KEY])).toBeUndefined(),
+      expect(
+        queryClient.getQueryData([PRACTICE_STATE_KEY]),
+      ).toBeUndefined(),
     );
   });
 });

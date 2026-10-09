@@ -34,13 +34,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { STRIPE_ENV_VAR_NAMES } from "../../packages/shared/src/env";
 
-const ENV_EXAMPLE = path.resolve(
-  __dirname,
-  "..",
-  "..",
-  "server",
-  ".env.example",
-);
+const ENV_EXAMPLE = path.resolve(__dirname, "..", "..", "server", ".env.example");
 
 /** Variable NAMES only. Values are never read, returned, or asserted on. */
 function declaredNames(): string[] {

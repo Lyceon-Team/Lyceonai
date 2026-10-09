@@ -15,9 +15,7 @@ function shippedFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const full = path.join(dir, name);
     if (statSync(full).isDirectory()) return shippedFiles(full);
-    return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name)
-      ? [full]
-      : [];
+    return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [full] : [];
   });
 }
 

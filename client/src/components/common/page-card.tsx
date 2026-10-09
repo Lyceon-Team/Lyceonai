@@ -1,10 +1,4 @@
-import {
-  Card,
-  CardHeader,
-  CardContent,
-  CardDescription,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 
 interface PageCardProps {
   title?: string;
@@ -20,8 +14,8 @@ export function PageCard({
   description,
   headerAction,
   children,
-  className = "",
-  contentClassName = "",
+  className = '',
+  contentClassName = ''
 }: PageCardProps) {
   return (
     <Card className={className} data-testid="page-card">
@@ -29,16 +23,14 @@ export function PageCard({
         <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
           <div className="space-y-1.5">
             {title && <CardTitle data-testid="card-title">{title}</CardTitle>}
-            {description && (
-              <CardDescription data-testid="card-description">
-                {description}
-              </CardDescription>
-            )}
+            {description && <CardDescription data-testid="card-description">{description}</CardDescription>}
           </div>
           {headerAction && <div className="flex-shrink-0">{headerAction}</div>}
         </CardHeader>
       )}
-      <CardContent className={contentClassName}>{children}</CardContent>
+      <CardContent className={contentClassName}>
+        {children}
+      </CardContent>
     </Card>
   );
 }

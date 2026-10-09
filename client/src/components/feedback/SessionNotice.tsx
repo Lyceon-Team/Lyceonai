@@ -1,7 +1,4 @@
-import {
-  type AppNoticeProps,
-  AppNotice,
-} from "@/components/feedback/AppNotice";
+import { type AppNoticeProps, AppNotice } from "@/components/feedback/AppNotice";
 
 type SessionNoticeProps = {
   title?: string;

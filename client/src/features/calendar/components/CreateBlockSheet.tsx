@@ -200,9 +200,7 @@ export function CreateBlockSheet({
 
           {engine === "review" ? (
             <div className="field">
-              <label htmlFor="calendar-create-review-count">
-                How many items?
-              </label>
+              <label htmlFor="calendar-create-review-count">How many items?</label>
               <select
                 id="calendar-create-review-count"
                 data-testid="calendar-create-review-count"

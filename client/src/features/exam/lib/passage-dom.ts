@@ -13,8 +13,7 @@
 function segmentOf(node: Node, root: HTMLElement): HTMLElement | null {
   let el: Node | null = node;
   while (el !== null && el !== root) {
-    if (el instanceof HTMLElement && el.dataset.segKind !== undefined)
-      return el;
+    if (el instanceof HTMLElement && el.dataset.segKind !== undefined) return el;
     el = el.parentNode;
   }
   return null;
@@ -29,15 +28,11 @@ function boundaryOffset(
   if (!root.contains(container)) return null;
   if (container === root) {
     // Between root children: the child at `offset` (or the end of the last one).
-    const children = Array.from(
-      root.querySelectorAll<HTMLElement>("[data-seg-kind]"),
-    );
+    const children = Array.from(root.querySelectorAll<HTMLElement>("[data-seg-kind]"));
     if (children.length === 0) return 0;
     const child = root.childNodes[offset];
-    if (child === undefined)
-      return Number(children[children.length - 1]!.dataset.segEnd);
-    const seg =
-      child instanceof HTMLElement ? (segmentOf(child, root) ?? child) : null;
+    if (child === undefined) return Number(children[children.length - 1]!.dataset.segEnd);
+    const seg = child instanceof HTMLElement ? segmentOf(child, root) ?? child : null;
     const start = seg instanceof HTMLElement ? seg.dataset.segStart : undefined;
     return start === undefined ? null : Number(start);
   }
@@ -45,8 +40,7 @@ function boundaryOffset(
   if (seg === null) return null;
   const segStart = Number(seg.dataset.segStart);
   const segEnd = Number(seg.dataset.segEnd);
-  if (seg.dataset.segKind !== "text")
-    return edge === "start" ? segStart : segEnd;
+  if (seg.dataset.segKind !== "text") return edge === "start" ? segStart : segEnd;
   if (container.nodeType === Node.TEXT_NODE) {
     const text = (container as Text).data;
     return segStart + Array.from(text.slice(0, offset)).length;
@@ -59,20 +53,11 @@ export function selectionToPassageRange(
   selection: Selection | null,
   root: HTMLElement,
 ): { start: number; end: number } | null {
-  if (
-    selection === null ||
-    selection.rangeCount === 0 ||
-    selection.isCollapsed
-  ) {
+  if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) {
     return null;
   }
   const range = selection.getRangeAt(0);
-  const start = boundaryOffset(
-    range.startContainer,
-    range.startOffset,
-    root,
-    "start",
-  );
+  const start = boundaryOffset(range.startContainer, range.startOffset, root, "start");
   const end = boundaryOffset(range.endContainer, range.endOffset, root, "end");
   if (start === null || end === null || start === end) return null;
   return { start: Math.min(start, end), end: Math.max(start, end) };

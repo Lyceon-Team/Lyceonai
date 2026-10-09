@@ -34,10 +34,7 @@ const BLOCK: PlanBlock = {
   scheduled_date: TODAY,
   block_type: "practice",
   section: "M",
-  scope: {
-    level: "domain",
-    mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }],
-  },
+  scope: { level: "domain", mix: [{ domain: "Algebra", count: 20, explanation_key: "weak" }] },
   target_count: 20,
   source: "auto",
   derived_from_block_id: null,
@@ -72,20 +69,18 @@ type Harness = {
   sessions: Map<string, "active" | "completed" | "abandoned">;
 };
 
-function harness(
-  options: {
-    block?: PlanBlock;
-    units?: ActivityUnit[];
-    localToday?: string;
-    createFails?: "unavailable" | "error";
-    /** Throw after the engine session exists but before the link is recorded. */
-    crashBeforeLink?: boolean;
-    /** R-08-34: override the day's launch rows, e.g. to link a sibling block's session. */
-    linkedSessions?: LinkedSession[];
-    /** R-08-34: units from a linked session, whatever date they fell on. */
-    linkedUnits?: ActivityUnit[];
-  } = {},
-): Harness {
+function harness(options: {
+  block?: PlanBlock;
+  units?: ActivityUnit[];
+  localToday?: string;
+  createFails?: "unavailable" | "error";
+  /** Throw after the engine session exists but before the link is recorded. */
+  crashBeforeLink?: boolean;
+  /** R-08-34: override the day's launch rows, e.g. to link a sibling block's session. */
+  linkedSessions?: LinkedSession[];
+  /** R-08-34: units from a linked session, whatever date they fell on. */
+  linkedUnits?: ActivityUnit[];
+} = {}): Harness {
   const block = options.block ?? BLOCK;
   const launches: ExistingLaunch[] = [];
   const sessions = new Map<string, "active" | "completed" | "abandoned">();
@@ -103,46 +98,24 @@ function harness(
         return err({ reason: "engine_unavailable", detail: "not shipped" });
       }
       if (options.createFails === "error") {
-        return err({
-          reason: "engine_error",
-          status: 403,
-          detail: "session_limit_exceeded",
-        });
+        return err({ reason: "engine_error", status: 403, detail: "session_limit_exceeded" });
       }
       const existing = sessionsByKey.get(ctx.idempotency_key);
       if (existing !== undefined) {
-        return ok({
-          session_id: existing,
-          next: `/practice/session/${existing}`,
-          resumed: true,
-        });
+        return ok({ session_id: existing, next: `/practice/session/${existing}`, resumed: true });
       }
       const id = `sess-${sessionsByKey.size + 1}`;
       sessionsByKey.set(ctx.idempotency_key, id);
       sessions.set(id, "active");
-      return ok({
-        session_id: id,
-        next: `/practice/session/${id}`,
-        resumed: false,
-      });
+      return ok({ session_id: id, next: `/practice/session/${id}`, resumed: false });
     },
-    async activityUnits() {
-      return [];
-    },
-    async unitsForSessions() {
-      return [];
-    },
+    async activityUnits() { return []; },
+    async unitsForSessions() { return []; },
     // §9.1: the route is the ADAPTER's to give. The service has nothing to build one from,
     // which is the point — see `CalendarEngineAdapter.resumeHref`.
-    resumeHref(sessionId) {
-      return `/practice/session/${sessionId}`;
-    },
-    async progress(sessionId) {
-      return sessions.get(sessionId) ?? null;
-    },
-    async nextLaunchSize(_b, remaining) {
-      return remaining;
-    },
+    resumeHref(sessionId) { return `/practice/session/${sessionId}`; },
+    async progress(sessionId) { return sessions.get(sessionId) ?? null; },
+    async nextLaunchSize(_b, remaining) { return remaining; },
   };
 
   const deps: LaunchDeps = {
@@ -154,9 +127,7 @@ function harness(
         localToday: options.localToday ?? TODAY,
       };
     },
-    async activityUnits() {
-      return options.units ?? [];
-    },
+    async activityUnits() { return options.units ?? []; },
     // R-08-34: the launch rows for the day's blocks, and the units those sessions produced
     // wherever they happened. Defaulted to the block's OWN launches so the ordinary harness
     // behaves as before; `linkedUnits` is what a work-ahead test supplies.
@@ -170,37 +141,23 @@ function harness(
         }))
       );
     },
-    async unitsForSessions() {
-      return options.linkedUnits ?? [];
-    },
+    async unitsForSessions() { return options.linkedUnits ?? []; },
     async latestLaunch() {
-      return launches.length === 0
-        ? null
-        : (launches[launches.length - 1] ?? null);
+      return launches.length === 0 ? null : (launches[launches.length - 1] ?? null);
     },
     async linkLaunch(_s, blockId, engine, sessionId) {
       linkCalls.push({ sessionId });
-      if (options.crashBeforeLink === true)
-        throw new Error("crash between create and link");
+      if (options.crashBeforeLink === true) throw new Error("crash between create and link");
       const replayed = launches.find((l) => l.engine_session_id === sessionId);
       if (replayed !== undefined) {
-        return ok({
-          launch_sequence: replayed.launch_sequence,
-          replayed: true,
-        });
+        return ok({ launch_sequence: replayed.launch_sequence, replayed: true });
       }
       const seq = launches.length + 1;
-      launches.push({
-        launch_sequence: seq,
-        engine,
-        engine_session_id: sessionId,
-      });
+      launches.push({ launch_sequence: seq, engine, engine_session_id: sessionId });
       void blockId;
       return ok({ launch_sequence: seq, replayed: false });
     },
-    adapterFor() {
-      return adapter;
-    },
+    adapterFor() { return adapter; },
   };
 
   return { deps, createCalls, linkCalls, launches, sessions };
@@ -265,7 +222,7 @@ describe("§15.1 step 3 — a live session is handed back", () => {
     // this would still come back as `/practice/session/sess-1` and the test would fail.
     // Engine-agnostic by construction rather than by inspection.
     const spied: CalendarEngineAdapter = {
-      ...h.deps.adapterFor("practice"),
+      ...(h.deps.adapterFor("practice")),
       resumeHref: (sessionId) => `/some-other-engine/session/${sessionId}`,
     };
     const deps = { ...h.deps, adapterFor: () => spied };
@@ -294,9 +251,7 @@ describe("§15.1 step 3 — a live session is handed back", () => {
 describe("§15.1 — the crash between create and link heals on retry", () => {
   it("one engine session and one launch row, because the key is recomputed", async () => {
     const crashing = harness({ crashBeforeLink: true });
-    await expect(launchBlock(REQ, crashing.deps)).rejects.toThrow(
-      "crash between create and link",
-    );
+    await expect(launchBlock(REQ, crashing.deps)).rejects.toThrow("crash between create and link");
     // The engine session exists; the launch row does not.
     expect(crashing.createCalls).toHaveLength(1);
     expect(crashing.launches).toHaveLength(0);
@@ -338,17 +293,9 @@ describe("§15.1 — refusals", () => {
   // plan, never a gate — so the assertions are inverted rather than removed, and the block's
   // date is now varied across all three positions to prove indifference rather than one case.
   it.each([
-    [
-      "a PAST date — a missed day the student wants to pick up",
-      "2026-09-22",
-      "past",
-    ],
+    ["a PAST date — a missed day the student wants to pick up", "2026-09-22", "past"],
     ["TODAY — the case that already worked", TODAY, "today"],
-    [
-      "a FUTURE date — a student who is ahead of schedule",
-      "2026-09-20",
-      "future",
-    ],
+    ["a FUTURE date — a student who is ahead of schedule", "2026-09-20", "future"],
   ])("launches on %s", async (_label, localToday) => {
     const h = harness({ localToday });
 
@@ -384,11 +331,7 @@ describe("§15.1 — refusals", () => {
     const result = await launchBlock(REQ, h.deps);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toMatchObject({
-      kind: "already_complete",
-      target: 20,
-      actual: 20,
-    });
+    expect(result.error).toMatchObject({ kind: "already_complete", target: 20, actual: 20 });
     expect(h.createCalls).toHaveLength(0);
   });
 
@@ -397,10 +340,7 @@ describe("§15.1 — refusals", () => {
     const result = await launchBlock(REQ, h.deps);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toMatchObject({
-      kind: "engine_unavailable",
-      engine: "practice",
-    });
+    expect(result.error).toMatchObject({ kind: "engine_unavailable", engine: "practice" });
     expect(h.launches).toHaveLength(0);
   });
 

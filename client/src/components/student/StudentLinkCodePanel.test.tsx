@@ -18,9 +18,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const csrfFetchMock = vi.fn();
-vi.mock("@/lib/csrf", () => ({
-  csrfFetch: (...a: unknown[]) => csrfFetchMock(...a),
-}));
+vi.mock("@/lib/csrf", () => ({ csrfFetch: (...a: unknown[]) => csrfFetchMock(...a) }));
 
 import { StudentLinkCodePanel } from "./StudentLinkCodePanel";
 
@@ -54,19 +52,13 @@ describe("student link code panel", () => {
 
   it("renders the code and the expiry the SERVER computed", async () => {
     csrfFetchMock.mockResolvedValue(
-      jsonResponse({
-        data: { code: "ABC234", expiresAt: expiryHoursFromNow(12) },
-      }),
+      jsonResponse({ data: { code: "ABC234", expiresAt: expiryHoursFromNow(12) } }),
     );
     renderPanel();
 
-    expect(
-      await screen.findByTestId("student-link-code-value"),
-    ).toHaveTextContent("ABC234");
+    expect(await screen.findByTestId("student-link-code-value")).toHaveTextContent("ABC234");
     // 12h, floored — derived from the server's timestamp, never from a client-held TTL.
-    expect(screen.getByTestId("student-link-code-expiry")).toHaveTextContent(
-      /Expires in 1[12]h/,
-    );
+    expect(screen.getByTestId("student-link-code-expiry")).toHaveTextContent(/Expires in 1[12]h/);
   });
 
   /**
@@ -75,48 +67,32 @@ describe("student link code panel", () => {
    */
   it("states what sharing the code grants, beside the code", async () => {
     csrfFetchMock.mockResolvedValue(
-      jsonResponse({
-        data: { code: "ABC234", expiresAt: expiryHoursFromNow(12) },
-      }),
+      jsonResponse({ data: { code: "ABC234", expiresAt: expiryHoursFromNow(12) } }),
     );
     renderPanel();
 
-    const consequence = await screen.findByTestId(
-      "student-link-code-consequence",
-    );
+    const consequence = await screen.findByTestId("student-link-code-consequence");
     expect(consequence).toHaveTextContent(/becomes your guardian/i);
-    expect(consequence).toHaveTextContent(
-      /cannot see your tutor conversations/i,
-    );
+    expect(consequence).toHaveTextContent(/cannot see your tutor conversations/i);
     expect(consequence).toHaveTextContent(/remove them at any time/i);
-    expect(consequence).toHaveTextContent(
-      /stops working once it has been used/i,
-    );
+    expect(consequence).toHaveTextContent(/stops working once it has been used/i);
   });
 
   it("replaces the code on regenerate", async () => {
     csrfFetchMock
       .mockResolvedValueOnce(
-        jsonResponse({
-          data: { code: "ABC234", expiresAt: expiryHoursFromNow(12) },
-        }),
+        jsonResponse({ data: { code: "ABC234", expiresAt: expiryHoursFromNow(12) } }),
       )
       .mockResolvedValueOnce(
-        jsonResponse({
-          data: { code: "XYZ789", expiresAt: expiryHoursFromNow(24) },
-        }),
+        jsonResponse({ data: { code: "XYZ789", expiresAt: expiryHoursFromNow(24) } }),
       );
     renderPanel();
 
-    expect(
-      await screen.findByTestId("student-link-code-value"),
-    ).toHaveTextContent("ABC234");
+    expect(await screen.findByTestId("student-link-code-value")).toHaveTextContent("ABC234");
     fireEvent.click(screen.getByTestId("student-link-code-regenerate"));
 
     await waitFor(() =>
-      expect(screen.getByTestId("student-link-code-value")).toHaveTextContent(
-        "XYZ789",
-      ),
+      expect(screen.getByTestId("student-link-code-value")).toHaveTextContent("XYZ789"),
     );
     // The second call is the regenerate POST, not a refetch of the same GET.
     expect(csrfFetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
@@ -132,9 +108,7 @@ describe("student link code panel", () => {
     );
     renderPanel();
 
-    expect(
-      await screen.findByTestId("student-link-code-error"),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId("student-link-code-error")).toBeInTheDocument();
     expect(screen.queryByTestId("student-link-code-value")).toBeNull();
   });
 });

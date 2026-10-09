@@ -12,12 +12,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function asUrl(input: RequestInfo | URL): string {
-  const raw =
-    typeof input === "string"
-      ? input
-      : input instanceof URL
-        ? input.toString()
-        : input.url;
+  const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   try {
     const parsed = new URL(raw);
     return `${parsed.pathname}${parsed.search}`;
@@ -37,70 +32,57 @@ describe("useCanonicalPractice target_minutes contract", () => {
   });
 
   it("sends target_minutes in canonical session creation payload", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async (input, init) => {
-        const url = asUrl(input);
-        const method = init?.method ?? "GET";
-        if (url === "/api/csrf-token" && method === "GET") {
-          return jsonResponse({ csrfToken: "csrf-test-token" });
-        }
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = asUrl(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/csrf-token" && method === "GET") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
 
-        if (url === "/api/practice/sessions" && method === "POST") {
-          return jsonResponse({ sessionId: "session-1" });
-        }
+      if (url === "/api/practice/sessions" && method === "POST") {
+        return jsonResponse({ sessionId: "session-1" });
+      }
 
-        if (
-          url.startsWith(
-            "/api/practice/sessions/session-1/next?client_instance_id=",
-          ) &&
-          method === "GET"
-        ) {
-          return jsonResponse({
-            sessionId: "session-1",
+      if (url.startsWith("/api/practice/sessions/session-1/next?client_instance_id=") && method === "GET") {
+        return jsonResponse({
+          sessionId: "session-1",
+          sessionItemId: "item-1",
+          ordinal: 1,
+          state: "active",
+          question: {
             sessionItemId: "item-1",
-            ordinal: 1,
-            state: "active",
-            question: {
-              sessionItemId: "item-1",
-              questionType: "multiple_choice",
-              stem: "What is 2 + 2?",
-              section: "M",
-              options: [
-                { id: "A", text: "4" },
-                { id: "B", text: "5" },
-              ],
-            },
-            stats: {
-              correct: 0,
-              incorrect: 0,
-              skipped: 0,
-              total: 0,
-              streak: 0,
-            },
-          });
-        }
+            questionType: "multiple_choice",
+            stem: "What is 2 + 2?",
+            section: "M",
+            options: [
+              { id: "A", text: "4" },
+              { id: "B", text: "5" },
+            ],
+          },
+          stats: {
+            correct: 0,
+            incorrect: 0,
+            skipped: 0,
+            total: 0,
+            streak: 0,
+          },
+        });
+      }
 
-        return jsonResponse({ error: `Unexpected URL ${url}` }, 500);
-      });
+      return jsonResponse({ error: `Unexpected URL ${url}` }, 500);
+    });
 
     render(<Harness />);
 
     await waitFor(() => {
       const startCall = fetchMock.mock.calls.find(([input, requestInit]) => {
-        return (
-          asUrl(input) === "/api/practice/sessions" &&
-          (requestInit?.method ?? "GET") === "POST"
-        );
+        return asUrl(input) === "/api/practice/sessions" && (requestInit?.method ?? "GET") === "POST";
       });
       expect(startCall).toBeDefined();
     });
 
     const startCall = fetchMock.mock.calls.find(([input, requestInit]) => {
-      return (
-        asUrl(input) === "/api/practice/sessions" &&
-        (requestInit?.method ?? "GET") === "POST"
-      );
+      return asUrl(input) === "/api/practice/sessions" && (requestInit?.method ?? "GET") === "POST";
     });
     const payload = JSON.parse((startCall?.[1]?.body as string) || "{}");
 
