@@ -120,12 +120,15 @@ export function createPublicQotdEmailRouter(
           .status(200)
           .type("html")
           .send(page(copy.title, `<p>${escapeHtml(copy.done)}</p>`));
-      } catch (error) {
-        logger.error(COMPONENT, "link_failed", "QOTD email link failed", {
-          requestId: req.requestId,
-          action,
-          reason: error instanceof Error ? error.message : "unknown",
-        });
+      } catch {
+        // QOTD resilience brief (Karl, 2026-10-09) §2: request id only (the action is the route).
+        logger.error(
+          COMPONENT,
+          "link_failed",
+          "QOTD email link failed",
+          undefined,
+          { requestId: req.requestId, action },
+        );
         return res
           .status(500)
           .type("html")

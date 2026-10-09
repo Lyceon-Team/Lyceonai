@@ -797,6 +797,8 @@ describe.skipIf(!PG_AVAILABLE)(
           dispatch: (options) =>
             dispatchQueuedMessages({ ...options, transport: fakeTransport }),
           now: new Date(nowIso),
+          // The owner alerts are proved in tests/ci/qotd-resilience.pg.ci.test.ts.
+          health: async () => undefined,
         });
       }
       async function grantAt(id: string, iso: string) {

@@ -8,7 +8,9 @@
  *       | @implemented [2026-10-09]
  *
  * plain English:
- *  - No question today (state "none"): nothing is drawn; the streak is unaffected.
+ *  - No question today (state "none": no scheduled question, or its question was withdrawn): the
+ *    card is drawn collapsed, the same shape as "done", saying "Today's question is on its way.
+ *    Check back soon." The streak chip is unaffected (QOTD resilience brief, Karl 2026-10-09 §1).
  *  - Unanswered: "Today's question", the stem, the choices lettered A-D by position (the shared
  *    QuestionRenderer; each choice is an opaque token), and Submit. Submit mints ONE
  *    idempotency key per press.
@@ -76,7 +78,9 @@ export function HomeQotdSection({
 
   return (
     <>
-      {data.state === "none" ? null : (
+      {data.state === "none" ? (
+        <NoQuestionToday />
+      ) : (
         <QotdCard
           key={data.qotd_date}
           data={data}
@@ -85,6 +89,25 @@ export function HomeQotdSection({
       )}
       {data.state === "unanswered" ? null : <SatDateCard />}
     </>
+  );
+}
+
+/** QOTD resilience brief §1: the collapsed card for a day with no question (no empty card). */
+const QOTD_ON_ITS_WAY_COPY = "Today's question is on its way. Check back soon.";
+
+function NoQuestionToday(): JSX.Element {
+  return (
+    <section
+      id="qotd"
+      aria-label="Today's question"
+      className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-lg border border-lyc-rule bg-lyc-sheet px-6 py-5 sm:px-8"
+      data-testid="home-qotd"
+      data-state="none"
+    >
+      <p className="m-0 text-[17px] text-lyc-ink" data-testid="home-qotd-none">
+        {QOTD_ON_ITS_WAY_COPY}
+      </p>
+    </section>
   );
 }
 

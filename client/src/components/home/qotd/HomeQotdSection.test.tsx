@@ -282,7 +282,8 @@ describe("Home QOTD card", () => {
     expect(await screen.findByText(EXPLANATION)).toBeTruthy();
   });
 
-  it("no question today: no card, and the chip still shows", async () => {
+  // QOTD resilience brief (Karl, 2026-10-09) §1: collapsed "on its way", the chip unchanged.
+  it("no question today: the card collapses to 'on its way', and the chip still shows the streak", async () => {
     net.today = homeQotdTodayResponseSchema.parse({
       state: "none",
       streak: { current: 2, today_done: false, broken: false },
@@ -293,7 +294,14 @@ describe("Home QOTD card", () => {
     expect((await screen.findByTestId("home-streak-chip")).textContent).toBe(
       "🔥 2 · keep it going today",
     );
-    expect(screen.queryByTestId("home-qotd")).toBeNull();
+    const card = await screen.findByTestId("home-qotd");
+    expect(card.getAttribute("data-state")).toBe("none");
+    expect(screen.getByTestId("home-qotd-none").textContent).toBe(
+      "Today's question is on its way. Check back soon.",
+    );
+    // Collapsed: no question, no choices, no Submit.
+    expect(screen.queryByTestId("home-qotd-submit")).toBeNull();
+    expect(screen.queryAllByTestId("runner-choice")).toHaveLength(0);
   });
 });
 
