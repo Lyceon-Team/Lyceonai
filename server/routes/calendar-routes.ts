@@ -45,6 +45,7 @@ import {
   idempotentMutationBodySchema,
   launchBodySchema,
   profileReadResponseSchema,
+  completedStudyProfile,
 } from "@lyceon/shared";
 import { logger } from "../logger";
 import { logRejectedRequest, routeOf } from "../lib/validation-log";
@@ -514,8 +515,11 @@ calendarRouter.get("/", async (req: Request, res: Response) => {
   // Checked directly rather than by calling `readCalendar` and inspecting the result:
   // `readCalendar` runs `generateOnFirstOpen` (R-08-04), and generating a plan for a
   // student who is not entitled to one is exactly what the gate is for.
+  // SCL-223: "has a profile" means "has completed setup"; a dates-only row is pre-setup.
   const hasProfile =
-    (await readStudyProfile(caller.studentId, req.requestId)) !== null;
+    completedStudyProfile(
+      await readStudyProfile(caller.studentId, req.requestId),
+    ) !== null;
   if (!hasProfile) {
     try {
       const result = await readCalendar({

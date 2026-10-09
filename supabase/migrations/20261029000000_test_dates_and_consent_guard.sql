@@ -29,6 +29,8 @@
 --     which the effective date no longer is once it rolls. It now reads
 --     `study_profile_occasion_exam_date`, which chooses among the dates so that a single
 --     stored date behaves exactly as the single column did.
+--  4. Saving dates alone does not set up the calendar: `study_days_mask` and `daily_minutes`
+--     are NULL until setup completes (CHECK study_profile_setup_answers_present).
 --
 -- Replaced bodies (mutations re-pointed in the same change): set_marketing_consent (was
 -- 20261028000000), profiles_marketing_consent_guard (was 20261027000000),
@@ -265,6 +267,26 @@ AS $fn$
   )
   SELECT count(*)::integer FROM moved;
 $fn$;
+
+-- SAVING DATES ALONE DOES NOT SET UP THE CALENDAR (brief A2). Onboarding and Settings may
+-- create the row with only the SAT dates; the schedule (study days, minutes) is asked by the
+-- calendar's setup and nothing invents it (R-08-03). So the two schedule columns are NULL until
+-- setup completes, and a completed setup must carry both. Expand-safe: relaxing NOT NULL breaks
+-- no writer, every existing row has both (they were NOT NULL), and `setup_completed_at` was
+-- stamped by every first write until now, so VALIDATE passes on existing data. Every planner
+-- (calendar_weekly_candidates, generate-on-first-open, profile_change regeneration) already
+-- reads only rows with setup_completed_at set.
+ALTER TABLE public.student_study_profile
+  ALTER COLUMN study_days_mask DROP NOT NULL,
+  ALTER COLUMN daily_minutes DROP NOT NULL;
+ALTER TABLE public.student_study_profile
+  DROP CONSTRAINT IF EXISTS study_profile_setup_answers_present;
+ALTER TABLE public.student_study_profile
+  ADD CONSTRAINT study_profile_setup_answers_present
+  CHECK (setup_completed_at IS NULL OR (study_days_mask IS NOT NULL AND daily_minutes IS NOT NULL))
+  NOT VALID;
+ALTER TABLE public.student_study_profile
+  VALIDATE CONSTRAINT study_profile_setup_answers_present;
 
 -- ---------------------------------------------------------------------------
 -- 4. The post-exam prompt reads the occasion date, not the effective one

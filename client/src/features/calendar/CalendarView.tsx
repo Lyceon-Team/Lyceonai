@@ -58,7 +58,7 @@ import type {
   PlanTrigger,
   PlanningEstimates,
   StreakSummary,
-  StudyProfile,
+  CompletedStudyProfile,
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
 import type { SectionProjectionDto } from "@lyceon/shared";
@@ -213,7 +213,7 @@ type CalendarViewProps = {
    * write path, and this is a write.
    */
   schedule?: {
-    profile: StudyProfile;
+    profile: CompletedStudyProfile;
     bounds: StudyProfileBounds;
     estimates: PlanningEstimates;
     /** §8.1's frequency readout: the lead window and the prefill cadence, both server-owned. */
