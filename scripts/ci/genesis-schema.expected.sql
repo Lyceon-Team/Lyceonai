@@ -2010,10 +2010,10 @@ COMMENT ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p_m
 
 
 --
--- Name: calendar_emit_exam_notification(uuid, uuid, text, date, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: calendar_emit_exam_notification(uuid, uuid, text, date, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) RETURNS text
+CREATE FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text, p_now timestamp with time zone DEFAULT now()) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -2029,6 +2029,16 @@ BEGIN
   -- The rule, at the chokepoint. One call site for one derivation.
   IF public.calendar_full_length_complete(p_student_id, p_local_date, p_timezone) THEN
     RETURN 'skipped_complete';
+  END IF;
+
+  -- Owner ruling 2026-10-09 (schedule audit Step 2, item 3(4)): "this week" is announced only
+  -- after this student's weekly re-plan for this local week, because the re-plan may move the
+  -- exam. While §12.5's predicate still says "generate", the notice is refused here, whoever
+  -- calls; the job re-plans first (exam-notify-job.ts) and asks again.
+  IF p_kind = 'full_length_week' AND EXISTS (
+       SELECT 1 FROM public.calendar_weekly_candidate(p_student_id, p_now) w
+        WHERE w.outcome IS NULL) THEN
+    RETURN 'skipped_not_replanned';
   END IF;
 
   v_event_id := public.notification_event_id(p_kind, p_block_id::text);
@@ -2049,7 +2059,10 @@ BEGIN
     jsonb_build_array(
       jsonb_build_object('profile_id', p_student_id, 'channels', v_channels)
     ),
-    jsonb_build_object('block_id', p_block_id, 'local_date', p_local_date)
+    jsonb_build_object('block_id', p_block_id, 'local_date', p_local_date),
+    -- Owner ruling 2026-10-09 item 3(1): an exam reminder is worthless once the test day has
+    -- begun in the student's zone (the plan date's own zone, as everywhere in this file).
+    (p_local_date::timestamp AT TIME ZONE p_timezone)
   );
 
   RETURN 'emitted';
@@ -2058,10 +2071,10 @@ $$;
 
 
 --
--- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text); Type: COMMENT; Schema: public; Owner: -
+-- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) IS 'Brief 14 Step 5 / notifications contract §2.2, §5.1, §8.1: the one write path for the two practice-test notices. Returns emitted | skipped_complete | duplicate. Idempotent per (block_id, kind) because the event type is part of notification_event_id''s hash input. Recipient is the student alone.';
+COMMENT ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text, p_now timestamp with time zone) IS 'Brief 14 Step 5 / notifications contract §2.2, §5.1, §8.1: the one write path for the two practice-test notices. Returns emitted | skipped_complete | skipped_not_replanned | duplicate. A week notice is refused while the student''s weekly predicate says generate (owner ruling 2026-10-09). Both notices expire at the start of the test day in the plan date''s zone. Idempotent per (block_id, kind). Recipient is the student alone.';
 
 
 --
@@ -3457,15 +3470,15 @@ COMMENT ON FUNCTION public.calendar_viewer_is_admin() IS 'Doc 05F §7.12 admin S
 
 
 --
--- Name: calendar_weekly_candidates(integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: calendar_weekly_candidate(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.calendar_weekly_candidates(p_limit integer DEFAULT 500) RETURNS TABLE(student_id uuid, period_key date, outcome text)
+CREATE FUNCTION public.calendar_weekly_candidate(p_student_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS TABLE(student_id uuid, period_key date, outcome text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT p.student_id,
-         (date_trunc('week', now() AT TIME ZONE p.timezone))::date AS period_key,
+         (date_trunc('week', p_now AT TIME ZONE p.timezone))::date AS period_key,
          CASE
            WHEN p.planner_mode <> 'auto' THEN 'skipped_custom'
            WHEN NOT public.entitlement_active(p.student_id) THEN 'skipped_no_entitlement'
@@ -3475,11 +3488,34 @@ CREATE FUNCTION public.calendar_weekly_candidates(p_limit integer DEFAULT 500) R
                AND v.validator_result = 'accepted'
                AND v.trigger IN ('setup','profile_change','weekly','student_refresh','post_exam')
                AND (v.created_at AT TIME ZONE p.timezone)
-                     >= date_trunc('week', now() AT TIME ZONE p.timezone)
+                     >= date_trunc('week', p_now AT TIME ZONE p.timezone)
            ) THEN 'skipped_fresh'
            ELSE NULL
          END AS outcome
   FROM public.student_study_profile p
+  WHERE p.student_id = p_student_id
+    AND p.setup_completed_at IS NOT NULL;
+$$;
+
+
+--
+-- Name: FUNCTION calendar_weekly_candidate(p_student_id uuid, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.calendar_weekly_candidate(p_student_id uuid, p_now timestamp with time zone) IS 'Doc 05F §12.5 / R-08-30: the weekly predicate for ONE student at p_now (outcome NULL = generate). The one definition: calendar_weekly_candidates reads it per student, and calendar_emit_exam_notification refuses a week notice while it says generate (owner ruling 2026-10-09, schedule audit Step 2 item 3(4)).';
+
+
+--
+-- Name: calendar_weekly_candidates(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.calendar_weekly_candidates(p_limit integer DEFAULT 500) RETURNS TABLE(student_id uuid, period_key date, outcome text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT c.student_id, c.period_key, c.outcome
+  FROM public.student_study_profile p
+  CROSS JOIN LATERAL public.calendar_weekly_candidate(p.student_id, now()) c
   WHERE p.setup_completed_at IS NOT NULL
   ORDER BY p.student_id
   LIMIT p_limit;
@@ -5326,6 +5362,83 @@ COMMENT ON FUNCTION public.crisis_source_fallback(p_source text) IS 'WS-L8 Item 
 
 
 --
+-- Name: notification_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_messages (
+    message_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    event_id uuid NOT NULL,
+    recipient_profile_id uuid NOT NULL,
+    channel text NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    provider_message_id text,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    seen_at timestamp with time zone,
+    read_at timestamp with time zone,
+    archived_at timestamp with time zone,
+    sent_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    not_before timestamp with time zone,
+    CONSTRAINT notification_messages_channel_check CHECK ((channel = ANY (ARRAY['in_app'::text, 'email'::text]))),
+    CONSTRAINT notification_messages_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'sent'::text, 'delivered'::text, 'bounced'::text, 'complained'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: TABLE notification_messages; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.notification_messages IS 'One row per (event, recipient, channel). in_app rows are delivered on insert and ARE the feed; email rows are moved queued->sent by the dispatcher and onward by verified provider webhooks.';
+
+
+--
+-- Name: COLUMN notification_messages.not_before; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.notification_messages.not_before IS 'Owner ruling 2026-10-09 (schedule audit Step 2, item 2): quiet-hours deferral. A queued email is not selected for dispatch before this instant. Written only by defer_notification_send; not an attempt.';
+
+
+--
+-- Name: defer_notification_send(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.defer_notification_send(p_message_id uuid, p_not_before timestamp with time zone) RETURNS SETOF public.notification_messages
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.notification_messages;
+BEGIN
+  IF p_not_before IS NULL THEN
+    RAISE EXCEPTION 'defer_notification_send: p_not_before is required'
+      USING ERRCODE = '22023';
+  END IF;
+  SELECT * INTO v_row
+    FROM public.notification_messages
+   WHERE message_id = p_message_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'defer_notification_send: message % not found', p_message_id
+      USING ERRCODE = 'LYN01';
+  END IF;
+  IF v_row.channel <> 'email' OR v_row.status <> 'queued' THEN
+    RAISE EXCEPTION 'defer_notification_send: message % is not a queued email (channel=%, status=%)',
+      p_message_id, v_row.channel, v_row.status
+      USING ERRCODE = 'LYN02';
+  END IF;
+
+  UPDATE public.notification_messages
+     SET not_before = p_not_before
+   WHERE message_id = p_message_id;
+
+  RETURN QUERY SELECT * FROM public.notification_messages WHERE message_id = p_message_id;
+END;
+$$;
+
+
+--
 -- Name: deidentify_user(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5372,13 +5485,28 @@ CREATE FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type tex
     SET search_path TO 'public', 'pg_temp'
     AS $$
 BEGIN
+  PERFORM public.emit_notification_event(
+    p_event_id, p_event_type, p_subject_profile_id, p_recipients, p_payload, NULL::timestamptz);
+END;
+$$;
+
+
+--
+-- Name: emit_notification_event(uuid, text, uuid, jsonb, jsonb, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb, p_expires_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
   IF p_recipients IS NULL OR jsonb_typeof(p_recipients) <> 'array' THEN
     RAISE EXCEPTION 'emit_notification_event: p_recipients must be a JSON array'
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO public.notification_events (event_id, event_type, subject_profile_id, payload)
-  VALUES (p_event_id, p_event_type, p_subject_profile_id, coalesce(p_payload, '{}'::jsonb))
+  INSERT INTO public.notification_events (event_id, event_type, subject_profile_id, payload, expires_at)
+  VALUES (p_event_id, p_event_type, p_subject_profile_id, coalesce(p_payload, '{}'::jsonb), p_expires_at)
   ON CONFLICT (event_id) DO NOTHING;
 
   -- in_app rows are the delivery: delivered on insert. email rows start queued.
@@ -8368,37 +8496,6 @@ $$;
 
 
 --
--- Name: notification_messages; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.notification_messages (
-    message_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    event_id uuid NOT NULL,
-    recipient_profile_id uuid NOT NULL,
-    channel text NOT NULL,
-    status text DEFAULT 'queued'::text NOT NULL,
-    provider_message_id text,
-    attempts integer DEFAULT 0 NOT NULL,
-    last_error text,
-    seen_at timestamp with time zone,
-    read_at timestamp with time zone,
-    archived_at timestamp with time zone,
-    sent_at timestamp with time zone,
-    delivered_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT notification_messages_channel_check CHECK ((channel = ANY (ARRAY['in_app'::text, 'email'::text]))),
-    CONSTRAINT notification_messages_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'sent'::text, 'delivered'::text, 'bounced'::text, 'complained'::text, 'failed'::text])))
-);
-
-
---
--- Name: TABLE notification_messages; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.notification_messages IS 'One row per (event, recipient, channel). in_app rows are delivered on insert and ARE the feed; email rows are moved queued->sent by the dispatcher and onward by verified provider webhooks.';
-
-
---
 -- Name: mark_notification(uuid, uuid, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8587,6 +8684,29 @@ $$;
 
 
 --
+-- Name: notification_dispatch_queue(timestamp with time zone, integer, integer, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notification_dispatch_queue(p_now timestamp with time zone, p_limit integer, p_max_attempts integer, p_event_id uuid DEFAULT NULL::uuid, p_event_type text DEFAULT NULL::text) RETURNS SETOF public.notification_messages
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT m.*
+    FROM public.notification_messages m
+   WHERE m.channel = 'email'
+     AND m.status = 'queued'
+     AND m.attempts < p_max_attempts
+     AND (m.not_before IS NULL OR m.not_before <= p_now)
+     AND (p_event_id IS NULL OR m.event_id = p_event_id)
+     AND (p_event_type IS NULL OR EXISTS (
+           SELECT 1 FROM public.notification_events e
+            WHERE e.event_id = m.event_id AND e.event_type = p_event_type))
+   ORDER BY m.created_at, m.message_id
+   LIMIT p_limit;
+$$;
+
+
+--
 -- Name: notification_event_id(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8658,6 +8778,7 @@ BEGIN
     OR NEW.sent_at              IS DISTINCT FROM OLD.sent_at
     OR NEW.delivered_at         IS DISTINCT FROM OLD.delivered_at
     OR NEW.created_at           IS DISTINCT FROM OLD.created_at
+    OR NEW.not_before           IS DISTINCT FROM OLD.not_before
     THEN
       RAISE EXCEPTION 'notification_messages: a recipient may change only seen_at, read_at and archived_at'
         USING ERRCODE = '42501';
@@ -9542,7 +9663,10 @@ BEGIN
         'qotd_date', v_today,
         'current_streak', COALESCE((SELECT s.current_streak FROM public.student_streak(r.student_id, p_now) s), 0),
         'email_variant', v_variant
-      )
+      ),
+      -- Owner ruling 2026-10-09 (schedule audit Step 2, item 3(1)): today's question expires
+      -- when its America/Chicago day ends; a late send is a dropped send.
+      ((v_today + 1)::timestamp AT TIME ZONE 'America/Chicago')
     );
     v_emitted := v_emitted + 1;
     IF r.email_on THEN v_email := v_email + 1; END IF;
@@ -14099,7 +14223,7 @@ CREATE TABLE public.calendar_job_runs (
     detail jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT calendar_job_runs_job_check CHECK ((job = ANY (ARRAY['weekly_regen'::text, 'exam_notify'::text, 'exam_score_renewal'::text]))),
-    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'skipped_complete'::text, 'skipped_duplicate'::text, 'skipped_cancel_pending'::text, 'skipped_new_exam_date'::text, 'skipped_answered'::text, 'canceled_no_answer'::text, 'failed'::text])))
+    CONSTRAINT calendar_job_runs_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'skipped_fresh'::text, 'skipped_custom'::text, 'skipped_no_entitlement'::text, 'skipped_complete'::text, 'skipped_duplicate'::text, 'skipped_cancel_pending'::text, 'skipped_new_exam_date'::text, 'skipped_answered'::text, 'skipped_not_replanned'::text, 'canceled_no_answer'::text, 'failed'::text])))
 );
 
 
@@ -15663,6 +15787,7 @@ CREATE TABLE public.notification_events (
     subject_profile_id uuid NOT NULL,
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone,
     CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text])))
 );
 
@@ -15672,6 +15797,13 @@ CREATE TABLE public.notification_events (
 --
 
 COMMENT ON TABLE public.notification_events IS 'One row per notifiable moment, written in the same transaction as the mutation that produced it. payload holds identifiers and rendering parameters only (contract §8). Service-role only.';
+
+
+--
+-- Name: COLUMN notification_events.expires_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.notification_events.expires_at IS 'Owner ruling 2026-10-09 (schedule audit Step 2, item 3(1)): the instant after which this event''s email is dropped, never sent late. Set once by the emitter. NULL = no expiry.';
 
 
 --
@@ -23077,10 +23209,11 @@ GRANT ALL ON FUNCTION public.calendar_edit_day(p_student_id uuid, p_date date, p
 
 
 --
--- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_emit_exam_notification(p_student_id uuid, p_block_id uuid, p_kind text, p_local_date date, p_timezone text, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -23193,6 +23326,14 @@ REVOKE ALL ON FUNCTION public.calendar_validate_plan(p_mode text, p_input jsonb,
 REVOKE ALL ON FUNCTION public.calendar_viewer_is_admin() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO authenticated;
 GRANT ALL ON FUNCTION public.calendar_viewer_is_admin() TO service_role;
+
+
+--
+-- Name: FUNCTION calendar_weekly_candidate(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.calendar_weekly_candidate(p_student_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.calendar_weekly_candidate(p_student_id uuid, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -23424,6 +23565,22 @@ GRANT ALL ON FUNCTION public.crisis_source_fallback(p_source text) TO service_ro
 
 
 --
+-- Name: TABLE notification_messages; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.notification_messages TO service_role;
+GRANT SELECT,UPDATE ON TABLE public.notification_messages TO authenticated;
+
+
+--
+-- Name: FUNCTION defer_notification_send(p_message_id uuid, p_not_before timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.defer_notification_send(p_message_id uuid, p_not_before timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.defer_notification_send(p_message_id uuid, p_not_before timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION deidentify_user(target_user_id uuid, deleted_email text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -23437,6 +23594,14 @@ GRANT ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email 
 
 REVOKE ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb, p_expires_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb, p_expires_at timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb, p_expires_at timestamp with time zone) TO service_role;
 
 
 --
@@ -23890,14 +24055,6 @@ GRANT ALL ON FUNCTION public.mark_deletion_log_executing(p_log_ids uuid[]) TO se
 
 
 --
--- Name: TABLE notification_messages; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.notification_messages TO service_role;
-GRANT SELECT,UPDATE ON TABLE public.notification_messages TO authenticated;
-
-
---
 -- Name: FUNCTION mark_notification(p_recipient_id uuid, p_message_id uuid, p_seen boolean, p_read boolean, p_archived boolean); Type: ACL; Schema: public; Owner: -
 --
 
@@ -23975,6 +24132,14 @@ GRANT ALL ON FUNCTION public.mastery_model_version() TO service_role;
 
 REVOKE ALL ON FUNCTION public.notification_apply_transition(p_message_id uuid, p_event_type text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.notification_apply_transition(p_message_id uuid, p_event_type text) TO service_role;
+
+
+--
+-- Name: FUNCTION notification_dispatch_queue(p_now timestamp with time zone, p_limit integer, p_max_attempts integer, p_event_id uuid, p_event_type text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.notification_dispatch_queue(p_now timestamp with time zone, p_limit integer, p_max_attempts integer, p_event_id uuid, p_event_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.notification_dispatch_queue(p_now timestamp with time zone, p_limit integer, p_max_attempts integer, p_event_id uuid, p_event_type text) TO service_role;
 
 
 --

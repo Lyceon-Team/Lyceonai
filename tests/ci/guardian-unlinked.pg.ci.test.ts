@@ -32,6 +32,7 @@ import {
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
 import { notificationEventId } from "../../server/lib/notifications/event-id";
+import { pinDaytimeClock, releaseClock } from "../helpers/daytime-clock";
 
 const DB_NAME = "guardian_unlinked_ci";
 const GUARDIAN = "11111111-1111-4111-8111-111111111111";
@@ -200,6 +201,9 @@ async function linkStatus(linkId: string): Promise<string> {
 
 describe.skipIf(!PG_AVAILABLE)("guardian_unlinked — real Postgres", () => {
   beforeAll(async () => {
+    // Quiet hours (owner ruling 2026-10-09): the routes send on the process clock, so pin it to
+    // Chicago daytime; otherwise "the email was sent" would depend on the hour CI ran.
+    pinDaytimeClock();
     process.env.RESEND_API_KEY = "re_test_key";
     process.env.NOTIFICATION_FROM_EMAIL = FROM_EMAIL;
     process.env.PUBLIC_SITE_URL = "https://app.example.test";
@@ -233,6 +237,7 @@ describe.skipIf(!PG_AVAILABLE)("guardian_unlinked — real Postgres", () => {
   });
 
   afterAll(async () => {
+    releaseClock();
     vi.unstubAllGlobals();
     if (pg) await pg.end();
   });
