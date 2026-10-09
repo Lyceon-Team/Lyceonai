@@ -195,7 +195,7 @@ describe("A4 — consent capture cannot take sign-in down with it", () => {
     // Every Google sign-in ended at /login?error=post_auth_finalize because
     // these two calls threw into the finalize catch.
     const block = oauthSrc.slice(
-      oauthSrc.indexOf("if (consentSource)"),
+      oauthSrc.indexOf("if (createdByThisSignIn)"),
       oauthSrc.indexOf('logger.info("OAUTH", "success"'),
     );
     expect(block).toContain("legal_resolution_failed");
@@ -217,7 +217,7 @@ describe("A4 — consent capture cannot take sign-in down with it", () => {
     // The alternative to skipping is guessing, and a row that cannot name the
     // bytes served is the false record this programme exists to prevent.
     const block = oauthSrc.slice(
-      oauthSrc.indexOf("if (consentSource)"),
+      oauthSrc.indexOf("if (createdByThisSignIn)"),
       oauthSrc.indexOf('logger.info("OAUTH", "success"'),
     );
     expect(block).not.toMatch(/docVersion:\s*["'`]/);

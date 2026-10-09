@@ -28,6 +28,7 @@ import {
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
+import { isNewlyCreatedAccount } from "../lib/new-auth-account.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import {
   postAuthDestination,
@@ -41,12 +42,17 @@ function getSiteUrl(): string {
   return (process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
 }
 
-function parseConsentSource(req: Request): ConsentSource | null {
+/**
+ * @spec [SCL-222] | plain English: the consent source stamped on a new Google account's acceptance
+ * rows. The browser names the button it came through; anything else (or nothing) is the canonical
+ * "clicked Continue with Google under the sign-in notice". The value only labels the row — whether a
+ * row is written at all is decided on the server, by account creation.
+ */
+function parseConsentSource(req: Request): ConsentSource {
   const source = String(req.query.consentSource ?? "").toLowerCase();
-  if (source === "google_continue_click") return "google_continue_click";
   if (source === "google_continue_pre_oauth")
     return "google_continue_pre_oauth";
-  return null;
+  return "google_continue_click";
 }
 
 // AL-3: the native email-confirmation / recovery handoff arrives as `token_hash` + `type` (the OTP
@@ -257,8 +263,15 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         requestId: req.requestId,
       });
 
-      const consentSource = parseConsentSource(req);
-      if (consentSource) {
+      // SCL-222 (owner ruling 2026-10-09): acceptance is recorded when the account is CREATED —
+      // the sign-in notice under the button is what the person agreed to — and a returning user's
+      // sign-in records nothing, so updated documents reach them only through the re-acceptance
+      // prompt. Only the PKCE Google path creates accounts here; the email-confirmation and
+      // recovery handoffs (OTP) belong to accounts whose signup already recorded acceptance.
+      const createdByThisSignIn =
+        otp === null && isNewlyCreatedAccount(user.created_at, new Date());
+      if (createdByThisSignIn) {
+        const consentSource = parseConsentSource(req);
         const minor = !!profile.is_under_13;
         // AS-1: durable + non-throwing. A SINGLE-store recording failure keeps the session (the
         // outbox absorbs it, drained later). Only when consent can't be captured ANYWHERE (both the

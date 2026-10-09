@@ -646,7 +646,6 @@ test("login", async ({ page }) => {
   await expect(page.getByTestId("button-google-signin")).toBeVisible({
     timeout: 15_000,
   });
-  await page.getByTestId("checkbox-google-legal").click();
   const authorize = page.waitForRequest(/\/auth\/v1\/authorize/);
   await page.getByTestId("button-google-signin").click();
   const authorizeUrl = new URL((await authorize).url());

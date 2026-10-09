@@ -55,17 +55,23 @@ const signupSchema = z.object({
   email: z.string().email(),
   password: passwordSchema,
   displayName: z.string().trim().min(1).max(120).optional(),
-  legalConsent: z.object({
-    studentTermsAccepted: z.literal(true),
-    privacyPolicyAccepted: z.literal(true),
-    consentSource: z
-      .enum([
-        "email_signup_form",
-        "google_continue_pre_oauth",
-        "google_continue_click",
-      ])
-      .optional(),
-  }),
+  // SCL-222 (owner ruling 2026-10-09): the sign-in notice under the buttons replaces the Terms
+  // checkbox, and acceptance is recorded at account creation — here, on every successful signup.
+  // The field is optional: it only labels the row's consent source, never decides whether one is
+  // written. Older clients that still send the two `true` flags are accepted unchanged.
+  legalConsent: z
+    .object({
+      studentTermsAccepted: z.literal(true).optional(),
+      privacyPolicyAccepted: z.literal(true).optional(),
+      consentSource: z
+        .enum([
+          "email_signup_form",
+          "google_continue_pre_oauth",
+          "google_continue_click",
+        ])
+        .optional(),
+    })
+    .optional(),
   role: z.unknown().optional(),
   // SCL-201 IS 6: the first-touch channel the browser derived in memory. Parsed by
   // recordSignupSource, never here — a bad value is dropped, it never refuses a signup.
@@ -145,7 +151,7 @@ router.post(
 
       const { email, password, displayName, legalConsent } = validation.data;
       const consentSource: ConsentSource =
-        legalConsent.consentSource ?? "email_signup_form";
+        legalConsent?.consentSource ?? "email_signup_form";
 
       // In test env we skip making real Supabase calls; behave like signup
       // failed so that downstream logic doesn't try to set cookies.
