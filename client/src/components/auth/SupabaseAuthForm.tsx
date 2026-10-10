@@ -78,7 +78,11 @@ export function SupabaseAuthForm({
   // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rules 1, 2, 4] |
   // @implemented [2026-10-10] | plain English: the page opens on the tab the link asked for, and
   // a guardian entry keeps its role intent for BOTH ways of creating the account (the email
-  // form and "Continue with Google"), until the person says "I'm a student". The tabs and the
+  // form and "Continue with Google"), until the person says "I'm a student". The intent is sent
+  // only while it is on screen (Sign Up, where the guardian line is drawn): a press of Google
+  // from the Sign In tab names no role, so no account is ever re-roled by an intent the page
+  // was not showing (spec audit 2026-10-10). Such an account still opens onboarding on Guardian
+  // through `next=/guardian`, which the parent link also carries (F13). The tabs and the
   // Google button stay available in every mode. After a failed email sign-in the card offers
   // "No account yet? Create one", which opens Sign Up with the typed email kept (the email is
   // one field across both tabs); the error copy itself is unchanged and non-enumerating.
@@ -194,7 +198,7 @@ export function SupabaseAuthForm({
     try {
       await signInWithGoogle(
         { consentSource: "google_continue_click" },
-        roleIntent,
+        mode === "signup" ? roleIntent : null,
       );
       toast({
         title: "Redirecting to Google...",

@@ -83,10 +83,21 @@ export default function Login() {
     }
   }, [isAuthenticated, authLoading, user, navigate]);
 
+  // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 4] |
+  // @implemented [2026-10-10] | plain English: the skeleton covers the FIRST auth check only.
+  // `authLoading` is also raised by every submit (signIn / signUp / Google set it while their
+  // request runs), and swapping the form for the skeleton then unmounted it, so a failed email
+  // sign-in came back as a fresh, empty form: the typed email, the inline error and "No account
+  // yet? Create one" were all lost (the toast alone survived). Once the first check has settled
+  // the form stays mounted, and its own buttons show the pending state (`isLoading`). The ref
+  // only ever goes false → true, so writing it during render is idempotent.
+  const firstCheckSettled = useRef(false);
+  if (!authLoading) firstCheckSettled.current = true;
+
   // Show loading skeleton while checking auth state.
   // UI-59: the student placeholder (`Skeleton variant="lyc"`: still, --seg-empty, aria-hidden)
   // inside a polite status region named for what is loading.
-  if (authLoading) {
+  if (authLoading && !firstCheckSettled.current) {
     return (
       <div
         role="status"
@@ -121,7 +132,12 @@ export default function Login() {
           data-testid="login-redirect-error"
         />
       )}
-      <SupabaseAuthForm initialMode={entry.mode} initialRole={entry.role} />
+      {/* Keyed by the entry, so a link from /login to another entry URL starts the form anew. */}
+      <SupabaseAuthForm
+        key={`${entry.mode}:${entry.role ?? ""}`}
+        initialMode={entry.mode}
+        initialRole={entry.role}
+      />
     </div>
   );
 }

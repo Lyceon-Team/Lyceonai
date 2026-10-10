@@ -26,11 +26,31 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const auth = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
-
-vi.mock("@/contexts/SupabaseAuthContext", () => ({
-  useSupabaseAuth: () => auth.value,
+const auth = vi.hoisted(() => ({
+  value: {} as Record<string, unknown>,
+  listeners: new Set<() => void>(),
 }));
+
+// A subscribable stand-in, so a submit can raise and lower `authLoading` the way the real
+// context does (every signIn / signUp / Google call sets it while its request runs).
+vi.mock("@/contexts/SupabaseAuthContext", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useSupabaseAuth: () =>
+      useSyncExternalStore(
+        (listener: () => void) => {
+          auth.listeners.add(listener);
+          return () => auth.listeners.delete(listener);
+        },
+        () => auth.value,
+      ),
+  };
+});
+
+function patchAuth(patch: Record<string, unknown>): void {
+  auth.value = { ...auth.value, ...patch };
+  for (const listener of auth.listeners) listener();
+}
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: () => undefined }),
   toast: () => undefined,
@@ -65,7 +85,11 @@ const { authError, resolveAuthErrorMessage } =
 const noop = async (): Promise<void> => undefined;
 const signUp = vi.fn(noop);
 const signInWithGoogle = vi.fn(noop);
+// As the real context: authLoading is raised for the request and lowered before the rejection.
 const signIn = vi.fn(async () => {
+  patchAuth({ authLoading: true, isLoading: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  patchAuth({ authLoading: false, isLoading: false });
   throw authError("signin_failed");
 });
 
@@ -262,7 +286,7 @@ describe("guardian intent reaches both ways of creating the account", () => {
     ]);
   });
 
-  it("Continue with Google sends role guardian, from either tab", async () => {
+  it("Continue with Google sends role guardian on Sign Up, and none from Sign In where the line is not shown", async () => {
     renderLoginAt(GUARDIAN);
     fireEvent.click(screen.getByTestId("button-google-signin"));
     await waitFor(() => expect(signInWithGoogle).toHaveBeenCalledTimes(1));
@@ -270,11 +294,18 @@ describe("guardian intent reaches both ways of creating the account", () => {
 
     fireEvent.mouseDown(screen.getByTestId("tab-signin"));
     expect(selectedTab()).toBe("signin");
-    // The line belongs to Sign Up; the intent itself stays for Google on either tab.
+    // The line belongs to Sign Up, and so does the intent: nothing is sent that is not shown.
     expect(screen.queryByTestId("signup-role-guardian")).toBeNull();
     fireEvent.click(screen.getByTestId("button-google-signin"));
     await waitFor(() => expect(signInWithGoogle).toHaveBeenCalledTimes(2));
-    expect(signInWithGoogle.mock.calls[1]?.[1]).toBe("guardian");
+    expect(signInWithGoogle.mock.calls[1]?.[1]).toBeNull();
+
+    // Back on Sign Up the line and the intent return together.
+    fireEvent.mouseDown(screen.getByTestId("tab-signup"));
+    expect(screen.getByTestId("signup-role-guardian")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-google-signin"));
+    await waitFor(() => expect(signInWithGoogle).toHaveBeenCalledTimes(3));
+    expect(signInWithGoogle.mock.calls[2]?.[1]).toBe("guardian");
   });
 
   it('"I\'m a student" drops the guardian intent for both calls', async () => {
@@ -321,5 +352,30 @@ describe('"No account yet? Create one"', () => {
       (screen.getByTestId("input-signup-email") as HTMLInputElement).value,
     ).toBe("typed@example.test");
     expect(screen.queryByTestId("alert-error")).toBeNull();
+  });
+});
+
+describe("a new entry URL on the open auth page", () => {
+  it("starts the form in the new mode and role", () => {
+    window.history.replaceState({}, "", "/login?mode=signin");
+    const client = new QueryClient();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Login />
+      </QueryClientProvider>,
+    );
+    expect(selectedTab()).toBe("signin");
+    window.history.replaceState(
+      {},
+      "",
+      "/login?mode=signup&role=guardian&next=%2Fguardian",
+    );
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Login />
+      </QueryClientProvider>,
+    );
+    expect(selectedTab()).toBe("signup");
+    expect(screen.getByTestId("signup-role-guardian")).toBeInTheDocument();
   });
 });

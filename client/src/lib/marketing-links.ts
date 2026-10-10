@@ -9,7 +9,8 @@ import {
  * @spec [owner rulings 2026-10-05, F13 Step 0 decision 4; SEO Wave 3 decision 5 (the standard
  *       "Start the free diagnostic" CTA)] | @implemented [2026-10-05]
  *
- * plain English: signup is /login; the return path rides the shared `next` channel, which
+ * plain English: signup is the auth page (/login, on its Sign Up tab since 2026-10-10, below);
+ * the return path rides the shared `next` channel, which
  * survives Google sign-in and onboarding. One copy for the homepage and every content page, so
  * the CTAs cannot point at different places.
  *
