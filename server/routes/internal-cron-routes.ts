@@ -36,6 +36,7 @@ import {
 import { sendOpsAlert } from "../lib/ops-alerts.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
 import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
+import { quietHoursDeferral } from "../lib/notifications/quiet-hours.js";
 import {
   defaultQotdEmailJobDeps,
   runQotdEmailJob,
@@ -102,6 +103,14 @@ router.get(
  *   2. ACCOUNT_DELETION_LIFECYCLE_V2 — flag-OFF is genuinely dormant: a no-op acknowledgement, no
  *      selector, no deidentify_user call. So shipping with the staged migration unapplied / flag off
  *      cannot anonymize anyone.
+ *
+ * SCHEDULE AND QUIET HOURS (owner ruling, Karl 2026-10-09, schedule audit Step 2 items 1 and 2)
+ * | @implemented [2026-10-09]: scheduled at 15:00 UTC (vercel.json `0 15 * * *`) = 10:00 CDT /
+ * 09:00 CST, so the deletion-completed email it sends is never due in quiet hours. A run that
+ * lands in 21:00–08:00 America/Chicago anyway (a manual trigger) does nothing and says so: the
+ * notice is not exempt, and it cannot be postponed past the step after it — the do-not-contact
+ * suppression added right after the notice would swallow a notice scheduled for 08:00 (the
+ * executor's step 7 comment). The next scheduled run, at most a few hours later, does the work.
  */
 router.get(
   "/execute-deletions",
@@ -117,6 +126,16 @@ router.get(
         skipped: "lifecycle_v2_disabled",
         executedCount: 0,
       });
+      return;
+    }
+    if (quietHoursDeferral(new Date()) !== null) {
+      // Quiet hours (owner ruling 2026-10-09): no deletion-completed email at night. Not an error.
+      logger.info(
+        "DELETION",
+        "execute_deletions_quiet_hours",
+        "Anonymize pass skipped: inside 21:00-08:00 America/Chicago; the next scheduled run does it",
+      );
+      res.json({ ok: true, skipped: "quiet_hours", executedCount: 0 });
       return;
     }
     try {
@@ -246,8 +265,10 @@ router.post(
  * session leaves its queue entries open, which is the point.
  *
  * Managed-service first: this is a Vercel cron entry in vercel.json, the same
- * scheduler already driving legal-acceptance-drain and execute-deletions. No
- * pg_cron (genesis excludes it as platform-managed), no second scheduler.
+ * scheduler already driving legal-acceptance-drain and execute-deletions. Not
+ * pg_cron (genesis excludes it as platform-managed; production runs exactly two pg_cron jobs,
+ * `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's report of
+ * 2026-10-09, both installed by owner-run scripts under scripts/ops/).
  *
  * Runs daily. The window is seven days, so the exact hour is immaterial and a
  * missed run costs nothing — the next run sweeps the same rows plus a day's worth.
@@ -382,6 +403,12 @@ router.get(
  * left behind (attempts below the cap) and hands them to the same dispatcher. Vercel Cron
  * on the hobby plan runs at most daily, so nothing here may be relied on for latency.
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ *
+ * SCHEDULE (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 1) | @implemented
+ * [2026-10-09]: 14:00 UTC (`0 14 * * *`) = 09:00 CDT / 08:00 CST — after quiet hours end, so it
+ * is also what delivers the emails quiet hours postponed to 08:00 Chicago (their `not_before`
+ * has passed by then), and it is the ONE retry path for every type but `qotd_daily` (the 17:00
+ * QOTD run dispatches only its own type). A retried email whose event has expired is dropped.
  */
 router.get(
   "/notification-dispatch-sweep",
@@ -446,7 +473,9 @@ router.get(
  * path re-runs them harmlessly.
  *
  * Scheduled by the vercel.json entry for this path; CRON_SECRET-gated like every other
- * endpoint in this file; unauthorized => 404. No pg_cron (installed, unused, stays so).
+ * endpoint in this file; unauthorized => 404. Not pg_cron: production runs exactly two pg_cron
+ * jobs, `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's report of
+ * 2026-10-09 (this comment used to say pg_cron was unused).
  */
 router.get(
   "/notification-retention-sweep",
@@ -489,7 +518,12 @@ router.get(
  * would answer `skipped_fresh` even without it.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which
- * reveals nothing and fails closed. No pg_cron (installed, unused, stays so).
+ * reveals nothing and fails closed. Not pg_cron: production runs exactly two pg_cron jobs,
+ * `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's report of
+ * 2026-10-09 (this comment used to say pg_cron was unused).
+ *
+ * The "this week" exam notice no longer depends on this cron running first: the notify job
+ * re-plans a due student itself (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(4)).
  */
 router.get(
   "/calendar-weekly-regen",
@@ -533,14 +567,25 @@ router.get(
  * Safe to rerun: the event id is derived from (event type, block), so a second call the same day
  * finds the event already there and records `skipped_duplicate` rather than sending twice.
  *
- * SCHEDULED AFTER the weekly regeneration (`30 5`, this at `0 6`), and that order is the point:
- * the weekly job may replan the future half of the horizon, so notifying first could announce a
- * practice test the replan then moves. Delivery does not depend on the dispatch sweep at `30 4`
- * having run — this job sends its own email inline (contract §6.1) and the sweep is only the
- * backstop for a row whose send failed.
+ * SCHEDULE (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 1) | @implemented
+ * [2026-10-09]: 21:00 UTC (`0 21 * * *`) = 16:00 CDT / 15:00 CST, the afternoon before the test
+ * for a Chicago student, outside quiet hours. "Tomorrow" stays right in every zone because the
+ * predicate reads each student's own local today.
+ *
+ * ORDER AGAINST THE WEEKLY RE-PLAN IS NOT A CRON ORDER. This comment used to claim the weekly
+ * regeneration (`30 5`) ran first and that this made the "this week" notice safe. It did not hold
+ * for every zone (a Chicago student in CST was notified at local 00:00 Monday and re-planned at
+ * 23:30 that night), and no single UTC time can make it hold. So the job re-plans any student
+ * whose week notice is due and whose week is not re-planned yet, and the emitter refuses the
+ * notice until it is (exam-notify-job.ts; ruling item 3(4)). Delivery does not depend on the
+ * dispatch sweep — this job sends its own email inline (contract §6.1) and the sweep (14:00 UTC)
+ * is only the backstop for a row whose send failed; the reminder expires at the start of the test
+ * day, so a retry never arrives late.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which reveals
- * nothing and fails closed. No pg_cron (installed, unused, stays so).
+ * nothing and fails closed. Scheduled by Vercel Cron, not pg_cron (production runs exactly two
+ * pg_cron jobs, `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's
+ * report of 2026-10-09; neither touches notifications).
  */
 router.get(
   "/calendar-exam-notify",
@@ -587,13 +632,16 @@ router.get(
  * twice. The silence pass is safe to rerun for a different reason — `setCancelAtPeriodEnd` reads
  * Stripe before writing, so a second pass is a no-op rather than a second webhook.
  *
- * SCHEDULED AFTER the exam notifications (`0 6`, this at `30 6`), and the order is only a courtesy:
- * the two touch nothing in common. It is late enough in the sequence that the dispatch sweep at
- * `30 4` has long finished, which matters not at all — this job sends its own email inline
- * (contract §6.1) and the sweep is only the backstop for a row whose send failed.
+ * SCHEDULE (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 1) | @implemented
+ * [2026-10-09]: 20:00 UTC (`0 20 * * *`) = 15:00 CDT / 14:00 CST, outside quiet hours. It shares
+ * nothing with the exam notifications (21:00 UTC), so their order is immaterial. This job sends
+ * its own email inline (contract §6.1); the dispatch sweep (14:00 UTC) is only the backstop for a
+ * row whose send failed.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which reveals
- * nothing and fails closed. No pg_cron (installed, unused, stays so).
+ * nothing and fails closed. Scheduled by Vercel Cron, not pg_cron (production runs exactly two
+ * pg_cron jobs, `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's
+ * report of 2026-10-09).
  */
 router.get(
   "/exam-score-renewal",
@@ -736,7 +784,8 @@ router.get(
  * plain English: every run rolls the effective SAT dates; in the 17:00 Chicago hour, runs the
  * `qotd_daily` notification rule (owner ruling on #1166, 2026-10-09): every student who has
  * answered nothing today gets the in-app notification, and the email too when its channel is on,
- * then the notification dispatcher sends the queued emails. Safe to rerun: the event id is
+ * then the notification dispatcher sends the queued `qotd_daily` emails — that type only (owner
+ * ruling, Karl 2026-10-09, schedule audit Step 2 item 3(3)). Safe to rerun: the event id is
  * deterministic per (student, day), so a second run the same day emits and sends nothing. 500
  * when any send failed, so the run shows as failed.
  *

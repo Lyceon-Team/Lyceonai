@@ -941,6 +941,23 @@ describe.skipIf(!PG_AVAILABLE)(
         ]);
       });
 
+      /**
+       * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(1); contract C6.7]
+       * | @implemented [2026-10-09] The rule's own output (the 17:00 CDT run above): today's
+       * event expires when its America/Chicago day ends — 2026-07-15 00:00 CDT = 05:00Z.
+       */
+      it("the rule's qotd_daily event expires at the end of its Chicago day", async () => {
+        const r = await pg.query<{ expires_at: Date | null }>(
+          `SELECT expires_at FROM public.notification_events
+            WHERE event_type = 'qotd_daily' AND subject_profile_id = $1 AND payload->>'qotd_date' = $2`,
+          [MAILED, SUMMER_DAY],
+        );
+        expect(r.rows).toHaveLength(1);
+        expect(r.rows[0]?.expires_at?.toISOString()).toBe(
+          "2026-07-15T05:00:00.000Z",
+        );
+      });
+
       it("in-app for a student who never consented, and for an under-13", async () => {
         expect(await messages(NEVERER, SUMMER_DAY)).toEqual([
           { channel: "in_app", status: "delivered" },
@@ -1038,22 +1055,26 @@ describe.skipIf(!PG_AVAILABLE)(
       });
 
       it("a daily email still queued after its day is never sent late; it fails at once", async () => {
+        // The event as qotd_daily_notify writes it: expires_at = the end of its Chicago day
+        // (owner ruling 2026-10-09, schedule audit Step 2 item 3(1); the rule's own expiry is
+        // asserted from real rule output in tests/ci/notification-quiet-hours.pg.ci.test.ts).
         await pg.query(
           `SELECT public.emit_notification_event(
              public.notification_event_id('qotd_daily', $1::text || ':2026-07-16'),
              'qotd_daily', $1::uuid,
              jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('in_app', 'email'))),
-             jsonb_build_object('qotd_date', '2026-07-16', 'current_streak', 0, 'email_variant', 'daily'))`,
+             jsonb_build_object('qotd_date', '2026-07-16', 'current_streak', 0, 'email_variant', 'daily'),
+             ('2026-07-17'::timestamp AT TIME ZONE 'America/Chicago'))`,
           [MAILED],
         );
         const { dispatchQueuedMessages } =
           await import("../../server/lib/notifications/dispatch");
         const before = sent.length;
-        // The next morning's backstop sweep (04:30 UTC = 23:30 CDT on the 16th is still the 16th;
-        // 09:30 UTC on the 17th is the next Chicago day).
+        // The next morning's backstop sweep: 14:00 UTC on the 17th = 09:00 CDT, the next
+        // Chicago day, outside quiet hours — so only the expiry can stop it.
         await dispatchQueuedMessages({
           transport: fakeTransport,
-          now: new Date("2026-07-17T09:30:00Z"),
+          now: new Date("2026-07-17T14:00:00Z"),
         });
         expect(sent.length).toBe(before);
         expect(await messages(MAILED, "2026-07-16")).toEqual([
@@ -1086,6 +1107,49 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(await messages(MAILED_UNSUB, "2026-07-16")).toEqual([
           { channel: "email", status: "failed" },
           { channel: "in_app", status: "delivered" },
+        ]);
+      });
+
+      /**
+       * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(3); contract C6.2]
+       * | @implemented [2026-10-09] The 17:00 run sends `qotd_daily` and nothing else: a queued
+       * email of another type is left exactly as it was, for the daily sweep.
+       */
+      it("the 17:00 run sends qotd_daily only; a queued email of another type is untouched", async () => {
+        await seedQuestion("SATM1Q90007");
+        await pg.query(
+          `INSERT INTO public.qotd_schedule (qotd_date, question_id) VALUES ('2026-07-20', 'SATM1Q90007')`,
+        );
+        // A guardian_linked email, queued through the real emitter and never dispatched.
+        const linkId = "a7000000-0000-4000-8000-0000000000f1";
+        await pg.query(
+          `SELECT public.emit_notification_event(
+             public.notification_event_id('guardian_linked', $2::text),
+             'guardian_linked', $3::uuid,
+             jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('email'))),
+             jsonb_build_object('link_id', $2::text, 'student_display_name', 'Sam'))`,
+          [GUARDIAN, linkId, MAILED],
+        );
+        const queued = `SELECT m.status, m.attempts, m.last_error, m.not_before
+                          FROM public.notification_messages m
+                          JOIN public.notification_events e ON e.event_id = m.event_id
+                         WHERE e.event_type = 'guardian_linked' AND m.recipient_profile_id = $1`;
+        expect((await pg.query(queued, [GUARDIAN])).rows).toEqual([
+          { status: "queued", attempts: 0, last_error: null, not_before: null },
+        ]);
+        const before = sent.length;
+
+        const summary = await run("2026-07-20T22:00:00Z"); // 17:00 CDT
+        expect(summary.chicago_hour).toBe(17);
+        // PRESENCE FIRST: the run did dispatch.
+        expect(summary.sent).toBeGreaterThan(0);
+        expect(sent.length).toBeGreaterThan(before);
+
+        expect(sent.slice(before).map((x) => x.to)).not.toContain(
+          `${GUARDIAN}@example.test`,
+        );
+        expect((await pg.query(queued, [GUARDIAN])).rows).toEqual([
+          { status: "queued", attempts: 0, last_error: null, not_before: null },
         ]);
       });
 

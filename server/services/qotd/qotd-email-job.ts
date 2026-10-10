@@ -17,8 +17,11 @@
  *   3. Run the rule, `qotd_daily_notify`, in batches until a batch comes back short: one
  *      `qotd_daily` event per student who has answered nothing today, in-app always and email on
  *      the student's enabled channel (the SQL decides who, including the 7-send pause).
- *   4. Hand the queued emails to the notification dispatcher, the same one every other email
- *      uses: Idempotency-Key = message id, Resend's suppression list, the attempt cap.
+ *   4. Hand the queued `qotd_daily` emails — and only those (owner ruling, Karl 2026-10-09,
+ *      schedule audit Step 2 item 3(3)) — to the notification dispatcher, the same one every
+ *      other email uses: Idempotency-Key = message id, Resend's suppression list, the attempt
+ *      cap, the event's expiry (the end of today in Chicago) and quiet hours (17:00 is outside
+ *      them).
  *
  * One per student per day is the ledger's guarantee, not this job's: the event id is
  * deterministic per (student, day), so a second run (or both evening crons) emits nothing new and
@@ -35,6 +38,7 @@ import {
 import { logger } from "../../logger";
 import { checkQotdHealth, defaultSendAlert } from "./qotd-health";
 import { QOTD_TIME_ZONE, qotdToday } from "./qotd-service";
+import { localHourIn } from "../calendar/adapters/local-day";
 import type { RpcClient } from "../../lib/rpc-client";
 
 const COMPONENT = "QOTD_EMAIL";
@@ -76,14 +80,13 @@ export type QotdEmailJobDeps = {
  */
 export const HORIZON_CHECK_FROM_CHICAGO_HOUR = 12;
 
-/** The America/Chicago wall-clock hour (0-23) at `now`. DST is the zone database's job. */
+/**
+ * The America/Chicago wall-clock hour (0-23) at `now`. DST is the zone database's job.
+ * The `Intl` read lives in `localHourIn` (local-day.ts), shared with the email quiet-hours guard
+ * (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2).
+ */
 export function chicagoHour(now: Date): number {
-  const hour = new Intl.DateTimeFormat("en-US", {
-    timeZone: QOTD_TIME_ZONE,
-    hour: "numeric",
-    hourCycle: "h23",
-  }).format(now);
-  return Number(hour);
+  return localHourIn(QOTD_TIME_ZONE, now);
 }
 
 const notifyResultSchema = z.object({
@@ -175,7 +178,14 @@ export async function runQotdEmailJob(
 
   if (summary.mailable > 0) {
     for (let pass = 0; pass < MAX_DISPATCH_PASSES; pass += 1) {
-      const d = await dispatch({ limit: DISPATCH_BATCH, now });
+      // qotd_daily ONLY (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(3)): this run
+      // used to flush every queued email of every type; the daily sweep is the one retry path
+      // for the other types.
+      const d = await dispatch({
+        limit: DISPATCH_BATCH,
+        now,
+        eventType: "qotd_daily",
+      });
       summary.sent += d.sent;
       summary.failed += d.failed;
       if (d.selectFailed) {

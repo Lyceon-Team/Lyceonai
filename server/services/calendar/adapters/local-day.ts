@@ -65,14 +65,34 @@ function offsetMinutesAt(instant: Date, timeZone: string): number {
 
 /** The instant at which `localDate` begins in `timeZone`. */
 function startOfLocalDay(localDate: string, timeZone: string): Date {
+  return localWallTimeUtc(localDate, 0, timeZone);
+}
+
+/**
+ * The instant at which the wall clock in `timeZone` reads `hour`:00 on `localDate`.
+ *
+ * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2 ("deferred to the next 08:00
+ *        America/Chicago")] | @implemented [2026-10-09]
+ *
+ * plain English: generalises the day-start computation below to any whole hour, with the same
+ * two-pass offset measurement, so "08:00 Chicago" is 13:00Z in CDT and 14:00Z in CST. An hour
+ * that does not exist on a spring-forward day (02:00 locally) resolves to the instant after the
+ * gap; no caller asks for one (the quiet-hours boundary is 08:00).
+ */
+export function localWallTimeUtc(
+  localDate: string,
+  hour: number,
+  timeZone: string,
+): Date {
   const match = ISO_DATE.exec(localDate);
   if (match === null) {
-    throw new Error(`localDayWindowUtc: ${localDate} is not a YYYY-MM-DD date`);
+    throw new Error(`localWallTimeUtc: ${localDate} is not a YYYY-MM-DD date`);
   }
   const naiveUtc = Date.UTC(
     Number(match[1]),
     Number(match[2]) - 1,
     Number(match[3]),
+    hour,
   );
 
   // Pass one: offset at the naive instant. Pass two: re-measure after applying it,
@@ -163,6 +183,35 @@ export function localTodayIn(timeZone: string, now: Date = new Date()): string {
     );
   }
   return localDate;
+}
+
+/**
+ * The wall-clock hour (0-23) in `timeZone` at `now`. DST is the zone database's job.
+ *
+ * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2] | @implemented [2026-10-09]
+ * Moved here from qotd-email-job.ts (`chicagoHour`, which now calls it) so the quiet-hours guard
+ * and the 17:00 QOTD gate read the hour through one helper rather than two.
+ */
+export function localHourIn(timeZone: string, now: Date): number {
+  const hour = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    hourCycle: "h23",
+  }).format(now);
+  return Number(hour);
+}
+
+/** The ISO date one day after `localDate` (calendar arithmetic, no zone). */
+export function nextLocalDate(localDate: string): string {
+  const match = ISO_DATE.exec(localDate);
+  if (match === null) {
+    throw new Error(`nextLocalDate: ${localDate} is not a YYYY-MM-DD date`);
+  }
+  return new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1),
+  )
+    .toISOString()
+    .slice(0, 10);
 }
 
 /**
