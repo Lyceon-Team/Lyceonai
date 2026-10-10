@@ -118,7 +118,7 @@ This rule overrides any instruction to the contrary.
 
 - One entry per delta. Newest at top.
 - Each entry: ID, date, status, the change, the reason, the spec doc(s) it touches, and the build artifact (PR / migration) if any.
-- **Status values:** `PROPOSED` (agent-appended, awaiting owner validation) · `OPEN` (owner-accepted, owed into the spec) · `APPLIED` (folded into the locked spec doc) · `SUPERSEDED` (replaced by a later entry) · `REJECTED` (owner declined an agent proposal). Agents may only write `PROPOSED`; the owner sets all others.
+- **Status values** (exactly the four in STATUS VALUES above): `PROPOSED` (the spec should change; not yet changed, and the owner has not ruled) · `RULING` (a decision recorded; no amendment needed) · `OPEN` (the owner has ruled the change in; not yet in docs/Spec/) · `APPLIED` (the amendment has been made in docs/Spec/). Agents may only write `PROPOSED`; the owner sets all others.
 - Entry IDs: `SCL-194` (sequential).
 
 ---
