@@ -125,6 +125,12 @@ describe("WalkthroughVideo", () => {
     expect(play).not.toHaveBeenCalled();
   });
 
+  it("plays inline, so iPhones play it in place instead of forcing full screen", () => {
+    const { container } = render(<WalkthroughVideo />);
+    near();
+    expect(videoEl(container).hasAttribute("playsinline")).toBe(true);
+  });
+
   it("carries a default English captions track", () => {
     const { container } = render(<WalkthroughVideo />);
     near();
