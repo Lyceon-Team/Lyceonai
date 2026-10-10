@@ -17,7 +17,8 @@
  *   * --date builds a PAST day (strictly before today in America/Chicago, else exit 2) from the
  *     public archive. Its answer is dropped by socialInputFromArchive before anything is built,
  *     and the output is then checked against it with socialAssetLeaks. `--date latest` picks the
- *     newest archive day (pull request runs use it to prove the workflow end to end).
+ *     newest archive day whose input passes socialInputProblems (pull request runs use it to
+ *     prove the workflow end to end, the Slack dry run included).
  *   * The card (client/src/components/qotd/QotdSocialCard.tsx) is loaded through Vite's SSR
  *     loader, so the same aliases and the same StaticMath the site uses apply, rendered to static
  *     HTML with the site's fonts, and screenshotted by Playwright at each size. Text is set to
@@ -28,7 +29,9 @@
  *
  * Writes to DIR (default qotd-social-out/): qotd-<date>-portrait.png, qotd-<date>-story.png,
  * caption.txt, alt-text.txt and summary.md (the run-page summary, caption and alt text in code
- * blocks so GitHub shows a copy button). Logs carry status only, never question text.
+ * blocks so GitHub shows a copy button), and post.json, the publish manifest the Slack poster
+ * requires (written only when every check passed and every format was produced; see
+ * publishDecision). Logs carry status only, never question text.
  */
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -43,10 +46,14 @@ import {
   qotdArchiveResponseSchema,
   qotdDateSchema,
   qotdTodayResponseSchema,
+  qotdSocialPostManifestSchema,
   type QotdArchiveResponse,
+  type QotdSocialCopy,
   type QotdSocialInput,
+  type QotdSocialPostManifest,
 } from "../../packages/shared/src/qotd-schema";
 import {
+  QOTD_SECTION_NAME,
   QOTD_SOCIAL_FORMATS,
   buildSocialCopy,
   revealWording,
@@ -124,9 +131,103 @@ async function getJson(url: string): Promise<unknown> {
   return res.json();
 }
 
-type Source =
+export type Source =
   | { kind: "today"; input: QotdSocialInput }
   | { kind: "past"; input: QotdSocialInput; revealed: QotdArchiveResponse };
+
+/**
+ * Whether a built day may be published, and if so its manifest (post.json).
+ *
+ * @spec [Doc 10A §7; owner brief 2026-10-10 (QOTD social assets to Slack: "never post a day
+ *       with a leak-check failure"; the existing socialAssetLeaks check gates the post)]
+ *       | @implemented [2026-10-10]
+ *
+ * plain English: every check the generator has always run (the input, the caption and alt text,
+ * reveal wording on each card), plus socialAssetLeaks against the day's revealed answer when
+ * the source is a past day. Any problem: no manifest, and the poster posts nothing. Today's
+ * source has no answer to check against (the public pre-submit payload's answer and explanation
+ * are the literal null), which the manifest records as "no-answer-in-source", never as a pass.
+ * Pure: the caller writes the files.
+ */
+export function publishDecision(
+  source: Source,
+  copy: QotdSocialCopy,
+  rendered: readonly { format: QotdSocialFormat; cardText: string }[],
+  today: string,
+):
+  | { ok: true; manifest: QotdSocialPostManifest }
+  | { ok: false; problems: string[] } {
+  const { input } = source;
+  const problems = [
+    ...socialInputProblems(input),
+    ...socialCopyProblems(copy, input),
+  ];
+  for (const r of rendered) {
+    const reveal = revealWording(r.cardText, input);
+    if (reveal) problems.push(`${r.format} card: ${reveal}`);
+    if (source.kind === "past") {
+      problems.push(
+        ...socialAssetLeaks(
+          {
+            caption: copy.caption,
+            alt_text: copy.alt_text,
+            card_text: r.cardText,
+          },
+          source.revealed,
+        ).map((leak) => `${r.format}: ${leak}`),
+      );
+    }
+  }
+  // "no-answer-in-source" is true only of today's own payload. A today source dated any other
+  // day (a stale cache at the day boundary) is a day whose answer is already public: refused,
+  // never posted without its leak check. Build it with --date instead.
+  if (source.kind === "today" && input.qotd_date !== today) {
+    problems.push(
+      `source: the today payload is dated ${input.qotd_date}, not today (${today})`,
+    );
+  }
+  if (rendered.length === 0) problems.push("no image was produced");
+  if (problems.length > 0) return { ok: false, problems };
+  return {
+    ok: true,
+    manifest: qotdSocialPostManifestSchema.parse({
+      qotd_date: input.qotd_date,
+      section: QOTD_SECTION_NAME[input.section_code],
+      source: source.kind,
+      caption: copy.caption,
+      alt_text: copy.alt_text,
+      images: rendered.map((r) => ({
+        format: r.format,
+        file: `qotd-${input.qotd_date}-${r.format}.png`,
+      })),
+      checks: {
+        input: "passed",
+        copy: "passed",
+        reveal_wording: "passed",
+        leaks: source.kind === "past" ? "passed" : "no-answer-in-source",
+      },
+    }),
+  };
+}
+
+/**
+ * Write post.json for a complete, passing day, and make sure no post.json exists otherwise: the
+ * Slack poster posts nothing without it (owner brief 2026-10-10). Returns whether it was written.
+ */
+export function writePublishManifest(
+  outDir: string,
+  decision: ReturnType<typeof publishDecision>,
+  unfit: readonly string[],
+): boolean {
+  const path = join(outDir, "post.json");
+  rmSync(path, { force: true });
+  if (!decision.ok || unfit.length > 0) return false;
+  writeFileSync(path, `${JSON.stringify(decision.manifest, null, 2)}\n`);
+  return true;
+}
+
+/** How far back `--date latest` looks for a day whose input passes. */
+const LATEST_LOOKBACK_DAYS = 14;
 
 async function loadSource(args: Args): Promise<Source> {
   if (args.date === null) {
@@ -286,12 +387,25 @@ async function main(): Promise<number> {
     const index = z
       .object({ data: qotdArchiveIndexResponseSchema })
       .parse(await getJson(`${args.baseUrl}/api/public/qotd/archive`));
-    const newest = index.data.days[0];
-    if (!newest) {
-      err("qotd-social: refused: the archive has no past day yet");
+    // The newest one whose input passes, so the run proves the full path (images, manifest,
+    // Slack dry run) rather than an older input refusal, which the unit tests already cover.
+    // Checked through loadSource, the same past-day read the build makes.
+    let picked: string | null = null;
+    for (const day of index.data.days.slice(0, LATEST_LOOKBACK_DAYS)) {
+      const candidate = await loadSource({ ...args, date: day.qotd_date });
+      if (socialInputProblems(candidate.input).length === 0) {
+        picked = day.qotd_date;
+        break;
+      }
+      out(`qotd-social: latest: skipping ${day.qotd_date} (input refused)`);
+    }
+    if (!picked) {
+      err(
+        `qotd-social: refused: no publishable day among the newest ${LATEST_LOOKBACK_DAYS} archive days`,
+      );
       return 2;
     }
-    args.date = newest.qotd_date;
+    args.date = picked;
   }
   if (args.date !== null) {
     const problem = pastDateProblem(args.date);
@@ -326,27 +440,9 @@ async function main(): Promise<number> {
     await close();
   }
 
-  const problems = [
-    ...socialInputProblems(input),
-    ...socialCopyProblems(copy, input),
-  ];
-  for (const r of result.rendered) {
-    const reveal = revealWording(r.cardText, input);
-    if (reveal) problems.push(`${r.format} card: ${reveal}`);
-    if (source.kind === "past") {
-      problems.push(
-        ...socialAssetLeaks(
-          {
-            caption: copy.caption,
-            alt_text: copy.alt_text,
-            card_text: r.cardText,
-          },
-          source.revealed,
-        ).map((leak) => `${r.format}: ${leak}`),
-      );
-    }
-  }
-  if (problems.length > 0) {
+  const decision = publishDecision(source, copy, result.rendered, today);
+  if (!decision.ok) {
+    const { problems } = decision;
     rmSync(args.out, { recursive: true, force: true });
     mkdirSync(args.out, { recursive: true });
     writeFileSync(
@@ -392,6 +488,7 @@ async function main(): Promise<number> {
     "",
   ].join("\n");
   writeFileSync(join(args.out, "summary.md"), summary);
+  writePublishManifest(args.out, decision, result.unfit);
 
   out(
     `qotd-social: ${date} (${source.kind}): ${result.rendered
