@@ -430,8 +430,9 @@ router.patch("/", async (req: Request, res: Response) => {
       });
     }
 
-    // G1-02 (R1): the one-time role choice. Every account is created as a student, so a
-    // parent picking "Guardian" is a CHANGE of role; `decideRoleChoice` allows it once,
+    // G1-02 (R1): the one-time role choice. An account is created as a student unless its
+    // sign-up came through the parent entry point (owner brief 2026-10-10), so picking the
+    // other role here is a CHANGE of role; `decideRoleChoice` allows it once,
     // before completion, on an account with no link and no learning state. The facts are
     // only read when a change is actually requested.
     const isRoleChange =

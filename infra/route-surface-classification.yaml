@@ -616,6 +616,17 @@ routes:
     requires_hmac: false
     prerender: false
     indexable: false
+  - path_pattern: /practice/diagnostic
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-05C
+    last_classified_at: 2026-10-10
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
   - path_pattern: /practice/session/:sessionId
     surface_class: authenticated_student
     clarity_allowed: false

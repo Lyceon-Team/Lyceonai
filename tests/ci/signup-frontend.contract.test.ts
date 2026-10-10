@@ -192,6 +192,8 @@ describe("Signup Frontend Contract", () => {
       "Password123!",
       { consentSource: "email_signup_form" },
       "Student User",
+      // No role intent on a plain /login (entry-aware auth brief 2026-10-10).
+      null,
     );
   });
 
@@ -202,9 +204,10 @@ describe("Signup Frontend Contract", () => {
     fireEvent.click(screen.getByTestId("button-google-signin"));
 
     await waitFor(() => {
-      expect(signInWithGoogleMock).toHaveBeenCalledWith({
-        consentSource: "google_continue_click",
-      });
+      expect(signInWithGoogleMock).toHaveBeenCalledWith(
+        { consentSource: "google_continue_click" },
+        null,
+      );
     });
   });
 

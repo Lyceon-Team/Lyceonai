@@ -4,9 +4,11 @@
  * @spec [Guardian_Closure_Plan G1-02; owner rulings R1, R10; Doc 01 V8 §17A (a role switch
  *        requires unlinking first), §16 (admin is never self-assigned)] | @implemented [2026-09-29]
  *
- * plain English: every account is created as a student (the `handle_new_user` trigger), so a
- * parent who picks "Guardian" on the profile-completion form is asking to CHANGE role. This
- * module decides whether that is allowed. Expected outcome: a brand-new account can pick
+ * plain English: an account is created as a student (the `handle_new_user` trigger) unless its
+ * sign-up came through the parent entry point (owner brief 2026-10-10 rule 2: the email sign-up
+ * names the role, and a Google sign-up is changed by `adoptGuardianSignupIntent` below, through
+ * this same decision). Picking the other role on the profile-completion form is asking to CHANGE
+ * role, and this module decides whether that is allowed. Expected outcome: a brand-new account can pick
  * student or guardian exactly once; after completion the role is locked; admin is never
  * self-assigned; and an account that already holds a guardian link or any learning state
  * cannot switch, because that state was written under the other role.
@@ -22,6 +24,7 @@
  * is written), rather than being read as "no state".
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { RuntimeRole } from "./auth-role.js";
 import {
   GUARDIAN_MIN_AGE,
   ageInYears,
@@ -254,4 +257,51 @@ export async function loadRoleChoiceFacts(
   }
 
   return { hasActiveLink, hasLearningState };
+}
+
+/**
+ * @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 2; G1-02 R1 (the
+ *        one-time role choice)] | @implemented [2026-10-10]
+ *
+ * plain English: a Google sign-up cannot name a role when the account is created (an OAuth
+ * sign-up carries no metadata of ours), so the `handle_new_user` trigger makes it a student. When
+ * that sign-up came through "I'm a parent or guardian", the callback calls this to make it the
+ * guardian it asked to be — the email sign-up gets the same result from its metadata. It is the
+ * SAME decision the onboarding form's role choice goes through (`decideRoleChoice` on freshly
+ * read facts), so it can never do what onboarding could not: a completed profile, an active link
+ * or any learning state refuses it, and admin is never reachable.
+ *
+ * Expected outcome: the row is a guardian when the decision allows it, and untouched when it
+ * refuses. Nothing is returned for routing: only a not-yet-onboarded account can be changed, and
+ * that account goes to onboarding whatever its role (`postAuthDestination`), which reads the row
+ * again. Trade-off: the write re-states its preconditions in its WHERE (still a student, still not
+ * completed), so a completion that lands between the read and the write leaves the row alone
+ * rather than overwriting a choice. Edge case: a read or write error THROWS — the callback's
+ * finalize branch keeps the session and shows a recoverable error, as for any finalize failure.
+ */
+export async function adoptGuardianSignupIntent(
+  supabase: SupabaseClient,
+  profile: { id: string; role: RuntimeRole; profileCompletedAt: string | null },
+  supportEmail: string,
+): Promise<void> {
+  if (profile.role === "guardian") return;
+  const facts = await loadRoleChoiceFacts(supabase, profile.id);
+  const decision = decideRoleChoice({
+    currentRole: profile.role,
+    requestedRole: "guardian",
+    profileCompletedAt: profile.profileCompletedAt,
+    facts,
+    supportEmail,
+  });
+  if (!decision.ok) return;
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ role: decision.role })
+    .eq("id", profile.id)
+    .eq("role", profile.role)
+    .is("profile_completed_at", null);
+  if (error) {
+    throw new Error(`signup_role_intent_write_failed: ${error.message}`);
+  }
 }

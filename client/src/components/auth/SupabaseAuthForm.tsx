@@ -14,8 +14,23 @@ import {
   PASSWORD_POLICY,
   evaluatePassword,
 } from "@lyceon/shared/password-policy";
+import {
+  parseAuthEntryMode,
+  type AuthEntryMode,
+  type SignupRoleIntent,
+} from "@lyceon/shared/auth-entry";
 
-type AuthMode = "signin" | "signup" | "reset";
+type AuthMode = AuthEntryMode | "reset";
+
+/**
+ * @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 4] | the card's
+ * title per mode. Sign Up and Sign In name what the person came to do; reset keeps its own.
+ */
+const MODE_TITLES: Readonly<Record<AuthMode, string>> = {
+  signin: "Welcome back",
+  signup: "Create your Lyceon account",
+  reset: "Reset Password",
+};
 
 const FIELD_ICON =
   "pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-lyc-muted";
@@ -47,12 +62,35 @@ const INLINE_LINK = LYC_INLINE_LINK;
  * Alert was role="alert"). The email and name inputs gain `autocomplete` tokens (email, name)
  * beside PasswordField's own.
  */
-export function SupabaseAuthForm() {
+export function SupabaseAuthForm({
+  initialMode = "signin",
+  initialRole = null,
+}: {
+  /** The tab the page opens on (`?mode=`, parsed by the shared allowlist). */
+  initialMode?: AuthEntryMode;
+  /** The account type the entry point asked for (`?role=`), or null: a student. */
+  initialRole?: SignupRoleIntent | null;
+} = {}) {
   const { signIn, signUp, signInWithGoogle, isLoading, resetPassword } =
     useSupabaseAuth();
   const { toast } = useToast();
 
-  const [mode, setMode] = useState<AuthMode>("signin");
+  // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rules 1, 2, 4] |
+  // @implemented [2026-10-10] | plain English: the page opens on the tab the link asked for, and
+  // a guardian entry keeps its role intent for BOTH ways of creating the account (the email
+  // form and "Continue with Google"), until the person says "I'm a student". The intent is sent
+  // only while it is on screen (Sign Up, where the guardian line is drawn): a press of Google
+  // from the Sign In tab names no role, so no account is ever re-roled by an intent the page
+  // was not showing (spec audit 2026-10-10). Such an account still opens onboarding on Guardian
+  // through `next=/guardian`, which the parent link also carries (F13). The tabs and the
+  // Google button stay available in every mode. After a failed email sign-in the card offers
+  // "No account yet? Create one", which opens Sign Up with the typed email kept (the email is
+  // one field across both tabs); the error copy itself is unchanged and non-enumerating.
+  const [mode, setMode] = useState<AuthMode>(initialMode);
+  const [roleIntent, setRoleIntent] = useState<SignupRoleIntent | null>(
+    initialRole,
+  );
+  const [signInFailed, setSignInFailed] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -104,6 +142,7 @@ export function SupabaseAuthForm() {
     e.preventDefault();
     setError("");
     setVerificationState(null);
+    setSignInFailed(false);
 
     try {
       if (mode === "signin") {
@@ -120,6 +159,7 @@ export function SupabaseAuthForm() {
         password,
         { consentSource: "email_signup_form" },
         displayName,
+        roleIntent,
       );
 
       if (signupResult.outcome === "verification_required") {
@@ -143,6 +183,7 @@ export function SupabaseAuthForm() {
     } catch (err) {
       const errorMsg = resolveAuthErrorMessage(err);
       setError(errorMsg);
+      if (mode === "signin") setSignInFailed(true);
       toast({
         title: mode === "signin" ? "Sign In Failed" : "Sign Up Failed",
         description: errorMsg,
@@ -155,7 +196,10 @@ export function SupabaseAuthForm() {
     setVerificationState(null);
 
     try {
-      await signInWithGoogle({ consentSource: "google_continue_click" });
+      await signInWithGoogle(
+        { consentSource: "google_continue_click" },
+        mode === "signup" ? roleIntent : null,
+      );
       toast({
         title: "Redirecting to Google...",
         description: "Continue in Google to finish sign-in.",
@@ -173,13 +217,31 @@ export function SupabaseAuthForm() {
   return (
     <div data-testid="auth-form">
       <BareCardHeader
-        title={mode === "reset" ? "Reset Password" : "Lyceon"}
+        title={MODE_TITLES[mode]}
         description={
           mode === "reset"
             ? "Enter your email to receive a password reset link"
-            : "Sign in to continue your SAT prep journey"
+            : mode === "signin"
+              ? "Sign in to continue your SAT prep journey"
+              : undefined
         }
       />
+      {mode === "signup" && roleIntent === "guardian" ? (
+        <p
+          className="m-0 mb-5 text-lyc-body text-lyc-muted"
+          data-testid="signup-role-guardian"
+        >
+          Signing up as a parent or guardian.{" "}
+          <Button
+            type="button"
+            variant="lyc-link"
+            onClick={() => setRoleIntent("student")}
+            data-testid="button-signup-as-student"
+          >
+            I&apos;m a student
+          </Button>
+        </p>
+      ) : null}
       {mode === "reset" ? (
         <form onSubmit={handleResetPassword} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
@@ -278,8 +340,9 @@ export function SupabaseAuthForm() {
           <Tabs
             value={mode}
             onValueChange={(v) => {
-              setMode(v as AuthMode);
+              setMode(parseAuthEntryMode(v));
               setVerificationState(null);
+              setSignInFailed(false);
             }}
           >
             <TabsList variant="lyc">
@@ -357,6 +420,27 @@ export function SupabaseAuthForm() {
                 >
                   {isLoading ? "Signing in..." : "Sign In"}
                 </Button>
+                {signInFailed ? (
+                  <p
+                    className="m-0 text-center text-lyc-meta-lg text-lyc-muted"
+                    data-testid="signin-create-account"
+                  >
+                    No account yet?{" "}
+                    <Button
+                      type="button"
+                      variant="lyc-link"
+                      className="text-lyc-meta-lg"
+                      onClick={() => {
+                        setMode("signup");
+                        setError("");
+                        setSignInFailed(false);
+                      }}
+                      data-testid="button-create-account"
+                    >
+                      Create one
+                    </Button>
+                  </p>
+                ) : null}
               </form>
             </TabsContent>
 

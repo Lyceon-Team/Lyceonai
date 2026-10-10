@@ -153,6 +153,9 @@ export const STUDENT_ROUTE_SHELLS = {
   // (ScopedTutorPanel) and its denial card (LisaUpgradeCard, now /chat's locked card with the
   // approved copy) followed, so nothing in the review runner reads the light tokens; off the lock.
   "/practice/session/:sessionId": focus("Practice", "/practice", false, null),
+  // Owner brief 2026-10-10 rule 3: the diagnostic start page hands straight over to the session
+  // above, so it is drawn in the same Focus frame (no shell change between the two).
+  "/practice/diagnostic": focus("Practice", "/practice", false, null),
   "/review/session/:sessionId": focus("Review", "/review", false, null),
   // UI-54 (2026-10-03): the exam session page and the report are rebuilt on the student tokens
   // only; off the lock. The timed module keeps its Bluebook layout and stays light for good.

@@ -24,7 +24,7 @@ This document records, for those routes:
 |-------|---------------|-------------|-----------|-------------------------|--------|
 | `/` | public | free | HomePage | N/A (static) | ACTIVE |
 | `/login` | public | free | Login | `/api/auth/signin`, `/api/auth/signup` | ACTIVE |
-| `/signup` | public | free | Redirect→`/login` | N/A | ACTIVE |
+| `/signup` | public | free | Redirect→`/login?mode=signup` (the Sign Up tab; owner brief 2026-10-10) | N/A | ACTIVE |
 | `/update-password` | public | free | UpdatePassword | `/api/auth/update-password` | ACTIVE |
 | `/account/recover` | public | free | AccountRecover | `/api/account/recover-deletion` | ACTIVE |
 | `/digital-sat` | public | free | Redirect→`/online-sat-prep` (301 at the edge) | N/A | ACTIVE |
@@ -77,6 +77,7 @@ This document records, for those routes:
 | `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/practice/diagnostic` | student, admin | free | DiagnosticStart (starts or resumes the diagnostic, then replaces itself with `/practice/session/:sessionId`; owner brief 2026-10-10 rule 3) | `/api/practice/diagnostic/sessions` | ACTIVE |
 | `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
 | `/review` | student, admin | free | Review | `/api/review/pool`, `/api/review/sessions/open`, `/api/review/sessions`, `/api/practice/topics` | ACTIVE |
 | `/review/session/:sessionId` | student, admin | free | ResumeReview | `/api/review/sessions/:sessionId/state`, `/api/review/sessions/:sessionId/next`, `/api/review/answer`, `/api/review/sessions/:sessionId/skip` | ACTIVE |

@@ -80,6 +80,7 @@ vi.mock("@/pages/notifications", pageStub);
 vi.mock("@/pages/practice", pageStub);
 vi.mock("@/pages/profile-complete", pageStub);
 vi.mock("@/pages/resume-practice", pageStub);
+vi.mock("@/pages/diagnostic-start", pageStub);
 vi.mock("@/pages/resume-review", pageStub);
 vi.mock("@/pages/review", pageStub);
 vi.mock("@/pages/score-report", pageStub);
@@ -389,6 +390,8 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/help",
       "/notifications",
       "/practice/session/:sessionId",
+      // Owner brief 2026-10-10 rule 3: the diagnostic start page, in the session's own frame.
+      "/practice/diagnostic",
       // UI-53 / OQ-54 (a), ruling 2026-10-05: the review runner, its LISA panel on student tokens.
       "/review/session/:sessionId",
       "/tests/:sessionId",

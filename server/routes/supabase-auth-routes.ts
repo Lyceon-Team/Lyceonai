@@ -27,6 +27,7 @@ import {
   revokeOtherSessionsAfterRecovery,
 } from "../lib/password-credentials.js";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
+import { parseSignupRoleIntent } from "../../packages/shared/src/auth-entry";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
@@ -150,6 +151,18 @@ router.post(
       }
 
       const { email, password, displayName, legalConsent } = validation.data;
+      // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 2] |
+      // @implemented [2026-10-10] | plain English: a sign-up that came through "I'm a parent or
+      // guardian" names `role: "guardian"`, and the account is created as a guardian (the
+      // handle_new_user trigger reads this metadata and maps anything but 'guardian' to
+      // 'student'). Before, every sign-up was created as a student and the guardian choice
+      // depended on onboarding still seeing `next=/guardian`, which an email-confirmation link
+      // does not carry. Both roles are self-assignable (server/lib/role-choice.ts), so this grants
+      // nothing the onboarding form does not; admin was refused above. Unknown → student.
+      const signupRole =
+        parseSignupRoleIntent(validation.data.role) === "guardian"
+          ? "guardian"
+          : "student";
       const consentSource: ConsentSource =
         legalConsent?.consentSource ?? "email_signup_form";
 
@@ -183,8 +196,9 @@ router.post(
             ...(emailRedirectTo ? { emailRedirectTo } : {}),
             data: {
               display_name: displayName || email.split("@")[0],
-              // Safe temporary backend role until profile-complete finalization.
-              role: "student",
+              // The sign-up's role intent (above): guardian or student. Onboarding can still
+              // change it once, before completion (decideRoleChoice).
+              role: signupRole,
             },
           },
         },
@@ -216,7 +230,11 @@ router.post(
       // admin client for the durable consent capture below.
       const admin = getSupabaseAdmin();
 
-      await recordSignupSource(authData.user.id, validation.data.signupSource, req.requestId);
+      await recordSignupSource(
+        authData.user.id,
+        validation.data.signupSource,
+        req.requestId,
+      );
 
       // AS-1: durable + non-throwing. A SINGLE-store failure keeps the signup (outbox absorbs it).
       // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed — consent is
@@ -307,6 +325,7 @@ router.post(
       logger.info("AUTH", "signup_success", "User signed up successfully", {
         userId: authData.user.id,
         canonicalSessionEstablished: hasCanonicalSession,
+        role: signupRole,
         requestId: req.requestId,
       });
 
@@ -443,7 +462,9 @@ router.post(
       // Doc 07A §6.2 user_signed_out. Only an explicit sign-out reaches this route; expiry and
       // security logouts are never observed here, so `explicit` is the only value emitted.
       if (req.user?.id) {
-        await emitEvent(req.user.id, "user_signed_out", { signout_trigger: "explicit" });
+        await emitEvent(req.user.id, "user_signed_out", {
+          signout_trigger: "explicit",
+        });
       }
 
       res.json({
