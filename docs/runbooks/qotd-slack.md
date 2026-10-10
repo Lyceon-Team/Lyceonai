@@ -67,8 +67,9 @@ the download is still on the run page, so the day can be shared by hand.
 - `invalid_auth`: the token was revoked or mistyped. Reinstall the app and update the secret.
 - `missing_scope`: add the scope, then reinstall the app.
 
-**Re-running a run posts the day again.** Re-run only a run whose **Post to Slack** step
-failed. Delete a duplicate post in Slack.
+**Re-running a run posts the day again.** Nothing records that a day was already posted. Re-run
+only a run whose **Post to Slack** step failed, and delete any duplicate post in Slack. (Accepted
+by Karl, 2026-10-10: re-runs are only for failed posts.)
 
 ## 4. What is posted, and what never is
 

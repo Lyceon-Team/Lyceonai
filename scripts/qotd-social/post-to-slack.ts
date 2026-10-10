@@ -25,6 +25,9 @@
  *   * --dry-run does every check and builds the message, but sends nothing and needs no token
  *     (pull request runs use it).
  *   * Logs carry status and Slack's error codes only: never the token, never question text.
+ *   * Not idempotent: nothing records that a day was posted, so re-running a run posts it again.
+ *     Ruled acceptable by Karl, 2026-10-10 (re-runs are only for failed posts;
+ *     docs/runbooks/qotd-slack.md §3).
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
