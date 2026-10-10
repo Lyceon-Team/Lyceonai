@@ -624,6 +624,25 @@ router.post(
          * parameter only decides whether the field is shown.
          */
         allow_promotion_codes: true,
+        /**
+         * NO CARD WHEN NOTHING IS DUE.
+         *
+         * @spec [owner ruling (Karl) 2026-10-10: "Stripe Checkout must not ask for a card when
+         *        the amount due is $0 (e.g. with the FOUNDING50 code on the Monthly plan)"]
+         *       | @implemented [2026-10-10]
+         *
+         * plain English: `if_required` tells Checkout to skip the payment-method step when the
+         * session's total is 0, which is what a 100%-off promotion code produces. Any session
+         * with something to pay still collects a card exactly as before (the default is
+         * `always`). Subscription mode only, which this session always is.
+         *
+         * ENTITLEMENT IS UNCHANGED. A $0 session completes with `payment_status:
+         * "no_payment_required"`, which `isSettled` in `server/lib/stripe/webhook-handler.ts`
+         * already treats as settled, so the grant path is the same one a paid session takes.
+         * Prices and plans are untouched. Guarded by
+         * `tests/ci/checkout-promotion-codes.contract.test.ts`.
+         */
+        payment_method_collection: "if_required",
         metadata: sessionMetadata,
         subscription_data: { metadata: sessionMetadata },
       };

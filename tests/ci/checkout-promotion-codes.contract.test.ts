@@ -266,6 +266,44 @@ describe("allow_promotion_codes at Checkout", () => {
     }
   });
 
+  it("no card is asked for when nothing is due, on both paths (owner ruling 2026-10-10)", async () => {
+    // `if_required` makes Checkout skip the payment-method step when the total is 0 (a
+    // FOUNDING50-style code on Monthly). Asserted on the params actually handed to Stripe.
+    await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly" });
+    const selfPay = createdParams();
+
+    vi.clearAllMocks();
+    stripeMocks.checkoutCreate.mockResolvedValue({ id: "cs_test_3" });
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [],
+      has_more: false,
+    });
+    accountMocks.getProfileStripeCustomerId.mockResolvedValue("cus_test");
+    entitlementMocks.evaluateEntitlementActive.mockResolvedValue({
+      ok: true,
+      active: false,
+    });
+    asGuardian();
+    await request(await billingApp())
+      .post("/api/billing/checkout")
+      .send({ plan: "monthly", student_profile_id: STUDENT_A });
+    const guardian = createdParams();
+
+    // Presence first: these are the two real paths, and both are subscription sessions (the
+    // only mode Stripe accepts this parameter in).
+    expect(selfPay.metadata?.payer_relationship).toBe("self");
+    expect(guardian.metadata?.payer_relationship).toBe("guardian");
+    for (const params of [selfPay, guardian]) {
+      expect(params.mode).toBe("subscription");
+      expect(params.payment_method_collection).toBe("if_required");
+      // The promotion-code field is still shown: a $0 total only exists if a code can apply.
+      expect(params.allow_promotion_codes).toBe(true);
+    }
+  });
+
   it("both paths reach ONE create call site, which is what makes it one parameter", async () => {
     // The claim the single edit rests on. If somebody later gives the guardian path its own
     // `checkout.sessions.create`, this reddens before the flag silently goes missing from it.
