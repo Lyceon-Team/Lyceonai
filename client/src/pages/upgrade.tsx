@@ -44,6 +44,29 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useFreeDailyLimit } from "@/hooks/usePracticeQuota";
 import { PLAN_PAID_ADDS, planFreeIncludes } from "@/lib/plan-copy";
+import { promoCodeNameSchema } from "../../../packages/shared/src/billing-schema";
+
+/** The plan a `/upgrade?promo=<CODE>` link pre-selects, and the only one the code is sent with. */
+export const PROMO_PLAN: BillingPlan = "monthly";
+
+/**
+ * The promotion code a `/upgrade?promo=<CODE>` link names, when it is code-shaped.
+ *
+ * @spec [owner brief (Karl) 2026-10-10: "/upgrade?promo=<CODE>": pre-select Monthly; the server
+ *       looks the code up; an unknown, expired or used-up code falls back silently to normal
+ *       checkout with the code field] | @implemented [2026-10-10]
+ *
+ * plain English: read once from the URL the page was opened with (the sign-in round trip keeps
+ * it, see `RequireRole`'s `intendedPath`). A value that is not code-shaped is ignored, so a
+ * mangled link is the normal page, never an error. The page never says whether the code is
+ * valid: that is Stripe's answer at checkout, and a code that does not apply simply leaves the
+ * code field there.
+ */
+export function promoFromSearch(search: string): string | null {
+  const raw = new URLSearchParams(search).get("promo");
+  const parsed = promoCodeNameSchema.safeParse(raw ?? "");
+  return parsed.success ? parsed.data : null;
+}
 
 const planCardTestIds: Record<BillingPlan, string> = {
   monthly: "upgrade-plan-monthly",
@@ -136,8 +159,22 @@ export default function UpgradePage() {
    */
   const bestValue = useMemo(() => bestValuePlan(plans), [plans]);
 
+  const promo = useMemo(
+    () =>
+      typeof window === "undefined"
+        ? null
+        : promoFromSearch(window.location.search),
+    [],
+  );
+  // A promo link pre-selects Monthly: that card takes the page's one filled action.
+  const emphasisedPlan = promo ? PROMO_PLAN : bestValue;
+
   const checkoutMutation = useMutation({
-    mutationFn: async (plan: BillingPlan) => startSubscriptionCheckout(plan),
+    mutationFn: async (plan: BillingPlan) =>
+      // Without a promo link the call is exactly as before; the code rides only with Monthly.
+      promo && plan === PROMO_PLAN
+        ? startSubscriptionCheckout(plan, { promo })
+        : startSubscriptionCheckout(plan),
     onError: (checkoutError) => {
       toast({
         title: "Unable to start checkout",
@@ -175,6 +212,8 @@ export default function UpgradePage() {
       <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         {plans.map((plan) => {
           const isBestValue = bestValue === plan.plan;
+          const isEmphasised = emphasisedPlan === plan.plan;
+          const isPromoPlan = promo !== null && plan.plan === PROMO_PLAN;
           // DERIVED HERE, FROM THE LIVE AMOUNTS. Both figures are functions of
           // `amountCents` and the interval; neither is transmitted, so neither
           // can disagree with the price printed above it.
@@ -200,11 +239,12 @@ export default function UpgradePage() {
               aria-label={plan.label}
               className={cn(
                 "flex flex-col gap-4 rounded-lg bg-lyc-sheet px-6 py-6",
-                isBestValue
+                isEmphasised
                   ? "border-2 border-lyc-ink-strong"
                   : "border border-lyc-rule",
               )}
               data-testid={planCardTestIds[plan.plan]}
+              data-selected={isPromoPlan ? "true" : undefined}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="m-0 font-lyc-serif text-lyc-panel font-semibold tracking-normal text-lyc-ink-strong">
@@ -246,6 +286,15 @@ export default function UpgradePage() {
                   </p>
                 )}
               </div>
+              {isPromoPlan && (
+                <p
+                  className="m-0 text-lyc-meta-lg text-lyc-ink"
+                  data-testid="upgrade-promo-note"
+                >
+                  Your code {promo} will be applied at checkout if it is still
+                  valid.
+                </p>
+              )}
               {savingsText && (
                 <span
                   className="self-start rounded-full bg-lyc-chip px-2.5 py-1 text-lyc-meta font-semibold text-lyc-ink"
@@ -256,7 +305,7 @@ export default function UpgradePage() {
               )}
               <Button
                 type="button"
-                variant={isBestValue ? "lyc-primary" : "lyc-outline"}
+                variant={isEmphasised ? "lyc-primary" : "lyc-outline"}
                 className="mt-auto w-full"
                 onClick={() => checkoutMutation.mutate(plan.plan)}
                 disabled={checkoutMutation.isPending}

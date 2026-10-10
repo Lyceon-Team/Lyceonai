@@ -152,13 +152,18 @@ export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
  */
 export async function startSubscriptionCheckout(
   plan: BillingPlan,
-  options?: { readonly studentProfileId?: string },
+  options?: {
+    readonly studentProfileId?: string;
+    /** A promotion code NAME from `/upgrade?promo=`; the server decides whether it applies. */
+    readonly promo?: string;
+  },
 ): Promise<BillingCheckoutOutcome> {
   const payload = await postBilling("/api/billing/checkout", {
     plan,
     ...(options?.studentProfileId
       ? { student_profile_id: options.studentProfileId }
       : {}),
+    ...(options?.promo ? { promo: options.promo } : {}),
   });
 
   const parsed = billingCheckoutOutcomeSchema.safeParse(payload);

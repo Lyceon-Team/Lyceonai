@@ -81,8 +81,17 @@ export function checkoutIdempotencyKey(input: {
   readonly subjectProfileId: string;
   readonly priceId: string;
   readonly nowMs: number;
+  /**
+   * The promotion code PRE-APPLIED to this attempt (owner brief 2026-10-10, `/upgrade?promo=`),
+   * or absent. It is part of the request, so it is part of the key: the one retry without a code
+   * Stripe refused must not reuse the key of the attempt with it (Stripe would answer
+   * `idempotency_error`, read here as "purchase in flight"). Absent leaves the key exactly as
+   * before, so every existing caller and window is unchanged.
+   */
+  readonly promotionCodeId?: string | null;
 }): string {
-  return `lyceon:checkout:${input.subjectProfileId}:${input.priceId}:${windowIndex(input.nowMs)}`;
+  const base = `lyceon:checkout:${input.subjectProfileId}:${input.priceId}:${windowIndex(input.nowMs)}`;
+  return input.promotionCodeId ? `${base}:${input.promotionCodeId}` : base;
 }
 
 /**
