@@ -586,7 +586,15 @@ export async function seedLisaHistory(
     },
   ];
   let withTurns = "";
-  for (const [index, conv] of conversations.entries()) {
+  // Walkthrough video (owner decisions 2026-10-09 item 7): the one fixture conversation with
+  // turns, "Slope from standard form", and no other row in the session list.
+  const seeded =
+    process.env.STUDENT_HARNESS_WALKTHROUGH === "1"
+      ? conversations.filter((c) => c.title === "Slope from standard form")
+      : conversations;
+  if (seeded.length === 0)
+    throw new Error("walkthrough: no LISA conversation to seed");
+  for (const [index, conv] of seeded.entries()) {
     const { json } = await call(
       base,
       "paid",
