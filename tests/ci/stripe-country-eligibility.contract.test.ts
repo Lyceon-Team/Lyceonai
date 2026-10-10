@@ -17,6 +17,7 @@ import {
   blocksCheckout,
   deniesEntitlement,
   TIER1_CONFIG_KEY,
+  resolveBillingCountry,
 } from "../../server/lib/stripe/country-eligibility";
 
 const TIER1 = ["US", "CA", "UK", "AU", "NZ", "IE", "SG"] as const;
@@ -90,5 +91,39 @@ describe("the two questions the verdict answers differ deliberately", () => {
     const ok = evaluateCountryEligibility("US", TIER1);
     expect(blocksCheckout(ok)).toBe(false);
     expect(deniesEntitlement(ok)).toBe(false);
+  });
+});
+
+describe("resolveBillingCountry: a missing billing country is evaluated as US (owner ruling 2026-10-10)", () => {
+  it("a country Stripe provided always wins, and is marked provided", () => {
+    for (const c of ["US", "CA", "FR", " gb "]) {
+      expect(resolveBillingCountry(c)).toEqual({
+        country: c.trim(),
+        source: "provided",
+      });
+    }
+  });
+
+  it("an absent or blank country becomes US, marked default_us", () => {
+    for (const c of [null, undefined, "", "   "]) {
+      expect(resolveBillingCountry(c)).toEqual({
+        country: "US",
+        source: "default_us",
+      });
+    }
+  });
+
+  it("the default changes nothing about the verdict for a provided country, nor for an unseeded list", () => {
+    const tier1 = ["US", "CA", "GB"];
+    expect(
+      evaluateCountryEligibility(resolveBillingCountry("FR").country, tier1),
+    ).toEqual({ verdict: "ineligible", country: "FR" });
+    expect(
+      evaluateCountryEligibility(resolveBillingCountry(null).country, tier1),
+    ).toEqual({ verdict: "eligible", country: "US" });
+    expect(
+      evaluateCountryEligibility(resolveBillingCountry(null).country, null)
+        .verdict,
+    ).toBe("unknown");
   });
 });

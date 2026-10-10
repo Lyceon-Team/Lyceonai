@@ -89,6 +89,7 @@ import {
 } from "../../packages/shared/src/billing-schema";
 
 import { logger } from "../logger";
+import { findUsablePromotionCodeId } from "../lib/stripe/promotion-code";
 import { digestId } from "../lib/stripe/redact";
 import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
@@ -101,6 +102,30 @@ const router = Router();
  * client cannot smuggle a profile id, a price id, or an entitlement claim.
  */
 const checkoutSchema = billingCheckoutRequestSchema;
+
+/** The same session with the pre-applied code removed and the code field shown instead. */
+function withCodeFieldInstead(
+  params: Stripe.Checkout.SessionCreateParams,
+): Stripe.Checkout.SessionCreateParams {
+  const copy: Stripe.Checkout.SessionCreateParams = { ...params };
+  delete copy.discounts;
+  copy.allow_promotion_codes = true;
+  return copy;
+}
+
+/**
+ * Stripe's "this request is invalid" (e.g. a coupon restriction). stripe-node sets `type` to the
+ * class name (`StripeInvalidRequestError`) and `rawType` to the API's `invalid_request_error`
+ * (`node_modules/stripe/cjs/Error.js`); either is accepted, narrowed without `instanceof`.
+ */
+function isStripeInvalidRequest(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { type?: unknown; rawType?: unknown };
+  return (
+    e.type === "StripeInvalidRequestError" ||
+    e.rawType === "invalid_request_error"
+  );
+}
 
 function siteBaseUrl(): string {
   return (
@@ -192,6 +217,16 @@ router.post(
 
       const priceId = getPriceId(plan);
       const stripe = getStripeClient();
+
+      // `/upgrade?promo=<CODE>` (owner brief 2026-10-10): resolved by NAME against Stripe, never
+      // trusted from the caller. `null` (none sent, unknown, inactive, expired, used up, or a
+      // failed lookup) means the normal checkout with the code field.
+      const promotionCodeId = parsed.data.promo
+        ? await findUsablePromotionCodeId(stripe, parsed.data.promo, {
+            requestId,
+            nowMs: Date.now(),
+          })
+        : null;
 
       let customerId = await getProfileStripeCustomerId(payerProfileId);
       if (!customerId) {
@@ -623,7 +658,35 @@ router.post(
          * The codes themselves are the owner's, created in the Dashboard. This
          * parameter only decides whether the field is shown.
          */
-        allow_promotion_codes: true,
+        /**
+         * A CODE FROM THE LINK, OR THE CODE FIELD — NEVER BOTH (owner brief 2026-10-10).
+         * `/upgrade?promo=<CODE>` sends `promo`; when `findUsablePromotionCodeId` finds it
+         * usable, the session pre-applies it as `discounts`, and `allow_promotion_codes` is
+         * omitted because Stripe rejects the pair (see above). Without a usable code the field
+         * is shown exactly as before.
+         */
+        ...(promotionCodeId
+          ? { discounts: [{ promotion_code: promotionCodeId }] }
+          : { allow_promotion_codes: true }),
+        /**
+         * NO CARD WHEN NOTHING IS DUE.
+         *
+         * @spec [owner ruling (Karl) 2026-10-10: "Stripe Checkout must not ask for a card when
+         *        the amount due is $0 (e.g. with the FOUNDING50 code on the Monthly plan)"]
+         *       | @implemented [2026-10-10]
+         *
+         * plain English: `if_required` tells Checkout to skip the payment-method step when the
+         * session's total is 0, which is what a 100%-off promotion code produces. Any session
+         * with something to pay still collects a card exactly as before (the default is
+         * `always`). Subscription mode only, which this session always is.
+         *
+         * ENTITLEMENT IS UNCHANGED. A $0 session completes with `payment_status:
+         * "no_payment_required"`, which `isSettled` in `server/lib/stripe/webhook-handler.ts`
+         * already treats as settled, so the grant path is the same one a paid session takes.
+         * Prices and plans are untouched. Guarded by
+         * `tests/ci/checkout-promotion-codes.contract.test.ts`.
+         */
+        payment_method_collection: "if_required",
         metadata: sessionMetadata,
         subscription_data: { metadata: sessionMetadata },
       };
@@ -643,33 +706,61 @@ router.post(
        * deliberately — see `checkoutIdempotencyKey`. Stripe answers that with
        * `idempotency_error`, which is a REFUSAL and is surfaced as one.
        */
-      let session: Stripe.Checkout.Session;
-      try {
-        session = await stripe.checkout.sessions.create(sessionParams, {
-          idempotencyKey: checkoutIdempotencyKey({
-            subjectProfileId: subjectStudentId,
-            priceId,
-            nowMs: Date.now(),
-          }),
-        });
-      } catch (err: unknown) {
-        if (!isStripeIdempotencyConflict(err)) throw err;
-        // NEVER fall through to a second create without the key: that is the
-        // second subscription this exists to prevent.
-        logger.warn(
-          "BILLING",
-          "checkout",
-          "Checkout refused: an attempt for this student is already in flight",
-          { requestId, payerProfileId },
-        );
-        return res.status(409).json({
-          error: {
-            message:
-              "A purchase for this student is already being processed. Please wait a moment and refresh.",
-            code: "PURCHASE_IN_FLIGHT",
-          },
-          requestId,
-        });
+      /**
+       * ONE RETRY, ONLY FOR A PRE-APPLIED CODE STRIPE REFUSES. The lookup can pass a code that
+       * Stripe then refuses at creation (a coupon limited to first-time customers or to other
+       * products). That must not cost the purchase: the second attempt drops the code and
+       * shows the code field, which is the brief's fallback. Every other failure is unchanged,
+       * and both attempts go through the ONE create call below, each under its own key.
+       */
+      const attempts: Stripe.Checkout.SessionCreateParams[] = promotionCodeId
+        ? [sessionParams, withCodeFieldInstead(sessionParams)]
+        : [sessionParams];
+      let session: Stripe.Checkout.Session | null = null;
+      for (const [index, params] of attempts.entries()) {
+        try {
+          session = await stripe.checkout.sessions.create(params, {
+            idempotencyKey: checkoutIdempotencyKey({
+              subjectProfileId: subjectStudentId,
+              priceId,
+              nowMs: Date.now(),
+              promotionCodeId: params.discounts ? promotionCodeId : null,
+            }),
+          });
+          break;
+        } catch (err: unknown) {
+          if (isStripeIdempotencyConflict(err)) {
+            // NEVER fall through to a second create without the key: that is the
+            // second subscription this exists to prevent.
+            logger.warn(
+              "BILLING",
+              "checkout",
+              "Checkout refused: an attempt for this student is already in flight",
+              { requestId, payerProfileId },
+            );
+            return res.status(409).json({
+              error: {
+                message:
+                  "A purchase for this student is already being processed. Please wait a moment and refresh.",
+                code: "PURCHASE_IN_FLIGHT",
+              },
+              requestId,
+            });
+          }
+          if (index < attempts.length - 1 && isStripeInvalidRequest(err)) {
+            logger.warn(
+              "BILLING",
+              "checkout",
+              "Stripe refused the pre-applied promotion code; retrying with the code field",
+              { requestId },
+            );
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!session) {
+        throw new Error("checkout session was not created");
       }
 
       // Charter §6: on the unaccompanied path the student IS the payer, so the
