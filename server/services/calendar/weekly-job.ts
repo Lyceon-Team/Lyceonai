@@ -129,6 +129,168 @@ async function recordRun(
 }
 
 /**
+ * One student's weekly run: record the SQL's skip, or regenerate and record the result. Shared by
+ * the weekly pass below and by `ensureWeeklyReplan` (the exam-notify job's re-plan-first step,
+ * owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(4)), so the two cannot drift.
+ * Returns the outcome recorded, or null for a skip value this file does not count.
+ */
+async function runWeeklyCandidate(
+  candidate: Candidate,
+  generatorVersion: string,
+  requestId: string | undefined,
+): Promise<JobOutcome | null> {
+  // The SQL already decided. A skip is RECORDED, not filtered away: a student the job
+  // passed over silently is a student nobody can explain later.
+  if (candidate.outcome !== null) {
+    const outcome = candidate.outcome as JobOutcome;
+    await recordRun(
+      candidate.student_id,
+      candidate.period_key,
+      outcome,
+      null,
+      requestId,
+    );
+    return outcome === "skipped_fresh" ||
+      outcome === "skipped_custom" ||
+      outcome === "skipped_no_entitlement"
+      ? outcome
+      : null;
+  }
+
+  try {
+    const result = await regeneratePlan(
+      {
+        student_id: candidate.student_id,
+        // §12.1: `weekly`, `initiated_by: system`. That pairing is what makes the plan
+        // show up in `latest_unacknowledged_nonstudent_change` and raise §17.4's banner —
+        // a refresh the student did not ask for has to announce itself.
+        trigger: "weekly",
+        initiated_by: "system",
+        generator_version: generatorVersion,
+        idempotency_key: weeklyIdempotencyKey(
+          candidate.student_id,
+          candidate.period_key,
+        ),
+      },
+      requestId,
+    );
+
+    if (result.ok) {
+      await recordRun(
+        candidate.student_id,
+        candidate.period_key,
+        "ok",
+        { version_no: result.value.version_no },
+        requestId,
+      );
+      return "ok";
+    }
+
+    // A refusal the writer decided is still a failed run for this student. The KIND is
+    // recorded; the plan scope, the timezone and the body are not (§18 "never logged").
+    await recordRun(
+      candidate.student_id,
+      candidate.period_key,
+      "failed",
+      { reason: result.error.kind },
+      requestId,
+    );
+    logger.error(
+      "CALENDAR_JOB",
+      "weekly_regenerate_refused",
+      "the weekly regeneration was refused for one student; the prior plan stands",
+      { reason: result.error.kind, requestId },
+    );
+    return "failed";
+  } catch (thrown) {
+    // Per-student isolation. One bad row must not leave everybody after it unplanned.
+    await recordRun(
+      candidate.student_id,
+      candidate.period_key,
+      "failed",
+      { reason: "threw" },
+      requestId,
+    );
+    logger.error(
+      "CALENDAR_JOB",
+      "weekly_regenerate_threw",
+      "the weekly regeneration threw for one student; the loop continued",
+      {
+        requestId,
+        reason: thrown instanceof Error ? thrown.message : "unknown",
+      },
+    );
+    return "failed";
+  }
+}
+
+function isCandidate(value: unknown): value is Candidate {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.student_id === "string" &&
+    typeof row.period_key === "string" &&
+    (row.outcome === null || typeof row.outcome === "string")
+  );
+}
+
+/**
+ * Re-plan ONE student's current local week if §12.5's predicate says it is due, and say whether
+ * the week now stands re-planned.
+ *
+ * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(4): the "this week" notice
+ *        must always come after the weekly re-plan for that student and week, and the notify job
+ *        ensures the student's re-plan for the current local week has run first;
+ *        Doc-05F_V1.0 §12.5] | @implemented [2026-10-09]
+ *
+ * plain English: reads `calendar_weekly_candidate` (the ONE weekly predicate) for this student
+ * and, when it says "generate", runs exactly what the weekly pass runs for them — same writer,
+ * same `(student, local week)` idempotency key, same `calendar_job_runs` row — so the daily
+ * weekly cron later finds them fresh rather than re-planning twice. A student the predicate
+ * skips (fresh, custom planner, no entitlement) or does not know (setup unfinished) needs
+ * nothing and nothing is recorded. Returns `already` when nothing was due (fresh, or a student
+ * the weekly job never re-plans), `replanned` when this call re-planned the week, and
+ * `not_replanned` when the re-plan failed or could not be read (the notice then waits — the
+ * emitter refuses it anyway, `skipped_not_replanned`).
+ */
+export type WeeklyReplanState = "already" | "replanned" | "not_replanned";
+
+export async function ensureWeeklyReplan(
+  studentId: string,
+  requestId?: string,
+): Promise<WeeklyReplanState> {
+  const { data, error } = await supabaseServer.rpc(
+    "calendar_weekly_candidate",
+    { p_student_id: studentId },
+  );
+  if (error) {
+    logger.error(
+      "CALENDAR_JOB",
+      "weekly_candidate_read_failed",
+      "could not read one student's weekly predicate; their week notice waits",
+      { ...classifyError(error), requestId },
+    );
+    return "not_replanned";
+  }
+  // SETOF over PostgREST is an array; a single row through some clients is the object.
+  const rows: unknown[] = Array.isArray(data)
+    ? data
+    : data === null || data === undefined
+      ? []
+      : [data];
+  const candidate = rows[0];
+  if (!isCandidate(candidate)) return "already";
+  if (candidate.outcome !== null) return "already";
+  const config = await loadCalendarConfig();
+  const outcome = await runWeeklyCandidate(
+    candidate,
+    config.generatorVersion,
+    requestId,
+  );
+  return outcome === "ok" ? "replanned" : "not_replanned";
+}
+
+/**
  * One pass. Returns the counts §18's `calendar.job_run {job, outcome}` event reports.
  *
  * `limit` bounds one invocation so a cold start cannot try to replan the whole user base in
@@ -166,101 +328,17 @@ export async function runWeeklyRegeneration(options?: {
     throw new Error(`calendar_weekly_candidates_failed: ${error.message}`);
   }
 
-  const candidates = Array.isArray(data) ? (data as Candidate[]) : [];
+  const candidates = Array.isArray(data) ? data : [];
 
   for (const candidate of candidates) {
-    if (
-      typeof candidate.student_id !== "string" ||
-      typeof candidate.period_key !== "string"
-    ) {
-      continue;
-    }
+    if (!isCandidate(candidate)) continue;
     summary.considered += 1;
-
-    // The SQL already decided. A skip is RECORDED, not filtered away: a student the job
-    // passed over silently is a student nobody can explain later.
-    if (candidate.outcome !== null) {
-      const outcome = candidate.outcome as JobOutcome;
-      if (outcome === "skipped_fresh") summary.skipped_fresh += 1;
-      else if (outcome === "skipped_custom") summary.skipped_custom += 1;
-      else if (outcome === "skipped_no_entitlement")
-        summary.skipped_no_entitlement += 1;
-      await recordRun(
-        candidate.student_id,
-        candidate.period_key,
-        outcome,
-        null,
-        requestId,
-      );
-      continue;
-    }
-
-    try {
-      const result = await regeneratePlan(
-        {
-          student_id: candidate.student_id,
-          // §12.1: `weekly`, `initiated_by: system`. That pairing is what makes the plan
-          // show up in `latest_unacknowledged_nonstudent_change` and raise §17.4's banner —
-          // a refresh the student did not ask for has to announce itself.
-          trigger: "weekly",
-          initiated_by: "system",
-          generator_version: config.generatorVersion,
-          idempotency_key: weeklyIdempotencyKey(
-            candidate.student_id,
-            candidate.period_key,
-          ),
-        },
-        requestId,
-      );
-
-      if (result.ok) {
-        summary.ok += 1;
-        await recordRun(
-          candidate.student_id,
-          candidate.period_key,
-          "ok",
-          { version_no: result.value.version_no },
-          requestId,
-        );
-        continue;
-      }
-
-      // A refusal the writer decided is still a failed run for this student. The KIND is
-      // recorded; the plan scope, the timezone and the body are not (§18 "never logged").
-      summary.failed += 1;
-      await recordRun(
-        candidate.student_id,
-        candidate.period_key,
-        "failed",
-        { reason: result.error.kind },
-        requestId,
-      );
-      logger.error(
-        "CALENDAR_JOB",
-        "weekly_regenerate_refused",
-        "the weekly regeneration was refused for one student; the prior plan stands",
-        { reason: result.error.kind, requestId },
-      );
-    } catch (thrown) {
-      // Per-student isolation. One bad row must not leave everybody after it unplanned.
-      summary.failed += 1;
-      await recordRun(
-        candidate.student_id,
-        candidate.period_key,
-        "failed",
-        { reason: "threw" },
-        requestId,
-      );
-      logger.error(
-        "CALENDAR_JOB",
-        "weekly_regenerate_threw",
-        "the weekly regeneration threw for one student; the loop continued",
-        {
-          requestId,
-          reason: thrown instanceof Error ? thrown.message : "unknown",
-        },
-      );
-    }
+    const outcome = await runWeeklyCandidate(
+      candidate,
+      config.generatorVersion,
+      requestId,
+    );
+    if (outcome !== null) summary[outcome] += 1;
   }
 
   // §18 `calendar.job_run {job, outcome}`. One line per pass, counts only — no student ids.

@@ -678,7 +678,11 @@ BEGIN
       -- owner-run half of this gate will read "pinned but does not exist" against production
       -- until they do. That is the gate working, not drift -- and it is the only state in
       -- which those two answers mean different things, so it is worth saying which one this is.
-      ('calendar_emit_exam_notification', 1138, 'afb40e5ef7a854544e9f86eefeef2cbe'),
+      -- Re-recorded 2026-10-09 by 20261031000000 (owner ruling, schedule audit Step 2): the emit
+      -- gained p_now, the week-notice re-plan rule and expires_at; the weekly predicate moved
+      -- into calendar_weekly_candidate (one definition) and calendar_weekly_candidates reads it.
+      -- NOT YET DEPLOYED when recorded: Karl applies the migration.
+      ('calendar_emit_exam_notification', 1942, '564d7b1774b4873a9106e29cb95cc916'),
       ('calendar_exam_notification_candidates', 1449, '8eb5b52c82624b772b69c4f58b014d8f'),
       ('calendar_exam_review_scope', 428, 'c74a9a309ec9c84944fe53f5f12298db'),
       ('calendar_full_length_complete', 301, '8ce47219a892b2339373463a8c626118'),
@@ -694,7 +698,8 @@ BEGIN
       ('calendar_scope_is_valid', 3552, '09fe6927d8b8e8b8bd597009853cc0dd'),
       ('calendar_validate_plan', 17209, '628372c06c754574ecf5b5f262f14518'),
       ('calendar_viewer_is_admin', 130, 'd0707346dc5e5486d8dd014ee386b79d'),
-      ('calendar_weekly_candidates', 884, '562c5433b509895852bcb2462c87e955'),
+      ('calendar_weekly_candidate', 880, 'e21a91d1d762ea0e731b50c8b276c7af'),
+      ('calendar_weekly_candidates', 245, 'ec25c92bc2a4581409a67d042873e801'),
       ('calendar_write_version', 3806, '6da5b170ec14ee5c9c7eab0f311ed7ef')
   ),
   live AS (

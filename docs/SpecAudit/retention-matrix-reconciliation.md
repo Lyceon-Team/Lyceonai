@@ -165,10 +165,10 @@ Grepped across all 47 files of `docs/Spec` rather than assuming the three above 
 | Schedule (UTC) | Path | Does it delete anything? |
 |---|---|---|
 | `0 3 * * *` | `/api/internal/legal-acceptance-drain` | **No** — stamps `processed_at`, never removes rows (`server/lib/legal-acceptance.ts:208,228`) |
-| `0 2 * * *` | `/api/internal/execute-deletions` | **Yes** — the whole deletion vertical + four housekeeping mechanisms |
+| `0 15 * * *` (was `0 2`; owner ruling 2026-10-09) | `/api/internal/execute-deletions` | **Yes** — the whole deletion vertical + four housekeeping mechanisms |
 | `30 3 * * *` | `/api/internal/stale-session-sweep` | **No** — status transition to `abandoned` only (`server/lib/stale-session-sweep.ts:60-89`) |
 | `0 4 * * *` | `/api/internal/baseline-pending-sweep` | **No** — read-only alerting |
-| `30 4 * * *` | `/api/internal/notification-dispatch-sweep` | **No** — sends mail |
+| `0 14 * * *` (was `30 4`; owner ruling 2026-10-09) | `/api/internal/notification-dispatch-sweep` | **No** — sends mail |
 | `0 5 * * *` | `/api/internal/notification-retention-sweep` | **Yes** — the only standalone deleting cron |
 
 A seventh handler, `/api/internal/crisis-sla-sweep` (`internal-cron-routes.ts:138`), has no cron

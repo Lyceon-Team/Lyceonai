@@ -924,7 +924,8 @@ describe.skipIf(!PG_AVAILABLE)("deletion phases 2/3/5 — real Postgres", () => 
     const deployed = vercel.crons.find(
       (c) => c.path === "/api/internal/execute-deletions",
     );
-    expect(deployed?.schedule).toBe("0 2 * * *");
-    expect(declared).toBe("daily_at_02_utc");
+    // Moved to 15:00 UTC by the owner's schedule ruling (Karl 2026-10-09, audit Step 2 item 1).
+    expect(deployed?.schedule).toBe("0 15 * * *");
+    expect(declared).toBe("daily_at_15_utc");
   });
 });

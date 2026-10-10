@@ -41,6 +41,7 @@ import {
   RESEND_WEBHOOK_PATH,
 } from "../../packages/shared/src/notifications-schema";
 import { notificationEventId } from "../../server/lib/notifications/event-id";
+import { pinDaytimeClock, releaseClock } from "../helpers/daytime-clock";
 
 const DB_NAME = "notifications_ci";
 const GUARDIAN = "11111111-1111-4111-8111-111111111111";
@@ -285,6 +286,9 @@ async function postWebhook(
 
 describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
   beforeAll(async () => {
+    // Quiet hours (owner ruling 2026-10-09): the routes send on the process clock, so pin it to
+    // Chicago daytime; otherwise "the email was sent" would depend on the hour CI ran.
+    pinDaytimeClock();
     process.env.RESEND_API_KEY = "re_test_key";
     process.env.NOTIFICATION_FROM_EMAIL = FROM_EMAIL;
     process.env.RESEND_WEBHOOK_SECRET = WEBHOOK_SECRET;
@@ -325,6 +329,7 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
   });
 
   afterAll(async () => {
+    releaseClock();
     vi.unstubAllGlobals();
     if (pg) await pg.end();
   });

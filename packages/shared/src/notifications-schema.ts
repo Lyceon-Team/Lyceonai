@@ -73,6 +73,41 @@ export type NotificationStatus = z.infer<typeof notificationStatusSchema>;
  */
 export const NOTIFICATION_EMAIL_MAX_ATTEMPTS = 5;
 
+// ── Quiet hours (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2) ──
+
+/**
+ * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2: "no student- or
+ *        guardian-facing email between 21:00 and 08:00 America/Chicago; an email due in that
+ *        window is deferred to the next 08:00 America/Chicago, never dropped; exempt only
+ *        user-triggered emails"; contracts/notifications.contract.md §6.6] | @implemented [2026-10-09]
+ *
+ * plain English: the window is `[21:00, 08:00)` Chicago wall-clock time, so 20:59 sends, 21:00
+ * defers and 08:00 sends. The zone is resolved by `Intl` (the IANA database), so it is exact on
+ * both sides of DST. One window for every recipient, wherever they live: the ruling names
+ * America/Chicago, not the recipient's zone.
+ */
+export const EMAIL_QUIET_HOURS_TIME_ZONE = "America/Chicago";
+export const EMAIL_QUIET_HOURS_START_HOUR = 21;
+export const EMAIL_QUIET_HOURS_END_HOUR = 8;
+
+/**
+ * Who an email is for, which decides whether quiet hours apply (transport.ts):
+ *   student_or_guardian  every notification-dispatched email and the deletion-completed notice
+ *                        — subject to quiet hours;
+ *   user_triggered       sent inside the request of the person who asked for it (the guardian
+ *                        invite a student sends; the deletion-scheduled email with its recovery
+ *                        link) — exempt;
+ *   ops                  the owner's ops alerts — not student- or guardian-facing, exempt.
+ * Every send names one; a send that names none is treated as student_or_guardian (fail closed).
+ */
+export const EMAIL_AUDIENCES = [
+  "student_or_guardian",
+  "user_triggered",
+  "ops",
+] as const;
+export const emailAudienceSchema = z.enum(EMAIL_AUDIENCES);
+export type EmailAudience = z.infer<typeof emailAudienceSchema>;
+
 // ── Payloads (contract §8.1 — identifiers and rendering parameters only) ────
 
 export const guardianLinkedPayloadSchema = z
@@ -185,6 +220,12 @@ export const notificationEventRowSchema = z.object({
   subject_profile_id: z.string().uuid(),
   payload: z.record(z.unknown()),
   created_at: timestampSchema,
+  /**
+   * Owner ruling 2026-10-09 (schedule audit Step 2, item 3(1)): set by the emitter; the email is
+   * dropped, never sent, at or after it. NULL = no expiry. Defaulted so a row read before
+   * 20261031000000 is applied still parses.
+   */
+  expires_at: nullableTimestampSchema.default(null),
 });
 export type NotificationEventRow = z.infer<typeof notificationEventRowSchema>;
 
@@ -203,6 +244,8 @@ export const notificationMessageRowSchema = z.object({
   sent_at: nullableTimestampSchema,
   delivered_at: nullableTimestampSchema,
   created_at: timestampSchema,
+  /** Quiet-hours deferral (owner ruling 2026-10-09, item 2): not dispatched before this instant. */
+  not_before: nullableTimestampSchema.default(null),
 });
 export type NotificationMessageRow = z.infer<
   typeof notificationMessageRowSchema

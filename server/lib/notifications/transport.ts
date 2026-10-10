@@ -24,12 +24,29 @@
  *
  * trade-offs: REST via fetch rather than the Resend SDK — no dependency change. `fetchImpl`
  * and `baseUrl` are injectable so the PG suite can capture requests without network.
+ *
+ * QUIET HOURS (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2; contract §6.6) |
+ * @implemented [2026-10-09]: this is the shared sender, so the guard lives here. Every send names
+ * its `audience`. A `student_or_guardian` send (or one that names none) whose clock falls in
+ * 21:00–08:00 America/Chicago is not delivered then: it goes to Resend with `scheduled_at` = the
+ * next 08:00 Chicago, so Resend holds it and delivers it at 08:00 — deferred, never dropped.
+ * Resend's scheduled send is the managed service for exactly this (Managed-service first), and
+ * it is the only deferral open to a direct send, which by design persists no address to retry
+ * from (direct-sends.ts). The notification dispatcher does NOT rely on it: it defers its rows
+ * itself, before calling here, so a deferred row stays `queued` and its expiry, its recipient's
+ * preference and its address are re-read at 08:00 (dispatch.ts). This branch is therefore the
+ * backstop for direct sends and for a dispatch that crossed 21:00 between its check and its send.
+ * `user_triggered` (the guardian invite a student sends; the deletion-scheduled email carrying its
+ * recovery link) and `ops` (the owner's alerts, not student- or guardian-facing) are exempt.
+ * Supabase Auth mail (password reset, sign-up confirmation) never passes through this module.
  */
 import { z } from "zod";
 import { notificationEnvSchema } from "../../../packages/shared/src/env";
 import { err, ok, type Result } from "../../../packages/shared/src/result";
 import { SUPPORT_EMAIL } from "../../../packages/shared/src/support-contact";
+import type { EmailAudience } from "../../../packages/shared/src/notifications-schema";
 import { logger } from "../../logger";
+import { quietHoursApply, quietHoursDeferral } from "./quiet-hours";
 
 export const RESEND_API_BASE_URL = "https://api.resend.com";
 
@@ -55,6 +72,14 @@ export type EmailSendInput = {
    * the dispatcher (owner ruling on #1166, 2026-10-09). Never logged.
    */
   headers?: Record<string, string>;
+  /**
+   * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2] | @implemented [2026-10-09]
+   * Who the email is for, which decides quiet hours (see the header). Required: a caller that
+   * omits it at runtime is held to `student_or_guardian`.
+   */
+  audience: EmailAudience;
+  /** The sender's clock for the quiet-hours check. Default: the process clock. */
+  now?: Date;
 };
 
 export type EmailSendFailure = {
@@ -67,9 +92,15 @@ export type EmailSendFailure = {
   status?: number;
 };
 
+/** `scheduledAt` is the ISO instant Resend will deliver at when quiet hours deferred the send; null when it went now. */
+export type EmailSendSuccess = {
+  providerMessageId: string;
+  scheduledAt: string | null;
+};
+
 export type EmailTransport = (
   input: EmailSendInput,
-) => Promise<Result<{ providerMessageId: string }, EmailSendFailure>>;
+) => Promise<Result<EmailSendSuccess, EmailSendFailure>>;
 
 type TransportOptions = {
   fetchImpl?: typeof fetch;
@@ -199,6 +230,11 @@ export function createResendTransport(
       });
     }
 
+    const deferredTo = quietHoursApply(input.audience)
+      ? quietHoursDeferral(input.now ?? new Date())
+      : null;
+    const scheduledAt = deferredTo === null ? null : deferredTo.toISOString();
+
     const response = await request(
       "POST",
       "/emails",
@@ -214,6 +250,8 @@ export function createResendTransport(
         html: input.html,
         text: input.text,
         ...(input.headers ? { headers: input.headers } : {}),
+        // Quiet hours: Resend holds the message until the next 08:00 America/Chicago.
+        ...(scheduledAt === null ? {} : { scheduled_at: scheduledAt }),
       },
       // One REST call per message, keyed so a retried send of the same row cannot become a
       // second email.
@@ -271,8 +309,10 @@ export function createResendTransport(
       idempotencyKey: input.idempotencyKey,
       providerMessageId: id,
       recipientProfileId: input.recipientProfileId,
+      audience: input.audience ?? "student_or_guardian",
+      scheduledAt,
     });
-    return ok({ providerMessageId: id });
+    return ok({ providerMessageId: id, scheduledAt });
   };
 }
 
