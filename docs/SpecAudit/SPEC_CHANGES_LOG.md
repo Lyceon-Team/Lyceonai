@@ -45,9 +45,16 @@ record ways of working. Nothing filed before this date is reclassified.
 
 ## STATUS VALUES
 
-Owner ruling 2026-09-16. Three values, and no others:
+Owner ruling 2026-09-16; OPEN added by owner ruling 2026-10-10 (Karl: "add OPEN to the
+register's STATUS VALUES section so it matches the precedent", the precedent being SCL-200..218
+on 2026-10-07 and SCL-222 on 2026-10-10). Four values, and no others:
 
-  - PROPOSED — the spec should change; it has not been changed yet.
+  - PROPOSED — the spec should change; it has not been changed yet, and the
+                owner has not ruled on it.
+  - OPEN      — the owner has ruled the change in; it has NOT landed in
+                docs/Spec/ yet. The entry carries a line "Status: OPEN. Ruled by
+                Karl, <date> (<source>). Owed into the spec; becomes APPLIED when
+                folded into <document>." Only the owner sets OPEN.
   - RULING    — a decision was recorded and NO amendment is needed. The
                 outcome is "the document already says the right thing", or
                 "this is not a spec matter after all". SCL-060 is the example.
@@ -60,10 +67,10 @@ APPLIED is about the AMENDMENT, not about bookkeeping around it. An entry whose
 spec text has landed is APPLIED even if something adjacent is still owed — a
 change record in the document's own §14, a follow-on decision — provided the
 entry says plainly what is outstanding. An entry whose spec text has NOT landed
-is PROPOSED, however firmly it has been authorised: authorisation is not
-application.
+is PROPOSED, or OPEN once the owner has ruled it in, however firmly it has been
+authorised: authorisation is not application.
 
-Do not invent a fourth value; if none of these three fits, say so and ask the
+Do not invent a fifth value; if none of these four fits, say so and ask the
 owner rather than coining one.
 
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
