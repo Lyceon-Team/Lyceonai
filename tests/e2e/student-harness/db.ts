@@ -19,6 +19,7 @@ import type { Client } from "pg";
 import { z } from "zod";
 import { buildHarnessDb, makeHarnessForm } from "../exam-harness/db";
 import { BARE_PAGE_PERSONAS, PERSONAS } from "./personas";
+import { WALKTHROUGH_GRID_IN, WALKTHROUGH_MCQ } from "./walkthrough-content";
 
 /**
  * The throwaway database's name. `STUDENT_HARNESS_DB` overrides it so two page groups can be
@@ -79,6 +80,63 @@ async function useCanonicalSkills(pg: Client): Promise<void> {
   }
 }
 
+/**
+ * Walkthrough video (`STUDENT_HARNESS_WALKTHROUGH=1`, owner decisions 2026-10-09 item 8): every
+ * question in this throwaway database is rewritten with the original items in
+ * walkthrough-content.ts, by its own domain, so the practice runner, review and the explanation
+ * on screen show readable SAT-style content written for the video (the fixture's explanations
+ * read "exg fixture"). Correct keys are untouched: the fixture's "A" (each item lists its correct
+ * option first) and grid-in "1".
+ */
+async function useWalkthroughContent(pg: Client): Promise<void> {
+  for (const [domain, items] of Object.entries(WALKTHROUGH_MCQ)) {
+    const rows = await pg.query<{ id: string }>(
+      `SELECT id FROM public.questions WHERE domain = $1 AND item_type = 'mcq' ORDER BY id`,
+      [domain],
+    );
+    for (const [n, row] of rows.rows.entries()) {
+      const item = items[n % items.length];
+      if (!item) continue;
+      await pg.query(
+        `UPDATE public.questions
+            SET passage = $2, stem = $3, explanation = $4,
+                options = jsonb_build_array(
+                  jsonb_build_object('key','A','text',$5::text),
+                  jsonb_build_object('key','B','text',$6::text),
+                  jsonb_build_object('key','C','text',$7::text),
+                  jsonb_build_object('key','D','text',$8::text))
+          WHERE id = $1`,
+        [
+          row.id,
+          item.passage ?? null,
+          item.stem,
+          item.explanation,
+          ...item.options,
+        ],
+      );
+    }
+  }
+  const grid = await pg.query<{ id: string }>(
+    `SELECT id FROM public.questions WHERE item_type = 'grid_in' ORDER BY id`,
+  );
+  for (const [n, row] of grid.rows.entries()) {
+    const item = WALKTHROUGH_GRID_IN[n % WALKTHROUGH_GRID_IN.length];
+    if (!item) continue;
+    await pg.query(
+      `UPDATE public.questions SET passage = NULL, stem = $2, explanation = $3 WHERE id = $1`,
+      [row.id, item.stem, item.explanation],
+    );
+  }
+  const left = await pg.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM public.questions WHERE explanation = 'exg fixture'`,
+  );
+  if (left.rows[0]?.n !== "0") {
+    throw new Error(
+      `walkthrough: ${left.rows[0]?.n ?? "?"} question(s) kept the fixture explanation`,
+    );
+  }
+}
+
 export async function buildStudentHarnessDb(): Promise<Client> {
   const pg = await buildHarnessDb(STUDENT_HARNESS_DB);
   if (process.env.STUDENT_HARNESS_SEED === "exam-history") {
@@ -89,6 +147,9 @@ export async function buildStudentHarnessDb(): Promise<Client> {
   }
   if (process.env.STUDENT_HARNESS_SEED === "mastery-skills") {
     await useCanonicalSkills(pg);
+  }
+  if (process.env.STUDENT_HARNESS_WALKTHROUGH === "1") {
+    await useWalkthroughContent(pg);
   }
   // The paid student comes from the exam harness's database; the others are built here.
   for (const persona of [PERSONAS.free, PERSONAS.managed]) {

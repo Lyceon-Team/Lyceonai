@@ -42,6 +42,10 @@ const TYPES = {
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8",
   ".xml": "application/xml",
+  // The homepage walkthrough (client/public/media/), typed as Vercel serves them.
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".vtt": "text/vtt; charset=utf-8",
 };
 
 function fileFor(pathname) {
