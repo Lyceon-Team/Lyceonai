@@ -29,6 +29,7 @@ import {
   makePgSupabase,
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
+import { pinDaytimeClock, releaseClock } from "../helpers/daytime-clock";
 
 const DB_NAME = "deletion_completed_ci";
 const USER_A = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
@@ -196,6 +197,10 @@ describe.skipIf(!PG_AVAILABLE)(
   "deletion-completed notice — real Postgres",
   () => {
     beforeAll(async () => {
+      // Quiet hours (owner ruling 2026-10-09): the notice is not exempt and the executor reads
+      // the process clock, so at night it would carry `scheduled_at`. This suite is about the
+      // notice itself; quiet hours are proved in notification-quiet-hours.pg.ci.test.ts.
+      pinDaytimeClock();
       process.env.RESEND_API_KEY = "re_test_key";
       process.env.NOTIFICATION_FROM_EMAIL = FROM_EMAIL;
       process.env.PUBLIC_SITE_URL = "https://app.example.test";
@@ -204,6 +209,7 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     afterAll(async () => {
+      releaseClock();
       vi.unstubAllGlobals();
       if (pg) await pg.end();
     });

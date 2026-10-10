@@ -10,6 +10,13 @@
 # now last defines them; H8 (was the qotd_email_sends claim, dropped) and H11 (was the job's
 # sunset, now inside the rule) to the `qotd_daily_notify` rule in MIG_C.
 #
+# Re-pointed 2026-10-09 (owner ruling, Karl, schedule audit Step 2): MIG_D
+# (20261031000000_notification_quiet_hours_expiry.sql) now LAST defines `qotd_daily_notify` (the
+# emit carries expires_at), so H8, H11, N1, N2, N3 aim there. H10: the `Intl` hour read moved to
+# `localHourIn` (local-day.ts), so the plant swaps the zone at chicagoHour's one call. N7: the
+# QOTD-only "its day has passed" check was replaced by the general expiry in the dispatcher, so
+# the plant disables that check.
+#
 # Each plant breaks ONE rule the brief locks and must turn a NAMED test red. Same three rules as
 # the other *.mutations.sh harnesses:
 #   RULE 1 — APPLIED. An anchor not found exactly once is STALE: a hard failure, never a pass.
@@ -24,6 +31,8 @@ cd "$ROOT"
 MIG_A="supabase/migrations/20261029000000_test_dates_and_consent_guard.sql"
 MIG_B="supabase/migrations/20261029010000_home_qotd_streak_email.sql"
 MIG_C="supabase/migrations/20261029020000_qotd_daily_notification.sql"
+MIG_D="supabase/migrations/20261031000000_notification_quiet_hours_expiry.sql"
+DISPATCH="server/lib/notifications/dispatch.ts"
 NOTIF_SECTION="client/src/components/settings/NotificationsSection.tsx"
 SEND_CTX="server/lib/notifications/qotd-daily-send-context.ts"
 JOB="server/services/qotd/qotd-email-job.ts"
@@ -35,7 +44,7 @@ DATES="shared/sat-test-dates.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/hq-mut.XXXX)"
 
-FILES=("$MIG_A" "$MIG_B" "$MIG_C" "$NOTIF_SECTION" "$SEND_CTX" "$JOB" "$LINKS" "$PROFILE_SVC" "$SECTION" "$PROMPT" "$DATES")
+FILES=("$MIG_A" "$MIG_B" "$MIG_C" "$MIG_D" "$DISPATCH" "$NOTIF_SECTION" "$SEND_CTX" "$JOB" "$LINKS" "$PROFILE_SVC" "$SECTION" "$PROMPT" "$DATES")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -130,8 +139,8 @@ plant "$MIG_C" $'    \'eligible\', COALESCE(public.marketing_opt_in_age_eligible
 run "H7 under-13" "A5: never for an under-13" "$PG_SUITE"
 
 echo "=== (8) the event id stops being one per student per day ==="
-need_last qotd_daily_notify H8 "$MIG_C"
-plant "$MIG_C" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || v_today::text);" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || p_now::text);" || { bad "H8 STALE"; exit 1; }
+need_last qotd_daily_notify H8 "$MIG_D"
+plant "$MIG_D" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || v_today::text);" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || p_now::text);" || { bad "H8 STALE"; exit 1; }
 run "H8 one per student per day" "one per student per day across both evening crons" "$PG_SUITE"
 
 echo "=== (9) the job sends at any hour ==="
@@ -139,12 +148,12 @@ plant "$JOB" "  if (summary.chicago_hour !== QOTD_EMAIL_SEND_HOUR_CHICAGO) {" " 
 run "H9 17:00 only" "outside the 17:00 Chicago hour nothing is created or sent" "$PG_SUITE"
 
 echo "=== (10) the hour is read in UTC (DST lost) ==="
-plant "$JOB" "    timeZone: QOTD_TIME_ZONE," "    timeZone: \"UTC\"," || { bad "H10 STALE"; exit 1; }
+plant "$JOB" "  return localHourIn(QOTD_TIME_ZONE, now);" "  return localHourIn(\"UTC\", now);" || { bad "H10 STALE"; exit 1; }
 run "H10 17:00 Chicago across DST" "at 17:00 CDT" "$PG_SUITE"
 
 echo "=== (11) the sunset never fires ==="
-need_last qotd_daily_notify H11 "$MIG_C"
-plant "$MIG_C" "      IF COALESCE(v_run, 0) >= 7 THEN" "      IF false THEN" || { bad "H11 STALE"; exit 1; }
+need_last qotd_daily_notify H11 "$MIG_D"
+plant "$MIG_D" "      IF COALESCE(v_run, 0) >= 7 THEN" "      IF false THEN" || { bad "H11 STALE"; exit 1; }
 run "H11 7-send sunset" "the sunset sends the pause email" "$PG_SUITE"
 
 echo "=== (12) a tampered unsubscribe link is accepted ==="
@@ -177,16 +186,16 @@ plant "$PROMPT" "        if (!next && !pending) onDecide(\"not_now\");" "       
 run "H18 Escape is Not now" "Escape closes the prompt" "$UI"
 
 echo "=== (19) a student who never consented gets no in-app reminder ==="
-need_last qotd_daily_notify N1 "$MIG_C"
-plant "$MIG_C" "                         ELSE jsonb_build_array('in_app') END" "                         ELSE jsonb_build_array() END" || { bad "N1 STALE"; exit 1; }
+need_last qotd_daily_notify N1 "$MIG_D"
+plant "$MIG_D" "                         ELSE jsonb_build_array('in_app') END" "                         ELSE jsonb_build_array() END" || { bad "N1 STALE"; exit 1; }
 run "N1 in-app without consent" "in-app for a student who never consented" "$PG_SUITE"
 
 echo "=== (20) the email goes out without consent ==="
-plant "$MIG_C" "           (COALESCE(c.enabled, false)" "           (true" || { bad "N2 STALE"; exit 1; }
+plant "$MIG_D" "           (COALESCE(c.enabled, false)" "           (true" || { bad "N2 STALE"; exit 1; }
 run "N2 email only with consent" "email only with consent" "$PG_SUITE"
 
 echo "=== (21) an under-13 with the preference on is emailed ==="
-plant "$MIG_C" $'            AND public.marketing_opt_in_age_eligible(p.date_of_birth)\n' "" || { bad "N3 STALE"; exit 1; }
+plant "$MIG_D" $'            AND public.marketing_opt_in_age_eligible(p.date_of_birth)\n' "" || { bad "N3 STALE"; exit 1; }
 run "N3 never email under-13" "never email for an under-13" "$PG_SUITE"
 
 echo "=== (22) the unsubscribe link stops writing the one preference ==="
@@ -204,7 +213,7 @@ plant "$NOTIF_SECTION" "            onClick={() => save.mutate(!on)}" "         
 run "N6 Settings toggle" "turns it on with the consent version, then off" "$SETTINGS"
 
 echo "=== (25) yesterday's daily email is sent late ==="
-plant "$SEND_CTX" "  if (parsed.data.qotd_date !== qotdToday(now)) {" "  if (false) {" || { bad "N7 STALE"; exit 1; }
+plant "$DISPATCH" "  if (expiresAt !== null && now.getTime() >= expiresAt.getTime()) {" "  if (false) {" || { bad "N7 STALE"; exit 1; }
 run "N7 never sent late" "never sent late" "$PG_SUITE"
 
 echo "=== (26) an email queued before an unsubscribe is still sent ==="

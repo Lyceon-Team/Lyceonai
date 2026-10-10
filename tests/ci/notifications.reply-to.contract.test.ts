@@ -46,6 +46,9 @@ const SEND = {
   subject: "s",
   html: "<p>h</p>",
   text: "t",
+  // Chicago daytime: quiet hours (owner ruling 2026-10-09) would otherwise add `scheduled_at`
+  // to the body this test enumerates, depending on the hour it ran.
+  now: new Date("2026-09-16T17:00:00Z"),
 };
 
 describe("Reply-To on transactional mail (Part A)", () => {

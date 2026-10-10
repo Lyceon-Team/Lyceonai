@@ -90,7 +90,12 @@ function row(over: Partial<Candidate> = {}): Candidate {
  */
 function scenario(
   candidates: Candidate[],
-  options?: { emits?: (string | "throw")[]; candidatesFail?: boolean },
+  options?: {
+    emits?: (string | "throw")[];
+    candidatesFail?: boolean;
+    /** The student's §12.5 weekly predicate (owner ruling 2026-10-09 item 3(4)). Default: fresh. */
+    weekly?: "fresh" | "read_fails";
+  },
 ): void {
   jobRuns.length = 0;
   const emits = [...(options?.emits ?? [])];
@@ -112,6 +117,16 @@ function scenario(
         const next = emits.shift() ?? "emitted";
         return next === "throw" ? errReply("deadlock detected") : okReply(next);
       },
+      calendar_weekly_candidate: (args) =>
+        options?.weekly === "read_fails"
+          ? errReply("connection reset")
+          : okReply([
+              {
+                student_id: args.p_student_id,
+                period_key: "2026-10-12",
+                outcome: "skipped_fresh",
+              },
+            ]),
     },
   });
 }
@@ -139,6 +154,7 @@ describe("every row considered is recorded, skips included (§18)", () => {
       skipped_no_entitlement: 0,
       skipped_complete: 1,
       skipped_duplicate: 1,
+      skipped_not_replanned: 0,
       failed: 0,
     });
     expect(jobRuns.map((r) => r.outcome)).toEqual([
@@ -175,8 +191,55 @@ describe("every row considered is recorded, skips included (§18)", () => {
       "skipped_no_entitlement",
       "skipped_complete",
       "skipped_duplicate",
+      "skipped_not_replanned",
       "failed",
     ]);
+  });
+});
+
+/**
+ * @spec [owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(4)] | @implemented [2026-10-09]
+ * The job asks each week-notice student's weekly predicate before notifying; a fresh week needs
+ * no re-plan and the population is read once. The SQL refusal is recorded, not swallowed. (The
+ * re-plan itself and the refusal are proved against Postgres in
+ * tests/ci/notification-quiet-hours.pg.ci.test.ts.)
+ */
+describe("the week notice waits for the weekly re-plan", () => {
+  it("asks the weekly predicate for a week-notice student, and only for them", async () => {
+    scenario(
+      [
+        row({ block_id: BLOCK_A }),
+        row({ student_id: S_C, block_id: BLOCK_B, kind: "full_length_week" }),
+      ],
+      { emits: ["emitted", "emitted"] },
+    );
+
+    await runExamNotifications();
+
+    const asked = client.rpcs.filter(
+      (r) => r.fn === "calendar_weekly_candidate",
+    );
+    expect(asked.map((r) => r.args.p_student_id)).toEqual([S_C]);
+    // Fresh: nothing re-planned, so the population is read once and the notice is written.
+    expect(
+      client.rpcs.filter(
+        (r) => r.fn === "calendar_exam_notification_candidates",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("records the writer's skipped_not_replanned refusal rather than reading it as success", async () => {
+    scenario(
+      [row({ student_id: S_C, block_id: BLOCK_B, kind: "full_length_week" })],
+      { emits: ["skipped_not_replanned"], weekly: "read_fails" },
+    );
+
+    const summary = await runExamNotifications();
+
+    expect(summary.skipped_not_replanned).toBe(1);
+    expect(summary.ok).toBe(0);
+    expect(jobRuns.map((r) => r.outcome)).toEqual(["skipped_not_replanned"]);
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 });
 

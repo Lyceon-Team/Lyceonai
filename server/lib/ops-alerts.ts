@@ -193,6 +193,9 @@ async function sendEmail(
     subject: `Lyceon ops: ${alert.title}`,
     html,
     text,
+    // To the owner, not a student or guardian: outside quiet hours (owner ruling, Karl
+    // 2026-10-09, schedule audit Step 2 item 2). This field is how the sender tells them apart.
+    audience: "ops",
   });
   if (!sent.ok) {
     await record(deps.db, id, "failed", deps.now);
