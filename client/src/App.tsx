@@ -28,6 +28,7 @@ import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
 import { useRouteScrollReset } from "@/lib/route-scroll-reset";
+import { SIGN_UP_HREF } from "@/lib/marketing-links";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
@@ -172,6 +173,7 @@ const Calendar = lazy(() => import("@/pages/calendar"));
 // GUARDIAN_ROUTES (`features/guardian/routes.tsx`), which lazy-loads them itself.
 const ScoreReport = lazy(() => import("@/pages/score-report"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
+const DiagnosticStart = lazy(() => import("@/pages/diagnostic-start"));
 const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
@@ -238,8 +240,11 @@ export function Router() {
         <Route path="/" component={HomePage} />
         <Route path="/login" component={LoginRoute} />
 
-        {/* Signup redirects to login page (signup happens via modal/form on login page) */}
-        <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
+        {/* Signup redirects to the auth page on its Sign Up tab (owner brief 2026-10-10 rule 1;
+            the URL comes from the shared allowlist). */}
+        <Route path="/signup">
+          {() => <Redirect to={SIGN_UP_HREF} replace />}
+        </Route>
 
         {/* SEO Content Pages */}
         {/* @spec [owner decision 3 on SEO Wave 3 Step 0, 2026-10-05: the three /digital-sat*
@@ -337,6 +342,19 @@ export function Router() {
         <Route path="/practice/random">
           {() => <Redirect to="/practice" replace />}
         </Route>
+        {/* Owner brief 2026-10-10 rule 3: "Start the free diagnostic" lands here after sign-in,
+            or after sign-up and onboarding; it starts (or resumes) the diagnostic and replaces
+            itself with the session. */}
+        <Route
+          path="/practice/diagnostic"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <StudentRouteFrame route="/practice/diagnostic">
+                <DiagnosticStart />
+              </StudentRouteFrame>
+            </RequireRole>
+          )}
+        />
         <Route
           path="/practice/session/:sessionId"
           component={() => (

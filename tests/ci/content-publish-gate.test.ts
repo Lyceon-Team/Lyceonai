@@ -37,6 +37,7 @@ import {
 } from "../../shared/content/pages/practice-questions";
 import type { ContentPage } from "../../packages/shared/src/seo-content-schema";
 import { BASE_URL } from "../../shared/seo/structured-data";
+import { START_DIAGNOSTIC_HREF } from "../../client/src/lib/marketing-links";
 import type { VercelRoute } from "../../shared/seo/route-registry";
 import {
   REPO_ROOT,
@@ -223,7 +224,11 @@ describe("the C4 blog rewrites (approved by Karl 2026-10-05)", () => {
       const links = [...body.matchAll(/<a\b[^>]*href="([^"]*)"/g)].map(
         (m) => m[1],
       );
-      expect(links.at(-1)).toBe("/login?next=%2Fdashboard");
+      // The one shared CTA target (marketing-links.ts; entry-aware auth brief, Karl
+      // 2026-10-10: the Sign Up tab, returning to the diagnostic), as the HTML escapes it.
+      expect(links.at(-1)?.replaceAll("&amp;", "&")).toBe(
+        START_DIAGNOSTIC_HREF,
+      );
       expect(body).toContain('data-testid="button-content-start-diagnostic"');
       const ld = jsonLdBlocks(html).find((b) => b["@type"] === "Article");
       expect(ld?.author).toEqual({

@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { LyceonMark } from "@/components/common/LyceonMark";
+import { SIGN_IN_HREF, SIGN_UP_HREF } from "@/lib/marketing-links";
 
 export default function PublicNavBar() {
   const [location] = useLocation();
@@ -50,13 +51,13 @@ export default function PublicNavBar() {
           ) : (
             <div className="flex items-center gap-3">
               <Link
-                href="/login"
+                href={SIGN_IN_HREF}
                 className="text-sm font-medium text-foreground/70 hover:text-foreground transition-opacity"
               >
                 Sign In
               </Link>
               <Link
-                href="/login"
+                href={SIGN_UP_HREF}
                 className="px-4 py-2 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
               >
                 Get Started
