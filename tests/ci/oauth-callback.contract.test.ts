@@ -516,6 +516,48 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(grantPasswordRecoveryMock).not.toHaveBeenCalled();
   });
 
+  // Owner brief 2026-10-10 (follow-up to #1188): the confirmation link now carries the page the
+  // visitor signed up from; the callback lands there (through onboarding when it is owed).
+  it("an email confirmation carrying next lands on it, through onboarding for a new student", async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: SESSION, user: USER },
+      error: null,
+    });
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: null,
+      is_under_13: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=abc124&type=signup&next=%2Fupgrade%3Fpromo%3DFOUNDING50",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/profile/complete?next=%2Fupgrade%3Fpromo%3DFOUNDING50",
+    );
+  });
+
+  it("an email confirmation carrying next lands an onboarded student straight on it", async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: SESSION, user: USER },
+      error: null,
+    });
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-10-10T00:00:00Z",
+      is_under_13: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=abc125&type=signup&next=%2Fupgrade%3Fpromo%3DFOUNDING50",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/upgrade?promo=FOUNDING50",
+    );
+  });
+
   // AL-7 — profile-per-human conflict from the callback path is a deliberate redirect, never a 500.
   it("redirects a profile-per-human conflict to /login?error=account_exists and signs out", async () => {
     okExchange();
