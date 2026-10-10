@@ -29,6 +29,10 @@ import {
   RETURN_PATH_PARAM,
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
+import {
+  AUTH_ROLE_PARAM,
+  type SignupRoleIntent,
+} from "@lyceon/shared/auth-entry";
 
 export type SignupOutcome = "authenticated" | "verification_required";
 
@@ -69,9 +73,13 @@ interface SupabaseAuthContextType {
     password: string,
     legalConsent: SignupLegalConsent,
     displayName?: string,
+    roleIntent?: SignupRoleIntent | null,
   ) => Promise<SignupResult>;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: (legalConsent: SignupLegalConsent) => Promise<void>;
+  signInWithGoogle: (
+    legalConsent: SignupLegalConsent,
+    roleIntent?: SignupRoleIntent | null,
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -370,6 +378,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     password: string,
     legalConsent: SignupLegalConsent,
     displayName?: string,
+    roleIntent?: SignupRoleIntent | null,
   ): Promise<SignupResult> => {
     setAuthLoading(true);
     try {
@@ -387,6 +396,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           // SCL-201 IS 6: the first-touch channel (kept for the tab session only with analytics
           // consent; see lib/analytics/first-touch.ts).
           signupSource: firstTouchSource(),
+          // Owner brief 2026-10-10 rule 2: the account type the sign-up asked for (the server
+          // re-parses it against the same allowlist; absent or unknown is a student).
+          ...(roleIntent ? { role: roleIntent } : {}),
         }),
       });
 
@@ -463,7 +475,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async (legalConsent: SignupLegalConsent) => {
+  const signInWithGoogle = async (
+    legalConsent: SignupLegalConsent,
+    roleIntent?: SignupRoleIntent | null,
+  ) => {
     setAuthLoading(true);
     try {
       // Native Supabase OAuth (PKCE). Supabase owns the Google OAuth callback at
@@ -482,6 +497,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // shared module before honouring it after the onboarding gate. Off-origin → dropped here.
       const returnPath = returnPathFromSearch(window.location.search);
       if (returnPath) callbackParams.set(RETURN_PATH_PARAM, returnPath);
+      // Owner brief 2026-10-10 rule 2: the role intent rides the same callback URL as `next`;
+      // the server applies it only to the account this sign-in creates.
+      if (roleIntent) callbackParams.set(AUTH_ROLE_PARAM, roleIntent);
       const redirectTo = `${window.location.origin}/auth/callback?${callbackParams.toString()}`;
 
       // @spec [SEO plan F8 (public-page weight); OAUTH-001] | @implemented [2026-10-07] |

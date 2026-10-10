@@ -210,10 +210,16 @@ export type Shot = {
    * index says so, with `reason`. The body must be built from the shared response schema.
    */
   fulfillRequest?: {
-    method: "GET";
+    method: "GET" | "POST";
     path: string;
     body: unknown;
     reason: string;
+    /**
+     * Entry-aware auth (2026-10-10): the status the browser answers with (default 200). The
+     * harness mounts no `/api/auth` routes (they call Supabase), so a failed email sign-in is
+     * answered here with the real route's 401 and body.
+     */
+    status?: number;
   };
   /**
    * UI-59: requests the browser fails itself (a network error, never reaching the server), for a

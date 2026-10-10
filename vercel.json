@@ -177,6 +177,10 @@
       "dest": "/app.html"
     },
     {
+      "src": "^/practice/diagnostic/?$",
+      "dest": "/app.html"
+    },
+    {
       "src": "^/practice/session/[^/]+/?$",
       "dest": "/app.html"
     },
