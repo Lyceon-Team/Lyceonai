@@ -29,6 +29,13 @@ import {
   RETURN_PATH_PARAM,
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
+
+/** The allowlisted return path on the current URL, if any (the sign-up form's `next`). */
+function signupReturnPath(): string | null {
+  return typeof window === "undefined"
+    ? null
+    : returnPathFromSearch(window.location.search);
+}
 import {
   AUTH_ROLE_PARAM,
   type SignupRoleIntent,
@@ -399,6 +406,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           // Owner brief 2026-10-10 rule 2: the account type the sign-up asked for (the server
           // re-parses it against the same allowlist; absent or unknown is a student).
           ...(roleIntent ? { role: roleIntent } : {}),
+          // Owner brief 2026-10-10: the page this sign-up came from (`/login?mode=signup&next=…`),
+          // so the email-confirmation link can bring the person back to it. Already sanitised
+          // here; the server re-sanitises.
+          ...(signupReturnPath() ? { next: signupReturnPath() } : {}),
         }),
       });
 
