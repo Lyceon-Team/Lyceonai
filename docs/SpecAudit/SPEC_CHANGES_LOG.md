@@ -47,7 +47,9 @@ record ways of working. Nothing filed before this date is reclassified.
 
 Owner ruling 2026-09-16; OPEN added by owner ruling 2026-10-10 (Karl: "add OPEN to the
 register's STATUS VALUES section so it matches the precedent", the precedent being SCL-200..218
-on 2026-10-07 and SCL-222 on 2026-10-10). Four values, and no others:
+on 2026-10-07 and SCL-222 on 2026-10-10); REJECTED added by owner ruling 2026-10-10 (Karl:
+"Add REJECTED as a fifth value ... meaning: the owner ruled the change out"). Five values, and no
+others:
 
   - PROPOSED — the spec should change; it has not been changed yet, and the
                 owner has not ruled on it.
@@ -62,6 +64,11 @@ on 2026-10-07 and SCL-222 on 2026-10-10). Four values, and no others:
                 The entry keeps its Change/WAS/IS lines as written and records
                 what landed and where; an entry is only APPLIED once the text
                 is actually in the document, not once it is authorised.
+  - REJECTED  — the owner ruled the change OUT: the spec will not change as
+                proposed. Unlike RULING (no amendment needed because the
+                document is already right, or it is not a spec matter), the
+                proposal was considered and declined. Only the owner sets
+                REJECTED; the entry stays in the register as the record.
 
 APPLIED is about the AMENDMENT, not about bookkeeping around it. An entry whose
 spec text has landed is APPLIED even if something adjacent is still owed — a
@@ -70,7 +77,7 @@ entry says plainly what is outstanding. An entry whose spec text has NOT landed
 is PROPOSED, or OPEN once the owner has ruled it in, however firmly it has been
 authorised: authorisation is not application.
 
-Do not invent a fifth value; if none of these four fits, say so and ask the
+Do not invent a sixth value; if none of these five fits, say so and ask the
 owner rather than coining one.
 
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
@@ -118,7 +125,7 @@ This rule overrides any instruction to the contrary.
 
 - One entry per delta. Newest at top.
 - Each entry: ID, date, status, the change, the reason, the spec doc(s) it touches, and the build artifact (PR / migration) if any.
-- **Status values** (exactly the four in STATUS VALUES above): `PROPOSED` (the spec should change; not yet changed, and the owner has not ruled) · `RULING` (a decision recorded; no amendment needed) · `OPEN` (the owner has ruled the change in; not yet in docs/Spec/) · `APPLIED` (the amendment has been made in docs/Spec/). Agents may only write `PROPOSED`; the owner sets all others.
+- **Status values** (exactly the five in STATUS VALUES above): `PROPOSED` (the spec should change; not yet changed, and the owner has not ruled) · `RULING` (a decision recorded; no amendment needed) · `OPEN` (the owner has ruled the change in; not yet in docs/Spec/) · `APPLIED` (the amendment has been made in docs/Spec/) · `REJECTED` (the owner ruled the change out). Agents may only write `PROPOSED`; the owner sets all others.
 - Entry IDs: `SCL-194` (sequential).
 
 ---
