@@ -47,6 +47,7 @@ import {
 import {
   pastDateProblem,
   publishDecision,
+  writePublishManifest,
   type Source,
 } from "../../scripts/qotd-social/generate";
 import {
@@ -524,7 +525,11 @@ function decide(source: Source, cardText?: string) {
     format,
     cardText: cardText ?? visibleText(cardMarkup(source.input, format)),
   }));
-  return { copy, rendered, decision: publishDecision(source, copy, rendered) };
+  return {
+    copy,
+    rendered,
+    decision: publishDecision(source, copy, rendered, QOTD_FIXTURE_TODAY),
+  };
 }
 
 function pastSource(day: QotdArchiveResponse): Source {
@@ -921,6 +926,7 @@ describe("PLANTS: an answer in the caption blocks the Slack post", () => {
       source,
       { ...copy, caption: `${copy.caption}\n\n${extra}` },
       rendered,
+      QOTD_FIXTURE_TODAY,
     );
   }
 
@@ -950,22 +956,102 @@ describe("PLANTS: an answer in the caption blocks the Slack post", () => {
     const source = pastSource(mcq);
     const { copy } = decide(source);
     const card = `${visibleText(cardMarkup(source.input, "portrait"))} ${mcq.question.explanation ?? ""}`;
-    const d = publishDecision(source, copy, [
-      { format: "portrait", cardText: card },
-    ]);
+    const d = publishDecision(
+      source,
+      copy,
+      [{ format: "portrait", cardText: card }],
+      QOTD_FIXTURE_TODAY,
+    );
     expect(d.ok).toBe(false);
     if (!d.ok) {
       expect(d.problems.some((p) => p.startsWith("portrait: card"))).toBe(true);
     }
   });
 
-  it("end to end: a blocked day has no manifest, so the poster sends nothing", async () => {
+  it("end to end: a blocked day gets no post.json (a stale one is removed), so nothing is sent", async () => {
+    // The passing day first: the writer writes it and the poster would post it.
+    const passing = builtDir(null);
+    expect(
+      writePublishManifest(passing, decide(pastSource(mcq)).decision, []),
+    ).toBe(true);
+    expect(loadPost(passing)).toMatchObject({ ok: true });
+    // Now the planted day over the same directory: the old post.json must not survive.
     const d = plantedDecision(mcq, `Hint: ${correct.text}`);
     expect(d.ok).toBe(false);
-    // generate.ts writes post.json only from an ok decision; without it the poster refuses.
-    const dir = builtDir(d.ok ? d.manifest : null);
+    expect(writePublishManifest(passing, d, [])).toBe(false);
     const slack = fakeSlack();
-    expect(await run(["--dir", dir], ENV, slack.fetch, logs().log)).toBe(1);
+    expect(await run(["--dir", passing], ENV, slack.fetch, logs().log)).toBe(1);
     expect(slack.calls).toEqual([]);
+  });
+
+  it("a passing day missing an image size gets no post.json either", () => {
+    const dir = builtDir(null);
+    expect(
+      writePublishManifest(dir, decide(pastSource(mcq)).decision, ["story"]),
+    ).toBe(false);
+    expect(loadPost(dir)).toMatchObject({ ok: false });
+  });
+});
+
+describe("Slack: the edges the audit named", () => {
+  it("a today payload dated any other day is refused (its answer is already public)", () => {
+    const source = todaySource();
+    const { copy, rendered } = decide(source);
+    const stale = publishDecision(source, copy, rendered, "2099-01-01");
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) {
+      expect(stale.problems).toEqual([
+        `source: the today payload is dated ${source.input.qotd_date}, not today (2099-01-01)`,
+      ]);
+    }
+    expect(
+      publishDecision(source, copy, rendered, source.input.qotd_date).ok,
+    ).toBe(true);
+  });
+
+  it("a malformed post.json is refused without quoting it", () => {
+    const m = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const dir = builtDir(m);
+    writeFileSync(join(dir, "post.json"), `{"caption": "${m.caption}`);
+    const r = loadPost(dir);
+    expect(r).toEqual({
+      ok: false,
+      error: "post.json is not valid JSON (SyntaxError)",
+    });
+  });
+
+  it("backticks cannot close the code block", () => {
+    const m = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const text = slackCopyMessage({ ...m, caption: "a ``` b ```` c" });
+    // Exactly the four fences the message is built with, and the caption's text kept.
+    expect(text.match(/```/g)).toHaveLength(4);
+    expect(text.replace(/\u200b/g, "")).toContain("a ``` b ```` c");
+  });
+
+  it("image bytes go only to a Slack https host", async () => {
+    const dir = builtDir(manifestFor(pastSource(PUBLISHABLE[0]!)));
+    for (const bad of [
+      "http://files.slack.com/upload/v1/x",
+      "https://files.slack.com.evil.example/upload",
+      "https://example.com/upload",
+    ]) {
+      const calls: string[] = [];
+      const fetch: FetchLike = async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, upload_url: bad, file_id: "F1" }),
+        };
+      };
+      const l = logs();
+      expect(await run(["--dir", dir], ENV, fetch, l.log)).toBe(1);
+      expect(calls).toEqual([
+        "https://slack.com/api/files.getUploadURLExternal",
+      ]);
+      expect(l.err).toEqual([
+        "qotd-slack: NOT POSTED: files.getUploadURLExternal: upload_url is not a Slack https URL",
+      ]);
+    }
   });
 });

@@ -49,13 +49,14 @@ Do this before the first scheduled run:
 
 The rule is that it never posts a day that failed a check, and it never fails quietly.
 
-| Situation                                                                                    | What happens                                                                                                  |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| The build fails a check (an answer in the caption or image, wrong reveal wording, bad input) | The build step fails. Nothing is uploaded and nothing is posted. The run page lists the problems.             |
-| An image does not fit                                                                        | The build step fails. No `post.json` is written, so nothing is posted.                                        |
-| `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                       | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.    |
-| `QOTD_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                     | Same: the download is uploaded and the run is red.                                                            |
-| Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)      | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red. |
+| Situation                                                                                    | What happens                                                                                                                                                           |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The build fails a check (an answer in the caption or image, wrong reveal wording, bad input) | The build step fails. Nothing is uploaded and nothing is posted. The run page lists the problems.                                                                      |
+| An image does not fit                                                                        | The build step fails. No `post.json` is written, so nothing is posted.                                                                                                 |
+| At 06:20 UTC the site still serves yesterday's question as today's                           | The build refuses it: that day's answer is already public, so it would have to pass the past-day leak check. Nothing is posted. Rebuild it by hand with that **date**. |
+| `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                       | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                             |
+| `QOTD_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                     | Same: the download is uploaded and the run is red.                                                                                                                     |
+| Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)      | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                          |
 
 A red run e-mails whoever GitHub notifies for failed scheduled workflows. When the post fails,
 the download is still on the run page, so the day can be shared by hand.

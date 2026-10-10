@@ -153,6 +153,7 @@ export function publishDecision(
   source: Source,
   copy: QotdSocialCopy,
   rendered: readonly { format: QotdSocialFormat; cardText: string }[],
+  today: string,
 ):
   | { ok: true; manifest: QotdSocialPostManifest }
   | { ok: false; problems: string[] } {
@@ -177,6 +178,14 @@ export function publishDecision(
       );
     }
   }
+  // "no-answer-in-source" is true only of today's own payload. A today source dated any other
+  // day (a stale cache at the day boundary) is a day whose answer is already public: refused,
+  // never posted without its leak check. Build it with --date instead.
+  if (source.kind === "today" && input.qotd_date !== today) {
+    problems.push(
+      `source: the today payload is dated ${input.qotd_date}, not today (${today})`,
+    );
+  }
   if (rendered.length === 0) problems.push("no image was produced");
   if (problems.length > 0) return { ok: false, problems };
   return {
@@ -199,6 +208,22 @@ export function publishDecision(
       },
     }),
   };
+}
+
+/**
+ * Write post.json for a complete, passing day, and make sure no post.json exists otherwise: the
+ * Slack poster posts nothing without it (owner brief 2026-10-10). Returns whether it was written.
+ */
+export function writePublishManifest(
+  outDir: string,
+  decision: ReturnType<typeof publishDecision>,
+  unfit: readonly string[],
+): boolean {
+  const path = join(outDir, "post.json");
+  rmSync(path, { force: true });
+  if (!decision.ok || unfit.length > 0) return false;
+  writeFileSync(path, `${JSON.stringify(decision.manifest, null, 2)}\n`);
+  return true;
 }
 
 /** How far back `--date latest` looks for a day whose input passes. */
@@ -415,7 +440,7 @@ async function main(): Promise<number> {
     await close();
   }
 
-  const decision = publishDecision(source, copy, result.rendered);
+  const decision = publishDecision(source, copy, result.rendered, today);
   if (!decision.ok) {
     const { problems } = decision;
     rmSync(args.out, { recursive: true, force: true });
@@ -463,14 +488,7 @@ async function main(): Promise<number> {
     "",
   ].join("\n");
   writeFileSync(join(args.out, "summary.md"), summary);
-  // The publish manifest only for a complete, passing day: the Slack poster posts nothing
-  // without it (owner brief 2026-10-10).
-  if (result.unfit.length === 0) {
-    writeFileSync(
-      join(args.out, "post.json"),
-      `${JSON.stringify(decision.manifest, null, 2)}\n`,
-    );
-  }
+  writePublishManifest(args.out, decision, result.unfit);
 
   out(
     `qotd-social: ${date} (${source.kind}): ${result.rendered

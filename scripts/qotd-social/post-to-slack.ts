@@ -58,7 +58,16 @@ export function loadPost(dir: string): Result<LoadedPost> {
         "no post.json: the build did not pass its checks (or did not run), so nothing is posted",
     };
   }
-  const raw: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (e: unknown) {
+    // The parser's message can quote the file, which holds question text: never logged.
+    return {
+      ok: false,
+      error: `post.json is not valid JSON (${e instanceof Error ? e.name : "error"})`,
+    };
+  }
   const parsed = qotdSocialPostManifestSchema.safeParse(raw);
   if (!parsed.success) {
     return {
@@ -126,12 +135,16 @@ export function slackConfig(env: NodeJS.ProcessEnv): Result<SlackConfig> {
   return { ok: true, value: { token, channel } };
 }
 
-/** Slack's mrkdwn escaping: &, < and > are the only control characters (also inside code). */
+/**
+ * Slack's mrkdwn escaping: &, < and > are its control characters (also inside code). A run of
+ * backticks would close the code block early, so a zero-width space breaks each pair up.
+ */
 function escapeMrkdwn(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/`(?=`)/g, "`\u200b");
 }
 
 /** The heading posted with the images: the date and section. */
@@ -235,6 +248,16 @@ export async function postToSlack(
       },
       uploadUrlOk,
     );
+    // The bytes go only to Slack's own host, over https (the token never goes there at all).
+    const uploadUrl = new URL(target.upload_url);
+    if (
+      uploadUrl.protocol !== "https:" ||
+      !uploadUrl.hostname.endsWith(".slack.com")
+    ) {
+      throw new SlackCallError(
+        "files.getUploadURLExternal: upload_url is not a Slack https URL",
+      );
+    }
     const put = await fetchImpl(target.upload_url, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
@@ -308,7 +331,7 @@ export async function run(
   try {
     const sent = await postToSlack(config.value, post.value, fetchImpl);
     log.out(
-      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}): ${sent.imagesShared} image(s) and the caption, message ${sent.messageTs}`,
+      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}): ${sent.imagesShared} image(s) and the caption, message ${sent.messageTs}`,
     );
     return 0;
   } catch (e: unknown) {
