@@ -9,6 +9,7 @@ import {
   postAuthDestination,
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
+import { authEntryFromSearch } from "@lyceon/shared/auth-entry";
 
 /**
  * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (login, signup);
@@ -102,6 +103,14 @@ export default function Login() {
     );
   }
 
+  // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 1] |
+  // @implemented [2026-10-10] | plain English: the tab and role the link asked for (`?mode=`,
+  // `?role=`), through the shared allowlist; anything else opens Sign In with no role intent.
+  // Read once per render like `?error=` above; the form takes them as its starting state only.
+  const entry = authEntryFromSearch(
+    typeof window !== "undefined" ? window.location.search : "",
+  );
+
   // Show auth form when ready
   return (
     <div className="flex flex-col gap-4">
@@ -112,7 +121,7 @@ export default function Login() {
           data-testid="login-redirect-error"
         />
       )}
-      <SupabaseAuthForm />
+      <SupabaseAuthForm initialMode={entry.mode} initialRole={entry.role} />
     </div>
   );
 }

@@ -248,7 +248,8 @@ describe("/login (sign in, sign up, reset)", () => {
     window.history.replaceState(null, "", "/login");
     renderRoute("/login", <Login />);
     const shell = bareShell();
-    expectOneH1(shell, "Lyceon");
+    // Owner brief 2026-10-10 rule 4: each mode names what the person came to do.
+    expectOneH1(shell, "Welcome back");
     expectOnePrimary(shell, "Continue with Google");
     expect(screen.getByLabelText("Email").getAttribute("autocomplete")).toBe(
       "email",
@@ -297,7 +298,7 @@ describe("/login (sign in, sign up, reset)", () => {
     fireEvent.click(tab);
     await screen.findByTestId("button-signup");
     const shell = bareShell();
-    expectOneH1(shell, "Lyceon");
+    expectOneH1(shell, "Create your Lyceon account");
     expectOnePrimary(shell, "Continue with Google");
     expect(
       screen.getByLabelText("Display Name").getAttribute("autocomplete"),
@@ -317,6 +318,36 @@ describe("/login (sign in, sign up, reset)", () => {
         .getByTestId("input-signup-password-requirements")
         .getAttribute("aria-live"),
     ).toBe("polite");
+    expectNoOwnFrame(shell);
+    expectStudentTokensOnly(shell);
+  });
+
+  // Owner brief 2026-10-10 rules 1, 4: the guardian line and "Create one" are quiet text and
+  // links on the same tokens; Google stays the one filled action in each.
+  it("sign up as a guardian: the role line is on student tokens; Google still the one filled action", () => {
+    window.history.replaceState(null, "", "/login?mode=signup&role=guardian");
+    renderRoute("/login", <Login />);
+    const shell = bareShell();
+    expectOneH1(shell, "Create your Lyceon account");
+    expect(screen.getByTestId("signup-role-guardian")).toBeInTheDocument();
+    expectOnePrimary(shell, "Continue with Google");
+    expectNoOwnFrame(shell);
+    expectStudentTokensOnly(shell);
+  });
+
+  it('after a failed sign-in: "Create one" is on student tokens; Google still the one filled action', async () => {
+    window.history.replaceState(null, "", "/login?mode=signin");
+    renderRoute("/login", <Login />);
+    fireEvent.change(screen.getByTestId("input-signin-email"), {
+      target: { value: "a@example.test" },
+    });
+    fireEvent.change(screen.getByTestId("input-signin-password"), {
+      target: { value: "whatever1" },
+    });
+    fireEvent.click(screen.getByTestId("button-signin"));
+    await screen.findByTestId("signin-create-account");
+    const shell = bareShell();
+    expectOnePrimary(shell, "Continue with Google");
     expectNoOwnFrame(shell);
     expectStudentTokensOnly(shell);
   });

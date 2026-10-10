@@ -12,6 +12,7 @@
  */
 import { Link } from "wouter";
 import { LyceonMark } from "@/components/common/LyceonMark";
+import { SIGN_IN_HREF, SIGN_UP_HREF } from "@/lib/marketing-links";
 
 const SECTION_LINKS = [
   { label: "How it works", href: "#how-it-works" },
@@ -65,13 +66,13 @@ export function HomeNav({
           ) : (
             <>
               <Link
-                href="/login"
+                href={SIGN_IN_HREF}
                 className={`${TAP} rounded-[10px] border-[1.5px] border-foreground px-4 font-semibold hover:bg-card`}
               >
                 Sign in
               </Link>
               <Link
-                href="/login"
+                href={SIGN_UP_HREF}
                 className={`${TAP} rounded-[10px] bg-foreground px-4 font-semibold text-background hover:opacity-90 sm:px-5`}
               >
                 Get started

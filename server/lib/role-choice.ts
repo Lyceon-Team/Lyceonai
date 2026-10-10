@@ -22,6 +22,7 @@
  * is written), rather than being read as "no state".
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseRuntimeRole, type RuntimeRole } from "./auth-role.js";
 import {
   GUARDIAN_MIN_AGE,
   ageInYears,
@@ -254,4 +255,60 @@ export async function loadRoleChoiceFacts(
   }
 
   return { hasActiveLink, hasLearningState };
+}
+
+/**
+ * @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 2; G1-02 R1 (the
+ *        one-time role choice)] | @implemented [2026-10-10]
+ *
+ * plain English: a Google sign-up cannot name a role when the account is created (an OAuth
+ * sign-up carries no metadata of ours), so the `handle_new_user` trigger makes it a student. When
+ * that sign-up came through "I'm a parent or guardian", the callback calls this to make it the
+ * guardian it asked to be — the email sign-up gets the same result from its metadata. It is the
+ * SAME decision the onboarding form's role choice goes through (`decideRoleChoice` on freshly
+ * read facts), so it can never do what onboarding could not: a completed profile, an active link
+ * or any learning state refuses it, and admin is never reachable.
+ *
+ * Expected outcome: the role the caller should route on. "guardian" when the row was changed (or
+ * already was one); the current role, unchanged, when the decision refuses. Trade-off: the write
+ * re-states its preconditions in its WHERE (still a student, still not completed), so a
+ * completion that lands between the read and the write leaves the row alone rather than
+ * overwriting a choice. Edge case: a read or write error THROWS — the callback's finalize branch
+ * keeps the session and shows a recoverable error, the same as any other finalize failure.
+ */
+export async function adoptGuardianSignupIntent(
+  supabase: SupabaseClient,
+  profile: { id: string; role: RuntimeRole; profileCompletedAt: string | null },
+  supportEmail: string,
+): Promise<RuntimeRole> {
+  if (profile.role === "guardian") return "guardian";
+  const facts = await loadRoleChoiceFacts(supabase, profile.id);
+  const decision = decideRoleChoice({
+    currentRole: profile.role,
+    requestedRole: "guardian",
+    profileCompletedAt: profile.profileCompletedAt,
+    facts,
+    supportEmail,
+  });
+  if (!decision.ok) return profile.role;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ role: decision.role })
+    .eq("id", profile.id)
+    .eq("role", profile.role)
+    .is("profile_completed_at", null)
+    .select("role")
+    .maybeSingle();
+  if (error) {
+    throw new Error(`signup_role_intent_write_failed: ${error.message}`);
+  }
+  // No row back: a precondition changed under us (completed, or re-roled). Route on what was read.
+  if (data === null) return profile.role;
+  // Parsed, never cast: a role the app does not know is refused, as on every profile read (G2-02).
+  const written = parseRuntimeRole((data as { role: unknown }).role);
+  if (written === null) {
+    throw new Error("signup_role_intent_write_failed: unrecognized role");
+  }
+  return written;
 }

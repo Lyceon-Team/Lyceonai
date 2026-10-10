@@ -35,6 +35,9 @@ import {
   sanitizeReturnPath,
 } from "../../packages/shared/src/return-path";
 import { grantPasswordRecovery } from "../lib/password-credentials.js";
+import { parseSignupRoleIntent } from "../../packages/shared/src/auth-entry";
+import { adoptGuardianSignupIntent } from "../lib/role-choice.js";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 
 const router = Router();
 
@@ -378,6 +381,27 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         }
       }
 
+      // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 2] |
+      // @implemented [2026-10-10] | plain English: a Google sign-up from "I'm a parent or
+      // guardian" carries `role=guardian` on this callback URL, exactly as it carries `next`, and
+      // the account this sign-in CREATED becomes a guardian here — through the same one-time role
+      // decision onboarding uses (adoptGuardianSignupIntent). A returning user's sign-in, an email
+      // link (OTP) and any other value change nothing: the parameter is an allowlist, and only a
+      // brand-new, not-yet-onboarded student with no state can be re-roled.
+      const role =
+        createdByThisSignIn &&
+        parseSignupRoleIntent(req.query.role) === "guardian"
+          ? await adoptGuardianSignupIntent(
+              admin,
+              {
+                id: profile.id,
+                role: profile.role,
+                profileCompletedAt: profile.profile_completed_at,
+              },
+              SUPPORT_EMAIL,
+            )
+          : profile.role;
+
       const profileNeedsCompletion = !profile.profile_completed_at;
 
       // SCL-201 IS 6: a Google signup carries the first-touch channel through the callback URL
@@ -385,7 +409,11 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       // user_signed_in fires for an onboarded account — a new one is still in signup, and its
       // first event is user_signed_up at onboarding completion.
       if (profileNeedsCompletion) {
-        await recordSignupSource(user.id, req.query.signupSource, req.requestId);
+        await recordSignupSource(
+          user.id,
+          req.query.signupSource,
+          req.requestId,
+        );
       } else {
         await emitEvent(user.id, "user_signed_in", {});
       }
@@ -394,7 +422,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       // request anyway; this only saves the student a detour through a refused page.
       const needsGuardianLink =
         !profileNeedsCompletion &&
-        profile.role === "student" &&
+        role === "student" &&
         profile.is_under_13 === true &&
         !(await hasActiveGuardianLink(admin, profile.id));
 
@@ -415,7 +443,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         !profileNeedsCompletion && needsGuardianLink
           ? "/guardian-required"
           : postAuthDestination({
-              role: profile.role,
+              role,
               needsOnboarding: profileNeedsCompletion,
               next: safeNext,
             });
