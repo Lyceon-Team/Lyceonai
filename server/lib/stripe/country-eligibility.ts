@@ -147,7 +147,9 @@ export type BillingCountrySource = "provided" | "default_us";
  *       session has no billing country, default it to US. A country Stripe does provide always
  *       wins." Ruled alongside `payment_method_collection: "if_required"` (no card, and so no
  *       address, on a $0 FOUNDING50 checkout) and in place of `billing_address_collection:
- *       "required"` (no extra personal information at checkout)] | @implemented [2026-10-10]
+ *       "required"` (no extra personal information at checkout); SCL-228 (OPEN): Karl confirmed
+ *       2026-10-10 that this overrides INV-03-08 where Stripe provides no billing country]
+ *       | @implemented [2026-10-10]
  *
  * plain English: a present country always wins and is returned as `provided` (trimmed; the
  * verdict still comes from `evaluateCountryEligibility`, so a non-Tier-1 country is denied
