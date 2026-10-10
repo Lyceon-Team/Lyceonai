@@ -1,0 +1,121 @@
+# Homepage walkthrough video: render both cuts from their committed compositions.
+#
+# @spec [Lyceon_Doc_10A_V1 §6, §8.4; docs/plans/seo/seo-marketing-vertical.md F13 ("See how it works"), §8.4 (faceless video);
+#   owner decisions 2026-10-09 on the walkthrough video, items 3 (two runs: landscape for the
+#   homepage, vertical for social), 5 (VTT on both, burned-in captions on the 9:16) and 6 (the
+#   9:16 cut is a run download)] | @implemented [2026-10-09]
+#
+# plain English: the two /brag compositions (brag-output-2026-10-09-035211 = 16:9,
+# brag-output-2026-10-09-041834 = 9:16) are committed with their footage, narration, music and
+# vendored GSAP, so this job renders them with Hyperframes and nothing else: no secret, no
+# database, no question bank, no network beyond installing the tools. Each cut is gated by
+# `hyperframes check`, rendered at delivery quality, given its poster (the settled practice
+# frame at 16.5 s) baked in as frame 0, and checked to be 60 s long. The run's Artifacts hold
+# both cuts, both posters, the captions (WebVTT) and the share copy. The homepage serves its own
+# web encode of the 16:9 cut from client/public/media/, committed separately.
+#
+# Hyperframes is fetched at a pinned version with `pnpm dlx`: a tool for producing the video,
+# never an app dependency (owner decision, 2026-10-09).
+name: Walkthrough video
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/walkthrough-video.yml
+      - brag-output-2026-10-09-035211/composition/**
+      - brag-output-2026-10-09-041834/composition/**
+      - brag-output-2026-10-09-035211/walkthrough.en.vtt
+      - brag-output-2026-10-09-041834/walkthrough.en.vtt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: walkthrough-video-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HYPERFRAMES_VERSION: "0.8.143"
+  HYPERFRAMES_NO_TELEMETRY: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins) and FFmpeg
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg
+          # The binary is `headless_shell` in older Playwright builds, `chrome-headless-shell` in newer.
+          shell=$(find "$HOME/.cache/ms-playwright" -type f \( -name headless_shell -o -name chrome-headless-shell \) -path '*chromium_headless_shell-*' | head -1)
+          echo "headless shell: ${shell:-not found}"
+          test -x "$shell"
+          echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
+
+      - name: Render both cuts
+        run: |
+          set -euo pipefail
+          mkdir -p walkthrough-out
+          render() {
+            dir="$1"; name="$2"; w="$3"; h="$4"
+            ( cd "$dir/composition" && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" check \
+              && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/walkthrough-out/$name.raw.mp4" )
+            out="walkthrough-out/$name"
+            ffmpeg -v error -y -ss 16.5 -i "$out.raw.mp4" -frames:v 1 -q:v 2 "$out.jpg"
+            ffmpeg -v error -y -i "$out.raw.mp4" -i "$out.jpg" \
+              -filter_complex "[0:v][1:v]overlay=0:0:enable='eq(n,0)'[v]" \
+              -map "[v]" -map 0:a -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p \
+              -c:a copy -movflags +faststart "$out.mp4"
+            rm "$out.raw.mp4"
+            cp "$dir/walkthrough.en.vtt" "$out.en.vtt"
+            dims=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$out.mp4")
+            dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$out.mp4")
+            echo "$name: ${dims} ${dur}s"
+            test "$dims" = "$w,$h"
+            awk -v d="$dur" 'BEGIN { exit !(d > 59.9 && d < 60.1) }'
+          }
+          render brag-output-2026-10-09-035211 walkthrough-16x9 1920 1080
+          render brag-output-2026-10-09-041834 walkthrough-9x16 1080 1920
+          cp brag-output-2026-10-09-041834/share-copy.txt walkthrough-out/share-copy.txt
+          ls -la walkthrough-out
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Walkthrough video"
+            echo
+            echo "Download **walkthrough-video** from this run's Artifacts: the 16:9 (homepage) and"
+            echo "9:16 (social, captions burned in) cuts, their posters and WebVTT captions."
+            echo
+            echo '```text'
+            cat walkthrough-out/share-copy.txt 2>/dev/null || echo "(not rendered)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the cuts
+        uses: actions/upload-artifact@v4
+        with:
+          name: walkthrough-video
+          path: walkthrough-out/
+          if-no-files-found: error
+          retention-days: 90

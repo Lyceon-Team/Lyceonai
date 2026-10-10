@@ -63,19 +63,31 @@ import {
 } from "../../client/src/features/guardian/test-harness";
 import { E2E_TODAY } from "../../tests/e2e/guardian-harness/today";
 import { COOKIE_BANNER_VERSION } from "../../packages/shared/src/analytics-consent-schema";
+import { reviewPromptResponseSchema } from "../../packages/shared/src/product-feedback-schema";
 
 const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-const OUT_DIR = path.join(ROOT, "client/public/images/home");
+// @spec [Lyceon_Doc_10A_V1 §6, §8.4; owner decisions 2026-10-09 on the walkthrough video]
+// | @implemented [2026-10-09] | plain English: PRODUCT_SHOTS_OUT_DIR, PRODUCT_SHOTS_VIEWPORT
+// ("WxH") and PRODUCT_SHOTS_SCALE re-shoot the same fixtures as video footage, outside the
+// homepage images. Unset, the homepage screenshots are unchanged.
+const OUT_DIR =
+  process.env.PRODUCT_SHOTS_OUT_DIR ??
+  path.join(ROOT, "client/public/images/home");
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:5176";
 const APP_ORIGIN = new URL(BASE_URL).origin;
 // A 1600x900 CSS viewport rendered at 0.8 device pixels per CSS pixel: a 1280x720 (16:9) image
 // that holds each surface whole without scrolling. Scrolled, the app's frosted sticky header
 // draws blurred page content behind it (the review's choice A, the Dashboard's top tiles).
-const VIEWPORT = { width: 1600, height: 900 };
-const DEVICE_SCALE = 0.8;
+const VIEWPORT_ENV = /^(\d+)x(\d+)$/.exec(
+  process.env.PRODUCT_SHOTS_VIEWPORT ?? "",
+);
+const VIEWPORT = VIEWPORT_ENV
+  ? { width: Number(VIEWPORT_ENV[1]), height: Number(VIEWPORT_ENV[2]) }
+  : { width: 1600, height: 900 };
+const DEVICE_SCALE = Number(process.env.PRODUCT_SHOTS_SCALE ?? "0.8");
 const JPEG_QUALITY = 80;
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -225,6 +237,11 @@ const practiceReads = ({ method, path: p }) => {
 
 const guardianReads = ({ path: p }) => {
   if (p === "/api/guardian/students") return { body: guardianRoster };
+  // The review prompt (SEO Wave 2, plan Q6) is not part of the picture: the server's "not now".
+  if (p === "/api/feedback/prompt")
+    return {
+      body: { data: reviewPromptResponseSchema.parse({ show: false }) },
+    };
   if (p === "/api/billing/status") return { body: guardianBilling };
   const ada = `/api/students/${ADA}`;
   if (p === `${ada}/calendar`) return { body: board.calendarWeek };

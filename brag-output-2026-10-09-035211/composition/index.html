@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Lyceon walkthrough (landscape)</title>
+    <script src="vendor/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Poppins"; font-weight: 500; src: url("assets/fonts/poppins-latin-500-normal.woff2") format("woff2"); }
+      @font-face { font-family: "Poppins"; font-weight: 600; src: url("assets/fonts/poppins-latin-600-normal.woff2") format("woff2"); }
+      @font-face { font-family: "Poppins"; font-weight: 700; src: url("assets/fonts/poppins-latin-700-normal.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-weight: 400 700; src: url("assets/fonts/inter-latin-400-700-normal.woff2") format("woff2"); }
+      body { margin: 0; background: #FFFAEF; color: #0F2E48; font-family: "Inter", sans-serif; }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #FFFAEF; }
+      .scene { position: absolute; inset: 0; }
+      .scene-in { position: absolute; inset: 0; }
+      .layer { position: absolute; }
+      .win { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; background: #FFFAEF;
+              box-shadow: 0 24px 70px rgba(15, 46, 72, 0.16), 0 0 0 1px rgba(15, 46, 72, 0.10); }
+      .kb { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 50% 50%; }
+      .kb img { display: block; width: 100%; height: 100%; }
+      .ring { position: absolute; border: 4px solid #0F2E48; border-radius: 14px; }
+      .pro { position: absolute; display: block; padding: 10px 26px; border-radius: 999px; background: #0F2E48; color: #FFFAEF;
+              font-family: "Poppins", sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.06em;
+              box-shadow: 0 8px 24px rgba(15, 46, 72, 0.25); }
+      .outro { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; }
+      .logo { display: block; width: 340px; height: 340px; }
+      .tagline { display: block; font-family: "Poppins", sans-serif; font-weight: 700; font-size: 76px; color: #0F2E48; }
+      .url { display: block; font-family: "Poppins", sans-serif; font-weight: 600; font-size: 46px; color: #0F2E48; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="60">
+      <section id="hero" class="clip scene" data-start="0.0" data-duration="5.7" data-track-index="0"><div id="hero-in" class="scene-in"><div id="hero-l0" class="layer" style="left:216px;top:75px;width:1488px;height:930px"><div class="win"><div id="hero-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/hero.jpg" alt="" /></div></div></div></div></section><section id="diag" class="clip scene" data-start="5.0" data-duration="7.7" data-track-index="1"><div id="diag-in" class="scene-in"><div id="diag-l0" class="layer" style="left:216px;top:75px;width:1488px;height:930px"><div class="win"><div id="diag-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/diagnostic.jpg" alt="" /></div></div></div></div></section><section id="practice" class="clip scene" data-start="12.0" data-duration="7.7" data-track-index="0"><div id="practice-in" class="scene-in"><div id="practice-l0" class="layer" style="left:216px;top:75px;width:1488px;height:930px"><div class="win"><div id="practice-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/practice-correct.jpg" alt="" /><div id="practice-ring" class="ring" style="left:362px;top:559px;width:763px;height:241px"></div></div></div></div></div></section><section id="review" class="clip scene" data-start="19.0" data-duration="6.7" data-track-index="1"><div id="review-in" class="scene-in"><div id="review-l0" class="layer" style="left:404px;top:75px;width:1111px;height:930px"><div class="win"><div id="review-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/review.jpg" alt="" /></div></div></div><div id="review-l1" class="layer" style="left:451px;top:75px;width:1018px;height:930px"><div class="win"><div id="review-l1-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/review-runner.jpg" alt="" /></div></div></div></div></section><section id="lisa" class="clip scene" data-start="25.0" data-duration="7.7" data-track-index="0"><div id="lisa-in" class="scene-in"><div id="lisa-l0" class="layer" style="left:216px;top:75px;width:1488px;height:930px"><div class="win"><div id="lisa-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/lisa.jpg" alt="" /></div></div></div><div id="lisa-pro" class="pro" data-layout-allow-overlap style="right:216px;top:6px">Pro</div></div></section><section id="calendar" class="clip scene" data-start="32.0" data-duration="7.7" data-track-index="1"><div id="calendar-in" class="scene-in"><div id="calendar-l0" class="layer" style="left:394px;top:75px;width:1132px;height:930px"><div class="win"><div id="calendar-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/calendar.jpg" alt="" /></div></div></div><div id="calendar-pro" class="pro" data-layout-allow-overlap style="right:394px;top:6px">Pro</div></div></section><section id="tests" class="clip scene" data-start="39.0" data-duration="8.2" data-track-index="0"><div id="tests-in" class="scene-in"><div id="tests-l0" class="layer" style="left:216px;top:75px;width:1488px;height:930px"><div class="win"><div id="tests-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/test-module.jpg" alt="" /></div></div></div><div id="tests-l1" class="layer" style="left:301px;top:75px;width:1318px;height:930px"><div class="win"><div id="tests-l1-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/report-domains.jpg" alt="" /></div></div></div><div id="tests-pro" class="pro" data-layout-allow-overlap style="right:216px;top:6px">Pro</div></div></section><section id="parent" class="clip scene" data-start="46.5" data-duration="7.2" data-track-index="1"><div id="parent-in" class="scene-in"><div id="parent-l0" class="layer" style="left:216px;top:75px;width:1488px;height:930px"><div class="win"><div id="parent-l0-kb" class="kb" data-layout-allow-overflow><img src="assets/footage/parent.jpg" alt="" /></div></div></div><div id="parent-pro" class="pro" data-layout-allow-overlap style="right:216px;top:6px">Pro</div></div></section><section id="outro" class="clip scene" data-start="53.0" data-duration="7.0" data-track-index="0"><div id="outro-in" class="scene-in outro"><img id="outro-logo" class="logo" src="assets/lyceon-logo-transparent.png" alt="Lyceon" /><div id="outro-tag" class="tagline">Study Smarter, Score Higher.</div><div id="outro-url" class="url">lyceon.ai</div></div></section>
+      
+    <audio id="music-bed" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3" data-start="0" data-duration="60" data-track-index="10" data-volume="1"
+      data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":1.5,"v":0.12},{"t":57,"v":0.12},{"t":60,"v":0}]}]}'></audio>
+    <audio id="vo" src="assets/voiceover.wav" data-start="0" data-duration="60" data-track-index="3" data-volume="1"></audio>
+    <audio id="sfx-click" src="assets/sfx/ui/click2.ogg" data-start="13.11" data-duration="0.5" data-track-index="11" data-volume="0.55"></audio>
+    <audio id="sfx-reveal" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="42" data-duration="0.6" data-track-index="12" data-volume="0.55"></audio>
+    <audio id="sfx-logo" src="assets/sfx/interface/bong_001.ogg" data-start="53.6" data-duration="0.8" data-track-index="13" data-volume="0.55"></audio>
+
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+            tl.fromTo("#hero-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.1, xPercent: 0, yPercent: 3, duration: 5.7, ease: "sine.inOut" }, 0.0);
+      tl.fromTo("#hero-in", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "sine.out" }, 0);
+      tl.fromTo("#diag-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.18, xPercent: 5, yPercent: 8, duration: 7.7, ease: "sine.inOut" }, 5.0);
+      tl.fromTo("#diag-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 5.0);
+      tl.fromTo("#practice-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.16, xPercent: 0, yPercent: -9, duration: 7.7, ease: "sine.inOut" }, 12.0);
+      tl.fromTo("#practice-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 12.0);
+      tl.fromTo("#review-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.08, xPercent: 0, yPercent: -3, duration: 3.2, ease: "sine.inOut" }, 19.0);
+      tl.fromTo("#review-l1", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 22.2);
+      tl.to("#review-l0", { opacity: 0, duration: 0.7, ease: "sine.inOut" }, 22.2);
+      tl.fromTo("#review-l1-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.08, xPercent: 0, yPercent: -3, duration: 3.5, ease: "sine.inOut" }, 22.2);
+      tl.fromTo("#review-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 19.0);
+      tl.fromTo("#lisa-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.12, xPercent: 3, yPercent: 4, duration: 7.7, ease: "sine.inOut" }, 25.0);
+      tl.fromTo("#lisa-pro", { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 25.4);
+      tl.fromTo("#lisa-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 25.0);
+      tl.fromTo("#calendar-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.12, xPercent: -3, yPercent: 3, duration: 7.7, ease: "sine.inOut" }, 32.0);
+      tl.fromTo("#calendar-pro", { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 32.4);
+      tl.fromTo("#calendar-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 32.0);
+      tl.fromTo("#tests-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.06, xPercent: 0, yPercent: 0, duration: 3.0, ease: "sine.inOut" }, 39.0);
+      tl.fromTo("#tests-l1", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 42.0);
+      tl.to("#tests-l0", { opacity: 0, duration: 0.7, ease: "sine.inOut" }, 42.0);
+      tl.fromTo("#tests-l1-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.06, xPercent: 0, yPercent: 0, duration: 5.2, ease: "sine.inOut" }, 42.0);
+      tl.fromTo("#tests-pro", { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 39.4);
+      tl.fromTo("#tests-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 39.0);
+      tl.fromTo("#parent-l0-kb", { scale: 1.0, xPercent: 0, yPercent: 0 }, { scale: 1.08, xPercent: 0, yPercent: 2, duration: 7.2, ease: "sine.inOut" }, 46.5);
+      tl.fromTo("#parent-pro", { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 46.9);
+      tl.fromTo("#parent-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 46.5);
+      // beat-locked: 13.11s (strong cue) — the worked explanation is framed
+      tl.fromTo("#practice-ring", { opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1, duration: 0.45, ease: "power2.out" }, 13.11);
+      // beat-locked: 42.00s (strong cue) — the report's domain bars arrive (layer crossfade at 39.0 + 3.0)
+      tl.fromTo("#outro-in", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.inOut" }, 53.0);
+      tl.fromTo("#outro-logo", { scale: 0.94 }, { scale: 1, duration: 1.2, ease: "power2.out" }, 53.0);
+      tl.fromTo("#outro-tag", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 54.0);
+      tl.fromTo("#outro-url", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 54.6);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

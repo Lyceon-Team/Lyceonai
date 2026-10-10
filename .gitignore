@@ -69,6 +69,13 @@ brag-output/**/*.mp4
 brag-output/**/*.jpg
 brag-output/**/*.png
 brag-output/composition/
+# Timestamped /brag runs that are tracked (the homepage walkthrough, 2026-10-09): the plan,
+# brief, captions, share copy and composition (with its footage) are tracked, so CI can render
+# them (.github/workflows/walkthrough-video.yml); the masters, posters and raw captures are not.
+brag-output-*/brag.mp4
+brag-output-*/brag.jpg
+brag-output-*/footage/
+brag-output-*/vo/
 
 # Supabase CLI local link state (machine-specific; never commit)
 supabase/.temp/
