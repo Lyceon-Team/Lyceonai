@@ -24,7 +24,6 @@ import express, {
   type Request,
   type Response,
 } from "express";
-import cookieParser from "cookie-parser";
 import request from "supertest";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -107,6 +106,14 @@ vi.mock("../../server/lib/supabase-ssr", () => ({
   }),
 }));
 
+// CSRF is not what this suite proves, and the real double-submit is proved where it is the
+// subject (tests/ci/csrf-runtime.contract.test.ts, tests/ci/auth-signup.contract.test.ts). Here it
+// passes through, so the harness needs no cookie handling at all.
+vi.mock("../../server/middleware/csrf-double-submit", () => ({
+  doubleCsrfProtection: (_req: Request, _res: Response, next: NextFunction) =>
+    next(),
+}));
+
 vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, getSupabaseAdmin: () => makePgSupabase(pg) };
@@ -123,7 +130,6 @@ const ENV_KEYS = [
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
   "PUBLIC_SITE_URL",
-  "CSRF_SECRET",
 ] as const;
 const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> =
   {};
@@ -137,28 +143,15 @@ async function loadApp(): Promise<express.Express> {
   process.env.SUPABASE_URL = "https://lyceon-ci.supabase.co";
   process.env.SUPABASE_ANON_KEY = "anon-key";
   process.env.PUBLIC_SITE_URL = "https://app.lyceon.test";
-  process.env.CSRF_SECRET = "signup-role-intent-ci-csrf-secret";
   const { default: authRoutes } =
     await import("../../server/routes/supabase-auth-routes");
   const { default: oauthRoutes } =
     await import("../../server/routes/oauth-callback-routes");
-  const { generateToken, doubleCsrfProtection } =
-    await import("../../server/middleware/csrf-double-submit");
   const app = express();
-  app.use(cookieParser());
-  // The REAL double-submit check on the whole harness app, not only inside the auth router's
-  // /signup (which applies it too): every POST below completes the handshake, and csrf-csrf
-  // passes GET (the OAuth callback, the token endpoint) through untouched. Applied here so the
-  // app the cookie parser serves is visibly protected (CodeQL js/missing-token-validation).
-  app.use(doubleCsrfProtection);
   app.use(express.json());
   app.use((req: Request, _res: Response, next: NextFunction) => {
     req.requestId = "req-signup-role-intent";
     next();
-  });
-  app.get("/api/csrf-token", (req: Request, res: Response) => {
-    req.cookies ??= {};
-    res.json({ csrfToken: generateToken(req, res) });
   });
   app.use("/api/auth", authRoutes);
   app.use("/auth", oauthRoutes);
@@ -169,11 +162,8 @@ async function emailSignup(
   app: express.Express,
   body: Record<string, unknown>,
 ): Promise<request.Response> {
-  const agent = request.agent(app);
-  const token = (await agent.get("/api/csrf-token")).body.csrfToken as string;
-  return agent
+  return request(app)
     .post("/api/auth/signup")
-    .set("x-csrf-token", token)
     .send({ password: "Long-enough-pass-1!", displayName: "Pat", ...body });
 }
 
