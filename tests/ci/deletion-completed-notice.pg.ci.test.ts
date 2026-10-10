@@ -164,13 +164,25 @@ async function seedUser(id: string, email: string): Promise<void> {
   );
 }
 
+/**
+ * Due ONE HOUR AGO BY THE CLOCK THE EXECUTOR READS. `executeDueDeletions` selects rows with
+ * `scheduled_hard_delete_at <= new Date()` (server/lib/account-deletion-execute.ts), and this
+ * suite pins `Date` to 17:00 UTC today (pinDaytimeClock). Seeding with the database's real
+ * `now() - 1 hour` made the row "not yet due" whenever CI ran after 18:00 UTC: executedCount 0,
+ * five red tests, green again the next morning. Both timestamps now come from the pinned clock.
+ */
 async function seedDueDeletion(profileId: string): Promise<string> {
+  const now = Date.now();
   const r = await pg.query(
     `INSERT INTO public.account_deletion_requests
        (profile_id, scheduled_hard_delete_at, actor_profile_id, status, requested_at)
-     VALUES ($1, now() - interval '1 hour', $1, 'pending', now() - interval '8 days')
+     VALUES ($1, $2, $1, 'pending', $3)
      RETURNING id`,
-    [profileId],
+    [
+      profileId,
+      new Date(now - 60 * 60 * 1000).toISOString(),
+      new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    ],
   );
   return String(r.rows[0].id);
 }
