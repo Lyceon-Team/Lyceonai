@@ -270,6 +270,8 @@ describe("guardian intent reaches both ways of creating the account", () => {
 
     fireEvent.mouseDown(screen.getByTestId("tab-signin"));
     expect(selectedTab()).toBe("signin");
+    // The line belongs to Sign Up; the intent itself stays for Google on either tab.
+    expect(screen.queryByTestId("signup-role-guardian")).toBeNull();
     fireEvent.click(screen.getByTestId("button-google-signin"));
     await waitFor(() => expect(signInWithGoogle).toHaveBeenCalledTimes(2));
     expect(signInWithGoogle.mock.calls[1]?.[1]).toBe("guardian");

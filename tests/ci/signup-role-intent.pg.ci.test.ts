@@ -310,6 +310,9 @@ describe.skipIf(!PG_AVAILABLE)(
         async (role) => {
           const email = freshEmail("google-unknown");
           const res = await googleSignIn(app, { role }, { email });
+          expect(res.headers.location).toBe(
+            "https://app.lyceon.test/profile/complete",
+          );
           expect(res.status).toBe(302);
           expect(await roleByEmail(email)).toBe("student");
         },
@@ -337,6 +340,80 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(await roleByEmail(email)).toBe("student");
       });
 
+      // The one-time decision refuses on its own facts, even where the write's WHERE would allow
+      // it (still a student, still not onboarded): learning state was written as a student.
+      it("a new, not-onboarded account that already holds learning state is not re-roled", async () => {
+        const email = freshEmail("google-state");
+        const id = randomUUID();
+        await pg.query(
+          `INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ($1, $2, '{}')`,
+          [id, email],
+        );
+        await pg.query(
+          `INSERT INTO public.student_study_profile (student_id, timezone) VALUES ($1, 'America/Chicago')`,
+          [id],
+        );
+        const res = await googleSignIn(
+          app,
+          { role: "guardian" },
+          { email, id },
+        );
+        // Presence first: the sign-in completed (an error redirect would also leave a student).
+        expect(res.headers.location).toBe(
+          "https://app.lyceon.test/profile/complete",
+        );
+        expect(res.status).toBe(302);
+        expect(await roleByEmail(email)).toBe("student");
+      });
+
+      // A completion landing between the decision's read and the write: the facts said "not
+      // onboarded", the row says otherwise by the time it is written. The write's own WHERE holds.
+      it("the write never overwrites a profile completed after the decision read it", async () => {
+        const email = freshEmail("race");
+        const id = randomUUID();
+        await pg.query(
+          `INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ($1, $2, '{}')`,
+          [id, email],
+        );
+        await pg.query(
+          `UPDATE public.profiles SET profile_completed_at = now(), date_of_birth = '2008-01-01'
+           WHERE id = $1`,
+          [id],
+        );
+        const { adoptGuardianSignupIntent } =
+          await import("../../server/lib/role-choice");
+        // The stale read: what the caller saw before the completion landed.
+        await adoptGuardianSignupIntent(
+          // The pg-backed stand-in for the service client (retention-sweep.pg.ci precedent).
+          makePgSupabase(pg) as unknown as Parameters<
+            typeof adoptGuardianSignupIntent
+          >[0],
+          { id, role: "student", profileCompletedAt: null },
+          "support@example.test",
+        );
+        expect(await roleByEmail(email)).toBe("student");
+      });
+
+      it("the same call on a still-unfinished account does make it a guardian", async () => {
+        const email = freshEmail("race-control");
+        const id = randomUUID();
+        await pg.query(
+          `INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ($1, $2, '{}')`,
+          [id, email],
+        );
+        const { adoptGuardianSignupIntent } =
+          await import("../../server/lib/role-choice");
+        await adoptGuardianSignupIntent(
+          // The pg-backed stand-in for the service client (retention-sweep.pg.ci precedent).
+          makePgSupabase(pg) as unknown as Parameters<
+            typeof adoptGuardianSignupIntent
+          >[0],
+          { id, role: "student", profileCompletedAt: null },
+          "support@example.test",
+        );
+        expect(await roleByEmail(email)).toBe("guardian");
+      });
+
       it("a just-created account that is already onboarded is not re-roled either", async () => {
         const email = freshEmail("google-completed");
         const id = randomUUID();
@@ -354,6 +431,7 @@ describe.skipIf(!PG_AVAILABLE)(
           { role: "guardian" },
           { email, id },
         );
+        expect(res.headers.location).toBe("https://app.lyceon.test/dashboard");
         expect(res.status).toBe(302);
         expect(await roleByEmail(email)).toBe("student");
       });

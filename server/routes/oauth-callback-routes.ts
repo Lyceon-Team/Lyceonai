@@ -388,19 +388,22 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       // decision onboarding uses (adoptGuardianSignupIntent). A returning user's sign-in, an email
       // link (OTP) and any other value change nothing: the parameter is an allowlist, and only a
       // brand-new, not-yet-onboarded student with no state can be re-roled.
-      const role =
+      // Routing below is unchanged: an account this can change is not yet onboarded, so it goes
+      // to onboarding whatever its role, and onboarding reads the row again.
+      if (
         createdByThisSignIn &&
         parseSignupRoleIntent(req.query.role) === "guardian"
-          ? await adoptGuardianSignupIntent(
-              admin,
-              {
-                id: profile.id,
-                role: profile.role,
-                profileCompletedAt: profile.profile_completed_at,
-              },
-              SUPPORT_EMAIL,
-            )
-          : profile.role;
+      ) {
+        await adoptGuardianSignupIntent(
+          admin,
+          {
+            id: profile.id,
+            role: profile.role,
+            profileCompletedAt: profile.profile_completed_at,
+          },
+          SUPPORT_EMAIL,
+        );
+      }
 
       const profileNeedsCompletion = !profile.profile_completed_at;
 
@@ -422,7 +425,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       // request anyway; this only saves the student a detour through a refused page.
       const needsGuardianLink =
         !profileNeedsCompletion &&
-        role === "student" &&
+        profile.role === "student" &&
         profile.is_under_13 === true &&
         !(await hasActiveGuardianLink(admin, profile.id));
 
@@ -443,7 +446,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         !profileNeedsCompletion && needsGuardianLink
           ? "/guardian-required"
           : postAuthDestination({
-              role,
+              role: profile.role,
               needsOnboarding: profileNeedsCompletion,
               next: safeNext,
             });
