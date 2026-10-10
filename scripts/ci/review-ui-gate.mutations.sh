@@ -653,16 +653,16 @@ s = s.replace(a, "    i < index ? \"todo\" : i === index ? \"current\" : \"done\
 plant "UI53-B1" "back goes to /dashboard" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx client/src/lib/route-shells.test.tsx" \
   "client/src/lib/route-shells.ts" \
-  'a = "focus(\"Practice\", \"/practice\", false, null)"
+  'a = "\"/practice/session/:sessionId\": focus(\"Practice\", \"/practice\", false, null)"
 assert s.count(a) == 1
-s = s.replace(a, "focus(\"Practice\", \"/dashboard\", false, null)", 1)'
+s = s.replace(a, "\"/practice/session/:sessionId\": focus(\"Practice\", \"/dashboard\", false, null)", 1)'
 
 plant "UI53-TL1" "practice runner put back on the light lock" \
   "client/src/lib/route-shells.test.tsx" \
   "client/src/lib/route-shells.ts" \
-  'a = "focus(\"Practice\", \"/practice\", false, null)"
+  'a = "\"/practice/session/:sessionId\": focus(\"Practice\", \"/practice\", false, null)"
 assert s.count(a) == 1
-s = s.replace(a, "focus(\"Practice\", \"/practice\")", 1)'
+s = s.replace(a, "\"/practice/session/:sessionId\": focus(\"Practice\", \"/practice\")", 1)'
 
 plant "UI53-T1" "LISA handed the choices" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
