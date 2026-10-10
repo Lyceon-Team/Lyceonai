@@ -11,7 +11,8 @@
  * date PK, the question_id UNIQUE, the release guard) is proven on Postgres by
  * scripts/ci/qotd-schema-gates.sql; this file proves the TypeScript decisions on top: the
  * rotation, determinism, idempotent reruns, the banned-phrase skip, the readability rules
- * (owner brief "QOTD — readability filter (Karl's option B)", 2026-10-09), the replacement of
+ * (owner brief "QOTD — readability filter (Karl's option B)", 2026-10-09; the Reading and Writing
+ * passage-plus-question cap, owner brief "QOTD follow-up", 2026-10-10), the replacement of
  * upcoming days, the sweep and the hook.
  */
 import { readFileSync } from "node:fs";
@@ -429,6 +430,18 @@ describe("readability rules", () => {
     long.passage = "w".repeat(301);
     exact.passage = `<p>${"w".repeat(300)}</p>`; // tags are not counted
     expect(await scheduleOne(pool, RW_DAY)).toBe(exact.id);
+  });
+
+  it("a Reading and Writing item with a short passage and a long question (passage + question > 400) is skipped", async () => {
+    const pool = makePool(2);
+    const [longStem, short] = firstDomain(pool, "2026-10-05");
+    if (!longStem || !short) throw new Error("no candidates");
+    // The production shape (2026-10-15): a 137-character passage under an 882-character stem.
+    longStem.passage = "n".repeat(137);
+    longStem.stem = "s".repeat(882);
+    short.passage = "n".repeat(150);
+    short.stem = "s".repeat(249); // 150 + 1 + 249 = 400
+    expect(await scheduleOne(pool, RW_DAY)).toBe(short.id);
   });
 
   it("a short Reading and Writing item and a short Math item are each scheduled", async () => {
