@@ -114,13 +114,56 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
     next(),
 }));
 
+/** The signed-in account for the profile routes (the consent cases), read per request. */
+const session = vi.hoisted(() => ({ userId: null as string | null }));
+
 vi.mock("../../server/middleware/supabase-auth", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, getSupabaseAdmin: () => makePgSupabase(pg) };
+  return {
+    ...actual,
+    getSupabaseAdmin: () => makePgSupabase(pg),
+    // The profile routes' identity, as the real middleware builds it from `profiles`.
+    requireSupabaseAuth: async (
+      req: Request,
+      res: Response,
+      next: NextFunction,
+    ) => {
+      const { rows } = await pg.query<{
+        id: string;
+        email: string;
+        role: string;
+        is_under_13: boolean | null;
+      }>(
+        `SELECT id, email, role::text AS role, is_under_13 FROM public.profiles WHERE id = $1`,
+        [session.userId],
+      );
+      const row = rows[0];
+      if (!row) {
+        res.status(401).json({ error: "no session" });
+        return;
+      }
+      (req as Request & { user?: unknown }).user = {
+        id: row.id,
+        email: row.email,
+        display_name: null,
+        role: row.role,
+        isAdmin: false,
+        isGuardian: row.role === "guardian",
+        is_under_13: row.is_under_13 === true,
+        actor_id: row.id,
+      };
+      next();
+    },
+  };
 });
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   get supabaseServer() {
     return makePgSupabase(pg);
+  },
+  supabaseAdmin: {
+    get from() {
+      return makePgSupabase(pg).from;
+    },
   },
 }));
 
@@ -147,6 +190,12 @@ async function loadApp(): Promise<express.Express> {
     await import("../../server/routes/supabase-auth-routes");
   const { default: oauthRoutes } =
     await import("../../server/routes/oauth-callback-routes");
+  const { default: profileRoutes } =
+    await import("../../server/routes/profile-routes");
+  const { default: guardianRoutes } =
+    await import("../../server/routes/guardian-routes");
+  const { requireSupabaseAuth } =
+    await import("../../server/middleware/supabase-auth");
   const app = express();
   app.use(express.json());
   app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -155,6 +204,8 @@ async function loadApp(): Promise<express.Express> {
   });
   app.use("/api/auth", authRoutes);
   app.use("/auth", oauthRoutes);
+  app.use("/api/profile", requireSupabaseAuth, profileRoutes);
+  app.use("/api/guardian", guardianRoutes);
   return app;
 }
 
@@ -173,6 +224,100 @@ async function roleByEmail(email: string): Promise<string | null> {
     [email],
   );
   return rows[0]?.role ?? null;
+}
+
+/** The acceptance rows sign-up wrote, as `doc_key/actor_type`, sorted. */
+async function consentRows(email: string): Promise<string[]> {
+  const { rows } = await pg.query<{ k: string }>(
+    `SELECT la.doc_key || '/' || la.actor_type AS k
+       FROM public.legal_acceptances la
+       JOIN public.profiles p ON p.id = la.user_id
+      WHERE p.email = $1
+      ORDER BY 1`,
+    [email],
+  );
+  return rows.map((r) => r.k);
+}
+
+async function idByEmail(email: string): Promise<string> {
+  const { rows } = await pg.query<{ id: string }>(
+    `SELECT id FROM public.profiles WHERE email = $1`,
+    [email],
+  );
+  const id = rows[0]?.id;
+  if (!id) throw new Error(`no profile for ${email}`);
+  return id;
+}
+
+/** What the re-consent prompt would ask this account for: the real GET /api/profile. */
+async function outstandingFor(
+  app: express.Express,
+  email: string,
+): Promise<string[]> {
+  session.userId = await idByEmail(email);
+  const res = await request(app).get("/api/profile");
+  expect(res.status).toBe(200);
+  const outstanding = (
+    res.body as { user?: { outstandingLegal?: { docKey: string }[] } }
+  ).user?.outstandingLegal;
+  expect(Array.isArray(outstanding)).toBe(true); // presence before the emptiness checks
+  return (outstanding ?? []).map((d) => d.docKey).sort();
+}
+
+/** Onboarding through the real PATCH /api/profile. */
+async function completeOnboarding(
+  app: express.Express,
+  email: string,
+  role: "student" | "guardian",
+): Promise<void> {
+  session.userId = await idByEmail(email);
+  const res = await request(app)
+    .patch("/api/profile")
+    .send({
+      displayName: "Pat",
+      role,
+      dateOfBirth: role === "guardian" ? "1985-05-05" : "2010-05-05",
+    });
+  expect(res.status).toBe(200);
+  expect(await roleByEmail(email)).toBe(role);
+}
+
+async function freshStudent(): Promise<string> {
+  const studentId = randomUUID();
+  await pg.query(
+    `INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ($1, $2, '{}')`,
+    [studentId, freshEmail("linked-student")],
+  );
+  return studentId;
+}
+
+/**
+ * The one way a link is created: the guardian redeems the student's code through the REAL
+ * POST /api/guardian/link/redeem, whose body must carry the Parent / Guardian Terms checkbox
+ * (`acceptParentGuardianTerms: true`, `redeemLinkCodeRequestSchema`).
+ */
+async function linkByRedeem(
+  app: express.Express,
+  guardianEmail: string,
+): Promise<void> {
+  const { issueStudentLinkCode } =
+    await import("../../server/lib/student-link-code");
+  const issued = await issueStudentLinkCode(await freshStudent());
+  expect(issued).not.toBeNull();
+  session.userId = await idByEmail(guardianEmail);
+  const res = await request(app)
+    .post("/api/guardian/link/redeem")
+    .send({ code: issued?.code, acceptParentGuardianTerms: true });
+  expect(res.status).toBe(201);
+}
+
+/** A link written straight into the table, bypassing redeem (the harness's control only). */
+async function linkDirectly(guardianEmail: string): Promise<void> {
+  await pg.query(
+    `INSERT INTO public.guardian_links (guardian_profile_id, student_profile_id, status, initiated_by)
+     VALUES ($1, $2, 'active', 'guardian')`,
+    [await idByEmail(guardianEmail), await freshStudent()],
+  );
 }
 
 let seq = 0;
@@ -271,6 +416,74 @@ describe.skipIf(!PG_AVAILABLE)(
           [email],
         );
         expect(rows).toHaveLength(0);
+      });
+    });
+
+    // @spec [owner answers on #1180 (Karl, 2026-10-10): guardians are not re-prompted; a switch
+    // to Student is handled by the existing re-consent flow; owner choice 2026-10-10: no code
+    // change, prove both paths] | Every account owes the Student Terms and Privacy Policy, and
+    // a guardian owes the Parent / Guardian Terms only once linked (SCL-084), which redeem's own
+    // clickwrap records (SCL-222, AS-1b, Doc 10 §9.15). The rows sign-up writes, then the REAL
+    // prompt set (GET /api/profile's outstandingLegal) after onboarding and after linking.
+    describe("consent: no re-prompt on either path", () => {
+      // Its own app instance, so its own sign-up rate limiter (10 per window): the email cases
+      // above spend the first one.
+      let consentApp: express.Express;
+      beforeAll(async () => {
+        consentApp = await loadApp();
+      });
+      const EVERY_ACCOUNT = ["privacy_policy/student", "student_terms/student"];
+
+      it("a guardian sign-up records the two documents every account owes, by email and by Google", async () => {
+        const byEmail = freshEmail("consent-email-guardian");
+        expect(
+          (await emailSignup(consentApp, { email: byEmail, role: "guardian" }))
+            .status,
+        ).toBe(201);
+        expect(await consentRows(byEmail)).toEqual(EVERY_ACCOUNT);
+        const byGoogle = freshEmail("consent-google-guardian");
+        await googleSignIn(
+          consentApp,
+          { role: "guardian" },
+          { email: byGoogle },
+        );
+        expect(await roleByEmail(byGoogle)).toBe("guardian");
+        expect(await consentRows(byGoogle)).toEqual(EVERY_ACCOUNT);
+      });
+
+      it("a guardian who stays a guardian is never prompted: not after onboarding, not after linking a student", async () => {
+        const email = freshEmail("consent-stays-guardian");
+        expect(
+          (await emailSignup(consentApp, { email, role: "guardian" })).status,
+        ).toBe(201);
+        await completeOnboarding(consentApp, email, "guardian");
+        expect(await outstandingFor(consentApp, email)).toEqual([]);
+        await linkByRedeem(consentApp, email);
+        expect(await consentRows(email)).toEqual(
+          [...EVERY_ACCOUNT, "parent_guardian_terms/parent"].sort(),
+        );
+        expect(await outstandingFor(consentApp, email)).toEqual([]);
+      });
+
+      it("the prompt is live in this harness: a guardian linked without redeem's clickwrap is asked for the Parent Terms", async () => {
+        const email = freshEmail("consent-control");
+        expect(
+          (await emailSignup(consentApp, { email, role: "guardian" })).status,
+        ).toBe(201);
+        await completeOnboarding(consentApp, email, "guardian");
+        await linkDirectly(email);
+        expect(await outstandingFor(consentApp, email)).toEqual([
+          "parent_guardian_terms",
+        ]);
+      });
+
+      it("a guardian-intent account that switches to Student at onboarding is not prompted (the Student Terms are already held)", async () => {
+        const email = freshEmail("consent-switch-student");
+        expect(
+          (await emailSignup(consentApp, { email, role: "guardian" })).status,
+        ).toBe(201);
+        await completeOnboarding(consentApp, email, "student");
+        expect(await outstandingFor(consentApp, email)).toEqual([]);
       });
     });
 
