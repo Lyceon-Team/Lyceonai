@@ -134,6 +134,40 @@ export function evaluateCountryEligibility(
     : { verdict: "ineligible", country: normalised };
 }
 
+/** The country a grant-time check assumes when Stripe provides none (owner ruling 2026-10-10). */
+export const DEFAULT_BILLING_COUNTRY = "US";
+
+/** Where the country a grant was decided on came from. Never carries the country itself. */
+export type BillingCountrySource = "provided" | "default_us";
+
+/**
+ * The billing country a GRANT-TIME check evaluates: Stripe's when it gave one, else US.
+ *
+ * @spec [INV-03-08 (Doc 03 §2156); owner ruling (Karl) 2026-10-10: "when a completed Checkout
+ *       session has no billing country, default it to US. A country Stripe does provide always
+ *       wins." Ruled alongside `payment_method_collection: "if_required"` (no card, and so no
+ *       address, on a $0 FOUNDING50 checkout) and in place of `billing_address_collection:
+ *       "required"` (no extra personal information at checkout)] | @implemented [2026-10-10]
+ *
+ * plain English: a present country always wins and is returned as `provided` (trimmed; the
+ * verdict still comes from `evaluateCountryEligibility`, so a non-Tier-1 country is denied
+ * exactly as before). An absent or blank one becomes `US` with source `default_us`, so the two
+ * can be told apart in logs and the default is never stored as if somebody had given it.
+ *
+ * WHAT THIS DOES NOT DEFAULT. An unseeded Tier-1 list still answers `unknown` and still denies:
+ * the default is for a missing COUNTRY, never for a missing CONFIGURATION. Session creation
+ * (`blocksCheckout`) and `customer.updated` egress do not use it either: neither grants.
+ */
+export function resolveBillingCountry(country: string | null | undefined): {
+  country: string;
+  source: BillingCountrySource;
+} {
+  const given = country?.trim();
+  return given
+    ? { country: given, source: "provided" }
+    : { country: DEFAULT_BILLING_COUNTRY, source: "default_us" };
+}
+
 /**
  * Should this eligibility verdict BLOCK a purchase at session creation?
  *
@@ -148,12 +182,13 @@ export function blocksCheckout(e: CountryEligibility): boolean {
 /**
  * Should this eligibility verdict DENY entitlement after Checkout completes?
  *
- * By this point the customer HAS supplied a billing address, so `unknown` here
- * means something different from `unknown` at session creation: it means the
- * completed session carried no country, or the Tier-1 list is unseeded. Both
- * are configuration or integration faults rather than facts about the user, and
- * both deny — after payment, refusing to decide is itself a decision, and the
- * safe one is not to grant access we cannot justify.
+ * `unknown` denies. Since the owner ruling of 2026-10-10 the grant-time callers pass the
+ * country through `resolveBillingCountry` first, so a session with NO country is evaluated as
+ * `US` rather than arriving here as `unknown`; what still reaches `unknown` is an unseeded
+ * Tier-1 list (and a deleted Customer, which carries no address at all). Those are
+ * configuration or integration faults rather than facts about the user, and they deny: after
+ * payment, refusing to decide is itself a decision, and the safe one is not to grant access we
+ * cannot justify.
  */
 export function deniesEntitlement(e: CountryEligibility): boolean {
   return e.verdict !== "eligible";
