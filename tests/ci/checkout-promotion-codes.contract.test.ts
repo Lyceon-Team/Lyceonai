@@ -67,6 +67,12 @@ const entitlementMocks = vi.hoisted(() => ({
 
 const stripeMocks = vi.hoisted(() => ({
   checkoutCreate: vi.fn(async () => ({ id: "cs_test_1" })),
+  promotionCodesList: vi.fn(
+    async (): Promise<{ object: "list"; data: unknown[] }> => ({
+      object: "list",
+      data: [],
+    }),
+  ),
   customersCreate: vi.fn(async () => ({ id: "cus_test" })),
   customersRetrieve: vi.fn(async () => ({
     id: "cus_test",
@@ -140,6 +146,7 @@ vi.mock("../../server/lib/stripe/client", () => ({
     },
     subscriptions: { list: stripeMocks.subscriptionsList },
     checkout: { sessions: { create: stripeMocks.checkoutCreate } },
+    promotionCodes: { list: stripeMocks.promotionCodesList },
     prices: { retrieve: vi.fn() },
     billingPortal: { sessions: { create: vi.fn() } },
   }),
@@ -318,5 +325,152 @@ describe("allow_promotion_codes at Checkout", () => {
       /const sessionParams: Stripe\.Checkout\.SessionCreateParams = \{/g,
     );
     expect(paramsLiterals).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// /upgrade?promo=<CODE> (owner brief 2026-10-10): look the code up by name, pre-apply it as
+// `discounts`, fall back silently to the code field.
+// ---------------------------------------------------------------------------------------------
+
+const NOW_S = Math.floor(Date.now() / 1000);
+function promotionCode(over: Record<string, unknown> = {}) {
+  return {
+    id: "promo_founding50",
+    object: "promotion_code",
+    code: "FOUNDING50",
+    active: true,
+    expires_at: null,
+    max_redemptions: null,
+    times_redeemed: 0,
+    ...over,
+  };
+}
+
+describe("a promo link pre-applies a usable code, and falls back to the code field otherwise", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authState.currentUser = {
+      id: STUDENT_A,
+      role: "student",
+      email: "student@test.com",
+    };
+    accountMocks.getProfileStripeCustomerId.mockResolvedValue("cus_test");
+    accountMocks.getAllGuardianStudentLinks.mockResolvedValue([]);
+    entitlementMocks.evaluateEntitlementActive.mockResolvedValue({
+      ok: true,
+      active: false,
+    });
+    stripeMocks.checkoutCreate.mockResolvedValue({ id: "cs_test_1" });
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      object: "list",
+      data: [],
+      has_more: false,
+    });
+    stripeMocks.promotionCodesList.mockResolvedValue({
+      object: "list",
+      data: [],
+    });
+  });
+
+  async function checkoutWith(body: Record<string, unknown>) {
+    return request(await billingApp())
+      .post("/api/billing/checkout")
+      .send(body);
+  }
+
+  it("a valid code is looked up by name and applied as discounts, without the code field", async () => {
+    stripeMocks.promotionCodesList.mockResolvedValue({
+      object: "list",
+      data: [promotionCode()],
+    });
+    const res = await checkoutWith({ plan: "monthly", promo: "FOUNDING50" });
+    expect(res.status).toBe(200);
+
+    expect(stripeMocks.promotionCodesList).toHaveBeenCalledWith({
+      code: "FOUNDING50",
+      active: true,
+      limit: 1,
+    });
+    const params = createdParams();
+    expect(params.client_reference_id).toBe(STUDENT_A);
+    expect(params.discounts).toEqual([{ promotion_code: "promo_founding50" }]);
+    // Stripe rejects the pair, so the field is OMITTED, not set false.
+    expect("allow_promotion_codes" in params).toBe(false);
+    // Still no card when nothing is due.
+    expect(params.payment_method_collection).toBe("if_required");
+  });
+
+  it.each([
+    ["unknown", []],
+    ["expired", [promotionCode({ expires_at: NOW_S - 60 })]],
+    ["used up", [promotionCode({ max_redemptions: 50, times_redeemed: 50 })]],
+    ["inactive", [promotionCode({ active: false })]],
+  ])(
+    "an %s code falls back silently to the normal checkout with the code field",
+    async (_label, data) => {
+      stripeMocks.promotionCodesList.mockResolvedValue({
+        object: "list",
+        data,
+      });
+      const res = await checkoutWith({ plan: "monthly", promo: "FOUNDING50" });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ kind: "checkout_session" });
+      const params = createdParams();
+      expect(params.allow_promotion_codes).toBe(true);
+      expect("discounts" in params).toBe(false);
+    },
+  );
+
+  it("a failed lookup also falls back, rather than failing the purchase", async () => {
+    stripeMocks.promotionCodesList.mockRejectedValue(new Error("stripe down"));
+    const res = await checkoutWith({ plan: "monthly", promo: "FOUNDING50" });
+    expect(res.status).toBe(200);
+    expect(createdParams().allow_promotion_codes).toBe(true);
+  });
+
+  it("a code Stripe refuses at creation is retried once with the code field, under its own key", async () => {
+    stripeMocks.promotionCodesList.mockResolvedValue({
+      object: "list",
+      data: [promotionCode()],
+    });
+    stripeMocks.checkoutCreate
+      .mockRejectedValueOnce(
+        Object.assign(new Error("This promotion code cannot be redeemed"), {
+          type: "StripeInvalidRequestError",
+          rawType: "invalid_request_error",
+        }),
+      )
+      .mockResolvedValueOnce({ id: "cs_test_retry" });
+    const res = await checkoutWith({ plan: "monthly", promo: "FOUNDING50" });
+    expect(res.status).toBe(200);
+
+    expect(stripeMocks.checkoutCreate).toHaveBeenCalledTimes(2);
+    const calls = stripeMocks.checkoutCreate.mock.calls as unknown as [
+      Stripe.Checkout.SessionCreateParams,
+      { idempotencyKey: string },
+    ][];
+    const [first, second] = calls;
+    expect(first?.[0].discounts).toEqual([
+      { promotion_code: "promo_founding50" },
+    ]);
+    expect("discounts" in (second?.[0] ?? {})).toBe(false);
+    expect(second?.[0].allow_promotion_codes).toBe(true);
+    // Different requests, different keys: the retry is not read as "already in flight".
+    expect(first?.[1].idempotencyKey).toMatch(/:promo_founding50$/);
+    expect(second?.[1].idempotencyKey).not.toBe(first?.[1].idempotencyKey);
+  });
+
+  it("no promo means no lookup and the field exactly as before", async () => {
+    const res = await checkoutWith({ plan: "monthly" });
+    expect(res.status).toBe(200);
+    expect(stripeMocks.promotionCodesList).not.toHaveBeenCalled();
+    expect(createdParams().allow_promotion_codes).toBe(true);
+  });
+
+  it("a code that is not code-shaped is refused by the schema (the page never sends one)", async () => {
+    const res = await checkoutWith({ plan: "monthly", promo: "50% OFF!" });
+    expect(res.status).toBe(400);
+    expect(stripeMocks.checkoutCreate).not.toHaveBeenCalled();
   });
 });
