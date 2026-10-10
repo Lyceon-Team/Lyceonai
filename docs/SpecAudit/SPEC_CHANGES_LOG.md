@@ -45,9 +45,18 @@ record ways of working. Nothing filed before this date is reclassified.
 
 ## STATUS VALUES
 
-Owner ruling 2026-09-16. Three values, and no others:
+Owner ruling 2026-09-16; OPEN added by owner ruling 2026-10-10 (Karl: "add OPEN to the
+register's STATUS VALUES section so it matches the precedent", the precedent being SCL-200..218
+on 2026-10-07 and SCL-222 on 2026-10-10); REJECTED added by owner ruling 2026-10-10 (Karl:
+"Add REJECTED as a fifth value ... meaning: the owner ruled the change out"). Five values, and no
+others:
 
-  - PROPOSED — the spec should change; it has not been changed yet.
+  - PROPOSED — the spec should change; it has not been changed yet, and the
+                owner has not ruled on it.
+  - OPEN      — the owner has ruled the change in; it has NOT landed in
+                docs/Spec/ yet. The entry carries a line "Status: OPEN. Ruled by
+                Karl, <date> (<source>). Owed into the spec; becomes APPLIED when
+                folded into <document>." Only the owner sets OPEN.
   - RULING    — a decision was recorded and NO amendment is needed. The
                 outcome is "the document already says the right thing", or
                 "this is not a spec matter after all". SCL-060 is the example.
@@ -55,15 +64,20 @@ Owner ruling 2026-09-16. Three values, and no others:
                 The entry keeps its Change/WAS/IS lines as written and records
                 what landed and where; an entry is only APPLIED once the text
                 is actually in the document, not once it is authorised.
+  - REJECTED  — the owner ruled the change OUT: the spec will not change as
+                proposed. Unlike RULING (no amendment needed because the
+                document is already right, or it is not a spec matter), the
+                proposal was considered and declined. Only the owner sets
+                REJECTED; the entry stays in the register as the record.
 
 APPLIED is about the AMENDMENT, not about bookkeeping around it. An entry whose
 spec text has landed is APPLIED even if something adjacent is still owed — a
 change record in the document's own §14, a follow-on decision — provided the
 entry says plainly what is outstanding. An entry whose spec text has NOT landed
-is PROPOSED, however firmly it has been authorised: authorisation is not
-application.
+is PROPOSED, or OPEN once the owner has ruled it in, however firmly it has been
+authorised: authorisation is not application.
 
-Do not invent a fourth value; if none of these three fits, say so and ask the
+Do not invent a sixth value; if none of these five fits, say so and ask the
 owner rather than coining one.
 
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
@@ -111,7 +125,7 @@ This rule overrides any instruction to the contrary.
 
 - One entry per delta. Newest at top.
 - Each entry: ID, date, status, the change, the reason, the spec doc(s) it touches, and the build artifact (PR / migration) if any.
-- **Status values:** `PROPOSED` (agent-appended, awaiting owner validation) · `OPEN` (owner-accepted, owed into the spec) · `APPLIED` (folded into the locked spec doc) · `SUPERSEDED` (replaced by a later entry) · `REJECTED` (owner declined an agent proposal). Agents may only write `PROPOSED`; the owner sets all others.
+- **Status values** (exactly the five in STATUS VALUES above): `PROPOSED` (the spec should change; not yet changed, and the owner has not ruled) · `RULING` (a decision recorded; no amendment needed) · `OPEN` (the owner has ruled the change in; not yet in docs/Spec/) · `APPLIED` (the amendment has been made in docs/Spec/) · `REJECTED` (the owner ruled the change out). Agents may only write `PROPOSED`; the owner sets all others.
 - Entry IDs: `SCL-194` (sequential).
 
 ---
@@ -4886,7 +4900,8 @@ Disclosure: this entry. Approved by Karl (the approver; there is no external cou
 Owner action: Karl merges #1138 to `cleanup`, then `main`. Before the first marketing email is sent, the unsubscribe link §9.2 promises must exist (not built today).
 Build artifact: `legal/privacy-policy/v6/{en.md,meta.yml}`; `manifest.json` `current: "v6"`; `server/lib/legal-registry.generated.ts`; `infra/retention-policy-registry.yaml` (citations to v6; RPOL-ANALYTICS-03 is now PostHog events; RPOL-ANALYTICS-05 session recordings, 30 days); `tests/ci/consent-outstanding-set.contract.test.ts` (5.0 and 4.0 acceptances are re-asked for v6; red with the manifest on v5); `tests/ci/retention-policy-registry.contract.test.ts` F1.9 bounds §6 at the next top-level heading; `tests/ci/retention-policy-publication.contract.test.ts` pins the published body; mutation M59 re-pointed; plan ruling R34 in `docs/plans/seo/seo-marketing-vertical.md`.
 
-SCL-222 | 2026-10-09 | Amends Doc 00 V6 item 20 ("Clickwrap acceptance with parent/minor linkage … ToS … (ST-LC-01 …)") for the Student Terms of Use and the Privacy Policy: the Terms checkbox at sign-in is replaced by the standard sign-in notice, "By continuing, you agree to Lyceon's Terms of Use and Privacy Policy" (linked, adjacent to the buttons), and acceptance is recorded at account creation. Parent/Guardian Terms keep their explicit clickwrap at link time (Doc 10 §9.15) | PROPOSED
+SCL-222 | 2026-10-09 | Amends Doc 00 V6 item 20 ("Clickwrap acceptance with parent/minor linkage … ToS … (ST-LC-01 …)") for the Student Terms of Use and the Privacy Policy: the Terms checkbox at sign-in is replaced by the standard sign-in notice, "By continuing, you agree to Lyceon's Terms of Use and Privacy Policy" (linked, adjacent to the buttons), and acceptance is recorded at account creation. Parent/Guardian Terms keep their explicit clickwrap at link time (Doc 10 §9.15) | OPEN
+Status: OPEN. Ruled by Karl, 2026-10-10 (owner brief: "Rule SCL-222: Karl ruled it 2026-10-10. Set it to OPEN"). Owed into the spec; becomes APPLIED when folded into Doc 00 V6 item 20.
 Id: `SCL-222` derived at the moment of use, 2026-10-09, after `git fetch --all --prune`, by the register scan across every remote ref: the highest allocated anywhere is `SCL-221`. Open PRs' head branches are in this repository and covered by the fetch. One entry allocated.
 Owner ruling recorded: Karl, 2026-10-09 — "Spec change: approved. Draft the SCL replacing the Terms clickwrap checkbox (Doc 00 item 20, ST-LC-01) with the standard sign-in notice ('By continuing, you agree to Lyceon's Terms of Use and Privacy Policy,' linked, adjacent to the buttons). Acceptance is recorded at account creation." And: "Returning Google users: sign-in records nothing; only account creation does."
 WAS (Doc 00 V6:401, verbatim): "| 20 | Eng — guardian/minor | Clickwrap acceptance with parent/minor linkage (Appendix-A patterns) | ToS / Parent Terms / Honor Code / CG (ST-LC-01, PG-LC-01, HC-LC-02, CG-LC-04) |". As built: two unticked checkboxes on `/login` (`checkbox-signup-legal`, `checkbox-google-legal`) gated Sign Up and Continue with Google (Google for every user, returning ones included); `POST /api/auth/signup` required `legalConsent.studentTermsAccepted/privacyPolicyAccepted: true` (400 otherwise); `/auth/callback` recorded acceptance on every Google sign-in that carried `consentSource`.
