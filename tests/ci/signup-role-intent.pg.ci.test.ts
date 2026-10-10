@@ -142,12 +142,15 @@ async function loadApp(): Promise<express.Express> {
     await import("../../server/routes/supabase-auth-routes");
   const { default: oauthRoutes } =
     await import("../../server/routes/oauth-callback-routes");
-  const { generateToken } =
+  const { generateToken, doubleCsrfProtection } =
     await import("../../server/middleware/csrf-double-submit");
   const app = express();
-  // codeql[js/missing-token-validation]: CSRF is enforced per-route inside the auth router
-  // (doubleCsrfProtection on /signup); every POST below completes the real double-submit.
   app.use(cookieParser());
+  // The REAL double-submit check on the whole harness app, not only inside the auth router's
+  // /signup (which applies it too): every POST below completes the handshake, and csrf-csrf
+  // passes GET (the OAuth callback, the token endpoint) through untouched. Applied here so the
+  // app the cookie parser serves is visibly protected (CodeQL js/missing-token-validation).
+  app.use(doubleCsrfProtection);
   app.use(express.json());
   app.use((req: Request, _res: Response, next: NextFunction) => {
     req.requestId = "req-signup-role-intent";
