@@ -165,24 +165,25 @@ async function seedUser(id: string, email: string): Promise<void> {
 }
 
 /**
- * Due ONE HOUR AGO BY THE CLOCK THE EXECUTOR READS. `executeDueDeletions` selects rows with
+ * Due ONE HOUR AGO BY BOTH CLOCKS THE DELETION READS. `executeDueDeletions` selects rows with
  * `scheduled_hard_delete_at <= new Date()` (server/lib/account-deletion-execute.ts), and this
- * suite pins `Date` to 17:00 UTC today (pinDaytimeClock). Seeding with the database's real
- * `now() - 1 hour` made the row "not yet due" whenever CI ran after 18:00 UTC: executedCount 0,
- * five red tests, green again the next morning. Both timestamps now come from the pinned clock.
+ * suite pins `Date` to 17:00 UTC today (pinDaytimeClock). The SQL it then calls,
+ * `preclear_account_deletion_links`, re-checks `scheduled_hard_delete_at <= now()` against the
+ * database's REAL clock. Each clock alone was a time-of-day failure:
+ *   - the database's `now() - 1 hour` was "not yet due" to the pinned JS clock after 18:00 UTC;
+ *   - the pinned clock's 16:00 was "not yet due" to the database before 16:00 UTC
+ *     (`PRECLEAR_NOT_DUE`, executedCount 0, failedCount 1; CI on #1190 at 05:08 UTC).
+ * So the row is due an hour before the EARLIER of the two, which satisfies both at any hour.
  */
 async function seedDueDeletion(profileId: string): Promise<string> {
-  const now = Date.now();
+  const pinnedNow = new Date(Date.now()).toISOString();
   const r = await pg.query(
     `INSERT INTO public.account_deletion_requests
        (profile_id, scheduled_hard_delete_at, actor_profile_id, status, requested_at)
-     VALUES ($1, $2, $1, 'pending', $3)
+     VALUES ($1, LEAST(now(), $2::timestamptz) - interval '1 hour', $1, 'pending',
+             LEAST(now(), $2::timestamptz) - interval '8 days')
      RETURNING id`,
-    [
-      profileId,
-      new Date(now - 60 * 60 * 1000).toISOString(),
-      new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
-    ],
+    [profileId, pinnedNow],
   );
   return String(r.rows[0].id);
 }
