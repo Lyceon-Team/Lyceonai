@@ -14,9 +14,11 @@
 # moves to `social`; it reaches production when Karl merges `social` into `main`.
 #
 # Setup (Karl, once): Settings → Secrets and variables → Actions → Variables → New repository
-# variable CONTENT_APPROVER_LOGIN = your GitHub login. If `social` is protected against pushes, allow
-# GitHub Actions to push to it (or the stamp commit fails and the run is red: nothing is approved
-# without the stamp, so nothing publishes). See docs/runbooks/content-ops.md.
+# variable CONTENT_APPROVER_LOGIN = your GitHub login. The stamp is a direct push with this
+# workflow's token, which works because the `social` ruleset blocks only deletion and force pushes
+# (Karl, 2026-10-11). If a rule ever blocks direct pushes to `social` (e.g. a required check), this
+# push fails and nothing is approved: switch to the GitHub App design in
+# docs/runbooks/content-ops.md §7 first.
 name: Content batch approval
 
 on:

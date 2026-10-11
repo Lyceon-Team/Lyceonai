@@ -54,13 +54,16 @@ verdicts, the PR link): `.github/workflows/content-batch-notify.yml`, set up in
    `CONTENT_APPROVER_LOGIN` = your GitHub login. Only a merge by that login stamps an approval.
    Note: pull requests Claude opens from these sessions are authored under the same GitHub
    account (`kingk237`). The approval rests on who **merges**, and the routines never merge.
-2. **Let the stamp reach `social`.** If `social` is protected against direct pushes, allow GitHub
-   Actions to push to it (branch protection or ruleset bypass for `github-actions[bot]`).
-   Otherwise the stamp commit fails, the **Content batch approval** run is red, and nothing in
-   that batch publishes until it is fixed and re-run.
-3. **Required check.** Make **Content batch checks / review-record** a required status check on
-   `social`. It blocks a ready batch without Codex's verdicts or without a Claude response to every
-   REVISE, and any hand edit of `approvals.json`.
+2. **The `social` ruleset: deletion and force pushes only.** Ruled by Karl, 2026-10-11 ("keep it
+   simple"). The ruleset blocks deleting `social` and force-pushing to it, and nothing else, so
+   the **Content batch approval** workflow pushes the stamp with its own token and needs no
+   bypass. If a rule is ever added that blocks direct pushes, the stamp stops landing; see §7.
+3. **`review-record` is not a required check.** Ruled by Karl, 2026-10-11. It runs on every batch
+   and plan PR into `social` and shows red or green there. It goes red on a ready batch that is
+   missing Codex's verdicts or a Claude response to a REVISE, and on any hand edit of
+   `approvals.json`. Karl reads the review record and merges only when it is green. GitHub does
+   not block a red merge; Karl's reading of the record is the gate. Making it required needs the
+   upgrade in §7 first.
 4. **Slack.** `SLACK_BOT_TOKEN` (secret) and `SOCIAL_SLACK_CHANNEL_ID` (variable, renamed from
    `QOTD_SLACK_CHANNEL_ID`): `docs/runbooks/slack.md`.
 5. **Vercel.** The publish cron uses the existing `CRON_SECRET` and `VERCEL_DEPLOY_HOOK_URL`
@@ -203,7 +206,7 @@ and §8.7). You audit; you never edit content.
 
 | What                                      | What happens                                                                   | What to do                                                                                                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A gate fails on a batch PR (CI red)       | The PR cannot be merged once the check is required                             | The revise routine fixes it; or ask Claude in the PR                                                                                                                 |
+| A gate fails on a batch PR (CI red)       | The PR shows red; GitHub still allows the merge, so Karl does not merge it     | The revise routine fixes it; or ask Claude in the PR                                                                                                                 |
 | Codex did not audit by Friday             | The revise routine records it and does not mark the PR ready                   | Run the Codex task by hand, then re-run the revise routine                                                                                                           |
 | Karl does not merge by Sunday             | Nothing publishes that week; the posts stay withheld                           | Merge later. The `social` → `main` merge deploys production, and that build publishes every approved post whose date has passed; the rest go live on their own dates |
 | The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Fix the push permission (§2.2) and re-run the **Content batch approval** run                                                                                         |
@@ -220,3 +223,59 @@ curl -s https://lyceon.ai/sitemap.xml | grep -c '/blog/<slug><'   # 1
 ```
 
 And the day before, the same URL answers 404 and the sitemap has no entry.
+
+## 7. Upgrade path: if `social` ever needs required checks
+
+Not in use (Karl, 2026-10-11: `review-record` stays a visible, not required, check). Read this only
+if `social` gets a rule that blocks direct pushes, such as a required status check.
+
+**The problem it solves.** The approval stamp is a direct push to `social` by the workflow's own
+token (`GITHUB_TOKEN`). A ruleset cannot list that token as a bypass actor. So once `social`
+requires a check, the stamp's push is refused, the **Content batch approval** run goes red, and no
+batch is approved.
+
+**The design (GitHub's standard pattern for a workflow that writes to a protected branch).** The
+stamp is pushed by a small GitHub App, which a ruleset can bypass-list. Karl's merge stays the
+approval, and the stamp's content and rules don't change:
+
+- the merger must be `CONTENT_APPROVER_LOGIN`;
+- the base must be `social`;
+- the first stamp wins;
+- it records `mergedBy`, `mergeSha` and the PR number.
+
+1. **Trigger.** The job runs on **push to `social`**, which is the merge itself, not on
+   `pull_request: closed`.
+2. **Environment.** It runs in an Environment, `content-approval`, whose deployment branch rule
+   admits only `social`. The App's private key lives only there, so no pull request, other branch
+   or other workflow can read it. A pull-request-triggered job runs on `refs/pull/N/merge`, which
+   that rule refuses.
+3. **Merge record.** The job reads the merge from GitHub's own record (`commits/{sha}/pulls`, then
+   `pulls/{n}`), never from the pull request's contents. It counts only when the PR's
+   `merge_commit_sha` is exactly the pushed commit. The App's own stamp commit has no PR behind
+   it, so it stamps nothing and cannot loop.
+4. **Token.** `actions/create-github-app-token` mints a one-hour token, limited to this repository
+   with Contents: read and write. Checkout and push use it. The workflow's own token stays
+   read-only.
+
+**Where it is.** The full implementation, with tests and planted defects, is on the branch
+`claude/content-approval-app-token` (commit 43760e42), from the closed PR #1195:
+`.github/workflows/content-batch-approval.yml`, `mergeEventFromPull` in
+`scripts/content/stamp-approval.ts`, and its tests.
+
+**Turning it on.**
+
+1. Create the GitHub App `lyceon-content-approval`: Contents read and write only, webhook off,
+   installed on `Lyceonai` only.
+2. Create the Environment `content-approval`, with deployment branches limited to `social`. Give it
+   the secret `CONTENT_APP_PRIVATE_KEY` (the `.pem` file) and the variable `CONTENT_APP_ID`.
+3. Add the App to the `social` ruleset's bypass list (mode: Always).
+4. Merge that branch's change. Bring it up to date with `seo` first.
+5. Only then add the required check.
+
+**Rejected alternatives.**
+
+- **Approval read from the merge record at build time.** Every production deploy would depend on
+  the GitHub API, the record would leave the repo, and Vercel's shallow clone makes git history
+  unreliable.
+- **A stamp written in the PR before merge.** That records an approval before it happens, and a
+  file in the PR can be edited by anyone who pushes to the branch.
