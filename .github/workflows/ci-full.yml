@@ -12,6 +12,9 @@
 # full-tier run already covered. A tree that already passed is never re-run (tree marker).
 # Cost: integration branches keep a pull request open into `main` and every merge into the branch
 # updates it, so this runs on each of those updates; `cancel-in-progress` keeps one run per PR.
+# WALL TIME (Karl, 2026-10-11): the two long jobs are split so neither is the critical path —
+# the review UI gate across `review-ui-gate-shard` jobs (totals checked by `review-ui-gate`) and
+# `pg-mutations` across a matrix of groups. Same steps, same plants, same per-plant proof.
 #
 # THE REQUIRED CHECK is the last job, `ci-full` (scripts/ci/ci-full-verdict.sh). On a pull request
 # into `main` it is green only when, on this exact tree, the full tier ran and passed (this run,
@@ -29,9 +32,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A new head (opened, synchronize, reopened) cancels the run still testing the old one. A label
+# event never does (CI wall-time brief, Karl 2026-10-11): it waits behind the run in progress, then
+# finds that tree already passed (tree marker) and goes green in about a minute. Before this, adding
+# `ci:full` to a pull request into `main` (where it is implied) restarted a full tier that had been
+# running for up to 17 minutes on the same head.
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('ci-full-pr-{0}', github.event.pull_request.number) || format('ci-full-run-{0}', github.run_id) }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'pull_request' || github.event.action != 'labeled' }}
 
 env:
   CI: true
@@ -62,13 +70,25 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: bash scripts/ci/ci-full-scope.sh
 
-  review-ui-gate:
+  # The review UI mutation gate, every plant, split across REVIEW_UI_GATE_JOBS jobs of 4 worktrees
+  # (CI wall-time brief, Karl 2026-10-11: ~21 minutes in one job was the full tier's critical path).
+  # Same plants, same proof per plant: each job runs its global shards through
+  # review-ui-gate.parallel.sh, which applies each plant, requires its named test red and every
+  # worktree byte-identical to HEAD. The `review-ui-gate` job below checks the totals across jobs.
+  review-ui-gate-shard:
     runs-on: ubuntu-latest
     needs: scope
     if: ${{ needs.scope.outputs.run == 'true' }}
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [0, 1, 2, 3, 4, 5]
+    env:
+      REVIEW_UI_GATE_JOBS: "6"
+      REVIEW_UI_GATE_SHARDS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,10 +107,47 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Every plant (owner decision 2026-10-07, CI audit item 3). Sharded across the runner's
-      # cores; every plant must turn its U-test red once and every worktree end byte-identical.
-      - name: Review UI mutation gate — every plant (proves U1-U9 are load-bearing)
+      - name: Review UI mutation gate — this job's shards of every plant (proves U1-U9 are load-bearing)
+        env:
+          REVIEW_UI_GATE_JOB: ${{ matrix.job }}/${{ env.REVIEW_UI_GATE_JOBS }}
+          REVIEW_UI_GATE_SUMMARY: ${{ runner.temp }}/review-ui-gate-summary-${{ matrix.job }}.txt
         run: bash scripts/ci/review-ui-gate.parallel.sh
+
+      - name: Upload this job's shard summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-ui-gate-summary-${{ matrix.job }}
+          path: ${{ runner.temp }}/review-ui-gate-summary-${{ matrix.job }}.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  # Every plant ran exactly once and went red, across all the shard jobs: each global shard
+  # reported once, the same plant total everywhere, ran = red = total, all on this head.
+  review-ui-gate:
+    runs-on: ubuntu-latest
+    needs: [scope, review-ui-gate-shard]
+    if: ${{ always() && needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download every shard job's summary
+        uses: actions/download-artifact@v4
+        with:
+          pattern: review-ui-gate-summary-*
+          path: ${{ runner.temp }}/review-ui-gate-summaries
+          merge-multiple: true
+
+      - name: Review UI mutation gate — totals across every shard (every plant red exactly once)
+        env:
+          SHARD_RESULT: ${{ needs.review-ui-gate-shard.result }}
+        run: |
+          echo "shard jobs: $SHARD_RESULT"
+          bash scripts/ci/review-ui-gate.combine.sh "${{ runner.temp }}/review-ui-gate-summaries" 6 4
+          [ "$SHARD_RESULT" = success ] || { echo "::error::a shard job ended $SHARD_RESULT"; exit 1; }
 
   gate-selftests:
     runs-on: ubuntu-latest
@@ -143,13 +200,22 @@ jobs:
       - name: Question-authoring gate tests (tests/assemble-batch.test.ts)
         run: pnpm exec vitest run tests/assemble-batch.test.ts
 
+  # Four jobs, one per group (CI wall-time brief, Karl 2026-10-11: ~15 minutes in one job). Every
+  # step still runs, each in exactly one group (tests/ci/ci-full-workflow-shape.test.ts holds that:
+  # a new step without a group is red). Groups keep their dependencies together: the calendar
+  # parity steps read the database the pipeline step builds, and the PostgREST harness stays last
+  # on its server. Each job has both servers, so every step keeps its port.
   pg-mutations:
     runs-on: ubuntu-latest
     needs: scope
     if: ${{ needs.scope.outputs.run == 'true' }}
-    timeout-minutes: 40
+    timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [deletion, qotd, review-marketing, calendar-migrations]
     services:
       # Two servers, one job (owner decision 2026-10-07, CI audit item 2: "Postgres jobs
       # consolidated"). Every script and test creates its own database, so the eleven jobs that
@@ -231,6 +297,7 @@ jobs:
       # the gate ON GATE 0. The target migration is resolved as the LAST definer, so a
       # newer CREATE OR REPLACE can never leave this mutation aimed at a dead body.
       - name: guardian_view_decision gate — body-pin mutations
+        if: matrix.group == 'review-marketing'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -246,6 +313,7 @@ jobs:
       # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
       # its assertion red, each reverted byte-identically in a trap.
       - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
+        if: matrix.group == 'review-marketing'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -257,6 +325,7 @@ jobs:
       # PRE-D1 behaviour (the case insert's failure swallowed, the flag left standing) and
       # requires D1.3 to notice.
       - name: Crisis flag atomicity self-test (proves each mutation turns it red)
+        if: matrix.group == 'deletion'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -265,6 +334,7 @@ jobs:
         run: bash scripts/ci/crisis-flag-atomic.mutations.sh
 
       - name: Deletion evidence bundle → mutation self-test (every gate observed red once)
+        if: matrix.group == 'deletion'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -277,6 +347,7 @@ jobs:
       # assertion and fails the build unless that assertion goes red. It patches the working
       # tree and restores it in a trap.
       - name: Review route assertions proven by planted violations (A1-A14)
+        if: matrix.group == 'review-marketing'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -285,6 +356,7 @@ jobs:
         run: bash scripts/ci/review-routes-gate.mutations.sh
 
       - name: Negative control — rehearsal must FAIL on a broken WHERE
+        if: matrix.group == 'deletion'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -295,6 +367,7 @@ jobs:
           bash scripts/ci/deletion-deidentify-negative-control.sh
 
       - name: Flag-on lifecycle e2e (request -> cron -> anonymize; recover/cancel -> restored)
+        if: matrix.group == 'deletion'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -305,6 +378,7 @@ jobs:
           bash scripts/ci/deletion-lifecycle-e2e.sh
 
       - name: Negative control — schema-proof must FAIL on missing column
+        if: matrix.group == 'deletion'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -318,6 +392,7 @@ jobs:
       # regression-tests the hardcoded-count blocker (a migration carrying a prod row
       # count reds every fresh apply).
       - name: Mastery unblock migration gates (1.1 + 1.2)
+        if: matrix.group == 'calendar-migrations'
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/mastery-unblock-gates.sh
@@ -328,6 +403,7 @@ jobs:
       # shipped in #589..#595 failed at its first backslash meta-command and CI
       # never noticed, because CI only ever ran the CI fixtures.
       - name: prod-verify console gate (operator SQL must run in a SQL console)
+        if: matrix.group == 'calendar-migrations'
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/prod-verify-console-gate.sh
@@ -337,6 +413,7 @@ jobs:
       # during the mastery outage is permanently no_baseline. This guards the
       # repair — and above all that it stays a repair, never a fabricated score.
       - name: Baseline repair gate (BUG-1 — repair, not fabrication)
+        if: matrix.group == 'calendar-migrations'
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/baseline-repair-gate.sh
@@ -346,11 +423,13 @@ jobs:
       # FIRST and must be strict: it is the only thing between a hand-applied schema
       # and an irreversible "recorded as applied".
       - name: Migration history gate
+        if: matrix.group == 'calendar-migrations'
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-history-gate.sh
 
       - name: Migration inventory gate (applied vs pending discrimination)
+        if: matrix.group == 'calendar-migrations'
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-inventory-gate.sh
@@ -358,12 +437,14 @@ jobs:
       # Proves the gate above can fail, and fails on the assertion each mutation names.
       # M3 is the load-bearing one: without it "counted" and "excluded" are the same test.
       - name: KPI quarantine gate — mutation proof
+        if: matrix.group == 'calendar-migrations'
         run: bash scripts/ci/05b-kpi-quarantine-gate.mutations.sh
         shell: bash
 
       # ── pg17 (port 5433): calendar ────────────────────────────────────────────────
 
       - name: Apply the migration pipeline to a throwaway database
+        if: matrix.group == 'calendar-migrations'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -392,6 +473,7 @@ jobs:
       # Plants a repeat schedule, a readable future day, two pre-submit answer leaks and an early
       # archive page; each must turn its guarding check red on a named assertion (plan Q1-Q3).
       - name: QOTD mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -405,6 +487,7 @@ jobs:
       # or without its URL, a prompt on the practice runner, feedback text in a log and the
       # onboarding checkbox for an under-13. Each must turn its guarding test red on a name.
       - name: Marketing opt-in + reviews mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -416,6 +499,7 @@ jobs:
       # new-account test ignoring the account's age, email signup recording only on a client
       # consent claim, and a disabled Continue with Google. Each must turn its test red by name.
       - name: Sign-in notice mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
         run: bash scripts/ci/signin-notice.mutations.sh
 
       # Marketing email lane (contract §14): plants the age rule and the pending-deletion
@@ -425,6 +509,7 @@ jobs:
       # on a partial read, an address in a log and account deletion keeping the contact. Each
       # must turn its test red by name.
       - name: Marketing email lane mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -436,6 +521,7 @@ jobs:
       # Chicago day, replay, quota exclusion, streak sources, prompt rules, 17:00 across DST,
       # sunset, signed unsubscribe, SAT dates) is planted and must turn its named test red.
       - name: Home QOTD, streak, email and SAT dates mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -448,6 +534,7 @@ jobs:
       # the no-question skip, the summary line, no address in logs, and both collapsed cards are
       # planted and must turn their named test red.
       - name: QOTD resilience mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -460,6 +547,7 @@ jobs:
       # (exam reminder, qotd_daily), the QOTD-only 17:00 run and the week-notice-after-re-plan
       # rule are planted (Q1-Q17) and must turn their named test red.
       - name: Notification quiet hours and expiry mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -471,6 +559,7 @@ jobs:
       # placement gates are planted rather than trusted. Each case builds its own
       # throwaway database, because the pipeline is not idempotent.
       - name: Calendar placement gates — mutations (Z-70 and the override arms)
+        if: matrix.group == 'calendar-migrations'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -479,6 +568,7 @@ jobs:
         run: bash scripts/ci/calendar-placement-gate.mutations.sh
 
       - name: Parity vs calendar_formula_reference.py (13 fixtures + seeded 3000 suite)
+        if: matrix.group == 'calendar-migrations'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -492,6 +582,7 @@ jobs:
       # suppression rule had no gate of any kind. It does now, and these plants are what
       # say so: two on the stored block, one on the database's own return.
       - name: Parity exam_placement comparison — mutations
+        if: matrix.group == 'calendar-migrations'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -506,6 +597,7 @@ jobs:
       # Proves the proof can fail, and that each mutation reds the assertion it names.
       # M1 and M3 both attack case 1 and are kept apart by WHICH line they red.
       - name: Mastery emission → REAL PostgREST proof — mutation harness
+        if: matrix.group == 'calendar-migrations'
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/mastery-postgrest-gate.mutations.sh
@@ -623,11 +715,13 @@ jobs:
           path: tested-tree.txt
           retention-days: 30
 
-      # The label means "run the full tier on this head". Once it has run, it is spent: a later
-      # push needs a fresh label, so the full tier always covers the head being merged. (A pull
-      # request into `main` needs no label; one left on it is removed the same way.)
+      # The label means "run the full tier on this head". Once this tree is covered, it is spent:
+      # by this run, or by an earlier one (a label added while a run was in progress waits for it,
+      # then finds the tree satisfied). A later push needs a fresh label, so the full tier always
+      # covers the head being merged. (A pull request into `main` needs no label; one left on it
+      # is removed the same way.)
       - name: Spend the ci:full label
-        if: ${{ always() && github.event_name == 'pull_request' && needs.scope.outputs.run == 'true' && contains(github.event.pull_request.labels.*.name, 'ci:full') }}
+        if: ${{ always() && github.event_name == 'pull_request' && (needs.scope.outputs.run == 'true' || needs.scope.outputs.satisfied == 'true') && contains(github.event.pull_request.labels.*.name, 'ci:full') }}
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
