@@ -42,10 +42,29 @@ export type BillingPeriodChoice = z.infer<typeof billingPeriodSchema>;
  * is rejected by the route, not silently ignored — ignoring it would let a
  * student believe they had bought for someone else.
  */
+/**
+ * A promotion code's NAME as a customer types it (e.g. `FOUNDING50`), from `/upgrade?promo=`.
+ *
+ * @spec [owner brief (Karl) 2026-10-10: "support /upgrade?promo=<CODE>"] | @implemented [2026-10-10]
+ *
+ * plain English: the shape only (letters, digits, `-` and `_`, up to 64), which is what Stripe
+ * accepts for a code. Whether the code exists, is active, unexpired and not used up is the
+ * server's lookup against Stripe, never the caller's claim; an unusable code falls back to the
+ * normal checkout with the code field. The client sends a value only when it parses here, so a
+ * mangled link never turns a purchase into a 400.
+ */
+export const promoCodeNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9_-]+$/);
+
 export const billingCheckoutRequestSchema = z
   .object({
     plan: billingPeriodSchema,
     student_profile_id: z.string().uuid().optional(),
+    promo: promoCodeNameSchema.optional(),
   })
   .strict();
 

@@ -292,10 +292,20 @@ restore
 
 echo "=== (21) an over-length Reading and Writing passage is scheduled ==="
 plant shared/qotd/readability.ts \
-  '  return passage.length > QOTD_RW_MAX_PASSAGE_CHARS' \
-  '  return passage.length > Number.MAX_SAFE_INTEGER' || { bad "M21 STALE"; exit 1; }
+  '  if (passage.length > QOTD_RW_MAX_PASSAGE_CHARS) return "rw_passage_too_long";' \
+  '' || { bad "M21 STALE"; exit 1; }
 OUT="$(ts_check "$SCHED")"; RC=$?
 expect_red "M21 long RW scheduled" "an over-length Reading and Writing passage" "$OUT" "$RC"
+restore
+
+echo "=== (26) a Reading and Writing item with a short passage and a long question is scheduled ==="
+plant shared/qotd/readability.ts \
+  '  return total > QOTD_RW_MAX_TOTAL_CHARS ? "rw_too_long" : null;' \
+  '  return null;' || { bad "M26 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M26 RW long question scheduled" "a short passage and a long question" "$OUT" "$RC"
+OUT="$(ts_check "$READ")"; RC=$?
+expect_red "M26b RW total cap gone (predicate)" "a short passage with a long question is refused" "$OUT" "$RC"
 restore
 
 echo "=== (22) the scheduler stops paging: readable questions behind a page of long ones are lost ==="

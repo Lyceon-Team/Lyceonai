@@ -45,9 +45,18 @@ record ways of working. Nothing filed before this date is reclassified.
 
 ## STATUS VALUES
 
-Owner ruling 2026-09-16. Three values, and no others:
+Owner ruling 2026-09-16; OPEN added by owner ruling 2026-10-10 (Karl: "add OPEN to the
+register's STATUS VALUES section so it matches the precedent", the precedent being SCL-200..218
+on 2026-10-07 and SCL-222 on 2026-10-10); REJECTED added by owner ruling 2026-10-10 (Karl:
+"Add REJECTED as a fifth value ... meaning: the owner ruled the change out"). Five values, and no
+others:
 
-  - PROPOSED — the spec should change; it has not been changed yet.
+  - PROPOSED — the spec should change; it has not been changed yet, and the
+                owner has not ruled on it.
+  - OPEN      — the owner has ruled the change in; it has NOT landed in
+                docs/Spec/ yet. The entry carries a line "Status: OPEN. Ruled by
+                Karl, <date> (<source>). Owed into the spec; becomes APPLIED when
+                folded into <document>." Only the owner sets OPEN.
   - RULING    — a decision was recorded and NO amendment is needed. The
                 outcome is "the document already says the right thing", or
                 "this is not a spec matter after all". SCL-060 is the example.
@@ -55,15 +64,20 @@ Owner ruling 2026-09-16. Three values, and no others:
                 The entry keeps its Change/WAS/IS lines as written and records
                 what landed and where; an entry is only APPLIED once the text
                 is actually in the document, not once it is authorised.
+  - REJECTED  — the owner ruled the change OUT: the spec will not change as
+                proposed. Unlike RULING (no amendment needed because the
+                document is already right, or it is not a spec matter), the
+                proposal was considered and declined. Only the owner sets
+                REJECTED; the entry stays in the register as the record.
 
 APPLIED is about the AMENDMENT, not about bookkeeping around it. An entry whose
 spec text has landed is APPLIED even if something adjacent is still owed — a
 change record in the document's own §14, a follow-on decision — provided the
 entry says plainly what is outstanding. An entry whose spec text has NOT landed
-is PROPOSED, however firmly it has been authorised: authorisation is not
-application.
+is PROPOSED, or OPEN once the owner has ruled it in, however firmly it has been
+authorised: authorisation is not application.
 
-Do not invent a fourth value; if none of these three fits, say so and ask the
+Do not invent a sixth value; if none of these five fits, say so and ask the
 owner rather than coining one.
 
 ## SCL NUMBER ALLOCATION — HARD OVERRIDE
@@ -111,7 +125,7 @@ This rule overrides any instruction to the contrary.
 
 - One entry per delta. Newest at top.
 - Each entry: ID, date, status, the change, the reason, the spec doc(s) it touches, and the build artifact (PR / migration) if any.
-- **Status values:** `PROPOSED` (agent-appended, awaiting owner validation) · `OPEN` (owner-accepted, owed into the spec) · `APPLIED` (folded into the locked spec doc) · `SUPERSEDED` (replaced by a later entry) · `REJECTED` (owner declined an agent proposal). Agents may only write `PROPOSED`; the owner sets all others.
+- **Status values** (exactly the five in STATUS VALUES above): `PROPOSED` (the spec should change; not yet changed, and the owner has not ruled) · `RULING` (a decision recorded; no amendment needed) · `OPEN` (the owner has ruled the change in; not yet in docs/Spec/) · `APPLIED` (the amendment has been made in docs/Spec/) · `REJECTED` (the owner ruled the change out). Agents may only write `PROPOSED`; the owner sets all others.
 - Entry IDs: `SCL-194` (sequential).
 
 ---
@@ -4494,6 +4508,17 @@ Build artifact: the migration (8 `REVOKE SELECT ON TABLE … FROM authenticated,
 - `scripts/ci/guardian-view-decision-gate.sql` GATE 14: `has_any_column_privilege` is false for `authenticated` and `anon` on all eight; RLS on all eight; zero policies on the two skill tables; presence first — `service_role` still reads all eight. Plants in `guardian-view-decision-gate.mutations.sh`: M3 (re-grant one column after the migration's own check) reds GATE 14 naming `student_skill_kpi`; M4 (re-create a skill-table read policy) reds GATE 14 naming the policy count. M1/M2 still red GATE 0. 9/9.
 - `scripts/ci/guardian-mirror-gates.sh`: a direct `authenticated` read, as a guardian linked to an entitled student and as the student themselves, is refused (42501), after a presence check of 3 seeded rows; red without the migration (`0|0|0`). The column-grant check now expects `false|false|false|0` (no column of `student_domain_mastery` readable, `mastery_level` included; no policy on `student_skill_kpi`).
 
+SCL-228 | 2026-10-10 | Amends INV-03-08 (Doc 03 §2156, "LISA access requires billing address country IN {US, CA, UK, AU, NZ, IE, SG} at V1 launch. The authoritative signal is Stripe billing address") for the case where Stripe provides NO billing country: at the grant gates a missing billing country is evaluated as US. A country Stripe provides always wins, and a country outside the Tier-1 list is still denied | OPEN
+Status: OPEN. Ruled by Karl, 2026-10-10 (owner brief: "the US default overrides INV-03-08 for the case where Stripe provides no billing country. A Stripe-provided country always wins, and non-allowed countries are still denied"). Owed into the spec; becomes APPLIED when folded into Doc 03 §2156 (INV-03-08).
+Id: `SCL-228` derived at the moment of use, 2026-10-10, after `git fetch --all --prune`, by `git branch -r --format='%(refname:short)' | while read b; do git grep -hoE 'SCL-[0-9]{3}' "$b" -- docs/SpecAudit/SPEC_CHANGES_LOG.md; done | sort -u | tail -1`: the highest allocated anywhere is `SCL-227`. Open PRs checked: no title or body names an SCL id, and every open PR's head branch is in this repository and covered by the fetch (highest on any of them `SCL-227`). One entry allocated.
+Owner ruling recorded: Karl, 2026-10-10 — "Don't require a billing address; no extra personal information at checkout. Instead, when a completed Checkout session has no billing country, default it to US. A country Stripe does provide always wins." Ruled alongside "Stripe Checkout must not ask for a card when the amount due is $0 (e.g. with the FOUNDING50 code on the Monthly plan)", and confirmed over INV-03-08 the same day.
+WAS: INV-03-08 as written, and as built: both grant-time gates evaluated the Stripe billing country as given — `fulfilCheckoutSession`'s gate on `session.customer_details.address.country` and `assertCountryEligibleForGrant` on the payer Customer's `address.country` (every granting subscription write). An absent country was `unknown` and denied: the checkout path held (no entitlement, no money moved), the subscription paths refused the grant.
+IS: with `payment_method_collection: "if_required"` a $0 Checkout collects no card and so no billing address. Both grant gates now pass the Stripe country through `resolveBillingCountry` (`server/lib/stripe/country-eligibility.ts`): a present country is used as given (`country_source: "provided"`), an absent or blank one is evaluated as `US` (`country_source: "default_us"`). The verdict is still `evaluateCountryEligibility` against the Tier-1 list, so a provided non-Tier-1 country is denied and remediated exactly as before. Not defaulted: an unseeded Tier-1 list (still `unknown`, still denies), a deleted Customer and a grant with no Customer (still `unknown`). Not changed: session creation (`blocksCheckout`) and `customer.updated` egress, neither of which grants. A defaulted US is recorded in the structured logs (`country_source`, no country value, no personal data) and is NOT written to `profiles.country_code`; only a Stripe-provided country is stored there.
+Why: no extra personal information at checkout (the alternative, `billing_address_collection: "required"`, would ask every buyer for a full billing address); the founding cohort's $0 Monthly checkout must grant.
+Disclosure: none.
+Owner action: none beyond merging.
+Build artifact: `server/lib/stripe/country-eligibility.ts` (`resolveBillingCountry`, `DEFAULT_BILLING_COUNTRY`); `server/lib/stripe/webhook-handler.ts` (both gates; the two entitlement writers store only a provided country); `server/lib/stripe/entitlement-paths.ts` (call-site citations re-pointed); tests `tests/ci/stripe-country-gate.contract.test.ts` (a $0 session with no country granted with `default_us` recorded at both gates and no profile country; provided US and CA unchanged; FR still denied; an unseeded list still holds), `tests/ci/stripe-checkout-subject-propagation.contract.test.ts` (the 2026-09-02 null-address Customer now grants), `tests/ci/stripe-country-eligibility.contract.test.ts` (the resolver); planted defects recorded in PR #1188.
+
 SCL-227 | 2026-10-09 | Amends Doc 01 §40.5 (scheduled deletion) and App A.5 (`scheduled_deletion_job_cron`) and `contracts/notifications.contract.md` (C1.1, C1.2, §4, C2A.3, C6.2, C6.3, C11.2; new C6.6, C6.7): the T+7 deletion job runs `daily_at_15_utc` (was `daily_at_02_utc`); the student/guardian-facing scheduled jobs run in the Chicago afternoon (calendar-exam-notify 21:00 UTC, exam-score-renewal 20:00 UTC, notification-dispatch-sweep 14:00 UTC, execute-deletions 15:00 UTC); the shared email sender holds every student- or guardian-facing email between 21:00 and 08:00 America/Chicago and defers it to the next 08:00 Chicago (never dropped; a deferral is not a failed attempt), exempting only user-triggered email; time-sensitive notification types carry an expiry (`full_length_tomorrow` / `full_length_week`: the start of the test day in the plan date's zone; `qotd_daily`: the end of its Chicago day) and are dropped and logged at or after it, never sent late; the 17:00 QOTD run sends `qotd_daily` only and the dispatch sweep is the single retry path; the "this week" notice is emitted only after that student's weekly re-plan | PROPOSED
 Id: `SCL-227` allocated 2026-10-09 after `git fetch --all --prune` and `git grep -hoE 'SCL-[0-9]{3}' <ref> -- docs/SpecAudit/SPEC_CHANGES_LOG.md` across every remote ref: highest anywhere `SCL-226`. Open PRs searched for added SCL ids: none.
 Change (owner rulings, Karl 2026-10-09, schedule audit Step 2, verbatim in part): "calendar-exam-notify → 21:00 UTC (4 PM CDT / 3 PM CST, the day before); exam-score-renewal → 20:00 UTC (3 PM / 2 PM); notification-dispatch-sweep → 14:00 UTC (9 AM / 8 AM); execute-deletions → 15:00 UTC (10 AM / 9 AM)." / "Quiet hours in the shared sender (transport.ts): no student- or guardian-facing email 21:00–08:00 America/Chicago; due emails defer to 08:00, never dropped. Exempt only user-triggered emails (password reset, sign-in, a guardian invite the user sends). The deletion-completed email is not exempt." / "time-sensitive types get an expiry … expired = dropped and logged, never sent late" / "the 17:00 QOTD run sends only qotd_daily emails; the dispatch sweep is the single retry path for every other type" / "the 'this week' notice always runs after the weekly re-plan".
@@ -4886,7 +4911,8 @@ Disclosure: this entry. Approved by Karl (the approver; there is no external cou
 Owner action: Karl merges #1138 to `cleanup`, then `main`. Before the first marketing email is sent, the unsubscribe link §9.2 promises must exist (not built today).
 Build artifact: `legal/privacy-policy/v6/{en.md,meta.yml}`; `manifest.json` `current: "v6"`; `server/lib/legal-registry.generated.ts`; `infra/retention-policy-registry.yaml` (citations to v6; RPOL-ANALYTICS-03 is now PostHog events; RPOL-ANALYTICS-05 session recordings, 30 days); `tests/ci/consent-outstanding-set.contract.test.ts` (5.0 and 4.0 acceptances are re-asked for v6; red with the manifest on v5); `tests/ci/retention-policy-registry.contract.test.ts` F1.9 bounds §6 at the next top-level heading; `tests/ci/retention-policy-publication.contract.test.ts` pins the published body; mutation M59 re-pointed; plan ruling R34 in `docs/plans/seo/seo-marketing-vertical.md`.
 
-SCL-222 | 2026-10-09 | Amends Doc 00 V6 item 20 ("Clickwrap acceptance with parent/minor linkage … ToS … (ST-LC-01 …)") for the Student Terms of Use and the Privacy Policy: the Terms checkbox at sign-in is replaced by the standard sign-in notice, "By continuing, you agree to Lyceon's Terms of Use and Privacy Policy" (linked, adjacent to the buttons), and acceptance is recorded at account creation. Parent/Guardian Terms keep their explicit clickwrap at link time (Doc 10 §9.15) | PROPOSED
+SCL-222 | 2026-10-09 | Amends Doc 00 V6 item 20 ("Clickwrap acceptance with parent/minor linkage … ToS … (ST-LC-01 …)") for the Student Terms of Use and the Privacy Policy: the Terms checkbox at sign-in is replaced by the standard sign-in notice, "By continuing, you agree to Lyceon's Terms of Use and Privacy Policy" (linked, adjacent to the buttons), and acceptance is recorded at account creation. Parent/Guardian Terms keep their explicit clickwrap at link time (Doc 10 §9.15) | OPEN
+Status: OPEN. Ruled by Karl, 2026-10-10 (owner brief: "Rule SCL-222: Karl ruled it 2026-10-10. Set it to OPEN"). Owed into the spec; becomes APPLIED when folded into Doc 00 V6 item 20.
 Id: `SCL-222` derived at the moment of use, 2026-10-09, after `git fetch --all --prune`, by the register scan across every remote ref: the highest allocated anywhere is `SCL-221`. Open PRs' head branches are in this repository and covered by the fetch. One entry allocated.
 Owner ruling recorded: Karl, 2026-10-09 — "Spec change: approved. Draft the SCL replacing the Terms clickwrap checkbox (Doc 00 item 20, ST-LC-01) with the standard sign-in notice ('By continuing, you agree to Lyceon's Terms of Use and Privacy Policy,' linked, adjacent to the buttons). Acceptance is recorded at account creation." And: "Returning Google users: sign-in records nothing; only account creation does."
 WAS (Doc 00 V6:401, verbatim): "| 20 | Eng — guardian/minor | Clickwrap acceptance with parent/minor linkage (Appendix-A patterns) | ToS / Parent Terms / Honor Code / CG (ST-LC-01, PG-LC-01, HC-LC-02, CG-LC-04) |". As built: two unticked checkboxes on `/login` (`checkbox-signup-legal`, `checkbox-google-legal`) gated Sign Up and Continue with Google (Google for every user, returning ones included); `POST /api/auth/signup` required `legalConsent.studentTermsAccepted/privacyPolicyAccepted: true` (400 otherwise); `/auth/callback` recorded acceptance on every Google sign-in that carried `consentSource`.

@@ -11,7 +11,7 @@
  * created is a guardian) is tests/ci/signup-role-intent.pg.ci.test.ts.
  */
 import React from "react";
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -150,5 +150,58 @@ describe("role intent on the wire", () => {
     });
     const redirect = new URL(oauth.calls[0]?.options.redirectTo ?? "");
     expect(redirect.searchParams.has("role")).toBe(false);
+  });
+});
+
+describe("the page the visitor signed up from rides the sign-up (owner brief 2026-10-10)", () => {
+  beforeEach(() => {
+    sent.bodies.length = 0;
+    oauth.calls.length = 0;
+    auth = null;
+    clearCsrfToken();
+    vi.stubGlobal("fetch", vi.fn(scriptedFetch));
+  });
+
+  it("the email sign-up body carries the allowlisted next from the URL", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/login?mode=signup&next=%2Fupgrade%3Fpromo%3DFOUNDING50",
+    );
+    await mount();
+    await act(async () => {
+      await auth!.signUp(
+        "ana@example.test",
+        "correct-horse-9",
+        { consentSource: "email_signup_form" },
+        "Ana",
+        null,
+      );
+    });
+    expect(sent.bodies).toHaveLength(1);
+    expect(sent.bodies[0]).toMatchObject({ next: "/upgrade?promo=FOUNDING50" });
+  });
+
+  it("no next (or an unsafe one) sends no next key at all", async () => {
+    for (const url of [
+      "/login?mode=signup",
+      "/login?mode=signup&next=https%3A%2F%2Fevil.example",
+    ]) {
+      sent.bodies.length = 0;
+      window.history.replaceState({}, "", url);
+      await mount();
+      await act(async () => {
+        await auth!.signUp(
+          "lee@example.test",
+          "correct-horse-9",
+          { consentSource: "email_signup_form" },
+          "Lee",
+          null,
+        );
+      });
+      expect(sent.bodies).toHaveLength(1);
+      expect(Object.keys(sent.bodies[0] as object)).not.toContain("next");
+      cleanup();
+    }
   });
 });

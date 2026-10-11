@@ -52,6 +52,7 @@ const tutorCost: ContentPageInput = {
   description:
     "What SAT tutoring costs per hour and per package, from published rates, plus questions to ask before you pay for a tutor.",
   h1: "How much does an SAT tutor cost?",
+  targetKeyword: "sat tutor cost",
   crumb: "SAT tutor cost",
   intro: [
     {
@@ -138,6 +139,7 @@ const vsTutor: ContentPageInput = {
   description:
     "How a private SAT tutor and Lyceon differ in cost, schedule and the kind of help you get, so you can pick what fits your student.",
   h1: "Lyceon or a private SAT tutor?",
+  targetKeyword: "lyceon vs sat tutor",
   crumb: "Lyceon or a private SAT tutor?",
   intro: [
     {
@@ -239,6 +241,7 @@ const worthIt: ContentPageInput = {
   description:
     "What studies have found about SAT coaching and score gains, what that means for your budget, and free official practice to try first.",
   h1: "Is SAT tutoring worth it?",
+  targetKeyword: "is sat tutoring worth it",
   crumb: "Is SAT tutoring worth it?",
   intro: [
     {

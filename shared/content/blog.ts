@@ -38,6 +38,10 @@ import {
   type ContentPage,
   type ContentPageInput,
 } from "../../packages/shared/src/seo-content-schema";
+import { approvalFor, CYCLE_APPROVALS, type ApprovalsFile } from "./approvals";
+import { SCHEDULED_POST_SPECS } from "./posts";
+import type { ScheduledPostSpec } from "./posts/types";
+import { isPagePublic } from "./schedule";
 
 const APPROVED = { by: "Karl", date: "2026-10-05" } as const;
 const REWRITTEN = "2026-10-05";
@@ -51,15 +55,24 @@ type PostSpec = {
   tags: string[];
   /** The original publish date; the rewrite date is `lastModified`. */
   published: string;
+  /** The one search term this post owns (Doc 10B §5 gate 11). */
+  targetKeyword: string;
   page: Omit<
     ContentPageInput,
-    "path" | "published" | "lastModified" | "approved" | "crumb"
+    | "path"
+    | "published"
+    | "lastModified"
+    | "approved"
+    | "crumb"
+    | "publishAt"
+    | "targetKeyword"
   >;
 };
 
 const POSTS: readonly PostSpec[] = [
   {
     slug: "is-digital-sat-harder",
+    targetKeyword: "is the digital sat harder",
     category: "SAT Basics",
     tags: ["digital-sat", "sat-prep", "test-comparison"],
     published: "2024-12-15",
@@ -143,6 +156,7 @@ const POSTS: readonly PostSpec[] = [
   },
   {
     slug: "digital-sat-scoring-explained",
+    targetKeyword: "digital sat scoring",
     category: "SAT Basics",
     tags: ["digital-sat", "sat-scoring", "sat-modules"],
     published: "2024-12-14",
@@ -223,6 +237,7 @@ const POSTS: readonly PostSpec[] = [
   },
   {
     slug: "quick-sat-study-routine",
+    targetKeyword: "sat study routine",
     category: "Study Tips",
     tags: ["sat-prep", "study-routine", "quick-study"],
     published: "2024-12-13",
@@ -314,6 +329,7 @@ const POSTS: readonly PostSpec[] = [
   },
   {
     slug: "sat-question-bank-practice",
+    targetKeyword: "sat question bank",
     category: "Study Tips",
     tags: ["sat-practice", "question-bank", "study-tips"],
     published: "2024-12-12",
@@ -402,6 +418,7 @@ const POSTS: readonly PostSpec[] = [
   },
   {
     slug: "common-sat-math-algebra-mistakes",
+    targetKeyword: "sat algebra mistakes",
     category: "SAT Math",
     tags: ["sat-math", "algebra", "common-mistakes"],
     published: "2024-12-11",
@@ -517,26 +534,27 @@ export type BlogPost = {
   author: string;
   /** The post as a content page (`/blog/<slug>`), gated like every other content page. */
   page: ContentPage;
+  /** The pipeline cycle that carries the post (Doc 10B §8.7); undefined for the 2024 posts. */
+  batch?: string;
 };
 
-function toPost(spec: PostSpec): BlogPost {
-  const parsed = contentPageSchema.safeParse({
-    ...spec.page,
-    path: `/blog/${spec.slug}`,
-    crumb: spec.page.h1,
-    parent: "/blog",
-    published: spec.published,
-    lastModified: REWRITTEN,
-    approved: APPROVED,
-  });
+function parsePage(slug: string, input: ContentPageInput): ContentPage {
+  const parsed = contentPageSchema.safeParse(input);
   if (!parsed.success) {
     throw new Error(
-      `blog post ${spec.slug} does not fit the content schema: ${parsed.error.issues
+      `blog post ${slug} does not fit the content schema: ${parsed.error.issues
         .map((i) => `${i.path.join(".")}: ${i.message}`)
         .join("; ")}`,
     );
   }
-  const page = parsed.data;
+  return parsed.data;
+}
+
+function toBlogPost(
+  spec: { slug: string; category: string; tags: string[] },
+  page: ContentPage,
+  batch?: string,
+): BlogPost {
   return {
     slug: spec.slug,
     title: page.h1,
@@ -546,10 +564,95 @@ function toPost(spec: PostSpec): BlogPost {
     tags: spec.tags,
     author: BLOG_AUTHOR,
     page,
+    ...(batch === undefined ? {} : { batch }),
   };
 }
 
-export const BLOG_POSTS: readonly BlogPost[] = POSTS.map(toPost);
+/** The 2024 posts: approved together on the 2026-10-05 rewrite, public since. */
+function toPost(spec: PostSpec): BlogPost {
+  return toBlogPost(
+    spec,
+    parsePage(spec.slug, {
+      ...spec.page,
+      path: `/blog/${spec.slug}`,
+      crumb: spec.page.h1,
+      parent: "/blog",
+      published: spec.published,
+      lastModified: REWRITTEN,
+      approved: APPROVED,
+      targetKeyword: spec.targetKeyword,
+    }),
+  );
+}
 
-/** The posts as content pages, for the publish gate. */
+/**
+ * A pipeline post (Doc 10B §8): published on its `publishAt` date, approved by its cycle's merge
+ * stamp (content/batches/approvals.json), never by anything written in the post itself.
+ */
+export function toScheduledPost(
+  spec: ScheduledPostSpec,
+  approvals: Readonly<ApprovalsFile> = CYCLE_APPROVALS,
+): BlogPost {
+  const publishDate = spec.publishAt.slice(0, 10);
+  const approved = approvalFor(spec.batch, approvals);
+  return toBlogPost(
+    spec,
+    parsePage(spec.slug, {
+      ...spec.page,
+      path: `/blog/${spec.slug}`,
+      crumb: spec.page.h1,
+      parent: "/blog",
+      published: publishDate,
+      lastModified: spec.updated ?? publishDate,
+      ...(approved === undefined ? {} : { approved }),
+      publishAt: spec.publishAt,
+      targetKeyword: spec.targetKeyword,
+    }),
+    spec.batch,
+  );
+}
+
+function allPosts(): readonly BlogPost[] {
+  const posts = [
+    ...POSTS.map(toPost),
+    ...SCHEDULED_POST_SPECS.filter(
+      (spec): spec is ScheduledPostSpec => spec !== null,
+    ).map((spec) => toScheduledPost(spec)),
+  ];
+  const seen = new Set<string>();
+  for (const post of posts) {
+    if (seen.has(post.slug))
+      throw new Error(`blog post ${post.slug} is declared twice`);
+    seen.add(post.slug);
+  }
+  return posts;
+}
+
+/**
+ * Every post in the repo, public or not: drafts, posts waiting for Karl's merge and posts whose
+ * `publishAt` is still ahead. For the gates and the publish job only; nothing public reads it.
+ */
+export const ALL_BLOG_POSTS: readonly BlogPost[] = allPosts();
+
+/** The posts public at `now`: approved, with `publishAt` (if any) reached (Doc 10B §8.3). */
+export function publishedBlogPosts(
+  now: Date,
+  posts: readonly BlogPost[] = ALL_BLOG_POSTS,
+): BlogPost[] {
+  return posts.filter((post) => isPagePublic(post.page, now));
+}
+
+/**
+ * The public posts, decided when this module loads: at build time for the prerender, the sitemap
+ * and the bundle (where the content-schedule plugin has already removed every withheld post's
+ * text), so the site never lists or links a post before its time.
+ */
+export const BLOG_POSTS: readonly BlogPost[] = publishedBlogPosts(new Date());
+
+/** The public posts as content pages, for the publish gate. */
 export const BLOG_PAGES: readonly ContentPage[] = BLOG_POSTS.map((p) => p.page);
+
+/** Every post as a content page, drafts included, for the gate's draft checks. */
+export const ALL_BLOG_PAGES: readonly ContentPage[] = ALL_BLOG_POSTS.map(
+  (p) => p.page,
+);

@@ -15,9 +15,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  daysUntil,
   offeredSatTestDates,
   SAT_DATES_SOURCE_URL,
+  SAT_SCORE_RELEASE_SOURCE_URL,
   SAT_TEST_DATES,
+  satCalendarEvents,
   satDateOptions,
 } from "../../shared/sat-test-dates";
 
@@ -80,6 +83,71 @@ describe("official SAT dates", () => {
     expect(options.map((o) => o.date)).toContain("2026-10-24");
     expect(options.find((o) => o.date === "2026-10-24")?.official).toBe(false);
     expect(options.map((o) => o.date)).not.toContain("2026-09-01");
+  });
+});
+
+describe("deadlines and score release dates (Doc 10B §3A; owner answer 6, 2026-10-11)", () => {
+  it("every confirmed date carries College Board's published deadlines and score release, as read 2026-10-11", () => {
+    const table = SAT_TEST_DATES.filter((d) => d.deadlines).map((d) => [
+      d.date,
+      d.deadlines?.registration,
+      d.deadlines?.late_registration,
+      d.deadlines?.scores_released,
+    ]);
+    expect(table).toEqual([
+      ["2026-10-03", "2026-09-18", "2026-09-22", "2026-10-16"],
+      ["2026-11-07", "2026-10-23", "2026-10-27", "2026-11-20"],
+      ["2026-12-05", "2026-11-20", "2026-11-24", "2026-12-18"],
+      ["2027-03-06", "2027-02-19", "2027-02-23", "2027-03-19"],
+      ["2027-05-01", "2027-04-16", "2027-04-20", "2027-05-14"],
+      ["2027-06-05", "2027-05-21", "2027-05-25", "2027-06-21"],
+    ]);
+    for (const d of SAT_TEST_DATES.filter((x) => x.deadlines)) {
+      expect(d.status).toBe("confirmed");
+      expect(d.deadlines?.source_url).toBe(SAT_DATES_SOURCE_URL);
+      expect(d.deadlines?.scores_source_url).toBe(SAT_SCORE_RELEASE_SOURCE_URL);
+      expect(d.deadlines?.verified_on).toBe("2026-10-11");
+      // Order a student meets them in: register, late, test, scores.
+      expect(
+        (d.deadlines?.registration ?? "") <
+          (d.deadlines?.late_registration ?? ""),
+      ).toBe(true);
+    }
+  });
+
+  it("an anticipated date carries no deadlines: published dates only, never an estimate", () => {
+    const anticipated = SAT_TEST_DATES.filter(
+      (d) => d.status === "anticipated",
+    );
+    expect(anticipated.length).toBeGreaterThan(0);
+    for (const d of anticipated) expect(d.deadlines, d.date).toBeUndefined();
+  });
+
+  it("November 2026's calendar: the Nov 7 test and scores, the Dec 5 deadlines, in date order", () => {
+    expect(
+      satCalendarEvents("2026-11-01", "2026-11-30").map((e) => [
+        e.date,
+        e.kind,
+        e.test_date,
+      ]),
+    ).toEqual([
+      ["2026-11-07", "test_day", "2026-11-07"],
+      ["2026-11-20", "registration_deadline", "2026-12-05"],
+      ["2026-11-20", "scores_released", "2026-11-07"],
+      ["2026-11-24", "late_registration_deadline", "2026-12-05"],
+    ]);
+    const scores = satCalendarEvents("2026-11-20", "2026-11-20").find(
+      (e) => e.kind === "scores_released",
+    );
+    expect(scores?.source_url).toBe(SAT_SCORE_RELEASE_SOURCE_URL);
+  });
+
+  it("days to test count calendar days, and go negative after the test", () => {
+    expect(daysUntil("2026-11-01", "2026-11-07")).toBe(6);
+    expect(daysUntil("2026-11-01", "2026-12-05")).toBe(34);
+    expect(daysUntil("2026-11-08", "2026-11-07")).toBe(-1);
+    // Across the DST change (Nov 1, 2026) and a month boundary.
+    expect(daysUntil("2026-10-31", "2026-11-02")).toBe(2);
   });
 });
 

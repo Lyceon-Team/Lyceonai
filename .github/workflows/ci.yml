@@ -219,6 +219,15 @@ jobs:
       - name: SCL register — no duplicate ids
         run: node scripts/ci/scl-duplicate-check.mjs
 
+      # Doc 10B §5 gates 6 and 8 (Vale: Microsoft at error level plus ai-tells, pinned; every link
+      # resolves) over the pipeline posts. Installed before the suite because
+      # tests/ci/content-quality-gates.test.ts also runs both tools against planted fixtures.
+      - name: Install content tools (Vale, lychee — pinned, sha256-checked)
+        uses: ./.github/actions/content-tools
+
+      - name: Content prose gates (Vale, lychee)
+        run: scripts/content/lint-prose.sh
+
       # Full deterministic CI suite. The stale-mock contract files were deleted
       # in Pass 0 (clean delete + rebuild later — see docs/alignment/KNOWN-GAPS.md),
       # so this runs green with no exclusions.
