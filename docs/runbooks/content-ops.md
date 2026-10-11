@@ -1,6 +1,7 @@
 # Runbook — the blog pipeline (Doc 10B Phase 1)
 
 > @spec [docs/Spec/Lyceon_Doc_10B.md §3A, §4, §5, §8; owner brief "Doc 10B Phase 1 — blog
+>
 > > pipeline" and owner answers on Step 0 (Karl, 2026-10-11)] | @implemented [2026-10-11]
 
 Three posts a week (Monday, Wednesday and Friday at 07:00 Central), planned a month ahead around
@@ -51,7 +52,13 @@ verdicts, the PR link): `.github/workflows/content-batch-notify.yml`, set up in
    (the same deploy hook the QOTD schedule uses). Nothing new.
 6. **Codex tasks.** Create the two Codex scheduled tasks in §4 with the text exactly as written.
    Until they exist, run the audit by hand with the same text (owner answer 9).
-7. **Enable the four Claude routines** (§3) after the dry run. They were created disabled.
+7. **Enable the four Claude routines** (§3) after the dry run. They were created disabled, from a
+   cloud session, and that kind of creation stores **no repository and no connectors**: as created,
+   a fired session would start without this repository and without GitHub tools. Before enabling
+   each one, open it in claude.ai → Routines and add the repository `Lyceon-Team/lyceonai` and the
+   GitHub connector (to open and update pull requests). IDs: weekly produce
+   `trig_01NopMoZVoiGFHeNcWR53QDw`, weekly revise `trig_01Fgz5GBaWie9YFmrpjjgMZK`, monthly plan
+   `trig_016Bdv7HPn16CYJFFqucMaYD`, monthly revise `trig_014BH4yEAeb9mqirH74rXrZt`.
 8. **Marketing plugin.** `.claude/settings.json` declares `marketing@knowledge-work-plugins`.
    Claude Code's documentation says plugins declared by a project do not load in a cloud
    session, so the cloud routines may run without it. The `content-ops` and `ai-cmo` skills carry
