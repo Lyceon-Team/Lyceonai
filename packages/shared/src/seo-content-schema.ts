@@ -31,6 +31,16 @@ import { z } from "zod";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
+/**
+ * A wall-clock time in America/Chicago, `YYYY-MM-DDTHH:mm`, with no offset. Doc 10B §3 and §8.3
+ * set publish times as Chicago times ("Monday, Wednesday and Friday, 07:00 America/Chicago"), so
+ * the value is written the way the schedule is stated and compared against the Chicago wall clock
+ * (shared/content/schedule.ts); daylight saving never moves it.
+ */
+export const chicagoWallTimeSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "expected YYYY-MM-DDTHH:mm (America/Chicago)");
+
 /** An external source behind a general fact (Doctrine rule 3). Rendered as a link under the text. */
 export const contentSourceSchema = z
   .object({
@@ -174,6 +184,17 @@ export const contentPageSchema = z
     lastModified: isoDate,
     /** Karl's written approval of this page's copy. Required to build; never on a draft. */
     approved: contentApprovalSchema.optional(),
+    /**
+     * When a scheduled page goes public (Doc 10B §8.3), America/Chicago wall time. Before it, the
+     * page is not prerendered, not in the sitemap or any index, and its URL is a 404; a page
+     * without it is public as soon as it is approved.
+     */
+    publishAt: chicagoWallTimeSchema.optional(),
+    /**
+     * The one search term this page is written for (Doc 10B §5 gate 11, "no duplication"). No two
+     * pages may share one; a new item on a covered term updates the existing page instead.
+     */
+    targetKeyword: z.string().min(3).optional(),
   })
   .strict();
 export type ContentPage = z.infer<typeof contentPageSchema>;

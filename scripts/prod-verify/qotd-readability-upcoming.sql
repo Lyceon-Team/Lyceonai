@@ -3,13 +3,16 @@
 -- ===========================================================================
 -- @spec [owner brief "QOTD — readability filter (Karl's option B)" (Karl, 2026-10-09)
 --        "Production check: after deploy, Claude runs a read-only query confirming every
---        upcoming day passes all rules"] | @implemented [2026-10-09]
+--        upcoming day passes all rules"]; owner brief "QOTD follow-up" (Karl, 2026-10-10)
+--        | @implemented [2026-10-09; RW total 2026-10-10]
 --
 -- plain English: one row per scheduled day AFTER today (America/Chicago), with each rule's
--- result and a PASS/FAIL `verdict`, then one OVERALL row (STOP also when nothing is scheduled). The rules mirror shared/qotd/readability.ts (the source of truth):
--- multiple choice; no "Text 1" + "Text 2"; Math passage + stem <= 400 visible characters (tags
--- removed, whitespace collapsed; +1 for the joining space when both exist); Reading and Writing
--- passage <= 300. Expected after the first 07:15 UTC run following deploy: passes = true on
+-- result and a PASS/FAIL `verdict`, then one OVERALL row (STOP also when nothing is scheduled).
+-- The rules mirror shared/qotd/readability.ts (the source of truth):
+-- multiple choice; no "Text 1" + "Text 2"; passage + stem <= 400 visible characters for both
+-- sections (tags removed, whitespace collapsed; +1 for the joining space when both exist); and for
+-- Reading and Writing the passage alone <= 300 too (the total cap: owner brief "QOTD follow-up",
+-- Karl, 2026-10-10). Expected after the first 07:15 UTC run following deploy: passes = true on
 -- every row, and the final OVERALL row's verdict reads 'OK: ...'. SELECT only; no writes.
 -- ===========================================================================
 WITH up AS (
@@ -24,25 +27,26 @@ r AS (
   SELECT qotd_date, id, section, item_type,
          item_type = 'mcq' AS is_mcq,
          NOT (passage ~* '\mtext\s*1\M' AND passage ~* '\mtext\s*2\M') AS not_paired,
-         CASE WHEN section = 'M'
-              THEN length(passage) + length(stem) + CASE WHEN passage <> '' AND stem <> '' THEN 1 ELSE 0 END
-              ELSE length(passage) END AS counted_chars
+         length(passage) AS passage_chars,
+         length(passage) + length(stem) + CASE WHEN passage <> '' AND stem <> '' THEN 1 ELSE 0 END
+           AS total_chars
     FROM up
 ),
 v AS (
   SELECT r.*,
          (is_mcq AND not_paired
-          AND counted_chars <= CASE WHEN section = 'M' THEN 400 ELSE 300 END) AS passes
+          AND total_chars <= 400
+          AND (section = 'M' OR passage_chars <= 300)) AS passes
     FROM r
 )
-SELECT qotd_date, id, section, item_type, is_mcq, not_paired, counted_chars, verdict
+SELECT qotd_date, id, section, item_type, is_mcq, not_paired, passage_chars, total_chars, verdict
 FROM (
-  SELECT 1 AS seq, qotd_date, id, section, item_type, is_mcq, not_paired, counted_chars,
+  SELECT 1 AS seq, qotd_date, id, section, item_type, is_mcq, not_paired, passage_chars, total_chars,
          CASE WHEN passes THEN 'PASS' ELSE 'FAIL' END AS verdict
     FROM v
   UNION ALL
   SELECT 2, NULL::date, 'OVERALL', NULL::text, NULL::text, NULL::boolean, NULL::boolean,
-         count(*)::integer,
+         NULL::integer, count(*)::integer,
          CASE WHEN count(*) = 0
               THEN 'STOP: no upcoming day is scheduled, so nothing was checked'
               WHEN count(*) FILTER (WHERE NOT passes) = 0

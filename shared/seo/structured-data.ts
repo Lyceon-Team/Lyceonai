@@ -1,3 +1,4 @@
+import { SOCIAL_PROFILE_URLS } from "./social-profiles";
 export const BASE_URL = "https://lyceon.ai";
 export const DEFAULT_OG_IMAGE = `${BASE_URL}/og-image.jpg`;
 /**
@@ -14,8 +15,10 @@ export const organizationJsonLd = {
   name: "Lyceon",
   url: BASE_URL,
   logo: LOGO_URL,
-  description: "Digital SAT prep with SAT-style practice, tutor guidance, and progress tracking.",
-  sameAs: [],
+  description:
+    "Digital SAT prep with SAT-style practice, tutor guidance, and progress tracking.",
+  // The official profiles (owner brief 2026-10-10): the same constant the footer's icon row reads.
+  sameAs: [...SOCIAL_PROFILE_URLS],
 };
 
 export const websiteJsonLd = {
@@ -23,7 +26,8 @@ export const websiteJsonLd = {
   "@type": "WebSite",
   name: "Lyceon",
   url: BASE_URL,
-  description: "Study smarter with SAT-style practice, full-length exams, and tutor guidance.",
+  description:
+    "Study smarter with SAT-style practice, full-length exams, and tutor guidance.",
   // No SearchAction (F1): the site has no search results page for it to point at.
 };
 
@@ -40,7 +44,9 @@ export function createBreadcrumbJsonLd(items: { name: string; url: string }[]) {
   };
 }
 
-export function createFaqJsonLd(faqs: readonly { question: string; answer: string }[]) {
+export function createFaqJsonLd(
+  faqs: readonly { question: string; answer: string }[],
+) {
   return {
     "@context": "https://schema.org",
     "@type": "FAQPage",

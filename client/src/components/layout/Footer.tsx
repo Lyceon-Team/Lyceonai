@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { LyceonMark } from "@/components/common/LyceonMark";
 import { openCookieSettings } from "@/lib/analytics/consent";
+import { SocialLinks } from "./SocialLinks";
 
 /**
  * `navy`: the homepage's footer band (F13, owner-approved design 2026-10-05). Same links, same
@@ -71,6 +72,16 @@ export default function Footer({ tone = "default" }: { tone?: FooterTone }) {
             <p className={`text-sm ${mutedClass}`}>
               Study Smarter, Score Higher.
             </p>
+            {/* The official profiles (owner brief 2026-10-10): shared/seo/social-profiles.ts. */}
+            <div className="mt-4 -ml-3">
+              <SocialLinks
+                linkClassName={
+                  navy
+                    ? "text-[var(--home-footer-text)] hover:text-background transition-colors"
+                    : "text-muted-foreground hover:text-foreground transition-colors"
+                }
+              />
+            </div>
           </div>
 
           <div>

@@ -81,23 +81,42 @@ export function checkoutIdempotencyKey(input: {
   readonly subjectProfileId: string;
   readonly priceId: string;
   readonly nowMs: number;
+  /**
+   * The promotion code PRE-APPLIED to this attempt (owner brief 2026-10-10, `/upgrade?promo=`),
+   * or absent. It is part of the request, so it is part of the key: the one retry without a code
+   * Stripe refused must not reuse the key of the attempt with it (Stripe would answer
+   * `idempotency_error`, read here as "purchase in flight"). Absent leaves the key exactly as
+   * before, so every existing caller and window is unchanged.
+   */
+  readonly promotionCodeId?: string | null;
 }): string {
-  return `lyceon:checkout:${input.subjectProfileId}:${input.priceId}:${windowIndex(input.nowMs)}`;
+  const base = `lyceon:checkout:${input.subjectProfileId}:${input.priceId}:${windowIndex(input.nowMs)}`;
+  return input.promotionCodeId ? `${base}:${input.promotionCodeId}` : base;
 }
 
 /**
  * Is this the error Stripe raises when a key is reused with different params?
  *
- * Narrowed on the raw `type` rather than `instanceof`, because the SDK's error
+ * @revised [2026-10-10, owner brief: "the duplicate-purchase check comparing the wrong err.type
+ *          (should return 409, not 500)"]
+ *
+ * Narrowed on the error's fields rather than `instanceof`, because the SDK's error
  * classes are constructed through a factory and an `instanceof` check across
  * two copies of the module (a real hazard in a monorepo with hoisting) silently
  * answers false — which would turn a designed refusal back into a 500.
+ *
+ * WHICH FIELD. stripe-node builds a `StripeIdempotencyError` whose `type` is the CLASS name
+ * (`"StripeIdempotencyError"`) and whose `rawType` is the API's `"idempotency_error"`
+ * (`node_modules/stripe/cjs/Error.js`: `this.type = type || this.constructor.name`,
+ * `this.rawType = raw.type`). This compared `type` to `"idempotency_error"`, which no real
+ * SDK error carries, so a genuine conflict fell through to the route's 500. Its test's fake
+ * Stripe threw exactly that impossible shape, so both agreed and the 409 was never proved;
+ * the fake now throws the SDK's own error class.
  */
 export function isStripeIdempotencyConflict(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { type?: unknown; rawType?: unknown };
   return (
-    typeof err === "object" &&
-    err !== null &&
-    "type" in err &&
-    (err as { type?: unknown }).type === "idempotency_error"
+    e.type === "StripeIdempotencyError" || e.rawType === "idempotency_error"
   );
 }

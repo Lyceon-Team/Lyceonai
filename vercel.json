@@ -41,6 +41,14 @@
       "schedule": "0 20 * * *"
     },
     {
+      "path": "/api/internal/content-publish",
+      "schedule": "5 12 * * *"
+    },
+    {
+      "path": "/api/internal/content-publish",
+      "schedule": "5 13 * * *"
+    },
+    {
       "path": "/api/internal/qotd-schedule",
       "schedule": "15 7 * * *"
     },

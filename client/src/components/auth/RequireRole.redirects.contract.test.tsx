@@ -95,6 +95,24 @@ describe("RequireRole declarative onboarding gate", () => {
     );
   });
 
+  /** Owner brief 2026-10-10: a signed-out visitor on a promo link signs in and comes back to it. */
+  it("carries a /upgrade?promo= link into the login redirect", () => {
+    authState = {
+      user: null,
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    location = "/upgrade";
+    window.history.replaceState({}, "", "/upgrade?promo=FOUNDING50");
+    render(
+      React.createElement(RequireRole, { allow: ["student", "admin"] }, child),
+    );
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe(
+      "/login?next=%2Fupgrade%3Fpromo%3DFOUNDING50",
+    );
+  });
+
   it("does not carry an un-allowlisted location (plain /login)", () => {
     authState = {
       user: null,

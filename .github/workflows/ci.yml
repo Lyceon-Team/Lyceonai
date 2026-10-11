@@ -219,6 +219,15 @@ jobs:
       - name: SCL register — no duplicate ids
         run: node scripts/ci/scl-duplicate-check.mjs
 
+      # Doc 10B §5 gates 6 and 8 (Vale: Microsoft at error level plus ai-tells, pinned; every link
+      # resolves) over the pipeline posts. Installed before the suite because
+      # tests/ci/content-quality-gates.test.ts also runs both tools against planted fixtures.
+      - name: Install content tools (Vale, lychee — pinned, sha256-checked)
+        uses: ./.github/actions/content-tools
+
+      - name: Content prose gates (Vale, lychee)
+        run: scripts/content/lint-prose.sh
+
       # Full deterministic CI suite. The stale-mock contract files were deleted
       # in Pass 0 (clean delete + rebuild later — see docs/alignment/KNOWN-GAPS.md),
       # so this runs green with no exclusions.
@@ -421,6 +430,11 @@ jobs:
       # PR that makes it (owner brief 2026-10-08).
       - name: CI full-tier scope and verdict self-test
         run: bash scripts/ci/ci-full-scope.selftest.sh
+
+      # The full tier splits the review UI gate across jobs; its last job adds up their shards
+      # (review-ui-gate.combine.sh). Proven here that a missing, doubled or non-red shard is red.
+      - name: Review UI gate shard-totals self-test (proves each mutation turns it red)
+        run: bash scripts/ci/review-ui-gate.combine.selftest.sh
 
       - name: Retired endpoints gate (no caller of a deleted route may remain)
         run: node scripts/ci/retired-endpoints-gate.mjs

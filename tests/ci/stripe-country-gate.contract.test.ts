@@ -43,6 +43,14 @@ const accountMocks = vi.hoisted(() => ({
   getEntitlementsBySubscriptionId: vi.fn(async () => []),
   getAllGuardianStudentLinks: vi.fn(async () => []),
 }));
+const logMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+const profileMocks = vi.hoisted(() => ({
+  setProfileCountryCode: vi.fn(async () => undefined),
+}));
 const configMocks = vi.hoisted(() => ({
   getTier1Countries: vi.fn(),
 }));
@@ -101,7 +109,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 }));
 vi.mock("../../server/lib/account", () => ({
   // W3-3: the grant path now records the billing country on the profile.
-  setProfileCountryCode: vi.fn(async () => undefined),
+  setProfileCountryCode: profileMocks.setProfileCountryCode,
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,
@@ -110,11 +118,19 @@ vi.mock("../../server/lib/account", () => ({
 vi.mock("../../server/lib/entitlement-runtime-config", () => ({
   getTier1Countries: configMocks.getTier1Countries,
 }));
-vi.mock("../../server/logger", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-}));
+vi.mock("../../server/logger", () => ({ logger: logMocks }));
 
-function signedCheckout(country: string | null | undefined) {
+/** Every structured-log payload that recorded a defaulted country. */
+function defaultedLogs(): unknown[] {
+  return [...logMocks.info.mock.calls, ...logMocks.error.mock.calls]
+    .map((c) => c[3] as Record<string, unknown> | undefined)
+    .filter((d) => d?.country_source === "default_us");
+}
+
+function signedCheckout(
+  country: string | null | undefined,
+  paymentStatus: "paid" | "no_payment_required" = "paid",
+) {
   const event = {
     id: "evt_country_gate",
     object: "event",
@@ -132,7 +148,7 @@ function signedCheckout(country: string | null | undefined) {
           country === undefined ? null : { address: { country } },
         // SCL-071: settled. The settlement gate has its own suite; this one is
         // about the country decision and must not be gated out before it.
-        payment_status: "paid",
+        payment_status: paymentStatus,
       },
     },
   };
@@ -213,7 +229,10 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
 
     const outcome = await process_(body, signature, "req_ineligible");
 
-    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      status: "remediated_refund_untraceable",
+    });
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
     expect(stripeApi.subscriptionsCancel).toHaveBeenCalledWith(
       "sub_country_gate",
@@ -223,24 +242,109 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
 
   /**
    * THE ASYMMETRY THAT KEEPS THIS SAFE, and the reason `unknown` is not simply
-   * folded into `ineligible` one layer down.
+   * folded into `ineligible` one layer down: `ineligible` is a fact about the PAYER (cancel and
+   * refund); `unknown` is a fact about OUR CONFIGURATION, and an unseeded `tier_1_countries`
+   * makes every session `unknown`, so it holds (no entitlement, no money moved). See the
+   * unseeded tests below.
    *
-   * `ineligible` is a fact about the PAYER — cancel and refund. `unknown` is a
-   * fact about OUR RECORDS or OUR CONFIGURATION, and an unseeded
-   * `tier_1_countries` makes EVERY session `unknown`. Auto-refunding on it
-   * would cancel and refund every paying customer at once while believing it
-   * was enforcing a policy. So `unknown` holds: still no entitlement (fail
-   * closed, unchanged), but no money moves without a human.
+   * NO COUNTRY IS NO LONGER `unknown` — owner ruling (Karl) 2026-10-10.
+   * @revised [2026-10-10] This case used to HOLD. A $0 FOUNDING50 Checkout
+   * (`payment_method_collection: "if_required"`) collects no card and so no billing address, on
+   * the session OR the Customer; the owner ruled that a missing country is evaluated as US
+   * rather than asking every buyer for an address. The shape below is that checkout: nothing
+   * paid, no country anywhere.
    *
-   * Both halves, and both directions: no entitlement AND no cancel AND no
-   * refund. Deleting the hold branch would make this fail.
+   * Plant: remove the default (`resolveBillingCountry` passes the absent value through) and
+   * this goes red: held, no entitlement.
    */
-  it("HOLDS when the completed session carries no country — denies entitlement, moves NO money", async () => {
+  it("GRANTS a $0 session with no country anywhere, and records the source as defaulted", async () => {
     configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
+    stripeApi.customersRetrieve.mockResolvedValueOnce({
+      id: "cus_test_1",
+      address: null,
+    });
     const process_ = await handler();
-    const { body, signature } = signedCheckout(undefined);
+    const { body, signature } = signedCheckout(
+      undefined,
+      "no_payment_required",
+    );
 
     const outcome = await process_(body, signature, "req_nocountry");
+
+    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      STUDENT_ID,
+      expect.objectContaining({ tier: "premium" }),
+    );
+    expect(stripeApi.subscriptionsCancel).not.toHaveBeenCalled();
+    expect(stripeApi.refundsCreate).not.toHaveBeenCalled();
+    // Recorded as defaulted at BOTH gates (the session, then the Customer), with no country
+    // value in the record, and never stored as the student's country: nobody gave one.
+    expect(defaultedLogs()).toHaveLength(2);
+    expect(JSON.stringify(defaultedLogs())).not.toMatch(/"country":/);
+    expect(profileMocks.setProfileCountryCode).not.toHaveBeenCalled();
+  });
+
+  it("a provided US country is unchanged: granted, stored, and not marked as defaulted", async () => {
+    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
+    const process_ = await handler();
+    const { body, signature } = signedCheckout("US");
+
+    const outcome = await process_(body, signature, "req_us");
+
+    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalled();
+    expect(profileMocks.setProfileCountryCode).toHaveBeenCalledWith(
+      STUDENT_ID,
+      "US",
+    );
+    expect(defaultedLogs()).toEqual([]);
+  });
+
+  it("a provided non-US country always wins over the default: CA granted as CA, FR still denied", async () => {
+    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
+    stripeApi.customersRetrieve.mockResolvedValueOnce({
+      id: "cus_test_1",
+      address: { country: "CA" },
+    });
+    const process_ = await handler();
+
+    const ca = await process_(...Object.values(signedCheckout("CA")), "req_ca");
+    expect(ca).toMatchObject({ ok: true, status: "processed" });
+    expect(profileMocks.setProfileCountryCode).toHaveBeenCalledWith(
+      STUDENT_ID,
+      "CA",
+    );
+    expect(defaultedLogs()).toEqual([]);
+
+    // A non-Tier-1 country is NOT replaced by the default: denied, cancelled, refunded, exactly
+    // as before the ruling.
+    vi.clearAllMocks();
+    dbMocks.insert.mockResolvedValue({ error: null });
+    configMocks.getTier1Countries.mockResolvedValue(["US", "CA", "GB"]);
+    const fr = await process_(...Object.values(signedCheckout("FR")), "req_fr");
+    expect(fr).toMatchObject({
+      ok: true,
+      status: "remediated_refund_untraceable",
+    });
+    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
+    expect(stripeApi.subscriptionsCancel).toHaveBeenCalled();
+    expect(defaultedLogs()).toEqual([]);
+  });
+
+  it("HOLDS a no-country session while the Tier-1 list is unseeded: the default never stands in for configuration", async () => {
+    configMocks.getTier1Countries.mockResolvedValue(null);
+    stripeApi.customersRetrieve.mockResolvedValueOnce({
+      id: "cus_test_1",
+      address: null,
+    });
+    const process_ = await handler();
+    const { body, signature } = signedCheckout(
+      undefined,
+      "no_payment_required",
+    );
+
+    const outcome = await process_(body, signature, "req_nocountry_unseeded");
 
     expect(outcome).toMatchObject({ ok: true, status: "held" });
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
@@ -308,7 +412,10 @@ describe("INV-03-08 country gate at checkout.session.completed", () => {
     // a retry loop. Still the wrong outcome for that customer, which is why
     // this test exists; it is now a wrong outcome that at least terminates.
     const outcome = await process_(body, signature, "req_uk_seed");
-    expect(outcome).toMatchObject({ ok: true, status: "remediated_refund_untraceable" });
+    expect(outcome).toMatchObject({
+      ok: true,
+      status: "remediated_refund_untraceable",
+    });
     expect(stripeApi.subscriptionsCancel).toHaveBeenCalled();
     expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
   });

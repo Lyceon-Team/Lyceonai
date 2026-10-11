@@ -1888,7 +1888,7 @@ s = s.replace(a, "      <a href=\"/dashboard\">Back to Dashboard</a>\n" + a, 1)'
 plant "UI58-U2" "every plan button is filled (DESIGN.md §1 one primary)" \
   "client/src/pages/upgrade.page.test.tsx" \
   "client/src/pages/upgrade.tsx" \
-  'a = "                variant={isBestValue ? \"lyc-primary\" : \"lyc-outline\"}"
+  'a = "                variant={isEmphasised ? \"lyc-primary\" : \"lyc-outline\"}"
 assert s.count(a) == 1
 s = s.replace(a, "                variant=\"lyc-primary\"", 1)'
 

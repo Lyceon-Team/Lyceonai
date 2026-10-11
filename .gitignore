@@ -87,3 +87,9 @@ tests/ci/lib/__scanner_test_tmp__/
 
 # QOTD social assets (scripts/qotd-social/generate.ts)
 qotd-social-out/
+
+# Vale packages are downloaded by `vale sync` (pinned in .vale.ini); only Lyceon's vocabulary is ours.
+/.vale/styles/*
+!/.vale/styles/config/
+/build/content-prose/
+/.vale/styles/config/templates/

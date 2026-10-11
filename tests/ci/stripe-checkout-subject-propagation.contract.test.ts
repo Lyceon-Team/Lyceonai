@@ -44,6 +44,7 @@ const dbMocks = vi.hoisted(() => ({
   delete: vi.fn(async () => ({ error: null })),
 }));
 const accountMocks = vi.hoisted(() => ({
+  setProfileCountryCode: vi.fn(async () => undefined),
   upsertEntitlement: vi.fn(async () => ({})),
   mapStripeStatusToEntitlement: vi.fn((s: string) => ({
     tier: s === "active" ? "premium" : "free",
@@ -108,7 +109,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 }));
 vi.mock("../../server/lib/account", () => ({
   // W3-3: the grant path now records the billing country on the profile.
-  setProfileCountryCode: vi.fn(async () => undefined),
+  setProfileCountryCode: accountMocks.setProfileCountryCode,
   upsertEntitlement: accountMocks.upsertEntitlement,
   mapStripeStatusToEntitlement: accountMocks.mapStripeStatusToEntitlement,
   getEntitlementsBySubscriptionId: accountMocks.getEntitlementsBySubscriptionId,
@@ -236,26 +237,28 @@ describe("guardian first purchase: bare item, and a Customer with no address", (
   });
 
   /**
-   * THE PRODUCTION FAILURE, PINNED. This is the state that existed at 07:43Z on
-   * 2026-09-02 and it must never read as success. The event settles — a denial
-   * is a decision, and `unknown` holds rather than auto-refunding, because an
-   * unseeded config would otherwise refund every paying customer at once — but
-   * NOTHING is granted.
+   * THE 2026-09-02 SHAPE, UNDER THE 2026-10-10 RULING. A real Customer with no address used to
+   * HOLD (no entitlement, no money moved): the gate read a field nobody populated. The owner
+   * has since ruled (Karl, 2026-10-10) that a missing billing country is evaluated as US, so
+   * that a $0 FOUNDING50 Checkout, which collects no card and so no address, is granted. The
+   * null Customer address is still this fixture's load-bearing field; what it now pins is that
+   * the default is applied AND kept apart from a provided country: the grant happens, but no
+   * country is written to the student's profile, because nobody gave one.
    *
-   * The plant that proves it bites is the change the brief proposed and the
-   * owner forbade: point `assertCountryEligibleForGrant` at the session instead
-   * of the Customer and this test grants, going red. That is the whole reason
-   * the fix lives at session creation rather than in the gate's read.
+   * Plant: remove the default from `assertCountryEligibleForGrant` and this goes red (held).
    */
-  it("HOLDS and writes nothing when the Customer carries no address, even though the session does", async () => {
+  it("GRANTS when the Customer carries no address (evaluated as US), and records no country on the profile", async () => {
     const process_ = await handler();
     const { body, signature } = signedCheckout("evt_null_address");
 
     const outcome = await process_(body, signature, "req_null_address");
 
-    expect(outcome).toMatchObject({ ok: true, status: "held" });
-    expect(accountMocks.upsertEntitlement).not.toHaveBeenCalled();
-    // Held means held: no money is moved on `unknown`.
+    expect(outcome).toMatchObject({ ok: true, status: "processed" });
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      STUDENT_A,
+      expect.objectContaining({ tier: "premium" }),
+    );
+    expect(accountMocks.setProfileCountryCode).not.toHaveBeenCalled();
     expect(stripeApi.subscriptionsCancel).not.toHaveBeenCalled();
     expect(stripeApi.refundsCreate).not.toHaveBeenCalled();
   });
