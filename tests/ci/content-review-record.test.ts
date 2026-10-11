@@ -8,8 +8,6 @@
  * plain English: every record here is the real template (content/batches/REVIEW.template.md) with
  * its table rows filled in, so the check is proven against the file the triggers copy.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   codexCommitProblems,
@@ -17,48 +15,10 @@ import {
   reviewRecordProblems,
   reviewSections,
 } from "../../scripts/content/review-record";
-import { REPO_ROOT } from "../lib/prerendered-site";
-
-const TEMPLATE = readFileSync(
-  join(REPO_ROOT, "content/batches/REVIEW.template.md"),
-  "utf8",
-);
-
-type Rows = {
-  self: string[];
-  source?: string;
-  codex: string[];
-  response: string[];
-};
-
-/** The template with each section's placeholder row replaced by `rows` (none = header only). */
-function record(rows: Rows): string {
-  const lines = TEMPLATE.replace(/CYCLE/g, "2026-W43")
-    .replace("#PR", "#1200")
-    .split("\n");
-  const out: string[] = [];
-  let section = -1;
-  for (const line of lines) {
-    if (line.startsWith("## 1.")) section = 0;
-    else if (line.startsWith("## 2.")) section = 1;
-    else if (line.startsWith("## 3.")) section = 2;
-    else if (line.startsWith("## 4.")) section = 3;
-    if (line.startsWith("| `slug` |")) {
-      out.push(...([rows.self, rows.codex, rows.response][section] ?? []));
-      continue;
-    }
-    if (
-      section === 1 &&
-      line.startsWith("Source:") &&
-      rows.source !== undefined
-    ) {
-      out.push(`Source: ${rows.source}`);
-      continue;
-    }
-    out.push(line);
-  }
-  return out.join("\n");
-}
+import {
+  reviewRecord as record,
+  type ReviewRows as Rows,
+} from "../lib/content-fixtures";
 
 const ITEMS = ["post-a", "post-b"];
 const SELF = ["| `post-a` | pass | ok |", "| `post-b` | pass | ok |"];

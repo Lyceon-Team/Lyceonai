@@ -23,10 +23,12 @@ REVIEW="scripts/content/review-record.ts"
 BANNED="shared/seo/banned-phrases.ts"
 VALE_INI=".vale.ini"
 LYCHEE="lychee.toml"
+SATDATES="shared/sat-test-dates.ts"
+NOTIFY="scripts/content/notify-batch.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/content-mut.XXXX)"
 
-FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE")
+FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE" "$SATDATES" "$NOTIFY")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -54,6 +56,8 @@ JOB_T=tests/ci/content-publish-job.test.ts
 STAMP_T=tests/ci/content-approval-stamp.test.ts
 REVIEW_T=tests/ci/content-review-record.test.ts
 QG_T=tests/ci/content-quality-gates.test.ts
+SAT_T=tests/ci/sat-test-dates.contract.test.ts
+NOTIFY_T=tests/ci/content-batch-notify.test.ts
 # The Vale and lychee plants (Q8, Q9) need both tools: the quality-gates suite skips them without,
 # which would read here as a plant that stayed green. Fail loudly instead.
 command -v vale >/dev/null && command -v lychee >/dev/null || { echo "vale and lychee must be on PATH (.github/actions/content-tools)"; exit 1; }
@@ -75,7 +79,7 @@ run() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T" "$QG_T")"; RC=$?
+OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T" "$QG_T" "$SAT_T" "$NOTIFY_T")"; RC=$?
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "CONTENT OPS MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -178,6 +182,26 @@ run "Q8 Vale runs ai-tells" "Vale rejects planted AI-tell prose in a real post's
 echo "=== (Q9) gate 8: lychee accepts a 404 ==="
 plant "$LYCHEE" 'accept = ["200..=299", "429"]' 'accept = ["200..=299", "404", "429"]' || { bad "Q9 STALE"; exit 1; }
 run "Q9 links resolve" "lychee passes a live College Board page and rejects one that 404s" "$QG_T"
+
+echo "=== (C1) the score release date is read from the wrong column ==="
+plant "$SATDATES" "            scores_released: deadlines[2]," "            scores_released: deadlines[1]," || { bad "C1 STALE"; exit 1; }
+run "C1 published dates as read" "every confirmed date carries College Board's published deadlines and score release" "$SAT_T"
+
+echo "=== (C2) the plan's calendar runs past its month ==="
+plant "$SATDATES" "    .filter((e) => e.date >= from && e.date <= to)" "    .filter((e) => e.date >= from)" || { bad "C2 STALE"; exit 1; }
+run "C2 one month's events" "November 2026's calendar" "$SAT_T"
+
+echo "=== (N1) the summary drops Codex's verdicts ==="
+plant "$NOTIFY" '  if (!["APPROVE", "REVISE", "REJECT"].includes(verdict))' "  if (true)" || { bad "N1 STALE"; exit 1; }
+run "N1 verdicts in the summary" "lists every post in publish order with its date, title and Codex verdict" "$NOTIFY_T"
+
+echo "=== (N2) the summary is not in publish order ==="
+plant "$NOTIFY" '        (a.page.publishAt ?? "").localeCompare(b.page.publishAt ?? ""),' "        0," || { bad "N2 STALE"; exit 1; }
+run "N2 publish order" "lists every post in publish order with its date, title and Codex verdict" "$NOTIFY_T"
+
+echo "=== (N3) a pull request without content posts ==="
+plant "$NOTIFY" "  if (cycles.length === 0) {" "  if (false) {" || { bad "N3 STALE"; exit 1; }
+run "N3 no content, no post" "a pull request without content posts nothing" "$NOTIFY_T"
 
 echo
 echo "CONTENT OPS MUTATIONS: $PASS passed, $FAIL failed"
