@@ -36,7 +36,7 @@ const LONG_TITLE_POOL = reviewPoolSummaryResponseSchema.parse({
       local_time: "9:58 AM",
       mode: "practice",
       filters: {
-        sections: ["math"],
+        sections: ["M"],
         domains: ["Algebra"],
         skills: [
           "Linear equations in one variable",
@@ -57,7 +57,7 @@ const LONG_TITLE_POOL = reviewPoolSummaryResponseSchema.parse({
       local_time: "2:12 PM",
       mode: "practice",
       filters: {
-        sections: ["rw"],
+        sections: ["RW"],
         domains: [
           "Information and Ideas",
           "Craft and Structure",
@@ -77,7 +77,7 @@ const LONG_TITLE_POOL = reviewPoolSummaryResponseSchema.parse({
       local_time: "10:00 AM",
       mode: "practice",
       filters: {
-        sections: ["math"],
+        sections: ["M"],
         domains: [],
         skills: [],
         difficulties: [],

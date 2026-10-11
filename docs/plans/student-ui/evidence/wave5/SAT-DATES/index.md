@@ -1,6 +1,6 @@
 # The SAT-date picker (dropdown multi-select) closed and open, and two-line recent-session titles; light and dark, 1440 and 390
 
-Generated 2026-10-11T10:02:00.316Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts SAT-DATES` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-11T11:13:14.089Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts SAT-DATES` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -79,7 +79,7 @@ Prototype: none. NOT PROTOTYPED: the dropdown SAT-date picker and the two-line t
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![calendar-sheet-open desktop light](calendar-sheet-open--desktop--light--built.png)<br>`/calendar`, 111 KB, horizontal overflow 0px | none |
+| desktop | light | ![calendar-sheet-open desktop light](calendar-sheet-open--desktop--light--built.png)<br>`/calendar`, 110 KB, horizontal overflow 0px | none |
 | desktop | dark | ![calendar-sheet-open desktop dark](calendar-sheet-open--desktop--dark--built.png)<br>`/calendar`, 109 KB, horizontal overflow 0px | none |
 | mobile | light | ![calendar-sheet-open mobile light](calendar-sheet-open--mobile--light--built.png)<br>`/calendar`, 46 KB, horizontal overflow 0px | none |
 | mobile | dark | ![calendar-sheet-open mobile dark](calendar-sheet-open--mobile--dark--built.png)<br>`/calendar`, 46 KB, horizontal overflow 0px | none |
@@ -94,7 +94,7 @@ Prototype: none. NOT PROTOTYPED: the dropdown SAT-date picker and the two-line t
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
 | desktop | light | ![home-recent-long-titles desktop light](home-recent-long-titles--desktop--light--built.png)<br>`/dashboard`, 147 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-recent-long-titles desktop dark](home-recent-long-titles--desktop--dark--built.png)<br>`/dashboard`, 147 KB, horizontal overflow 0px | none |
+| desktop | dark | ![home-recent-long-titles desktop dark](home-recent-long-titles--desktop--dark--built.png)<br>`/dashboard`, 148 KB, horizontal overflow 0px | none |
 | mobile | light | ![home-recent-long-titles mobile light](home-recent-long-titles--mobile--light--built.png)<br>`/dashboard`, 224 KB, horizontal overflow 0px | none |
 | mobile | dark | ![home-recent-long-titles mobile dark](home-recent-long-titles--mobile--dark--built.png)<br>`/dashboard`, 229 KB, horizontal overflow 0px | none |
 
@@ -108,12 +108,12 @@ Prototype: none. NOT PROTOTYPED: the dropdown SAT-date picker and the two-line t
 |---|---|---|---|
 | desktop | light | ![home-recent-sessions desktop light](home-recent-sessions--desktop--light--built.png)<br>`/dashboard`, 142 KB, horizontal overflow 0px | none |
 | desktop | dark | ![home-recent-sessions desktop dark](home-recent-sessions--desktop--dark--built.png)<br>`/dashboard`, 143 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-recent-sessions mobile light](home-recent-sessions--mobile--light--built.png)<br>`/dashboard`, 218 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-recent-sessions mobile dark](home-recent-sessions--mobile--dark--built.png)<br>`/dashboard`, 223 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-recent-sessions mobile light](home-recent-sessions--mobile--light--built.png)<br>`/dashboard`, 217 KB, horizontal overflow 0px | none |
+| mobile | dark | ![home-recent-sessions mobile dark](home-recent-sessions--mobile--dark--built.png)<br>`/dashboard`, 222 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"2b1f3bb6-9df3-4aa8-b4f3-738c74e0e8d5","openPracticeSessionId":"ba695859-3fdc-4188-a21b-8dd4ab5d7428","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"99b0b098-e46b-4d5d-a9ec-a4e1dc792be6","openPracticeSessionId":"3cba63f3-5960-4013-b262-32bfe5222d2d","openReviewSessionId":null,"diagnosticSessionId":"b8d28794-db9c-42e1-8867-5c805e84b899","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"bb24de09-f551-432c-8c2b-9003295b70ac","openPracticeSessionId":"ef061c9d-ff6e-4da1-9fb3-aeb1c4cdc888","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"e5cfd4fa-f369-469d-8486-5889a9bd22bf","openPracticeSessionId":"597610e9-731a-4853-b12f-8c096f909b5d","openReviewSessionId":null,"diagnosticSessionId":"746cae5b-f769-4b00-8169-79da73478aeb","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - Desmos (QA2-B, opt-in `STUDENT_HARNESS_DESMOS=1`): not loaded (a local-only run; the calculator shows its unavailable line)
 - External hosts blocked: none
