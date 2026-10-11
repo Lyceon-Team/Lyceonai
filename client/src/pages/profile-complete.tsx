@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { isProfileGateSatisfied } from "@lyceon/shared/profile-completion";
+import { resetOnboardingLoopGuard } from "@/lib/onboarding-loop-guard";
 import { Redirect, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { FullPageLoader, Notice } from "@/components/student-ui";
@@ -215,6 +217,8 @@ export default function ProfileComplete() {
     },
     onSuccess: async (result) => {
       setErrorMessage("");
+      // A completed profile ends any loop suspicion (hotfix 2026-10-11).
+      resetOnboardingLoopGuard();
       await queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
 
       toast({
@@ -285,10 +289,18 @@ export default function ProfileComplete() {
    */
   const completing =
     completionMutation.isPending || completionMutation.isSuccess;
+  // Hotfix 2026-10-11: "already complete" is the one shared rule the server gate uses, so this
+  // page never sends someone back to a page the server will refuse them.
   if (
     !completing &&
-    profile?.requiredProfileComplete &&
-    profile?.profileCompletedAt
+    profile !== null &&
+    profile.requiredProfileComplete !== false &&
+    isProfileGateSatisfied({
+      isAdmin: false, // an admin already returned above
+      role: profile.role,
+      profileCompletedAt: profile.profileCompletedAt,
+      dateOfBirthKnown: profile.dateOfBirth !== null,
+    })
   ) {
     return (
       <Redirect

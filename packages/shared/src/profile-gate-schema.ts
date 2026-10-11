@@ -19,6 +19,8 @@ export const profileGateSchema = z.object({
   user: z
     .object({
       profileCompletedAt: z.string().nullable().optional(),
+      role: z.string().optional(),
+      dateOfBirth: z.string().nullable().optional(),
       requiredProfileComplete: z.boolean().optional(),
       guardianConsentRequired: z.boolean().optional(),
       outstandingLegal: z.unknown().optional(),
