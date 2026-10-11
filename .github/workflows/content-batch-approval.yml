@@ -3,31 +3,41 @@
 # @spec [docs/Spec/Lyceon_Doc_10B.md §2.4 ("Karl's approval is a merge of the batch pull request"),
 #   §8.7 ("Triggers never merge"); owner answer on Doc 10B Phase 1 Step 0, item 1 (Karl,
 #   2026-10-11): "merge alone counts … a plain workflow script stamps the approval from the merge
-#   event … No extra click."] | @implemented [2026-10-11]
+#   event … No extra click."; owner brief 2026-10-11, "change how the approval is recorded so it
+#   doesn't need a direct push to a protected branch"] | @implemented [2026-10-11]
 #
-# plain English: when a pull request into `social` that touches content/batches/<cycle>/ is MERGED by
-# the approver (repository variable CONTENT_APPROVER_LOGIN, Karl's GitHub account), this commits
-# the cycle's stamp to content/batches/approvals.json on `social`. The site treats a post as approved
-# exactly when its cycle has a stamp (shared/content/approvals.ts). No agent runs here: it is one
-# script and one commit. A merge into any other base stamps nothing (stamp-approval.ts refuses
-# it), so content merged into `seo` by mistake is never approved. Owner brief 2026-10-11: content
-# moves to `social`; it reaches production when Karl merges `social` into `main`.
+# plain English: Karl's merge of a batch pull request into `social` is the approval. That merge is
+# a push to `social`; this job runs on it, asks GitHub which pull request the pushed commit merged
+# (GitHub's record, not anything in the pull request), and, when the merger is the approver
+# (repository variable CONTENT_APPROVER_LOGIN) and the merge commit is exactly the pushed commit,
+# commits the cycle's stamp to content/batches/approvals.json on `social`. The site treats a post as
+# approved exactly when its cycle has a stamp (shared/content/approvals.ts).
 #
-# Setup (Karl, once): Settings → Secrets and variables → Actions → Variables → New repository
-# variable CONTENT_APPROVER_LOGIN = your GitHub login. If `social` is protected against pushes, allow
-# GitHub Actions to push to it (or the stamp commit fails and the run is red: nothing is approved
-# without the stamp, so nothing publishes). See docs/runbooks/content-ops.md.
+# WHY A GITHUB APP TOKEN. `social` is protected by a ruleset, and the GITHUB_TOKEN cannot be a
+# bypass actor, so it cannot push the stamp once a required check is on. A GitHub App can be
+# bypass-listed: this is GitHub's documented pattern for a workflow that writes to a protected
+# branch. The token is minted per run (one hour, this repository, contents: write).
+#
+# WHY A PUSH TRIGGER AND AN ENVIRONMENT. The App's private key lives only in the `content-approval`
+# Environment, whose deployment branch rule allows `social` alone. A job may use it only when it
+# runs on `refs/heads/social`, i.e. on a push to `social`: no pull request, no other branch and no
+# other workflow can read the key. (A pull_request trigger runs on refs/pull/N/merge, which that rule
+# would refuse.)
+#
+# Loop and fail-closed: the stamp commit is itself a push to `social`; GitHub reports no merged pull
+# request behind it, so that run stamps nothing. Any failure (no App, no bypass, wrong merger)
+# leaves the run red and the cycle unapproved: nothing publishes without the stamp.
+# Setup: docs/runbooks/content-ops.md §2.
 name: Content batch approval
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [social]
     paths:
       - content/batches/**
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: read
 
 concurrency:
@@ -36,51 +46,81 @@ concurrency:
 
 jobs:
   stamp:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: content-approval
     steps:
-      - name: Checkout social
+      - name: Find the pull request this push merged (GitHub's record)
+        id: pull
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          number="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" \
+            --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"${SHA}\")][0].number // empty")"
+          if [ -z "$number" ]; then
+            echo "No pull request was merged by ${SHA}: nothing to stamp."
+            echo "number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}" > "$RUNNER_TEMP/pull.json"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}/files" --paginate --jq '.[].filename' \
+            > "$RUNNER_TEMP/files.txt"
+
+      - name: Mint the approval App token
+        if: steps.pull.outputs.number != ''
+        id: app
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.CONTENT_APP_ID }}
+          private-key: ${{ secrets.CONTENT_APP_PRIVATE_KEY }}
+
+      - name: Checkout social (as the App)
+        if: steps.pull.outputs.number != ''
         uses: actions/checkout@v4
         with:
           ref: social
+          token: ${{ steps.app.outputs.token }}
 
       - name: Setup pnpm
+        if: steps.pull.outputs.number != ''
         uses: pnpm/action-setup@v4
 
       - name: Setup Node
+        if: steps.pull.outputs.number != ''
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
+        if: steps.pull.outputs.number != ''
         run: pnpm install --frozen-lockfile
 
       - name: Stamp the approval
+        if: steps.pull.outputs.number != ''
         env:
-          GH_TOKEN: ${{ github.token }}
-          STAMP_PR: ${{ github.event.pull_request.number }}
-          STAMP_BASE: ${{ github.event.pull_request.base.ref }}
-          STAMP_MERGED_BY: ${{ github.event.pull_request.merged_by.login }}
-          STAMP_MERGED_AT: ${{ github.event.pull_request.merged_at }}
-          STAMP_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          STAMP_PUSH_SHA: ${{ github.sha }}
           CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
         run: |
-          STAMP_CHANGED_FILES="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${STAMP_PR}/files" --paginate --jq '.[].filename')"
-          export STAMP_CHANGED_FILES
+          STAMP_PULL_JSON="$(cat "$RUNNER_TEMP/pull.json")"
+          STAMP_CHANGED_FILES="$(cat "$RUNNER_TEMP/files.txt")"
+          export STAMP_PULL_JSON STAMP_CHANGED_FILES
           pnpm exec tsx scripts/content/stamp-approval.ts
 
-      - name: Commit the stamp to social
+      - name: Commit the stamp to social (as the App, which the ruleset bypass-lists)
+        if: steps.pull.outputs.number != ''
         run: |
           if git diff --quiet -- content/batches/approvals.json; then
             echo "No new stamp."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "lyceon-content-approval[bot]"
+          git config user.email "lyceon-content-approval[bot]@users.noreply.github.com"
           git add content/batches/approvals.json
-          git commit -m "content: record Karl's approval from PR #${{ github.event.pull_request.number }}"
+          git commit -m "content: record Karl's approval from PR #${{ steps.pull.outputs.number }}"
           for i in 1 2 3 4; do
             git pull --rebase origin social && git push origin HEAD:social && exit 0
             sleep $((2 ** i))

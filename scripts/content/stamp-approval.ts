@@ -4,17 +4,23 @@
  * @spec [docs/Spec/Lyceon_Doc_10B.md §2.4 ("Karl's approval is a merge of the batch pull
  *       request"), §8.7 ("Triggers never merge"); owner answer on Doc 10B Phase 1 Step 0, item 1
  *       (Karl, 2026-10-11): "merge alone counts … a plain workflow script stamps the approval from
- *       the merge event … No extra click."] | @implemented [2026-10-11]
+ *       the merge event … No extra click."]; owner brief 2026-10-11 ("change how the approval is
+ *       recorded so it doesn't need a direct push to a protected branch"): the stamp is pushed with
+ *       a GitHub App token that the `social` ruleset bypass-lists, from a push-triggered job in an
+ *       Environment only `social` can use] | @implemented [2026-10-11]
  *
- * plain English: run by .github/workflows/content-batch-approval.yml when a pull request into `social`
- * that touches `content/batches/<cycle>/` is merged. For each cycle it touched, it writes
+ * plain English: run by .github/workflows/content-batch-approval.yml on every push to `social`.
+ * It reads the merge from GitHub's own record of the pull request behind the pushed commit
+ * (mergeEventFromPull), so the merge it stamps is Karl's click, not anything the pull request
+ * contains. For each cycle the merged pull request touched, it writes
  * `{ by: "Karl", date, pr, mergedBy, mergeSha }` into content/batches/approvals.json, the one file
  * the site reads approval from (shared/content/approvals.ts). It stamps only a merge by the
  * approver (`CONTENT_APPROVER_LOGIN`, a repository variable naming Karl's GitHub account): any
  * other merger, or no variable, writes nothing and exits 1 so the run is red and visible.
  *
- * Inputs (environment): STAMP_PR, STAMP_BASE, STAMP_MERGED_BY, STAMP_MERGED_AT (ISO), STAMP_MERGE_SHA,
- * STAMP_CHANGED_FILES (newline-separated paths), CONTENT_APPROVER_LOGIN.
+ * Inputs (environment): STAMP_PULL_JSON (GitHub's record of the pull request the pushed commit
+ * belongs to, empty if none), STAMP_PUSH_SHA, STAMP_CHANGED_FILES (newline-separated paths),
+ * CONTENT_APPROVER_LOGIN.
  *
  * edge cases:
  *  - A cycle already stamped keeps its first stamp (a re-run changes nothing).
@@ -25,6 +31,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import {
   CONTENT_BRANCH,
   approvalsFileSchema,
@@ -45,6 +52,58 @@ export type MergeEvent = {
   mergeSha: string;
   changedFiles: readonly string[];
 };
+
+/**
+ * The fields of GitHub's pull request object (REST `GET /repos/{owner}/{repo}/pulls/{number}`)
+ * the stamp reads. Everything else in the response is ignored.
+ */
+const mergedPullSchema = z.object({
+  number: z.number().int().positive(),
+  merged_at: z.string().nullable(),
+  merge_commit_sha: z.string().nullable(),
+  merged_by: z.object({ login: z.string().min(1) }).nullable(),
+  base: z.object({ ref: z.string().min(1) }),
+});
+
+/**
+ * The merge a push to `social` carries, from GitHub's own record of the pull request, or the
+ * reason there is none.
+ *
+ * plain English: the stamp job runs on every push to `social` (the only way it can hold the
+ * App key; see .github/workflows/content-batch-approval.yml). It asks GitHub which pull request
+ * the pushed commit belongs to and reads the merge from GitHub's record, not from anything the
+ * pull request itself contains. It counts only when that pull request is merged and its merge
+ * commit IS the pushed commit; otherwise (no pull request: the App's own stamp commit, or a
+ * push that merged nothing) there is nothing to stamp.
+ */
+export function mergeEventFromPull(
+  pull: unknown,
+  pushSha: string,
+  changedFiles: readonly string[],
+): { ok: true; event: MergeEvent } | { ok: false; reason: string } {
+  const parsed = mergedPullSchema.safeParse(pull);
+  if (!parsed.success)
+    return { ok: false, reason: "no pull request record for this push" };
+  const pr = parsed.data;
+  if (pr.merged_at === null || pr.merged_by === null)
+    return { ok: false, reason: `pull request #${pr.number} is not merged` };
+  if (pr.merge_commit_sha !== pushSha)
+    return {
+      ok: false,
+      reason: `pull request #${pr.number} was not merged by this push (${pushSha.slice(0, 7)})`,
+    };
+  return {
+    ok: true,
+    event: {
+      pr: pr.number,
+      base: pr.base.ref,
+      mergedBy: pr.merged_by.login,
+      mergedAt: pr.merged_at,
+      mergeSha: pr.merge_commit_sha,
+      changedFiles,
+    },
+  };
+}
 
 export type StampResult =
   | { ok: true; approvals: ApprovalsFile; stamped: string[] }
@@ -157,16 +216,21 @@ function main(): void {
   const current = approvalsFileSchema.parse(
     JSON.parse(readFileSync(file, "utf8")),
   );
+  const pullJson = env.STAMP_PULL_JSON?.trim() ?? "";
+  const merge = mergeEventFromPull(
+    pullJson === "" ? null : JSON.parse(pullJson),
+    env.STAMP_PUSH_SHA ?? "",
+    (env.STAMP_CHANGED_FILES ?? "").split("\n").filter(Boolean),
+  );
+  if (!merge.ok) {
+    // Not a batch merge (the App's own stamp commit, or a push that merged no pull request):
+    // nothing to approve, and nothing wrong.
+    process.stdout.write(`stamp-approval: ${merge.reason}; nothing to stamp\n`);
+    return;
+  }
   const result = stampApprovals(
     current,
-    {
-      pr: Number(env.STAMP_PR),
-      base: env.STAMP_BASE ?? "",
-      mergedBy: env.STAMP_MERGED_BY ?? "",
-      mergedAt: env.STAMP_MERGED_AT ?? "",
-      mergeSha: env.STAMP_MERGE_SHA ?? "",
-      changedFiles: (env.STAMP_CHANGED_FILES ?? "").split("\n").filter(Boolean),
-    },
+    merge.event,
     env.CONTENT_APPROVER_LOGIN?.trim() || undefined,
   );
   if (!result.ok) {
@@ -176,7 +240,7 @@ function main(): void {
   writeFileSync(file, serializeApprovals(result.approvals));
   process.stdout.write(
     result.stamped.length > 0
-      ? `stamp-approval: approved ${result.stamped.join(", ")} (PR #${env.STAMP_PR})\n`
+      ? `stamp-approval: approved ${result.stamped.join(", ")} (PR #${merge.event.pr})\n`
       : "stamp-approval: nothing new to stamp\n",
   );
 }
