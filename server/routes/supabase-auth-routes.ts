@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { createClient } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
+import { sanitizeReturnPath } from "../../packages/shared/src/return-path";
 import {
   requireSupabaseAuth,
   getSupabaseAdmin,
@@ -77,6 +78,10 @@ const signupSchema = z.object({
   // SCL-201 IS 6: the first-touch channel the browser derived in memory. Parsed by
   // recordSignupSource, never here — a bad value is dropped, it never refuses a signup.
   signupSource: z.unknown().optional(),
+  // Owner brief 2026-10-10 (follow-up to #1188): the page the visitor signed up FROM (e.g.
+  // `/upgrade?promo=…`). Re-sanitised below with the one return-path allowlist; an unsafe or
+  // unknown value is dropped, never a refusal.
+  next: z.unknown().optional(),
 });
 
 /**
@@ -185,7 +190,17 @@ router.post(
       // establishes the SAME @supabase/ssr session as every other entry method — no custom token
       // handling. Omitted (not set to undefined) when PUBLIC_SITE_URL is absent.
       const siteUrl = (process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
-      const emailRedirectTo = siteUrl ? `${siteUrl}/auth/callback` : null;
+      // THE RETURN LINK RIDES THE CONFIRMATION LINK (owner brief 2026-10-10). Without it a
+      // visitor who signed up by email from `/upgrade?promo=…` confirmed and landed on the
+      // default page: the link was dropped here. `sanitizeReturnPath` is the same allowlist
+      // the callback re-applies (`parseSafeNext`), and the shape is the one password recovery
+      // already sends (`/auth/callback?next=…`), so the redirect allowlist already admits it.
+      const signupNext = sanitizeReturnPath(validation.data.next);
+      const emailRedirectTo = siteUrl
+        ? `${siteUrl}/auth/callback${
+            signupNext ? `?next=${encodeURIComponent(signupNext)}` : ""
+          }`
+        : null;
 
       // Sign up user with Supabase Auth
       const { data: authData, error: signupError } = await supabase.auth.signUp(
