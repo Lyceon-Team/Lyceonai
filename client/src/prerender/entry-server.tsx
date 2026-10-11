@@ -90,6 +90,7 @@ import type { ContentPage } from "../../../packages/shared/src/seo-content-schem
 import {
   claimIdsIn,
   contentPageProblems,
+  duplicateTargetProblems,
   renderedPageProblems,
   type GateContext,
 } from "@shared/seo/content-gate";
@@ -269,7 +270,7 @@ export function assertContentPagesPublishable(
     claimIds: claimIdsIn(claimInventory),
     claimInventory,
   };
-  const problems: string[] = [];
+  const problems: string[] = [...duplicateTargetProblems(contentPages)];
   for (const content of contentPages) {
     problems.push(...contentPageProblems(content, ctx));
     const built = pages.find((p) => p.path === content.path);

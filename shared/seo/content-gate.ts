@@ -34,7 +34,12 @@ import type {
   ContentBlock,
   ContentPage,
 } from "../../packages/shared/src/seo-content-schema";
-import { firstBannedPhrase, firstUnapprovedOutcome } from "./banned-phrases";
+import {
+  firstBannedPhrase,
+  firstInternalLabel,
+  firstPipelinePhrase,
+  firstUnapprovedOutcome,
+} from "./banned-phrases";
 import { publishAtProblem } from "../content/schedule";
 
 export const TITLE_MAX = 60;
@@ -304,6 +309,13 @@ export function contentPageProblems(
       problems.push(
         at(`banned phrase ${banned.pattern} (${banned.why}) in "${text}"`),
       );
+    const label = firstInternalLabel(text);
+    if (label)
+      problems.push(
+        at(
+          `names ${label.why} (${label.pattern}) in "${text}" (Doc 10B §5 gate 2)`,
+        ),
+      );
     const outcome = firstUnapprovedOutcome(text);
     if (outcome)
       problems.push(
@@ -313,8 +325,88 @@ export function contentPageProblems(
       );
   }
 
+  // Blog posts are pipeline content (Doc 10B §5): they own one search term (gate 11), never
+  // mention AI, automation or process (gate 12; LISA as a product feature excepted, Karl
+  // 2026-10-11), and link the reader on to a practice or score page (gate 7).
+  if (page.path.startsWith("/blog/")) {
+    if (page.targetKeyword === undefined) {
+      problems.push(
+        at("a blog post needs a targetKeyword (Doc 10B §5 gate 11)"),
+      );
+    }
+    for (const text of everything) {
+      const phrase = firstPipelinePhrase(text);
+      if (phrase)
+        problems.push(
+          at(
+            `mentions ${phrase.why} (${phrase.pattern}) in "${text}" (Doc 10B §5 gate 12)`,
+          ),
+        );
+    }
+    const linksOn = units
+      .flatMap((u) => u.links)
+      .filter((h) => h.startsWith("/"));
+    if (
+      !linksOn.some((h) =>
+        PRACTICE_OR_SCORE_PATHS.some((p) => internalPath(h).startsWith(p)),
+      )
+    ) {
+      problems.push(
+        at(
+          `links to no practice or score page (${PRACTICE_OR_SCORE_PATHS.join(", ")}) (Doc 10B §5 gate 7)`,
+        ),
+      );
+    }
+  }
+
   if (page.parent !== undefined && !ctx.resolves(page.parent)) {
     problems.push(at(`parent ${page.parent} does not resolve`));
+  }
+  return problems;
+}
+
+/** Where a blog post sends the reader next (Doc 10B §5 gate 7): practice or score pages. */
+export const PRACTICE_OR_SCORE_PATHS: readonly string[] = [
+  "/sat-practice-questions",
+  "/free-sat-practice-test",
+  "/what-is-a-good-sat-score",
+];
+
+/**
+ * A target keyword as compared for duplicates: lower case, punctuation as spaces, each word's
+ * plural `s` dropped, so "SAT practice tests" and "sat practice test" are the same term.
+ */
+export function normalizedKeyword(keyword: string): string {
+  return keyword
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .map((w) =>
+      w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w,
+    )
+    .join(" ");
+}
+
+/**
+ * Doc 10B §5 gate 11 ("a new item may not target a search term an existing Lyceon page already
+ * covers; if the topic is covered, the existing page is updated instead"): no two pages share a
+ * target keyword.
+ */
+export function duplicateTargetProblems(
+  pages: readonly ContentPage[],
+): string[] {
+  const owner = new Map<string, string>();
+  const problems: string[] = [];
+  for (const page of pages) {
+    if (page.targetKeyword === undefined) continue;
+    const key = normalizedKeyword(page.targetKeyword);
+    const first = owner.get(key);
+    if (first !== undefined) {
+      problems.push(
+        `${page.path}: targets "${page.targetKeyword}", which ${first} already covers; update ${first} instead (Doc 10B §5 gate 11)`,
+      );
+    } else owner.set(key, page.path);
   }
   return problems;
 }
@@ -325,6 +417,23 @@ export function contentArticle(html: string): string | null {
   if (start === -1) return null;
   const end = html.indexOf("</article>", start);
   return end === -1 ? null : html.slice(start, end);
+}
+
+/**
+ * The standard SAT trademark notice (owner answer 6, 2026-10-03; Doc 10B §2.10, §5 gate 12), as the
+ * footer renders it (client/src/components/layout/Footer.tsx).
+ */
+export const SAT_TRADEMARK_NOTICE =
+  "SAT® is a trademark registered by the College Board, which is not affiliated with, and does not endorse, this product.";
+
+/** Visible text of rendered HTML with whitespace collapsed (entities for ® and & decoded). */
+function bodyTextOf(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&reg;|&#174;|&#xAE;/gi, "®")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ");
 }
 
 /** Every problem the RENDERED page has: one h1, no skipped heading level, links resolve. */
@@ -340,6 +449,12 @@ export function renderedPageProblems(
 
   const h1s = [...body.matchAll(/<h1[\s>]/g)].length;
   if (h1s !== 1) problems.push(at(`has ${h1s} <h1> elements (exactly 1)`));
+
+  // Doc 10B §5 gate 12, §2.10: the College Board trademark notice is on the page (the footer
+  // carries it on every public page; this proves the built page still renders it).
+  if (!bodyTextOf(body).includes(SAT_TRADEMARK_NOTICE)) {
+    problems.push(at("has no SAT trademark notice (Doc 10B §5 gate 12)"));
+  }
 
   const article = contentArticle(body);
   if (article === null) {

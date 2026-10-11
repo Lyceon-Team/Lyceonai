@@ -20,10 +20,13 @@ GATE="shared/seo/content-gate.ts"
 JOB="server/services/content/publish-job.ts"
 STAMP="scripts/content/stamp-approval.ts"
 REVIEW="scripts/content/review-record.ts"
+BANNED="shared/seo/banned-phrases.ts"
+VALE_INI=".vale.ini"
+LYCHEE="lychee.toml"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/content-mut.XXXX)"
 
-FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW")
+FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -50,6 +53,10 @@ SCHED_T=tests/ci/content-schedule.test.ts
 JOB_T=tests/ci/content-publish-job.test.ts
 STAMP_T=tests/ci/content-approval-stamp.test.ts
 REVIEW_T=tests/ci/content-review-record.test.ts
+QG_T=tests/ci/content-quality-gates.test.ts
+# The Vale and lychee plants (Q8, Q9) need both tools: the quality-gates suite skips them without,
+# which would read here as a plant that stayed green. Fail loudly instead.
+command -v vale >/dev/null && command -v lychee >/dev/null || { echo "vale and lychee must be on PATH (.github/actions/content-tools)"; exit 1; }
 
 expect_red() {
   if [ "$4" = 0 ]; then bad "$1: check stayed GREEN (the plant was not caught)"; return; fi
@@ -68,7 +75,7 @@ run() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T")"; RC=$?
+OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T" "$QG_T")"; RC=$?
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "CONTENT OPS MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -135,6 +142,42 @@ run "R2 a response to every REVISE" "is blocked when a REVISE has no Claude resp
 echo "=== (R3) Codex may edit other sections ==="
 plant "$REVIEW" "    if (withoutCodex(before) !== withoutCodex(after)) {" "    if (false) {" || { bad "R3 STALE"; exit 1; }
 run "R3 Codex writes only its section" "a Codex commit that edits a post, or another section, is refused" "$REVIEW_T"
+
+echo "=== (Q1) gate 11: a duplicate target keyword passes ==="
+plant "$GATE" "    if (first !== undefined) {" "    if (false) {" || { bad "Q1 STALE"; exit 1; }
+run "Q1 no duplicate targeting" "a second page targeting an owned term, in plural and capitals, is rejected" "$QG_T"
+
+echo "=== (Q2) gate 12: an AI mention in a post passes ==="
+plant "$GATE" "      const phrase = firstPipelinePhrase(text);" "      const phrase = null;" || { bad "Q2 STALE"; exit 1; }
+run "Q2 no AI in posts" "an AI mention in a post is rejected" "$QG_T"
+
+echo "=== (Q3) gate 12: LISA as a feature is no longer excepted ==="
+plant "$BANNED" '  const rest = text.replace(LISA_AS_FEATURE, " ");' "  const rest = text;" || { bad "Q3 STALE"; exit 1; }
+run "Q3 the LISA exception" '"LISA, your AI tutor" is the one AI mention allowed' "$QG_T"
+
+echo "=== (Q4) gate 12: a page without the trademark notice passes ==="
+plant "$GATE" "  if (!bodyTextOf(body).includes(SAT_TRADEMARK_NOTICE)) {" "  if (false) {" || { bad "Q4 STALE"; exit 1; }
+run "Q4 the trademark notice" "a built page without the trademark notice is rejected" "$QG_T"
+
+echo "=== (Q5) gate 2: an internal label passes ==="
+plant "$GATE" "    const label = firstInternalLabel(text);" "    const label = null;" || { bad "Q5 STALE"; exit 1; }
+run "Q5 no internal labels" "a register ID in a post is rejected" "$QG_T"
+
+echo "=== (Q6) gate 7: a post with no practice or score link passes ==="
+plant "$GATE" "      !linksOn.some((h) =>" "      false && !linksOn.some((h) =>" || { bad "Q6 STALE"; exit 1; }
+run "Q6 links on to practice or score" "a post whose practice and score links are removed is rejected" "$QG_T"
+
+echo "=== (Q7) gate 11: a post needs no target keyword ==="
+plant "$GATE" "    if (page.targetKeyword === undefined) {" "    if (false) {" || { bad "Q7 STALE"; exit 1; }
+run "Q7 every post has a target" "a blog post with no target keyword is rejected" "$QG_T"
+
+echo "=== (Q8) gate 6: Vale without the ai-tells rule set ==="
+plant "$VALE_INI" "BasedOnStyles = Vale, Microsoft, ai-tells" "BasedOnStyles = Vale, Microsoft" || { bad "Q8 STALE"; exit 1; }
+run "Q8 Vale runs ai-tells" "Vale rejects planted AI-tell prose in a real post's export" "$QG_T"
+
+echo "=== (Q9) gate 8: lychee accepts a 404 ==="
+plant "$LYCHEE" 'accept = ["200..=299", "429"]' 'accept = ["200..=299", "404", "429"]' || { bad "Q9 STALE"; exit 1; }
+run "Q9 links resolve" "lychee passes a live College Board page and rejects one that 404s" "$QG_T"
 
 echo
 echo "CONTENT OPS MUTATIONS: $PASS passed, $FAIL failed"
