@@ -3702,9 +3702,9 @@ s = s.replace(a, "            const title = s.source_engine === \"review\" ? \"R
 plant "W6-UI66-P1" "Practice's recent row prints \"Practice\" again, not the criteria" \
   "$W6_UI66_PRACTICE" \
   "client/src/pages/practice.tsx" \
-  'a = "                  {recentSessionTitle(s)}\n"
+  'a = "                  text={recentSessionTitle(s)}\n"
 assert s.count(a) == 1
-s = s.replace(a, "                  {\"Practice\"}\n", 1)'
+s = s.replace(a, "                  text=\"Practice\"\n", 1)'
 
 plant "W6-UI66-M1" "the row helper ignores the criteria the row carries" \
   "$W6_UI66_MODEL $W6_UI66_HOME $W6_UI66_PRACTICE" \
