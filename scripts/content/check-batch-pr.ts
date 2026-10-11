@@ -23,7 +23,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ALL_BLOG_POSTS } from "../../shared/content/blog";
 import { batchWeekProblem } from "../../shared/content/schedule";
-import { APPROVALS_PATH, cyclesTouched } from "./stamp-approval";
+import {
+  APPROVALS_PATH,
+  approvalsEditProblem,
+  cyclesTouched,
+} from "./stamp-approval";
 import {
   codexCommitProblems,
   copiedCommentProblems,
@@ -90,9 +94,13 @@ function main(): void {
   const problems: string[] = [];
 
   if (changed.includes(APPROVALS_PATH)) {
-    problems.push(
-      `${APPROVALS_PATH} is changed by hand; only the merge workflow writes it`,
-    );
+    const at = (rev: string): string | null =>
+      git("ls-tree", "--name-only", rev, "--", APPROVALS_PATH).trim() ===
+      APPROVALS_PATH
+        ? git("show", `${rev}:${APPROVALS_PATH}`)
+        : null;
+    const problem = approvalsEditProblem(at(base), at(head));
+    if (problem) problems.push(problem);
   }
 
   for (const cycle of cyclesConcerned(changed)) {

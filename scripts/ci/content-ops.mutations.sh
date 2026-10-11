@@ -139,6 +139,10 @@ echo "=== (A2) a re-run overwrites the first stamp ==="
 plant "$STAMP" "    if (next[cycle]) continue;" "" || { bad "A2 STALE"; exit 1; }
 run "A2 first stamp kept" "a re-run keeps the first stamp" "$STAMP_T"
 
+echo "=== (A3) a hand-added stamp passes the PR check ==="
+plant "$STAMP" "  return a === read(before)" "  return true" || { bad "A3 STALE"; exit 1; }
+run "A3 no stamps by hand" "adding, editing or removing a stamp is" "$STAMP_T"
+
 echo "=== (R1) a ready record without Codex verdicts passes ==="
 plant "$REVIEW" "  if (!ctx.ready) return problems;" "  return problems;" || { bad "R1 STALE"; exit 1; }
 run "R1 ready needs the Codex section" "is blocked when the Codex section has not been written" "$REVIEW_T"

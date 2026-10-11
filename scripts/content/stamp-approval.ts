@@ -112,6 +112,36 @@ export function serializeApprovals(approvals: Readonly<ApprovalsFile>): string {
   return `${JSON.stringify(sorted, null, 2)}\n`;
 }
 
+/**
+ * Whether a pull request changed the stamps by hand (Doc 10B §2.4: only the merge workflow
+ * writes them). Compares the stamps, not the bytes: a missing file reads as `{}`, so the pull
+ * request that first adds the empty file passes, and any stamp added, edited or removed fails.
+ * `before`/`after` are the file's text at the base and the head, or null where it is absent.
+ */
+export function approvalsEditProblem(
+  before: string | null,
+  after: string | null,
+): string | null {
+  const read = (text: string | null): string | null => {
+    if (text === null) return serializeApprovals({});
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (e: unknown) {
+      // Unparseable JSON is a finding (null); anything else is a bug, so it propagates.
+      if (e instanceof SyntaxError) return null;
+      throw e;
+    }
+    const parsed = approvalsFileSchema.safeParse(raw);
+    return parsed.success ? serializeApprovals(parsed.data) : null;
+  };
+  const a = read(after);
+  if (a === null) return `${APPROVALS_PATH} is not a valid approvals file`;
+  return a === read(before)
+    ? null
+    : `${APPROVALS_PATH} is changed by hand; only the merge workflow writes it`;
+}
+
 function main(): void {
   const env = process.env;
   const file = join(ROOT, APPROVALS_PATH);

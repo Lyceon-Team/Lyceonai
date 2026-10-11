@@ -9,11 +9,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   APPROVALS_PATH,
+  approvalsEditProblem,
   cyclesTouched,
   serializeApprovals,
   stampApprovals,
   type MergeEvent,
 } from "../../scripts/content/stamp-approval";
+import { FIXTURE_APPROVALS } from "../lib/content-fixtures";
 import { approvalsFileSchema } from "../../shared/content/approvals";
 import { REPO_ROOT } from "../lib/prerendered-site";
 
@@ -107,5 +109,34 @@ describe("stamping a merged batch", () => {
     const text = readFileSync(join(REPO_ROOT, APPROVALS_PATH), "utf8");
     const parsed = approvalsFileSchema.parse(JSON.parse(text));
     expect(serializeApprovals(parsed)).toBe(text);
+  });
+});
+
+describe("a pull request may not stamp approvals by hand", () => {
+  const stamped = serializeApprovals(FIXTURE_APPROVALS);
+  const empty = serializeApprovals({});
+  it("adding the empty file (this pipeline's first PR) is not a hand stamp", () => {
+    expect(approvalsEditProblem(null, empty)).toBe(null);
+    expect(approvalsEditProblem(empty, "{}")).toBe(null);
+  });
+  it("adding, editing or removing a stamp is", () => {
+    const byHand = `${APPROVALS_PATH} is changed by hand; only the merge workflow writes it`;
+    expect(approvalsEditProblem(empty, stamped)).toBe(byHand);
+    expect(approvalsEditProblem(null, stamped)).toBe(byHand);
+    expect(approvalsEditProblem(stamped, empty)).toBe(byHand);
+    expect(
+      approvalsEditProblem(
+        stamped,
+        stamped.replace("2026-10-16", "2026-10-15"),
+      ),
+    ).toBe(byHand);
+  });
+  it("an unparseable or malformed file is refused", () => {
+    expect(approvalsEditProblem(empty, "{")).toBe(
+      `${APPROVALS_PATH} is not a valid approvals file`,
+    );
+    expect(approvalsEditProblem(empty, '{"2026-W43": {"by": "Someone"}}')).toBe(
+      `${APPROVALS_PATH} is not a valid approvals file`,
+    );
   });
 });
