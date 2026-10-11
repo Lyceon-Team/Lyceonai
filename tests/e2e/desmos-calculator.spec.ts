@@ -54,13 +54,21 @@ const CONSTRUCTOR_SPY = `(() => {
   window.__desmosConstructed = counts;
   // Desmos assigns an empty object to window.Desmos and fills it afterwards, so the
   // constructors are wrapped when they are READ, through a Proxy over the real object.
+  // Desmos's constructor re-enters itself through window.Desmos when called via a wrapper, so a
+  // call made while another counted construction is still running is the same calculator.
   const wrappers = new Map();
+  let depth = 0;
   const wrap = (real, key) => {
     if (typeof real !== "function") return real;
     if (!wrappers.has(real)) {
       wrappers.set(real, function (el, o) {
-        counts[key] += 1;
-        return new real(el, o);
+        if (depth === 0) counts[key] += 1;
+        depth += 1;
+        try {
+          return new real(el, o);
+        } finally {
+          depth -= 1;
+        }
       });
     }
     return wrappers.get(real);
