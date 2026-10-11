@@ -28,8 +28,12 @@ type Step = {
   run?: string;
 };
 type Workflow = {
-  on: { pull_request: { types: string[]; branches: string[] } };
-  jobs: Record<string, { steps: Step[] }>;
+  on: {
+    pull_request?: { types: string[]; branches: string[] };
+    push?: { branches: string[]; paths?: string[] };
+  };
+  permissions?: Record<string, string>;
+  jobs: Record<string, { steps: Step[]; environment?: string }>;
 };
 
 function workflow(file: string): Workflow {
@@ -38,21 +42,21 @@ function workflow(file: string): Workflow {
   ) as Workflow;
 }
 
+/** The pull-request-triggered content workflows (the approval stamp runs on the merge's push). */
 const CONTENT_WORKFLOWS = [
   "content-batch-checks.yml",
   "content-batch-notify.yml",
-  "content-batch-approval.yml",
 ];
 
 /** GitHub's `branches:` filter for pull_request: the event runs when the base matches. */
 function runsOn(wf: Workflow, base: string): boolean {
-  return wf.on.pull_request.branches.includes(base);
+  return wf.on.pull_request?.branches.includes(base) ?? false;
 }
 
 describe("the content workflows run on PRs into social only", () => {
   it.each(CONTENT_WORKFLOWS)("%s filters on base social", (file) => {
     expect(CONTENT_BRANCH).toBe("social");
-    expect(workflow(file).on.pull_request.branches).toEqual([CONTENT_BRANCH]);
+    expect(workflow(file).on.pull_request?.branches).toEqual([CONTENT_BRANCH]);
   });
 
   it("a batch PR into social triggers the review-record check; the same into seo does not", () => {
@@ -71,15 +75,52 @@ describe("the content workflows run on PRs into social only", () => {
     );
   });
 
-  it("the approval stamp checks out social, is told the base, and pushes the stamp to social", () => {
+  it("the approval stamp runs only on a push to social, in the Environment that holds the App key", () => {
+    const wf = workflow("content-batch-approval.yml");
+    // A push trigger runs on refs/heads/social, the only ref the `content-approval` Environment's
+    // branch rule admits; a pull_request trigger (refs/pull/N/merge) could never read the key.
+    expect(wf.on.pull_request).toBeUndefined();
+    expect(wf.on.push?.branches).toEqual([CONTENT_BRANCH]);
+    expect(wf.jobs["stamp"]?.environment).toBe("content-approval");
+    // The workflow's own token can read, never write: the stamp is pushed as the App.
+    expect(wf.permissions).toEqual({
+      contents: "read",
+      "pull-requests": "read",
+    });
+  });
+
+  it("the merge is read from GitHub's record and must be this push's merge commit", () => {
     const steps =
       workflow("content-batch-approval.yml").jobs["stamp"]?.steps ?? [];
+    const find = steps.find((s) => s.run?.includes("/commits/"))?.run ?? "";
+    expect(find).toContain("repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls");
+    expect(find).toContain('.merge_commit_sha == \\"${SHA}\\"');
     expect(
-      steps.find((s) => s.uses?.startsWith("actions/checkout"))?.with?.ref,
-    ).toBe(CONTENT_BRANCH);
-    expect(
-      steps.find((s) => s.run?.includes("stamp-approval.ts"))?.env?.STAMP_BASE,
-    ).toBe("${{ github.event.pull_request.base.ref }}");
+      steps.find((s) => s.run?.includes("stamp-approval.ts"))?.env
+        ?.STAMP_PUSH_SHA,
+    ).toBe("${{ github.sha }}");
+  });
+
+  it("the stamp is pushed to social with the App token, never the workflow token", () => {
+    const steps =
+      workflow("content-batch-approval.yml").jobs["stamp"]?.steps ?? [];
+    const app = steps.find((s) =>
+      s.uses?.startsWith("actions/create-github-app-token"),
+    );
+    expect(app?.with).toEqual({
+      "app-id": "${{ vars.CONTENT_APP_ID }}",
+      "private-key": "${{ secrets.CONTENT_APP_PRIVATE_KEY }}",
+    });
+    const checkout = steps.find((s) => s.uses?.startsWith("actions/checkout"));
+    expect(checkout?.with).toEqual({
+      ref: CONTENT_BRANCH,
+      token: "${{ steps.app.outputs.token }}",
+    });
+    // The key is read by the token step and nowhere else.
+    for (const step of steps)
+      expect(JSON.stringify(step).includes("secrets."), step.name).toBe(
+        step === app,
+      );
     const push = steps.find((s) => s.run?.includes("git push"))?.run ?? "";
     expect(push).toContain("git push origin HEAD:social");
     expect(push).not.toMatch(/\bseo\b/);
