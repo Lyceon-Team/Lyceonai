@@ -402,8 +402,15 @@ jobs:
       # one shard per core. The driver also requires every plant to run exactly once and every
       # worktree to end byte-identical to HEAD. It was ~24 of this job's ~30 minutes serially.
       # Owner decision 2026-10-07 (CI audit item 3): on a pull request, only the plants whose
-      # target file or test the change touches (all of them when the harness itself changes, or
-      # when the change is unknown); every plant in the full tier (ci-full.yml) before `main`.
+      # target file or test the change touches; every plant in the full tier (ci-full.yml) before
+      # `main`.
+      # Owner ruling 2026-10-11 (Karl, on #1204: the earlier option (b)): when the change would
+      # select the FULL plant set (the harness itself changed, or the change is unknown), this job
+      # does not run it: 474 plants do not fit this job's 25 minutes on a slow runner (#1204 timed
+      # out twice). It says so and passes; ci-full's parallel `review-ui-gate-shard` jobs are the
+      # gate for that change (on a pull request into cleanup, via the `ci:full` label). The
+      # 25-minute limit stays. Proven by tests/ci/review-ui-gate-fast-lane.test.ts, which runs
+      # this exact block.
       - name: Review UI mutation gate — the plants this change touches (proves U1-U9 are load-bearing)
         env:
           CHANGED_KNOWN: ${{ needs.changes.outputs.changed_known }}
@@ -411,10 +418,15 @@ jobs:
           ALL_PLANTS: ${{ needs.changes.outputs.review_ui_gate }}
         run: |
           set -euo pipefail
-          if [ "$CHANGED_KNOWN" = true ] && [ "$ALL_PLANTS" != true ]; then
-            printf '%s\n' "$CHANGED_FILES" > "$RUNNER_TEMP/review-ui-changed.txt"
-            export REVIEW_UI_GATE_ONLY_CHANGED="$RUNNER_TEMP/review-ui-changed.txt"
+          if [ "$CHANGED_KNOWN" != true ] || [ "$ALL_PLANTS" = true ]; then
+            echo "Review UI mutation gate: this change selects the FULL plant set (the harness changed, or the change is unknown)."
+            echo "Not run in this job: ci-full runs every plant across parallel shards (review-ui-gate-shard) and is the gate for this change."
+            echo "On a pull request into cleanup, add the ci:full label to run it."
+            echo "::notice title=Review UI mutation gate deferred to ci-full::Full plant set selected; ci-full (review-ui-gate-shard) runs it. On a PR into cleanup, add the ci:full label."
+            exit 0
           fi
+          printf '%s\n' "$CHANGED_FILES" > "$RUNNER_TEMP/review-ui-changed.txt"
+          export REVIEW_UI_GATE_ONLY_CHANGED="$RUNNER_TEMP/review-ui-changed.txt"
           bash scripts/ci/review-ui-gate.parallel.sh
 
       # The docs-only skip (changes job) is sound only while no job it skips reads those docs.
