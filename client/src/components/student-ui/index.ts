@@ -23,3 +23,5 @@ export { FilterBar } from "./filter-bar/FilterBar";
 export { EMPTY_FILTER, type FilterBarValue } from "./filter-bar/filter-cascade";
 // UI-50: the 40-tick ruler (DESIGN.md §3 "Ruler progress"): Home's diagnostic card and free quota.
 export { RulerProgress, rulerFill } from "./RulerProgress";
+// Owner brief 2026-10-11 (DESIGN.md "UI standards"): a long label is two lines and an ellipsis.
+export { ClampedLabel } from "./ClampedLabel";

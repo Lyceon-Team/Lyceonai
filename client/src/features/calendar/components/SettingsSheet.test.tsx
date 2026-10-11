@@ -31,6 +31,10 @@ import type {
   StudyProfileBounds,
 } from "@lyceon/shared/calendar";
 import { SettingsSheet } from "./SettingsSheet";
+import {
+  openSatDates,
+  satDatesSummary,
+} from "@/components/sat-dates/sat-date-picker.testing";
 
 const ESTIMATES: PlanningEstimates = {
   practice_seconds_per_unit: 90,
@@ -145,12 +149,19 @@ describe("the sheet opens on the student's CURRENT schedule", () => {
     expect(group.queryByRole("button", { name: "1 hr" })).toBeNull();
   });
 
-  it("bounds the SAT date by the served window, not by a literal", () => {
+  it("bounds the SAT dates by the served window, not by a literal", () => {
     renderSheet();
-    const input = screen.getByLabelText("SAT date");
-    expect(input.getAttribute("min")).toBe("2026-09-22");
-    // 2026-09-22 + 400 days.
-    expect(input.getAttribute("max")).toBe("2027-10-27");
+    // Owner brief 2026-10-11 §1: the one SAT-date picker, opening on the saved date.
+    expect(satDatesSummary("settings-exam-dates")).toBe("Sat, Nov 7, 2026");
+    const menu = openSatDates("settings-exam-dates");
+    // 2026-09-22 + 400 days = 2027-10-27: the official 2027-10-09 is offered, and the
+    // official 2027-11-06, past the served horizon the write refuses, is not.
+    expect(
+      within(menu).queryByTestId("settings-exam-dates-date-2027-10-09"),
+    ).not.toBeNull();
+    expect(
+      within(menu).queryByTestId("settings-exam-dates-date-2027-11-06"),
+    ).toBeNull();
   });
 });
 
@@ -264,7 +275,7 @@ describe("guard rails", () => {
       "full_length_weekday",
       "planner_mode",
       "study_days_mask",
-      "target_exam_date",
+      "target_exam_dates",
       "target_score",
       "timezone",
     ]);
@@ -461,7 +472,9 @@ describe("practice test frequency (§8.1)", () => {
   });
 
   it("states the RATE, not a count, when there is no target date to count toward", () => {
-    renderSheet({ profile: { ...PROFILE, target_exam_date: null } });
+    renderSheet({
+      profile: { ...PROFILE, target_exam_date: null, target_exam_dates: [] },
+    });
     expect(screen.getByTestId("settings-summary").textContent).toContain(
       "a full-length test every 2 weeks, on Saturdays",
     );

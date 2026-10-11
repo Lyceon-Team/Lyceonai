@@ -396,7 +396,7 @@ export default function CalendarPage(): JSX.Element {
                 timezone: draft.timezone,
                 study_days_mask: draft.study_days_mask,
                 daily_minutes: draft.daily_minutes,
-                target_exam_date: draft.target_exam_date,
+                target_exam_dates: draft.target_exam_dates,
                 target_score: draft.target_score,
                 full_length_weekday: draft.full_length_weekday,
                 // Both halves, always. `calendarProfileUpsertSchema` refuses a body that

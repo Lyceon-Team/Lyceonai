@@ -9,11 +9,29 @@
  * and one profile, because the only surface collecting this had a required field in it.
  */
 import React from "react";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CalendarSetupDefaults } from "@lyceon/shared/calendar";
 import { EXAM_FREQUENCIES, WEEKDAYS } from "../copy/exam-cadence";
 import { SetupPopup, type SetupAnswers } from "./SetupPopup";
+import { daysBetween } from "../lib/dates";
+import { fullLengthsBeforeTarget } from "@lyceon/shared/calendar";
+import {
+  chooseNotSure,
+  closeSatDates,
+  openSatDates,
+  satDatesSummary,
+  toggleSatDate,
+} from "@/components/sat-dates/sat-date-picker.testing";
+
+/** The setup form's SAT-date picker (owner brief 2026-10-11 §1: the one shared picker). */
+const PICKER = "calendar-setup-exam-dates";
 
 afterEach(cleanup);
 
@@ -164,52 +182,75 @@ describe("pressing straight through", () => {
 });
 
 describe("the test date is optional", () => {
-  it('"I haven\'t picked a date yet" stores NULL, not the placeholder in the input', () => {
+  it('"Not sure yet" stores no dates, not a placeholder the form chose', () => {
     const { submitted } = open();
-
-    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
+    // Presence first: a date can be chosen, and then "Not sure yet" clears it.
+    toggleSatDate(PICKER, "2026-11-07");
+    expect(satDatesSummary(PICKER)).toBe("Sat, Nov 7, 2026");
+    chooseNotSure(PICKER);
+    closeSatDates(PICKER);
+    expect(satDatesSummary(PICKER)).toBe("Not sure yet");
     fireEvent.click(screen.getByTestId("calendar-setup-continue"));
     fireEvent.click(screen.getByTestId("calendar-setup-done"));
-
-    expect(submitted[0]!.target_exam_date).toBeNull();
+    expect(submitted[0]!.target_exam_dates).toEqual([]);
   });
 
-  it("disables the date input when the opt-out is checked", () => {
+  it('choosing a date clears "Not sure yet", and "Not sure yet" clears the dates', () => {
     open();
-    const date = screen.getByTestId(
-      "calendar-setup-exam-date",
-    ) as HTMLInputElement;
-    expect(date.disabled).toBe(false);
-    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
-    expect(date.disabled).toBe(true);
+    const menu = openSatDates(PICKER);
+    const notSure = within(menu).getByTestId(`${PICKER}-not-sure`);
+    expect(notSure.getAttribute("aria-checked")).toBe("true");
+    toggleSatDate(PICKER, "2026-12-05");
+    expect(notSure.getAttribute("aria-checked")).toBe("false");
+    expect(
+      within(menu)
+        .getByTestId(`${PICKER}-date-2026-12-05`)
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    chooseNotSure(PICKER);
+    expect(notSure.getAttribute("aria-checked")).toBe("true");
+    expect(
+      within(menu)
+        .getByTestId(`${PICKER}-date-2026-12-05`)
+        .getAttribute("aria-checked"),
+    ).toBe("false");
   });
 
-  it("a chosen date IS stored", () => {
+  it("chosen dates ARE stored, several of them", () => {
     const { submitted } = open();
-    fireEvent.change(screen.getByTestId("calendar-setup-exam-date"), {
-      target: { value: "2026-11-07" },
-    });
+    toggleSatDate(PICKER, "2026-12-05");
+    toggleSatDate(PICKER, "2026-11-07");
+    closeSatDates(PICKER);
+    expect(satDatesSummary(PICKER)).toBe("Sat, Nov 7, 2026 + 1 more");
     fireEvent.click(screen.getByTestId("calendar-setup-continue"));
     fireEvent.click(screen.getByTestId("calendar-setup-done"));
-    expect(submitted[0]!.target_exam_date).toBe("2026-11-07");
+    expect(submitted[0]!.target_exam_dates).toEqual([
+      "2026-11-07",
+      "2026-12-05",
+    ]);
+  });
+
+  it("opens on the dates the student already chose (onboarding or Settings, SCL-223)", () => {
+    open({
+      defaults: { ...DEFAULTS, target_exam_dates: ["2026-12-05"] },
+    });
+    expect(satDatesSummary(PICKER)).toBe("Sat, Dec 5, 2026");
   });
 });
 
 describe("the live countdown on the score step", () => {
-  it('reads "N days to go" from the chosen date', () => {
+  it('reads "N days to go" from the closest chosen date', () => {
     open();
-    fireEvent.change(screen.getByTestId("calendar-setup-exam-date"), {
-      target: { value: "2026-10-24" },
-    });
-    // 2026-09-24 → 2026-10-24 is 30 days. Asserted as arithmetic, not as a literal.
+    toggleSatDate(PICKER, "2026-12-05");
+    toggleSatDate(PICKER, "2026-11-07");
+    closeSatDates(PICKER);
     expect(screen.getByTestId("calendar-setup-score-note").textContent).toBe(
-      `out of 1600 · ${30} days to go`,
+      `out of 1600 · ${daysBetween(TODAY, "2026-11-07")} days to go`,
     );
   });
 
   it("drops the countdown — not to zero — when there is no date", () => {
     open();
-    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
     const note = screen.getByTestId("calendar-setup-score-note").textContent;
     expect(note).toBe("out of 1600");
     expect(note).not.toMatch(/\b0 days\b/);
@@ -227,18 +268,32 @@ describe("the live countdown on the score step", () => {
 });
 
 describe("skipping", () => {
-  it("Skip on step 1 sends BOTH target fields as null", () => {
+  it("Skip on step 1 sends no target score and no dates the student did not save", () => {
     const { submitted } = open();
+    toggleSatDate(PICKER, "2026-11-07");
+    closeSatDates(PICKER);
 
     fireEvent.click(screen.getByTestId("calendar-setup-skip-1"));
     fireEvent.click(screen.getByTestId("calendar-setup-done"));
 
-    // Skip means "no answer from me" — so the slider's resting position is not stored as
-    // if the student had chosen it.
+    // Skip means "no answer from me" — so neither the slider's resting position nor a date
+    // picked and then skipped is stored as if the student had chosen it.
     expect(submitted[0]!.target_score).toBeNull();
-    expect(submitted[0]!.target_exam_date).toBeNull();
+    expect(submitted[0]!.target_exam_dates).toEqual([]);
     // …and the schedule half is still real, so there is still a plan to build.
     expect(submitted[0]!.study_days_mask).toBeGreaterThan(0);
+  });
+
+  it("Skip keeps the dates the student had already saved: skipping erases no earlier answer", () => {
+    const { submitted } = open({
+      defaults: { ...DEFAULTS, target_exam_dates: ["2026-12-05"] },
+    });
+    toggleSatDate(PICKER, "2026-12-05");
+    toggleSatDate(PICKER, "2026-11-07");
+    closeSatDates(PICKER);
+    fireEvent.click(screen.getByTestId("calendar-setup-skip-1"));
+    fireEvent.click(screen.getByTestId("calendar-setup-done"));
+    expect(submitted[0]!.target_exam_dates).toEqual(["2026-12-05"]);
   });
 
   it("moving the slider after Skip counts as an answer again", () => {
@@ -630,6 +685,8 @@ describe("the practice-test frequency (Brief 14)", () => {
 
   it("the note says what the choice MEANS — counted against the date they gave", () => {
     open();
+    toggleSatDate(PICKER, "2026-12-05");
+    closeSatDates(PICKER);
     scheduleStep();
 
     fireEvent.click(
@@ -641,18 +698,29 @@ describe("the practice-test frequency (Brief 14)", () => {
       )!,
     );
 
-    // Step 1's date is still in hand (TODAY + 60 days = 2026-11-23), so the readout COUNTS.
-    // The figure comes from `fullLengthsBeforeTarget` — the generator's own steps — which is
-    // why it is a promise the plan can keep rather than a client-side estimate.
+    // Step 1's date is in hand (Dec 5), so the readout COUNTS. The figure comes from
+    // `fullLengthsBeforeTarget` — the generator's own steps — which is why it is a promise the
+    // plan can keep rather than a client-side estimate.
+    const count = fullLengthsBeforeTarget({
+      today: TODAY,
+      intervalWeeks: 3,
+      preferredWeekday: 6,
+      targetExamDate: "2026-12-05",
+      finalExamLeadDays: DEFAULTS.final_exam_lead_days,
+    });
+    expect(count).toBeGreaterThan(0);
     expect(screen.getByTestId("calendar-setup-note").textContent).toContain(
-      "about 3 full-length tests before November 23, on Saturdays",
+      `about ${count} full-length tests before December 5, on Saturdays`,
     );
   });
 
   it("falls back to the RATE once the student says they have no date", () => {
     open();
-    // The opt-out is on step 1, so this is the ordinary order: no date, then the schedule.
-    fireEvent.click(screen.getByTestId("calendar-setup-no-date"));
+    // "Not sure yet" is step 1's answer, so this is the ordinary order: no date, then the
+    // schedule. Presence first: a date chosen, then taken back.
+    toggleSatDate(PICKER, "2026-12-05");
+    chooseNotSure(PICKER);
+    closeSatDates(PICKER);
     scheduleStep();
 
     fireEvent.click(
