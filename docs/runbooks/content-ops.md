@@ -37,7 +37,8 @@ claude/content-<cycle>  --(draft PR, Karl merges)-->  social  --(Karl merges)-->
 
 **What Karl's merge does.** Merging a batch PR into `social` runs **Content batch approval**,
 which stamps the cycle in `content/batches/approvals.json` on `social` (only Karl's merge into
-`social` stamps; only that workflow writes the file). A post is approved exactly when its cycle
+`social` stamps; only that workflow writes the file, reading the merge from GitHub's own record of
+the pull request and pushing as the `lyceon-content-approval` App). A post is approved exactly when its cycle
 has a stamp. Production builds from `main`, so the batch reaches the site after the `social` →
 `main` merge (two merges a week, owner answer 2). From then on each post is withheld from the
 build until its date: not prerendered, not in the sitemap, its URL a 404, its text in no bundle.
@@ -54,16 +55,32 @@ verdicts, the PR link): `.github/workflows/content-batch-notify.yml`, set up in
    `CONTENT_APPROVER_LOGIN` = your GitHub login. Only a merge by that login stamps an approval.
    Note: pull requests Claude opens from these sessions are authored under the same GitHub
    account (`kingk237`). The approval rests on who **merges**, and the routines never merge.
-2. **The `social` ruleset: deletion and force pushes only.** Ruled by Karl, 2026-10-11 ("keep it
-   simple"). The ruleset blocks deleting `social` and force-pushing to it, and nothing else, so
-   the **Content batch approval** workflow pushes the stamp with its own token and needs no
-   bypass. If a rule is ever added that blocks direct pushes, the stamp stops landing; see §7.
-3. **`review-record` is not a required check.** Ruled by Karl, 2026-10-11. It runs on every batch
-   and plan PR into `social` and shows red or green there. It goes red on a ready batch that is
-   missing Codex's verdicts or a Claude response to a REVISE, and on any hand edit of
-   `approvals.json`. Karl reads the review record and merges only when it is green. GitHub does
-   not block a red merge; Karl's reading of the record is the gate. Making it required needs the
-   upgrade in §7 first.
+2. **Let the stamp reach `social` (a GitHub App).** The `social` ruleset cannot bypass-list the
+   workflow's own token, so the stamp is pushed by a small GitHub App instead, which a ruleset can
+   bypass-list. This is GitHub's standard way for a workflow to write to a protected branch.
+   Once, in this order:
+   1. **Create the App.** GitHub → your organization (Lyceon-Team) → **Settings → Developer
+      settings → GitHub Apps → New GitHub App**. Name `lyceon-content-approval`. Uncheck
+      **Webhook → Active**. **Repository permissions → Contents: Read and write** (nothing else).
+      **Where can this GitHub App be installed: Only on this account.** Create it.
+   2. **Key and install.** On the App's page, note the **App ID**, then **Generate a private key**
+      (a `.pem` file downloads). **Install App** → Lyceon-Team → **Only select repositories** →
+      `Lyceonai`.
+   3. **Environment that holds the key.** Repository **Settings → Environments → New environment**,
+      named `content-approval`. **Deployment branches and tags → Selected branches and tags → add
+      `social`.** Then in that Environment add the **secret** `CONTENT_APP_PRIVATE_KEY` (paste the
+      whole `.pem` file) and the **variable** `CONTENT_APP_ID` (the App ID). Delete the downloaded
+      `.pem` afterwards. Only a job running on `social` can read the key; no pull request can.
+   4. **Bypass.** Repository **Settings → Rules → Rulesets →** the `social` ruleset → **Bypass list
+      → Add bypass → Apps → `lyceon-content-approval`**, mode **Always**.
+
+   Until all four are done, a merged batch is not stamped: the **Content batch approval** run is
+   red and nothing in that batch publishes. Nothing else needs a bypass: Karl's own merges go
+   through the normal pull request path.
+
+3. **Required check.** Make **Content batch checks / review-record** a required status check on
+   `social`. It blocks a ready batch without Codex's verdicts or without a Claude response to every
+   REVISE, and any hand edit of `approvals.json`.
 4. **Slack.** `SLACK_BOT_TOKEN` (secret) and `SOCIAL_SLACK_CHANNEL_ID` (variable, renamed from
    `QOTD_SLACK_CHANNEL_ID`): `docs/runbooks/slack.md`.
 5. **Vercel.** The publish cron uses the existing `CRON_SECRET` and `VERCEL_DEPLOY_HOOK_URL`
@@ -209,7 +226,7 @@ and §8.7). You audit; you never edit content.
 | A gate fails on a batch PR (CI red)       | The PR shows red; GitHub still allows the merge, so Karl does not merge it     | The revise routine fixes it; or ask Claude in the PR                                                                                                                 |
 | Codex did not audit by Friday             | The revise routine records it and does not mark the PR ready                   | Run the Codex task by hand, then re-run the revise routine                                                                                                           |
 | Karl does not merge by Sunday             | Nothing publishes that week; the posts stay withheld                           | Merge later. The `social` → `main` merge deploys production, and that build publishes every approved post whose date has passed; the rest go live on their own dates |
-| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Fix the push permission (§2.2) and re-run the **Content batch approval** run                                                                                         |
+| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Check §2.2 (App installed, key and ID in the `content-approval` Environment, App on the `social` bypass list), then re-run the **Content batch approval** run        |
 | The publish cron did not deploy           | `content_publish_deploy_failed` in the logs; the cron answers 500              | Check `VERCEL_DEPLOY_HOOK_URL`; redeploy by hand, which publishes everything due                                                                                     |
 | A correction after publication            | Edit the post and set `updated`; it needs a new cycle's approval (Doc 10B §10) | Include it in the next batch PR                                                                                                                                      |
 

@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { QotdSocialCard } from "@/components/qotd/QotdSocialCard";
 import {
   qotdSocialInputSchema,
@@ -548,8 +548,17 @@ function manifestFor(source: Source): QotdSocialPostManifest {
   return decision.manifest;
 }
 
-/** The fixture days the generator would publish (the rest fail a check that is not a leak). */
-const PUBLISHABLE = DAYS.filter((d) => decide(pastSource(d)).decision.ok);
+/**
+ * The fixture days the generator would publish (the rest fail a check that is not a leak).
+ *
+ * A function, not a module constant, so it runs inside a test and never while the file is being
+ * collected. As a constant it built every day's social input at import, so a plant that breaks
+ * `socialInputFromArchive` (qotd.mutations.sh M12) threw before any test existed: the file went
+ * red with "no tests" and the named test that guards that leak never ran.
+ */
+function publishable(): QotdArchiveResponse[] {
+  return DAYS.filter((d) => decide(pastSource(d)).decision.ok);
+}
 
 const PNG = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -565,7 +574,7 @@ afterEach(() => {
 function builtDir(manifest: QotdSocialPostManifest | null): string {
   const dir = mkdtempSync(join(tmpdir(), "qotd-slack-"));
   dirs.push(dir);
-  const m = manifest ?? manifestFor(pastSource(PUBLISHABLE[0]!));
+  const m = manifest ?? manifestFor(pastSource(publishable()[0]!));
   for (const image of m.images) writeFileSync(join(dir, image.file), PNG);
   writeFileSync(join(dir, "caption.txt"), `${m.caption}\n`);
   writeFileSync(join(dir, "alt-text.txt"), `${m.alt_text}\n`);
@@ -648,20 +657,20 @@ function unescapeMrkdwn(text: string): string {
 describe("Slack: posts only after the leak check passes", () => {
   it("every fixture day that passes yields a manifest; a past day records its leak check", () => {
     // Presence first: publishable past days, and with today both sections are covered.
-    expect(PUBLISHABLE.length).toBeGreaterThanOrEqual(2);
+    expect(publishable().length).toBeGreaterThanOrEqual(2);
     expect(
       new Set([
-        ...PUBLISHABLE.map((d) => manifestFor(pastSource(d)).section),
+        ...publishable().map((d) => manifestFor(pastSource(d)).section),
         manifestFor(todaySource()).section,
       ]),
     ).toEqual(new Set(["Math", "Reading and Writing"]));
     // A day that fails any check gets no manifest (here, a grid-in: not quick to read).
-    const refused = DAYS.filter((d) => !PUBLISHABLE.includes(d));
+    const refused = DAYS.filter((d) => !publishable().includes(d));
     for (const day of refused) {
       const { decision } = decide(pastSource(day));
       expect(decision.ok).toBe(false);
     }
-    for (const day of PUBLISHABLE) {
+    for (const day of publishable()) {
       const m = manifestFor(pastSource(day));
       expect(m.checks).toEqual({
         input: "passed",
@@ -676,7 +685,7 @@ describe("Slack: posts only after the leak check passes", () => {
   });
 
   it("the manifest schema refuses a leak check that did not pass or did not run", () => {
-    const m = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const m = manifestFor(pastSource(publishable()[0]!));
     for (const leaks of ["failed", "no-answer-in-source", undefined]) {
       expect(
         qotdSocialPostManifestSchema.safeParse({
@@ -705,7 +714,7 @@ describe("Slack: posts only after the leak check passes", () => {
   });
 
   it("a passing day is posted: two uploads, one share with the date and section, then the copy", async () => {
-    const manifest = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const manifest = manifestFor(pastSource(publishable()[0]!));
     const dir = builtDir(manifest);
     const slack = fakeSlack();
     const l = logs();
@@ -755,7 +764,7 @@ describe("Slack: posts only after the leak check passes", () => {
   });
 
   it("a hand-edited caption.txt, a wrong-day image or a non-PNG is refused", () => {
-    const manifest = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const manifest = manifestFor(pastSource(publishable()[0]!));
     const edited = builtDir(manifest);
     writeFileSync(join(edited, "caption.txt"), "something else\n");
     expect(loadPost(edited)).toEqual({
@@ -780,7 +789,7 @@ describe("Slack: posts only after the leak check passes", () => {
   });
 
   it("a dry run checks everything and sends nothing, with no token", async () => {
-    const dir = builtDir(manifestFor(pastSource(PUBLISHABLE[0]!)));
+    const dir = builtDir(manifestFor(pastSource(publishable()[0]!)));
     const slack = fakeSlack();
     const l = logs();
     expect(await run(["--dir", dir, "--dry-run"], {}, slack.fetch, l.log)).toBe(
@@ -797,7 +806,7 @@ describe("Slack: posts only after the leak check passes", () => {
 
 describe("Slack: fails loudly, never silently", () => {
   it("a missing token fails the run, names the secret, and calls nothing", async () => {
-    const dir = builtDir(manifestFor(pastSource(PUBLISHABLE[0]!)));
+    const dir = builtDir(manifestFor(pastSource(publishable()[0]!)));
     for (const env of [
       { SLACK_CHANNEL_ID: ENV.SLACK_CHANNEL_ID },
       { ...ENV, SLACK_BOT_TOKEN: "" },
@@ -831,7 +840,7 @@ describe("Slack: fails loudly, never silently", () => {
     ["files.completeUploadExternal", "not_in_channel"],
     ["chat.postMessage", "missing_scope"],
   ])("Slack's %s error %s fails the run and is named", async (method, code) => {
-    const dir = builtDir(manifestFor(pastSource(PUBLISHABLE[0]!)));
+    const dir = builtDir(manifestFor(pastSource(publishable()[0]!)));
     const slack = fakeSlack({ error: [method, code] });
     const l = logs();
     expect(await run(["--dir", dir], ENV, slack.fetch, l.log)).toBe(1);
@@ -840,7 +849,7 @@ describe("Slack: fails loudly, never silently", () => {
   });
 
   it("Slack down (HTTP 503) fails the run", async () => {
-    const dir = builtDir(manifestFor(pastSource(PUBLISHABLE[0]!)));
+    const dir = builtDir(manifestFor(pastSource(publishable()[0]!)));
     const slack = fakeSlack({ httpStatus: 503 });
     const l = logs();
     expect(await run(["--dir", dir], ENV, slack.fetch, l.log)).toBe(1);
@@ -852,47 +861,55 @@ describe("Slack: fails loudly, never silently", () => {
 
 describe("Slack: the message carries the caption and no answer (real fixture days)", () => {
   type SlackCase = [string, () => Source, QotdArchiveResponse];
-  const cases: SlackCase[] = [
-    ...PUBLISHABLE.map(
-      (d): SlackCase => [`archive ${d.qotd_date}`, () => pastSource(d), d],
-    ),
-    [`today ${QOTD_FIXTURE_TODAY}`, todaySource, TODAY_REVEALED],
-  ];
-
-  it.each(cases)("%s", (_name, makeSource, revealed) => {
-    const m = manifestFor(makeSource());
-    const text = slackCopyMessage(m);
-    const comment = slackImagesComment(m);
-    // Presence first: the caption, the alt text, the date and the section.
-    expect(unescapeMrkdwn(text)).toContain(m.caption);
-    expect(unescapeMrkdwn(text)).toContain(m.alt_text);
-    expect(m.caption.length).toBeGreaterThan(40);
-    expect(comment).toContain(m.section);
-    expect(comment).toContain(String(Number(m.qotd_date.slice(8))));
-    expect(comment).toContain(m.qotd_date.slice(0, 4));
-    // Then absence: each part of what Slack receives is checked against the day's revealed
-    // answer and explanation in the role it plays: the caption block and the message's own
-    // words as a caption, the alt-text block as alt text (it reads every option, as the card
-    // shows them), the image comment as card text.
-    const blocks = [
-      ...unescapeMrkdwn(text).matchAll(/```\n([\s\S]*?)\n```/g),
-    ].map((b) => b[1] ?? "");
-    expect(blocks).toEqual([m.caption, m.alt_text]);
-    const outside = unescapeMrkdwn(text).replace(/```\n[\s\S]*?\n```/g, " ");
-    expect(
-      socialAssetLeaks(
-        {
-          caption: `${outside}\n${blocks[0]}`,
-          alt_text: blocks[1] ?? "",
-          card_text: comment,
-        },
-        revealed,
+  // Built inside the test (see publishable()); each case's name rides on its leak assertion.
+  function cases(): SlackCase[] {
+    return [
+      ...publishable().map(
+        (d): SlackCase => [`archive ${d.qotd_date}`, () => pastSource(d), d],
       ),
-    ).toEqual([]);
+      [`today ${QOTD_FIXTURE_TODAY}`, todaySource, TODAY_REVEALED],
+    ];
+  }
+
+  it("every publishable archive day, and today", () => {
+    const all = cases();
+    expect(all.length).toBeGreaterThanOrEqual(3);
+    for (const [name, makeSource, revealed] of all) {
+      const m = manifestFor(makeSource());
+      const text = slackCopyMessage(m);
+      const comment = slackImagesComment(m);
+      // Presence first: the caption, the alt text, the date and the section.
+      expect(unescapeMrkdwn(text)).toContain(m.caption);
+      expect(unescapeMrkdwn(text)).toContain(m.alt_text);
+      expect(m.caption.length).toBeGreaterThan(40);
+      expect(comment).toContain(m.section);
+      expect(comment).toContain(String(Number(m.qotd_date.slice(8))));
+      expect(comment).toContain(m.qotd_date.slice(0, 4));
+      // Then absence: each part of what Slack receives is checked against the day's revealed
+      // answer and explanation in the role it plays: the caption block and the message's own
+      // words as a caption, the alt-text block as alt text (it reads every option, as the card
+      // shows them), the image comment as card text.
+      const blocks = [
+        ...unescapeMrkdwn(text).matchAll(/```\n([\s\S]*?)\n```/g),
+      ].map((b) => b[1] ?? "");
+      expect(blocks).toEqual([m.caption, m.alt_text]);
+      const outside = unescapeMrkdwn(text).replace(/```\n[\s\S]*?\n```/g, " ");
+      expect(
+        socialAssetLeaks(
+          {
+            caption: `${outside}\n${blocks[0]}`,
+            alt_text: blocks[1] ?? "",
+            card_text: comment,
+          },
+          revealed,
+        ),
+        name,
+      ).toEqual([]);
+    }
   });
 
   it("escapes Slack's control characters, so a caption cannot ping or link", () => {
-    const m = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const m = manifestFor(pastSource(publishable()[0]!));
     const text = slackCopyMessage({
       ...m,
       caption: "a < b & c > d <!channel> <https://x.example|y>",
@@ -906,10 +923,19 @@ describe("Slack: the message carries the caption and no answer (real fixture day
 
 describe("PLANTS: an answer in the caption blocks the Slack post", () => {
   // A day that publishes untouched, so the plant is the only thing that can block it.
-  const mcq = PUBLISHABLE.find((d) => d.question.item_type === "mcq")!;
-  const correct = mcq.question.options.find(
-    (o) => o.id === mcq.question.correct_option_id,
-  )!;
+  // Chosen in beforeAll, not while the file is collected (see publishable()).
+  let mcq: QotdArchiveResponse;
+  let correct: QotdArchiveResponse["question"]["options"][number];
+  beforeAll(() => {
+    const day = publishable().find((d) => d.question.item_type === "mcq");
+    if (!day) throw new Error("no publishable multiple-choice fixture day");
+    const option = day.question.options.find(
+      (o) => o.id === day.question.correct_option_id,
+    );
+    if (!option) throw new Error("fixture day has no correct option");
+    mcq = day;
+    correct = option;
+  });
 
   it("the day publishes untouched (presence before absence)", () => {
     expect(decide(pastSource(mcq)).decision.ok).toBe(true);
@@ -1009,7 +1035,7 @@ describe("Slack: the edges the audit named", () => {
   });
 
   it("a malformed post.json is refused without quoting it", () => {
-    const m = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const m = manifestFor(pastSource(publishable()[0]!));
     const dir = builtDir(m);
     writeFileSync(join(dir, "post.json"), `{"caption": "${m.caption}`);
     const r = loadPost(dir);
@@ -1020,7 +1046,7 @@ describe("Slack: the edges the audit named", () => {
   });
 
   it("backticks cannot close the code block", () => {
-    const m = manifestFor(pastSource(PUBLISHABLE[0]!));
+    const m = manifestFor(pastSource(publishable()[0]!));
     const text = slackCopyMessage({ ...m, caption: "a ``` b ```` c" });
     // Exactly the four fences the message is built with, and the caption's text kept.
     expect(text.match(/```/g)).toHaveLength(4);
@@ -1028,7 +1054,7 @@ describe("Slack: the edges the audit named", () => {
   });
 
   it("image bytes go only to a Slack https host", async () => {
-    const dir = builtDir(manifestFor(pastSource(PUBLISHABLE[0]!)));
+    const dir = builtDir(manifestFor(pastSource(publishable()[0]!)));
     for (const bad of [
       "http://files.slack.com/upload/v1/x",
       "https://files.slack.com.evil.example/upload",
