@@ -243,7 +243,8 @@ export function sendUnauthenticated(res: Response, requestId?: string) {
 export function sendRoleUnrecognized(res: Response, requestId?: string) {
   return sendDenial(res, 403, {
     error: "Account unavailable",
-    message: "This account can't be opened. Please contact support.",
+    message:
+      "This account can't be opened. Please contact support.",
     requestId,
     extra: { code: ROLE_UNRECOGNIZED },
   });
@@ -910,9 +911,9 @@ export async function requireGuardianLinkForUnder13(
 /**
  * Middleware to require completed onboarding profile before feature access.
  * Blocks when the shared rule `isProfileGateSatisfied` says no: an admin always passes; anyone
- * else passes exactly when `profile_completed_at` is set. An under-13 student is gated
- * separately, on every request, by the live link check `requireGuardianLinkForUnder13` (G2-04);
- * there is no stored consent state.
+ * else needs `profile_completed_at`, and a student also a known date of birth. An under-13
+ * student is gated separately, on every request, by the live link check
+ * `requireGuardianLinkForUnder13` (G2-04); there is no stored consent state.
  * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
  * @spec [hotfix 2026-10-11: one definition of "profile complete", shared with the client's
  *        RequireRole and completion page; admins are not subject to the student gate]
@@ -980,9 +981,7 @@ export function requireProfileComplete(
  * The tutor's age test, on its own so the feature-access map (OQ-29) asks the exact question
  * `requireStudentOnly` asks. Fail-closed: only an explicit `false` passes.
  */
-export function passesTutorAgeGate(
-  user: Pick<SupabaseUser, "is_under_13">,
-): boolean {
+export function passesTutorAgeGate(user: Pick<SupabaseUser, "is_under_13">): boolean {
   return user.is_under_13 === false;
 }
 
