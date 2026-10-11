@@ -55,6 +55,7 @@ const freePracticeTest: ContentPageInput = {
   description:
     "Where to take a free full-length SAT practice test from the College Board, and a free Lyceon diagnostic to see your strengths by section.",
   h1: "Free SAT practice tests",
+  targetKeyword: "sat practice test",
   crumb: "Free SAT practice tests",
   intro: [
     {
@@ -176,6 +177,7 @@ const onlineSatPrep: ContentPageInput = {
   description:
     "Online SAT prep with daily practice, explanations after every question, full-length practice tests and a study plan. Start free.",
   h1: "Online SAT prep",
+  targetKeyword: "online sat prep",
   crumb: "Online SAT prep",
   intro: [
     {
@@ -252,6 +254,7 @@ const howToStudy: ContentPageInput = {
   description:
     "How to study for the digital SAT, from your first practice test to test week, using free official practice and short daily sessions.",
   h1: "How to study for the SAT",
+  targetKeyword: "how to study for the sat",
   crumb: "How to study for the SAT",
   sections: [
     {

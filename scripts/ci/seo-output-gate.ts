@@ -29,7 +29,7 @@ import {
 } from "../../shared/seo/route-registry";
 import { BASE_URL } from "../../shared/seo/structured-data";
 import { CONTENT_PAGES } from "../../shared/content/pages/index";
-import { BLOG_PAGES } from "../../shared/content/blog";
+import { ALL_BLOG_POSTS, BLOG_PAGES } from "../../shared/content/blog";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const OUT = resolve(ROOT, "dist/public");
@@ -161,9 +161,10 @@ const SUPABASE_CLIENT_MARKERS = ["auth/v1", "realtime/v1"];
 // have none. A drop below this means the markers stopped matching, not that the entry is clean.
 const MIN_PAGES_WITH_MARKERS = 20;
 const homeHtml = readFileSync(join(OUT, "index.html"), "utf8");
-const entryName = /<script type="module" crossorigin src="\/(assets\/[^"]+\.js)">/.exec(
-  homeHtml,
-)?.[1];
+const entryName =
+  /<script type="module" crossorigin src="\/(assets\/[^"]+\.js)">/.exec(
+    homeHtml,
+  )?.[1];
 let entryGzip = 0;
 let pagesWithMarkers = 0;
 if (entryName === undefined) {
@@ -207,6 +208,55 @@ if (entryName === undefined) {
     );
 }
 
+// Doc 10B §8.3 (scheduled publishing): every post the build withheld (unapproved, or its
+// `publishAt` still ahead) has no page file, no sitemap entry, and none of its copy in any file
+// the site ships (dist/public) or the prerender bundle (dist/prerender). The withheld list is the
+// one the content-schedule plugin wrote for this build; a build without it is not checked, it
+// fails.
+const withheldFile = resolve(ROOT, "dist/content-withheld.json");
+let withheldChecked = 0;
+if (!existsSync(withheldFile)) {
+  fail(
+    "dist/content-withheld.json is missing: the content-schedule plugin did not run",
+  );
+} else {
+  const { withheld } = JSON.parse(readFileSync(withheldFile, "utf8")) as {
+    withheld: { slug: string }[];
+  };
+  const shipped = (dir: string): string[] =>
+    existsSync(dir)
+      ? readdirSync(dir).flatMap((name) => {
+          const full = join(dir, name);
+          if (statSync(full).isDirectory()) return shipped(full);
+          return /\.(js|html|xml|json|txt)$/.test(name) ? [full] : [];
+        })
+      : [];
+  const shippedText = [
+    ...shipped(OUT),
+    ...shipped(resolve(ROOT, "dist/prerender")),
+  ]
+    .map((f) => readFileSync(f, "utf8"))
+    .join("\n");
+  const sitemap = readFileSync(join(OUT, "sitemap.xml"), "utf8");
+  for (const { slug } of withheld) {
+    const post = ALL_BLOG_POSTS.find((p) => p.slug === slug);
+    if (post === undefined) {
+      fail(`withheld post ${slug} is not in the repo's post list`);
+      continue;
+    }
+    withheldChecked += 1;
+    if (existsSync(join(OUT, "blog", slug, "index.html")))
+      fail(`withheld post ${slug} was prerendered`);
+    if (sitemap.includes(`/blog/${slug}<`))
+      fail(`withheld post ${slug} is in sitemap.xml`);
+    const leaked = [post.page.h1, post.page.description].find((text) =>
+      shippedText.includes(text),
+    );
+    if (leaked !== undefined)
+      fail(`withheld post ${slug}'s copy ships in the build ("${leaked}")`);
+  }
+}
+
 if (failures.length > 0) {
   err(`SEO OUTPUT GATE FAILED (${failures.length}):`);
   for (const f of failures) err(`  - ${f}`);
@@ -217,4 +267,7 @@ out(
 );
 out(
   `ENTRY CHUNK OK: ${entryName ?? "?"} ${(entryGzip / 1024).toFixed(1)} KB gzip (budget ${ENTRY_GZIP_BUDGET_BYTES / 1024} KB); no Supabase client; no content-page copy (${pagesWithMarkers} pages checked by marker)`,
+);
+out(
+  `SCHEDULED POSTS OK: ${withheldChecked} withheld post(s) have no page, no sitemap entry and no copy in the build`,
 );

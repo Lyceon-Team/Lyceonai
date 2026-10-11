@@ -1,0 +1,86 @@
+# Records Karl's approval of a content cycle from the merge of its batch pull request.
+#
+# @spec [docs/Spec/Lyceon_Doc_10B.md §2.4 ("Karl's approval is a merge of the batch pull request"),
+#   §8.7 ("Triggers never merge"); owner answer on Doc 10B Phase 1 Step 0, item 1 (Karl,
+#   2026-10-11): "merge alone counts … a plain workflow script stamps the approval from the merge
+#   event … No extra click."] | @implemented [2026-10-11]
+#
+# plain English: when a pull request into `seo` that touches content/batches/<cycle>/ is MERGED by
+# the approver (repository variable CONTENT_APPROVER_LOGIN, Karl's GitHub account), this commits
+# the cycle's stamp to content/batches/approvals.json on `seo`. The site treats a post as approved
+# exactly when its cycle has a stamp (shared/content/approvals.ts). No agent runs here: it is one
+# script and one commit.
+#
+# Setup (Karl, once): Settings → Secrets and variables → Actions → Variables → New repository
+# variable CONTENT_APPROVER_LOGIN = your GitHub login. If `seo` is protected against pushes, allow
+# GitHub Actions to push to it (or the stamp commit fails and the run is red: nothing is approved
+# without the stamp, so nothing publishes). See docs/runbooks/content-ops.md.
+name: Content batch approval
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [seo]
+    paths:
+      - content/batches/**
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: content-batch-approval
+  cancel-in-progress: false
+
+jobs:
+  stamp:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout seo
+        uses: actions/checkout@v4
+        with:
+          ref: seo
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Stamp the approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAMP_PR: ${{ github.event.pull_request.number }}
+          STAMP_MERGED_BY: ${{ github.event.pull_request.merged_by.login }}
+          STAMP_MERGED_AT: ${{ github.event.pull_request.merged_at }}
+          STAMP_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
+        run: |
+          STAMP_CHANGED_FILES="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${STAMP_PR}/files" --paginate --jq '.[].filename')"
+          export STAMP_CHANGED_FILES
+          pnpm exec tsx scripts/content/stamp-approval.ts
+
+      - name: Commit the stamp to seo
+        run: |
+          if git diff --quiet -- content/batches/approvals.json; then
+            echo "No new stamp."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content/batches/approvals.json
+          git commit -m "content: record Karl's approval from PR #${{ github.event.pull_request.number }}"
+          for i in 1 2 3 4; do
+            git pull --rebase origin seo && git push origin HEAD:seo && exit 0
+            sleep $((2 ** i))
+          done
+          echo "Could not push the approval stamp to seo." >&2
+          exit 1

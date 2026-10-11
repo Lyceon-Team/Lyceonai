@@ -35,6 +35,7 @@ import type {
   ContentPage,
 } from "../../packages/shared/src/seo-content-schema";
 import { firstBannedPhrase, firstUnapprovedOutcome } from "./banned-phrases";
+import { publishAtProblem } from "../content/schedule";
 
 export const TITLE_MAX = 60;
 export const DESCRIPTION_MIN = 120;
@@ -202,10 +203,19 @@ export function contentPageProblems(
   const at = (message: string): string => `${page.path}: ${message}`;
   const problems: string[] = [];
 
-  // Karl's approval gate (Doctrine rule 5).
+  // Karl's approval gate (Doctrine rule 5). A scheduled page (Doc 10B §8.3) is approved by its
+  // batch merge BEFORE it goes public, so while `lastModified` is still its publish date the text
+  // has not changed since that approval; a later correction moves `lastModified` and needs a new
+  // approval on or after it, like any other page.
+  const scheduledFirstPublication =
+    page.publishAt !== undefined &&
+    page.lastModified === page.publishAt.slice(0, 10);
   if (!page.approved) {
     problems.push(at('not approved (no `approved: { by: "Karl", date }`)'));
-  } else if (page.approved.date < page.lastModified) {
+  } else if (
+    !scheduledFirstPublication &&
+    page.approved.date < page.lastModified
+  ) {
     problems.push(
       at(
         `approved ${page.approved.date}, before its last change ${page.lastModified}: the current text is not approved`,
@@ -214,6 +224,10 @@ export function contentPageProblems(
   }
   if (page.lastModified < page.published) {
     problems.push(at("lastModified is before published"));
+  }
+  if (page.publishAt !== undefined) {
+    const offCadence = publishAtProblem(page.publishAt);
+    if (offCadence !== null) problems.push(at(offCadence));
   }
 
   // Meta lengths.
