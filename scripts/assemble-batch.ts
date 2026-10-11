@@ -21,6 +21,7 @@ import {
   gridInAcceptedForms,
 } from "../shared/question-ingestion-qa.js";
 import { explanationNamesChoiceLetter } from "../shared/practice/letter-reference.js";
+import { questionMarkupViolations } from "../shared/question-markup.js";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 
@@ -479,6 +480,26 @@ function validateRecord(
 
   if (!rec.explanation || rec.explanation.trim().length === 0) {
     v("explanation", "explanation is empty");
+  }
+
+  // MISSING_UNDERLINED_TARGET / RAW_HTML — shared/question-markup.ts (2026-10-11). A stem
+  // that says "the underlined ..." needs exactly one paired <u>...</u> in the passage (the
+  // Codex missing_underlined_target finding), and no field may carry any other tag: the
+  // renderers draw only a paired <u> and print everything else literally. The same check
+  // runs over the seeded bank in scripts/ci/question-markup-gate.ts.
+  if (typeof rec.stem === "string") {
+    for (const mv of questionMarkupViolations({
+      stem: rec.stem,
+      passage: typeof rec.passage === "string" ? rec.passage : null,
+      others: [
+        { field: "explanation", value: rec.explanation },
+        ...(Array.isArray(rec.options)
+          ? rec.options.map((o) => ({ field: `option_${o.key}`, value: o.text }))
+          : []),
+      ],
+    })) {
+      v(mv.field, mv.message);
+    }
   }
 
   // DOUBLED_LATEX_ESCAPE: detect \\cmd patterns that indicate the JSON source

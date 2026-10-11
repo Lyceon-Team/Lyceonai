@@ -107,7 +107,9 @@ export function PassageView({ passage, highlights, onChange }: Props) {
         className="exam-inline-math max-w-[62ch] whitespace-pre-wrap text-[17px] leading-[1.75]"
       >
         {segments.map((seg) =>
-          seg.kind === "math" ? (
+          // A paired <u>/</u> is a zero-width atom: the tag is never drawn, the text it
+          // wraps is (shared/question-markup.ts, 2026-10-11).
+          seg.kind === "tag" ? null : seg.kind === "math" ? (
             <span
               key={`m${seg.start}`}
               data-seg-kind="math"
@@ -115,7 +117,13 @@ export function PassageView({ passage, highlights, onChange }: Props) {
               data-seg-end={seg.end}
               className={seg.highlighted ? "rounded-sm bg-[var(--exam-highlight)]" : undefined}
             >
-              <MathRenderer content={seg.source} />
+              {seg.underlined ? (
+                <u>
+                  <MathRenderer content={seg.source} />
+                </u>
+              ) : (
+                <MathRenderer content={seg.source} />
+              )}
             </span>
           ) : seg.highlighted ? (
             <mark
@@ -125,7 +133,7 @@ export function PassageView({ passage, highlights, onChange }: Props) {
               data-seg-end={seg.end}
               className="rounded-sm bg-[var(--exam-highlight)] text-inherit"
             >
-              {seg.text}
+              {seg.underlined ? <u>{seg.text}</u> : seg.text}
             </mark>
           ) : (
             <span
@@ -134,7 +142,7 @@ export function PassageView({ passage, highlights, onChange }: Props) {
               data-seg-start={seg.start}
               data-seg-end={seg.end}
             >
-              {seg.text}
+              {seg.underlined ? <u>{seg.text}</u> : seg.text}
             </span>
           ),
         )}

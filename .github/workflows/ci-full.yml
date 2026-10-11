@@ -502,6 +502,14 @@ jobs:
         if: matrix.group == 'qotd'
         run: bash scripts/ci/signin-notice.mutations.sh
 
+      # Live bug 2026-10-11 (passages printed their <u> tags): plants the tags printed again
+      # (MathRenderer, StaticMath), the underline dropped (MathRenderer, exam passage view), the
+      # allowlist widened to <U>, the missing-target and raw-HTML rules switched off, the
+      # baseline ratchet loosened, and the assembly gate unwired. Each must turn its test red.
+      - name: Question underline mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        run: bash scripts/ci/question-underline.mutations.sh
+
       # Doc 10B Phase 1 (blog pipeline): plants an unapproved or future post going public, the
       # withheld post's words reaching the bundle, a daily rebuild, a merge by anyone stamping the
       # approval, a ready batch without Codex's verdicts or Claude's responses, and each new
