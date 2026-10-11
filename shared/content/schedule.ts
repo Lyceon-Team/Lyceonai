@@ -75,3 +75,50 @@ export function isPagePublic(page: Schedulable, now: Date): boolean {
   if (page.publishAt === undefined) return true;
   return page.publishAt <= chicagoWallClock(now);
 }
+
+function utcDate(date: string): Date {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1));
+}
+
+/**
+ * The weekly cycle a publish date belongs to: its ISO 8601 week, `YYYY-Www` (Doc 10B §8.2: each
+ * Wednesday's batch carries the NEXT week's items, so a batch is named for the week it publishes
+ * in). ISO weeks start on Monday; week 1 holds the year's first Thursday.
+ */
+export function isoWeekCycle(date: string): string {
+  const d = utcDate(date);
+  const weekday = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() + 4 - weekday); // the Thursday of this week
+  const year = d.getUTCFullYear();
+  const week = Math.ceil(
+    ((d.getTime() - Date.UTC(year, 0, 1)) / 86_400_000 + 1) / 7,
+  );
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
+/** Why a post's `publishAt` is outside its batch's week, or null when it is inside it. */
+export function batchWeekProblem(
+  batch: string,
+  publishAt: string,
+): string | null {
+  if (!/^\d{4}-W\d{2}$/.test(batch)) return null;
+  const week = isoWeekCycle(publishAt.slice(0, 10));
+  return week === batch
+    ? null
+    : `publishAt ${publishAt} is in ${week}, not in its batch ${batch}`;
+}
+
+/** Every on-cadence publish slot (`YYYY-MM-DDT07:00`) from `from` to `to` inclusive. */
+export function publishSlots(from: string, to: string): string[] {
+  const slots: string[] = [];
+  for (
+    const d = utcDate(from);
+    d.getTime() <= utcDate(to).getTime();
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
+    const slot = `${d.toISOString().slice(0, 10)}T${CONTENT_PUBLISH_TIME}`;
+    if (publishAtProblem(slot) === null) slots.push(slot);
+  }
+  return slots;
+}

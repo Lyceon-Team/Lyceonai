@@ -44,7 +44,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Writable } from "node:stream";
-import { renderToPipeableStream } from "react-dom/server";
+import { renderToPipeableStream, renderToStaticMarkup } from "react-dom/server";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ContentArticle } from "@/components/content/ContentArticle";
 import { Router as WouterRouter } from "wouter";
 import App from "@/App";
 import { queryClient } from "@/lib/queryClient";
@@ -88,6 +90,7 @@ import { CONTENT_PAGES, contentPageAt } from "@shared/content/pages";
 import { qotdSampleDates } from "@shared/content/qotd-samples";
 import type { ContentPage } from "../../../packages/shared/src/seo-content-schema";
 import {
+  articleProblems,
   claimIdsIn,
   contentPageProblems,
   duplicateTargetProblems,
@@ -248,6 +251,73 @@ async function loadPublishedLegal(): Promise<PrerenderContent["legal"]> {
   return published;
 }
 
+/** What a link may point at: a page this build produced, or a registry route the SPA answers. */
+function gateContext(
+  pages: readonly { path: string }[],
+  registry: readonly RouteRegistryRow[],
+  claimInventory: string,
+): GateContext {
+  const served = new Set<string>([
+    ...pages.map((p) => p.path),
+    ...registry
+      .filter((r) => !r.redirect_to && !r.path_pattern.includes(":"))
+      .map((r) => r.path_pattern),
+  ]);
+  return {
+    resolves: (p) => served.has(p),
+    claimIds: claimIdsIn(claimInventory),
+    claimInventory,
+  };
+}
+
+/**
+ * The publish gate for posts that are not built yet: every pipeline post, as it will be on the
+ * day it goes live.
+ *
+ * @spec [docs/Spec/Lyceon_Doc_10B.md §4 stage 4 ("Every gate in §5 passes") before stage 6
+ *       (Karl's merge), §5 gate 11; owner brief "Doc 10B Phase 1" (Karl, 2026-10-11)]
+ *       | @implemented [2026-10-11]
+ *
+ * plain English: a batch's posts are unapproved until Karl merges, so the build withholds them and
+ * the build's gate never sees them. This runs the same checks on each of `posts` with the approval
+ * the merge will stamp (Karl, dated the publish date), so everything except the approval itself is
+ * proven before the merge: the data checks, gate 11 against every page and post (`allPages`), and
+ * the article as rendered on its own (heading order, every link). The page around the article (one
+ * H1, the footer's trademark notice) is the blog's shared template, checked on every built post.
+ */
+export function draftPostProblems(
+  posts: readonly ContentPage[],
+  allPages: readonly ContentPage[],
+  builtPages: readonly { path: string }[],
+  registry: readonly RouteRegistryRow[],
+  claimInventory: string,
+): string[] {
+  const ctx = gateContext(
+    [...builtPages, ...posts.map((p) => ({ path: p.path }))],
+    registry,
+    claimInventory,
+  );
+  const byPath = new Map<string, ContentPage>();
+  for (const page of [...allPages, ...posts]) byPath.set(page.path, page);
+  const problems = duplicateTargetProblems([...byPath.values()]);
+  for (const page of posts) {
+    const asMerged: ContentPage = {
+      ...page,
+      approved: { by: "Karl", date: page.lastModified },
+    };
+    problems.push(...contentPageProblems(asMerged, ctx));
+    const article = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <WouterRouter ssrPath={page.path}>
+          <ContentArticle page={asMerged} byline="Lyceon Team" />
+        </WouterRouter>
+      </QueryClientProvider>,
+    );
+    problems.push(...articleProblems(page.path, article, ctx));
+  }
+  return problems;
+}
+
 /**
  * The publish gate over the built site (plan row C3). A link resolves when it names a page this
  * build produced or a registry route the SPA answers (`/login`, …); a redirect row does not
@@ -259,17 +329,7 @@ export function assertContentPagesPublishable(
   registry: readonly RouteRegistryRow[],
   claimInventory: string,
 ): void {
-  const served = new Set<string>([
-    ...pages.map((p) => p.path),
-    ...registry
-      .filter((r) => !r.redirect_to && !r.path_pattern.includes(":"))
-      .map((r) => r.path_pattern),
-  ]);
-  const ctx: GateContext = {
-    resolves: (p) => served.has(p),
-    claimIds: claimIdsIn(claimInventory),
-    claimInventory,
-  };
+  const ctx = gateContext(pages, registry, claimInventory);
   const problems: string[] = [...duplicateTargetProblems(contentPages)];
   for (const content of contentPages) {
     problems.push(...contentPageProblems(content, ctx));

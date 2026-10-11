@@ -25,10 +25,12 @@ VALE_INI=".vale.ini"
 LYCHEE="lychee.toml"
 SATDATES="shared/sat-test-dates.ts"
 NOTIFY="scripts/content/notify-batch.ts"
+PLAN="scripts/content/plan-skeleton.ts"
+ENTRY="client/src/prerender/entry-server.tsx"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/content-mut.XXXX)"
 
-FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE" "$SATDATES" "$NOTIFY")
+FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE" "$SATDATES" "$NOTIFY" "$PLAN" "$ENTRY")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -58,6 +60,8 @@ REVIEW_T=tests/ci/content-review-record.test.ts
 QG_T=tests/ci/content-quality-gates.test.ts
 SAT_T=tests/ci/sat-test-dates.contract.test.ts
 NOTIFY_T=tests/ci/content-batch-notify.test.ts
+PLAN_T=tests/ci/content-plan.test.ts
+DRAFT_T=tests/ci/content-drafts-gate.test.ts
 # The Vale and lychee plants (Q8, Q9) need both tools: the quality-gates suite skips them without,
 # which would read here as a plant that stayed green. Fail loudly instead.
 command -v vale >/dev/null && command -v lychee >/dev/null || { echo "vale and lychee must be on PATH (.github/actions/content-tools)"; exit 1; }
@@ -79,7 +83,7 @@ run() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T" "$QG_T" "$SAT_T" "$NOTIFY_T")"; RC=$?
+OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T" "$QG_T" "$SAT_T" "$NOTIFY_T" "$PLAN_T" "$DRAFT_T")"; RC=$?
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "CONTENT OPS MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -202,6 +206,30 @@ run "N2 publish order" "lists every post in publish order with its date, title a
 echo "=== (N3) a pull request without content posts ==="
 plant "$NOTIFY" "  if (cycles.length === 0) {" "  if (false) {" || { bad "N3 STALE"; exit 1; }
 run "N3 no content, no post" "a pull request without content posts nothing" "$NOTIFY_T"
+
+echo "=== (W1) ISO weeks start on the wrong day ==="
+plant "$SCHEDULE" "  d.setUTCDate(d.getUTCDate() + 4 - weekday); // the Thursday of this week" "  d.setUTCDate(d.getUTCDate() + 1 - weekday);" || { bad "W1 STALE"; exit 1; }
+run "W1 ISO weeks" "names a date's ISO week, across year ends" "$PLAN_T"
+
+echo "=== (W2) a post outside its batch's week passes ==="
+plant "$SCHEDULE" "  return week === batch" "  return true" || { bad "W2 STALE"; exit 1; }
+run "W2 batch week" "a post outside its batch's week is reported" "$PLAN_T"
+
+echo "=== (W3) the plan counts days to a past test ==="
+plant "$PLAN" "SAT_TEST_DATES.find((t) => t.date >= date)" "SAT_TEST_DATES.find((t) => t.date <= date)" || { bad "W3 STALE"; exit 1; }
+run "W3 days to the next test" "has one row per slot, each with its cycle and the days to the next test" "$PLAN_T"
+
+echo "=== (D1) a draft's data is not gated ==="
+plant "$ENTRY" "    problems.push(...contentPageProblems(asMerged, ctx));" "" || { bad "D1 STALE"; exit 1; }
+run "D1 draft data gated" "fails a draft with an unsourced paragraph" "$DRAFT_T"
+
+echo "=== (D2) a draft's rendered article is not gated ==="
+plant "$ENTRY" "    problems.push(...articleProblems(page.path, article, ctx));" "" || { bad "D2 STALE"; exit 1; }
+run "D2 draft article gated" "fails a draft whose article links to a page that does not exist" "$DRAFT_T"
+
+echo "=== (D3) gate 11 compares drafts only with each other ==="
+plant "$ENTRY" "  const problems = duplicateTargetProblems([...byPath.values()]);" "  const problems = duplicateTargetProblems(posts);" || { bad "D3 STALE"; exit 1; }
+run "D3 drafts against live pages" "fails a draft that targets a term a live page owns" "$DRAFT_T"
 
 echo
 echo "CONTENT OPS MUTATIONS: $PASS passed, $FAIL failed"

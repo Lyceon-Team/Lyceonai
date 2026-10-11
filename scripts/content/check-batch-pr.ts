@@ -10,6 +10,7 @@
  *  - a cycle the pull request touches (a content/batches/<cycle>/ file, or a post whose `batch`
  *    is that cycle) has no REVIEW.md, or its REVIEW.md breaks the rules in ./review-record.ts
  *    (draft: the self-audit; ready: also the Codex audit and Claude's responses);
+ *  - a weekly batch carries a post whose `publishAt` is outside that ISO week;
  *  - a commit marked `Audit-By: Codex` changes anything but the Codex section of a review record;
  *  - a Codex section copied from a pull request comment does not match that comment, or the
  *    comment is not Codex's.
@@ -21,6 +22,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ALL_BLOG_POSTS } from "../../shared/content/blog";
+import { batchWeekProblem } from "../../shared/content/schedule";
 import { APPROVALS_PATH, cyclesTouched } from "./stamp-approval";
 import {
   codexCommitProblems,
@@ -98,6 +100,10 @@ function main(): void {
     if (!existsSync(join(ROOT, path))) {
       problems.push(`cycle ${cycle} has no review record (${path})`);
       continue;
+    }
+    for (const post of ALL_BLOG_POSTS.filter((p) => p.batch === cycle)) {
+      const week = batchWeekProblem(cycle, post.page.publishAt ?? "");
+      if (week) problems.push(`${post.slug}: ${week}`);
     }
     const text = readFileSync(join(ROOT, path), "utf8");
     for (const p of reviewRecordProblems(text, {

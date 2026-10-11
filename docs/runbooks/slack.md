@@ -1,27 +1,27 @@
 # Runbook — posting to Slack from repo jobs
 
 > @spec [owner brief 2026-10-10 (QOTD social assets to Slack: bot token as a GitHub secret,
-> channel ID as a variable, fail loudly); owner brief "Doc 10B Phase 1" (Karl, 2026-10-11) scope 4
-> and answers 11 and 12] | @implemented [2026-10-11]
+> > channel ID as a variable, fail loudly); owner brief "Doc 10B Phase 1" (Karl, 2026-10-11) scope 4
+> > and answers 11 and 12] | @implemented [2026-10-11]
 
 Every repo job that posts to Slack uses one app, one token, one channel variable and one client.
 Don't add a second.
 
-| Piece | What | Where |
-| --- | --- | --- |
-| App | `Lyceon bot`, bot scopes `chat:write` and `files:write` | api.slack.com/apps |
-| Token | the `xoxb-` Bot User OAuth Token | GitHub secret `SLACK_BOT_TOKEN` |
-| Channel | the ID of `#social` (e.g. `C0123456789`) | GitHub variable `SOCIAL_SLACK_CHANNEL_ID` |
-| Client | reads both, calls Slack, parses every reply | `scripts/slack/client.ts` |
+| Piece   | What                                                    | Where                                     |
+| ------- | ------------------------------------------------------- | ----------------------------------------- |
+| App     | `Lyceon bot`, bot scopes `chat:write` and `files:write` | api.slack.com/apps                        |
+| Token   | the `xoxb-` Bot User OAuth Token                        | GitHub secret `SLACK_BOT_TOKEN`           |
+| Channel | the ID of `#social` (e.g. `C0123456789`)                | GitHub variable `SOCIAL_SLACK_CHANNEL_ID` |
+| Client  | reads both, calls Slack, parses every reply             | `scripts/slack/client.ts`                 |
 
 The credential lives where the job runs: GitHub Actions secrets, read only in the one step that
 posts. It is never logged, never in the repository, never in Vercel.
 
 ## Jobs that post
 
-| Job | Workflow | When | What it posts | Runbook |
-| --- | --- | --- | --- | --- |
-| QOTD social assets | `qotd-social.yml` | daily, 06:20 UTC | the day's two images, then the caption and alt text | `docs/runbooks/qotd-slack.md` |
+| Job                  | Workflow                   | When                                                    | What it posts                                                | Runbook                        |
+| -------------------- | -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------ |
+| QOTD social assets   | `qotd-social.yml`          | daily, 06:20 UTC                                        | the day's two images, then the caption and alt text          | `docs/runbooks/qotd-slack.md`  |
 | Content batch notify | `content-batch-notify.yml` | a batch or plan pull request into `seo` is marked ready | titles, publish dates, Codex verdicts, the pull request link | `docs/runbooks/content-ops.md` |
 
 ## One-time setup (Karl)

@@ -461,6 +461,22 @@ export function renderedPageProblems(
     problems.push(at("has no <article data-content-page>"));
     return problems;
   }
+  problems.push(...articleProblems(path, article, ctx));
+  return problems;
+}
+
+/**
+ * The checks on the content article alone: heading order and every link in it. Run on each built
+ * page (above) and on each draft post rendered on its own (draftPostProblems in the prerender),
+ * which is how a post is gated before Karl's merge makes it buildable.
+ */
+export function articleProblems(
+  path: string,
+  article: string,
+  ctx: GateContext,
+): string[] {
+  const at = (message: string): string => `${path} (rendered): ${message}`;
+  const problems: string[] = [];
   const levels = [...article.matchAll(/<h([1-6])[\s>]/g)].map((m) =>
     Number(m[1]),
   );
