@@ -345,6 +345,69 @@ describe("Auth Signup Contract", () => {
     );
   });
 
+  /**
+   * Owner brief 2026-10-10 (follow-up to #1188): the email-confirmation link brings the person
+   * back to the page they signed up from. Before this, the link was always the bare callback, so
+   * `/upgrade?promo=…` was lost on email sign-up (login and Google kept it).
+   */
+  it("carries the page the visitor signed up from on the confirmation link", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-next", email: "next@example.com" },
+        session: null,
+      },
+      error: null,
+    });
+    const app = await loadAuthApp();
+
+    const res = await signupWithCsrf(app, {
+      email: "next@example.com",
+      password: "Password123!",
+      next: "/upgrade?promo=FOUNDING50",
+    });
+
+    expect(res.status).toBe(202);
+    const signUpArg = signUpMock.mock.calls[0]?.[0] as {
+      options?: { emailRedirectTo?: string };
+    };
+    expect(signUpArg.options?.emailRedirectTo).toBe(
+      "https://app.lyceon.ai/auth/callback?next=%2Fupgrade%3Fpromo%3DFOUNDING50",
+    );
+  });
+
+  it.each([
+    ["an off-origin URL", "https://evil.example/upgrade"],
+    ["a protocol-relative host", "//evil.example/upgrade"],
+    ["an un-allowlisted path", "/not-a-route?x=1"],
+    ["a non-string", { path: "/upgrade" }],
+  ])(
+    "drops %s from the confirmation link without refusing the sign-up",
+    async (_label, next) => {
+      signUpMock.mockResolvedValueOnce({
+        data: {
+          user: { id: "user-bad-next", email: "bad@example.com" },
+          session: null,
+        },
+        error: null,
+      });
+      const app = await loadAuthApp();
+
+      const res = await signupWithCsrf(app, {
+        email: "bad@example.com",
+        password: "Password123!",
+        next,
+      });
+
+      expect(res.status).toBe(202);
+      const signUpArg = signUpMock.mock.calls[0]?.[0] as {
+        options?: { emailRedirectTo?: string };
+      };
+      expect(signUpArg.options?.emailRedirectTo).toBe(
+        "https://app.lyceon.ai/auth/callback",
+      );
+    },
+  );
+
   it("returns verification_required when Supabase signup has no session", async () => {
     signUpMock.mockResolvedValueOnce({
       data: {

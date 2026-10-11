@@ -26,6 +26,7 @@
  * params raises `idempotency_error`. A mock that ignored the key would make
  * every case below vacuous.
  */
+import Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import express from "express";
@@ -170,8 +171,12 @@ function idempotentCreate(prefix: string) {
     const prior = stripeState.seen.get(key);
     if (prior) {
       if (prior.params !== fingerprint) {
-        throw Object.assign(new Error("Keys for idempotent requests..."), {
+        // THE SDK'S OWN ERROR, not a hand-built shape: a fixture of `{ type: "idempotency_error" }`
+        // agreed with a check no real error could satisfy, and the 409 went unproved.
+        throw new Stripe.errors.StripeIdempotencyError({
           type: "idempotency_error",
+          message:
+            "Keys for idempotent requests can only be used with the same parameters",
         });
       }
       return prior.result;
@@ -403,5 +408,37 @@ describe("deterministic idempotency key on purchase creation", () => {
     expect(new Set(keysUsed(stripeMocks.checkoutCreate)).size).toBe(2);
     expect(stripeState.counter).toBe(2);
     expect(forA.body.sessionId).not.toBe(forB.body.sessionId);
+  });
+});
+
+describe("isStripeIdempotencyConflict reads the SDK's real error, not a hand-built shape", () => {
+  it("is true for the SDK's StripeIdempotencyError (type = class name, rawType = API type)", async () => {
+    const { isStripeIdempotencyConflict } =
+      await import("../../server/lib/stripe/purchase-idempotency");
+    const err = new Stripe.errors.StripeIdempotencyError({
+      type: "idempotency_error",
+      message:
+        "Keys for idempotent requests can only be used with the same parameters",
+    });
+    // Presence first: the fields really are what the check reads.
+    expect(err.type).toBe("StripeIdempotencyError");
+    expect(err.rawType).toBe("idempotency_error");
+    expect(isStripeIdempotencyConflict(err)).toBe(true);
+  });
+
+  it("is false for other Stripe errors and for anything that is not one", async () => {
+    const { isStripeIdempotencyConflict } =
+      await import("../../server/lib/stripe/purchase-idempotency");
+    expect(
+      isStripeIdempotencyConflict(
+        new Stripe.errors.StripeInvalidRequestError({
+          type: "invalid_request_error",
+          message: "No such price",
+        }),
+      ),
+    ).toBe(false);
+    expect(isStripeIdempotencyConflict(new Error("boom"))).toBe(false);
+    expect(isStripeIdempotencyConflict(null)).toBe(false);
+    expect(isStripeIdempotencyConflict("idempotency_error")).toBe(false);
   });
 });
