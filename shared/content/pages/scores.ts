@@ -124,6 +124,7 @@ function scorePage(
     title: `Is ${score} a Good SAT Score? | Lyceon`,
     description: `A ${score} SAT score is at the ${ordinal(nr)} national percentile and the ${ordinal(user)} among test takers, per the College Board. Here is what that means for college lists.`,
     h1: `Is ${score} a good SAT score?`,
+    targetKeyword: `is ${score} a good sat score`,
     crumb: String(score),
     parent: GOOD_SCORE_PATH,
     intro: [
@@ -205,6 +206,7 @@ const goodScore: ContentPageInput = {
   description:
     "What counts as a good SAT score, with the College Board's percentiles for 1000 to 1600, the average score, and the benchmarks for each section.",
   h1: "What is a good SAT score?",
+  targetKeyword: "good sat score",
   crumb: "What is a good SAT score?",
   intro: [
     {

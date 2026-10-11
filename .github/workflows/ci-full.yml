@@ -418,6 +418,18 @@ jobs:
       - name: Sign-in notice mutations (planted defects must fail)
         run: bash scripts/ci/signin-notice.mutations.sh
 
+      # Doc 10B Phase 1 (blog pipeline): plants an unapproved or future post going public, the
+      # withheld post's words reaching the bundle, a daily rebuild, a merge by anyone stamping the
+      # approval, a ready batch without Codex's verdicts or Claude's responses, and each new
+      # quality gate (gate 11 duplicates, AI mentions, the LISA exception, the trademark notice,
+      # internal labels, the practice/score link, Vale's ai-tells, lychee's 404). Each must turn
+      # its named test red.
+      - name: Install content tools (Vale, lychee — pinned, sha256-checked)
+        uses: ./.github/actions/content-tools
+
+      - name: Content pipeline mutations (planted defects must fail)
+        run: bash scripts/ci/content-ops.mutations.sh
+
       # Marketing email lane (contract §14): plants the age rule and the pending-deletion
       # exclusion out of the audience, a lost replay dedupe, a complaint logged as an
       # unsubscribe, a provider grant, a signature bypass, ignored unsubscribes / complaints,

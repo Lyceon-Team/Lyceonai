@@ -57,6 +57,7 @@ import {
   addDaysToLocalDate,
   daysBetweenLocalDates,
 } from "../../../packages/shared/src/calendar/time";
+import { triggerDeployHook } from "../../lib/deploy-hook";
 import { logger } from "../../logger";
 import { qotdToday, type QotdDbClient } from "./qotd-service";
 
@@ -336,22 +337,11 @@ export async function runQotdSchedule(params: {
     await rpc(params.client, "sweep_rate_limit_ledger_anon", {}),
   );
 
-  let deploy: QotdScheduleSummary["deploy"] = "skipped_no_hook";
-  if (params.deployHookUrl) {
-    try {
-      const res = await (params.fetchImpl ?? fetch)(params.deployHookUrl, {
-        method: "POST",
-        signal: AbortSignal.timeout(10_000),
-      });
-      deploy = res.ok ? "triggered" : "failed";
-    } catch (err: unknown) {
-      // The hook URL is a credential: log only the error class, never the URL.
-      logger.warn("QOTD", "deploy_hook_failed", "Deploy hook request failed", {
-        reason: err instanceof Error ? err.name : "unknown",
-      });
-      deploy = "failed";
-    }
-  }
+  const deploy: QotdScheduleSummary["deploy"] = await triggerDeployHook(
+    params.deployHookUrl,
+    "QOTD",
+    params.fetchImpl,
+  );
 
   return {
     today,
