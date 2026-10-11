@@ -32,8 +32,10 @@ import type {
 } from "@lyceon/shared/calendar";
 import { SettingsSheet } from "./SettingsSheet";
 import {
+  closeSatDates,
   openSatDates,
   satDatesSummary,
+  toggleSatDate,
 } from "@/components/sat-dates/sat-date-picker.testing";
 
 const ESTIMATES: PlanningEstimates = {
@@ -478,5 +480,34 @@ describe("practice test frequency (§8.1)", () => {
     expect(screen.getByTestId("settings-summary").textContent).toContain(
       "a full-length test every 2 weeks, on Saturdays",
     );
+  });
+});
+
+describe("the date menu inside the sheet", () => {
+  // Esc in the open date menu closes the menu only, not the schedule sheet around it.
+  it("Esc closes the date menu and leaves the sheet open", () => {
+    const { onClose } = renderSheet();
+    const menu = openSatDates("settings-exam-dates");
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByTestId("settings-exam-dates-menu")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("calendar-settings-sheet")).toBeInTheDocument();
+  });
+});
+
+describe("the SAT dates save with the schedule", () => {
+  // Owner brief 2026-10-11 §1 / SCL-223 as amended: the sheet edits the date list itself.
+  it("a date added in the picker is in the saved draft, beside the one already chosen", () => {
+    const { onSave } = renderSheet();
+    toggleSatDate("settings-exam-dates", "2026-12-05");
+    closeSatDates("settings-exam-dates");
+    expect(satDatesSummary("settings-exam-dates")).toBe(
+      "Sat, Nov 7, 2026 + 1 more",
+    );
+    fireEvent.click(screen.getByTestId("settings-save"));
+    expect(onSave.mock.calls[0]?.[0].target_exam_dates).toEqual([
+      "2026-11-07",
+      "2026-12-05",
+    ]);
   });
 });

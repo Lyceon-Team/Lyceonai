@@ -238,6 +238,21 @@ describe("the test date is optional", () => {
   });
 });
 
+describe("the date menu inside the popup", () => {
+  // The popup closes itself on Esc (one shared keyboard hook). Esc in the open date menu must
+  // close the MENU only: the student is choosing a date, not leaving setup.
+  it("Esc closes the date menu and leaves the popup open", () => {
+    const { dismissed } = open();
+    const menu = openSatDates(PICKER);
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByTestId(`${PICKER}-menu`)).toBeNull();
+    expect(dismissed()).toBe(0);
+    // Control: Esc with no menu open still dismisses, as before.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(dismissed()).toBe(1);
+  });
+});
+
 describe("the live countdown on the score step", () => {
   it('reads "N days to go" from the closest chosen date', () => {
     open();

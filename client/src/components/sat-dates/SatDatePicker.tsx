@@ -51,7 +51,7 @@ export function satDateSummary(dates: readonly string[]): string {
 }
 
 const ITEM =
-  "rounded-md py-2.5 pl-9 pr-3 text-lyc-body leading-snug text-lyc-ink focus:bg-lyc-hover focus:text-lyc-ink-strong";
+  "rounded-md py-2.5 pl-10 pr-3 text-lyc-body leading-snug text-lyc-ink focus:bg-lyc-hover focus:text-lyc-ink-strong";
 
 export function SatDatePicker({
   value,
@@ -117,6 +117,7 @@ export function SatDatePicker({
         >
           {/* Pinned: outside the scrolling list, so it is always the first choice in view. */}
           <DropdownMenuCheckboxItem
+            variant="lyc-box"
             checked={notSure}
             onCheckedChange={(checked) => {
               if (checked) onChange({ dates: [] });
@@ -135,6 +136,7 @@ export function SatDatePicker({
           >
             {options.map((o) => (
               <DropdownMenuCheckboxItem
+                variant="lyc-box"
                 key={o.date}
                 checked={value.dates.includes(o.date)}
                 onCheckedChange={(checked) =>

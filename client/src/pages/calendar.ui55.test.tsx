@@ -612,6 +612,28 @@ describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
     expect(await screen.findByTestId("calendar-settings-sheet")).toBeTruthy();
   });
 
+  // Owner brief 2026-10-11 §1 / SCL-223 as amended: the sheet's SAT dates reach the profile
+  // write as the date list, through the page's save (not only the sheet's draft).
+  it("Edit schedule: a date chosen in the sheet's picker is in the PUT body as target_exam_dates", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    await openMore();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
+    await screen.findByTestId("calendar-settings-sheet");
+    toggleSatDate("settings-exam-dates", "2026-12-05");
+    closeSatDates("settings-exam-dates");
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() =>
+      expect(sent("PUT", "/api/calendar/profile")).toHaveLength(1),
+    );
+    const body = sent("PUT", "/api/calendar/profile")[0] as Record<
+      string,
+      unknown
+    >;
+    expect(body.target_exam_dates).toContain("2026-12-05");
+    expect(Object.keys(body)).not.toContain("target_exam_date");
+  });
+
   it("Regenerate plan posts to /api/calendar/plan/regenerate with a fresh key, then reads Plan regenerated", async () => {
     await mount("paid");
     await screen.findByTestId("calendar-week-grid");

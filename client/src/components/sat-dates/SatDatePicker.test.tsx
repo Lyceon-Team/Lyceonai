@@ -115,6 +115,24 @@ describe("open", () => {
     expect([...dates].sort()).toEqual(dates);
   });
 
+  it("every row shows a checkbox, drawn from the row's own checked state", () => {
+    render(<Harness initial={["2026-12-05"]} />);
+    const menu = openSatDates(ID);
+    const items = within(menu).getAllByRole("menuitemcheckbox");
+    expect(items.length).toBeGreaterThan(3);
+    for (const item of items) {
+      expect(item.querySelector('[data-indicator="box"]')).not.toBeNull();
+      expect(item.getAttribute("data-state")).toBe(
+        item.getAttribute("aria-checked") === "true" ? "checked" : "unchecked",
+      );
+    }
+    expect(
+      within(menu)
+        .getByTestId(`${ID}-date-2026-12-05`)
+        .getAttribute("data-state"),
+    ).toBe("checked");
+  });
+
   it("each choice clears the other, and the menu stays open while choosing", () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
