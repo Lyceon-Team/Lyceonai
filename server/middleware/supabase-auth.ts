@@ -932,7 +932,10 @@ export function requireProfileComplete(
   if (
     !isProfileGateSatisfied({
       isAdmin: req.user.isAdmin,
+      role: req.user.role,
       profileCompletedAt: req.user.profile_completed_at,
+      // the same test requireGuardianLinkForUnder13 applies (G2-06)
+      dateOfBirthKnown: typeof req.user.is_under_13 === "boolean",
     })
   ) {
     logger.warn(

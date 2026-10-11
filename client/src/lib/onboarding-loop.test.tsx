@@ -120,7 +120,9 @@ vi.mock("@/lib/csrf", () => ({
           // The profile route's own answer (server/routes/profile-routes.ts).
           requiredProfileComplete: isProfileGateSatisfied({
             isAdmin: account.role === "admin",
+            role: account.role,
             profileCompletedAt: account.profileCompletedAt,
+            dateOfBirthKnown: account.dateOfBirth !== null,
           }),
           guardianConsentRequired: false,
           outstandingLegal: [],
@@ -320,5 +322,20 @@ describe("no login/dashboard reload loop (hotfix 2026-10-11)", () => {
     await settle();
     expect(window.location.pathname).toBe("/profile/complete");
     expect(toCompletion()).toBeLessThanOrEqual(1);
+  });
+
+  it("a completed student whose date of birth is unknown lands on the form, not in a loop", async () => {
+    // requireGuardianLinkForUnder13 refuses an unknown age with PROFILE_INCOMPLETE (G2-06); the
+    // shared rule says this student is not complete, so the client agrees and sends them to the form.
+    await run({
+      id: "0c0c0c0c-0000-4000-8000-000000000006",
+      role: "student",
+      dateOfBirth: null,
+      profileCompletedAt: "2026-09-01T00:00:00Z",
+    });
+    expect(reloads).toBe(0);
+    expect(toCompletion()).toBeLessThanOrEqual(1);
+    expect(window.location.pathname).toBe("/profile/complete");
+    expect(document.querySelector('input[type="date"]')).not.toBeNull();
   });
 });

@@ -137,7 +137,15 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // server's can never disagree (their disagreement over an admin was the production reload loop).
   const needsOnboarding =
     requiredProfileComplete === false ||
-    !isProfileGateSatisfied({ isAdmin, profileCompletedAt });
+    !isProfileGateSatisfied({
+      isAdmin,
+      role: gateUser?.role,
+      profileCompletedAt,
+      dateOfBirthKnown:
+        gateUser?.dateOfBirth === undefined
+          ? undefined
+          : gateUser.dateOfBirth !== null,
+    });
 
   if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
     // @spec [AS-5; register UI-03] | @implemented [2026-09-29] | plain English: the page the

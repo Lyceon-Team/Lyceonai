@@ -40,7 +40,8 @@ function profileBody(role: Role): Record<string, unknown> {
       isGuardian: role === "guardian",
       is_under_13: false,
       guardian_consent: false,
-      dateOfBirth: null,
+      // a completed student has a date of birth (hotfix 2026-10-11 shared rule)
+      dateOfBirth: "2008-01-01",
       marketingOptIn: false,
       profileCompletedAt: "2026-09-01T00:00:00.000Z",
       requiredProfileComplete: true,

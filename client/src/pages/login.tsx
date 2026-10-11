@@ -50,6 +50,7 @@ export default function Login() {
         user.requiredProfileComplete === false ||
         !isProfileGateSatisfied({
           isAdmin: user.role === "admin",
+          role: user.role,
           profileCompletedAt: user.profile_completed_at,
         });
       // G2-04: an under-13 student with no active guardian link goes to the linking page.

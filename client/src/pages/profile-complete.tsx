@@ -297,7 +297,9 @@ export default function ProfileComplete() {
     profile.requiredProfileComplete !== false &&
     isProfileGateSatisfied({
       isAdmin: false, // an admin already returned above
+      role: profile.role,
       profileCompletedAt: profile.profileCompletedAt,
+      dateOfBirthKnown: profile.dateOfBirth !== null,
     })
   ) {
     return (

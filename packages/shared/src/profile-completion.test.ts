@@ -26,6 +26,25 @@ describe("isProfileGateSatisfied", () => {
       }),
     ).toBe(true);
   });
+  it("a completed student whose date of birth is unknown does not pass (the age gate would refuse them)", () => {
+    expect(
+      isProfileGateSatisfied({
+        isAdmin: false,
+        role: "student",
+        profileCompletedAt: "2026-10-01T00:00:00Z",
+        dateOfBirthKnown: false,
+      }),
+    ).toBe(false);
+    // a guardian is not asked for one
+    expect(
+      isProfileGateSatisfied({
+        isAdmin: false,
+        role: "guardian",
+        profileCompletedAt: "2026-10-01T00:00:00Z",
+        dateOfBirthKnown: false,
+      }),
+    ).toBe(true);
+  });
   it("a student without profile_completed_at does not pass, date of birth or not", () => {
     expect(
       isProfileGateSatisfied({ isAdmin: false, profileCompletedAt: null }),

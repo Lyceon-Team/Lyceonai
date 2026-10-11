@@ -91,4 +91,14 @@ describe("requireProfileComplete (hotfix 2026-10-11)", () => {
       }),
     ).toMatchObject({ passed: true });
   });
+  it("a completed student with no date of birth is refused (one rule with the age gate)", () => {
+    expect(
+      call({
+        id: "s",
+        role: "student",
+        isAdmin: false,
+        profile_completed_at: "2026-09-01T00:00:00Z",
+      }),
+    ).toEqual({ passed: false, status: 403, code: "PROFILE_INCOMPLETE" });
+  });
 });

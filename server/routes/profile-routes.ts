@@ -300,7 +300,9 @@ router.get("/", async (req: Request, res: Response) => {
     // the client's gate and the server's can never disagree about this account.
     const requiredProfileComplete = isProfileGateSatisfied({
       isAdmin: user.isAdmin,
+      role: profileRow.role,
       profileCompletedAt: profileRow.profile_completed_at,
+      dateOfBirthKnown: profileRow.date_of_birth !== null,
     });
 
     // @spec [Doc-01_V8 §40 / §40.3] | @implemented 2026-06-21 | plain English: server-authority

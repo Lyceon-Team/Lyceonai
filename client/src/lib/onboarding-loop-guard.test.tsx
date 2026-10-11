@@ -122,7 +122,9 @@ vi.mock("@/lib/csrf", () => ({
           // The profile route's own answer (server/routes/profile-routes.ts).
           requiredProfileComplete: isProfileGateSatisfied({
             isAdmin: account.role === "admin",
+            role: account.role,
             profileCompletedAt: account.profileCompletedAt,
+            dateOfBirthKnown: account.dateOfBirth !== null,
           }),
           guardianConsentRequired: false,
           outstandingLegal: [],
