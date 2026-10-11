@@ -422,6 +422,11 @@ jobs:
       - name: CI full-tier scope and verdict self-test
         run: bash scripts/ci/ci-full-scope.selftest.sh
 
+      # The full tier splits the review UI gate across jobs; its last job adds up their shards
+      # (review-ui-gate.combine.sh). Proven here that a missing, doubled or non-red shard is red.
+      - name: Review UI gate shard-totals self-test (proves each mutation turns it red)
+        run: bash scripts/ci/review-ui-gate.combine.selftest.sh
+
       - name: Retired endpoints gate (no caller of a deleted route may remain)
         run: node scripts/ci/retired-endpoints-gate.mjs
 
