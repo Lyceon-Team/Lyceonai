@@ -429,7 +429,7 @@ export const SAT_TRADEMARK_NOTICE =
 /** Visible text of rendered HTML with whitespace collapsed (entities for ® and & decoded). */
 function bodyTextOf(html: string): string {
   return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&reg;|&#174;|&#xAE;/gi, "®")
     .replace(/&amp;/g, "&")
