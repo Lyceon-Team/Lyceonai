@@ -1,4 +1,5 @@
 import { Component, ReactNode, Suspense, lazy } from "react";
+import { OnboardingLoopScreen } from "@/components/auth/OnboardingLoopScreen";
 import { Switch, Route, Redirect, useLocation, useSearch } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -662,6 +663,9 @@ function App() {
                   <DeletionGate>
                     <Router />
                   </DeletionGate>
+                  {/* Hotfix 2026-10-11: the onboarding-redirect loop guard's screen (sign-out
+                      instead of a third redirect). Renders nothing until the guard trips. */}
+                  <OnboardingLoopScreen />
                 </StudentUpgradeModal>
               </ActiveThemeLockProvider>
               {/* SEO F10/F11: cookie banner + the only switch that starts PostHog (after

@@ -219,7 +219,6 @@ async function settle(): Promise<void> {
 async function run(account: Account, start = "/dashboard"): Promise<void> {
   harness.account = account;
   window.history.replaceState({}, "", start);
-  visited.push(start);
   render(<App />);
   await settle();
   while (reloadTo !== null && reloads < 6) {

@@ -12,6 +12,7 @@ import {
   PROFILE_INCOMPLETE,
 } from "../../packages/shared/src/guardian-link-gate";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { isProfileGateSatisfied } from "../../packages/shared/src/profile-completion";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 
@@ -242,8 +243,7 @@ export function sendUnauthenticated(res: Response, requestId?: string) {
 export function sendRoleUnrecognized(res: Response, requestId?: string) {
   return sendDenial(res, 403, {
     error: "Account unavailable",
-    message:
-      "This account can't be opened. Please contact support.",
+    message: "This account can't be opened. Please contact support.",
     requestId,
     extra: { code: ROLE_UNRECOGNIZED },
   });
@@ -909,10 +909,16 @@ export async function requireGuardianLinkForUnder13(
 
 /**
  * Middleware to require completed onboarding profile before feature access.
- * Blocks when profile_completed_at is null ("DOB not yet set"). An under-13 student is gated
+ * Blocks when the shared rule `isProfileGateSatisfied` says no: an admin always passes; anyone
+ * else passes exactly when `profile_completed_at` is set. An under-13 student is gated
  * separately, on every request, by the live link check `requireGuardianLinkForUnder13` (G2-04);
  * there is no stored consent state.
  * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
+ * @spec [hotfix 2026-10-11: one definition of "profile complete", shared with the client's
+ *        RequireRole and completion page; admins are not subject to the student gate]
+ *        | @implemented [2026-10-11] | plain English: before this, the gate refused an admin
+ *        whose `profile_completed_at` was NULL while the client exempted admins, and the client
+ *        reloaded between the two every ~1.5s (production, 2026-10-11).
  */
 export function requireProfileComplete(
   req: Request,
@@ -923,7 +929,12 @@ export function requireProfileComplete(
     return sendNoUser(req, res);
   }
 
-  if (!req.user.profile_completed_at) {
+  if (
+    !isProfileGateSatisfied({
+      isAdmin: req.user.isAdmin,
+      profileCompletedAt: req.user.profile_completed_at,
+    })
+  ) {
     logger.warn(
       "AUTH",
       "profile_incomplete",
@@ -966,7 +977,9 @@ export function requireProfileComplete(
  * The tutor's age test, on its own so the feature-access map (OQ-29) asks the exact question
  * `requireStudentOnly` asks. Fail-closed: only an explicit `false` passes.
  */
-export function passesTutorAgeGate(user: Pick<SupabaseUser, "is_under_13">): boolean {
+export function passesTutorAgeGate(
+  user: Pick<SupabaseUser, "is_under_13">,
+): boolean {
   return user.is_under_13 === false;
 }
 

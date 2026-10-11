@@ -1,3 +1,5 @@
+import { navigate as navigateInApp } from "wouter/use-browser-location";
+import { admitOnboardingRedirect } from "./onboarding-loop-guard";
 import {
   MutationCache,
   QueryCache,
@@ -130,16 +132,32 @@ export const navigation = {
  * guardian link was just revoked) sends them to /guardian-required at once, instead of leaving
  * them on a page of refused requests until the next reload. One place, so no page has to know
  * the codes. A no-op when already there (no loop).
+ *
+ * Hotfix 2026-10-11 (the login/dashboard reload loop): the PROFILE_INCOMPLETE redirect is an
+ * IN-APP navigation, not a page load, and it passes the loop guard first — a second refusal
+ * within a few seconds of the last redirect shows the guard's error screen (with sign-out)
+ * instead of redirecting again. The profile query is invalidated so the completion page reads
+ * the server's current answer, not a cached one. GUARDIAN_LINK_REQUIRED keeps its full
+ * navigation (G-NEW-10: it re-reads `/api/profile` and the guardian-required page depends on it).
  */
 export function redirectForOnboarding(
   error: unknown,
-  navigate: (path: string) => void = (path) => navigation.assign(path),
+  navigate: (path: string) => void = (path) =>
+    path === PROFILE_COMPLETE_PATH
+      ? navigateInApp(path)
+      : navigation.assign(path),
 ): void {
   const path = onboardingRedirectFor(error);
   if (!path || typeof window === "undefined") return;
   if (window.location.pathname === path) return;
+  if (path === PROFILE_COMPLETE_PATH) {
+    if (admitOnboardingRedirect() === "blocked") return;
+    void queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+  }
   navigate(path);
 }
+
+const PROFILE_COMPLETE_PATH = "/profile/complete";
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({

@@ -176,10 +176,8 @@ import ProfileComplete from "@/pages/profile-complete";
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "./api-error";
 import { navigation, queryClient } from "./queryClient";
-import {
-  OnboardingLoopScreen,
-  resetOnboardingLoopGuard,
-} from "./onboarding-loop-guard";
+import { OnboardingLoopScreen } from "@/components/auth/OnboardingLoopScreen";
+import { resetOnboardingLoopGuard } from "./onboarding-loop-guard";
 
 /** The dashboard's two practice reads, as the production log shows them. */
 function Dashboard(): JSX.Element {
@@ -238,7 +236,6 @@ async function settle(): Promise<void> {
 async function run(account: Account, start = "/dashboard"): Promise<void> {
   harness.account = account;
   window.history.replaceState({}, "", start);
-  visited.push(start);
   render(<App />);
   await settle();
   while (reloadTo !== null && reloads < 6) {

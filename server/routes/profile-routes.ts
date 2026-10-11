@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { isProfileGateSatisfied } from "../../packages/shared/src/profile-completion";
 import { resolveFeatureAccess } from "../lib/feature-access";
 import { z } from "zod";
 import {
@@ -295,7 +296,12 @@ router.get("/", async (req: Request, res: Response) => {
     const guardianConsentRequired = !!(
       profileRow.is_under_13 && !guardianConnected
     );
-    const requiredProfileComplete = !!profileRow.profile_completed_at;
+    // The shared rule (hotfix 2026-10-11): the same answer `requireProfileComplete` gives, so
+    // the client's gate and the server's can never disagree about this account.
+    const requiredProfileComplete = isProfileGateSatisfied({
+      isAdmin: user.isAdmin,
+      profileCompletedAt: profileRow.profile_completed_at,
+    });
 
     // @spec [Doc-01_V8 §40 / §40.3] | @implemented 2026-06-21 | plain English: server-authority
     // exposure of (a) whether the V2 account-deletion lifecycle is live and (b) whether THIS user is in
@@ -357,9 +363,16 @@ router.get("/", async (req: Request, res: Response) => {
       },
     });
   } catch (error: unknown) {
-    logger.error("PROFILE", "get_profile", "Unexpected error", error, undefined, {
-      requestId: req.requestId,
-    });
+    logger.error(
+      "PROFILE",
+      "get_profile",
+      "Unexpected error",
+      error,
+      undefined,
+      {
+        requestId: req.requestId,
+      },
+    );
     return res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -399,9 +412,7 @@ router.patch("/", async (req: Request, res: Response) => {
     const { data: existingProfile, error: existingProfileError } =
       await supabase
         .from("profiles")
-        .select(
-          "id, role, profile_completed_at, date_of_birth",
-        )
+        .select("id, role, profile_completed_at, date_of_birth")
         .eq("id", userId)
         .single();
 
@@ -468,7 +479,9 @@ router.patch("/", async (req: Request, res: Response) => {
     if (!validation.success) {
       // F-41: a malformed date of birth is the person's input being wrong, so it gets the coded
       // refusal the onboarding page shows verbatim (AS-3), not the generic "Invalid profile data".
-      if (validation.error.issues.some((issue) => issue.path[0] === "dateOfBirth")) {
+      if (
+        validation.error.issues.some((issue) => issue.path[0] === "dateOfBirth")
+      ) {
         return sendRoleChoiceRefusal(res, INVALID_DATE_OF_BIRTH);
       }
       return res.status(400).json({
@@ -671,7 +684,10 @@ router.patch("/", async (req: Request, res: Response) => {
       );
       // Owner report 2026-10-05: a first completion that does not emit is said here too, at the
       // call site, with the wrapper's reason. Only an under-13 account is expected to skip it.
-      if (!signedUp.ok && signedUp.reason !== "excluded_under_13_or_age_unknown") {
+      if (
+        !signedUp.ok &&
+        signedUp.reason !== "excluded_under_13_or_age_unknown"
+      ) {
         logger.error(
           "PROFILE",
           "signup_event_missed",
@@ -699,9 +715,16 @@ router.patch("/", async (req: Request, res: Response) => {
       guardianConsentRequired,
     });
   } catch (error: unknown) {
-    logger.error("PROFILE", "complete_profile", "Unexpected error", error, undefined, {
-      requestId: req.requestId,
-    });
+    logger.error(
+      "PROFILE",
+      "complete_profile",
+      "Unexpected error",
+      error,
+      undefined,
+      {
+        requestId: req.requestId,
+      },
+    );
     return res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -808,13 +831,11 @@ router.put(
       }
       await emitMarketingConsentCaptured(emitEvent, user.id, write);
 
-      return res
-        .status(200)
-        .json(
-          marketingConsentResponseSchema.parse({
-            marketingOptIn: write.granted,
-          }),
-        );
+      return res.status(200).json(
+        marketingConsentResponseSchema.parse({
+          marketingOptIn: write.granted,
+        }),
+      );
     } catch (error: unknown) {
       logger.error(
         "PROFILE",
@@ -856,65 +877,77 @@ router.put(
  * edge cases: the name is never logged (it is personal data); a missing profile row is a 404,
  * never an insert; a write failure is a 500 carrying the error's code only.
  */
-router.patch("/name", requireStudentAccount, async (req: Request, res: Response) => {
-  // 1. Auth: the session principal, from the server's own session (requireSupabaseAuth), already
-  //    held to a student account by `requireStudentAccount`.
-  const user = requireRequestUser(req, res);
-  if (!user) return;
+router.patch(
+  "/name",
+  requireStudentAccount,
+  async (req: Request, res: Response) => {
+    // 1. Auth: the session principal, from the server's own session (requireSupabaseAuth), already
+    //    held to a student account by `requireStudentAccount`.
+    const user = requireRequestUser(req, res);
+    if (!user) return;
 
-  // 2. Parse: the strict shared body. An extra key (marketingOptIn, role …) is a 400.
-  const parsed = profileNameUpdateRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: {
-        code: "INVALID_NAME",
-        message: "Enter a name between 1 and 120 characters.",
-        details: parsed.error.flatten(),
-      },
-    });
-  }
+    // 2. Parse: the strict shared body. An extra key (marketingOptIn, role …) is a 400.
+    const parsed = profileNameUpdateRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_NAME",
+          message: "Enter a name between 1 and 120 characters.",
+          details: parsed.error.flatten(),
+        },
+      });
+    }
 
-  // 3. Domain: one column (and its timestamp) on the caller's own row.
-  try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("profiles")
-      .update({
-        display_name: parsed.data.displayName,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", user.id)
-      .select("display_name")
-      .maybeSingle();
+    // 3. Domain: one column (and its timestamp) on the caller's own row.
+    try {
+      const supabase = getSupabaseAdmin();
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({
+          display_name: parsed.data.displayName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id)
+        .select("display_name")
+        .maybeSingle();
 
-    if (error) {
-      logger.error("PROFILE", "name_save_failed", "Name save failed", {
+      if (error) {
+        logger.error("PROFILE", "name_save_failed", "Name save failed", {
+          requestId: req.requestId,
+          code: error.code ?? "unknown",
+        });
+        return res.status(500).json({
+          error: {
+            code: "NAME_SAVE_FAILED",
+            message: "Failed to save your name",
+          },
+        });
+      }
+      if (!data || typeof data.display_name !== "string") {
+        return res.status(404).json({
+          error: { code: "PROFILE_NOT_FOUND", message: "Profile not found" },
+        });
+      }
+
+      // 4. Serialize: the stored value, nothing else.
+      const body: ProfileNameUpdateResponse = {
+        displayName: data.display_name,
+      };
+      return res.json(body);
+    } catch (err: unknown) {
+      logger.error("PROFILE", "name_save_exception", "Name save failed", {
         requestId: req.requestId,
-        code: error.code ?? "unknown",
+        reason: err instanceof Error ? err.message : "unknown",
       });
       return res.status(500).json({
-        error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
+        error: {
+          code: "NAME_SAVE_FAILED",
+          message: "Failed to save your name",
+        },
       });
     }
-    if (!data || typeof data.display_name !== "string") {
-      return res.status(404).json({
-        error: { code: "PROFILE_NOT_FOUND", message: "Profile not found" },
-      });
-    }
-
-    // 4. Serialize: the stored value, nothing else.
-    const body: ProfileNameUpdateResponse = { displayName: data.display_name };
-    return res.json(body);
-  } catch (err: unknown) {
-    logger.error("PROFILE", "name_save_exception", "Name save failed", {
-      requestId: req.requestId,
-      reason: err instanceof Error ? err.message : "unknown",
-    });
-    return res.status(500).json({
-      error: { code: "NAME_SAVE_FAILED", message: "Failed to save your name" },
-    });
-  }
-});
+  },
+);
 
 /**
  * POST /api/profile/date-of-birth — the one-time date-of-birth fill for a guardian with none.

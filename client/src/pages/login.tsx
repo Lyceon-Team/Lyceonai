@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { isProfileGateSatisfied } from "@lyceon/shared/profile-completion";
 import { useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
@@ -44,8 +45,13 @@ export default function Login() {
       // No legal document appears here now. What remains is an incomplete
       // account, and the under-13 rule, which is a condition of the Terms rather
       // than a consent state.
+      // Hotfix 2026-10-11: the one shared rule (admins pass), as RequireRole and the server.
       const needsOnboarding =
-        user.requiredProfileComplete === false || !user.profile_completed_at;
+        user.requiredProfileComplete === false ||
+        !isProfileGateSatisfied({
+          isAdmin: user.role === "admin",
+          profileCompletedAt: user.profile_completed_at,
+        });
       // G2-04: an under-13 student with no active guardian link goes to the linking page.
       const needsGuardianLink =
         user.role === "student" && user.guardianConsentRequired === true;
