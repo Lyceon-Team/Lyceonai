@@ -509,9 +509,11 @@ jobs:
       # internal labels, the practice/score link, Vale's ai-tells, lychee's 404). Each must turn
       # its named test red.
       - name: Install content tools (Vale, lychee — pinned, sha256-checked)
+        if: matrix.group == 'review-marketing'
         uses: ./.github/actions/content-tools
 
       - name: Content pipeline mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
         run: bash scripts/ci/content-ops.mutations.sh
 
       # Marketing email lane (contract §14): plants the age rule and the pending-deletion

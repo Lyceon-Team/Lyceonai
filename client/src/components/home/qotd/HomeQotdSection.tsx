@@ -308,7 +308,6 @@ function SatDateCard(): JSX.Element | null {
   const save = useStudyProfileMutation();
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<SatDateChoice>({
-    notSure: false,
     dates: [],
   });
   const todayChicago = chicagoToday();

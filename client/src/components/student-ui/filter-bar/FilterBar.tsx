@@ -109,11 +109,13 @@ function FilterMenu({
         {options.map((o) => (
           <DropdownMenuCheckboxItem
             key={o.value}
+            // DESIGN.md §5 (Karl, 2026-10-11): a multi-select shows a checkbox on every row.
+            variant="lyc-box"
             checked={chosen.includes(o.value)}
             onCheckedChange={() => onToggle(o.value)}
             // Keep the menu open so several values can be chosen in one visit.
             onSelect={(event) => event.preventDefault()}
-            className="rounded-md py-2.5 pl-9 pr-3 text-lyc-body leading-snug text-lyc-ink focus:bg-lyc-hover focus:text-lyc-ink-strong"
+            className="rounded-md py-2.5 pl-10 pr-3 text-lyc-body leading-snug text-lyc-ink focus:bg-lyc-hover focus:text-lyc-ink-strong"
           >
             {o.label}
           </DropdownMenuCheckboxItem>

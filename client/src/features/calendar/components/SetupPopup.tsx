@@ -45,6 +45,10 @@ import {
 } from "@/hooks/useKeyboardShortcuts";
 import { addDays, daysBetween } from "../lib/dates";
 import {
+  SatDatePicker,
+  type SatDateChoice,
+} from "@/components/sat-dates/SatDatePicker";
+import {
   OPENING_STUDY_DAYS,
   browserTimeZone,
   maskOf,
@@ -113,7 +117,7 @@ const OPENING_SCORE = 1400;
  * schema does not have (or names with a different type) fails the build there.
  */
 export type SetupAnswers = {
-  target_exam_date: string | null;
+  target_exam_dates: string[];
   target_score: number | null;
   study_days_mask: number;
   daily_minutes: number;
@@ -178,15 +182,15 @@ export function SetupPopup({
   error: string | null;
 }): JSX.Element {
   const [step, setStep] = useState<1 | 2>(1);
-  // Opens on a date roughly a term away, so the control has a sensible position. It is
-  // only STORED if the student leaves "I haven't picked a date yet" unchecked.
-  // SCL-223: opens on the next SAT date the student already chose (onboarding or Settings),
-  // when there is one. The field is "your next SAT"; later chosen dates are kept by the write.
-  const [examDate, setExamDate] = useState<string>(
-    () =>
-      defaults.target_exam_dates.find((d) => d >= today) ?? addDays(today, 60),
-  );
-  const [noDate, setNoDate] = useState(false);
+  // Owner brief 2026-10-11 §1: the one SAT-date picker, opening on the dates the student
+  // already chose (onboarding or Settings, SCL-223). Empty is "Not sure yet", which replaces
+  // the old "I haven't picked a date yet" box: a student who has not picked one has said so.
+  const [examDates, setExamDates] = useState<SatDateChoice>(() => ({
+    dates: defaults.target_exam_dates.filter((d) => d >= today),
+  }));
+  // The date every readout counts to: the closest chosen date on or after today, the same rule
+  // the database applies to `target_exam_date` (SCL-223).
+  const effectiveExamDate = examDates.dates.find((d) => d >= today) ?? null;
   const [score, setScore] = useState<number>(OPENING_SCORE);
   const [days, setDays] = useState<readonly number[]>(OPENING_STUDY_DAYS);
   const [minutes, setMinutes] = useState<number>(() =>
@@ -300,8 +304,8 @@ export function SetupPopup({
   /**
    * The exam half of step 2's note, from the SHARED readout — the settings sheet prints the
    * same sentence from the same function. Which of its three shapes appears is decided there
-   * and not here: with the step-1 date still in hand it is a count, and after the "haven't
-   * picked a date yet" opt-out it falls back to the rate.
+   * and not here: with a step-1 date chosen it is a count against the closest one, and with
+   * "Not sure yet" it falls back to the rate.
    */
   function setupExamNote(): string {
     return examCadenceNote({
@@ -311,7 +315,7 @@ export function SetupPopup({
       // The SUBMITTED value, not the painted one: the sentence describes what will
       // actually be scheduled, and while the pair is unanswered that is nothing.
       intervalWeeks: submittedWeeks(),
-      targetExamDate: noDate ? null : examDate,
+      targetExamDate: effectiveExamDate,
       today,
       finalExamLeadDays: defaults.final_exam_lead_days,
     });
@@ -323,7 +327,10 @@ export function SetupPopup({
   );
 
   /** The live readout. Null when there is no date to count to — copy, never a 0. */
-  const daysToGo = noDate ? null : Math.max(0, daysBetween(today, examDate));
+  const daysToGo =
+    effectiveExamDate === null
+      ? null
+      : Math.max(0, daysBetween(today, effectiveExamDate));
 
   // Escape dismisses. A popup that traps a student who does not want it is a blocker
   // wearing a different shape.
@@ -334,10 +341,9 @@ export function SetupPopup({
 
   function answers(): SetupAnswers {
     return {
-      // The opt-out is the reason this is null rather than the date sitting in the input:
-      // a student who says they have not picked one has said something, and storing the
-      // placeholder would be the form answering on their behalf.
-      target_exam_date: noDate ? null : examDate,
+      // SCL-223: the dates themselves; `[]` is "Not sure yet", stored as no dates rather than
+      // a placeholder the form chose on the student's behalf.
+      target_exam_dates: examDates.dates,
       target_score: score,
       study_days_mask: maskOf(days),
       daily_minutes: minutes,
@@ -350,7 +356,11 @@ export function SetupPopup({
   /** Skip means "no answer from me", so the field is sent as null rather than as its
    *  opening position — the opening position is a control's resting state, not a claim. */
   function skipToSchedule(): void {
-    setNoDate(true);
+    // The dates fall back to what the student had ALREADY saved (onboarding or Settings), not
+    // to none: skipping answers nothing, so it must not erase an earlier answer either.
+    setExamDates({
+      dates: defaults.target_exam_dates.filter((d) => d >= today),
+    });
     setScoreSkipped(true);
     setStep(2);
   }
@@ -400,26 +410,15 @@ export function SetupPopup({
           {step === 1 ? (
             <>
               <div className="field">
-                <label htmlFor="setup-exam">When is your SAT?</label>
-                <input
-                  id="setup-exam"
-                  type="date"
-                  value={examDate}
-                  disabled={noDate}
-                  max={addDays(today, defaults.target_exam_date_max_days)}
-                  onChange={(e) => setExamDate(e.target.value)}
-                  data-testid="calendar-setup-exam-date"
+                <SatDatePicker
+                  legend="When is your SAT?"
+                  value={examDates}
+                  onChange={setExamDates}
+                  today={today}
+                  latest={addDays(today, defaults.target_exam_date_max_days)}
+                  data-testid="calendar-setup-exam-dates"
                 />
               </div>
-              <label className="optout">
-                <input
-                  type="checkbox"
-                  checked={noDate}
-                  onChange={(e) => setNoDate(e.target.checked)}
-                  data-testid="calendar-setup-no-date"
-                />{" "}
-                I haven't picked a date yet
-              </label>
               <div className="field">
                 <label htmlFor="setup-score">
                   What score are you aiming for?

@@ -1588,6 +1588,27 @@ describe("QA item 14: Home's mastery rows and recent sessions go somewhere", () 
     expect(second.closest("li")?.textContent).toContain("1 to review");
   });
 
+  // Owner brief 2026-10-11 (DESIGN.md "UI standards", long labels): a recent-session title is
+  // two lines and an ellipsis — never five — with the full text on hover (`title`) and while the
+  // row's own control has keyboard focus (the row is the focus group).
+  it("titles are clamped to two lines, with the full text on hover and focus", async () => {
+    await mount("paid", { calendar: "ready" });
+    const panel = screen.getByTestId("app-shell-panel");
+    const rows = await within(panel).findAllByTestId("home-recent-row");
+    expect(rows.length).toBeGreaterThan(0); // presence before the per-row checks
+    for (const row of rows) {
+      const title = within(row).getByTestId("home-recent-title");
+      expect(title.className.split(" ")).toEqual(
+        expect.arrayContaining([
+          "line-clamp-2",
+          "group-focus-within:line-clamp-none",
+        ]),
+      );
+      expect(title.getAttribute("title")).toBe(title.textContent);
+      expect(row.className.split(" ")).toContain("group");
+    }
+  });
+
   it("OQ-66 (h): each row names its action, 'Review this session', with the session in its accessible name", async () => {
     await mount("paid", { calendar: "ready" });
     const panel = screen.getByTestId("app-shell-panel");
