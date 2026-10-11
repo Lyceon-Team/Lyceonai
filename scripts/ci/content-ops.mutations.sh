@@ -19,10 +19,11 @@ WITHHELD="scripts/content/withheld-posts.ts"
 GATE="shared/seo/content-gate.ts"
 JOB="server/services/content/publish-job.ts"
 STAMP="scripts/content/stamp-approval.ts"
+REVIEW="scripts/content/review-record.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/content-mut.XXXX)"
 
-FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP")
+FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -48,6 +49,7 @@ check() { pnpm exec vitest run "$@" 2>&1; }
 SCHED_T=tests/ci/content-schedule.test.ts
 JOB_T=tests/ci/content-publish-job.test.ts
 STAMP_T=tests/ci/content-approval-stamp.test.ts
+REVIEW_T=tests/ci/content-review-record.test.ts
 
 expect_red() {
   if [ "$4" = 0 ]; then bad "$1: check stayed GREEN (the plant was not caught)"; return; fi
@@ -66,7 +68,7 @@ run() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T")"; RC=$?
+OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T")"; RC=$?
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "CONTENT OPS MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -121,6 +123,18 @@ run "A1 only the approver's merge" "a merge by anyone else records nothing" "$ST
 echo "=== (A2) a re-run overwrites the first stamp ==="
 plant "$STAMP" "    if (next[cycle]) continue;" "" || { bad "A2 STALE"; exit 1; }
 run "A2 first stamp kept" "a re-run keeps the first stamp" "$STAMP_T"
+
+echo "=== (R1) a ready record without Codex verdicts passes ==="
+plant "$REVIEW" "  if (!ctx.ready) return problems;" "  return problems;" || { bad "R1 STALE"; exit 1; }
+run "R1 ready needs the Codex section" "is blocked when the Codex section has not been written" "$REVIEW_T"
+
+echo "=== (R2) a REVISE needs no Claude response ==="
+plant "$REVIEW" '    if (verdict === "APPROVE") continue;' "    continue;" || { bad "R2 STALE"; exit 1; }
+run "R2 a response to every REVISE" "is blocked when a REVISE has no Claude response" "$REVIEW_T"
+
+echo "=== (R3) Codex may edit other sections ==="
+plant "$REVIEW" "    if (withoutCodex(before) !== withoutCodex(after)) {" "    if (false) {" || { bad "R3 STALE"; exit 1; }
+run "R3 Codex writes only its section" "a Codex commit that edits a post, or another section, is refused" "$REVIEW_T"
 
 echo
 echo "CONTENT OPS MUTATIONS: $PASS passed, $FAIL failed"

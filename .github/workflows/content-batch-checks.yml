@@ -1,0 +1,77 @@
+# Checks a content pull request into seo: the review record, Codex's write scope, the approvals file.
+#
+# @spec [docs/Spec/Lyceon_Doc_10B.md §8.7; owner brief "Doc 10B Phase 1 — blog pipeline" (Karl,
+#   2026-10-11) scope 2: "a CI check that a batch PR can't be marked ready without the Codex section
+#   and a Claude response to every REVISE"; owner answers on Step 0, items 1 and 3]
+#   | @implemented [2026-10-11]
+#
+# plain English: on every pull request into `seo` (opened, pushed to, marked ready, or turned back
+# into a draft) this runs scripts/content/check-batch-pr.ts. A pull request that carries no content
+# passes at once. A batch pull request passes as a draft with Claude's self-audit; once marked READY
+# it also needs Codex's verdict on every item and Claude's response to every REVISE, or the check
+# goes red. Make "Content batch checks / review-record" a required status check on `seo` (branch
+# protection) so a red record cannot be merged. It also fails any pull request that edits
+# content/batches/approvals.json, which only the merge workflow writes, and any `Audit-By: Codex`
+# commit that touches anything but the Codex section.
+name: Content batch checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    branches: [seo]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: content-batch-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history, for the base...head diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Does this pull request carry content?
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git diff --name-only "$BASE_SHA...$HEAD_SHA" | grep -qE '^(content/batches/|shared/content/posts/)'; then
+            echo "content=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "content=false" >> "$GITHUB_OUTPUT"
+            echo "No content in this pull request."
+          fi
+
+      - name: Setup pnpm
+        if: steps.scope.outputs.content == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        if: steps.scope.outputs.content == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.scope.outputs.content == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Check the review record
+        if: steps.scope.outputs.content == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm exec tsx scripts/content/check-batch-pr.ts
