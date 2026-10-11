@@ -1,5 +1,6 @@
 import { navigate as navigateInApp } from "wouter/use-browser-location";
 import { admitOnboardingRedirect } from "./onboarding-loop-guard";
+import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
 import {
   MutationCache,
   QueryCache,
@@ -152,7 +153,7 @@ export function redirectForOnboarding(
   if (window.location.pathname === path) return;
   if (path === PROFILE_COMPLETE_PATH) {
     if (admitOnboardingRedirect() === "blocked") return;
-    void queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+    void queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
   }
   navigate(path);
 }
