@@ -1,0 +1,72 @@
+# Posts a content batch's summary to Slack #social when its pull request is marked ready.
+#
+# @spec [docs/Spec/Lyceon_Doc_10B.md §8.7; owner brief "Doc 10B Phase 1" (Karl, 2026-10-11)
+#   scope 4; owner answers 11 (one SOCIAL_SLACK_CHANNEL_ID) and 12 (duplicate posts accepted)]
+#   | @implemented [2026-10-11]
+#
+# plain English: when a pull request into `social` that carries content (content/batches/** or
+# shared/content/posts/**) is marked ready for review, scripts/content/notify-batch.ts posts the
+# titles, publish dates, Codex verdicts and the pull request link to the channel in the
+# repository variable SOCIAL_SLACK_CHANNEL_ID, as "Lyceon bot" (secret SLACK_BOT_TOKEN). Setup and
+# failures: docs/runbooks/slack.md. A failed post turns this run red; it never blocks the merge.
+# Marking a pull request ready twice posts twice (accepted, owner answer 12). Base `social`: owner
+# brief 2026-10-11, "move content to the social branch".
+name: Content batch notify
+
+on:
+  pull_request:
+    types: [ready_for_review]
+    branches: [social]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history, for the base...head diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Does this pull request carry content?
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git diff --name-only "$BASE_SHA...$HEAD_SHA" | grep -qE '^(content/batches/|shared/content/posts/)'; then
+            echo "content=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "content=false" >> "$GITHUB_OUTPUT"
+            echo "No content in this pull request; nothing to post."
+          fi
+
+      - name: Setup pnpm
+        if: steps.scope.outputs.content == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        if: steps.scope.outputs.content == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.scope.outputs.content == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Post the batch summary to Slack
+        if: steps.scope.outputs.content == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/content/notify-batch.ts

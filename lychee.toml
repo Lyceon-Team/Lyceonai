@@ -1,0 +1,11 @@
+# Link check for pipeline content (Doc 10B §5 gate 8, "all links resolve"; §9 "Existing crawl
+# check, link check"). Run by scripts/content/lint-prose.sh over build/content-prose/links.txt.
+max_retries = 3
+retry_wait_time = 2
+timeout = 20
+max_concurrency = 8
+# 429 is a server asking us to slow down, not a missing page.
+accept = ["200..=299", "429"]
+# Hosts that refuse automated clients outright (checked by hand when cited):
+#   doi.org → doi.apa.org answers 403 to any non-browser client (checked 2026-10-11).
+exclude = ["^https://doi\\.org/10\\.1037/"]

@@ -1,0 +1,35 @@
+name: Content tools (Vale, lychee)
+description: >-
+  Install the pinned Vale and lychee builds used by the content prose and link gates
+  (Doc 10B §5 gates 6 and 8), each checked against its sha256 before it is put on PATH.
+
+# @spec [docs/Spec/Lyceon_Doc_10B.md §5, §9; owner decision 2026-10-11 ("Vale: Microsoft (error
+#   level) plus ai-tells, pinned")] | @implemented [2026-10-11]
+#
+# plain English: downloads Vale v3.24.0 and lychee v0.24.2 release tarballs, refuses either one
+# whose sha256 differs from the pinned value, and adds them to PATH. Bounded and retried (curl
+# --retry, a timeout per transfer) so a stalled download fails fast instead of hanging the job.
+# Bumping a version means bumping its URL and its sha256 together, in this file only.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        dest="$RUNNER_TEMP/content-tools"
+        mkdir -p "$dest/bin"
+        fetch() { # url sha256 file
+          curl -fsSL --retry 4 --retry-delay 2 --max-time 120 -o "$dest/$3" "$1"
+          echo "$2  $dest/$3" | sha256sum -c -
+        }
+        fetch https://github.com/errata-ai/vale/releases/download/v3.24.0/vale_3.24.0_Linux_64-bit.tar.gz \
+          867534ddb678abca7f214bc4706ead0922bd5252ffe8035fc227013f66c8b214 vale.tar.gz
+        tar -xzf "$dest/vale.tar.gz" -C "$dest/bin" vale
+        fetch https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz \
+          1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a lychee.tar.gz
+        tar -xzf "$dest/lychee.tar.gz" -C "$dest/bin" --strip-components=1 \
+          lychee-x86_64-unknown-linux-gnu/lychee
+        echo "$dest/bin" >> "$GITHUB_PATH"
+        "$dest/bin/vale" --version
+        "$dest/bin/lychee" --version

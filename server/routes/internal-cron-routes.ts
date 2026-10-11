@@ -36,6 +36,8 @@ import {
 import { sendOpsAlert } from "../lib/ops-alerts.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
 import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
+import { ALL_BLOG_POSTS } from "../../shared/content/blog.js";
+import { runContentPublish } from "../services/content/publish-job.js";
 import { quietHoursDeferral } from "../lib/notifications/quiet-hours.js";
 import {
   defaultQotdEmailJobDeps,
@@ -721,6 +723,50 @@ router.get(
         err,
       );
       res.status(500).json({ error: "qotd_schedule_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/content-publish
+ * @spec [docs/Spec/Lyceon_Doc_10B.md §8.3, §8.4 ("a daily job triggers the production deploy hook
+ *        only on days when an item's date arrives"); owner answers on Doc 10B Phase 1 Step 0
+ *        (Karl, 2026-10-11)] | @implemented [2026-10-11]
+ *
+ * plain English: scheduled at 12:05 and 13:05 UTC (vercel.json); each run acts only when it is the
+ * 07:00 hour in America/Chicago, so exactly one run a day can act in summer or winter time. It
+ * triggers the production build only when an approved blog post's publishAt is today and has
+ * arrived (server/services/content/publish-job.ts); otherwise it does nothing. Safe to rerun: a
+ * second build on a publish day rebuilds the same site.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/content-publish",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runContentPublish({
+        posts: ALL_BLOG_POSTS,
+        now: new Date(),
+        deployHookUrl: process.env.VERCEL_DEPLOY_HOOK_URL,
+      });
+      res.status(summary.deploy === "failed" ? 500 : 200).json({
+        ok: summary.deploy !== "failed",
+        job: "content_publish",
+        ...summary,
+      });
+    } catch (err) {
+      logger.error(
+        "CONTENT",
+        "content_publish_job_error",
+        "Content publish job failed",
+        err,
+      );
+      res.status(500).json({ error: "content_publish_failed" });
     }
   },
 );

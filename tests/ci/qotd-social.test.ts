@@ -53,11 +53,10 @@ import {
 import {
   loadPost,
   run,
-  slackConfig,
   slackCopyMessage,
   slackImagesComment,
-  type FetchLike,
 } from "../../scripts/qotd-social/post-to-slack";
+import { slackConfig, type FetchLike } from "../../scripts/slack/client";
 import { QOTD_RW_MAX_PASSAGE_CHARS } from "../../shared/qotd/readability";
 import {
   QOTD_ARCHIVE_ROWS,
@@ -480,7 +479,7 @@ describe("future days are never generated early or publicly reachable", () => {
     expect(postStep.env).toEqual({
       SLACK_BOT_TOKEN: "${{ secrets.SLACK_BOT_TOKEN }}",
       SLACK_CHANNEL_ID:
-        "${{ inputs.slack_channel || vars.QOTD_SLACK_CHANNEL_ID }}",
+        "${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}",
     });
     expect(postStep.run).toBe(
       "pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out",
@@ -819,7 +818,7 @@ describe("Slack: fails loudly, never silently", () => {
     for (const channel of [undefined, "", "#social", "social", "U0123456789"]) {
       const r = slackConfig({ ...ENV, SLACK_CHANNEL_ID: channel });
       expect(r.ok, String(channel)).toBe(false);
-      if (!r.ok) expect(r.error).toContain("QOTD_SLACK_CHANNEL_ID");
+      if (!r.ok) expect(r.error).toContain("SOCIAL_SLACK_CHANNEL_ID");
     }
     expect(slackConfig(ENV)).toEqual({
       ok: true,

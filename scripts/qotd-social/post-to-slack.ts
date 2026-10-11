@@ -9,7 +9,8 @@
  *
  * Usage:
  *   pnpm exec tsx scripts/qotd-social/post-to-slack.ts [--dir qotd-social-out] [--dry-run]
- *   env: SLACK_BOT_TOKEN (xoxb-…, scopes files:write and chat:write), SLACK_CHANNEL_ID (C…)
+ *   env: SLACK_BOT_TOKEN (xoxb-…, scopes files:write and chat:write), SLACK_CHANNEL_ID (C…);
+ *   both read by the shared client, scripts/slack/client.ts (docs/runbooks/slack.md).
  *
  * plain English:
  *   * Nothing is posted without post.json, the manifest generate.ts writes only when every
@@ -38,13 +39,20 @@ import {
   type QotdSocialPostManifest,
 } from "../../packages/shared/src/qotd-schema";
 import { formatSocialDate } from "../../shared/qotd/social";
+import {
+  SlackCallError,
+  escapeMrkdwn,
+  postMessage,
+  slackCall,
+  slackConfig,
+  type FetchLike,
+  type Result,
+  type SlackConfig,
+} from "../slack/client";
 
-const SLACK_API = "https://slack.com/api";
 const PNG_SIGNATURE = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 ]);
-
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export type LoadedPost = {
   manifest: QotdSocialPostManifest;
@@ -112,44 +120,6 @@ export function loadPost(dir: string): Result<LoadedPost> {
   return { ok: true, value: { manifest, images } };
 }
 
-export type SlackConfig = { token: string; channel: string };
-
-/** The bot token and channel from the environment; missing or malformed fails, never defaults. */
-export function slackConfig(env: NodeJS.ProcessEnv): Result<SlackConfig> {
-  const token = env.SLACK_BOT_TOKEN?.trim() ?? "";
-  const channel = env.SLACK_CHANNEL_ID?.trim() ?? "";
-  if (token === "") {
-    return {
-      ok: false,
-      error:
-        "SLACK_BOT_TOKEN is not set (GitHub secret SLACK_BOT_TOKEN; see docs/runbooks/qotd-slack.md)",
-    };
-  }
-  if (!token.startsWith("xoxb-")) {
-    return { ok: false, error: "SLACK_BOT_TOKEN is not a bot token (xoxb-…)" };
-  }
-  if (!/^[CG][A-Z0-9]{8,}$/.test(channel)) {
-    return {
-      ok: false,
-      error:
-        "SLACK_CHANNEL_ID is not set or is not a channel ID (GitHub variable QOTD_SLACK_CHANNEL_ID, e.g. C0123456789)",
-    };
-  }
-  return { ok: true, value: { token, channel } };
-}
-
-/**
- * Slack's mrkdwn escaping: &, < and > are its control characters (also inside code). A run of
- * backticks would close the code block early, so a zero-width space breaks each pair up.
- */
-function escapeMrkdwn(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/`(?=`)/g, "`\u200b");
-}
-
 /** The heading posted with the images: the date and section. */
 export function slackImagesComment(m: QotdSocialPostManifest): string {
   return `*SAT Question of the Day* · ${formatSocialDate(m.qotd_date)} · ${m.section}`;
@@ -170,8 +140,6 @@ export function slackCopyMessage(m: QotdSocialPostManifest): string {
   ].join("\n");
 }
 
-const slackError = z.object({ ok: z.literal(false), error: z.string() });
-const postMessageOk = z.object({ ok: z.literal(true), ts: z.string() });
 const uploadUrlOk = z.object({
   ok: z.literal(true),
   upload_url: z.string().url(),
@@ -181,53 +149,6 @@ const completeOk = z.object({
   ok: z.literal(true),
   files: z.array(z.object({ id: z.string() })).min(1),
 });
-
-export type FetchLike = (
-  input: string,
-  init: {
-    method: string;
-    headers?: Record<string, string>;
-    body?: string | Uint8Array;
-  },
-) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
-
-class SlackCallError extends Error {}
-
-async function slackCall<T>(
-  fetchImpl: FetchLike,
-  token: string,
-  method: string,
-  body: { json: Record<string, unknown> } | { form: Record<string, string> },
-  okSchema: z.ZodType<T>,
-): Promise<T> {
-  const init =
-    "json" in body
-      ? {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json; charset=utf-8",
-          },
-          body: JSON.stringify(body.json),
-        }
-      : {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: new URLSearchParams(body.form).toString(),
-        };
-  const res = await fetchImpl(`${SLACK_API}/${method}`, init);
-  if (!res.ok) throw new SlackCallError(`${method}: HTTP ${res.status}`);
-  const payload: unknown = await res.json();
-  const good = okSchema.safeParse(payload);
-  if (good.success) return good.data;
-  const bad = slackError.safeParse(payload);
-  throw new SlackCallError(
-    `${method}: ${bad.success ? bad.data.error : "unexpected response"}`,
-  );
-}
 
 /** Post the day: images (with the date and section) first, then the caption and alt text. */
 export async function postToSlack(
@@ -284,21 +205,12 @@ export async function postToSlack(
     },
     completeOk,
   );
-  const message = await slackCall(
+  const messageTs = await postMessage(
+    config,
+    slackCopyMessage(manifest),
     fetchImpl,
-    config.token,
-    "chat.postMessage",
-    {
-      json: {
-        channel: config.channel,
-        text: slackCopyMessage(manifest),
-        unfurl_links: false,
-        unfurl_media: false,
-      },
-    },
-    postMessageOk,
   );
-  return { imagesShared: shared.files.length, messageTs: message.ts };
+  return { imagesShared: shared.files.length, messageTs };
 }
 
 /** The whole command, injectable for tests. Returns the exit code. */

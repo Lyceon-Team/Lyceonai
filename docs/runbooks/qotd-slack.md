@@ -12,6 +12,9 @@ run's download, then posts them to `#social`:
 
 It uses a standard Slack app with two scopes. It works on Slack's free plan.
 
+The app, token, channel variable and client are shared with every repo job that posts to Slack:
+see `docs/runbooks/slack.md`.
+
 ## 1. One-time setup (Karl)
 
 1. **Create the app.** Go to <https://api.slack.com/apps> → **Create New App** → **From
@@ -27,7 +30,7 @@ It uses a standard Slack app with two scopes. It works on Slack's free plan.
 4. **Add the token and channel to GitHub.** In the repository, go to **Settings** → **Secrets
    and variables** → **Actions**:
    - **Secrets** tab → **New repository secret**: name `SLACK_BOT_TOKEN`, value the `xoxb-` token.
-   - **Variables** tab → **New repository variable**: name `QOTD_SLACK_CHANNEL_ID`, value the
+   - **Variables** tab → **New repository variable**: name `SOCIAL_SLACK_CHANNEL_ID`, value the
      channel ID of `#social` (below).
 
 **Finding a channel ID:** in Slack, open the channel, click its name at the top, and scroll
@@ -55,7 +58,7 @@ The rule is that it never posts a day that failed a check, and it never fails qu
 | An image does not fit                                                                        | The build step fails. No `post.json` is written, so nothing is posted.                                                                                                 |
 | At 06:20 UTC the site still serves yesterday's question as today's                           | The build refuses it: that day's answer is already public, so it would have to pass the past-day leak check. Nothing is posted. Rebuild it by hand with that **date**. |
 | `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                       | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                             |
-| `QOTD_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                     | Same: the download is uploaded and the run is red.                                                                                                                     |
+| `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                     | Same: the download is uploaded and the run is red.                                                                                                                     |
 | Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)      | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                          |
 
 A red run e-mails whoever GitHub notifies for failed scheduled workflows. When the post fails,

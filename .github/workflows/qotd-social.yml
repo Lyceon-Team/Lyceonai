@@ -15,7 +15,7 @@
 # section (scripts/qotd-social/post-to-slack.ts). It posts only from post.json, which the build
 # writes only when every check passed, the leak check included; a build that failed never reaches
 # the step. The bot token is the GitHub secret SLACK_BOT_TOKEN, read by that one step and nothing
-# else; the channel is the variable QOTD_SLACK_CHANNEL_ID (or the run's slack_channel input, for
+# else; the channel is the variable SOCIAL_SLACK_CHANNEL_ID (or the run's slack_channel input, for
 # a test post). A missing token or a Slack error fails the run, after the download is uploaded.
 # Pull requests run the same step as a dry run: every check, no token, nothing sent.
 # Setup: docs/runbooks/qotd-slack.md.
@@ -46,7 +46,7 @@ on:
         required: false
         default: ""
       slack_channel:
-        description: "Slack channel ID for this run only, e.g. a test channel (empty: QOTD_SLACK_CHANNEL_ID)"
+        description: "Slack channel ID for this run only, e.g. a test channel (empty: SOCIAL_SLACK_CHANNEL_ID)"
         required: false
         default: ""
 
@@ -130,5 +130,5 @@ jobs:
         if: success() && github.event_name != 'pull_request'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.QOTD_SLACK_CHANNEL_ID }}
+          SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
         run: pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out
